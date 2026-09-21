@@ -146,7 +146,8 @@
  * @property {boolean} [tools] 本机工具，默认开
  * @property {boolean} [enableSearch]
  * @property {number} [contextWindow]
- * @property {string} [reasoningLevels]
+ * @property {string} [reasoningLevels] 此模型认的思考档位，逗号分隔；none 是不认；探到的与手填的都记在这里
+ * @property {string} [reasoningProbed] 探过档位时模型的身份（接口|地址|模型 ID，见 reasoningProbeKey），亲手填的前面带 manual|；换了任一样再探
  * @property {string[]} [modelList]
  */
 /** @typedef {{ id: string, text: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
@@ -360,12 +361,15 @@ function loadStore() {
       settings: {
         ...defaultStore.settings,
         ...(data.settings || {}),
+        // 旧版思考菜单上有「关」，现在没有了：按「默认」看
+        reasoning: normalizeReasoning(data.settings?.reasoning),
         serverProfile: { ...defaultStore.settings.serverProfile, ...(data.settings?.serverProfile || {}) }
       },
       profiles: Array.isArray(data.profiles) ? data.profiles : [],
       conversations: (Array.isArray(data.conversations) ? data.conversations : []).map(({ ended, workAuto, ...c }) => ({
         ...c,
         commandPolicy: normalizeCommandPolicy(c.commandPolicy, workAuto ? "auto" : "ask"),
+        reasoning: normalizeReasoning(c.reasoning),
         // 旧版在压缩开始时就先落一个 compacting 分隔：页面若在摘要生成前关掉，它会留下来把历史长期截断；启动时清掉
         messages: (Array.isArray(c.messages) ? c.messages : []).filter(m => !(m?.role === "context" && m.compacting)),
         forks: Array.isArray(c.forks) ? c.forks : [],
@@ -640,6 +644,7 @@ function persistServerProfile(p) {
       maxTokens: p.maxTokens,
       systemPrompt: p.systemPrompt,
       reasoningLevels: p.reasoningLevels,
+      reasoningProbed: p.reasoningProbed,
       quota: p.quota,
       usedTokens: p.usedTokens
     };
@@ -1972,6 +1977,14 @@ function bindEvents() {
     const item = e.target.closest("[data-profile]");
     if (!item) return;
     selectProfile(item.dataset.profile);
+    // 这个模型还没探过认哪几档：探一下，发送键旁的标签与菜单跟着换（探不成就按通用四档，撞了错再学）
+    const picked = activeProfile();
+    if (picked && !reasoningProbed(picked))
+      void probeReasoningLevels(picked).then(levels => {
+        if (levels === null || activeProfile() !== picked) return;
+        renderModelTriggers();
+        if ($("#modelMenu")?.classList.contains("hidden") === false) renderModelMenu();
+      });
   });
   $("#messages").addEventListener("click", handleMessageAction);
   document.addEventListener("keydown", e => {
@@ -3048,11 +3061,11 @@ function renderModelTriggers() {
   const p = activeProfile(),
     c = currentConversation(),
     level = (c ? c.reasoning : store.settings.reasoning) || "";
+  // 标签写实际会送出的那一档：模型不认所选的就落到最接近的；模型不认思考档位（探过是 none）就不写
+  const used = level ? nearestReasoning(p, level) : "";
   document.querySelectorAll(".model-trigger").forEach(button => {
     button.querySelector(".model-name").textContent = p?.name || "尚未接入模型";
-    button.querySelector(".model-extra").textContent = level
-      ? `· 思考 ${reasoningLabel(nearestReasoning(activeProfile(), level) || level)}`
-      : "";
+    button.querySelector(".model-extra").textContent = used ? `· 思考 ${reasoningLabel(used)}` : "";
   });
 }
 function closeModelMenu() {
@@ -3094,7 +3107,7 @@ function renderModelMenu() {
   if (all.length)
     $("#modelMenu").insertAdjacentHTML(
       "beforeend",
-      `<div class="menu-section"><div class="menu-section-title"><span>思考深度</span><span title="留空由接口决定；各模型所认的档位不同，可在模型高级配置中填写，接口拒绝时亦会自动记下">${c ? "本段对话" : "新对话默认"}</span></div><div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div></div><button class="model-option model-manage" data-manage>模型设置</button>`
+      `<div class="menu-section"><div class="menu-section-title"><span>思考深度</span><span title="留空由接口决定；各模型所认的档位不同，可在模型高级配置中填写，接口拒绝时亦会自动记下">${c ? "本段对话" : "新对话默认"}</span></div>${choices.length > 1 ? `<div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div>` : `<div class="menu-section-note">此模型不认思考档位</div>`}</div><button class="model-option model-manage" data-manage>模型设置</button>`
     );
   $("#configureFirst")?.addEventListener("click", () => openSettings("models"));
   $("#modelMenu [data-manage]")?.addEventListener("click", e => {
@@ -8870,35 +8883,43 @@ function formatTokens(value) {
         : String(n);
 }
 // 思考强度：OpenAI 系接口走 reasoning_effort；DashScope 兼容模式走 enable_thinking / thinking_budget。留空则不带字段，由接口自己定。
-// 各家接受的档位不一样（有的只有 low / medium / xhigh，有的多一个 minimal 或 max）：模型配置里可填「思考档位」，没填就用通用的低 / 中 / 高；
-// 接口拒绝某个档位时，从它的报错里读出它认的那几档记到模型上，把这一问换成最接近的一档重发一次
+// 各家接受的档位不一样（有的只有 low / medium / xhigh，有的多一个 minimal 或 max）：模型配置里可填「思考档位」，
+// 没填就按四档（低 / 中 / 高 / 最高）列；只认三档的接口拒绝某个档位时，从它的报错里读出它认的那几档记到模型上，
+// 把这一问换成最接近的一档重发一次，此后菜单只列它认的。菜单上没有「关」：愿意接 Key 的人不至于连思考都不愿开，
+// 要它少想就选「低」，旧数据里存的「关」按「默认」看
 const REASONING_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-  REASONING_NAMES = { "": "默认", none: "关", off: "关", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" },
-  REASONING_DEFAULT_LEVELS = ["low", "medium", "high"];
+  REASONING_NAMES = { "": "默认", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" },
+  REASONING_DEFAULT_LEVELS = ["low", "medium", "high", "max"];
 function reasoningLabel(level) {
   return REASONING_NAMES[level || ""] || level;
 }
-// 模型认的档位（不含「关」）：配置里填的优先，否则通用三档；一律按由低到高排，不管填写或报错里是什么顺序
+// 旧版菜单上有「关」（off / none）：现在按「默认」看，不带字段
+function normalizeReasoning(level) {
+  return level === "off" || level === "none" ? "" : String(level || "");
+}
+// 模型认的档位（不含「关」）：配置里填的（或探到的）优先，否则通用四档；一律按由低到高排，不管填写或报错里是什么顺序。
+// 填的是 none：这个模型不认思考档位（探测时接口说不认识 reasoning_effort），菜单上只剩「默认」
 /** @param {Profile} profile */
 function profileReasoningLevels(profile) {
-  const listed = String(profile?.reasoningLevels || "")
-    .toLowerCase()
-    .split(/[\s,，、/|]+/)
-    .filter(item => REASONING_ORDER.includes(item) && item !== "none");
+  const raw = String(profile?.reasoningLevels || "").toLowerCase();
+  if (raw.trim() === "none") return [];
+  const listed = raw.split(/[\s,，、/|]+/).filter(item => REASONING_ORDER.includes(item) && item !== "none");
   return listed.length
     ? [...new Set(listed)].sort((a, b) => REASONING_ORDER.indexOf(a) - REASONING_ORDER.indexOf(b))
     : REASONING_DEFAULT_LEVELS;
 }
-// 菜单上的档位：默认 + 模型认的几档 + 关
+// 菜单上的档位：默认 + 模型认的几档
 /** @param {Profile} profile */
 function reasoningChoices(profile) {
-  return ["", ...profileReasoningLevels(profile), "off"];
+  return ["", ...profileReasoningLevels(profile)];
 }
 // 把用户选的档位落到模型认的档位上：认就原样用；不认则取最接近的一档，同样近时取高的那档（选「高」是想它多想，别给它降成「中」）
 /** @param {Profile} profile */
 function nearestReasoning(profile, level) {
-  if (!level || level === "off") return level;
+  level = normalizeReasoning(level);
+  if (!level) return level;
   const levels = profileReasoningLevels(profile);
+  if (!levels.length) return "";
   if (levels.includes(level)) return level;
   const want = REASONING_ORDER.indexOf(level);
   return [...levels].sort((a, b) => {
@@ -8909,36 +8930,118 @@ function nearestReasoning(profile, level) {
 }
 /** @param {Profile} profile */
 function reasoningFields(profile, level) {
+  level = normalizeReasoning(level);
   if (!level) return {};
   if (/dashscope|aliyuncs/i.test(profile.baseUrl || ""))
-    return level === "off"
-      ? { enable_thinking: false }
-      : {
-          enable_thinking: true,
-          thinking_budget: { minimal: 1024, low: 2048, medium: 8192, high: 32768, xhigh: 65536, max: 81920 }[level] || 8192
-        };
-  return { reasoning_effort: level === "off" ? "none" : nearestReasoning(profile, level) };
+    return {
+      enable_thinking: true,
+      thinking_budget: { minimal: 1024, low: 2048, medium: 8192, high: 32768, xhigh: 65536, max: 81920 }[level] || 8192
+    };
+  const effort = nearestReasoning(profile, level);
+  return effort ? { reasoning_effort: effort } : {};
 }
-// 接口拒绝了思考档位：从报错里认出它支持的几档（如 Supported values are: 'low', 'medium', and 'xhigh'），记到模型上；认不出来就不动
+// 从接口的报错里认出它支持的几档（如 Supported values are: 'low', 'medium', and 'xhigh'），由低到高排；认不出来给空。
 // sent 是这次发出去、被拒的那一档：报错里通常会把它也复述一遍（Invalid value: 'high'），不能当成它认的
+function parseReasoningLevels(message, sent) {
+  const text = String(message || "");
+  if (!/reasoning|effort|thinking/i.test(text) && !(sent && text.includes(sent))) return [];
+  const found = [...new Set([...text.matchAll(/\b(none|minimal|low|medium|high|xhigh|max)\b/gi)].map(m => m[1].toLowerCase()))].filter(
+    level => level !== "none" && level !== sent
+  );
+  return found.length < 2 ? [] : found.sort((a, b) => REASONING_ORDER.indexOf(a) - REASONING_ORDER.indexOf(b));
+}
+// 接口拒绝了思考档位：认出它支持的几档记到模型上；认不出来就不动
 /**
  * @param {Profile} profile
  * @param {Message} message
  */
 function learnReasoningLevels(profile, message, sent) {
-  const text = String(message || "");
-  if (!/reasoning|effort|thinking/i.test(text) && !(sent && text.includes(sent))) return false;
-  const found = [...new Set([...text.matchAll(/\b(none|minimal|low|medium|high|xhigh|max)\b/gi)].map(m => m[1].toLowerCase()))].filter(
-    level => level !== "none" && level !== sent
-  );
-  if (found.length < 2) return false;
-  found.sort((a, b) => REASONING_ORDER.indexOf(a) - REASONING_ORDER.indexOf(b));
+  const found = parseReasoningLevels(message, sent);
+  if (!found.length) return false;
   const current = profileReasoningLevels(profile);
   if (found.length === current.length && found.every(level => current.includes(level))) return false;
   profile.reasoningLevels = found.join(", ");
+  // 从报错里学到的就是这个身份的定论，不必再探
+  profile.reasoningProbed = reasoningProbeKey(profile);
   persistServerProfile(profile);
   saveStoreSoon();
   return true;
+}
+// 选定模型时探一下它认哪几档：故意送一个不存在的档位（probe），接口若按 OpenAI 的样子报错，就把报错里列的几档记下；
+// 报错说它压根不认识 reasoning_effort，记成 none（菜单上只剩「默认」）；接口照单全收（中转站常常忽略这个字段）就按通用四档列。
+// 鉴权、网络之类别的错不算探过，下次再探。探过的记在 reasoningProbed 上——记的是「接口 + 地址 + 模型」三样合成的键，
+// 换了模型、换了地址或接口类型都得重探；探测发出去之后模型被换了（探着 A 的时候切到 B），回来的结果作废，不往 B 上写。
+// Anthropic 与 DashScope 的档位是换算成预算送的，没有可探的枚举，直接算探过。回值是探到的几档，没探成给 null
+/** @param {Profile} profile 探的是这个模型此刻的身份 */
+function reasoningProbeKey(profile) {
+  return `${anthropicLike(profile) ? "anthropic" : "openai"}|${String(profile?.baseUrl || "").trim()}|${String(profile?.model || "").trim()}`;
+}
+// 探过、或用户亲手填过档位（记成 manual|键——手填的是定论，测试连接也不重探；换了模型才作废）。
+// 旧版只有 reasoningLevels、没有探过的标记（那时的档位是手填或从报错里学来的）：当手填的，绑在当前身份上，首次探测不能把它冲掉
+/** @param {Profile} profile */
+function reasoningProbed(profile) {
+  if (!profile?.model) return false;
+  const key = reasoningProbeKey(profile);
+  if (profile.reasoningLevels && !profile.reasoningProbed) {
+    profile.reasoningProbed = `manual|${key}`;
+    persistServerProfile(profile);
+    saveStoreSoon();
+  }
+  return profile.reasoningProbed === key || profile.reasoningProbed === `manual|${key}`;
+}
+// 这个身份上的档位是亲手填的（换了模型，先前手填的就不算数了）
+/** @param {Profile} profile */
+function reasoningManual(profile) {
+  return !!profile?.model && profile.reasoningProbed === `manual|${reasoningProbeKey(profile)}`;
+}
+// 走到这里就是身份变了（或亲手要求重探）：此前记的档位是旧模型的，一律不沿用——接口照单全收就按通用四档，
+// 不然旧模型的 none 会跟着新模型走，把一个认档位的模型永远标成不认
+/** @param {Profile} profile */
+async function probeReasoningLevels(profile) {
+  if (!profile?.model || reasoningProbed(profile)) return null;
+  const key = reasoningProbeKey(profile);
+  if (anthropicLike(profile) || /dashscope|aliyuncs/i.test(profile.baseUrl || "")) {
+    profile.reasoningLevels = "";
+    profile.reasoningProbed = key;
+    persistServerProfile(profile);
+    saveStoreSoon();
+    return profileReasoningLevels(profile);
+  }
+  if (apiBase === null && profile.source === "server") return null;
+  const controller = new AbortController(),
+    timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await requestChat(profile, [{ role: "user", content: "。" }], controller.signal, {
+      systemPrompt: "",
+      maxTokens: 16,
+      reasoning: "probe"
+    });
+    // 探着探着模型被换了：这份结果是旧模型的，作废；探着的时候用户亲手填了档位：手填的是定论，也作废
+    if (reasoningProbeKey(profile) !== key || reasoningManual(profile)) return null;
+    let learned;
+    if (response.ok) learned = REASONING_DEFAULT_LEVELS;
+    else {
+      const data = await response.json().catch(() => ({})),
+        message = (typeof data.error === "string" ? data.error : data.error?.message) || "";
+      const found = parseReasoningLevels(message, "probe");
+      if (found.length) learned = found;
+      // 只有明说不认识这个字段的才记成不认；「Invalid reasoning_effort value」这种只是嫌 probe 不对、又没列它认的几档——
+      // 按通用四档，撞了错再学。报错压根不提思考的（鉴权、限流）不算探过
+      else if (!/reasoning_effort|reasoning|effort/i.test(message)) return null;
+      else if (/unknown|unrecognized|unsupported|not support|不支持|不认识/i.test(message)) learned = [];
+      else learned = REASONING_DEFAULT_LEVELS;
+    }
+    profile.reasoningLevels = learned.length ? learned.join(", ") : "none";
+    profile.reasoningProbed = key;
+    persistServerProfile(profile);
+    saveStoreSoon();
+    return learned;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
 }
 // 经桥接的请求头：用桥接预设的模型时带上会话令牌（见 server.js 的 SESSION_TOKEN）
 /** @param {Profile} profile */
@@ -8959,7 +9062,8 @@ async function requestChat(profile, messages, signal, overrides = {}) {
   const extras = {
     ...(overrides.tools ? { tools: overrides.tools } : {}),
     ...(overrides.enableSearch ? { enable_search: true } : {}),
-    ...reasoningFields(profile, overrides.reasoning)
+    // probe 是探档位时故意送的、不存在的一档，原样送出去让接口报错（见 probeReasoningLevels）
+    ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
   if (apiBase !== null)
     return fetch(`${apiBase}/api/chat`, {
@@ -9584,7 +9688,7 @@ function profileCardHtml(p) {
   ]
     .map(([v, label]) => `<option value="${v}"${quota.unit === v ? " selected" : ""}>${label}</option>`)
     .join("")}</select></div>`;
-  return `<div class="profile-card" data-profile-card="${escapeHtml(p.id)}"><div class="profile-head"><strong>${escapeHtml(p.name)}</strong>${locked ? `<span class="profile-badge">服务端</span>` : ""}${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</div><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}" ${locked ? "disabled" : ""}></label><label>用量限制${quotaField}<small>必填；改动后重新计量</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}" ${locked ? "disabled" : ""}>OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}" ${locked ? "disabled" : ""}>Anthropic</button></div><small>${anthropicLike(p) ? "Messages API；思考档位换算成思考预算" : "chat/completions；大多数服务与中转站"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}" ${locked ? "disabled" : ""}></label>${locked ? "" : `<label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">模型${modelField}${locked ? "" : `<small>填写 Base URL 与 API Key 后可获取列表，亦可手动输入</small>`}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${[p.tools === false ? "本机工具关" : "", modelSearchEnabled(p) ? "接口原生联网开" : "", p.systemPrompt ? "已设 system prompt" : ""].filter(Boolean).join(" · ")}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>由本机桥接执行检索、网页读取与文档翻阅；需接口支持 function calling</small></label><label>接口原生联网（实验）<div class="segmented"><button data-toggle-field="enableSearch" data-value="true" class="${modelSearchEnabled(p) ? "active" : ""}">开</button><button data-toggle-field="enableSearch" data-value="false" class="${modelSearchEnabled(p) ? "" : "active"}">关</button></div><small>仅当接口文档明确支持时开启，仅附加 <code>enable_search: true</code>；普通 OpenAI 兼容服务通常会忽略该字段，不能替代本机联网</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number(p.temperature ?? 0.7)}"><small>0–2，默认 0.7；数值越高越发散</small></label><label><code>max_tokens</code><input type="number" min="16" max="65536" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens || DEFAULT_MAX_TOKENS)}"><small>单次回复的输出上限，默认 ${DEFAULT_MAX_TOKENS}</small></label><label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>此模型一次可读的 token 数；填写后右下角按比例计量，逾七成半即提醒</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>此模型所认的 <code>reasoning_effort</code> 档位，逗号分隔（minimal、low、medium、high、xhigh、max）；留空用低 / 中 / 高，接口拒绝某档时会自动记下</small></label><label class="profile-full"><code>system prompt</code><textarea class="field wide field-area" data-field="systemPrompt" placeholder="可选。设定模型的身份与应答方式">${escapeHtml(p.systemPrompt || "")}</textarea></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}${locked ? "" : `<button class="danger-btn" data-profile-action="delete">删除</button>`}<span class="profile-status">${invalidQuota ? "请先设定用量上限" : ""}</span></div></div>`;
+  return `<div class="profile-card" data-profile-card="${escapeHtml(p.id)}"><div class="profile-head"><strong>${escapeHtml(p.name)}</strong>${locked ? `<span class="profile-badge">服务端</span>` : ""}${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</div><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}" ${locked ? "disabled" : ""}></label><label>用量限制${quotaField}<small>必填；改动后重新计量</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}" ${locked ? "disabled" : ""}>OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}" ${locked ? "disabled" : ""}>Anthropic</button></div><small>${anthropicLike(p) ? "Messages API；思考档位换算成思考预算" : "chat/completions；大多数服务与中转站"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}" ${locked ? "disabled" : ""}></label>${locked ? "" : `<label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">模型${modelField}${locked ? "" : `<small>填写 Base URL 与 API Key 后可获取列表，亦可手动输入</small>`}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${[p.tools === false ? "本机工具关" : "", modelSearchEnabled(p) ? "接口原生联网开" : "", p.systemPrompt ? "已设 system prompt" : ""].filter(Boolean).join(" · ")}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>由本机桥接执行检索、网页读取与文档翻阅；需接口支持 function calling</small></label><label>接口原生联网（实验）<div class="segmented"><button data-toggle-field="enableSearch" data-value="true" class="${modelSearchEnabled(p) ? "active" : ""}">开</button><button data-toggle-field="enableSearch" data-value="false" class="${modelSearchEnabled(p) ? "" : "active"}">关</button></div><small>仅当接口文档明确支持时开启，仅附加 <code>enable_search: true</code>；普通 OpenAI 兼容服务通常会忽略该字段，不能替代本机联网</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number(p.temperature ?? 0.7)}"><small>0–2，默认 0.7；数值越高越发散</small></label><label><code>max_tokens</code><input type="number" min="16" max="65536" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens || DEFAULT_MAX_TOKENS)}"><small>单次回复的输出上限，默认 ${DEFAULT_MAX_TOKENS}</small></label><label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>此模型一次可读的 token 数；填写后右下角按比例计量，逾七成半即提醒</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>此模型所认的 <code>reasoning_effort</code> 档位，逗号分隔（minimal、low、medium、high、xhigh、max）；选定模型时会自动探测并填在这里（none 是不认）；留空按 low / medium / high / max 四档列，接口拒绝某档时也会记下</small></label><label class="profile-full"><code>system prompt</code><textarea class="field wide field-area" data-field="systemPrompt" placeholder="可选。设定模型的身份与应答方式">${escapeHtml(p.systemPrompt || "")}</textarea></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}${locked ? "" : `<button class="danger-btn" data-profile-action="delete">删除</button>`}<span class="profile-status">${invalidQuota ? "请先设定用量上限" : ""}</span></div></div>`;
 }
 function storageSize() {
   const bytes = new Blob([JSON.stringify(store)]).size;
@@ -9739,10 +9843,14 @@ function bindSettingsEvents() {
           return;
         p[field] = ["temperature", "maxTokens", "usedTokens", "contextWindow"].includes(field) ? Number(e.target.value) : e.target.value;
         if (field === "contextWindow") updateContextGauge();
+        // 亲手填的档位就是定论，不再探；清空了下次选模型再探
+        if (field === "reasoningLevels") p.reasoningProbed = e.target.value.trim() ? `manual|${reasoningProbeKey(p)}` : "";
         persistServerProfile(p);
         saveStoreSoon();
       })
     );
+    // 手动输入的模型 ID：改定了（失焦或回车）探一下它认哪几档
+    card.querySelector('[data-field="model"]')?.addEventListener("change", () => void reportReasoningProbe(p, card));
     const amount = card.querySelector("[data-quota-amount]"),
       unit = card.querySelector("[data-quota-unit]");
     const applyQuota = () => {
@@ -9774,6 +9882,7 @@ function bindSettingsEvents() {
       p.model = e.target.value;
       saveStoreSoon();
       renderHeader();
+      void reportReasoningProbe(p, card);
     });
     card.querySelectorAll("[data-toggle-field]").forEach(
       button =>
@@ -9800,6 +9909,41 @@ function bindSettingsEvents() {
       .querySelectorAll("[data-profile-action]")
       .forEach(button => (button.onclick = () => handleProfileAction(p, button.dataset.profileAction, card)));
   });
+}
+// 选定模型后探它认哪几档，结果写在卡片的状态行上，高级配置里的「思考档位」也跟着填；探不成不吭声（撞了错再学）。
+// 亲手填过档位的不探（测试连接也不），状态行照实写它填的。同一张卡片连着探了两次（模型改了两回），只有最后一次能动状态行——
+// 先前那次迟到回来是作废的，不能把后一次已经写上的结果抹掉
+const probeSerial = new Map();
+/** @param {Profile} profile */
+async function reportReasoningProbe(profile, card, force = false) {
+  if (force && !reasoningManual(profile)) profile.reasoningProbed = "";
+  if (!profile.model) return;
+  const status = () => document.querySelector(`[data-profile-card="${profile.id}"] .profile-status`);
+  // 状态行上此前的话留着（「可用 · 4 ms」），但上一回探到的档位不留——刷新列表探了一次、再从下拉里选一个又探一次，不能越接越长
+  const before = (status()?.textContent || "")
+    .split(" · ")
+    .filter(part => !/^(探测)?思考档位/.test(part))
+    .join(" · ");
+  if (reasoningProbed(profile)) {
+    if (force && status()) {
+      const levels = profileReasoningLevels(profile);
+      status().textContent = `${before ? `${before} · ` : ""}思考档位 ${levels.length ? levels.map(reasoningLabel).join(" / ") : "此模型不认"}${reasoningManual(profile) ? "（手填）" : ""}`;
+    }
+    return;
+  }
+  const serial = (probeSerial.get(profile.id) || 0) + 1;
+  probeSerial.set(profile.id, serial);
+  if (status()) status().textContent = `${before ? `${before} · ` : ""}探测思考档位…`;
+  const levels = await probeReasoningLevels(profile);
+  const el = status();
+  if (!el || probeSerial.get(profile.id) !== serial) return;
+  if (levels === null) el.textContent = before;
+  else {
+    el.textContent = `${before ? `${before} · ` : ""}思考档位 ${levels.length ? levels.map(reasoningLabel).join(" / ") : "此模型不认"}`;
+    const field = document.querySelector(`[data-profile-card="${profile.id}"] [data-field="reasoningLevels"]`);
+    if (field) field.value = profile.reasoningLevels || "";
+    renderModelTriggers();
+  }
 }
 /** @param {Profile} profile */
 async function handleProfileAction(profile, action, card) {
@@ -9830,6 +9974,7 @@ async function handleProfileAction(profile, action, card) {
       renderHeader();
       card = document.querySelector(`[data-profile-card="${profile.id}"]`);
       if (card) card.querySelector(".profile-status").textContent = `已获取 ${models.length} 个模型`;
+      void reportReasoningProbe(profile, card);
     } catch (error) {
       status.textContent = friendlyError(error.message);
     }
@@ -9872,6 +10017,8 @@ async function handleProfileAction(profile, action, card) {
       const data = type.includes("application/json") ? await response.json() : {};
       if (!response.ok) throw Error(data.error || data.message || `连接失败（${response.status}）`);
       status.textContent = `可用 · ${Math.round(performance.now() - started)} ms`;
+      // 测试连接是亲手要的一次核对：档位也重探一遍
+      void reportReasoningProbe(profile, card, true);
     } catch (error) {
       status.textContent = friendlyError(error.message);
     }

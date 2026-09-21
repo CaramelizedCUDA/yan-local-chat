@@ -80,35 +80,43 @@ function formatTokens(value) {
         : String(n);
 }
 // 思考强度：OpenAI 系接口走 reasoning_effort；DashScope 兼容模式走 enable_thinking / thinking_budget。留空则不带字段，由接口自己定。
-// 各家接受的档位不一样（有的只有 low / medium / xhigh，有的多一个 minimal 或 max）：模型配置里可填「思考档位」，没填就用通用的低 / 中 / 高；
-// 接口拒绝某个档位时，从它的报错里读出它认的那几档记到模型上，把这一问换成最接近的一档重发一次
+// 各家接受的档位不一样（有的只有 low / medium / xhigh，有的多一个 minimal 或 max）：模型配置里可填「思考档位」，
+// 没填就按四档（低 / 中 / 高 / 最高）列；只认三档的接口拒绝某个档位时，从它的报错里读出它认的那几档记到模型上，
+// 把这一问换成最接近的一档重发一次，此后菜单只列它认的。菜单上没有「关」：愿意接 Key 的人不至于连思考都不愿开，
+// 要它少想就选「低」，旧数据里存的「关」按「默认」看
 const REASONING_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-  REASONING_NAMES = { "": "默认", none: "关", off: "关", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" },
-  REASONING_DEFAULT_LEVELS = ["low", "medium", "high"];
+  REASONING_NAMES = { "": "默认", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" },
+  REASONING_DEFAULT_LEVELS = ["low", "medium", "high", "max"];
 function reasoningLabel(level) {
   return REASONING_NAMES[level || ""] || level;
 }
-// 模型认的档位（不含「关」）：配置里填的优先，否则通用三档；一律按由低到高排，不管填写或报错里是什么顺序
+// 旧版菜单上有「关」（off / none）：现在按「默认」看，不带字段
+function normalizeReasoning(level) {
+  return level === "off" || level === "none" ? "" : String(level || "");
+}
+// 模型认的档位（不含「关」）：配置里填的（或探到的）优先，否则通用四档；一律按由低到高排，不管填写或报错里是什么顺序。
+// 填的是 none：这个模型不认思考档位（探测时接口说不认识 reasoning_effort），菜单上只剩「默认」
 /** @param {Profile} profile */
 function profileReasoningLevels(profile) {
-  const listed = String(profile?.reasoningLevels || "")
-    .toLowerCase()
-    .split(/[\s,，、/|]+/)
-    .filter(item => REASONING_ORDER.includes(item) && item !== "none");
+  const raw = String(profile?.reasoningLevels || "").toLowerCase();
+  if (raw.trim() === "none") return [];
+  const listed = raw.split(/[\s,，、/|]+/).filter(item => REASONING_ORDER.includes(item) && item !== "none");
   return listed.length
     ? [...new Set(listed)].sort((a, b) => REASONING_ORDER.indexOf(a) - REASONING_ORDER.indexOf(b))
     : REASONING_DEFAULT_LEVELS;
 }
-// 菜单上的档位：默认 + 模型认的几档 + 关
+// 菜单上的档位：默认 + 模型认的几档
 /** @param {Profile} profile */
 function reasoningChoices(profile) {
-  return ["", ...profileReasoningLevels(profile), "off"];
+  return ["", ...profileReasoningLevels(profile)];
 }
 // 把用户选的档位落到模型认的档位上：认就原样用；不认则取最接近的一档，同样近时取高的那档（选「高」是想它多想，别给它降成「中」）
 /** @param {Profile} profile */
 function nearestReasoning(profile, level) {
-  if (!level || level === "off") return level;
+  level = normalizeReasoning(level);
+  if (!level) return level;
   const levels = profileReasoningLevels(profile);
+  if (!levels.length) return "";
   if (levels.includes(level)) return level;
   const want = REASONING_ORDER.indexOf(level);
   return [...levels].sort((a, b) => {
@@ -119,36 +127,118 @@ function nearestReasoning(profile, level) {
 }
 /** @param {Profile} profile */
 function reasoningFields(profile, level) {
+  level = normalizeReasoning(level);
   if (!level) return {};
   if (/dashscope|aliyuncs/i.test(profile.baseUrl || ""))
-    return level === "off"
-      ? { enable_thinking: false }
-      : {
-          enable_thinking: true,
-          thinking_budget: { minimal: 1024, low: 2048, medium: 8192, high: 32768, xhigh: 65536, max: 81920 }[level] || 8192
-        };
-  return { reasoning_effort: level === "off" ? "none" : nearestReasoning(profile, level) };
+    return {
+      enable_thinking: true,
+      thinking_budget: { minimal: 1024, low: 2048, medium: 8192, high: 32768, xhigh: 65536, max: 81920 }[level] || 8192
+    };
+  const effort = nearestReasoning(profile, level);
+  return effort ? { reasoning_effort: effort } : {};
 }
-// 接口拒绝了思考档位：从报错里认出它支持的几档（如 Supported values are: 'low', 'medium', and 'xhigh'），记到模型上；认不出来就不动
+// 从接口的报错里认出它支持的几档（如 Supported values are: 'low', 'medium', and 'xhigh'），由低到高排；认不出来给空。
 // sent 是这次发出去、被拒的那一档：报错里通常会把它也复述一遍（Invalid value: 'high'），不能当成它认的
+function parseReasoningLevels(message, sent) {
+  const text = String(message || "");
+  if (!/reasoning|effort|thinking/i.test(text) && !(sent && text.includes(sent))) return [];
+  const found = [...new Set([...text.matchAll(/\b(none|minimal|low|medium|high|xhigh|max)\b/gi)].map(m => m[1].toLowerCase()))].filter(
+    level => level !== "none" && level !== sent
+  );
+  return found.length < 2 ? [] : found.sort((a, b) => REASONING_ORDER.indexOf(a) - REASONING_ORDER.indexOf(b));
+}
+// 接口拒绝了思考档位：认出它支持的几档记到模型上；认不出来就不动
 /**
  * @param {Profile} profile
  * @param {Message} message
  */
 function learnReasoningLevels(profile, message, sent) {
-  const text = String(message || "");
-  if (!/reasoning|effort|thinking/i.test(text) && !(sent && text.includes(sent))) return false;
-  const found = [...new Set([...text.matchAll(/\b(none|minimal|low|medium|high|xhigh|max)\b/gi)].map(m => m[1].toLowerCase()))].filter(
-    level => level !== "none" && level !== sent
-  );
-  if (found.length < 2) return false;
-  found.sort((a, b) => REASONING_ORDER.indexOf(a) - REASONING_ORDER.indexOf(b));
+  const found = parseReasoningLevels(message, sent);
+  if (!found.length) return false;
   const current = profileReasoningLevels(profile);
   if (found.length === current.length && found.every(level => current.includes(level))) return false;
   profile.reasoningLevels = found.join(", ");
+  // 从报错里学到的就是这个身份的定论，不必再探
+  profile.reasoningProbed = reasoningProbeKey(profile);
   persistServerProfile(profile);
   saveStoreSoon();
   return true;
+}
+// 选定模型时探一下它认哪几档：故意送一个不存在的档位（probe），接口若按 OpenAI 的样子报错，就把报错里列的几档记下；
+// 报错说它压根不认识 reasoning_effort，记成 none（菜单上只剩「默认」）；接口照单全收（中转站常常忽略这个字段）就按通用四档列。
+// 鉴权、网络之类别的错不算探过，下次再探。探过的记在 reasoningProbed 上——记的是「接口 + 地址 + 模型」三样合成的键，
+// 换了模型、换了地址或接口类型都得重探；探测发出去之后模型被换了（探着 A 的时候切到 B），回来的结果作废，不往 B 上写。
+// Anthropic 与 DashScope 的档位是换算成预算送的，没有可探的枚举，直接算探过。回值是探到的几档，没探成给 null
+/** @param {Profile} profile 探的是这个模型此刻的身份 */
+function reasoningProbeKey(profile) {
+  return `${anthropicLike(profile) ? "anthropic" : "openai"}|${String(profile?.baseUrl || "").trim()}|${String(profile?.model || "").trim()}`;
+}
+// 探过、或用户亲手填过档位（记成 manual|键——手填的是定论，测试连接也不重探；换了模型才作废）。
+// 旧版只有 reasoningLevels、没有探过的标记（那时的档位是手填或从报错里学来的）：当手填的，绑在当前身份上，首次探测不能把它冲掉
+/** @param {Profile} profile */
+function reasoningProbed(profile) {
+  if (!profile?.model) return false;
+  const key = reasoningProbeKey(profile);
+  if (profile.reasoningLevels && !profile.reasoningProbed) {
+    profile.reasoningProbed = `manual|${key}`;
+    persistServerProfile(profile);
+    saveStoreSoon();
+  }
+  return profile.reasoningProbed === key || profile.reasoningProbed === `manual|${key}`;
+}
+// 这个身份上的档位是亲手填的（换了模型，先前手填的就不算数了）
+/** @param {Profile} profile */
+function reasoningManual(profile) {
+  return !!profile?.model && profile.reasoningProbed === `manual|${reasoningProbeKey(profile)}`;
+}
+// 走到这里就是身份变了（或亲手要求重探）：此前记的档位是旧模型的，一律不沿用——接口照单全收就按通用四档，
+// 不然旧模型的 none 会跟着新模型走，把一个认档位的模型永远标成不认
+/** @param {Profile} profile */
+async function probeReasoningLevels(profile) {
+  if (!profile?.model || reasoningProbed(profile)) return null;
+  const key = reasoningProbeKey(profile);
+  if (anthropicLike(profile) || /dashscope|aliyuncs/i.test(profile.baseUrl || "")) {
+    profile.reasoningLevels = "";
+    profile.reasoningProbed = key;
+    persistServerProfile(profile);
+    saveStoreSoon();
+    return profileReasoningLevels(profile);
+  }
+  if (apiBase === null && profile.source === "server") return null;
+  const controller = new AbortController(),
+    timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await requestChat(profile, [{ role: "user", content: "。" }], controller.signal, {
+      systemPrompt: "",
+      maxTokens: 16,
+      reasoning: "probe"
+    });
+    // 探着探着模型被换了：这份结果是旧模型的，作废；探着的时候用户亲手填了档位：手填的是定论，也作废
+    if (reasoningProbeKey(profile) !== key || reasoningManual(profile)) return null;
+    let learned;
+    if (response.ok) learned = REASONING_DEFAULT_LEVELS;
+    else {
+      const data = await response.json().catch(() => ({})),
+        message = (typeof data.error === "string" ? data.error : data.error?.message) || "";
+      const found = parseReasoningLevels(message, "probe");
+      if (found.length) learned = found;
+      // 只有明说不认识这个字段的才记成不认；「Invalid reasoning_effort value」这种只是嫌 probe 不对、又没列它认的几档——
+      // 按通用四档，撞了错再学。报错压根不提思考的（鉴权、限流）不算探过
+      else if (!/reasoning_effort|reasoning|effort/i.test(message)) return null;
+      else if (/unknown|unrecognized|unsupported|not support|不支持|不认识/i.test(message)) learned = [];
+      else learned = REASONING_DEFAULT_LEVELS;
+    }
+    profile.reasoningLevels = learned.length ? learned.join(", ") : "none";
+    profile.reasoningProbed = key;
+    persistServerProfile(profile);
+    saveStoreSoon();
+    return learned;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
 }
 // 经桥接的请求头：用桥接预设的模型时带上会话令牌（见 server.js 的 SESSION_TOKEN）
 /** @param {Profile} profile */
@@ -169,7 +259,8 @@ async function requestChat(profile, messages, signal, overrides = {}) {
   const extras = {
     ...(overrides.tools ? { tools: overrides.tools } : {}),
     ...(overrides.enableSearch ? { enable_search: true } : {}),
-    ...reasoningFields(profile, overrides.reasoning)
+    // probe 是探档位时故意送的、不存在的一档，原样送出去让接口报错（见 probeReasoningLevels）
+    ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
   if (apiBase !== null)
     return fetch(`${apiBase}/api/chat`, {
