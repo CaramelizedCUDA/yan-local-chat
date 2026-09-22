@@ -12,21 +12,10 @@ const bundler = require("./build.js");
 require("./src/19-anthropic.js");
 const ANTHROPIC = globalThis.YAN_ANTHROPIC;
 const { pipeline } = require("node:stream/promises");
-const crypto = require("node:crypto");
 
 const ROOT = __dirname;
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.YAN_PORT || 8787);
-const CONFIG_CANDIDATES = [process.env.YAN_API_CONFIG].filter(Boolean);
-// 会话令牌：桥接每次启动随机生成，只发给本站页面与 VS Code Webview（见 handleBootstrap）。
-// 服务端预设模型的 Key 在桥接手里，转发时须带上这枚令牌，别的本地页面（file:// 或其他端口）拿不到令牌就不能借它消耗额度；
-// 用户自己填 Key 的模型不受此限——Key 本就是页面自己的
-const SESSION_TOKEN = crypto.randomBytes(24).toString("hex");
-const SESSION_HEADER = "x-yan-session";
-function sessionOk(req) {
-  const given = String(req.headers[SESSION_HEADER] || "");
-  return given.length === SESSION_TOKEN.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(SESSION_TOKEN));
-}
 // 工具定义一次最多带多少件：超过不再静默截掉后面的，明确报错，接入更多工具时一眼能看出来
 const TOOLS_LIMIT = 128;
 const MIME = {
@@ -43,33 +32,6 @@ const MIME = {
   ".pfb": "application/octet-stream",
   ".bcmap": "application/octet-stream"
 };
-
-function loadServerConfig() {
-  const file = CONFIG_CANDIDATES.find(candidate => fs.existsSync(candidate));
-  if (!file) return { unconfigured: true };
-  const lines = fs
-    .readFileSync(file, "utf8")
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
-  const read = label => {
-    const index = lines.findIndex(line => new RegExp(`^${label}\\s*:`, "i").test(line));
-    if (index < 0) return "";
-    const inline = lines[index].replace(new RegExp(`^${label}\\s*:\\s*`, "i"), "");
-    return inline || lines[index + 1] || "";
-  };
-  const config = {
-    baseUrl: read("Base URL"),
-    model: read("Model"),
-    apiKey: read("API Key"),
-    api: read("API").toLowerCase(),
-    sourceFile: file
-  };
-  if (!config.baseUrl || !config.model || !config.apiKey) return { error: "API 配置缺少 Base URL、Model 或 API Key" };
-  if (config.api && !["openai", "anthropic"].includes(config.api))
-    return { error: `API 配置里的 API 只认 openai 或 anthropic（现在是 ${config.api}）` };
-  return config;
-}
 
 function sendJson(res, status, data) {
   const body = JSON.stringify(data);
@@ -99,7 +61,7 @@ function corsHeaders(req, res) {
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Yan-Session");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.headers["access-control-request-private-network"] === "true") res.setHeader("Access-Control-Allow-Private-Network", "true");
 }
 // 执事接口能执行本机指令，不能只依赖 CORS：不可信页面即使读不到响应，也可能用简单请求触发副作用。
@@ -147,14 +109,7 @@ function endpoint(baseUrl, suffix) {
   if (!/^https?:$/.test(url.protocol)) throw Error("Base URL 只支持 http 或 https");
   return /\/chat\/completions\/?$/.test(url.pathname) ? url.href : `${url.href.replace(/\/$/, "")}${suffix}`;
 }
-function resolveProfile(input, requireModel = true, req = null) {
-  if (input?.source === "server") {
-    if (req && !sessionOk(req)) throw Error("此页面无权使用桥接预设的模型，请从桥接地址或 VS Code 打开「言」");
-    const config = loadServerConfig();
-    if (config.error) throw Error(config.error);
-    if (config.unconfigured) throw Error("服务端没有预设模型，请在页面中手动添加");
-    return config;
-  }
+function resolveProfile(input, requireModel = true) {
   const config = {
     baseUrl: String(input?.baseUrl || "").trim(),
     model: String(input?.model || "").trim(),
@@ -279,6 +234,16 @@ function isPrivateAddress(value) {
   }
   return false;
 }
+// Clash / Mihomo 的 TUN fake-ip 会让正常域名解析到 198.18.0.0/15：DNS 结果允许这段交给代理接管；
+// 用户直接写 http://198.18.x.x 则仍按保留内网段拒绝，免得把「代理兼容」变成字面地址绕过。
+function isFakeIpAddress(value) {
+  const host = hostLiteral(value),
+    mapped = net.isIPv6(host) ? unmapIpv4(host) : null;
+  if (mapped) return isFakeIpAddress(mapped);
+  if (!net.isIPv4(host)) return false;
+  const [a, b] = host.split(".").map(Number);
+  return a === 198 && (b === 18 || b === 19);
+}
 // 本机回环：127.0.0.0/8、::1、localhost。http_request / download_file 对它放行（模型开的本机服务本就该能测，run_command 里 curl 本机也放行），
 // 局域网等别的内网地址照旧拒；fetch_page / search_web 仍一律不碰本机
 function isLoopback(value) {
@@ -294,7 +259,8 @@ async function assertPublicUrl(url, { allowLoopback = false } = {}) {
   if (blocked(host)) throw Error(allowLoopback ? "不允许访问内网地址（本机 127.0.0.1 / localhost 除外）" : "不允许访问本机或内网地址");
   if (net.isIP(host) || (allowLoopback && host === "localhost")) return;
   const addresses = await dns.lookup(host, { all: true, verbatim: true });
-  if (!addresses.length || addresses.some(item => blocked(item.address))) throw Error("网址解析到了本机或内网地址");
+  const hit = addresses.find(item => blocked(item.address) && !isFakeIpAddress(item.address));
+  if (!addresses.length || hit) throw Error(`网址解析到了本机或内网地址${hit ? `（${hit.address}）` : ""}`);
 }
 // 带方法与请求体的公网请求（http_request / download_file 用）：同样的地址门禁，跳转逐跳再查；返回的是 Response，正文由调用者按需读
 async function fetchPublicResponse(url, { method = "GET", headers = {}, body = null, timeout = 30000, allowLoopback = false } = {}) {
@@ -605,45 +571,24 @@ try {
   APP_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version || "";
 } catch {}
 function handleBootstrap(req, res) {
-  const config = loadServerConfig();
-  // 令牌与预设模型只给本站页面与 VS Code Webview；别的页面（file:// 预览、其他端口）照常拿到目录信息，但没有预设模型可用
-  const trusted = trustedWorkRequest(req),
-    token = trusted ? SESSION_TOKEN : "";
-  const work = {
-    home: WORK.WORK_HOME,
-    archive: WORK.ARCHIVE_HOME,
-    scratch: WORK.SCRATCH_DIR,
-    platform: process.platform,
-    shell: WORK.WORK_SHELL
-  };
-  if (config.unconfigured || !trusted)
-    return sendJson(res, 200, { version: APP_VERSION, work, token, serverProfile: null, configError: "" });
-  if (config.error) return sendJson(res, 200, { version: APP_VERSION, work, token, serverProfile: null, configError: config.error });
-  const lower = config.model.toLowerCase();
-  const name = lower.includes("qwen") ? "Qwen" : lower.includes("claude") ? "Claude" : lower.includes("gpt") ? "GPT" : "预设模型";
   sendJson(res, 200, {
     version: APP_VERSION,
-    work,
-    token,
-    serverProfile: {
-      id: "server-preset",
-      source: "server",
-      name,
-      model: config.model,
-      baseUrl: config.baseUrl,
-      api: config.api || (ANTHROPIC.anthropicLike(config) ? "anthropic" : "openai"),
-      temperature: 0.7,
-      maxTokens: 8192,
-      systemPrompt: ""
-    },
-    configError: ""
+    work: {
+      home: WORK.WORK_HOME,
+      archive: WORK.ARCHIVE_HOME,
+      chats: CHATS.CHATS_HOME,
+      customChats: true,
+      scratch: WORK.SCRATCH_DIR,
+      platform: process.platform,
+      shell: WORK.WORK_SHELL
+    }
   });
 }
 async function handleTest(req, res) {
   const started = Date.now();
   try {
     const body = await readJson(req),
-      config = resolveProfile(body.profile, true, req);
+      config = resolveProfile(body.profile, true);
     const response = await fetch(upstreamModelsUrl(config), { headers: upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
     if (!response.ok) throw Error(await upstreamError(response));
     const data = await response.json();
@@ -659,7 +604,7 @@ async function handleTest(req, res) {
 async function handleModels(req, res) {
   try {
     const body = await readJson(req),
-      config = resolveProfile(body.profile, false, req);
+      config = resolveProfile(body.profile, false);
     const response = await fetch(upstreamModelsUrl(config), { headers: upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
     if (!response.ok) throw Error(await upstreamError(response));
     const data = await response.json();
@@ -672,7 +617,7 @@ async function handleModels(req, res) {
 async function handleChat(req, res) {
   try {
     const body = await readJson(req),
-      config = resolveProfile(body.profile, true, req);
+      config = resolveProfile(body.profile, true);
     if (!Array.isArray(body.messages) || !body.messages.length) throw Error("消息不能为空");
     const messages = body.systemPrompt
       ? [{ role: "system", content: String(body.systemPrompt).slice(0, 20000) }, ...body.messages]
@@ -682,14 +627,14 @@ async function handleChat(req, res) {
       messages,
       stream: true,
       stream_options: { include_usage: true },
-      temperature: Math.max(0, Math.min(2, Number(body.temperature ?? 0.7))),
-      max_tokens: Math.max(16, Math.min(65536, Number(body.maxTokens || 8192)))
+      temperature: Math.max(0, Math.min(2, Number(body.temperature ?? 0.7)))
     };
+    // 页面给了才带 max_tokens（Anthropic 与拟题、压缩这几处）；没给就不传，让接口用自己的默认
+    if (Number(body.maxTokens) > 0) payload.max_tokens = Math.max(16, Math.round(Number(body.maxTokens)));
     if (Array.isArray(body.tools) && body.tools.length) {
       if (body.tools.length > TOOLS_LIMIT) throw Error(`工具定义过多：${body.tools.length} 件，一次最多 ${TOOLS_LIMIT} 件`);
       payload.tools = body.tools;
     }
-    if (body.enable_search === true) payload.enable_search = true;
     // 思考强度：只透传这几个字段
     for (const key of ["reasoning_effort", "enable_thinking", "thinking_budget"]) if (body[key] !== undefined) payload[key] = body[key];
     const abort = new AbortController();
@@ -697,7 +642,7 @@ async function handleChat(req, res) {
       if (!res.writableEnded) abort.abort();
     });
     console.log(
-      `${new Date().toLocaleTimeString("zh-CN", { hour12: false })} → ${config.model}：${messages.length} 条消息${payload.tools ? `，工具 ${payload.tools.length} 个` : ""}${payload.enable_search ? "，enable_search" : ""}`
+      `${new Date().toLocaleTimeString("zh-CN", { hour12: false })} → ${config.model}：${messages.length} 条消息${payload.tools ? `，工具 ${payload.tools.length} 个` : ""}`
     );
     // Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格再给页面；OpenAI 兼容的原样透传（thinking_blocks 是 Anthropic 才要的，去掉）
     const anthropic = ANTHROPIC.anthropicLike(config);
@@ -723,11 +668,19 @@ async function handleChat(req, res) {
     );
   } catch (error) {
     if (!res.headersSent) sendJson(res, 400, { error: String(error.message || error).slice(0, 500) });
-    else if (!res.writableEnded && !res.destroyed) res.end();
+    else if (!res.writableEnded && !res.destroyed) {
+      // 流开了头才断的（上游掐线、读超时）：不能就这么静静结束——页面会把半截话当成写完了。
+      // 补一条带 error 的事件再收，页面据此按「连接中断」处理，留着续写的余地；页面自己先走了的不必补
+      if (!res.destroyed && error?.name !== "AbortError")
+        try {
+          res.write(`data: ${JSON.stringify({ error: { message: `上游连接中断：${String(error.message || error).slice(0, 200)}` } })}\n\n`);
+        } catch {}
+      res.end();
+    }
   }
 }
 const WORK = require("./server/work.js")({ sendJson, readJson, decodeEntities, fetchPublicResponse, readLimitedBytes });
-const COMPUTER = require("./server/computer.js")({ sendJson, readJson });
+const CHATS = require("./server/chats.js")({ sendJson, readJson });
 
 const NOT_FOUND_PAGE = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>此页不存在 · 言</title><style>html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#fbfaf6;color:#292724;font-family:"Noto Serif SC","Songti SC","STSong",serif}@media(prefers-color-scheme:dark){body{background:#1e1c19;color:#e6e1d6}}main{text-align:center;letter-spacing:.06em}.seal{display:inline-grid;place-items:center;width:34px;height:34px;border:1px solid #9b5540;color:#9b5540;font-size:18px;transform:rotate(-3deg)}h1{margin:18px 0 8px;font-weight:500;font-size:24px}p{margin:0 0 22px;opacity:.6;font-size:13px}a{color:#9b5540;text-decoration:none;font-size:13px;border-bottom:1px solid currentColor}</style></head><body><main><span class="seal">空</span><h1>此页不存在</h1><p>所寻之处并无一字</p><a href="/">回到案前</a></main></body></html>`;
 // 页面脚本与样式由多段源文件拼成：桥接在线时按请求即时拼接（ETag 取各段的大小与修改时间），src/ 改一段、刷新即生效；
@@ -736,6 +689,36 @@ const BUNDLES = {
   "/support.js": { build: bundler.bundleScript, type: "application/javascript; charset=utf-8" },
   "/app.css": { build: bundler.bundleStyles, type: "text/css; charset=utf-8" }
 };
+// 静态服务只开放页面运行真正需要的文件。仓库根目录里还有桥接源码、测试、.git 与用户可能临时放入的配置，
+// 不能因为它们恰好位于 ROOT 下就一并交给浏览器；vendor/ 是随页面分发的纯前端资源，提示词则逐个列出。
+const PUBLIC_STATIC_FILES = new Set([
+  "index.html",
+  "theme-boot.js",
+  "preview.html",
+  "preview-runtime.js",
+  "prompts/assistant.js",
+  "prompts/work.js",
+  "prompts/side.js",
+  "prompts/memory.js",
+  "prompts/delegate.js",
+  "prompts/tools.js"
+]);
+const REAL_ROOT = fs.realpathSync(ROOT);
+function publicStaticTarget(requested) {
+  // URL 路径里的反斜杠在 Windows 上也是目录分隔符；先统一再规范化，vendor/../server.js 不能借前缀混进来。
+  const webPath = requested.replace(/\\/g, "/"),
+    normalized = path.posix.normalize(webPath);
+  if (normalized !== webPath || normalized.startsWith("../") || path.posix.isAbsolute(normalized)) return null;
+  if (!PUBLIC_STATIC_FILES.has(normalized) && !normalized.startsWith("vendor/")) return null;
+  const candidate = path.resolve(ROOT, ...normalized.split("/"));
+  if (!fs.existsSync(candidate)) return null;
+  // 白名单目录中若出现指向仓库外的符号链接，也不能跟出去。
+  const file = fs.realpathSync(candidate),
+    relative = path.relative(REAL_ROOT, file);
+  if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+  const stat = fs.statSync(file);
+  return stat.isFile() ? { file, stat } : null;
+}
 function serveBundle(req, res, urlPath) {
   const entry = BUNDLES[urlPath];
   if (!entry) return false;
@@ -757,13 +740,13 @@ function serveStatic(req, res) {
   const urlPath = decodeURIComponent(new URL(req.url, `http://${HOST}`).pathname);
   if (serveBundle(req, res, urlPath)) return;
   const requested = urlPath === "/" ? "index.html" : urlPath.slice(1);
-  const file = path.resolve(ROOT, requested);
-  const stat = file.startsWith(ROOT + path.sep) && fs.existsSync(file) ? fs.statSync(file) : null;
-  if (!stat || stat.isDirectory()) {
+  const target = publicStaticTarget(requested);
+  if (!target) {
     if (urlPath.startsWith("/api/")) return sendJson(res, 404, { error: "未找到接口" });
     res.writeHead(404, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" });
     return res.end(NOT_FOUND_PAGE);
   }
+  const { file, stat } = target;
   // 带上 ETag / Last-Modified：no-cache 只要求重新验证，有了校验值浏览器才会真正拿到改动后的文件，而不是沿用旧缓存
   const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
   const headers = {
@@ -794,8 +777,14 @@ const server = http.createServer(async (req, res) => {
   try {
     securityHeaders(req, res);
     const urlPath = new URL(req.url, `http://${HOST}`).pathname;
-    // 能打到本机服务的接口（执事、卷宗、http_request）只受理本站页面与 VS Code Webview
-    if ((urlPath.startsWith("/api/work/") || urlPath.startsWith("/api/archive/") || urlPath === "/api/http") && !trustedWorkRequest(req))
+    // 能打到本机服务的接口（执事、卷宗、对话目录、http_request）只受理本站页面与 VS Code Webview
+    if (
+      (urlPath.startsWith("/api/work/") ||
+        urlPath.startsWith("/api/archive/") ||
+        urlPath.startsWith("/api/chats/") ||
+        urlPath === "/api/http") &&
+      !trustedWorkRequest(req)
+    )
       return sendJson(res, 403, { error: "此页面无权调用本机执事接口，请从桥接地址或 VS Code 打开「言」" });
     corsHeaders(req, res);
     if (req.method === "OPTIONS") {
@@ -812,7 +801,6 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/api/work/prepare") return await WORK.handleWorkPrepare(req, res);
     if (req.method === "POST" && req.url === "/api/work/pick") return await WORK.handleWorkPick(req, res);
     if (req.method === "POST" && req.url === "/api/work/run") return await WORK.handleWorkRun(req, res);
-    if (req.method === "POST" && req.url === "/api/work/inspect") return await COMPUTER.handleInspect(req, res);
     if (req.method === "POST" && req.url === "/api/work/write") return await WORK.handleWorkWrite(req, res);
     if (req.method === "POST" && req.url === "/api/work/read") return await WORK.handleWorkRead(req, res);
     if (req.method === "POST" && req.url === "/api/work/list") return await WORK.handleWorkList(req, res);
@@ -823,6 +811,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/api/archive/put") return await WORK.handleArchivePut(req, res);
     if (req.method === "POST" && req.url === "/api/archive/remove") return await WORK.handleArchiveRemove(req, res);
     if (req.method === "POST" && req.url === "/api/archive/clean") return await WORK.handleArchiveClean(req, res);
+    if (req.method === "POST" && req.url === "/api/chats/load") return await CHATS.handleLoad(req, res);
+    if (req.method === "POST" && req.url === "/api/chats/save") return await CHATS.handleSave(req, res);
+    if (req.method === "POST" && req.url === "/api/chats/delete") return await CHATS.handleDelete(req, res);
+    if (req.method === "POST" && req.url === "/api/chats/meta") return await CHATS.handleMeta(req, res);
     if ((req.method === "GET" || req.method === "HEAD") && urlPath === "/api/archive/file")
       return await WORK.handleArchiveFile(req, res, new URL(req.url, `http://${HOST}`).searchParams);
     if (req.method === "GET" || req.method === "HEAD") return serveStatic(req, res);
@@ -856,7 +848,7 @@ server.listen(PORT, HOST, () => {
     console.log(`  （产出 support.js / app.css 失败：${error.message}）`);
   }
   console.log(
-    `\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  执事    ${WORK.WORK_HOME}\n  卷宗    ${WORK.ARCHIVE_HOME}\n`
+    `\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  执事    ${WORK.WORK_HOME}\n  卷宗    ${WORK.ARCHIVE_HOME}\n  对话    ${CHATS.CHATS_HOME}\n`
   );
   console.log("  请保持此窗口开启；关闭后页面刷新、模型转发、联网与执事都会停止。按 Ctrl+C 退出。");
   console.log("  此窗口不会显示 API Key。\n");

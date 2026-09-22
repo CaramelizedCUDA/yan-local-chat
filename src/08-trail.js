@@ -5,7 +5,6 @@ const TOOL_LABELS = {
   fetch_page: "翻阅网页",
   read_document: "翻阅文档",
   run_command: "运行",
-  inspect_computer: "检查电脑",
   write_file: "写入",
   edit_file: "修改",
   read_file: "读取",
@@ -81,6 +80,59 @@ function trailReasoningHtml(message, group) {
   return text
     ? `<details class="reasoning trail-reasoning" data-state="done"><summary>思绪</summary><div class="reasoning-body">${escapeHtml(text)}</div></details>`
     : "";
+}
+// 一组没有夹着正文、只是「想一阵 → 调工具 → 再想」时，后半段思绪仍属于同一组。
+// 沿用组里原来的那枚签，重新切回 live；否则旧签一直打勾，下面又短暂冒出一枚新签，看起来像没有继续思考。
+/** @param {Element} block @param {Message} message @param {string} visible */
+function reusableTrailReasoning(block, message, visible) {
+  if (!trailWork(message) || message.status !== "streaming") return null;
+  const groups = trailGroups(message),
+    active = block.querySelector('.tool-stack.is-work .trail-group > .reasoning[data-round-live="true"]');
+  const group = active ? groups.find(item => active.parentElement?.dataset.at === String(item.at)) : groups.at(-1);
+  if (!group) return null;
+  const details =
+    active ||
+    [...block.querySelectorAll(".tool-stack.is-work .tool-stack-body > .trail-group")]
+      .find(host => host.dataset.at === String(group.at))
+      ?.querySelector(":scope > .reasoning");
+  if (!details) return null;
+  if (!active) {
+    if (
+      String(visible || "")
+        .slice(group.at)
+        .trim()
+    )
+      return null;
+    if (
+      !String(message.reasoning || "")
+        .slice(group.rat)
+        .trim()
+    )
+      return null;
+    details.dataset.roundLive = "true";
+    // 生成中切去别处再回来时，整页渲染会先把尾段思绪画在行迹之后；既然能归回上一组，就撤掉那份临时副本。
+    block.querySelector(":scope > .reasoning")?.remove();
+  }
+  return {
+    details,
+    text: String(message.reasoning || "")
+      .slice(group.rfrom)
+      .trim()
+  };
+}
+/** @param {Element} host @param {Message} message @param {ReturnType<typeof trailGroups>[number]} group */
+function syncTrailGroupReasoning(host, message, group) {
+  const text = String(message.reasoning || "")
+      .slice(group.rfrom, group.rat)
+      .trim(),
+    details = host.querySelector(":scope > .reasoning");
+  if (!text) return details?.remove();
+  if (!details) return host.insertAdjacentHTML("afterbegin", trailReasoningHtml(message, group));
+  const body = details.querySelector(".reasoning-body");
+  if (body.textContent !== text) body.textContent = text;
+  details.dataset.state = "done";
+  delete details.dataset.roundLive;
+  if (details.open && !details.dataset.touched) settleDetails(details, false);
 }
 /** @param {Message|SubAgent} message */
 function trailNoteHtml(message, group) {
@@ -690,7 +742,7 @@ function workStepHtml(step, title) {
     more = "";
   // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头
   if (status === "pending")
-    body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre><div class="tool-approve"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="${step.approvalScope === "answer" ? "本答径行：本次回答里的后续指令不再询问，下一问恢复" : "径行：此对话中后续指令不再询问"}">${step.approvalScope === "answer" ? "本答径行" : "径行"}</button></div>`;
+    body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre><div class="tool-approve"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="径行：此对话中后续指令不再询问">径行</button></div>`;
   else if (step.diff) {
     const del = clampLines(step.diff.old, step.full),
       ins = clampLines(step.diff.new, step.full);
@@ -731,7 +783,13 @@ function refreshSteps(assistant) {
       groups = work ? trailGroups(assistant) : [];
     if (work)
       for (const group of groups) {
-        if (bodyHost.querySelector(`.trail-group[data-at="${group.at}"]`)) continue;
+        const existing = [...bodyHost.querySelectorAll(":scope > .trail-group")].find(
+          host => !host.classList.contains("trail-live") && host.dataset.at === String(group.at)
+        );
+        if (existing) {
+          syncTrailGroupReasoning(existing, assistant, group);
+          continue;
+        }
         // 正在承接这一轮话的「进行中」分组就地转正：话按最终文本重画一遍（流式可能还差几个字），再挂上步骤容器
         const live = bodyHost.querySelector(":scope > .trail-group.trail-live");
         if (live) {

@@ -1038,6 +1038,31 @@ button.history-repo:hover .history-repo-name {
   overflow-y: auto;
   padding: 24px 42px 145px;
 }
+/* 原生细滚动条保持原样，只在它上面铺一层透明的宽命中区；延伸到底边，输入框盖住正文后也仍能抓住。 */
+.chat-scroll-grabber {
+  position: absolute;
+  z-index: 7;
+  top: 55px;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  background: transparent;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+}
+.chat-scroll-grabber.active {
+  pointer-events: auto;
+  cursor: default; /* 与原生滚动条一样，指针不变形 */
+}
+html.work-mode .chat-scroll-grabber {
+  pointer-events: none;
+}
+/* 命中层盖着滑块，原生的 :hover 到不了它；指针在命中层上（或正拖着）时把滑块加深，手感与直接悬在滑块上一致 */
+.main:has(.chat-scroll-grabber.active:hover) .chat-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink-3) 46%, transparent);
+  background-clip: padding-box;
+}
 .chat-inner {
   width: min(100%, var(--read));
   margin: 0 auto;
@@ -4535,17 +4560,17 @@ textarea::placeholder,
   width: 72px;
   text-align: right;
 }
-.setting-archive {
+.setting-directory {
   flex: 1;
   max-width: 420px;
 }
-.setting-archive .field {
+.setting-directory .field {
   flex: 1;
   min-width: 0;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 12px;
 }
-.setting-archive .outline-btn {
+.setting-directory .outline-btn {
   flex: none;
   white-space: nowrap;
 }
@@ -6007,14 +6032,6 @@ html.theme-fade * {
     fill 0.38s ease,
     stroke 0.38s ease !important;
 }
-@media (hover: none) {
-  .message-actions,
-  .history-tools,
-  .library-actions,
-  .attachment-tool {
-    opacity: 1;
-  }
-}
 .meta-seal {
   position: relative;
   width: 16px;
@@ -6277,11 +6294,6 @@ button:focus:not(:focus-visible) {
     display: none !important;
   }
 }
-@media (hover: none) {
-  .hint {
-    display: none;
-  }
-}
 @media (max-width: 760px) {
   .jump-bottom {
     bottom: calc(var(--composer-h, 135px) + 12px);
@@ -6381,6 +6393,13 @@ button:focus:not(:focus-visible) {
   }
 }
 @media (max-width: 760px) {
+  .chat-scroll-grabber {
+    display: none;
+  }
+  /* 窄窗里居中的快捷键提示会与右下角的上下文计数撞在一起；窄了就只留计数 */
+  .hint {
+    display: none;
+  }
   .outline {
     display: none;
   }

@@ -9,6 +9,31 @@
   overflow-y: auto;
   padding: 24px 42px 145px;
 }
+/* 原生细滚动条保持原样，只在它上面铺一层透明的宽命中区；延伸到底边，输入框盖住正文后也仍能抓住。 */
+.chat-scroll-grabber {
+  position: absolute;
+  z-index: 7;
+  top: 55px;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  background: transparent;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+}
+.chat-scroll-grabber.active {
+  pointer-events: auto;
+  cursor: default; /* 与原生滚动条一样，指针不变形 */
+}
+html.work-mode .chat-scroll-grabber {
+  pointer-events: none;
+}
+/* 命中层盖着滑块，原生的 :hover 到不了它；指针在命中层上（或正拖着）时把滑块加深，手感与直接悬在滑块上一致 */
+.main:has(.chat-scroll-grabber.active:hover) .chat-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink-3) 46%, transparent);
+  background-clip: padding-box;
+}
 .chat-inner {
   width: min(100%, var(--read));
   margin: 0 auto;

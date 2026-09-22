@@ -153,14 +153,6 @@ html.theme-fade * {
     fill 0.38s ease,
     stroke 0.38s ease !important;
 }
-@media (hover: none) {
-  .message-actions,
-  .history-tools,
-  .library-actions,
-  .attachment-tool {
-    opacity: 1;
-  }
-}
 .meta-seal {
   position: relative;
   width: 16px;
@@ -423,11 +415,6 @@ button:focus:not(:focus-visible) {
     display: none !important;
   }
 }
-@media (hover: none) {
-  .hint {
-    display: none;
-  }
-}
 @media (max-width: 760px) {
   .jump-bottom {
     bottom: calc(var(--composer-h, 135px) + 12px);
@@ -527,6 +514,13 @@ button:focus:not(:focus-visible) {
   }
 }
 @media (max-width: 760px) {
+  .chat-scroll-grabber {
+    display: none;
+  }
+  /* 窄窗里居中的快捷键提示会与右下角的上下文计数撞在一起；窄了就只留计数 */
+  .hint {
+    display: none;
+  }
   .outline {
     display: none;
   }

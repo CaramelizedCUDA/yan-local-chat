@@ -72,7 +72,7 @@ const anthropicMessages = (payload, res) => {
   return anthropicSse(res, [
     ["message_start", { message: { id: "msg_2", model: payload.model, usage: { input_tokens: 30 } } }],
     ...text(
-      `ANTHROPIC|sys:${String(payload.system || "").includes("今天") ? "yes" : "no"}|think:${thought?.signature === "sig-1" ? "yes" : "no"}|tools:${(payload.tools || []).length}|schema:${payload.tools?.[0]?.input_schema ? "yes" : "no"}|result:${String(results.at(-1).content).replace(/\s+/g, " ").slice(0, 30)}`
+      `ANTHROPIC|sys:${String(payload.system || "").includes("今日") ? "yes" : "no"}|think:${thought?.signature === "sig-1" ? "yes" : "no"}|tools:${(payload.tools || []).length}|schema:${payload.tools?.[0]?.input_schema ? "yes" : "no"}|result:${String(results.at(-1).content).replace(/\s+/g, " ").slice(0, 30)}`
     ),
     ["message_delta", { delta: { stop_reason: "end_turn" }, usage: { output_tokens: 11 } }],
     ["message_stop", {}]
@@ -117,7 +117,7 @@ http
       }
       // 带附件的一问是分段内容：正文在第一段
       const lastText = Array.isArray(lastUser) ? String(lastUser.find(part => part.type === "text")?.text || "") : lastUser;
-      if (typeof lastUser === "string" && lastUser.startsWith("请为下面这段对话拟")) {
+      if (typeof lastUser === "string" && lastUser.startsWith("为下面这段对话拟")) {
         // TITLEFAIL：头一次拟题时装作网络出错，页面不该就此把这段对话标成「已拟题」
         if (lastUser.includes("TITLEFAIL") && !titleFailed) {
           titleFailed = true;
@@ -132,6 +132,9 @@ http
             res.end(JSON.stringify({ error: { message: "slow bad gateway" } }));
           }, 800);
         }
+        // TITLEEDITRACE：给用户留出正在标题框里编辑的窗口，检查迟到的自动拟题不会被 blur / Esc 用旧字反盖。
+        if (lastUser.includes("TITLEEDITRACE"))
+          return setTimeout(() => sse(res, [delta({ content: "测试标题" }), delta({}, { usage: { total_tokens: 10 } })]), 1500);
         return sse(res, [delta({ content: "测试标题" }), delta({}, { usage: { total_tokens: 10 } })]);
       }
       if (typeof lastUser === "string" && lastUser.includes("SLOWHTML")) {
@@ -195,6 +198,22 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      if (typeof lastUser === "string" && lastUser.includes("STREAMERR"))
+        // 写了半截后流里夹一条报错（限流之类）就收：页面该按「连接中断」处理、已写的留着，而不是当写完了
+        return sse(res, [
+          delta({ content: "先写半句，" }),
+          delta({ content: "再写半句。" }),
+          { error: { message: "rate limited (fake)", type: "rate_limit_error" } }
+        ]);
+      if (typeof lastUser === "string" && lastUser.includes("STREAMCUT")) {
+        // 写了半截上游就掐线：桥接得补一条报错事件给页面，页面按中断处理，而不是把半截当写完
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify(delta({ content: "写到一半" }))}
+
+`);
+        setTimeout(() => res.destroy(), 60);
+        return;
+      }
       if (typeof lastUser === "string" && lastUser.includes("NOEOL"))
         return sseNoEol(res, [delta({ content: "开头，" }), delta({ content: "结尾在此" }), delta({}, { usage: { total_tokens: 77 } })]);
       if (typeof lastUser === "string" && lastUser.includes("TRUNC")) {
@@ -222,7 +241,7 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
-      if (typeof lastUser === "string" && lastUser.startsWith("请把下面这段对话压成一份摘要"))
+      if (typeof lastUser === "string" && lastUser.startsWith("把下面这段对话压成一份摘要"))
         return sse(res, [
           delta({ content: `- 用户在测试压缩，此前 ${(lastUser.match(/\n用户：/g) || []).length} 问\n- 结论：术语 X 需留意` }),
           delta({}, { usage: { total_tokens: 12 } })
@@ -400,7 +419,7 @@ http
         if (n === 1) return sse(res, call("edit_file", { path: "src/a.js", old: "return 1;", new: "return 2;" }));
         return sse(res, [
           delta({
-            content: `回报：已把 return 1 改为 return 2。｜sys:${sys.includes("被差遣") ? "yes" : "no"}|delegate:${names.includes("delegate") ? "yes" : "no"}|ask:${names.includes("ask_user") ? "yes" : "no"}|memw:${names.filter(x => ["remember", "forget"].includes(x)).length}|memr:${names.filter(x => ["recall", "search_conversations"].includes(x)).length}|n:${msgs.length}`
+            content: `回报：已把 return 1 改为 return 2。｜sys:${sys.includes("子任务的帮手") ? "yes" : "no"}|delegate:${names.includes("delegate") ? "yes" : "no"}|ask:${names.includes("ask_user") ? "yes" : "no"}|memw:${names.filter(x => ["remember", "forget"].includes(x)).length}|memr:${names.filter(x => ["recall", "search_conversations"].includes(x)).length}|n:${msgs.length}`
           }),
           delta({}, { usage: { total_tokens: 7 } })
         ]);
@@ -700,7 +719,6 @@ http
             ]);
         if (n === 0) return call("run_command", { command: "Set-Content review-ok.txt ok" });
         if (n === 1) return call("run_command", { command: "Set-ExecutionPolicy Unrestricted" });
-        if (n === 2) return call("inspect_computer", { sections: ["overview", "storage"], detail: "summary" });
         return sse(res, [
           delta({
             content: `POLICY-REVIEW done｜${turnToolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 100)).join(" ▸ ")}`

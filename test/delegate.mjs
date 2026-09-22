@@ -94,7 +94,7 @@ check(
 check("marker meta counts helper steps and files", /2 步 · 改 1 个文件 · \d+ 秒/.test(card.meta), card.meta);
 // 一答收尾时步骤的 at 会前移，分组的键随之变。页面若不撤掉落单的旧分组，同一次差遣就画两遍
 const painted = await evalJs(
-  `JSON.stringify({ markers: document.querySelectorAll(".message.assistant .tool-step-delegate").length, groups: document.querySelectorAll(".message.assistant .tool-stack-body > .trail-group").length, steps: JSON.parse(localStorage.getItem("yan-chat-v1")).conversations[0].messages.at(-1).steps.length })`
+  `JSON.stringify({ markers: document.querySelectorAll(".message.assistant .tool-step-delegate").length, groups: document.querySelectorAll(".message.assistant .tool-stack-body > .trail-group").length, steps: __yanState().conversations[0].messages.at(-1).steps.length })`
 );
 check(
   "each step is painted once — stale groups are dropped when offsets shift",
@@ -220,13 +220,24 @@ check(
 );
 // 刷新后从存储重画：差遣卡片与嵌套步骤仍在
 await send("Page.navigate", { url: PAGE });
-await sleep(1500);
+await waitFor(`[...document.querySelectorAll("#history .history-item")].some(n => n.textContent.includes("DELEGATE"))`, 5000);
 await evalJs(
   `[...document.querySelectorAll("#history .history-item")].find(n => n.textContent.includes("DELEGATE"))?.querySelector(".history-open").click(); true`
 );
-await sleep(600);
+const markerRestored = await waitFor(`!!document.querySelector(".message.assistant .tool-step-delegate")`, 5000).catch(() => false);
+check(
+  "the delegate marker is restored before opening its panel",
+  markerRestored,
+  markerRestored
+    ? ""
+    : JSON.stringify(
+        await evalJs(
+          `__yanState().conversations.filter(c => c.title.includes("DELEGATE")).map(c => ({ title: c.title, messages: c.messages.map(m => ({ role: m.role, status: m.status, steps: (m.steps || []).map(s => s.name) })) }))`
+        )
+      )
+);
 // 重载后：签还在，点开面板帮手那两步与回报也还在（都存在步骤上，不靠内存）；做完的那一轮折着，步骤仍在折叠区里
-await evalJs(`document.querySelector(".message.assistant .tool-step-delegate > .tool-step-head").click(); true`);
+if (markerRestored) await evalJs(`document.querySelector(".message.assistant .tool-step-delegate > .tool-step-head").click(); true`);
 await sleep(300);
 const after = await evalJs(
   `(d => d ? { marker: !!d, report: !!document.querySelector("#helperModal .sub-report"), nested: document.querySelectorAll("#helperModal .tool-step").length, folds: [...document.querySelectorAll("#helperModal .sub-steps")].map(f => (f.open ? "open" : "closed") + ":" + f.querySelector(".tool-stack-label").textContent) } : null)(document.querySelector(".message.assistant .tool-step-delegate"))`

@@ -35,6 +35,33 @@ for (let i = 0; i < 40; i++) {
 }
 const win = process.platform === "win32",
   workdir = WORK.split("/").join(win ? "\\" : "/");
+// 静态服务只给页面资源：仓库源码、测试与 .git 即使同在服务根目录，也不能被其他本地网页读走。
+for (const publicPath of [
+  "/",
+  "/support.js",
+  "/app.css",
+  "/theme-boot.js",
+  "/preview.html",
+  "/prompts/assistant.js",
+  "/vendor/marked.umd.js"
+]) {
+  const response = await fetch(BASE + publicPath, { headers: { Origin: "http://127.0.0.1:9999" } });
+  check(`public static asset ${publicPath} is served`, response.status === 200, String(response.status));
+  await response.body?.cancel();
+}
+for (const privatePath of [
+  "/server.js",
+  "/server/chats.js",
+  "/test/bridge-security.mjs",
+  "/prompts/README.md",
+  "/.git/config",
+  "/package.json",
+  "/vendor%5c..%5cserver.js"
+]) {
+  const response = await fetch(BASE + privatePath, { headers: { Origin: "http://127.0.0.1:9999" } });
+  check(`private repository path ${privatePath} is hidden`, response.status === 404, String(response.status));
+  await response.body?.cancel();
+}
 // Origin 门禁
 let r = await post("/api/work/run", { workdir, command: "echo hi" }, { Origin: "null" });
 check("Origin: null cannot reach the work API", r.status === 403, `${r.status} ${JSON.stringify(r.data)}`);
@@ -50,11 +77,17 @@ check(
   r.status === 200 && r.data.workdir.toLowerCase() === workdir.toLowerCase(),
   `${r.status} ${JSON.stringify(r.data).slice(0, 120)}`
 );
-r = await post("/api/work/inspect", { sections: ["overview"] });
+r = await post("/api/chats/load", { root: "relative-chats" });
 check(
-  "native computer inspection returns the requested read-only section",
-  r.status === 200 && r.data?.sections?.length === 1 && r.data.sections[0].name === "overview" && r.data.sections[0].ok,
-  `${r.status} ${JSON.stringify(r.data).slice(0, 180)}`
+  "custom chats directory requires an absolute path",
+  r.status === 500 && /完整的绝对路径/.test(r.data?.error || ""),
+  `${r.status} ${r.data?.error}`
+);
+r = await post("/api/chats/load", { root: win ? "C:\\" : "/" });
+check(
+  "custom chats directory refuses a disk root",
+  r.status === 500 && /整个磁盘/.test(r.data?.error || ""),
+  `${r.status} ${r.data?.error}`
 );
 // 工作目录必须完整限定
 for (const bad of win ? ["\\yan-drive-relative", "/yan-drive-relative", "C:yan-relative", "foo", "./foo"] : ["foo", "./foo"]) {
@@ -169,43 +202,6 @@ check(
   r.status === 200 && existsSync(`${OUTSIDE}/secret.txt`),
   `${r.status} ${r.data?.error}`
 );
-// ---- 服务端预设模型要会话令牌：只发给本站页面；别的页面（file://、其他端口）没有令牌就不能借桥接消耗额度
-let b = await (await fetch(BASE + "/api/bootstrap", { headers: { Origin: "null" } })).json();
-check(
-  "bootstrap from a null origin carries no session token and no server profile",
-  !b.token && !b.serverProfile,
-  JSON.stringify(b).slice(0, 120)
-);
-b = await (await fetch(BASE + "/api/bootstrap", { headers: { Origin: `http://127.0.0.1:${PORT}` } })).json();
-check(
-  "bootstrap from the bridge's own page carries the session token",
-  typeof b.token === "string" && b.token.length >= 32,
-  String(b.token).slice(0, 8)
-);
-r = await post("/api/chat", { profile: { source: "server" }, messages: [{ role: "user", content: "hi" }] });
-check(
-  "server profile without the token is refused",
-  r.status === 400 && /无权使用桥接预设/.test(r.data?.error || ""),
-  `${r.status} ${r.data?.error}`
-);
-r = await post(
-  "/api/chat",
-  { profile: { source: "server" }, messages: [{ role: "user", content: "hi" }] },
-  { "X-Yan-Session": "0".repeat(48) }
-);
-check("a wrong token is refused too", r.status === 400 && /无权使用桥接预设/.test(r.data?.error || ""), `${r.status} ${r.data?.error}`);
-r = await post("/api/chat", { profile: { source: "server" }, messages: [{ role: "user", content: "hi" }] }, { "X-Yan-Session": b.token });
-check(
-  "the right token passes the gate (then fails only for lack of a preset)",
-  r.status === 400 && /没有预设模型/.test(r.data?.error || ""),
-  `${r.status} ${r.data?.error}`
-);
-r = await post("/api/models", { profile: { source: "server" } });
-check(
-  "models endpoint gates the server profile as well",
-  r.status === 400 && /无权使用桥接预设/.test(r.data?.error || ""),
-  `${r.status} ${r.data?.error}`
-);
 // ---- 工具定义过多不再静默截断
 r = await post("/api/chat", {
   profile: { source: "custom", baseUrl: "http://127.0.0.1:9/v1", model: "x", apiKey: "k" },
@@ -236,6 +232,12 @@ check(
 r = await post("/api/fetch", { url: "http://[::ffff:c0a8:0101]:1/" });
 check(
   "IPv4-mapped 192.168.1.1 (hex) is refused",
+  r.status === 400 && /本机或内网/.test(r.data?.error || ""),
+  `${r.status} ${r.data?.error}`
+);
+r = await post("/api/fetch", { url: "http://198.18.0.1:1/" });
+check(
+  "a literal fake-ip address is still refused as a reserved private range",
   r.status === 400 && /本机或内网/.test(r.data?.error || ""),
   `${r.status} ${r.data?.error}`
 );
@@ -365,10 +367,11 @@ r = await post("/api/work/run", {
   command: win ? `Set-Content "${outsideReviewFile}" x` : `printf x > "${outsideReviewFile}"`
 });
 check(
-  "automatic review does not mutate an explicit path outside the workdir",
-  r.status === 400 && /越出了工作目录/.test(r.data?.error || "") && !existsSync(outsideReviewFile),
+  "automatic review lets a command write outside the workdir",
+  r.status === 200 && existsSync(outsideReviewFile),
   `${r.status} ${r.data?.error || ""}`
 );
+rmSync(outsideReviewFile, { force: true });
 r = await post("/api/work/write", {
   workdir,
   sandbox: false,
@@ -378,16 +381,13 @@ r = await post("/api/work/write", {
   content: "x"
 });
 check(
-  "automatic review also keeps file tools inside the workdir",
-  r.status === 400 && /越出了工作目录/.test(r.data?.error || "") && !existsSync(outsideReviewFile),
+  "automatic review leaves file-tool reach to the roam setting",
+  r.status === 200 && existsSync(outsideReviewFile),
   `${r.status} ${r.data?.error || ""}`
 );
+rmSync(outsideReviewFile, { force: true });
 r = await post("/api/work/read", { workdir, sandbox: false, permission: "review", path: ".env" });
-check(
-  "automatic review keeps file tools from reading secret files",
-  r.status === 400 && /审查拒绝.*机密文件/.test(r.data?.error || ""),
-  `${r.status} ${r.data?.error || ""}`
-);
+check("automatic review does not guard secret files (that is the sandbox's job)", r.status === 200, `${r.status} ${r.data?.error || ""}`);
 if (win) {
   r = await post("/api/work/run", {
     workdir,

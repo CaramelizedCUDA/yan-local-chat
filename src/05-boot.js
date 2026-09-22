@@ -12,7 +12,6 @@ async function connectBridge(candidates, timeout = 1400) {
       const response = await fetch(`${candidate}/api/bootstrap`, { signal: AbortSignal.timeout(wait) });
       if (!response.ok || !(response.headers.get("content-type") || "").includes("application/json")) continue;
       const next = await response.json();
-      if (next.serverProfile) Object.assign(next.serverProfile, store.settings.serverProfile);
       bootstrap = next;
       apiBase = candidate;
       return true;
@@ -42,6 +41,7 @@ async function ensureLocalBridge() {
     if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
     renderHeader();
     void refreshArchive();
+    void syncChatsWithDisk();
     if (!$("#settingsModal").classList.contains("hidden")) renderSettings();
     toast("本机桥接已接通，联网可用");
   }
@@ -56,6 +56,7 @@ function recoverInterruptedMessages() {
         message.error = "页面刷新或连接中断，已生成的内容已保留";
         message.interruptedAt = now();
         settleSteps(message, "连接中断");
+        markDirty(conversation.id);
         changed = true;
       }
   for (const conversation of store.conversations)
@@ -64,18 +65,23 @@ function recoverInterruptedMessages() {
         if (message.status === "streaming") {
           message.status = message.content ? "stopped" : "error";
           message.error = "页面刷新或连接中断";
+          markDirty(conversation.id);
           changed = true;
         }
   if (changed) saveStore();
 }
 async function boot() {
+  // 对话主体在 IndexedDB；先把旧 localStorage 数据迁入/把最新快照读回，再接桥接与绘制页面
+  await hydrateStore();
   setupMarkdown();
   setupMermaid();
   setupVizObserver();
   const candidates = ["", LOCAL_BRIDGE].filter((value, index, array) => array.indexOf(value) === index);
   await connectBridge(candidates);
+  // 桥接在线：对话正本在本机的对话目录里，先与它合一次再画页面
+  if (apiBase !== null) await syncChatsWithDisk();
   if (apiBase === null) {
-    bootstrap.configError = servedByBridge()
+    bootstrap.notice = servedByBridge()
       ? "正在连接本机桥接…若始终连不上，请重新运行 start.cmd。"
       : "未检测到本机桥接，当前为浏览器直连。若接口未开放 CORS，请运行 start.cmd 或 VS Code 任务「言：启动模型桥接」。";
     if (servedByBridge()) retryBridgeLater();
@@ -92,6 +98,11 @@ async function boot() {
   delete document.documentElement.dataset.sidebar;
   restorePlace();
   render();
+  // 低频的全量巡检：哪段改了没标到也兜得住；页面藏起来时也巡一趟（手机切走常常就不回来了）
+  setInterval(sweepConversations, 45000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) sweepConversations();
+  });
 }
 
 function bindEvents() {
@@ -210,7 +221,7 @@ function bindEvents() {
     });
     input.addEventListener("keydown", e => {
       if (e.isComposing || e.keyCode === 229) return;
-      if (e.key === "Enter" && !e.shiftKey && !touchInput.matches) {
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         const waiting = input.id === "chatInput" && !input.value.trim() ? pendingApprovalHere() : null;
         if (waiting) {
@@ -379,29 +390,39 @@ function bindEvents() {
     if (!input) return;
     if (e.key === "Enter") {
       e.preventDefault();
+      // Enter 本身就是明确提交；也照顾脚本/输入法最后一拍尚未来得及冒 input 事件的情形。
+      renamingDirty = true;
       commitRename(input.value);
     } else if (e.key === "Escape") {
       e.stopPropagation();
       renamingId = null;
+      renamingDirty = false;
       renderHistory();
     }
   });
+  $("#history").addEventListener("input", e => {
+    if (e.target.closest(".history-rename") && renamingId) renamingDirty = true;
+  });
   $("#history").addEventListener("focusout", e => {
     const input = e.target.closest(".history-rename");
-    if (input && renamingId) commitRename(input.value);
+    if (input && renamingId && !renderingHistory) commitRename(input.value);
   });
   const title = $("#chatTitle");
-  let titleBefore = "";
+  let titleDirty = false,
+    titleCanceled = false;
   title.addEventListener("focus", () => {
-    titleBefore = title.textContent;
+    titleDirty = false;
+    titleCanceled = false;
   });
+  title.addEventListener("input", () => (titleDirty = true));
   title.addEventListener("keydown", e => {
     if (e.key === "Enter") {
       e.preventDefault();
       title.blur();
     } else if (e.key === "Escape") {
       e.stopPropagation();
-      title.textContent = titleBefore;
+      titleCanceled = true;
+      title.textContent = currentConversation()?.title || "";
       title.blur();
     }
   });
@@ -409,8 +430,10 @@ function bindEvents() {
     const c = currentConversation();
     if (!c) return;
     const value = title.textContent.replace(/\s+/g, " ").trim();
-    if (value && value !== c.title) renameConversation(c.id, value);
+    if (!titleCanceled && titleDirty && value && value !== c.title) renameConversation(c.id, value);
     else title.textContent = c.title;
+    titleDirty = false;
+    titleCanceled = false;
   });
   $("#modelMenu").addEventListener("click", e => {
     const level = e.target.closest("[data-reasoning]");
@@ -618,6 +641,7 @@ function bindEvents() {
       if (area && !area.classList.contains("hidden")) {
         $("#chatScroll").style.paddingBottom = `${area.offsetHeight + 16}px`;
         document.documentElement.style.setProperty("--composer-h", `${area.offsetHeight}px`);
+        syncChatScrollGrabber();
       }
     }).observe($("#composerArea"));
   $("#workAuto").onclick = () => {
@@ -795,7 +819,10 @@ function bindEvents() {
       closeHelperPanel();
       return;
     }
-    closeModelMenu();
+    // 浮着的小菜单（附件签、历史条目的「⋯」、目录签的弹层、模型菜单）：Esc 只收它，别连带把底下的旁注面板也关了
+    if (document.querySelector(".chip-pop")) return closeChipPop();
+    const modelMenu = $("#modelMenu");
+    if (!modelMenu.classList.contains("hidden") && !modelMenu.classList.contains("leaving")) return closeModelMenu();
     if (confirmResolve) settleConfirm(false);
     else if (!$("#settingsModal").classList.contains("hidden")) closeSettings();
     else if (editingMessageId) {
@@ -828,6 +855,7 @@ function bindEvents() {
   if (typeof ResizeObserver === "function")
     new ResizeObserver(() => {
       if (followBottom && view === "chat" && currentId) scrollBottom();
+      syncChatScrollGrabber();
     }).observe($("#messages"));
   $("#messages").addEventListener("click", event => {
     const button = event.target.closest("[data-toggle-compacted]");
@@ -883,9 +911,73 @@ function bindEvents() {
     },
     { passive: true }
   );
-  window.addEventListener("pagehide", () => {
+  // 右侧透明命中层把细滚动条的可抓宽度放大，也越过输入框覆盖区一直延伸到底部。
+  // 按下轨道会把滑块移到指针处；按住近似滑块则保留抓取点，拖动手感与原生滚动条一致。
+  const scrollGrabber = $("#chatScrollGrabber"),
+    chatScroll = $("#chatScroll");
+  let scrollDrag = null;
+  const scrollGeometry = () => {
+    const max = Math.max(0, chatScroll.scrollHeight - chatScroll.clientHeight),
+      track = chatScroll.clientHeight,
+      thumb = Math.min(track, Math.max(28, (track * track) / Math.max(chatScroll.scrollHeight, 1)));
+    return { rect: chatScroll.getBoundingClientRect(), max, track, thumb, travel: Math.max(1, track - thumb) };
+  };
+  const moveScrollGrabber = event => {
+    if (!scrollDrag || event.pointerId !== scrollDrag.pointerId) return;
+    const geometry = scrollGeometry(),
+      pointer = Math.max(0, Math.min(geometry.track, event.clientY - geometry.rect.top));
+    chatScroll.scrollTop = Math.max(0, Math.min(geometry.max, ((pointer - scrollDrag.offset) / geometry.travel) * geometry.max));
+  };
+  const stopScrollGrabber = event => {
+    if (!scrollDrag || event.pointerId !== scrollDrag.pointerId) return;
+    try {
+      scrollGrabber.releasePointerCapture(event.pointerId);
+    } catch {}
+    scrollDrag = null;
+  };
+  scrollGrabber.addEventListener("pointerdown", event => {
+    const geometry = scrollGeometry();
+    if (event.button !== 0 || !geometry.max || getComputedStyle(chatScroll).overflowY === "hidden") return;
+    event.preventDefault();
+    autoScrolling = false;
+    followBottom = false;
+    const pointer = Math.max(0, Math.min(geometry.track, event.clientY - geometry.rect.top)),
+      thumbTop = (chatScroll.scrollTop / geometry.max) * geometry.travel,
+      withinThumb = pointer >= thumbTop && pointer <= thumbTop + geometry.thumb;
+    scrollDrag = {
+      pointerId: event.pointerId,
+      offset: withinThumb ? pointer - thumbTop : geometry.thumb / 2
+    };
+    try {
+      scrollGrabber.setPointerCapture(event.pointerId);
+    } catch {}
+    moveScrollGrabber(event);
+  });
+  scrollGrabber.addEventListener("pointermove", moveScrollGrabber);
+  scrollGrabber.addEventListener("pointerup", stopScrollGrabber);
+  scrollGrabber.addEventListener("pointercancel", stopScrollGrabber);
+  scrollGrabber.addEventListener(
+    "wheel",
+    event => {
+      if (!scrollGrabber.classList.contains("active")) return;
+      const scale = event.deltaMode === 1 ? 20 : event.deltaMode === 2 ? chatScroll.clientHeight : 1;
+      if (event.deltaY < 0) followBottom = false;
+      chatScroll.scrollTop += event.deltaY * scale;
+      event.preventDefault();
+    },
+    { passive: false }
+  );
+  const flushPageState = () => {
     persistDraft();
-    saveStore();
+    flushOnUnload();
+  };
+  // beforeunload 比 pagehide 早，给 IndexedDB 事务多一点提交时间；pagehide 仍兜住不派 beforeunload 的移动端 / 缓存路径。
+  // flushOnUnload 自身幂等，不会因为两者都到而重复写。
+  window.addEventListener("beforeunload", flushPageState);
+  window.addEventListener("pagehide", flushPageState);
+  // 从前进 / 后退缓存回来仍是同一份 JS 状态：允许它在下一次离页时再次落盘。
+  window.addEventListener("pageshow", event => {
+    if (event.persisted) unloading = false;
   });
   window.addEventListener("offline", () => setConnection("error", "连接中断"));
   window.addEventListener("online", refreshConnection);
@@ -912,6 +1004,7 @@ function bindEvents() {
     if (mobile && !wasMobile) toggleSidebar(true);
     wasMobile = mobile;
     syncScrim();
+    syncChatScrollGrabber();
   });
   $("#sidebarScrim").onclick = () => toggleSidebar(true);
   // 生成时向上翻阅后，给一枚「回到最新」；贴近底部自动隐去

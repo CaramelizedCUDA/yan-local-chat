@@ -1,4 +1,4 @@
-// 三档权限：审而后行不弹请求，常规工作放行、明确高风险拒绝；原生电脑检查不依赖 shell
+// 三档权限：审而后行不弹请求，常规工作放行、明确高风险拒绝
 import { existsSync } from "node:fs";
 import { connect, check, sleep, PAGE, TMP } from "./lib.mjs";
 
@@ -21,7 +21,7 @@ await evalJs(
 );
 await waitFor(`document.querySelector('.message.assistant')?.dataset.status === "complete"`, 30000);
 const state = await evalJs(
-  `(c => ({ policy: c.commandPolicy, steps: c.messages.at(-1).steps.map(s => ({ name: s.name, status: s.status, result: s.result, output: s.output })) }))(JSON.parse(localStorage.getItem("yan-chat-v1")).conversations[0])`
+  `(c => ({ policy: c.commandPolicy, steps: c.messages.at(-1).steps.map(s => ({ name: s.name, status: s.status, result: s.result, output: s.output })) }))(__yanState().conversations[0])`
 );
 check(
   "automatic review persisted on the conversation and never opened an approval request",
@@ -36,14 +36,6 @@ check(
   "clear host risk was denied without asking",
   state.steps[1]?.name === "run_command" && state.steps[1].status === "error" && /审查拒绝/.test(state.steps[1].result || ""),
   JSON.stringify(state.steps[1])
-);
-check(
-  "native inspection still returned overview and storage after the shell route was denied",
-  state.steps[2]?.name === "inspect_computer" &&
-    state.steps[2].status === "done" &&
-    /系统概况/.test(state.steps[2].output || "") &&
-    /磁盘与存储/.test(state.steps[2].output || ""),
-  JSON.stringify(state.steps[2])
 );
 
 const labels = [];

@@ -1,7 +1,7 @@
 // 言 · 言 / 行两态、欢迎页与目录签、开合对话
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
 // 言与行不是两个入口，而是一段对话有没有绑工作目录：绑了就是行（执事，改动落在那个目录，提示词也是执事的做法）；
-// 没绑就是言（对谈，文件工具落在卷宗，电脑检查另有固定只读探针）。目录可以在对话中途绑上或解开，上下文不断
+// 没绑就是言（对谈，文件工具落在卷宗）。目录可以在对话中途绑上或解开，上下文不断
 /** @param {Conversation} c */
 function isWork(c) {
   return !!c?.workdir;
@@ -416,6 +416,7 @@ async function deleteConversation(id) {
   void cleanScratch(removed);
   void deleteAttachments([...attachmentIds(allMessages(removed)), ...draftFiles]);
   store.conversations = store.conversations.filter(c => c.id !== id);
+  void deleteConversationStorage(id);
   if (currentId === id) {
     currentId = null;
     pendingAttachments = [];
@@ -428,17 +429,21 @@ function togglePin(id) {
   const c = store.conversations.find(item => item.id === id);
   if (!c) return;
   c.pinned = !c.pinned;
+  markDirty(id);
   saveStore();
   renderHistory();
 }
 function startRename(id) {
   renamingId = id;
+  renamingDirty = false;
   renderHistory();
 }
 function commitRename(value) {
   const id = renamingId;
   renamingId = null;
-  if (id) renameConversation(id, value);
+  const changed = renamingDirty;
+  renamingDirty = false;
+  if (id && changed) renameConversation(id, value);
   else renderHistory();
 }
 function renameConversation(id, value) {
@@ -450,6 +455,7 @@ function renameConversation(id, value) {
   if (c && title && title !== c.title) {
     c.title = title;
     c.titleAuto = false;
+    markDirty(id);
     saveStore();
   }
   renderHistory();
@@ -462,9 +468,11 @@ function selectProfile(id, shouldRender = true) {
   if (!profiles().some(p => p.id === id)) return;
   const c = currentConversation(),
     wasDry = conversationDry(c);
+  // 开旧对话时也走这里，多半什么都没变：没变就不整份存一遍
+  const changed = store.settings.activeProfileId !== id || (!!c && c.profileId !== id);
   store.settings.activeProfileId = id;
   if (c) c.profileId = id;
-  saveStore();
+  if (changed) saveStore();
   closeModelMenu();
   if (shouldRender) {
     renderHeader();
@@ -477,6 +485,12 @@ function syncJumpBottom(gap) {
   const el = $("#chatScroll");
   if (gap === undefined) gap = el ? el.scrollHeight - el.scrollTop - el.clientHeight : 0;
   $("#jumpBottom").classList.toggle("hidden", view !== "chat" || !currentId || gap < 260);
+}
+function syncChatScrollGrabber() {
+  const host = $("#chatScroll"),
+    grabber = $("#chatScrollGrabber");
+  if (!host || !grabber) return;
+  grabber.classList.toggle("active", view === "chat" && !!currentId && host.scrollHeight > host.clientHeight + 1);
 }
 function syncDocumentTitle() {
   const c = currentConversation();

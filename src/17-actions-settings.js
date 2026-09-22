@@ -45,7 +45,6 @@ async function handleMessageAction(event) {
       await ensureLocalBridge();
       profile = activeProfile() || profile;
     }
-    if (parseTokenLimit(profile.quota) === null) return toast("请先为该模型设置用量上限");
     if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
     if (!(await ensureWorkReady(c))) return;
     message.status = "streaming";
@@ -61,7 +60,6 @@ async function handleMessageAction(event) {
   if (userIndex < 0) return;
   const profile = activeProfile();
   if (!profile) return openSettings("models");
-  if (parseTokenLimit(profile.quota) === null) return toast("请先为该模型设置用量上限");
   if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
   if (!(await ensureWorkReady(c))) return;
   forkTail(c, userIndex + 1);
@@ -78,7 +76,6 @@ async function saveEditedMessage(conversation, index, value) {
   if (!text) return toast("尚未落笔");
   const profile = activeProfile();
   if (!profile) return openSettings("models");
-  if (parseTokenLimit(profile.quota) === null) return toast("请先为该模型设置用量上限");
   if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
   const old = conversation.messages[index];
   if (text === old.content) {
@@ -126,6 +123,12 @@ function openSettings(tab = settingsTab) {
 }
 function closeSettings() {
   hideWithFade($("#settingsModal"));
+  // 「手记一条」后没写字就关了窗：那条空的不留（文本框随窗撤掉时未必触发 blur）
+  const kept = store.memory.items.filter(item => String(item.text || "").trim());
+  if (kept.length !== store.memory.items.length) {
+    store.memory.items = kept;
+    saveStore();
+  }
   render();
 }
 function renderSettings() {
@@ -147,17 +150,25 @@ function renderSettings() {
     host.classList.add("tab-fade");
   }
 }
+function chatsDirectorySettingsHtml() {
+  if (apiBase === null) return "";
+  const value = store.settings.chatsDir || "",
+    fallback = bootstrap.work?.chats || "";
+  if (bootstrap.work?.customChats !== true)
+    return `<div class="setting-row"><div class="setting-copy"><strong>对话目录</strong><small>当前桥接是更新前启动的，尚不能切换目录；请关闭并重新运行 start.cmd。${value ? "已记下所选路径，重启后会自动同步。" : "重启后即可选择。"}</small></div><div class="setting-actions setting-directory"><input class="field" spellcheck="false" value="${escapeHtml(value)}" placeholder="${escapeHtml(fallback)}" disabled></div></div>`;
+  return `<div class="setting-row"><div class="setting-copy"><strong>对话目录</strong><small>一段对话一个 JSON 文件；更换后会把当前对话同步到新目录，原目录不自动删除。留空则用默认 ${escapeHtml(fallback)}</small></div><div class="setting-actions setting-directory"><input id="settingChats" class="field" spellcheck="false" autocomplete="off" placeholder="${escapeHtml(fallback)}" value="${escapeHtml(value)}"><button id="settingChatsPick" class="outline-btn" type="button">选择…</button></div></div>`;
+}
 function generalSettingsHtml() {
-  return `<h2>通用</h2><p class="settings-lead">所有数据仅存于此设备的浏览器。</p><div class="setting-row"><div class="setting-copy"><strong>显示名称</strong><small>侧栏中显示的称呼</small></div><input id="settingName" class="field" value="${escapeHtml(store.settings.name)}"></div><div class="setting-row"><div class="setting-copy"><strong>自动拟题</strong><small>首次问答后由模型拟题，略耗额度；手动修改过的标题不再覆盖</small></div><div class="segmented"><button data-setting="autoTitle" data-value="true" class="${store.settings.autoTitle ? "active" : ""}">开</button><button data-setting="autoTitle" data-value="false" class="${store.settings.autoTitle ? "" : "active"}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>自动压缩上下文</strong><small>一答收尾后，若下一问估算送出的 token 超过此数，便请模型把前文压成摘要；留空为不自动。右下角的计数亦可随时手动压缩</small></div><div class="setting-actions"><label class="setting-inline">超过<input id="settingCompactAt" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不自动" value="${Number(store.settings.compactAt) || ""}"></label></div></div>${
+  return `<h2>通用</h2><p class="settings-lead">数据只存于本机；桥接在线时，对话与卷宗可落到你指定的目录。</p><div class="setting-row"><div class="setting-copy"><strong>显示名称</strong><small>侧栏中显示的称呼</small></div><input id="settingName" class="field" value="${escapeHtml(store.settings.name)}"></div><div class="setting-row"><div class="setting-copy"><strong>自动拟题</strong><small>首次问答后由模型拟题，略耗额度；手动修改过的标题不再覆盖</small></div><div class="segmented"><button data-setting="autoTitle" data-value="true" class="${store.settings.autoTitle ? "active" : ""}">开</button><button data-setting="autoTitle" data-value="false" class="${store.settings.autoTitle ? "" : "active"}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>自动压缩上下文</strong><small>一答收尾后，若下一问估算送出的 token 超过此数，便请模型把前文压成摘要；留空为不自动。右下角的计数亦可随时手动压缩</small></div><div class="setting-actions"><label class="setting-inline">超过<input id="settingCompactAt" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不自动" value="${Number(store.settings.compactAt) || ""}"></label></div></div>${
     apiBase !== null
-      ? `<div class="setting-row"><div class="setting-copy"><strong>卷宗目录</strong><small>卷宗在本机的位置；未绑目录的对话里，模型写出的文件与草稿皆落于此。留空则用默认 ${escapeHtml(bootstrap.work?.archive || "")}</small></div><div class="setting-actions setting-archive"><input id="settingArchive" class="field" spellcheck="false" autocomplete="off" placeholder="${escapeHtml(bootstrap.work?.archive || "")}" value="${escapeHtml(store.settings.archiveDir || "")}"><button id="settingArchivePick" class="outline-btn" type="button">选择…</button></div></div>`
+      ? `${chatsDirectorySettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>卷宗目录</strong><small>卷宗在本机的位置；未绑目录的对话里，模型写出的文件与草稿皆落于此。留空则用默认 ${escapeHtml(bootstrap.work?.archive || "")}</small></div><div class="setting-actions setting-directory"><input id="settingArchive" class="field" spellcheck="false" autocomplete="off" placeholder="${escapeHtml(bootstrap.work?.archive || "")}" value="${escapeHtml(store.settings.archiveDir || "")}"><button id="settingArchivePick" class="outline-btn" type="button">选择…</button></div></div>`
       : ""
   }<div class="setting-row"><div class="setting-copy"><strong>本机数据</strong><small>${store.conversations.length} 段对话 · ${store.library.length} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">含附件原件</label><button id="exportData" class="outline-btn">导出备份</button><button id="importData" class="outline-btn">导入备份</button></div></div><div class="setting-row"><div class="setting-copy"><strong>清空所有对话</strong><small>模型配置、个性化与卷宗将保留</small></div><button id="clearAll" class="danger-btn">清空对话</button></div>`;
 }
 // 工具：沙箱、三档指令权限、可及范围、卷宗可读、轮次上限——模型能动手的边界都在这一栏
 function toolsSettingsHtml() {
   const policy = normalizeCommandPolicy(store.settings.commandPolicyDefault);
-  return `<h2>工具</h2><p class="settings-lead">模型能做什么、做到哪一步问一声，都在这里定。</p><div class="setting-row"><div class="setting-copy"><strong>沙箱</strong><small>言与行的指令与文件工具都套着一层：改动不出工作目录、机密文件不碰、动系统与直接外联的指令拒绝、指令看不到机密环境变量；查看则可及整台机器，电脑检查才走得通。在桥接那头守，模型绕不过。这是静态筛查，不是进程隔离。非要让模型改目录之外的东西时再关</small></div><div class="segmented"><button data-setting="sandbox" data-value="true" class="${store.settings.sandbox !== false ? "active" : ""}">开</button><button data-setting="sandbox" data-value="false" class="${store.settings.sandbox === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>指令权限</strong><small>新对话默认档位：问而后行逐条请示，明确只读的径直跑；审而后行由桥接代审，常规改动与整机查看放行、明确高风险当场回绝，不来打扰；径行不再审查。三档都不另调模型，沙箱开着时那道界仍在</small></div><div class="segmented"><button data-setting="commandPolicyDefault" data-value="ask" class="${policy === "ask" ? "active" : ""}">问而后行</button><button data-setting="commandPolicyDefault" data-value="review" class="${policy === "review" ? "active" : ""}">审而后行</button><button data-setting="commandPolicyDefault" data-value="auto" class="${policy === "auto" ? "active" : ""}">径行</button></div></div><div class="setting-row"><div class="setting-copy"><strong>文件工具可及范围</strong><small>没套沙箱时，模型读写文件、列目录与搜索能否越出工作目录或卷宗：「全盘」可指向任何绝对路径，「目录内」一律拒绝越出；指令不受此限。沙箱开着时一律目录内</small></div><div class="segmented"><button data-setting="toolReach" data-value="anywhere" class="${store.settings.toolReach !== "inside" ? "active" : ""}">全盘</button><button data-setting="toolReach" data-value="inside" class="${store.settings.toolReach === "inside" ? "active" : ""}">目录内</button></div></div><div class="setting-row"><div class="setting-copy"><strong>卷宗对模型可读</strong><small>开启后，模型可在任何对话中翻阅卷宗里的文档（PDF、Office、文本），用到时才取回并在本机提取正文</small></div><div class="segmented"><button data-setting="archiveRead" data-value="true" class="${store.settings.archiveRead !== false ? "active" : ""}">开</button><button data-setting="archiveRead" data-value="false" class="${store.settings.archiveRead === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>工具轮次上限</strong><small>一次回答里模型最多调几轮工具，到顶后收回工具请它收尾；帮手另计，大任务可放宽</small></div><div class="setting-actions"><label class="setting-inline">一答<input id="settingToolRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" value="${toolRoundLimit()}"></label><label class="setting-inline">帮手<input id="settingSubRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" value="${subRoundLimit()}"></label></div></div>`;
+  return `<h2>工具</h2><p class="settings-lead">模型能做什么、做到哪一步问一声，都在这里定。</p><div class="setting-row"><div class="setting-copy"><strong>沙箱</strong><small>言与行的指令与文件工具都套着一层：改动不出工作目录、机密文件不碰、动系统与直接外联的指令拒绝、指令看不到机密环境变量；查看则可及整台机器，要它看看电脑也走得通。在桥接那头守，模型绕不过。这是静态筛查，不是进程隔离。非要让模型改目录之外的东西时再关</small></div><div class="segmented"><button data-setting="sandbox" data-value="true" class="${store.settings.sandbox !== false ? "active" : ""}">开</button><button data-setting="sandbox" data-value="false" class="${store.settings.sandbox === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>指令权限</strong><small>新对话默认档位：问而后行逐条请示，明确只读的径直跑；审而后行由桥接代审，常规改动、整机查看、写到目录之外都放行，只把伤及系统与难以恢复的当场回绝，不来打扰；径行不再审查。三档都不另调模型，沙箱开着时那道界仍在</small></div><div class="segmented"><button data-setting="commandPolicyDefault" data-value="ask" class="${policy === "ask" ? "active" : ""}">问而后行</button><button data-setting="commandPolicyDefault" data-value="review" class="${policy === "review" ? "active" : ""}">审而后行</button><button data-setting="commandPolicyDefault" data-value="auto" class="${policy === "auto" ? "active" : ""}">径行</button></div></div><div class="setting-row"><div class="setting-copy"><strong>文件工具可及范围</strong><small>没套沙箱时，模型读写文件、列目录与搜索能否越出工作目录或卷宗：「全盘」可指向任何绝对路径，「目录内」一律拒绝越出；指令不受此限。沙箱开着时一律目录内</small></div><div class="segmented"><button data-setting="toolReach" data-value="anywhere" class="${store.settings.toolReach !== "inside" ? "active" : ""}">全盘</button><button data-setting="toolReach" data-value="inside" class="${store.settings.toolReach === "inside" ? "active" : ""}">目录内</button></div></div><div class="setting-row"><div class="setting-copy"><strong>卷宗对模型可读</strong><small>开启后，模型可在任何对话中翻阅卷宗里的文档（PDF、Office、文本），用到时才取回并在本机提取正文</small></div><div class="segmented"><button data-setting="archiveRead" data-value="true" class="${store.settings.archiveRead !== false ? "active" : ""}">开</button><button data-setting="archiveRead" data-value="false" class="${store.settings.archiveRead === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>工具轮次上限</strong><small>一次回答里模型最多调几轮工具，到顶后收回工具请它收尾；帮手另计，大任务可放宽</small></div><div class="setting-actions"><label class="setting-inline">一答<input id="settingToolRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" value="${toolRoundLimit()}"></label><label class="setting-inline">帮手<input id="settingSubRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" value="${subRoundLimit()}"></label></div></div>`;
 }
 function appearanceSettingsHtml() {
   const s = store.settings;
@@ -215,7 +226,10 @@ function aboutSettingsHtml() {
   return (
     `<div class="about-head"><h2>言</h2><span class="about-version">v${escapeHtml(version)} · ${bridged ? "本机桥接" : "浏览器直连"}</span></div><p class="about-ethos">清简为骨，纸墨为意。<br>长问慢答，尽付纸墨；言毕，即行。</p>` +
     `<div class="about-section"><h3>数据与边界</h3>${rows([
-      ["存放", "对话、模型配置与草稿存于此浏览器的本地存储，附件原件存于 IndexedDB；不经任何云端"],
+      [
+        "存放",
+        "桥接在线时对话落在本机的对话目录（默认 ~/言/对话，可在通用设置更换；一段一个文件，复制即备份）；设置、模型配置与草稿存于此浏览器，并镜像一份到该目录（不含 API Key）。没桥接时对话暂存于浏览器的 IndexedDB；附件原件另存 IndexedDB。不经任何云端"
+      ],
       ["桥接", "本机进程仅监听 127.0.0.1，负责转发模型请求、联网检索与读取网页；拒绝访问本机与内网地址"],
       ["执事", "指令在你的机器上、以你的权限执行，只读指令直接执行，其余默认逐条确认；文件读写限定在工作目录之内"],
       [
@@ -255,7 +269,7 @@ function modelsSettingsHtml() {
     apiBase !== null
       ? `本机桥接已接通${apiBase ? "（VS Code 预览）" : ""}，联网与转发均可用。`
       : "当前由浏览器直连模型，联网检索不可用；本机桥接启动后将自动接通。";
-  return `<h2>模型</h2><p class="settings-lead">任何 OpenAI 兼容接口均可接入，API Key 仅存于当前浏览器。${transport}</p>${bootstrap.configError ? `<div class="server-notice">${escapeHtml(bootstrap.configError)}</div>` : ""}<div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">＋ 接入模型</button>`;
+  return `<h2>模型</h2><p class="settings-lead">任何 OpenAI 兼容接口均可接入，API Key 仅存于当前浏览器。${transport}</p>${bootstrap.notice ? `<div class="server-notice">${escapeHtml(bootstrap.notice)}</div>` : ""}<div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">＋ 接入模型</button>`;
 }
 function quotaParts(value) {
   const match = String(value ?? "")
@@ -266,22 +280,19 @@ function quotaParts(value) {
 }
 /** @param {Profile} p */
 function profileCardHtml(p) {
-  const locked = p.source === "server",
-    invalidQuota = parseTokenLimit(p.quota) === null,
+  const invalidQuota = !!String(p.quota || "").trim() && parseTokenLimit(p.quota) === null,
     quota = quotaParts(p.quota),
     models = Array.isArray(p.modelList) ? p.modelList : [],
     listed = models.includes(p.model);
-  const modelField = locked
-    ? `<input class="field wide" value="${escapeHtml(p.model)}" disabled>`
-    : `<div class="field-row">${models.length ? `<select class="field wide select" data-model-select>${models.map(m => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("")}<option value="__custom__"${listed ? "" : " selected"}>手动输入…</option></select>` : ""}<input class="field wide${models.length && listed ? " hidden" : ""}" data-field="model" value="${escapeHtml(p.model)}" placeholder="如 gpt-4o-mini"><button class="outline-btn" data-profile-action="models" title="从接口的 /models 获取可用模型">${models.length ? "刷新" : "获取列表"}</button></div>`;
-  const quotaField = `<div class="field-row"><input type="number" min="0" step="any" class="field wide" data-quota-amount value="${escapeHtml(quota.amount)}" placeholder="如 100" ${invalidQuota ? `aria-invalid="true"` : ""}><select class="field select" data-quota-unit>${[
+  const modelField = `<div class="field-row">${models.length ? `<select class="field wide select" data-model-select>${models.map(m => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("")}<option value="__custom__"${listed ? "" : " selected"}>手动输入…</option></select>` : ""}<input class="field wide${models.length && listed ? " hidden" : ""}" data-field="model" value="${escapeHtml(p.model)}" placeholder="如 gpt-4o-mini"><button class="outline-btn" data-profile-action="models" title="从接口的 /models 获取可用模型">${models.length ? "刷新" : "获取列表"}</button></div>`;
+  const quotaField = `<div class="field-row"><input type="number" min="0" step="any" class="field wide" data-quota-amount value="${escapeHtml(quota.amount)}" placeholder="不限" ${invalidQuota ? `aria-invalid="true"` : ""}><select class="field select" data-quota-unit>${[
     ["k", "千 (k)"],
     ["m", "百万 (m)"],
     ["e", "亿 (e)"]
   ]
     .map(([v, label]) => `<option value="${v}"${quota.unit === v ? " selected" : ""}>${label}</option>`)
     .join("")}</select></div>`;
-  return `<div class="profile-card" data-profile-card="${escapeHtml(p.id)}"><div class="profile-head"><strong>${escapeHtml(p.name)}</strong>${locked ? `<span class="profile-badge">服务端</span>` : ""}${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</div><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}" ${locked ? "disabled" : ""}></label><label>用量限制${quotaField}<small>必填；改动后重新计量</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}" ${locked ? "disabled" : ""}>OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}" ${locked ? "disabled" : ""}>Anthropic</button></div><small>${anthropicLike(p) ? "Messages API；思考档位换算成思考预算" : "chat/completions；大多数服务与中转站"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}" ${locked ? "disabled" : ""}></label>${locked ? "" : `<label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">模型${modelField}${locked ? "" : `<small>填写 Base URL 与 API Key 后可获取列表，亦可手动输入</small>`}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${[p.tools === false ? "本机工具关" : "", modelSearchEnabled(p) ? "接口原生联网开" : "", p.systemPrompt ? "已设 system prompt" : ""].filter(Boolean).join(" · ")}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>由本机桥接执行检索、网页读取与文档翻阅；需接口支持 function calling</small></label><label>接口原生联网（实验）<div class="segmented"><button data-toggle-field="enableSearch" data-value="true" class="${modelSearchEnabled(p) ? "active" : ""}">开</button><button data-toggle-field="enableSearch" data-value="false" class="${modelSearchEnabled(p) ? "" : "active"}">关</button></div><small>仅当接口文档明确支持时开启，仅附加 <code>enable_search: true</code>；普通 OpenAI 兼容服务通常会忽略该字段，不能替代本机联网</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number(p.temperature ?? 0.7)}"><small>0–2，默认 0.7；数值越高越发散</small></label><label><code>max_tokens</code><input type="number" min="16" max="65536" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens || DEFAULT_MAX_TOKENS)}"><small>单次回复的输出上限，默认 ${DEFAULT_MAX_TOKENS}</small></label><label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>此模型一次可读的 token 数；填写后右下角按比例计量，逾七成半即提醒</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>此模型所认的 <code>reasoning_effort</code> 档位，逗号分隔（minimal、low、medium、high、xhigh、max）；选定模型时会自动探测并填在这里（none 是不认）；留空按 low / medium / high / max 四档列，接口拒绝某档时也会记下</small></label><label class="profile-full"><code>system prompt</code><textarea class="field wide field-area" data-field="systemPrompt" placeholder="可选。设定模型的身份与应答方式">${escapeHtml(p.systemPrompt || "")}</textarea></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}${locked ? "" : `<button class="danger-btn" data-profile-action="delete">删除</button>`}<span class="profile-status">${invalidQuota ? "请先设定用量上限" : ""}</span></div></div>`;
+  return `<div class="profile-card" data-profile-card="${escapeHtml(p.id)}"><div class="profile-head"><strong>${escapeHtml(p.name)}</strong>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</div><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>用量上限${quotaField}<small>留空不限，只计已耗；改动后重新计量</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}">OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button></div><small>${anthropicLike(p) ? "Messages API；思考档位换算成思考预算" : "chat/completions；大多数服务与中转站"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">模型${modelField}<small>填写 Base URL 与 API Key 后可获取列表，亦可手动输入</small></label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${[p.tools === false ? "本机工具关" : "", p.systemPrompt ? "已设 system prompt" : ""].filter(Boolean).join(" · ")}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>由本机桥接执行检索、网页读取与文档翻阅；需接口支持 function calling</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number(p.temperature ?? 0.7)}"><small>0–2，默认 0.7；数值越高越发散</small></label>${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>Messages API 必填的输出上限；留空按 ${DEFAULT_MAX_TOKENS}，模型嫌大会报错，照报错调小即可</small></label>` : ""}<label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>此模型一次可读的 token 数；填写后右下角按比例计量，逾七成半即提醒</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>此模型所认的 <code>reasoning_effort</code> 档位，逗号分隔（minimal、low、medium、high、xhigh、max）；选定模型时会自动探测并填在这里（none 是不认）；留空按 low / medium / high / max 四档列，接口拒绝某档时也会记下</small></label><label class="profile-full"><code>system prompt</code><textarea class="field wide field-area" data-field="systemPrompt" placeholder="可选。设定模型的身份与应答方式">${escapeHtml(p.systemPrompt || "")}</textarea></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}<button class="danger-btn" data-profile-action="delete">删除</button><span class="profile-status">${invalidQuota ? "请填写大于 0 的数值，或留空不限" : ""}</span></div></div>`;
 }
 function storageSize() {
   const bytes = new Blob([JSON.stringify(store)]).size;
@@ -301,6 +312,53 @@ function bindSettingsEvents() {
       store.settings[key] = value >= 1 ? Math.min(value, 500) : fallback;
       saveStoreSoon();
     });
+  // 对话目录：切换后以浏览器里的当前对话为准同步一份过去；旧目录不删，避免一次改路径就造成不可恢复的数据移动。
+  const chatsInput = $("#settingChats");
+  let chatsTimer = null;
+  const commitChats = value => {
+    clearTimeout(chatsTimer);
+    chatsTimer = setTimeout(async () => {
+      const next = String(value || "").trim();
+      let prepared = "";
+      if (next)
+        try {
+          prepared = (await bridge("/api/work/prepare", { workdir: next }, AbortSignal.timeout(8000))).workdir;
+        } catch (error) {
+          return toast(`对话目录不可用：${String(error.message || error).slice(0, 80)}`);
+        }
+      if (prepared === (store.settings.chatsDir || "")) return;
+      if (prepared) store.settings.chatsDir = prepared;
+      else delete store.settings.chatsDir;
+      if (chatsInput && document.activeElement !== chatsInput) chatsInput.value = prepared;
+      chatsBroken = false;
+      chatHashes.clear();
+      chatStamps.clear();
+      chatDiskWrites.clear();
+      writeMeta();
+      await syncChatsWithDisk();
+      const ids = store.conversations.map(conversation => conversation.id);
+      flushConversations(ids, { force: true });
+      await Promise.allSettled(ids.map(id => chatWritePromises.get(id)).filter(Boolean));
+      writeMetaMirror();
+      toast(prepared ? `对话已同步到 ${pathTail(prepared)}；原目录仍保留` : "对话目录已恢复默认位置；原目录仍保留");
+    }, 500);
+  };
+  chatsInput?.addEventListener("input", e => commitChats(e.target.value));
+  $("#settingChatsPick")?.addEventListener("click", async () => {
+    const button = $("#settingChatsPick");
+    button.disabled = true;
+    try {
+      const data = await bridge("/api/work/pick", { current: chatsInput.value.trim() || chatsDir() }, AbortSignal.timeout(300000));
+      if (data.path) {
+        chatsInput.value = data.path;
+        commitChats(data.path);
+      }
+    } catch (error) {
+      toast(String(error.message || error).slice(0, 80));
+    } finally {
+      button.disabled = false;
+    }
+  });
   // 卷宗目录：改完立刻按新目录重新翻卷宗；路径不合法（相对路径、整个磁盘）桥接会拒绝，提示后仍保留输入以便改正
   const archiveInput = $("#settingArchive");
   let archiveTimer = null;
@@ -369,6 +427,7 @@ function bindSettingsEvents() {
         .flatMap(([, draft]) => (Array.isArray(draft?.attachments) ? draft.attachments.map(file => file.id) : []));
     const currentDraftFiles = currentId ? pendingAttachments.map(file => file.id) : [];
     void deleteAttachments([...attachmentIds(store.conversations.flatMap(allMessages)), ...draftFiles, ...currentDraftFiles]);
+    for (const c of store.conversations) void deleteConversationStorage(c.id);
     store.conversations = [];
     store.drafts = store.drafts?.[NEW_DRAFT_ID] ? { [NEW_DRAFT_ID]: store.drafts[NEW_DRAFT_ID] } : {};
     scrollPositions.clear();
@@ -412,7 +471,6 @@ function bindSettingsEvents() {
       baseUrl: "",
       apiKey: "",
       temperature: 0.7,
-      maxTokens: DEFAULT_MAX_TOKENS,
       quota: "",
       usedTokens: 0,
       systemPrompt: ""
@@ -432,13 +490,10 @@ function bindSettingsEvents() {
     card.querySelectorAll("[data-field]").forEach(input =>
       input.addEventListener("input", e => {
         const field = e.target.dataset.field;
-        if (p.source === "server" && !["temperature", "maxTokens", "systemPrompt", "reasoningLevels", "contextWindow"].includes(field))
-          return;
         p[field] = ["temperature", "maxTokens", "usedTokens", "contextWindow"].includes(field) ? Number(e.target.value) : e.target.value;
         if (field === "contextWindow") updateContextGauge();
         // 亲手填的档位就是定论，不再探；清空了下次选模型再探
         if (field === "reasoningLevels") p.reasoningProbed = e.target.value.trim() ? `manual|${reasoningProbeKey(p)}` : "";
-        persistServerProfile(p);
         saveStoreSoon();
       })
     );
@@ -448,15 +503,14 @@ function bindSettingsEvents() {
       unit = card.querySelector("[data-quota-unit]");
     const applyQuota = () => {
       const value = amount.value.trim() ? `${amount.value.trim()}${unit.value}` : "",
-        valid = parseTokenLimit(value) !== null;
+        valid = !value || parseTokenLimit(value) !== null;
       if (valid) amount.removeAttribute("aria-invalid");
       else amount.setAttribute("aria-invalid", "true");
-      card.querySelector(".profile-status").textContent = valid ? "" : "请填写大于 0 的数值";
+      card.querySelector(".profile-status").textContent = valid ? "" : "请填写大于 0 的数值，或留空不限";
       if (!valid) return;
       if (p.quota !== value) {
         p.quota = value;
         p.usedTokens = 0;
-        persistServerProfile(p);
         saveStoreSoon();
         if (p.id === store.settings.activeProfileId) renderQuota();
       }
@@ -602,7 +656,7 @@ async function handleProfileAction(profile, action, card) {
         apiBase !== null
           ? await fetch(`${apiBase}/api/test`, {
               method: "POST",
-              headers: bridgeHeaders(profile),
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ profile: profileForRequest(profile) })
             })
           : await fetch(directModelsRequest(profile).url, { headers: directModelsRequest(profile).headers });
@@ -625,7 +679,7 @@ async function fetchModelList(profile) {
   if (apiBase !== null) {
     response = await fetch(`${apiBase}/api/models`, {
       method: "POST",
-      headers: bridgeHeaders(profile),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile: profileForRequest(profile) })
     });
     data = await response.json().catch(() => ({}));
@@ -663,36 +717,35 @@ async function importData(file) {
     const data = JSON.parse(await readFile(file, "text"));
     if (!data || !Number.isInteger(data.version) || data.version < 1 || data.version > STORE_VERSION || !Array.isArray(data.conversations))
       throw Error("不是言的备份文件，或版本不兼容");
+    // 旧版备份先按启动时同一套迁移与规整过一遍（workAuto → commandPolicy、去掉半成品的压缩分隔……），别等下次刷新才对
+    const incoming = normalizeStoreData(data);
     const known = new Set(store.conversations.map(c => c.id));
     let conversations = 0,
       added = 0,
       library = 0,
       drafts = 0,
       files = 0;
-    for (const c of data.conversations)
+    for (const c of incoming.conversations)
       if (c?.id && !known.has(c.id) && Array.isArray(c.messages)) {
-        store.conversations.push({
-          ...c,
-          forks: Array.isArray(c.forks) ? c.forks : [],
-          threads: Array.isArray(c.threads) ? c.threads : []
-        });
+        store.conversations.push(c);
+        markDirty(c.id);
         conversations += 1;
       }
     const profileIds = new Set(profiles().map(p => p.id));
-    for (const p of Array.isArray(data.profiles) ? data.profiles : [])
+    for (const p of incoming.profiles)
       if (p?.id && p.source !== "server" && !profileIds.has(p.id)) {
         store.profiles.push({ ...p, apiKey: p.apiKey || "" });
         added += 1;
       }
     const libraryIds = new Set(store.library.map(f => f.id));
-    for (const f of Array.isArray(data.library) ? data.library : [])
+    for (const f of incoming.library)
       if (f?.id && !libraryIds.has(f.id)) {
         store.library.push(f);
         library += 1;
       }
-    for (const [key, draft] of Object.entries(data.drafts && typeof data.drafts === "object" ? data.drafts : {}))
-      if (!store.drafts[key] && (typeof draft === "string" || (draft && typeof draft === "object"))) {
-        store.drafts[key] = normalizeDraft(draft);
+    for (const [key, draft] of Object.entries(incoming.drafts))
+      if (!store.drafts[key] && (draft.text || draft.attachments.length || draft.quote)) {
+        store.drafts[key] = draft;
         drafts += 1;
       }
     for (const record of Array.isArray(data.attachments) ? data.attachments : [])
@@ -703,7 +756,7 @@ async function importData(file) {
     const memoryIds = new Set(store.memory.items.map(item => item.id)),
       memoryTexts = new Set(store.memory.items.map(item => item.text));
     let memories = 0;
-    for (const item of normalizeMemory(data.memory).items)
+    for (const item of incoming.memory.items)
       if (!memoryIds.has(item.id) && !memoryTexts.has(item.text) && store.memory.items.length < MAX_MEMORY_ITEMS) {
         store.memory.items.push(item);
         memoryIds.add(item.id);

@@ -6,6 +6,7 @@ function estimateText(text) {
 }
 // 上下文过重的门槛：每一答的用量标注超过它就转为印色提醒
 const CONTEXT_HEAVY = 24000;
+const SSE_IDLE_MS = 300000;
 function estimateTokens(messages) {
   let score = 0;
   for (const message of messages) {
@@ -160,7 +161,6 @@ function learnReasoningLevels(profile, message, sent) {
   profile.reasoningLevels = found.join(", ");
   // 从报错里学到的就是这个身份的定论，不必再探
   profile.reasoningProbed = reasoningProbeKey(profile);
-  persistServerProfile(profile);
   saveStoreSoon();
   return true;
 }
@@ -181,7 +181,6 @@ function reasoningProbed(profile) {
   const key = reasoningProbeKey(profile);
   if (profile.reasoningLevels && !profile.reasoningProbed) {
     profile.reasoningProbed = `manual|${key}`;
-    persistServerProfile(profile);
     saveStoreSoon();
   }
   return profile.reasoningProbed === key || profile.reasoningProbed === `manual|${key}`;
@@ -200,11 +199,9 @@ async function probeReasoningLevels(profile) {
   if (anthropicLike(profile) || /dashscope|aliyuncs/i.test(profile.baseUrl || "")) {
     profile.reasoningLevels = "";
     profile.reasoningProbed = key;
-    persistServerProfile(profile);
     saveStoreSoon();
     return profileReasoningLevels(profile);
   }
-  if (apiBase === null && profile.source === "server") return null;
   const controller = new AbortController(),
     timer = setTimeout(() => controller.abort(), 20000);
   try {
@@ -230,7 +227,6 @@ async function probeReasoningLevels(profile) {
     }
     profile.reasoningLevels = learned.length ? learned.join(", ") : "none";
     profile.reasoningProbed = key;
-    persistServerProfile(profile);
     saveStoreSoon();
     return learned;
   } catch {
@@ -240,43 +236,40 @@ async function probeReasoningLevels(profile) {
     controller.abort();
   }
 }
-// 经桥接的请求头：用桥接预设的模型时带上会话令牌（见 server.js 的 SESSION_TOKEN）
-/** @param {Profile} profile */
-function bridgeHeaders(profile) {
-  return {
-    "Content-Type": "application/json",
-    ...(profile?.source === "server" && bootstrap.token ? { "X-Yan-Session": bootstrap.token } : {})
-  };
-}
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
   const parameters = {
     messages,
     systemPrompt: overrides.systemPrompt ?? (profile.systemPrompt || ""),
     temperature: Number(overrides.temperature ?? profile.temperature ?? 0.7),
-    maxTokens: Number(overrides.maxTokens ?? profile.maxTokens ?? DEFAULT_MAX_TOKENS)
+    // 输出上限：拟题、压缩、探档位这几处自己给；平时 OpenAI 兼容接口不传（服务端的默认就是模型的上限，
+    // 手写一个反而常常把长回答截断），Anthropic 必填、按模型设置或默认值
+    maxTokens:
+      Number(overrides.maxTokens) > 0
+        ? Number(overrides.maxTokens)
+        : anthropicLike(profile)
+          ? Number(profile.maxTokens) || DEFAULT_MAX_TOKENS
+          : undefined
   };
   const extras = {
     ...(overrides.tools ? { tools: overrides.tools } : {}),
-    ...(overrides.enableSearch ? { enable_search: true } : {}),
     // probe 是探档位时故意送的、不存在的一档，原样送出去让接口报错（见 probeReasoningLevels）
     ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
   if (apiBase !== null)
     return fetch(`${apiBase}/api/chat`, {
       method: "POST",
-      headers: bridgeHeaders(profile),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }),
       signal
     });
-  if (profile.source === "server") throw Error("本机桥接未启动");
   const payload = {
     model: profile.model,
     messages: parameters.systemPrompt ? [{ role: "system", content: parameters.systemPrompt }, ...messages] : messages,
     stream: true,
     stream_options: { include_usage: true },
     temperature: parameters.temperature,
-    max_tokens: parameters.maxTokens,
+    ...(parameters.maxTokens ? { max_tokens: parameters.maxTokens } : {}),
     ...extras
   };
   // 直连 Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格，后面的读法不变
@@ -326,9 +319,7 @@ function directHeaders(profile) {
 }
 /** @param {Profile} profile */
 function profileForRequest(profile) {
-  return profile.source === "server"
-    ? { source: "server" }
-    : { source: "custom", baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profile.api || "" };
+  return { source: "custom", baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profile.api || "" };
 }
 /** @param {Message} assistant 主消息、帮手，或拟题 / 压缩用的临时消息 */
 async function readSse(response, assistant, { onFrame = null } = {}) {
@@ -363,11 +354,13 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     }
     const visible = paced ? assistant.content.slice(0, shown) : assistant.content;
     const base = trailBase(assistant),
-      host = trailLiveHost(block, assistant) || block,
+      reusedReasoning = reusableTrailReasoning(block, assistant, visible),
+      // 还只有思绪时直接沿用上一组，不先在下面造一枚重复的签；正文起笔才需要新的进行中容器。
+      host = reusedReasoning && !visible.slice(base).trim() ? null : trailLiveHost(block, assistant) || block,
       rbase = trailReasoningBase(assistant),
-      thought = String(assistant.reasoning || "").slice(rbase);
+      thought = reusedReasoning?.text ?? String(assistant.reasoning || "").slice(rbase);
     if (thought.trim()) {
-      let details = host.querySelector(":scope > .reasoning");
+      let details = reusedReasoning?.details || host?.querySelector(":scope > .reasoning");
       if (!details) {
         host.insertAdjacentHTML("afterbegin", reasoningHtml(assistant, thought));
         details = host.querySelector(":scope > .reasoning");
@@ -379,14 +372,14 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       const live = reasoningLive({ ...assistant, content: visible });
       details.dataset.state = live ? "live" : "done";
       if (details.open && body._follow !== false) body.scrollTop = body.scrollHeight; // 软跟踪：没往上翻就跟着最新一行走
-      if (!assistant.reasoningTouched) {
+      if (!(reusedReasoning ? details.dataset.touched : assistant.reasoningTouched)) {
         if (!live && details.open) settleDetails(details, false);
         else if (live && !details.open) settleDetails(details, true);
       }
     }
     if (!visible) {
       if (!block.querySelector(".thinking")) insertAboveChangeBar(block, `<div class="thinking">正在凝神</div>`);
-    } else if (visible.length <= base) {
+    } else if (!visible.slice(base).trim()) {
       /* 新一轮尚未起笔 */
     } else {
       let markdown = host.querySelector(":scope > .markdown");
@@ -421,7 +414,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
         freshGroups.map(group => ({ count: group.count, age: at - group.at }))
       );
     }
-    paintDrafting(host, assistant);
+    paintDrafting(host || block, assistant);
     if (onFrame) onFrame();
     else if (followBottom) scrollBottom();
     else syncJumpBottom();
@@ -480,16 +473,30 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     think.held = "";
     think.mode = "body";
   };
+  // 直连时流静默太久没人管（桥接那头 Node 自带五分钟的读超时）：五分钟一个字节都没有就当断了，按中断处理、可续写
+  const readChunk = () =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reader.cancel().catch(() => {});
+        reject(Error("接口静默超过五分钟，连接已中断"));
+      }, SSE_IDLE_MS);
+      reader
+        .read()
+        .then(resolve, reject)
+        .finally(() => clearTimeout(timer));
+    });
   // 流被掐断（停止、补言改道）时这一段的帧循环到此为止：接下来的一轮另起一个，两个循环不能同时画一条消息
   try {
     await pump();
   } catch (error) {
     closed = true;
+    // 半途出错（流里的报错事件）：把还开着的连接收掉，别让桥接那头替一个没人读的流继续转发
+    reader.cancel().catch(() => {});
     throw error;
   }
   async function pump() {
     while (true) {
-      const { value, done } = await reader.read();
+      const { value, done } = await readChunk();
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() || "";
@@ -502,8 +509,12 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
         if (!data || data === "[DONE]") continue;
+        let failure = "";
         try {
           const json = JSON.parse(data);
+          // 流里夹着的报错（限流、上游掐线、桥接补的「连接中断」）：不能当没看见让半截话冒充写完了——按中断处理，已写的留着、可续写
+          if (json.error && !json.choices)
+            failure = (typeof json.error === "string" ? json.error : json.error?.message) || "接口在作答途中返回了错误";
           const delta = json.choices?.[0]?.delta;
           const text = normalizeContent(delta?.content),
             reasoning = normalizeContent(delta?.reasoning_content ?? delta?.reasoning);
@@ -528,6 +539,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
           }
           if (json.usage) assistant.usage = json.usage;
         } catch {}
+        if (failure) throw Error(failure);
       }
       if (done) break;
     }

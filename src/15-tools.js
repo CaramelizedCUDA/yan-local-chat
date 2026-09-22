@@ -274,7 +274,6 @@ async function runTool(step, conversation, assistant, signal) {
     }
     if (step.name === "read_document") return await readDocumentTool(step, args, conversation);
     if (step.name === "run_js") return await runJsTool(step, args, signal);
-    if (step.name === "inspect_computer") return await inspectComputerTool(step, args, signal);
     if (step.name === "http_request") return await httpRequestTool(step, args, signal);
     if (step.name === "download_file") return await downloadFileTool(step, args, conversation, signal);
     if (step.name === "update_plan") return updatePlanTool(step, args);
@@ -291,24 +290,6 @@ async function runTool(step, conversation, assistant, signal) {
       display: friendlyError(String(error.message || error)).slice(0, 60)
     };
   }
-}
-async function inspectComputerTool(step, args, signal) {
-  const sections = Array.isArray(args.sections) ? args.sections : args.sections ? [args.sections] : [],
-    data = await bridge("/api/work/inspect", { sections, detail: args.detail === "full" ? "full" : "summary" }, signal),
-    rows = (data.sections || []).map(section =>
-      section.ok
-        ? `## ${section.title}\n${section.output || "（无结果）"}`
-        : `## ${section.title}\n检查失败：${section.error || "未知错误"}`
-    ),
-    ok = (data.sections || []).filter(section => section.ok).length;
-  step.title = sections.length ? (data.sections || []).map(section => section.title).join("、") : "常规体检";
-  step.output = rows.join("\n\n");
-  step.note = `${ok}/${(data.sections || []).length} 项 · ${(Number(data.durationMs || 0) / 1000).toFixed(1)}s`;
-  return {
-    ok: ok > 0,
-    content: step.output || "没有可用的检查结果",
-    display: step.note
-  };
 }
 // ---- run_js：在隔离沙箱里算一段 JS。沙箱是一个 sandbox iframe（origin null、CSP 不许联网）里的 Worker，由 preview-runtime.js 承担；
 // 每次现起一个 iframe、算完就撤，超时由那头把 Worker 杀掉；直连没桥接也能用
@@ -636,7 +617,7 @@ function askStepHtml(step) {
 /** @param {Step} step */
 function approvalBarHtml(step) {
   if (step.name !== "ask_user")
-    return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">问</span><span class="approval-title">${step.approvalScope === "answer" ? "本机请示" : "执事请示"} · 运行此指令</span><span class="approval-hint" title="输入框留空时，Enter 即运行">Enter 运行</span></div><pre class="approval-cmd">${escapeHtml(step.title)}</pre><div class="approval-actions"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="${step.approvalScope === "answer" ? "本答径行：本次回答里的后续指令不再询问，下一问恢复" : "径行：此对话中后续指令不再询问"}">${step.approvalScope === "answer" ? "本答径行" : "径行"}</button></div>`;
+    return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">问</span><span class="approval-title">${isWork(currentConversation()) ? "执事请示" : "本机请示"} · 运行此指令</span><span class="approval-hint" title="输入框留空时，Enter 即运行">Enter 运行</span></div><pre class="approval-cmd">${escapeHtml(step.title)}</pre><div class="approval-actions"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="径行：此对话中后续指令不再询问">径行</button></div>`;
   const questions = step.form?.questions || [];
   const block = (q, i) =>
     `<div class="ask-q" data-q="${i}" data-multi="${q.multi ? "true" : "false"}"><div class="ask-question">${q.header ? `<span class="ask-header">${escapeHtml(q.header)}</span>` : ""}${escapeHtml(q.question)}${q.multi ? `<span class="ask-multi">可多选</span>` : ""}</div><div class="ask-options" role="${q.multi ? "group" : "radiogroup"}">${q.options.map((o, j) => `<button type="button" class="ask-opt" role="${q.multi ? "checkbox" : "radio"}" aria-checked="false" data-opt="${j}"><span class="ask-tick" aria-hidden="true"></span><span class="ask-opt-copy"><strong>${escapeHtml(o.label)}</strong>${o.description ? `<small>${escapeHtml(o.description)}</small>` : ""}</span></button>`).join("")}</div><input class="ask-other" type="text" maxlength="200" placeholder="${q.options.length ? (q.multi ? "还可自行补充" : "或自行填写") : "请填写"}" aria-label="自行填写"></div>`;
@@ -672,15 +653,9 @@ function approveFrom(button) {
     c = currentConversation();
   if (!stepId || !c) return;
   if (button.dataset.approve === "auto") {
-    const step = pendingApprovals.get(stepId)?.step;
-    if (step?.approvalScope === "answer") {
-      const job = requestJob(c.id);
-      if (job) job.commandAuto = true;
-    } else {
-      c.commandPolicy = "auto";
-      saveStore();
-      renderWorkAuto();
-    }
+    c.commandPolicy = "auto";
+    saveStore();
+    renderWorkAuto();
   }
   settleApproval(stepId, button.dataset.approve !== "skip");
 }
@@ -815,7 +790,6 @@ async function runDelegate(step, args, conversation, assistant, signal) {
   const overrides = {
     systemPrompt: `${assistantHint(profile, tools, conversation)}\n\n${prompt("delegate.system")}`,
     tools,
-    enableSearch: modelSearchEnabled(profile),
     reasoning: conversation.reasoning || ""
   };
   const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
@@ -978,10 +952,9 @@ async function runWorkTool(step, args, conversation, assistant, signal) {
     step.title = String(args.command || "").trim();
     if (!step.title) return { ok: false, content: "指令为空", display: "指令为空" };
     step.readOnly = isReadOnlyCommand(step.title);
-    // shell 不是进程隔离：行可把整段对话切成径行；言第一次问，可只放行本答，不能悄悄把今后的对谈都放开
-    let policy = job?.commandAuto ? "auto" : commandPolicyOf(conversation);
+    // 言与行一样：请示条上按「径行」即把这一段对话切成径行，此后不再问
+    let policy = commandPolicyOf(conversation);
     if (policy === "ask" && !step.readOnly) {
-      step.approvalScope = isWork(conversation) ? "conversation" : "answer";
       step.status = "pending";
       if (job) setJobLabel(conversation, job, "等待确认");
       refreshSteps(assistant);
@@ -998,7 +971,7 @@ async function runWorkTool(step, args, conversation, assistant, signal) {
       }
     } else if (job) setJobLabel(conversation, job, "执行中");
     // 用户可能在等待条上把这一段对话切成审而后行或径行；执行前再取一次，不沿用旧档位。
-    policy = job?.commandAuto ? "auto" : commandPolicyOf(conversation);
+    policy = commandPolicyOf(conversation);
     const data = await bridge(
       "/api/work/run",
       { workdir, sandbox, permission: policy, command: step.title, timeout: Number(args.timeout) || 120 },

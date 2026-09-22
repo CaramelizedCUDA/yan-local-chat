@@ -4,8 +4,13 @@ const { send, evalJs, waitFor, shot, close } = await connect();
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
 await evalJs(`localStorage.clear(); true`);
+await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
+check(
+  "fresh installs default to the light theme even when the system is dark",
+  await evalJs(`document.documentElement.dataset.theme === "light" && window.__yanState().settings.theme === "light"`)
+);
 check(
   "first-run notice visible without profiles",
   await evalJs(
@@ -37,9 +42,9 @@ await evalJs(
 );
 await sleep(200);
 check(
-  "quota field invalid via attribute",
+  "empty quota means unlimited, not invalid",
   await evalJs(
-    `getComputedStyle(document.querySelector('[data-quota-amount]')).borderColor === getComputedStyle(document.documentElement).getPropertyValue("--danger") || document.querySelector('[data-quota-amount]').getAttribute("aria-invalid") === "true"`
+    `document.querySelector('[data-quota-amount]').getAttribute("aria-invalid") !== "true" && document.querySelector('[data-quota-amount]').placeholder === "不限"`
   )
 );
 check(

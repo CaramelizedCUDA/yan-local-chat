@@ -55,7 +55,6 @@
  * @property {Array<{ text: string, status: string }>} [plan] update_plan 的清单
  * @property {number} [exitCode]
  * @property {boolean} [readOnly] 只读指令，免确认
- * @property {"conversation"|"answer"} [approvalScope] 指令确认的放行范围：行可对整段对话径行，言只可放行本答
  * @property {{ old: string, new: string }} [diff]
  * @property {{ path: string, added: number, removed: number, created?: boolean }} [change]
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
@@ -136,12 +135,11 @@
  * @property {string} [apiKey]
  * @property {"openai"|"anthropic"} [api] 接口类型；没写按地址认（anthropic.com）
  * @property {number} temperature
- * @property {number} maxTokens
- * @property {string} quota 用量上限，如 "100k"
+ * @property {number} [maxTokens] 只对 Anthropic 有意义（Messages API 必填）；OpenAI 兼容接口不传，由服务端定
+ * @property {string} quota 用量上限，如 "100k"；空则不限
  * @property {number} usedTokens
  * @property {string} systemPrompt
  * @property {boolean} [tools] 本机工具，默认开
- * @property {boolean} [enableSearch]
  * @property {number} [contextWindow]
  * @property {string} [reasoningLevels] 此模型认的思考档位，逗号分隔；none 是不认；探到的与手填的都记在这里
  * @property {string} [reasoningProbed] 探过档位时模型的身份（接口|地址|模型 ID，见 reasoningProbeKey），亲手填的前面带 manual|；换了任一样再探
@@ -170,12 +168,12 @@
  * @property {number} toolRounds
  * @property {number} subRounds
  * @property {string} [archiveDir]
- * @property {Partial<Profile>} serverProfile 桥接预设模型上用户可改的几项
+ * @property {string} [chatsDir]
  * @property {"chat"|"library"} [lastView] 上次停在哪一页，刷新后回到原处
  * @property {string} [lastConversationId]
  */
 /**
- * @typedef {Object} Store 整个本地存储（localStorage 里的一份 JSON）
+ * @typedef {Object} Store 整个本地存储（主体在 IndexedDB；localStorage 只留启动镜像）
  * @property {number} version
  * @property {Settings} settings
  * @property {Profile[]} profiles
@@ -185,6 +183,13 @@
  * @property {Record<string, Draft>} drafts
  */
 const STORAGE_KEY = "yan-chat-v1";
+const STORAGE_META_KEY = "__yanStorage";
+const STATE_DB_NAME = "yan-chat-state-v1";
+const STATE_STORE_NAME = "state"; // 旧版整份记录的表（main 一条），迁走后就空着
+const STATE_RECORD_KEY = "main";
+const CHATS_STORE_NAME = "conversations"; // 没桥接时对话存这里，一段一条
+const CHAT_DISK_INTERVAL = 1200, // 静止时同一段对话连续落盘的最短间隔（毫秒）
+  CHAT_STREAM_DISK_INTERVAL = 3000; // 流式生成时少改几遍整份 JSON；收尾会恢复上面的短间隔
 // 内置提示词都在 prompts/ 目录里，这里只做取值与填空；{{名字}} 由 vars 填入，缺文件时报错并给空串，不让请求整个失败
 const PROMPTS = window.YAN_PROMPTS || {};
 function prompt(path, vars = {}) {
@@ -209,7 +214,8 @@ const limitLabel = bytes => (bytes >= 1024 * MB ? `${bytes / (1024 * MB)} GB` : 
 const MAX_EXTRACTED_CHARS = 300000;
 const HISTORY_TEXT_CHARS = 3000;
 const FOLLOW_THRESHOLD = 80;
-const DEFAULT_MAX_TOKENS = 8192;
+// Anthropic 的 max_tokens 没填时的值：今日的 Claude 都认得下这个数；OpenAI 兼容接口根本不传这个字段
+const DEFAULT_MAX_TOKENS = 32000;
 const MIN_TOOL_STATUS_MS = 240;
 // 一次回答里最多几轮工具调用（帮手另计），超过后收回工具、请模型直接收尾；默认值在这里，实际值在「设置 → 通用」里可改
 const DEFAULT_TOOL_ROUNDS = 80,
@@ -232,7 +238,7 @@ const defaultStore = {
   version: STORE_VERSION,
   settings: {
     name: "访客",
-    theme: "system",
+    theme: "light",
     inkMotion: "on",
     font: "mixed",
     width: 760,
@@ -248,8 +254,7 @@ const defaultStore = {
     toolReach: "anywhere",
     archiveRead: true,
     toolRounds: DEFAULT_TOOL_ROUNDS,
-    subRounds: DEFAULT_SUB_ROUNDS,
-    serverProfile: { temperature: 0.7, maxTokens: DEFAULT_MAX_TOKENS, systemPrompt: "", quota: "", usedTokens: 0 }
+    subRounds: DEFAULT_SUB_ROUNDS
   },
   profiles: [],
   conversations: [],
@@ -259,13 +264,19 @@ const defaultStore = {
 };
 /** @type {Store} */
 let store = loadStore();
-let bootstrap = { serverProfile: null, configError: "" };
+// 给端到端测试看内存里的记录（对话不再整份镜像在 localStorage 里，测试没别的地方读）
+window.__yanState = () => store;
+window.__yanSave = () => saveStore();
+// 桥接的引导信息（目录、平台、shell）；notice 是页面自己写的桥接状态提示，在设置 → 模型顶部显示
+let bootstrap = { notice: "" };
 let apiBase = null;
 /** @type {string|null} 正在看的对话 */
 let currentId = null;
 let view = "chat";
 let editingMessageId = null;
-let renamingId = null;
+let renamingId = null,
+  renamingDirty = false,
+  renderingHistory = false;
 let historyQuery = "";
 /** @type {Attachment[]} 案上待发的附件 */
 let pendingAttachments = [];
@@ -289,6 +300,26 @@ const requestJobs = new Map();
 let settingsTab = "general";
 let toastTimer = null;
 let fileDbPromise = null;
+let stateDbPromise = null,
+  stateDb = null;
+let metaRevision = 0,
+  metaSaveWarned = false,
+  metaMirrorTimer = null;
+// 对话的存取状态：目录是否可用、正在合、指纹与时间戳、待写与在写、没删成的（见 01-store.js 开头的说明）
+let chatsBroken = false,
+  chatsSyncing = false,
+  freshBrowser = false,
+  chatSaveWarned = false,
+  unloading = false;
+const dirtyChatIds = new Set(),
+  chatHashes = new Map(),
+  chatStamps = new Map(),
+  pendingChatWrites = new Map(),
+  activeChatWrites = new Map(),
+  chatWritePromises = new Map(),
+  deletedChatIds = new Set(),
+  chatDiskWrites = new Map(),
+  pendingChatDeletes = new Set();
 let libraryQuery = "",
   libraryKind = "all";
 const advancedOpen = new Set();

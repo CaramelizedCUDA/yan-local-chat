@@ -2,15 +2,21 @@
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
 function render(shouldScroll = false) {
   rememberPlace();
+  const c = currentConversation(),
+    library = view === "library";
+  // 人在卷宗页时这段对话的一答写完了，记了「有新回复」；回到它眼前就算看过了，不必再点一次侧栏
+  if (c && !library && c.unread) {
+    c.unread = false;
+    saveStoreSoon();
+  }
   renderHeader();
   renderHistory();
   syncDocumentTitle();
   requestAnimationFrame(() => syncJumpBottom());
-  const c = currentConversation(),
-    library = view === "library";
   $("#library").classList.toggle("hidden", !library);
   $("#welcome").classList.toggle("hidden", library || !!c);
   $("#chat").classList.toggle("hidden", library || !c);
+  $("#chatScrollGrabber").classList.toggle("hidden", library || !c);
   $("#composerArea").classList.toggle("hidden", library || !c);
   $("#openLibrary").classList.toggle("active", library);
   if (library) renderLibrary();
@@ -21,6 +27,7 @@ function render(shouldScroll = false) {
   renderSendButtons();
   renderApprovalBar();
   renderHelperBar();
+  requestAnimationFrame(syncChatScrollGrabber);
 }
 function renderHeader() {
   renderModelTriggers();
@@ -39,21 +46,26 @@ function renderHeader() {
   renderLibraryCount();
   refreshConnection();
 }
+// 余墨：设了上限时显示还剩多少、墨池随之见底；没设（不限）时墨池常满，改报已耗多少
 function renderQuota() {
   const p = activeProfile(),
-    parsed = p ? parseTokenLimit(p.quota) : null,
-    cap = parsed === null ? 0 : parsed,
+    cap = p ? parseTokenLimit(p.quota) : null,
     used = Math.max(0, Number(p?.usedTokens || 0));
   const remaining = cap ? Math.max(0, cap - used) : 0,
-    ratio = p && parsed !== null ? (cap ? remaining / cap : 1) : 0,
+    ratio = !p ? 0 : cap ? remaining / cap : 1,
     status = $("#quotaStatus");
   const percent = Math.min(100, Math.round(ratio * 100));
   $("#quotaFill").style.width = `${percent}%`;
   status.style.setProperty("--ink-level", `${percent}%`);
-  $("#quotaText").textContent = !p ? "—" : parsed === null ? "未设" : formatTokens(remaining);
-  status.classList.toggle("dry", cap > 0 && remaining === 0);
-  status.classList.toggle("empty", !p || parsed === null);
-  status.title = !p ? "尚未接入模型" : parsed === null ? "尚未设定用量上限" : `余墨 ${formatTokens(remaining)} · 上限 ${formatTokens(cap)}`;
+  status.querySelector(".quota-label").textContent = p && cap === null ? "耗墨" : "余墨";
+  status.title = !p
+    ? "尚未接入模型"
+    : cap === null
+      ? `不限用量，已耗 ${formatTokens(used)}`
+      : `余墨 ${formatTokens(remaining)} / ${formatTokens(cap)}`;
+  $("#quotaText").textContent = !p ? "—" : cap === null ? formatTokens(used) : formatTokens(remaining);
+  status.classList.toggle("dry", !!cap && remaining === 0);
+  status.classList.toggle("empty", !p);
   status.setAttribute("aria-label", status.title);
 }
 function renderModelTriggers() {
@@ -146,9 +158,15 @@ function renderHistory() {
   const buckets = new Map([["置顶", pinned.map(c => ({ kind: "chat", c }))]]);
   for (const label of ["今天", "过去七天", "更早"]) buckets.set(label, []);
   for (const node of nodes) buckets.get(dayBucket(node.at)).push(node);
+  // 正改着名时侧栏也可能重画（别的对话拟好了题、后台一答收尾）：改到一半的字与光标得留住，不能被原标题冲掉
+  const editing = $("#history .history-rename"),
+    typed =
+      editing && renamingId && editing.closest("[data-conversation]")?.dataset.conversation === renamingId
+        ? { value: editing.value, start: editing.selectionStart, end: editing.selectionEnd }
+        : null;
   const item = c => {
     if (renamingId === c.id)
-      return `<div class="history-item active" data-conversation="${escapeHtml(c.id)}"><input class="history-rename" value="${escapeHtml(c.title)}" maxlength="60" aria-label="重命名对话"></div>`;
+      return `<div class="history-item active" data-conversation="${escapeHtml(c.id)}"><input class="history-rename" value="${escapeHtml(typed && renamingDirty ? typed.value : c.title)}" maxlength="60" aria-label="重命名对话"></div>`;
     const job = requestJob(c.id),
       running = !!job,
       waiting = job?.label === "等待确认";
@@ -168,18 +186,24 @@ function renderHistory() {
       running = node.items.filter(c => c.id !== currentId && requestJob(c.id)).length;
     return `<div class="history-repo-group${fold ? " collapsed" : ""}" data-repo="${escapeHtml(node.dir)}"><div class="history-repo-head"><button type="button" class="history-repo" data-repo-toggle="${escapeHtml(node.dir)}" title="${escapeHtml(node.dir)}\n${fold ? "展开" : "收起"}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">工</span><span class="history-repo-name">${escapeHtml(name)}</span><small>${node.items.length}${fold && running ? ` · ${running} 生成中` : ""}</small><span class="repo-caret" aria-hidden="true">›</span></button><button type="button" class="history-tool repo-new" data-history-workdir="${escapeHtml(node.dir)}" title="在此目录翻页">＋</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
   };
-  $("#history").innerHTML =
-    [...buckets]
-      .filter(([, items]) => items.length)
-      .map(
-        ([label, items]) =>
-          `<div class="history-group"><div class="history-label">${label}</div>${items.map(node => (node.kind === "repo" ? repoHtml(node) : item(node.c))).join("")}</div>`
-      )
-      .join("") || `<div class="history-empty">${query ? "没有匹配的对话" : "尚无旧墨"}</div>`;
-  const input = $("#history .history-rename");
-  if (input) {
-    input.focus();
-    input.select();
+  renderingHistory = true;
+  try {
+    $("#history").innerHTML =
+      [...buckets]
+        .filter(([, items]) => items.length)
+        .map(
+          ([label, items]) =>
+            `<div class="history-group"><div class="history-label">${label}</div>${items.map(node => (node.kind === "repo" ? repoHtml(node) : item(node.c))).join("")}</div>`
+        )
+        .join("") || `<div class="history-empty">${query ? "没有匹配的对话" : "尚无旧墨"}</div>`;
+    const input = $("#history .history-rename");
+    if (input) {
+      input.focus();
+      if (typed) input.setSelectionRange(typed.start, typed.end);
+      else input.select();
+    }
+  } finally {
+    renderingHistory = false;
   }
 }
 function scrollSnapshot() {
@@ -217,7 +241,8 @@ function renderConversation(shouldScroll = false) {
   const c = currentConversation();
   if (!c) return;
   const snapshot = c.id === lastRenderedConvId ? scrollSnapshot() : scrollPositions.get(c.id);
-  $("#chatTitle").textContent = c.title;
+  // 同一段对话原地重画（换主题、压缩收尾）时，正改着的标题不动
+  if (c.id !== lastRenderedConvId || document.activeElement !== $("#chatTitle")) $("#chatTitle").textContent = c.title;
   renderChatMeta(c);
   renderWorkAuto();
   renderModelTriggers();

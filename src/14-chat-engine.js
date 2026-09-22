@@ -137,12 +137,6 @@ async function sendOrStop() {
     await ensureLocalBridge();
     profile = activeProfile() || profile;
   }
-  if (parseTokenLimit(profile.quota) === null) {
-    toast("请先为该模型设置用量上限");
-    openSettings("models");
-    setTimeout(() => document.querySelector(`[data-profile-card="${profile.id}"] [data-quota-amount]`)?.focus(), 0);
-    return;
-  }
   if (quotaBlocked(profile)) {
     if (currentConversation()) renderConversation();
     toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候或调高上限");
@@ -356,6 +350,7 @@ function stopGeneration(id = currentId) {
   const job = requestJob(id);
   if (!job) return;
   requestJobs.delete(id);
+  markDirty(id);
   job.controller.abort();
   const conversation = store.conversations.find(item => item.id === id),
     assistant =
@@ -381,6 +376,7 @@ function stopAllGenerations() {
       assistant.status = "stopped";
       settleSteps(assistant, "已停止");
     }
+    markDirty(conversation?.id);
   }
   requestJobs.clear();
 }
@@ -393,7 +389,7 @@ function stopAllGenerations() {
 async function streamReply(conversation, assistant, profile, { resume = false } = {}) {
   // 这一答是不是执事的，记在消息自己身上：生成期间用户可能翻去欢迎页或卷宗，页面上一时没有「当前对话」，时间线不能因此改画法
   assistant.work = isWork(conversation);
-  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user: Message, step: Step }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number, commandAuto: boolean }} */
+  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user: Message, step: Step }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number }} */
   const job = {
     controller: new AbortController(),
     assistantId: assistant.id,
@@ -403,9 +399,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     round: null,
     reading: false,
     roundStart: 0,
-    steerTimer: 0,
-    // 言里的 shell 不是进程隔离：用户可在第一次请示时只放行本答，下一答重新询问
-    commandAuto: false
+    steerTimer: 0
   };
   requestJobs.set(conversation.id, job);
   renderSendButtons();
@@ -437,7 +431,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     history = summaryMessages(contextIndex >= 0 ? conversation.messages[contextIndex] : null);
     history.push(...(await historyForApi(source, lastUserId, budget)));
     // 先把这一答预计的用量记到预留里（提示 + 最大输出），别的对话同时开工时看得见；收尾时换成实际用量
-    releaseQuota = reserveTokens(profile, estimateTokens(history) + Number(profile.maxTokens || DEFAULT_MAX_TOKENS));
+    // 预留只是估个数：一答的输出按八千算，不必与接口实际的上限一致
+    releaseQuota = reserveTokens(profile, estimateTokens(history) + (Number(profile.maxTokens) || 8192));
     if (resume && assistant.content) {
       history.push({ role: "assistant", content: assistant.content });
       history.push({ role: "user", content: "上一条回复在此处因连接中断。请仅从中断处继续，不要重复已生成的内容。" });
@@ -446,7 +441,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     const overrides = {
       systemPrompt: assistantHint(profile, tools, conversation),
       tools,
-      enableSearch: modelSearchEnabled(profile),
       reasoning: conversation.reasoning || ""
     };
     const toolCache = new Map();
@@ -574,6 +568,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     if (requestJobs.get(conversation.id) === job) requestJobs.delete(conversation.id);
     settleSupplements(conversation, assistant, job, profile);
     if (currentId !== conversation.id || view !== "chat") conversation.unread = true;
+    markDirty(conversation.id);
     saveStore();
     renderHistory();
     if (currentId === conversation.id && view === "chat") {
@@ -695,7 +690,6 @@ function accountUsage(
   profile.usedTokens = Math.max(0, Number(profile.usedTokens || 0)) + consumed;
   assistant.tokenCount = consumed;
   assistant.tokenEstimated = !(exact > 0) || partialRound || steered;
-  persistServerProfile(profile);
   if (quotaExhausted(profile)) toast("此答写毕，余墨已尽；换个模型可续");
   renderQuota();
 }
@@ -748,7 +742,6 @@ async function maybeAutoTitle(conversation, profile) {
     }
     const spent = Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]);
     profile.usedTokens = Math.max(0, Number(profile.usedTokens || 0)) + spent;
-    persistServerProfile(profile);
     renderQuota();
     const title =
       temp.content
@@ -762,10 +755,12 @@ async function maybeAutoTitle(conversation, profile) {
     conversation.titleAuto = true;
     conversation.titled = true;
     delete conversation.titleTries;
+    markDirty(conversation.id);
     saveStore();
     renderHistory();
+    // 用户正在页面上方改着标题：不把拟好的题写进去盖掉他的字，他落笔（blur）时以他写的为准
     if (currentId === conversation.id) {
-      $("#chatTitle").textContent = title;
+      if (document.activeElement !== $("#chatTitle")) $("#chatTitle").textContent = title;
       syncDocumentTitle();
     }
   } catch {
@@ -791,17 +786,11 @@ function availableDocuments(conversation) {
     }
   return [...seen.values()];
 }
-// 通义千问（DashScope）接口默认打开模型自带联网；其他接口不发送该参数，除非用户手动开启
-/** @param {Profile} profile */
-function modelSearchEnabled(profile) {
-  if (typeof profile.enableSearch === "boolean") return profile.enableSearch;
-  return /dashscope\.aliyuncs\.com/i.test(String(profile.baseUrl || ""));
-}
 // sub：给帮手的一套——同样的工具，但不再差遣、也不请示用户
 /** @param {Conversation} conversation */
 function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
   // 描述与参数说明在 prompts/tools.js；这里只决定哪些工具在此对话里可用
-  // 言（对谈）的文件工具只为产出；电脑检查是一件多路复用工具。带 brief 的用短说明，且不带 edit_file / search_files
+  // 言（对谈）的文件工具只为产出。带 brief 的用短说明，且不带 edit_file / search_files
   // lookup：旁注用的只查不改的一套——检索、翻网页、翻文档、翻记忆与旧谈；不动文件、不请示、不差遣、不记不忘
   const work = isWork(conversation) && !lookup;
   const define = (name, vars = {}) => {
@@ -818,8 +807,6 @@ function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
   // 调接口能发 POST，不算纯查阅，旁注不给；算一段 JS 在浏览器里的隔离沙箱跑，不经桥接，谁都有
   if (apiBase !== null && !lookup) tools.push(define("http_request"));
   tools.push(define("run_js"));
-  // 固定只读探针不依赖工作目录；与通用 shell 是两条路，某条受限时仍能完成本机诊断
-  if (apiBase !== null && !lookup) tools.push(define("inspect_computer"));
   // 文件工具：绑了目录是执事的六件，落在工作目录；没绑是言的四件，落在卷宗；都要桥接在线。下载也落在同一处
   if (workRoot(conversation) && !lookup)
     tools.push(...(work ? [...WORK_TOOLS] : CHAT_FILE_TOOLS).map(name => define(name)), define("download_file"));
@@ -863,7 +850,8 @@ function assistantHint(profile, tools, conversation = null) {
   if (names.has("run_command") && conversation) lines.push(workHint(conversation));
   if (names.has("search_web")) lines.push(prompt("assistant.search"));
   if (names.has("ask_user")) lines.push(prompt("assistant.asking"));
-  if (names.has("delegate")) lines.push(prompt("assistant.delegating"));
+  // 何时差遣写在工具说明里；这一句只给行——对谈里差遣是少数，不必每问都背着
+  if (names.has("delegate") && conversation && isWork(conversation)) lines.push(prompt("assistant.delegating"));
   if (names.has("remember")) lines.push(prompt("memory.hint", { count: store.memory.items.length }));
   lines.push(prompt("assistant.drawing"));
   if (!conversation || !isWork(conversation)) lines.push(prompt("assistant.manner"));
