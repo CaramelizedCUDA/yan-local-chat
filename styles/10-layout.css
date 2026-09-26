@@ -90,7 +90,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 38px;
+  height: 36px;
   padding: 0;
   border-radius: 10px;
   color: var(--ink);
@@ -113,15 +113,16 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   display: grid;
   place-items: center;
 }
+/* 三个入口等距：原先翻页下 4、卷宗下 6，间距 42 / 45 不齐 */
 .new-chat {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
 }
 .new-chat .rail-icon {
   color: var(--ink-2);
   font: 300 17px/1 var(--title);
 }
 .library-open {
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 .rail-btn .count {
   margin-left: auto;
@@ -193,19 +194,20 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font: 10.5px var(--title);
   letter-spacing: 0.16em;
 }
-/* 「工」组：绑了同一目录的对话归在一起，头一行是印 + 目录名 + 件数，点了收起 / 展开，右侧「＋」在此目录另起一纸 */
+/* 「工」组：绑了同一目录的对话归在一起，头一行是印 + 目录名 + 件数，点了收起 / 展开，右侧「＋」在此目录另起一纸。
+   组不衬底，印下垂一道由浓到淡的朱线，线有多长组就有多大；每段对话之间一道弱分隔，组内组外一样。
+   落选的：组衬一层亮纸（单独的对话与成块的组并排，一块一块的突兀）；只铺底、没有线（原先那层 paper-3 的四成，几乎看不出）；
+   左缘朱边的签条（太重）；虚线针脚（碎） */
 .history-repo-group {
-  margin: 2px 0 6px;
-  padding: 3px 0 3px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--paper-3) 40%, transparent);
+  margin: 2px 0 4px;
+  padding: 2px 0 2px;
 }
 .history-repo-head {
   position: relative;
   display: flex;
   align-items: center;
 }
-button.history-repo {
+.history-repo {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -221,7 +223,7 @@ button.history-repo {
   cursor: pointer;
   transition: color 0.16s;
 }
-button.history-repo:hover {
+.history-repo:hover {
   color: var(--accent);
 }
 .repo-seal {
@@ -244,7 +246,7 @@ button.history-repo:hover {
   font: 500 12.5px var(--title);
   color: var(--ink);
 }
-button.history-repo:hover .history-repo-name {
+.history-repo:hover .history-repo-name {
   color: var(--accent);
 }
 .history-repo small {
@@ -258,23 +260,66 @@ button.history-repo:hover .history-repo-name {
   color: var(--ink-3);
   font-size: 13px;
   transform: rotate(90deg);
-  transition: transform 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    opacity 0.15s;
 }
 .history-repo-group.collapsed .repo-caret {
   transform: none;
 }
+/* 组首右端的「＋」（集组还有「⋯」）悬停时浮出、箭头隐去让位：按钮不占位，工组与集组的箭头才在同一处 */
 .repo-new {
-  flex: none;
-  margin-right: 4px;
+  position: absolute;
+  top: 50%;
+  right: 4px;
   opacity: 0;
+  transform: translateY(-50%);
   transition: opacity 0.15s;
+}
+.repo-new:has(+ .repo-more) {
+  right: 26px;
+}
+.history-repo-head .repo-new:hover {
+  background: var(--paper-3);
 }
 .history-repo-head:hover .repo-new,
 .history-repo-head:focus-within .repo-new {
   opacity: 1;
 }
+.history-repo-head:hover .repo-caret,
+.history-repo-head:focus-within .repo-caret {
+  opacity: 0;
+}
+.repo-more {
+  font-size: 14px;
+}
+/* 拖着一段对话经过某组：组首铺一层淡朱、描一道朱边，松手即移入；被拖的那条淡下去 */
+.history-repo-group.drop-into > .history-repo-head {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.history-item.dragging {
+  opacity: 0.4;
+}
 .history-repo-items {
-  padding: 0 3px 0 6px;
+  position: relative;
+  padding: 0 3px 0 22px;
+}
+.history-repo-items:before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: -3px;
+  bottom: 6px;
+  width: 1.5px;
+  border-radius: 1px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 70%, transparent),
+    color-mix(in srgb, var(--accent) 16%, transparent)
+  );
+  pointer-events: none;
 }
 /* 组内的对话不再各自打「行」印，组头的「工」已说明 */
 .history-repo-items .history-item.is-work .history-open:before {
@@ -289,6 +334,21 @@ button.history-repo:hover .history-repo-name {
   align-items: center;
   border-radius: 9px;
   margin: 1px 0;
+}
+.history-item:after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: -1px;
+  height: 1px;
+  background: var(--line);
+  pointer-events: none;
+}
+.history-item:last-child:after,
+.history-item.active:after,
+.history-item:hover:after {
+  display: none;
 }
 .history-item.active,
 .history-item:hover {
@@ -381,19 +441,29 @@ button.history-repo:hover .history-repo-name {
   color: var(--ink-2);
   font-size: 12px;
 }
-.settings-open .gear {
-  padding-right: 12px;
-  color: var(--ink-3);
+.settings-open .gear-wrap {
+  display: grid;
+  padding-right: 10px;
 }
+.settings-open .gear {
+  width: 18px;
+  height: 18px;
+  opacity: 0.8;
+}
+.settings-open:hover .gear {
+  opacity: 1;
+}
+/* 左下角的名字：一方淡朱的圆印，与侧栏的纸色拉开；原先 paper-3 底、ink-2 字，与侧栏底色几乎一样 */
 .avatar {
   width: 25px;
   height: 25px;
   display: grid;
   place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
   border-radius: 50%;
-  background: var(--paper-3);
-  color: var(--ink-2);
-  font: 12px var(--title);
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper));
+  color: var(--accent);
+  font: 500 12px var(--title);
 }
 .main {
   position: relative;
@@ -431,6 +501,53 @@ button.history-repo:hover .history-repo-name {
   padding: 0 22px;
   position: relative;
   z-index: 5;
+}
+/* 书眉：标题滚走后，顶栏左边留一行题名与问数，与正文同一左缘；没滚过标题时不显示，不与标题重复。点一下回到开头。
+   落选的：居中疏排只留题名（像书页页眉，但与右侧的状态挤在一条线上，题名一长就难看） */
+.running-head {
+  position: absolute;
+  top: 0;
+  left: max(42px, calc(50% - var(--read) / 2));
+  right: 300px;
+  height: 55px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  color: var(--ink-2);
+  font: 500 13px var(--title);
+  letter-spacing: 0.08em;
+  text-align: left;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+.running-head.shown {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.main:has(#chat.hidden) .running-head {
+  display: none;
+}
+.running-head-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.running-head:hover .running-head-title {
+  color: var(--ink);
+}
+.running-head-meta {
+  flex: none;
+  color: var(--ink-3);
+  font: 10px var(--title);
+  letter-spacing: 0.14em;
 }
 .model-wrap {
   position: relative;
@@ -780,4 +897,11 @@ button.history-repo:hover .history-repo-name {
 }
 .quota.empty .quota-text {
   color: var(--danger);
+}
+/* 分组（「集」）组首里改名时的输入框：紧凑些，与组名同一行 */
+.history-repo .group-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  font-size: 12.5px;
 }

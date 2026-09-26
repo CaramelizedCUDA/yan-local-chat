@@ -76,7 +76,7 @@ const waitPort = async (port, timeout = 8000) => {
   const t = Date.now();
   while (Date.now() - t < timeout) {
     try {
-      await fetch(`http://127.0.0.1:${port}/`);
+      await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(1000) });
       return;
     } catch {
       await sleep(150);
@@ -87,8 +87,10 @@ const waitPort = async (port, timeout = 8000) => {
 const stopAll = () => {
   for (const child of children) {
     try {
-      if (process.platform === "win32") spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore" });
-      else child.kill("SIGKILL");
+      if (process.platform === "win32") {
+        const result = spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore" });
+        if (result.status !== 0) child.kill();
+      } else child.kill("SIGKILL");
     } catch {}
   }
 };
@@ -136,7 +138,7 @@ const runSpec = (file, env = {}) =>
 
 // 端口若已被别的进程占着（上次没退干净的假模型、手动起的桥接），用例会悄悄连到那个旧进程上，结果不可信：先查一遍
 for (const port of [BRIDGE_PORT, SECURITY_PORT, 8798, DEBUG_PORT]) {
-  const busy = await fetch(`http://127.0.0.1:${port}/`).then(
+  const busy = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(1000) }).then(
     () => true,
     () => false
   );
@@ -155,8 +157,7 @@ try {
       env: {
         ...process.env,
         YAN_PORT: String(SECURITY_PORT),
-        YAN_ARCHIVE: path.join(TMP, "archive-security"),
-        YAN_CHATS: path.join(TMP, "chats-security"),
+        YAN_HOME: path.join(TMP, "security", ".yan"),
         YAN_TEST_SECRET_TOKEN: "leak-me"
       }
     });
@@ -164,47 +165,57 @@ try {
     await runSpec("bridge-security.mjs", { YAN_PORT: String(SECURITY_PORT) });
   }
   const specs = readdirSync(HERE)
-    .filter(f => f.endsWith(".mjs") && !["run.mjs", "lib.mjs", "fake-llm.mjs", "bridge-security.mjs"].includes(f))
+    .filter(f => f.endsWith(".mjs") && !["run.mjs", "lib.mjs", "fake-llm.mjs", "fake-mcp.mjs", "bridge-security.mjs"].includes(f))
     .filter(wants)
     .sort();
   if (specs.length) {
-    // 卷宗目录指到临时目录，别把测试文件写进用户的 ~/言/卷宗
+    // 存储根指到临时目录，别把测试的对话、卷宗与配置写进用户的 ~/.yan
     start(process.execPath, ["server.js"], {
       cwd: ROOT,
-      env: { ...process.env, YAN_PORT: String(BRIDGE_PORT), YAN_ARCHIVE: path.join(TMP, "archive"), YAN_CHATS: path.join(TMP, "chats") }
+      env: { ...process.env, YAN_PORT: String(BRIDGE_PORT), YAN_HOME: path.join(TMP, ".yan") }
     });
     start(process.execPath, [path.join(HERE, "fake-llm.mjs")], { cwd: ROOT });
     await waitPort(BRIDGE_PORT);
     await waitPort(8798);
     const profile = path.join(TMP, `browser-profile-${Date.now().toString(36)}`);
-    start(browser, [
+    const browserProcess = start(browser, [
       "--headless=new",
       "--disable-gpu",
+      "--disable-gpu-sandbox",
+      "--disable-software-rasterizer",
+      "--no-sandbox",
       "--no-first-run",
       "--no-default-browser-check",
       `--remote-debugging-port=${DEBUG_PORT}`,
       `--user-data-dir=${profile}`,
       "about:blank"
     ]);
-    await waitPort(DEBUG_PORT, 15000);
+    let browserErrors = "";
+    browserProcess.stderr.on("data", data => (browserErrors = (browserErrors + data.toString()).slice(-1200)));
+    try {
+      await waitPort(DEBUG_PORT, 15000);
+    } catch (error) {
+      throw Error(`浏览器调试口未就绪（退出码 ${browserProcess.exitCode ?? "尚未退出"}）：${browserErrors || error.message}`);
+    }
     for (const spec of specs) {
       // 上一个用例的页面还开着，会接着往对话目录写（巡检、卸载时的补写）：先把它领到空白页，再清目录
       try {
         const { send, close } = await connect();
         await send("Page.navigate", { url: "about:blank" });
-        await sleep(300);
+        // 离页时补写的配置（防抖一秒、再加一次往返）要在清目录前落完：否则它落进下一个用例的空根，
+        // 下一个用例灌的浏览器记录又不再压过磁盘，就会带着上一个用例的模型开跑
+        await sleep(1500);
         close();
       } catch {}
       tryRm(path.join(TMP, "work"));
-      tryRm(path.join(TMP, "archive"));
-      // 对话目录也清：上一个用例落盘的对话不能混进下一个。旧页面离开时补写的那一笔可能正落在桥接手里，
+      // 存储根整个清掉（对话、卷宗、配置）：上一个用例落盘的不能混进下一个。旧页面离开时补写的那一笔可能正落在桥接手里，
       // 删的时候文件还占着或刚写出来；删不干净就等等再删，直到目录真的没了
-      for (let i = 0; i < 20 && existsSync(path.join(TMP, "chats")); i++) {
-        tryRm(path.join(TMP, "chats"));
-        if (existsSync(path.join(TMP, "chats"))) await sleep(150);
+      for (let i = 0; i < 20 && existsSync(path.join(TMP, ".yan")); i++) {
+        tryRm(path.join(TMP, ".yan"));
+        if (existsSync(path.join(TMP, ".yan"))) await sleep(150);
       }
       await sleep(400);
-      tryRm(path.join(TMP, "chats"));
+      tryRm(path.join(TMP, ".yan"));
       await runSpec(spec);
     }
   }

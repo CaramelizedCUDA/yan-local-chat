@@ -5,9 +5,6 @@
   .source-grid {
     grid-template-columns: 1fr;
   }
-  .html-app-stage {
-    height: 400px;
-  }
   .work-expanded {
     inset: 6px !important;
   }
@@ -77,9 +74,6 @@
 }
 .message.is-new .markdown {
   animation: fadeIn 0.45s ease 0.06s backwards;
-}
-.message.is-new .viz:not(.viz-pending) .viz-canvas {
-  animation: fadeIn 0.4s ease 0.1s backwards;
 }
 .tool-step.is-new,
 .tool-stack.is-new,
@@ -479,7 +473,6 @@ button:focus:not(:focus-visible) {
   .tool-step.body-new .tool-results,
   .tool-step.body-new .tool-note,
   .message.is-new .markdown,
-  .message.is-new .viz:not(.viz-pending) .viz-canvas,
   .converge .message,
   .converge .markdown,
   .converge .tool-step,
@@ -521,6 +514,10 @@ button:focus:not(:focus-visible) {
   .hint {
     display: none;
   }
+  /* 提示藏了，底栏就没了高度，靠它定位的计数会掉到窗口外半截；给它留出一行 */
+  .composer-foot:has(.context-gauge:not(.hidden)) {
+    height: 20px;
+  }
   .outline {
     display: none;
   }
@@ -557,6 +554,10 @@ button:focus:not(:focus-visible) {
   }
   .topbar {
     padding: 0 14px;
+  }
+  .running-head {
+    left: 54px;
+    right: 230px;
   }
   .welcome {
     padding: 40px 20px 100px;
@@ -640,6 +641,7 @@ body {
    浏览器照样把滚轮截在里面不往外传，鼠标停在上面页面就滚不动，像那一块失灵了。去掉；正文那侧的 chat-scroll 照旧 */
 .work-mode .chat-scroll {
   overflow: hidden;
+  mask-image: none; /* 带着 mask，全屏的那块只能铺在滚动区里、随滚动偏走，「收起」也出了视野 */
 }
 .history-state {
   position: absolute;
@@ -764,4 +766,15 @@ body {
     opacity: 0.85;
     transform: scale(1.12);
   }
+}
+/* 组内置顶：右上角折一个小墨角，像书页折角作记号。置顶只是排序，用墨；朱色留给未读那粒圆点——有事待看的才醒目。
+   落选的：朱色小菱形（与未读的朱圆点同色同大，一眼分不开）；墨色菱形（分得开，但仍是现代 UI 的小点）；「顶」字小印（9px 的字看不清） */
+.history-state.pinned {
+  top: 3px;
+  right: 5px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 9px 9px 0;
+  border-color: transparent color-mix(in srgb, var(--ink-3) 80%, transparent) transparent transparent;
 }

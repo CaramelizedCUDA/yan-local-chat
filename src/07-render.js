@@ -3,9 +3,11 @@
 function render(shouldScroll = false) {
   rememberPlace();
   const c = currentConversation(),
-    library = view === "library";
+    library = view === "library",
+    groups = view === "groups",
+    page = library || groups;
   // 人在卷宗页时这段对话的一答写完了，记了「有新回复」；回到它眼前就算看过了，不必再点一次侧栏
-  if (c && !library && c.unread) {
+  if (c && !page && c.unread) {
     c.unread = false;
     saveStoreSoon();
   }
@@ -14,12 +16,17 @@ function render(shouldScroll = false) {
   syncDocumentTitle();
   requestAnimationFrame(() => syncJumpBottom());
   $("#library").classList.toggle("hidden", !library);
-  $("#welcome").classList.toggle("hidden", library || !!c);
-  $("#chat").classList.toggle("hidden", library || !c);
-  $("#chatScrollGrabber").classList.toggle("hidden", library || !c);
-  $("#composerArea").classList.toggle("hidden", library || !c);
+  $("#groups").classList.toggle("hidden", !groups);
+  $("#welcome").classList.toggle("hidden", page || !!c);
+  $("#chat").classList.toggle("hidden", page || !c);
+  $("#chatScrollGrabber").classList.toggle("hidden", page || !c);
+  $("#composerArea").classList.toggle("hidden", page || !c);
   $("#openLibrary").classList.toggle("active", library);
+  $("#openGroups").classList.toggle("active", groups);
+  renderGroupsCount();
+  renderGroupTags();
   if (library) renderLibrary();
+  else if (groups) renderGroupsPage();
   else if (c) renderConversation(shouldScroll);
   else renderOutline();
   restoreDraft();
@@ -71,12 +78,16 @@ function renderQuota() {
 function renderModelTriggers() {
   const p = activeProfile(),
     c = currentConversation(),
-    level = (c ? c.reasoning : store.settings.reasoning) || "";
+    level = (c ? c.reasoning : p?.reasoning) || "",
+    preset = presetOf(c);
   // 标签写实际会送出的那一档：模型不认所选的就落到最接近的；模型不认思考档位（探过是 none）就不写
   const used = level ? nearestReasoning(p, level) : "";
   document.querySelectorAll(".model-trigger").forEach(button => {
     button.querySelector(".model-name").textContent = p?.name || "尚未接入模型";
-    button.querySelector(".model-extra").textContent = used ? `· 思考 ${reasoningLabel(used)}` : "";
+    button.querySelector(".model-extra").textContent = [preset?.name, used ? `思考 ${reasoningLabel(used)}` : ""]
+      .filter(Boolean)
+      .map(text => `· ${text}`)
+      .join(" ");
   });
 }
 function closeModelMenu() {
@@ -110,15 +121,15 @@ function renderModelMenu() {
         .join("")
     : `<button class="model-option" id="configureFirst"><strong>接入模型</strong><small>任何 OpenAI 兼容接口</small></button>`;
   const c = currentConversation(),
-    level = (c ? c.reasoning : store.settings.reasoning) || "",
     profile = activeProfile(),
+    level = (c ? c.reasoning : profile?.reasoning) || "",
     choices = reasoningChoices(profile),
     // 选过的档位这个模型不认（换了模型、或刚学到它的档位）：菜单上点亮它实际会落到的那一档
     shown = choices.includes(level) ? level : nearestReasoning(profile, level) || "";
   if (all.length)
     $("#modelMenu").insertAdjacentHTML(
       "beforeend",
-      `<div class="menu-section"><div class="menu-section-title"><span>思考深度</span><span title="留空由接口决定；各模型所认的档位不同，可在模型高级配置中填写，接口拒绝时亦会自动记下">${c ? "本段对话" : "新对话默认"}</span></div>${choices.length > 1 ? `<div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div>` : `<div class="menu-section-note">此模型不认思考档位</div>`}</div><button class="model-option model-manage" data-manage>模型设置</button>`
+      `${presetMenuHtml()}<div class="menu-section"><div class="menu-section-title"><span>思考深度</span><span title="每个模型分别记住所选档位；默认不带字段，由接口决定。各模型所认的档位可在高级配置中填写">当前模型</span></div>${choices.length > 1 ? `<div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div>` : `<div class="menu-section-note">此模型不认思考档位</div>`}</div><button class="model-option model-manage" data-manage>模型设置</button>`
     );
   $("#configureFirst")?.addEventListener("click", () => openSettings("models"));
   $("#modelMenu [data-manage]")?.addEventListener("click", e => {
@@ -135,12 +146,21 @@ function renderHistory() {
     (c.messages || []).some(m => typeof m.content === "string" && m.content.toLowerCase().includes(query));
   const sorted = [...store.conversations].filter(matches).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   // 一条时间线：绑了目录的对话归在各自的「工」组里，组按组内最近动过的那条排（一条有动静，整组靠前），组内按时间；
-  // 没绑目录的对话按自己的时间散在其间；置顶另列。组可收起，收起时只露出当前打开的那条；查找时不收
+  // 自立的分组（「集」）同样按组内最近动过的那条排，空组按立组的时间，与「工」组同一排法；没绑目录的对话按自己的时间散在其间；置顶另列。
+  // 落选的：分组在置顶之下自成一段（组一多，刚写的对话被压到下面，且与置顶之间没有界线，看着像置顶的一部分）。
+  // 组可收起，收起时只露出当前打开的那条；查找时不收，也不列没有命中的组
   const collapsed = new Set(store.settings.collapsedRepos || []),
-    pinned = sorted.filter(c => c.pinned),
+    pinned = sorted.filter(c => c.pinned && !groupOf(c)),
     repos = new Map(),
+    sets = new Map(groupsList().map(group => [group.id, { kind: "set", group, at: group.createdAt, items: [] }])),
     nodes = [];
   for (const c of sorted) {
+    const set = c.groupId && sets.get(c.groupId);
+    if (set) {
+      if (!set.items.length || c.updatedAt > set.at) set.at = c.updatedAt;
+      set.items.push(c);
+      continue;
+    }
     if (c.pinned) continue;
     if (!isWork(c)) {
       nodes.push({ kind: "chat", at: c.updatedAt, c });
@@ -154,8 +174,14 @@ function renderHistory() {
     }
     node.items.push(c);
   }
+  for (const set of sets.values()) if (!query || set.items.length) nodes.push(set);
   nodes.sort((a, b) => b.at.localeCompare(a.at));
-  const buckets = new Map([["置顶", pinned.map(c => ({ kind: "chat", c }))]]);
+  /** @type {Map<string, any[]>} */
+  const buckets = new Map();
+  buckets.set(
+    "置顶",
+    pinned.map(c => ({ kind: "chat", c }))
+  );
   for (const label of ["今天", "过去七天", "更早"]) buckets.set(label, []);
   for (const node of nodes) buckets.get(dayBucket(node.at)).push(node);
   // 正改着名时侧栏也可能重画（别的对话拟好了题、后台一答收尾）：改到一半的字与光标得留住，不能被原标题冲掉
@@ -176,15 +202,31 @@ function renderHistory() {
         ? `<span class="history-state running" title="后台生成中" aria-label="后台生成中"></span>`
         : c.unread
           ? `<span class="history-state unread" title="有新回复" aria-label="有新回复"></span>`
-          : "";
-    return `<div class="history-item ${c.id === currentId ? "active" : ""} ${running ? "is-running" : ""} ${c.unread ? "has-unread" : ""} ${isWork(c) ? "is-work" : ""}" data-conversation="${escapeHtml(c.id)}"><button class="history-open" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</button>${state}<span class="history-tools"><button class="history-tool history-more" data-history-action="menu" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></span></div>`;
+          : c.pinned && groupOf(c)
+            ? `<span class="history-state pinned" title="组内置顶" aria-label="组内置顶"></span>`
+            : "";
+    return `<div class="history-item ${c.id === currentId ? "active" : ""} ${running ? "is-running" : ""} ${c.unread ? "has-unread" : ""} ${isWork(c) ? "is-work" : ""}" data-conversation="${escapeHtml(c.id)}" draggable="true"><button class="history-open" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</button>${state}<span class="history-tools"><button class="history-tool history-more" data-history-action="menu" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></span></div>`;
   };
   const repoHtml = node => {
     const name = node.dir.split(/[\\/]/).filter(Boolean).pop() || node.dir || "未定目录",
       fold = collapsed.has(node.dir) && !query,
       shown = fold ? node.items.filter(c => c.id === currentId) : node.items,
       running = node.items.filter(c => c.id !== currentId && requestJob(c.id)).length;
-    return `<div class="history-repo-group${fold ? " collapsed" : ""}" data-repo="${escapeHtml(node.dir)}"><div class="history-repo-head"><button type="button" class="history-repo" data-repo-toggle="${escapeHtml(node.dir)}" title="${escapeHtml(node.dir)}\n${fold ? "展开" : "收起"}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">工</span><span class="history-repo-name">${escapeHtml(name)}</span><small>${node.items.length}${fold && running ? ` · ${running} 生成中` : ""}</small><span class="repo-caret" aria-hidden="true">›</span></button><button type="button" class="history-tool repo-new" data-history-workdir="${escapeHtml(node.dir)}" title="在此目录翻页">＋</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
+    return `<div class="history-repo-group${fold ? " collapsed" : ""}" data-repo="${escapeHtml(node.dir)}"><div class="history-repo-head"><button type="button" class="history-repo" data-repo-toggle="${escapeHtml(node.dir)}" title="${escapeHtml(node.dir)}\n${fold ? "展开" : "收起"}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">工</span><span class="history-repo-name">${escapeHtml(name)}</span><small>${node.items.length}${fold && running ? ` · ${running} 生成中` : ""}</small><span class="repo-caret" aria-hidden="true">›</span></button><button type="button" class="history-tool repo-new" data-history-workdir="${escapeHtml(node.dir)}" title="在此目录新建">＋</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
+  };
+  // 分组：画法同「工」组，印文是「集」；组首右侧「＋」在此组另起一段、「⋯」改名、打开组的设置或解散；改名时组名换成输入框。
+  // 对话可拖到组上移入、拖到组外移出（见 24-groups.js）
+  const setHtml = node => {
+    const { group } = node,
+      key = `group:${group.id}`,
+      fold = collapsed.has(key) && !query,
+      items = [...node.items].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned)),
+      shown = fold ? items.filter(c => c.id === currentId) : items,
+      renaming = renamingGroupId === group.id;
+    const name = renaming
+      ? `<input class="history-rename group-rename" value="${escapeHtml(group.name)}" maxlength="40" aria-label="分组改名">`
+      : `<span class="history-repo-name">${escapeHtml(group.name)}</span>`;
+    return `<div class="history-repo-group is-set${fold ? " collapsed" : ""}" data-group="${escapeHtml(group.id)}"><div class="history-repo-head"><div role="button" tabindex="0" class="history-repo" data-group-toggle="${escapeHtml(group.id)}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">集</span>${name}<small>${node.items.length}</small><span class="repo-caret" aria-hidden="true">›</span></div><button type="button" class="history-tool repo-new" data-group-new="${escapeHtml(group.id)}" title="在此组新建">＋</button><button type="button" class="history-tool repo-new repo-more" data-group-menu="${escapeHtml(group.id)}" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
   };
   renderingHistory = true;
   try {
@@ -193,7 +235,7 @@ function renderHistory() {
         .filter(([, items]) => items.length)
         .map(
           ([label, items]) =>
-            `<div class="history-group"><div class="history-label">${label}</div>${items.map(node => (node.kind === "repo" ? repoHtml(node) : item(node.c))).join("")}</div>`
+            `<div class="history-group"><div class="history-label">${label}</div>${items.map(node => (node.kind === "repo" ? repoHtml(node) : node.kind === "set" ? setHtml(node) : item(node.c))).join("")}</div>`
         )
         .join("") || `<div class="history-empty">${query ? "没有匹配的对话" : "尚无旧墨"}</div>`;
     const input = $("#history .history-rename");
@@ -236,6 +278,26 @@ function restoreScrollPosition(snapshot) {
 function renderChatMeta(c) {
   $("#chatMeta").innerHTML =
     `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user").length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? ` · <button type="button" class="chat-meta-path" data-workdir-bind title="工作目录">${escapeHtml(c.workdir || "")}</button>` : c.ended ? "" : ` · <button type="button" class="chat-meta-bind" data-workdir-bind title="绑定工作目录，此后指令与改动落于其中">绑定目录</button>`}${c.messages.some(m => m.role === "assistant" && m.status === "complete") ? ` · <button type="button" class="chat-meta-bind" data-export-md title="${archiveOnline() ? "以 Markdown 存入卷宗" : "以 Markdown 下载"}">${archiveOnline() ? "存入卷宗" : "存为 Markdown"}</button>` : ""}`;
+  renderRunningHead();
+  requestAnimationFrame(syncRunningHead);
+}
+// 书眉：标题滚出视口后才显出题名与问数。字随 renderChatMeta 与改标题刷新（renderRunningHead），滚动时只切显隐（syncRunningHead）
+function renderRunningHead() {
+  const c = currentConversation(),
+    head = $("#runningHead");
+  if (c) {
+    const notes = visibleThreads(c).length;
+    head.querySelector(".running-head-title").textContent = c.title;
+    head.querySelector(".running-head-meta").textContent =
+      `${chineseNumber(c.messages.filter(m => m.role === "user").length, true)}问${notes ? ` · 旁注 ${notes}` : ""}`;
+  }
+  syncRunningHead();
+}
+function syncRunningHead() {
+  $("#runningHead").classList.toggle(
+    "shown",
+    !!currentConversation() && $("#chatTitle").getBoundingClientRect().bottom < $("#chatScroll").getBoundingClientRect().top + 4
+  );
 }
 function renderConversation(shouldScroll = false) {
   const c = currentConversation();
@@ -275,11 +337,11 @@ function renderConversation(shouldScroll = false) {
     restoreScrollPosition(snapshot);
     requestAnimationFrame(() => restoreScrollPosition(snapshot));
   }
-  // 主题、朱色或字体变了：留在原地的图表就地换色，不必重画整段
+  // 主题、朱色或字体变了：留在原地的交互内容就地换色，不必重画整段
   const themeKey = vizThemeKey();
   if (themeKey !== lastVizThemeKey) {
     lastVizThemeKey = themeKey;
-    rethemeViz($("#messages"));
+    rethemeHtmlApps($("#messages"));
   }
   for (const node of added) {
     void loadThumbnails(node);
@@ -294,8 +356,8 @@ function renderConversation(shouldScroll = false) {
 // 停在哪一页记在设置里：刷新后回到原处——正看着的那段对话、或卷宗；开机时由 boot 读回
 function rememberPlace() {
   const s = store.settings,
-    /** @type {{ view: "chat"|"library", id: string }} */
-    next = { view: view === "library" ? "library" : "chat", id: view === "library" ? "" : currentId || "" };
+    /** @type {{ view: "chat"|"library"|"groups", id: string }} */
+    next = { view: view === "library" || view === "groups" ? view : "chat", id: view === "chat" ? currentId || "" : "" };
   if (s.lastView === next.view && (s.lastConversationId || "") === next.id) return;
   s.lastView = next.view;
   s.lastConversationId = next.id;
@@ -303,7 +365,7 @@ function rememberPlace() {
 }
 function restorePlace() {
   const { lastView, lastConversationId } = store.settings;
-  if (lastView === "library") view = "library";
+  if (lastView === "library" || lastView === "groups") view = lastView;
   else if (lastConversationId && store.conversations.some(c => c.id === lastConversationId)) {
     currentId = lastConversationId;
     const c = currentConversation();
@@ -364,7 +426,8 @@ function syncNodes(host, items, converged) {
     const node = existing.get(item.key);
     existing.delete(item.key);
     let next = node;
-    const streaming = node && item.message?.status === "streaming" && node.dataset.status === "streaming";
+    // 正在流式写的那条由逐帧的那一路刷，这里不动；别处在写、这边跟着看的，没有那一路，照常按新内容重画
+    const streaming = node && item.message?.status === "streaming" && node.dataset.status === "streaming" && !runningElsewhere();
     if (!streaming) {
       const sig = item.html ?? messageSig(item.message, item.branch);
       if (!node || nodeSig.get(node) !== sig) {
@@ -377,7 +440,6 @@ function syncNodes(host, items, converged) {
     }
     if (node && next !== node) {
       if (node === cursor) cursor = cursor.nextElementSibling;
-      disposeChartsIn(node);
       node.remove();
     }
     if (next === cursor) cursor = cursor.nextElementSibling;
@@ -387,28 +449,12 @@ function syncNodes(host, items, converged) {
   while (cursor) {
     const stale = cursor;
     cursor = cursor.nextElementSibling;
-    disposeChartsIn(stale);
     stale.remove();
   }
   return { added };
 }
 function vizThemeKey() {
   return `${document.documentElement.dataset.theme}|${cssVar("--accent")}|${cssVar("--body")}`;
-}
-function rethemeViz(root) {
-  for (const chart of vizCharts) {
-    const canvas = chart.getDom(),
-      el = canvas?.closest('.viz[data-viz="echarts"]');
-    if (!el || !root.contains(canvas)) continue;
-    try {
-      chart.setOption(themedEchartsOption(parseVizJson(el.querySelector(".viz-source")?.textContent || ""), canvas), true);
-    } catch {}
-  }
-  const stale = [...root.querySelectorAll('.viz[data-viz="mermaid"][data-rendered].viz-ok')];
-  if (stale.length) {
-    for (const el of stale) delete el.dataset.rendered;
-    void renderViz(stale);
-  }
 }
 /** @param {Message} message */
 function noteMarkHtml(message) {
@@ -531,6 +577,8 @@ function finalizeAssistant(conversation, assistant, leadTrim = 0) {
   if (reasoning && thought.trim()) {
     reasoning.querySelector(".reasoning-body").textContent = thought;
     reasoning.dataset.state = "done";
+    // 做完就收，与行迹同一个定例：流式期间读者往上翻着看时没收成的，这里补上；用户亲手开合过的不动
+    if (!assistant.reasoningTouched) settleDetails(reasoning, false, null, true);
   } else if (reasoning) reasoning.remove();
   else if (thought.trim()) {
     const stack = block.querySelector(":scope > .tool-stack");
@@ -545,7 +593,7 @@ function finalizeAssistant(conversation, assistant, leadTrim = 0) {
     markdown?.remove();
     block.insertAdjacentHTML("beforeend", assistantMainHtml(assistant));
   } else if (markdown?.querySelector(".md-tail")) {
-    // 已渲染的稳定段保持不动，只把尾段按最终文本重绘一次——此时 mermaid / echarts / html 才真正成图
+    // 已渲染的稳定段保持不动，只把尾段按最终文本重绘一次——此时交互内容才真正挂载
     const cut = Math.max(trailBase(assistant), Math.min(Number(markdown.dataset.cut || 0) - leadTrim, assistant.content.length)),
       tail = markdown.querySelector(".md-tail");
     markdown.dataset.cut = String(cut);
@@ -577,4 +625,169 @@ function finalizeAssistant(conversation, assistant, leadTrim = 0) {
   $("#chatScroll").classList.remove("generating");
   renderHelperBar();
   if (followBottom) requestAnimationFrame(scrollBottom);
+}
+
+// 模型菜单：各处的模型签点开同一张菜单，挂到被点的那枚旁边；菜单里选模型、选思考档位、选预设
+function bindModelMenuEvents() {
+  document.querySelectorAll(".model-trigger").forEach(button => {
+    button.setAttribute("aria-haspopup", "dialog");
+    button.setAttribute("aria-controls", "modelMenu");
+    button.setAttribute("aria-expanded", "false");
+    button.onclick = e => {
+      e.stopPropagation();
+      const menu = $("#modelMenu"),
+        opening = menu.classList.contains("hidden") || menu.classList.contains("leaving");
+      if (menu.parentElement !== button.parentElement) {
+        menu.classList.add("hidden");
+        menu.classList.remove("leaving", "drop-up");
+        button.parentElement.append(menu);
+      }
+      if (!opening) {
+        closeModelMenu();
+        return;
+      }
+      renderModelMenu();
+      showNow(menu);
+      button.setAttribute("aria-expanded", "true");
+      positionModelMenu(button);
+    };
+  });
+  document.addEventListener("click", closeModelMenu);
+  window.addEventListener("resize", () => {
+    const trigger = document.querySelector('.model-trigger[aria-expanded="true"]');
+    if (trigger) positionModelMenu(trigger);
+  });
+  $("#modelMenu").addEventListener("click", e => {
+    const level = e.target.closest("[data-reasoning]");
+    if (level) {
+      e.stopPropagation();
+      const c = currentConversation();
+      const profile = activeProfile();
+      if (!profile) return;
+      profile.reasoning = normalizeReasoning(level.dataset.reasoning);
+      if (c) c.reasoning = profile.reasoning;
+      saveStore();
+      renderModelMenu();
+      renderModelTriggers();
+      const trigger = document.querySelector('.model-trigger[aria-expanded="true"]');
+      if (trigger) positionModelMenu(trigger);
+      return;
+    }
+    const preset = e.target.closest("[data-preset]");
+    if (preset) return selectPreset(preset.dataset.preset);
+    const item = e.target.closest("[data-profile]");
+    if (!item) return;
+    selectProfile(item.dataset.profile);
+    // 这个模型还没探过认哪几档：探一下，发送键旁的标签与菜单跟着换（探不成就按通用四档，撞了错再学）
+    const picked = activeProfile();
+    if (picked && !reasoningProbed(picked))
+      void probeReasoningLevels(picked).then(levels => {
+        if (levels === null || activeProfile() !== picked) return;
+        renderModelTriggers();
+        if ($("#modelMenu")?.classList.contains("hidden") === false) renderModelMenu();
+      });
+  });
+}
+
+// 正文的滚动：跟随到底、回到最新、右侧加宽的滚动条命中层
+function bindScrollEvents() {
+  // 跟随的规矩：往下滚到离底不远就算到底、开始跟随（生成中内容一直在长，硬要滚到最后一像素常常追不上）；
+  // 往上滚离底超过阈值才算离开。内容自己长高、缩短引起的滚动不算用户的意思
+  let lastScrollTop = 0;
+  $("#chatScroll").addEventListener("scroll", () => {
+    const el = $("#chatScroll"),
+      gap = el.scrollHeight - el.scrollTop - el.clientHeight,
+      down = el.scrollTop > lastScrollTop;
+    lastScrollTop = el.scrollTop;
+    if (gap < 8 || (down && gap < FOLLOW_THRESHOLD)) {
+      followBottom = true;
+      autoScrolling = false;
+    } else if (!down && !autoScrolling && gap > FOLLOW_THRESHOLD) followBottom = false;
+    syncJumpBottom(gap);
+    syncOutline();
+    syncRunningHead();
+  });
+  $("#runningHead").addEventListener("click", () => $("#chatScroll").scrollTo({ top: 0, behavior: "smooth" }));
+  // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧
+  if (typeof ResizeObserver === "function")
+    new ResizeObserver(() => {
+      if (followBottom && view === "chat" && currentId) scrollBottom();
+      syncChatScrollGrabber();
+    }).observe($("#messages"));
+  $("#chatScroll").addEventListener(
+    "wheel",
+    e => {
+      if (e.deltaY < 0 && !wheelScrollsInner(e)) followBottom = false;
+    },
+    { passive: true }
+  );
+  $("#chatScroll").addEventListener(
+    "pointerdown",
+    () => {
+      autoScrolling = false;
+    },
+    { passive: true }
+  );
+  // 右侧透明命中层把细滚动条的可抓宽度放大，也越过输入框覆盖区一直延伸到底部。
+  // 按下轨道会把滑块移到指针处；按住近似滑块则保留抓取点，拖动手感与原生滚动条一致。
+  const scrollGrabber = $("#chatScrollGrabber"),
+    chatScroll = $("#chatScroll");
+  let scrollDrag = null;
+  const scrollGeometry = () => {
+    const max = Math.max(0, chatScroll.scrollHeight - chatScroll.clientHeight),
+      track = chatScroll.clientHeight,
+      thumb = Math.min(track, Math.max(28, (track * track) / Math.max(chatScroll.scrollHeight, 1)));
+    return { rect: chatScroll.getBoundingClientRect(), max, track, thumb, travel: Math.max(1, track - thumb) };
+  };
+  const moveScrollGrabber = event => {
+    if (!scrollDrag || event.pointerId !== scrollDrag.pointerId) return;
+    const geometry = scrollGeometry(),
+      pointer = Math.max(0, Math.min(geometry.track, event.clientY - geometry.rect.top));
+    chatScroll.scrollTop = Math.max(0, Math.min(geometry.max, ((pointer - scrollDrag.offset) / geometry.travel) * geometry.max));
+  };
+  const stopScrollGrabber = event => {
+    if (!scrollDrag || event.pointerId !== scrollDrag.pointerId) return;
+    try {
+      scrollGrabber.releasePointerCapture(event.pointerId);
+    } catch {}
+    scrollDrag = null;
+  };
+  scrollGrabber.addEventListener("pointerdown", event => {
+    const geometry = scrollGeometry();
+    if (event.button !== 0 || !geometry.max || getComputedStyle(chatScroll).overflowY === "hidden") return;
+    event.preventDefault();
+    autoScrolling = false;
+    followBottom = false;
+    const pointer = Math.max(0, Math.min(geometry.track, event.clientY - geometry.rect.top)),
+      thumbTop = (chatScroll.scrollTop / geometry.max) * geometry.travel,
+      withinThumb = pointer >= thumbTop && pointer <= thumbTop + geometry.thumb;
+    scrollDrag = {
+      pointerId: event.pointerId,
+      offset: withinThumb ? pointer - thumbTop : geometry.thumb / 2
+    };
+    try {
+      scrollGrabber.setPointerCapture(event.pointerId);
+    } catch {}
+    moveScrollGrabber(event);
+  });
+  scrollGrabber.addEventListener("pointermove", moveScrollGrabber);
+  scrollGrabber.addEventListener("pointerup", stopScrollGrabber);
+  scrollGrabber.addEventListener("pointercancel", stopScrollGrabber);
+  scrollGrabber.addEventListener(
+    "wheel",
+    event => {
+      if (!scrollGrabber.classList.contains("active")) return;
+      const scale = event.deltaMode === 1 ? 20 : event.deltaMode === 2 ? chatScroll.clientHeight : 1;
+      if (event.deltaY < 0) followBottom = false;
+      chatScroll.scrollTop += event.deltaY * scale;
+      event.preventDefault();
+    },
+    { passive: false }
+  );
+  // 生成时向上翻阅后，给一枚「回到最新」；贴近底部自动隐去
+  $("#jumpBottom").onclick = () => {
+    const el = $("#chatScroll");
+    followBottom = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: reducedMotion.matches ? "instant" : "smooth" });
+  };
 }

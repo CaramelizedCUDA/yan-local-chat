@@ -1,5 +1,6 @@
 // 桥接安全检查：Origin 门禁、工作目录必须完整限定、链接不能越出工作目录；卷宗接口不能越出卷宗目录、网页按纯文本给；沙箱在桥接这头守
-import { mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, symlinkSync, existsSync } from "node:fs";
+import http from "node:http";
 const PORT = Number(process.env.YAN_PORT || 8797),
   BASE = `http://127.0.0.1:${PORT}`;
 import { TMP } from "./lib.mjs";
@@ -52,6 +53,7 @@ for (const publicPath of [
 for (const privatePath of [
   "/server.js",
   "/server/chats.js",
+  "/server/store.js",
   "/test/bridge-security.mjs",
   "/prompts/README.md",
   "/.git/config",
@@ -71,6 +73,15 @@ r = await post("/api/work/run", { workdir, command: "echo hi" }, { Origin: "http
 check("foreign origin is rejected", r.status === 403, String(r.status));
 r = await fetch(BASE + "/api/work/run", { method: "OPTIONS", headers: { Origin: "null", "Access-Control-Request-Method": "POST" } });
 check("preflight from null origin is refused too", r.status === 403, String(r.status));
+// 来源 null 也可能是别处网页嵌进来的沙箱 iframe：连模型转发与检索也不给它
+r = await post(
+  "/api/chat",
+  { profile: { baseUrl: "http://192.168.1.1/v1", model: "x" }, messages: [{ role: "user", content: "x" }] },
+  { Origin: "null" }
+);
+check("Origin: null cannot relay through the model endpoint either", r.status === 403, String(r.status));
+r = await post("/api/search", { query: "x" }, { Origin: "null" });
+check("Origin: null cannot use search either", r.status === 403, String(r.status));
 r = await post("/api/work/prepare", { workdir }, { Origin: `http://127.0.0.1:${PORT}` });
 check(
   "own origin passes",
@@ -156,7 +167,7 @@ check(
   `${r.status} ${r.data?.error}`
 );
 // ---- 卷宗接口
-const ARCHIVE = `${TMP}/archive-security`;
+const ARCHIVE = `${TMP}/security/.yan/卷宗`;
 r = await post("/api/archive/put", { name: "../escaped.txt", data: "data:text/plain;base64,aGk=" });
 check(
   "archive put keeps only the basename",
@@ -425,6 +436,232 @@ check(
   r.status === 400 && /越出/.test(r.data?.error || ""),
   `${r.status} ${r.data?.error}`
 );
+// ---- 沙箱的宽档：审而后行、径行只守系统本身——.. 上溯写、读 .env、改 .git 内部都放行，往系统目录写仍拒
+for (const permission of ["review", "auto"]) {
+  r = await post("/api/work/run", {
+    workdir,
+    sandbox: true,
+    permission,
+    command: win ? "Get-Content .env | Out-Null; Set-Content ../loose-probe.txt ok" : "cat .env > /dev/null; printf ok > ../loose-probe.txt"
+  });
+  check(
+    `loose sandbox (${permission}): .. writes and .env reads are allowed`,
+    r.status === 200 && r.data.exitCode === 0,
+    `${r.status} ${r.data?.error || r.data?.stderr}`
+  );
+  r = await post("/api/work/run", {
+    workdir,
+    sandbox: true,
+    permission,
+    command: win ? "Copy-Item plain.txt C:\\Windows\\yan-probe.txt" : "cp plain.txt /usr/yan-probe.txt"
+  });
+  check(
+    `loose sandbox (${permission}): writing into system dirs is still refused`,
+    r.status === 400 && /沙箱拒绝/.test(r.data?.error || ""),
+    `${r.status} ${r.data?.error}`
+  );
+  r = await post("/api/work/read", { workdir, sandbox: true, permission, path: ".env" });
+  check(`loose sandbox (${permission}): file tools may read .env`, r.status === 200, `${r.status} ${r.data?.error || ""}`);
+}
+rmSync(`${WORK}/../loose-probe.txt`, { force: true });
+// ---- 预筛：问而后行发指令前问一声严的沙箱会不会拦，拦的写明原因
+r = await post("/api/work/screen", { workdir, command: "curl https://example.com" });
+check("screen: the strict sandbox reason is reported", r.status === 200 && /外联/.test(r.data?.why || ""), JSON.stringify(r.data));
+r = await post("/api/work/screen", { workdir, command: "Get-ChildItem" });
+check("screen: a harmless command passes", r.status === 200 && r.data.why === null, JSON.stringify(r.data));
+// ---- 后台指令：先回头几秒的输出与编号，之后取新输出、结束它；跑着的时候别的指令不排队
+{
+  const loop = win
+    ? "Write-Output 'bg-start'; while ($true) { Start-Sleep -Milliseconds 300 }"
+    : "echo bg-start; while true; do sleep 0.3; done";
+  r = await post("/api/work/run", { workdir, sandbox: true, command: loop, background: true });
+  const id = r.data?.id;
+  check(
+    "background: returns an id with the first output while it keeps running",
+    r.status === 200 && !!id && r.data.running && /bg-start/.test(r.data.stdout),
+    JSON.stringify(r.data)
+  );
+  const quick = await post("/api/work/run", { workdir, sandbox: true, command: win ? "Write-Output side" : "echo side" });
+  check(
+    "background: other commands are not blocked by it",
+    quick.status === 200 && /side/.test(quick.data.stdout),
+    JSON.stringify(quick.data)
+  );
+  r = await post("/api/work/check", { id });
+  check(
+    "background: check reports it still running with no repeated output",
+    r.status === 200 && r.data.running && !/bg-start/.test(r.data.stdout),
+    JSON.stringify(r.data)
+  );
+  r = await post("/api/work/check", { id, stop: true });
+  check("background: stop ends it", r.status === 200 && !r.data.running, JSON.stringify(r.data));
+  r = await post("/api/work/check", { id: "bg-nope" });
+  check("background: an unknown id is explained", r.status === 400 && /没有编号/.test(r.data?.error || ""), JSON.stringify(r.data));
+}
+// ---- 存储目录：配置（含 API Key）只给本站页面读写；存进去的原样读回来
+{
+  const outsider = await fetch(`${BASE}/api/store/config/load`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://evil.example" },
+    body: "{}"
+  });
+  check("store config is refused to other origins", outsider.status === 403, String(outsider.status));
+  r = await post("/api/store/config/save", { config: { settings: { name: "测" }, profiles: [{ id: "p", apiKey: "k" }] }, savedAt: 42 });
+  check("store config saves", r.status === 200 && r.data.savedAt === 42, JSON.stringify(r.data));
+  r = await post("/api/store/config/load", {});
+  check(
+    "store config reads back what was saved, key included",
+    r.status === 200 && r.data.savedAt === 42 && r.data.config?.profiles?.[0]?.apiKey === "k",
+    JSON.stringify(r.data)
+  );
+  // 另一个浏览器拿着旧的一份来写：不写，把磁盘上更新的那份交回去，由它合并后再写
+  r = await post("/api/store/config/save", { config: { settings: { name: "旧" } }, savedAt: 50, base: 10 });
+  check(
+    "a config save based on an older copy is refused and handed the newer one",
+    r.status === 409 && r.data.savedAt === 42 && r.data.config?.settings?.name === "测",
+    JSON.stringify(r.data)
+  );
+  r = await post("/api/store/config/save", { config: { settings: { name: "新" } }, savedAt: 60, base: 42 });
+  check("a config save based on the current copy goes through", r.status === 200 && r.data.savedAt === 60, JSON.stringify(r.data));
+  const backupDir = `${TMP}/security/.yan/配置备份`;
+  const backups = existsSync(backupDir) ? readdirSync(backupDir).filter(name => name.endsWith(".json")) : [];
+  check(
+    "a config rewrite keeps an earlier disk snapshot for recovery",
+    backups.length > 0 && JSON.parse(readFileSync(`${backupDir}/${backups[0]}`, "utf8")).profiles?.[0]?.id === "p",
+    JSON.stringify(backups)
+  );
+}
+// ---- 删除记录：别处删了的对话，迟到的旧保存不让它复活；删后又真存了（在里头说话、从备份导回）的照存
+{
+  const root = `${TMP}/tomb-chats`.split("/").join(win ? "\\" : "/"),
+    conversation = { id: "tomb-1", title: "墓", messages: [] };
+  rmSync(root, { recursive: true, force: true });
+  await post("/api/chats/save", { root, savedAt: 1000, conversation });
+  await post("/api/chats/delete", { root, id: "tomb-1" });
+  r = await post("/api/chats/load", { root });
+  check(
+    "a deletion is recorded for the other browsers",
+    r.status === 200 && r.data.items.length === 0 && r.data.deleted?.["tomb-1"] > 0,
+    JSON.stringify(r.data)
+  );
+  r = await post("/api/chats/save", { root, savedAt: 2000, conversation });
+  check("a stale save after the deletion does not bring it back", r.status === 410, JSON.stringify(r.data));
+  r = await post("/api/chats/save", { root, savedAt: Date.now() + 1000, conversation });
+  const after = await post("/api/chats/load", { root });
+  check(
+    "a save made after the deletion revives it and clears the record",
+    r.status === 200 && after.data.items.length === 1 && !after.data.deleted?.["tomb-1"],
+    JSON.stringify(after.data)
+  );
+  rmSync(root, { recursive: true, force: true });
+}
+// ---- 只认发往本机地址的请求：DNS 重绑定过来的（Host 是别的域名）一律不理；别的网站连模型转发也不能借道
+{
+  const status = await new Promise(resolve => {
+    const request = http.request(
+      { host: "127.0.0.1", port: PORT, path: "/api/bootstrap", headers: { Host: `evil.example:${PORT}` } },
+      response => {
+        response.resume();
+        resolve(response.statusCode);
+      }
+    );
+    request.on("error", () => resolve(0));
+    request.end();
+  });
+  check("a request addressed to another host name is refused (DNS rebinding)", status === 421, String(status));
+  r = await post(
+    "/api/chat",
+    { profile: { baseUrl: "http://192.168.1.1/v1", model: "x" }, messages: [{ role: "user", content: "x" }] },
+    { Origin: "https://evil.example" }
+  );
+  check("other websites cannot relay through the model endpoint", r.status === 403, String(r.status));
+}
+// ---- 编码：UTF-16LE（Windows PowerShell 5.1 的 > 写出的）照读、改后仍是带 BOM 的 UTF-16；GBK 照读、不许逐字改
+{
+  writeFileSync(`${WORK}/u16.txt`, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("第一行\r\n第二行\r\n", "utf16le")]));
+  r = await post("/api/work/read", { workdir, path: "u16.txt" });
+  check(
+    "utf-16 file reads as text",
+    r.status === 200 && /第二行/.test(r.data.text) && r.data.encoding === "utf-16le",
+    JSON.stringify(r.data)
+  );
+  r = await post("/api/work/edit", { workdir, path: "u16.txt", old: "第二行", new: "改过" });
+  const raw = readFileSync(`${WORK}/u16.txt`);
+  check(
+    "editing keeps utf-16 with its BOM",
+    r.status === 200 && raw[0] === 0xff && raw[1] === 0xfe && raw.subarray(2).toString("utf16le") === "第一行\r\n改过\r\n",
+    JSON.stringify(r.data)
+  );
+  writeFileSync(`${WORK}/gbk.txt`, Buffer.from([0xc4, 0xe3, 0xba, 0xc3, 0x0a]));
+  r = await post("/api/work/read", { workdir, path: "gbk.txt" });
+  check("gbk file reads as text", r.status === 200 && /你好/.test(r.data.text) && r.data.encoding === "gbk", JSON.stringify(r.data));
+  r = await post("/api/work/edit", { workdir, path: "gbk.txt", old: "你好", new: "再见" });
+  check("gbk file is not edited in place", r.status === 400 && /GBK/.test(r.data?.error || ""), JSON.stringify(r.data));
+}
+// ---- 检索：会灾难回溯的正则两秒上下即中止，桥接不被卡死
+{
+  writeFileSync(`${WORK}/redos.txt`, `${"a".repeat(40)}b\n`);
+  const started = Date.now();
+  r = await post("/api/work/search", { workdir, query: "(a+)+$", glob: "redos.txt" });
+  check(
+    "a catastrophic regex is cut off instead of hanging the bridge",
+    r.status === 400 && /回溯/.test(r.data?.error || "") && Date.now() - started < 8000,
+    `${Date.now() - started}ms ${JSON.stringify(r.data)}`
+  );
+}
+// ---- 指令输出里大段中文：分块到达时汉字跨在两块之间，也不被劈成 �
+{
+  r = await post("/api/work/run", {
+    workdir,
+    command: win ? '1..2000 | ForEach-Object { "汉字输出第$($_)行" }' : 'for i in $(seq 1 2000); do echo "汉字输出第${i}行"; done'
+  });
+  check(
+    "long chinese output survives chunk boundaries",
+    r.status === 200 && !String(r.data.stdout).includes("�") && /第2000行/.test(r.data.stdout),
+    String(r.data?.stdout || JSON.stringify(r.data)).slice(-80)
+  );
+}
+// ---- 桥接不受理自己转出的请求：http_request / download_file 能打本机，不能借它们调桥接的执事接口、绕过请示与沙箱 ----
+{
+  const marker = `${WORK}/via-http.txt`,
+    command = win ? `Set-Content -Path "${marker}" -Value x` : `echo x > "${marker}"`;
+  for (const target of [`${BASE}/api/work/run`, `http://localhost:${PORT}/api/work/run`]) {
+    r = await post("/api/http", { url: target, method: "POST", body: { workdir, command } });
+    check(
+      `http_request cannot reach the bridge's own API (${target})`,
+      r.status === 200 && r.data.status === 403 && !existsSync(marker),
+      JSON.stringify(r.data).slice(0, 200)
+    );
+  }
+  r = await post("/api/http", {
+    url: `${BASE}/api/work/run`,
+    method: "POST",
+    headers: { "X-Yan-Outbound": "" },
+    body: { workdir, command }
+  });
+  check(
+    "the outbound mark cannot be cleared by caller headers",
+    r.status === 200 && r.data.status === 403 && !existsSync(marker),
+    JSON.stringify(r.data).slice(0, 200)
+  );
+  r = await post("/api/work/run", {
+    workdir,
+    command: `curl -s -X POST http://127.0.0.1:${PORT}/api/work/run`,
+    sandbox: true,
+    permission: "review"
+  });
+  check("sandboxed command cannot call the bridge", r.status === 400 && /本机桥接/.test(r.data?.error || ""), JSON.stringify(r.data));
+  // 本机别的服务照常能调：这正是 http_request 放行本机的用处
+  const other = http.createServer((req, res) => res.end("local-ok")).listen(0, "127.0.0.1");
+  await new Promise(resolve => other.once("listening", resolve));
+  r = await post("/api/http", { url: `http://127.0.0.1:${other.address().port}/`, method: "GET" });
+  check(
+    "http_request still reaches other local services",
+    r.status === 200 && r.data.text === "local-ok",
+    JSON.stringify(r.data).slice(0, 200)
+  );
+  other.close();
+}
 rmSync(ARCHIVE, { recursive: true, force: true });
 rmSync(WORK, { recursive: true, force: true });
 rmSync(OUTSIDE, { recursive: true, force: true });

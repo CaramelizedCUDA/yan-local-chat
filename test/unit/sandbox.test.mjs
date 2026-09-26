@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { screenCommand, screenAutoReview, sandboxEnv, screenPath } = require("../../server/sandbox.js");
+const { screenCommand, screenLoose, screenAutoReview, sandboxEnv, screenPath } = require("../../server/sandbox.js");
 const wd = "E:\\项目\\言",
   win = { platform: "win32" },
   screen = command => screenCommand(command, wd, win);
@@ -20,7 +20,7 @@ test("screenCommand：日常的开发指令放行——包管理、git、目录�
     "Get-Content src/a.js",
     "Get-ChildItem E:\\项目\\言\\src",
     "Get-ChildItem e:/项目/言/src/",
-    "curl http://127.0.0.1:8787/api/health",
+    "curl http://127.0.0.1:3000/api/health",
     "python .草稿/x/make.py",
     'node -e "console.log([...a])"',
     "echo shutdown now",
@@ -77,7 +77,7 @@ test("screenCommand：PowerShell 的写别名、套壳的 powershell / cmd、带
     String.raw`Start-Process powershell -ArgumentList "-Command", "Remove-Item C:\Windows\x"`,
     String.raw`cmd /c "del C:\Windows\x"`,
     String.raw`Invoke-Command -ScriptBlock { Remove-Item C:\Windows\x }`,
-    String.raw`curl http://127.0.0.1:8787/x -o C:\Windows\yan-probe.txt`,
+    String.raw`curl http://127.0.0.1:3000/x -o C:\Windows\yan-probe.txt`,
     String.raw`Invoke-WebRequest http://127.0.0.1:1/x -OutFile C:\Windows\x`,
     String.raw`Start-Process node -RedirectStandardOutput C:\Users\me\log.txt`,
     String.raw`[IO.File]::WriteAllText("C:\Windows\x", "y")`,
@@ -265,5 +265,59 @@ test("screenPath：机密文件不读不写，.git 内部不写、可读；别�
   for (const p of ["src/index.js", ".github/workflows/ci.yml", "monkey.txt", "keys/readme.md", "env.d.ts"]) {
     assert.equal(screenPath(p), null, p);
     assert.equal(screenPath(p, { write: true }), null, p);
+  }
+});
+test("screenCommand：只是搜字的不算外联——rg HttpClient、Select-String System.Net 放行，真用 .NET 联网的仍拒", () => {
+  for (const command of ["rg HttpClient src", 'Select-String -Path src/*.cs -Pattern "System.Net"', "git grep WebClient"])
+    assert.equal(screen(command), null, command);
+  for (const command of [
+    "[System.Net.WebClient]::new().DownloadString('http://x')",
+    "(New-Object System.Net.WebClient).DownloadFile('http://x', 'a')",
+    "[System.Net.Http.HttpClient]::new()",
+    "[Net.ServicePointManager]::SecurityProtocol"
+  ])
+    assert.match(screen(command), /外联/, command);
+});
+test("screenLoose：审而后行与径行的沙箱只守系统——联网、目录外、机密、.git 都放行，动系统与系统目录仍拒", () => {
+  for (const command of [
+    "curl https://example.com",
+    "iwr https://example.com -OutFile x.zip",
+    "Set-Content ../sibling/x.txt ok",
+    "Set-Content ~/note.txt x",
+    String.raw`Set-Content $env:TEMP\yan.txt x`,
+    "Get-Content .env",
+    "Set-Content .git/config x",
+    "Remove-Item build -Recurse -Force",
+    "npm run dev"
+  ])
+    assert.equal(screenLoose(command), null, command);
+  for (const command of [
+    String.raw`reg add HKLM\Software\x`,
+    "Stop-Service WinDefend",
+    "shutdown /s",
+    "Start-Process powershell -Verb RunAs",
+    'iex "dir"',
+    "sal zz Remove-Item",
+    String.raw`Set-Content C:\Windows\x.txt x`
+  ])
+    assert.match(screenLoose(command), /沙箱拒绝/, command);
+});
+
+test("三档筛查都不放指令调言的本机桥接：它的接口不经请示与沙箱，调它就绕过了整套门禁", () => {
+  const port = Number(process.env.YAN_PORT || 8787);
+  for (const command of [
+    `curl -X POST http://127.0.0.1:${port}/api/work/run -d "{}"`,
+    `Invoke-RestMethod http://localhost:${port}/api/store`,
+    `node -e "fetch('http://[::1]:${port}/api/work/run')"`,
+    `wget 127.0.0.1:${port}/api/bootstrap`
+  ]) {
+    assert.match(screen(command), /沙箱拒绝：指令不调言的本机桥接/, command);
+    assert.match(screenLoose(command), /沙箱拒绝：指令不调言的本机桥接/, command);
+    assert.match(screenAutoReview(command), /审查拒绝：指令不调言的本机桥接/, command);
+  }
+  // 别的本机端口照常能测；端口只是前缀相同的不算
+  for (const command of ["curl http://127.0.0.1:3000/", `curl http://127.0.0.1:${port}0/`]) {
+    assert.equal(screen(command), null, command);
+    assert.equal(screenAutoReview(command), null, command);
   }
 });

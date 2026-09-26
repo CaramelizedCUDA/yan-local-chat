@@ -22,6 +22,47 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
+/* 原生控件的明暗跟言的主题走，不跟系统：页头的 color-scheme 写的是 light dark，系统暗色时勾选框、下拉、滚动条会变成黑块 */
+:root {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+/* 勾选框与环境卡、MCP 卡上的勾同一个样子：空框，勾上是一枚朱色实心 */
+input[type="checkbox"] {
+  appearance: none;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1px solid var(--ink-3);
+  border-radius: 3px;
+  background: transparent;
+  vertical-align: -2px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+}
+input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2.5px var(--paper);
+}
+input[type="checkbox"]:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+/* 数字框不要上下箭头：值都是手填的，箭头在暗色里是两块黑 */
+input[type="number"] {
+  appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
 :root {
   --paper: #fbfaf6;
   --paper-2: #f3f0e8;
@@ -47,28 +88,42 @@ button:disabled {
   --body: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
   --title: "Noto Serif SC", "Songti SC", "STSong", serif;
 }
-.rail-icon .archive-seal {
-  width: 19px;
-  height: 19px;
-  display: grid;
-  place-items: center;
-  border: 1px solid currentColor;
-  border-radius: 2px;
-  color: var(--ink-2);
-  font: 500 11px/1 var(--title);
-  transform: rotate(-2deg);
-  transition:
-    color 0.16s,
-    transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1),
-    background-color 0.2s;
+/* 笔意图标（画法见 src/03-brush.js）：墨分两色，一片淡墨作纸，一点朱。
+   落选的：等宽圆头的线稿加实心色块（UI 图标的画法，怎么减细节都偏卡通）；卷宗一个「卷」字小印（与「工」印混在一处，认不出是入口） */
+.brush {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.library-open:hover .archive-seal,
-.library-open.active .archive-seal {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
+.brush .ink {
+  fill: color-mix(in srgb, var(--ink) 80%, var(--paper));
 }
-.library-open:hover .archive-seal {
-  transform: translateY(-1px) rotate(0);
+.brush .ink2 {
+  fill: color-mix(in srgb, var(--ink) 45%, var(--paper));
+}
+.brush .wash {
+  fill: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+.brush .zhu {
+  fill: var(--accent);
+}
+.library-open:hover .archive-icon,
+.new-chat:hover .brush {
+  transform: translateY(-1px);
+}
+.tab-btn .brush {
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
+}
+.tab-btn.active .brush,
+.tab-btn:hover .brush {
+  opacity: 1;
+}
+.settings-mark {
+  width: 28px;
+  height: 28px;
 }
 :root {
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .085 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");

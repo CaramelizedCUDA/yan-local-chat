@@ -1,11 +1,8 @@
 // 言 · 内置提示词 · 工具定义
-// 交给模型的 function 定义（OpenAI tools 格式里 function 的 description 与 parameters）。
+// 交给模型的 function 定义（OpenAI tools 格式里 function 的 description 与参数），按工具名与 src/15-tools/ 的登记对上。
 // 模型是把系统提示和这一整份一起读的：每件工具做什么、何时用、有什么不能猜的规矩，只在这里说一遍，系统提示不复述。
-// search_web / fetch_page / http_request 在桥接在线时提供；run_js 一律提供（在浏览器里的隔离沙箱跑，直连也有）；六件文件工具在桥接在线时提供（绑了目录落在工作目录，没绑落在卷宗），
-// download_file 随之；update_plan 只给行的主模型；delegate 在桥接在线且有别的工具可交给帮手时提供（帮手自己不再差遣）；
-// ask_user 对谈与执事都提供（帮手没有）；五件记忆工具在记忆启用时提供（帮手只有 recall / search_conversations / read_conversation，不能 remember / forget）；read_document 在对话带有可读文档时提供。
-// 言（对谈）的文件工具只为产出文件，不带 edit_file / search_files。带 brief 的工具用短说明——对谈的每一问都背着这份定义，越轻越好；文白相杂、能省则省。
-// 参数在页面上按这里的 schema 核对：必填项缺了不执行；有副作用的工具（run_command / write_file / edit_file / remember / forget / delegate）参数 JSON 被截断时也不执行。
+// 哪件工具在何处给出（桥接在不在、绑没绑目录、记忆开没开）、帮手与旁注能不能用，都写在登记里，这里只管说法。
+// 带 brief 的在言（对谈）里用短说明——对谈的每一问都背着这份定义，越轻越好；文白相杂、能省则省。{{docs}} 这类为运行时填入的值。
 (window.YAN_PROMPTS ||= {}).tools = {
   search_web: {
     description: "联网搜索，返回若干条标题、链接与摘要。",
@@ -14,7 +11,7 @@
 
   fetch_page: {
     description: "读网页正文（已去 HTML），多用于看某条搜索结果的详情。",
-    parameters: { type: "object", properties: { url: { type: "string", description: "完整的 http/https 地址" } }, required: ["url"] }
+    parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] }
   },
 
   http_request: {
@@ -24,7 +21,7 @@
     parameters: {
       type: "object",
       properties: {
-        url: { type: "string", description: "完整的 http/https 地址" },
+        url: { type: "string" },
         method: { type: "string", description: "GET（默认）/ POST / PUT / PATCH / DELETE / HEAD" },
         headers: { type: "object", description: '请求头，如 { "Accept": "application/json" }' },
         body: { type: "string", description: "请求体原文（JSON 请自行序列化并给 Content-Type）" }
@@ -55,8 +52,8 @@
     parameters: {
       type: "object",
       properties: {
-        url: { type: "string", description: "完整的 http/https 地址" },
-        path: { type: "string", description: "存成的文件路径，相对工作目录；省略则按网址里的文件名" }
+        url: { type: "string" },
+        path: { type: "string", description: "相对工作目录；省略则按网址里的文件名" }
       },
       required: ["url"]
     }
@@ -86,15 +83,32 @@
   },
 
   run_command: {
-    description: "在工作目录执行一条非交互式指令，返回退出码、stdout 与 stderr。改动限于工作目录，查看不限。",
+    description: "在工作目录执行一条非交互式指令（不等输入、不开编辑器或图形界面），返回退出码、stdout 与 stderr。",
     brief: "在卷宗目录执行一条非交互式指令（生成文件、检查本机），返回退出码与输出。",
     parameters: {
       type: "object",
       properties: {
         command: { type: "string", description: "要执行的指令" },
-        timeout: { type: "number", description: "超时秒数，默认 120，不设上限；耗时长的指令记得给足" }
+        timeout: { type: "number", description: "超时秒数，默认 120，不设上限；耗时长的指令记得给足" },
+        background: {
+          type: "boolean",
+          description: "开发服务器、监听构建这类不会自己结束的放后台：先回几秒输出与编号，之后用 check_command"
+        }
       },
       required: ["command"]
+    }
+  },
+
+  check_command: {
+    description: "看后台指令（run_command 的 background）：取上次之后的新输出，可先等几秒；stop 为 true 则结束它。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "后台指令的编号，如 bg1" },
+        wait: { type: "number", description: "最多等几秒再取（等到结束或输出停下），默认 0" },
+        stop: { type: "boolean", description: "结束这条后台指令" }
+      },
+      required: ["id"]
     }
   },
 
@@ -103,7 +117,7 @@
     brief: "写一个文本文件（新建或整份覆盖），目录自动创建。",
     parameters: {
       type: "object",
-      properties: { path: { type: "string", description: "相对工作目录的路径" }, content: { type: "string", description: "文件全文" } },
+      properties: { path: { type: "string", description: "相对工作目录" }, content: { type: "string" } },
       required: ["path", "content"]
     }
   },
@@ -114,9 +128,9 @@
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "相对工作目录的路径" },
-        old: { type: "string", description: "要被替换的原文" },
-        new: { type: "string", description: "替换后的文本" },
+        path: { type: "string", description: "相对工作目录" },
+        old: { type: "string", description: "原文" },
+        new: { type: "string" },
         replace_all: { type: "boolean", description: "old 出现多处时全部替换，默认 false" }
       },
       required: ["path", "old", "new"]
@@ -167,9 +181,9 @@
 
   delegate: {
     description:
-      "差遣一名帮手独立完成一件自成一段的子任务，做完回报。该用便用：通读一批文件并归纳、多路检索比对、在不熟的模块里排查、按已定方案实现互不相干的一部分、改后独立复查——量大、独立、或会读进大量与主线无关内容的活，先想差遣；一两步的事直接做。帮手有与你相同的工具与目录，但看不到这段对话：task 里写全背景、目标、边界、完成标准与回报内容。同一轮可差遣多名并行，所改文件互不重叠。",
+      "差遣一名帮手独立完成一件自成一段的子任务，做完回报。宜于量大、独立、或会读进大量与主线无关内容的活：通读一批文件并归纳、多路检索比对、在不熟的模块里排查、按已定方案实现互不相干的一部分、改后独立复查；一两步的事直接做。帮手的目录与工具同你（请示用户、记与忘除外），但看不到这段对话：task 里写全背景、目标、边界、完成标准与回报内容。活能拆成互不相干的几块时，同一轮差遣多名并行（所改文件互不重叠），差遣前一句话说拆法。",
     brief:
-      "把一件自成一段的大活（通读一批资料并归纳、多路检索比对、生成一份复杂文件）交给帮手另起一段对话独立做完后回报。帮手工具与你相同但看不到这段对话：task 里写全背景、目标、边界与回报内容。一两步的事直接做。",
+      "把一件自成一段的大活（通读一批资料并归纳、多路检索比对、生成一份复杂文件）交给帮手另起一段对话独立做完后回报。帮手看不到这段对话：task 里写全背景、目标、边界与回报内容。一两步的事直接做。",
     parameters: {
       type: "object",
       properties: {
@@ -183,7 +197,7 @@
   // 请示：下一步取决于用户的选择时弹一张小表单；对谈与执事都提供，在浏览器里完成
   ask_user: {
     description:
-      "下一步取决于用户选择时（做法各有取舍、缺信息、需求有歧义）弹一张小表单请用户选，比正文里连问省事。1–8 题（常 1–3），每题 2–4 个短选项，可并存者 multi: true；用户亦可自填。得到答复后直接继续，不复述。",
+      "拿不准便先弹一张小表单请用户选，再动手——范围、风格、交付形式、方案取舍、缺关键信息、需求有歧义；答案显然者不问。1–8 题（常 1–3），每题 2–4 个短选项，可并存者 multi: true；用户亦可自填。得到答复后照做，不复述。",
     parameters: {
       type: "object",
       properties: {
@@ -225,7 +239,7 @@
 
   forget: {
     description: "删除一条过时或有误的记忆。",
-    parameters: { type: "object", properties: { id: { type: "string", description: "条目 id（见 recall 的结果）" } }, required: ["id"] }
+    parameters: { type: "object", properties: { id: { type: "string", description: "recall 结果里的条目 id" } }, required: ["id"] }
   },
 
   recall: {
@@ -268,6 +282,32 @@
         query: { type: "string", description: "只返回包含该关键词的段落" }
       },
       required: ["name"]
+    }
+  },
+
+  // MCP 里工具多、定义重的服务按需给：模型只见目录，用时先查参数、再调用。{{directory}} 是各服务的目录
+  mcp_describe: {
+    description: "查 MCP 工具的说明与参数，调用前先查；可一次查几件。已接入、按需取用的服务与工具：\n{{directory}}",
+    parameters: {
+      type: "object",
+      properties: {
+        server: { type: "string", description: "服务名，见目录" },
+        tools: { type: "array", items: { type: "string" }, description: "要查的工具名" }
+      },
+      required: ["server", "tools"]
+    }
+  },
+
+  mcp_call: {
+    description: "调用一件 MCP 工具（服务与工具见 mcp_describe 的目录），params 照查得的参数给。",
+    parameters: {
+      type: "object",
+      properties: {
+        server: { type: "string", description: "服务名" },
+        tool: { type: "string", description: "工具名" },
+        params: { type: "object", description: "那件工具的参数" }
+      },
+      required: ["server", "tool"]
     }
   }
 };

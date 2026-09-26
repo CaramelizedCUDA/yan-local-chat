@@ -81,11 +81,6 @@
 .memory-head {
   align-items: center;
 }
-.memory-seal {
-  width: 26px;
-  height: 26px;
-  font-size: 14px;
-}
 .memory-list {
   border-top: 1px solid var(--line);
 }
@@ -352,6 +347,9 @@
   border-color: var(--danger);
 }
 .tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   padding: 8px 10px;
   border-radius: 9px;
   text-align: left;
@@ -372,10 +370,24 @@
   margin: 0 0 5px;
   font: 500 21px var(--title);
 }
+/* 设置是一张八行笺：题下一道「文武线」（一粗一细），行与行之间是朱丝栏，条目前一粒朱点；标题左边一方章印，每栏一字（与记忆页的「录」同一个样子）。
+   落选的：整块套朱色版框（框占宽度、内容挤）；一条设置一张纸条（歪斜的纸条一多就乱）；右下角垫一个极淡的大字（会被控件压住，单个的字也不好看） */
 .settings-lead {
-  margin: 0 0 24px;
+  position: relative;
+  margin: 0 0 10px;
+  padding-bottom: 16px;
   color: var(--ink-2);
   font-size: 12.5px;
+}
+.settings-lead:after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  border-top: 1.6px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-bottom: 0.8px solid color-mix(in srgb, var(--accent) 38%, transparent);
 }
 .setting-row {
   display: flex;
@@ -383,12 +395,25 @@
   justify-content: space-between;
   gap: 24px;
   padding: 15px 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.settings-lead + .setting-row {
+  border-top: 0;
 }
 .setting-copy strong {
   display: block;
-  font-size: 13px;
-  font-weight: 500;
+  font: 600 13.5px var(--title);
+}
+.setting-copy strong:before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 8px 2px 0;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0.8;
+  transform: rotate(45deg);
 }
 .setting-copy small {
   display: block;
@@ -421,7 +446,6 @@
 }
 .check input {
   margin: 0;
-  accent-color: var(--accent);
 }
 .field {
   width: 250px;
@@ -430,6 +454,8 @@
   border-radius: 8px;
   outline: none;
   background: var(--paper-2);
+  /* 填进去的值用正文墨色：不然放在淡色的说明标签里会随它变淡，与占位提示分不出来 */
+  color: var(--ink);
   font-size: 12px;
 }
 .field:focus {
@@ -442,9 +468,14 @@
   min-height: 86px;
   resize: vertical;
 }
+/* 下拉框：去掉原生的箭头，右侧一道淡墨的折线；展开的列表仍是系统的，随 color-scheme 换明暗 */
 .select {
-  appearance: auto;
-  padding-right: 6px;
+  appearance: none;
+  padding-right: 26px;
+  background: var(--paper-2)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a847a' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 10px center / 9px 6px;
+  cursor: pointer;
 }
 .profile-advanced {
   margin-top: 12px;
@@ -528,6 +559,8 @@
 }
 .danger-btn,
 .outline-btn {
+  flex: none;
+  white-space: nowrap;
   padding: 7px 11px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -588,6 +621,9 @@
   margin-top: 12px;
 }
 .profile-status {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
   margin-left: auto;
   color: var(--ink-3);
   font-size: 11px;
@@ -599,6 +635,7 @@
   background: var(--paper-2);
 }
 .segmented button {
+  white-space: nowrap;
   min-width: 62px;
   padding: 6px 9px;
   border-radius: 7px;
@@ -678,4 +715,436 @@
 .setting-directory .outline-btn {
   flex: none;
   white-space: nowrap;
+}
+
+/* 设置里的卡片列表：MCP 的各个服务、环境的各组工具。一张卡一行头（名、标签、状态、动作），下面一行说明，可展开细目或就地改 */
+.card-list {
+  display: grid;
+  /* 格子默认不肯比里面最长的一行字窄：卡里一长串包名、路径会把整张卡撑出面板 */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 14px 0 12px;
+}
+.card {
+  box-sizing: border-box;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  transition: border-color 0.2s;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.card-name {
+  font: 500 14px var(--title);
+  color: var(--ink);
+}
+.card-tag {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--ink-3);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.card-state {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-state.ok {
+  color: var(--ink-2);
+}
+.card-state.err {
+  color: var(--danger);
+}
+.card-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.card-actions .outline-btn {
+  padding: 4px 9px;
+}
+.card-sub {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--ink-3);
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-more {
+  margin-top: 6px;
+}
+.card-more > summary {
+  cursor: pointer;
+  color: var(--ink-3);
+  font-size: 11px;
+  list-style: none;
+}
+.card-more > summary::-webkit-details-marker {
+  display: none;
+}
+.card-more > summary::before {
+  content: "▸ ";
+}
+.card-more[open] > summary::before {
+  content: "▾ ";
+}
+.card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+.card-chips span {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+}
+.card-chips small {
+  margin-left: 4px;
+  color: var(--ink-3);
+  font-family: var(--body);
+}
+.card.editing {
+  border-color: var(--ink-3);
+}
+.card .profile-grid {
+  margin-top: 4px;
+}
+.card-form-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+}
+.card-form-foot .danger-btn {
+  margin-left: auto;
+}
+.card-error {
+  color: var(--danger);
+  font-size: 11px;
+}
+.card-foot {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+/* 可勾选的卡：整张可点；名称与说明在左，状态在右——空框、朱色实心（待装）、一笔勾（已装） */
+.card.pickable {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding-left: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.card.pickable:hover {
+  border-color: var(--ink-3);
+}
+.card.pickable[aria-disabled="true"] {
+  cursor: default;
+}
+.card-tick {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--ink-3);
+  border-radius: 4px;
+  transition:
+    border-color 0.18s,
+    background-color 0.18s;
+}
+.card.pickable[aria-checked="true"] .card-tick {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--paper);
+}
+.card.pickable[data-state="done"] {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+}
+.card.pickable[data-state="done"] .card-tick {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.card-tick svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.env-pack-word {
+  flex: none;
+  min-width: 2.4em;
+  color: var(--accent);
+  font-size: 11px;
+  text-align: right;
+}
+.card.pickable[data-state="drop"] .env-pack-word {
+  color: var(--ink-3);
+}
+.card-body {
+  flex: 1;
+  min-width: 0;
+}
+.card-body > span {
+  display: block;
+}
+.card-body > .card-head {
+  display: flex;
+}
+.card-note {
+  margin-top: 3px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.json-box {
+  margin-bottom: 14px;
+}
+.json-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.json-editor {
+  width: 100%;
+  min-height: 220px;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.settings-note {
+  margin-top: 14px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.settings-sub {
+  margin: 22px 0 0;
+  color: var(--ink-2);
+  font: 500 13px var(--title);
+}
+/* 环境：状态一张卡，准备中时下面滚着输出 */
+.env-log {
+  max-height: 180px;
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font:
+    11px/1.6 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.env-extra .field {
+  width: 150px;
+}
+/* 预设：表单里工具与 MCP 各一排勾选 */
+.preset-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.preset-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.preset-checks .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.preset-prompt {
+  min-height: 120px;
+}
+
+/* 文档：目录像古籍的目录页——卷次、题名、引线、提要；一篇是一页版心——顶上卷次与书口的鱼尾，步骤是小朱印，提醒写成右侧的眉批。
+   落选的：目录做成一排立着的线装书（好看，但题签竖排、篇目一多就挤，提要也放不下） */
+.guide-toc {
+  margin-top: 4px;
+}
+.guide-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+  text-align: left;
+  transition: background-color 0.16s;
+}
+.guide-row:hover {
+  background: color-mix(in srgb, var(--paper-3) 45%, transparent);
+}
+.guide-juan {
+  flex: none;
+  width: 42px;
+  color: var(--accent);
+  font: 12px var(--title);
+  letter-spacing: 0.08em;
+}
+.guide-title {
+  flex: none;
+  color: var(--ink);
+  font: 600 14px var(--title);
+}
+.guide-lead-line {
+  flex: 1;
+  min-width: 20px;
+  border-bottom: 1px dotted var(--ink-3);
+  opacity: 0.5;
+  transform: translateY(-3px);
+}
+.guide-gist {
+  flex: none;
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.guide-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font: 11px var(--title);
+  letter-spacing: 0.1em;
+}
+.guide-back {
+  color: var(--ink-2);
+  letter-spacing: 0.1em;
+}
+.guide-back:hover {
+  color: var(--accent);
+}
+.guide-fish {
+  margin-left: auto;
+  padding-right: 34px;
+  color: var(--accent);
+}
+.guide-doc h2 {
+  margin: 12px 0 4px;
+  font-size: 23px;
+}
+.guide-summary {
+  margin: 0 0 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+.guide-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  gap: 18px;
+  padding-top: 6px;
+}
+.guide-main {
+  grid-column: 1;
+}
+.guide-step h4 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 0 4px;
+  font: 600 14px var(--title);
+}
+.guide-no {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  color: var(--accent);
+  font: 11px var(--title);
+  transform: rotate(-3deg);
+}
+.guide-step p {
+  margin: 0 0 4px 29px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.85;
+}
+.guide-step code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--paper-2);
+  font-size: 11.5px;
+}
+.guide-step strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.guide-note {
+  grid-column: 2;
+  align-self: start;
+  margin-top: 12px;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  font: 11.5px/1.7 var(--title);
+}
+.guide-note b {
+  display: block;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+.guide-pager {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.guide-pager button {
+  color: var(--ink-3);
+  font: 12px var(--title);
+}
+.guide-pager button:hover {
+  color: var(--accent);
 }

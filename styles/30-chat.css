@@ -4,10 +4,15 @@
   display: flex;
   flex-direction: column;
 }
+/* 滚动条两侧都留槽：正文列才与下面的输入框同一中线（只留一侧时正文左偏半条滚动条宽）；
+   顶端渐隐 26px，滚到顶栏下的正文淡出而不是被一刀切齐。
+   留神：mask 会让里面 position: fixed 的元素改以滚动区为定位基准；全屏的可视化（.work-expanded）因此在展开时撤掉渐隐，见 90-motion-responsive.css */
 .chat-scroll {
   flex: 1;
   overflow-y: auto;
   padding: 24px 42px 145px;
+  scrollbar-gutter: stable both-edges;
+  mask-image: linear-gradient(transparent, #000 26px);
 }
 /* 原生细滚动条保持原样，只在它上面铺一层透明的宽命中区；延伸到底边，输入框盖住正文后也仍能抓住。 */
 .chat-scroll-grabber {
@@ -67,6 +72,22 @@ html.work-mode .chat-scroll-grabber {
 }
 .message {
   margin-bottom: 36px;
+}
+/* 问近其答、答远下问：问句下的复制 / 编辑浮在气泡下方不占位，问与它的答贴近，一轮与下一轮拉开。
+   原先两者都隔 36px，加上问句按钮暗占的一行，问离自己的答反比离上一答远，眼睛会把问句归给上一答 */
+#messages > .message.user {
+  position: relative;
+  margin-bottom: 26px;
+}
+#messages > .message.user > .message-actions {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin: 0 -5px 0 0;
+  padding-top: 3px; /* 用内边距而非外边距：指针从气泡挪到按钮上，中间没有失了 :hover 的缝 */
+}
+#messages > .message.assistant {
+  margin-bottom: 64px;
 }
 .message.is-new {
   animation: rise 0.32s cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -135,361 +156,6 @@ html.work-mode .chat-scroll-grabber {
   height: 12px;
   margin: 0 1px;
   background: var(--line);
-}
-.side-panel {
-  position: relative;
-  flex: none;
-  width: min(400px, 42vw);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border-left: 1px solid var(--line);
-  background: var(--paper-2);
-  animation: fadeIn 0.18s ease;
-  transition: width 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-/* 阔：铺满整页——正文让位，旁注按阅读宽度居中 */
-.side-panel.wide {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  width: auto;
-  border-left: 0;
-}
-.side-panel.wide .side-scroll {
-  padding: 22px 34px 26px;
-}
-.side-panel.wide .side-messages {
-  width: min(100%, var(--read));
-  margin: 0 auto;
-}
-.side-panel.wide .side-messages .markdown,
-.side-panel.wide .side-messages .user-bubble {
-  font-size: 14px;
-}
-.side-panel.leaving {
-  opacity: 0;
-  transition: opacity 0.17s;
-}
-.side-head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 13px 12px 10px 14px;
-  border-bottom: 1px solid var(--line);
-}
-.side-seal {
-  width: 22px;
-  height: 22px;
-  font-size: 12px;
-}
-.side-title {
-  flex: 1;
-  min-width: 0;
-}
-.side-title strong {
-  display: block;
-  font: 500 13px var(--title);
-  letter-spacing: 0.08em;
-}
-.side-title small {
-  display: block;
-  color: var(--ink-3);
-  font: 9.5px var(--title);
-  letter-spacing: 0.16em;
-}
-.side-nav {
-  margin-right: 2px;
-}
-.side-anchor {
-  display: -webkit-box;
-  width: 100%;
-  margin: 0;
-  padding: 10px 14px 10px 15px;
-  border-left: 2px solid var(--accent);
-  text-align: left;
-  color: var(--ink-2);
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--paper) 55%, transparent);
-  transition:
-    color 0.16s,
-    background 0.16s;
-}
-.side-anchor:hover {
-  color: var(--ink);
-  background: var(--paper);
-}
-.side-anchor.lost {
-  border-left-color: var(--ink-3);
-  color: var(--ink-3);
-  cursor: default;
-}
-.side-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 16px 14px 18px;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--ink-3) 28%, transparent) transparent;
-}
-.side-messages .message {
-  margin-bottom: 22px;
-}
-.side-messages .markdown {
-  font-size: 13px;
-}
-.side-messages .user-bubble {
-  font-size: 13px;
-}
-.side-messages .message-meta {
-  font-size: 10px;
-}
-.side-messages .message-actions {
-  opacity: 0.5;
-}
-/* 目录页：不列范围、不设输入；目录钮只在看某一条时出现 */
-.side-panel[data-mode="index"] .side-composer,
-.side-panel[data-mode="index"] #sideRemove {
-  display: none;
-}
-.side-tools {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 4px;
-}
-.side-tools .icon-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  font: 12px var(--title);
-  letter-spacing: 0.04em;
-}
-.side-tools #sideClose {
-  font-size: 15px;
-}
-/* 左下角回目录的箭头：与右边的模型签同一分量 */
-.side-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-right: auto;
-  padding: 3px 7px 3px 4px;
-  border-radius: 6px;
-  color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.08em;
-  transition:
-    color 0.16s,
-    background 0.16s;
-}
-.side-back span {
-  font-size: 14px;
-  line-height: 1;
-}
-.side-back:hover {
-  color: var(--ink);
-  background: var(--paper-3);
-}
-.side-index {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.side-index-item {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 10px 9px 8px;
-  border-radius: 9px;
-  text-align: left;
-  color: var(--ink-2);
-  transition: background 0.16s;
-}
-.side-index-item:hover {
-  background: var(--paper-2);
-  color: var(--ink);
-}
-.side-index-item.here {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.side-index-num {
-  flex: none;
-  width: 18px;
-  padding-top: 2px;
-  color: var(--accent);
-  font: 10.5px var(--title);
-  letter-spacing: 0.04em;
-  text-align: center;
-}
-.side-index-copy {
-  flex: 1;
-  min-width: 0;
-}
-.side-index-copy strong {
-  display: -webkit-box;
-  font: 12.5px/1.6 var(--body);
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.side-index-copy small {
-  display: block;
-  margin-top: 2px;
-  color: var(--ink-3);
-  font: 10px var(--title);
-  letter-spacing: 0.08em;
-}
-.side-index-new {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  margin: 0 0 6px;
-  padding: 8px 10px 8px 8px;
-  border: 1px dashed var(--line);
-  border-radius: 9px;
-  color: var(--ink-3);
-  font: 11.5px var(--title);
-  letter-spacing: 0.08em;
-  text-align: left;
-  transition:
-    color 0.16s,
-    border-color 0.16s;
-}
-.side-index-new span {
-  width: 18px;
-  font-size: 14px;
-  text-align: center;
-}
-.side-index-new:hover {
-  border-color: var(--accent);
-}
-.side-index-new:hover {
-  color: var(--accent);
-}
-.side-empty {
-  padding: 34px 8px;
-  text-align: center;
-  color: var(--ink-3);
-  font: 12px/1.9 var(--title);
-  letter-spacing: 0.06em;
-}
-.side-composer {
-  padding: 10px 12px 8px;
-  border-top: 1px solid var(--line);
-  background: var(--paper);
-}
-.side-composer-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-.side-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
-  color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.06em;
-}
-.side-foot .model-trigger {
-  padding: 3px 6px;
-  font-size: 11px;
-}
-.side-composer textarea {
-  flex: 1;
-  min-height: 38px;
-  max-height: 160px;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--paper);
-  resize: none;
-  outline: none;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink);
-}
-.side-composer textarea:focus {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-}
-.side-composer .send-btn {
-  width: 34px;
-  height: 34px;
-  flex: none;
-}
-mark.note-anchor {
-  background: none;
-  color: inherit;
-  text-decoration: underline dotted color-mix(in srgb, var(--accent) 70%, transparent);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-  cursor: pointer;
-  transition: text-decoration-color 0.16s;
-}
-mark.note-anchor:hover {
-  text-decoration-style: solid;
-}
-mark.note-anchor.active {
-  text-decoration: underline solid var(--accent);
-  text-decoration-thickness: 1px;
-}
-sup.note-ref {
-  display: inline-block;
-  margin: 0 1px 0 2px;
-  padding: 0 3px;
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line));
-  border-radius: 3px;
-  background: var(--paper);
-  color: var(--accent);
-  font: 9px/12px var(--title);
-  line-height: 12px;
-  vertical-align: super;
-  cursor: pointer;
-  user-select: none;
-  letter-spacing: 0;
-  transition:
-    background 0.16s,
-    color 0.16s;
-}
-sup.note-ref:hover,
-sup.note-ref.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--paper);
-}
-.note-mark {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 8px;
-  padding: 0 6px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 3px;
-  background: var(--paper);
-  color: var(--accent);
-  font: 10px/15px var(--title);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  transform: rotate(-2deg);
-  opacity: 0.85;
-  transition:
-    opacity 0.16s,
-    transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-.note-mark:hover {
-  opacity: 1;
-  transform: rotate(0);
-}
-.message.user .note-mark {
-  margin: 0 6px 6px 0;
 }
 .quote-tip:hover {
   color: var(--ink);
@@ -584,7 +250,7 @@ sup.note-ref.active {
   align-items: center;
   gap: 7px;
   height: 18px;
-  margin: -3px 0 22px;
+  margin: -3px 0 18px;
   padding-left: 10px;
   color: var(--ink-3);
   font: 11px var(--title);
@@ -692,6 +358,9 @@ sup.note-ref.active {
   display: flex;
   gap: 6px;
   margin: 2px 9px 9px 50px;
+}
+.tool-step > .approval-sandbox {
+  margin: 2px 9px 7px 50px;
 }
 .tool-approve button {
   padding: 4px 11px;
@@ -1215,7 +884,6 @@ sup.note-ref.active {
 }
 .markdown input[type="checkbox"] {
   margin: 0 0.5em 0 0;
-  accent-color: var(--accent);
   vertical-align: -1px;
 }
 .markdown blockquote {
@@ -1223,6 +891,10 @@ sup.note-ref.active {
   padding: 1px 0 1px 18px;
   border-left: 1px solid var(--line);
   color: var(--ink-2);
+}
+/* 引文里末一段的段后距留在竖线里，线就比字长出一截 */
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
 }
 .markdown code {
   padding: 0.1em 0.35em;
@@ -1242,11 +914,15 @@ sup.note-ref.active {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--paper-2);
+  /* 字号与行高定在 pre 上：只定在里头的 code 上时，每行仍被 pre 按正文字号撑出的行高（约 1.85 × 正文）拉开，代码稀得像隔行 */
+  font-size: 85%;
+  line-height: 1.65;
 }
 .markdown pre code {
   padding: 0;
   background: none;
-  line-height: 1.65;
+  font-size: 1em;
+  line-height: inherit;
 }
 .markdown a {
   color: var(--accent);

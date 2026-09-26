@@ -86,7 +86,8 @@ async function addFiles(fileList) {
       toast(`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`);
       break;
     }
-    if (attachmentUsage + file.size > MAX_ATTACHMENTS_BYTES) {
+    // 合计上限只管浏览器里的暂存；桥接在线时原件落在存储目录，不受它限
+    if (apiBase === null && attachmentUsage + file.size > MAX_ATTACHMENTS_BYTES) {
       toast(`卷宗与附件原件合计已达 ${limitLabel(MAX_ATTACHMENTS_BYTES)} 上限，请先清理`);
       break;
     }
@@ -229,7 +230,7 @@ function renderLibrary() {
   const lead = $("#libraryLead");
   if (lead)
     lead.innerHTML = disk
-      ? `常用的文件收于此处；置于案上，便随下一问送出。卷宗即本机的一个目录：<code title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</code>（可在设置里更换）；未绑目录的对话里，模型写出的文件亦落于此。${
+      ? `常用的文件收于此处；置于案上，便随下一问送出。卷宗即本机的一个目录：<code title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</code>（在存储位置里，可在设置里更换）；未绑目录的对话里，模型写出的文件亦落于此。${
           archiveScratch?.count
             ? `<span class="library-scratch">草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}<button type="button" id="libraryCleanScratch" title="清理模型留下的脚本与中间文件（${escapeHtml(bootstrap.work?.scratch || ".草稿")}）">清理</button></span>`
             : ""
@@ -333,7 +334,7 @@ async function saveToLibrary(id) {
       .flatMap(m => m.attachments || [])
       .find(file => file.id === id);
   const file = metadata && (await getAttachment(id));
-  if (!file) return toast("附件原件已不在此浏览器中");
+  if (!file) return toast("附件原件已找不到");
   if (archiveOnline()) {
     try {
       const saved = await putArchiveFile(metadata.name, file.kind === "text" ? dataUrlFromText(file.data, file.mime) : file.data);
@@ -480,7 +481,7 @@ async function viewerReader(source) {
     return { url: () => url, text: async () => (await fetched()).text(), blob: async () => (await fetched()).blob(), extracted: "" };
   }
   const file = await getAttachment(source.attachmentId);
-  if (!file) throw Error("附件原件已不在此浏览器中");
+  if (!file) throw Error("附件原件已找不到");
   const blob = file.kind === "text" ? new Blob([file.data], { type: file.mime || "text/plain" }) : await (await fetch(file.data)).blob();
   return {
     url: () => viewerBlobUrl(blob),
@@ -809,7 +810,7 @@ async function extractZipDocumentText(extension, bytes) {
 async function downloadAttachment(id) {
   try {
     const file = await getAttachment(id);
-    if (!file) return toast("附件原件已不在此浏览器中");
+    if (!file) return toast("附件原件已找不到");
     const anchor = document.createElement("a");
     let objectUrl = "";
     if (file.kind === "text") {
@@ -824,3 +825,135 @@ async function downloadAttachment(id) {
   }
 }
 // 只有本轮要回答的那条用户消息携带附件原件；更早的消息改为文本摘要，避免每轮重发图片与长文
+
+// 文件查看器与图片查看器
+function bindViewerEvents() {
+  $("#fileViewerClose").onclick = closeFileViewer;
+  $("#fileViewerDownload").onclick = downloadViewerFile;
+  $("#fileViewer").addEventListener("click", e => {
+    if (e.target.closest("[data-viewer-download]")) return downloadViewerFile();
+    if (e.target === $("#fileViewer") || e.target === $("#fileViewerStage")) closeFileViewer();
+  });
+  $("#imageViewerClose").onclick = closeImageViewer;
+  $("#imageViewerDownload").onclick = () => {
+    if (imageViewerAttachmentId) void downloadAttachment(imageViewerAttachmentId);
+    else if (imageViewerArchivePath) downloadArchiveFile(imageViewerArchivePath);
+  };
+  $("#imageViewerZoom").onclick = toggleImageViewerZoom;
+  $("#imageViewerStage").addEventListener("click", e => {
+    if (e.target === $("#imageViewerImage")) toggleImageViewerZoom();
+    else if (e.target === $("#imageViewerStage")) closeImageViewer();
+  });
+}
+
+// 卷宗：收入、检索、分类、卡片上的动作；整页拖入文件；正文里指向卷宗文件的链接与答末的成品卡
+function bindLibraryEvents() {
+  $("#fileInput").onchange = handleFiles;
+  $("#libraryAdd").onclick = () => $("#libraryFileInput").click();
+  $("#libraryFileInput").onchange = async e => {
+    await addLibraryFiles(e.target.files);
+    e.target.value = "";
+  };
+  $("#librarySearch").addEventListener("input", e => {
+    libraryQuery = e.target.value;
+    renderLibrary();
+  });
+  document.querySelectorAll("[data-library-kind]").forEach(
+    button =>
+      (button.onclick = () => {
+        libraryKind = button.dataset.libraryKind;
+        renderLibrary();
+      })
+  );
+  $("#libraryGrid").addEventListener("click", e => {
+    const disk = e.target.closest("[data-open-disk-image]");
+    if (disk) return openArchiveImage(disk.dataset.openDiskImage, disk);
+    const button = e.target.closest("[data-library-action]");
+    if (!button) return;
+    const path = button.closest("[data-library-disk]")?.dataset.libraryDisk,
+      id = button.closest("[data-library-item]")?.dataset.libraryItem,
+      action = button.dataset.libraryAction;
+    if (path) {
+      if (action === "view") void openFileViewer(path, "", button);
+      else if (action === "place") void placeFromArchive(path);
+      else if (action === "download") downloadArchiveFile(path);
+      else if (action === "remove") void removeArchiveFile(path);
+      return;
+    }
+    if (action === "place") placeFromLibrary(id);
+    else if (action === "view")
+      void openFileViewer({ attachmentId: id }, button.closest(".library-card")?.querySelector("strong")?.textContent || "", button);
+    else if (action === "download") void downloadAttachment(id);
+    else if (action === "remove") void removeFromLibrary(id);
+  });
+  $("#libraryGrid").addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (!e.target.matches?.("[data-open-disk-image]")) return;
+    e.preventDefault();
+    openArchiveImage(e.target.dataset.openDiskImage, e.target);
+  });
+  let dragHideTimer = null,
+    dragFromPage = false;
+  // 拖的是页面里自己的东西（卷宗里的图、案上的附件、答里的图片）时浏览器也会把它当文件拖入：
+  // 松手就又收一份进卷宗。页内起手的拖动一概不接——卷宗可能绑着用户自己的目录，里面本就允许有重样的文件，不能靠查重来挡
+  window.addEventListener("dragstart", () => (dragFromPage = true));
+  window.addEventListener("dragend", () => (dragFromPage = false));
+  const hasDraggedFiles = event => !dragFromPage && Array.from(event.dataTransfer?.types || []).includes("Files");
+  const showDropVeil = () => {
+    clearTimeout(dragHideTimer);
+    const toLibrary = view === "library";
+    $("#dropTitle").textContent = toLibrary ? "松手，收入卷宗" : "松手，置于案上";
+    $("#dropHint").textContent = toLibrary
+      ? archiveOnline()
+        ? "任何文件 · 落到本机的卷宗目录"
+        : `图片、文档与代码文件 · 单件不超过 ${limitLabel(MAX_FILE_BYTES)}`
+      : `图片、文档与代码文件 · 单次共 ${limitLabel(MAX_PENDING_BYTES)}`;
+    $("#dropVeil").classList.remove("hidden");
+  };
+  const hideDropVeil = () => {
+    clearTimeout(dragHideTimer);
+    $("#dropVeil").classList.add("hidden");
+  };
+  window.addEventListener("dragenter", event => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    showDropVeil();
+  });
+  window.addEventListener("dragover", event => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    showDropVeil();
+  });
+  window.addEventListener("dragleave", event => {
+    if (!hasDraggedFiles(event)) return;
+    dragHideTimer = setTimeout(hideDropVeil, 80);
+  });
+  window.addEventListener("drop", event => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    hideDropVeil();
+    void (view === "library" ? addLibraryFiles : addFiles)(event.dataTransfer.files);
+  });
+  // 正文里指向本地文件的链接（模型写的「下载《x.docx》」）：页面上没有那样的路，到卷宗里找同名的那件来下载
+  document.addEventListener("click", async event => {
+    const link = event.target.closest(".markdown a[data-file]");
+    if (!link) return;
+    event.preventDefault();
+    const name = link.dataset.file;
+    if (!archiveOnline()) return toast(`链接无处可去：「${name}」不在卷宗里`);
+    if (archiveEntries === null) await refreshArchive();
+    const entry = (archiveEntries || []).find(file => file.name === name || file.path === name);
+    if (!entry) return toast(`卷宗里没有「${name}」`);
+    downloadArchiveFile(entry.path);
+  });
+  $("#messages").addEventListener("click", event => {
+    const button = event.target.closest("[data-deliver-action]");
+    if (!button) return;
+    const path = button.closest("[data-deliver]")?.dataset.deliver;
+    if (!path) return;
+    if (deliverableMissing(path)) return toast("这件已从卷宗移除");
+    if (button.dataset.deliverAction === "download") downloadArchiveFile(path);
+    else void openFileViewer(path, "", button);
+  });
+}

@@ -20,7 +20,10 @@ const delta = (d, extra = {}) => ({
   choices: [{ index: 0, delta: d, finish_reason: null }],
   ...extra
 });
+// 长活（LONGSUB 帮手、LONGMAIN 主答）：每轮读一个大文件，请求超过 limit 字就回「放不下」；轮数记在这里，压掉的往来不影响它
+const long = { rounds: {}, folds: {}, overflows: {}, limit: { LONGSUB: 60000, LONGMAIN: 200000 } };
 let calls = 0,
+  flaky503 = 0,
   titleFailed = false,
   slowTitleFailed = false;
 // 流的末尾不带换行就结束：最后一段 data: 与 usage 都没有跟换行，页面在 EOF 时也得把它们处理掉
@@ -72,7 +75,7 @@ const anthropicMessages = (payload, res) => {
   return anthropicSse(res, [
     ["message_start", { message: { id: "msg_2", model: payload.model, usage: { input_tokens: 30 } } }],
     ...text(
-      `ANTHROPIC|sys:${String(payload.system || "").includes("今日") ? "yes" : "no"}|think:${thought?.signature === "sig-1" ? "yes" : "no"}|tools:${(payload.tools || []).length}|schema:${payload.tools?.[0]?.input_schema ? "yes" : "no"}|result:${String(results.at(-1).content).replace(/\s+/g, " ").slice(0, 30)}`
+      `ANTHROPIC|sys:${(Array.isArray(payload.system) ? payload.system.map(b => b.text).join("") : String(payload.system || "")).includes("今日") ? "yes" : "no"}|think:${thought?.signature === "sig-1" ? "yes" : "no"}|tools:${(payload.tools || []).length}|schema:${payload.tools?.[0]?.input_schema ? "yes" : "no"}|result:${String(results.at(-1).content).replace(/\s+/g, " ").slice(0, 30)}`
     ),
     ["message_delta", { delta: { stop_reason: "end_turn" }, usage: { output_tokens: 11 } }],
     ["message_stop", {}]
@@ -83,6 +86,11 @@ http
     if (req.url.endsWith("/v1/models") && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ data: [{ id: "claude-test", type: "model" }] }));
+    }
+    // 长活用例读一下：各自压过几回、撞过几回「放不下」
+    if (req.url.endsWith("/long-stats") && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(long));
     }
     // 用例读一下到目前为止收到过几次请求（探档位只探一次之类的断言）
     if (req.url.endsWith("/calls") && req.method === "GET") {
@@ -98,6 +106,15 @@ http
       const msgs = payload.messages || [],
         toolResults = msgs.filter(m => m.role === "tool");
       const lastUser = [...msgs].reverse().find(m => m.role === "user")?.content || "";
+      // 学有的中转：回传的工具调用参数逐个当 JSON 解析，有一个坏的整个请求就报错（页面得回传合法的 JSON 对象）
+      for (const call of msgs.flatMap(m => m.tool_calls || []))
+        try {
+          const value = JSON.parse(call.function.arguments);
+          if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("not an object");
+        } catch (error) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: { message: `Expecting value: ${error.message}` } }));
+        }
       // 探思考档位：页面故意送 reasoning_effort: "probe"。按模型 ID 装几种接口：
       // fake-three 只认三档；fake-plain 压根不认识这个字段；fake-mute 照单全收（中转站的样子）；其余按 OpenAI 的样子列四档
       // fake-slow 认四档，但要一秒半才回——探着它的时候换了模型，这份迟到的结果不能写到新模型上
@@ -114,6 +131,60 @@ http
           res.end(JSON.stringify({ error: { message, type: "invalid_request_error", param: "reasoning_effort" } }));
         };
         return model.includes("slow") ? setTimeout(reply, 1500) : reply();
+      }
+      // 长活：轮内压缩的请求（开头是 fold 提示）回一份笔记；其余按任务里的记号分派
+      const firstUser = String(msgs.find(m => m.role === "user")?.content || ""),
+        longKey = ["LONGSUB", "LONGMAIN"].find(k => firstUser.includes(k) && !firstUser.includes("LONGRUN"));
+      if (typeof lastUser === "string" && lastUser.startsWith("你在做下面这件事")) {
+        const key = ["LONGSUB", "LONGMAIN"].find(k => lastUser.includes(k)) || "?";
+        long.folds[key] = (long.folds[key] || 0) + 1;
+        const read = [...new Set(lastUser.match(/big\d+\.txt/g) || [])];
+        return sse(res, [delta({ content: `- 已读 ${read.join("、")}，各有 8000 字\n- 下一步：接着读` }), delta({}, { usage: { total_tokens: 9 } })]);
+      }
+      if (longKey) {
+        const size = JSON.stringify(msgs).length;
+        if (size > long.limit[longKey]) {
+          long.overflows[longKey] = (long.overflows[longKey] || 0) + 1;
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(
+            JSON.stringify({ error: { message: `This model's maximum context length is 16000 tokens. However, your messages resulted in ${Math.ceil(size / 4)} tokens.`, code: "context_length_exceeded" } })
+          );
+        }
+        const n = (long.rounds[longKey] = (long.rounds[longKey] || 0) + 1) - 1,
+          usage = { prompt_tokens: Math.ceil((size + JSON.stringify(payload.tools || []).length) / 4), completion_tokens: 20, total_tokens: 0 };
+        usage.total_tokens = usage.prompt_tokens + 20;
+        if (n < 12)
+          return sse(res, [
+            delta({ content: `读第 ${n + 1} 个。` }),
+            delta({ tool_calls: [{ index: 0, id: `call_long${n}`, type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: `big${n}.txt` }) } }] }),
+            delta({}, { usage })
+          ]);
+        const note = msgs.find(m => m.role === "assistant" && String(m.content || "").startsWith("［工作笔记］"));
+        return sse(res, [
+          delta({ content: `${longKey} done|note:${note ? "yes" : "no"}|folded:${msgs.some(m => m.role === "user" && String(m.content).includes("原文不再保留")) ? "yes" : "no"}|task:${firstUser.includes(longKey) ? "yes" : "no"}|n:${msgs.length}` }),
+          delta({}, { usage })
+        ]);
+      }
+      // 前文放不下（LONGHEAD 没填窗口、LHWIN 填了窗口）：请求超过 30000 字回「放不下」；答里写明见没见到前文摘要
+      const headKey = typeof lastUser === "string" && !lastUser.startsWith("把下面这段对话") && ["LONGHEAD", "LHWIN", "LH-SEED"].find(k => lastUser.includes(k));
+      if (headKey) {
+        const size = JSON.stringify(msgs).length;
+        if (size > 30000) {
+          long.overflows[headKey] = (long.overflows[headKey] || 0) + 1;
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: { message: `This model's maximum context length is 8000 tokens. However, your messages resulted in ${Math.ceil(size / 4)} tokens.` } }));
+        }
+        const summary = msgs.some(m => m.role === "user" && String(m.content || "").startsWith("［前文摘要］"));
+        return sse(res, [delta({ content: `${headKey} ok|summary:${summary ? "yes" : "no"}|size:${size}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
+      if (typeof lastUser === "string" && lastUser.includes("LONGRUN-SUB")) {
+        if (!toolResults.length)
+          return sse(res, [
+            delta({ content: "派一名帮手。" }),
+            delta({ tool_calls: [{ index: 0, id: "call_lr0", type: "function", function: { name: "delegate", arguments: JSON.stringify({ title: "读十二个大文件", task: "LONGSUB：依次读 big0.txt 到 big11.txt，然后回报。" }) } }] }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [delta({ content: `LONGRUN-SUB done｜${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}` }), delta({}, { usage: { total_tokens: 5 } })]);
       }
       // 带附件的一问是分段内容：正文在第一段
       const lastText = Array.isArray(lastUser) ? String(lastUser.find(part => part.type === "text")?.text || "") : lastUser;
@@ -159,6 +230,40 @@ http
         const paragraphs = Array.from({ length: 20 }, (_, i) => `第${i + 1}段，先说一句。再说一句。\n\n`);
         return sse(res, [...paragraphs.map(content => delta({ content })), delta({}, { usage: { total_tokens: 20 } })], 400);
       }
+      // MCPTEST：接入的 MCP 服务一轮全用上——逐件给的 echo（stdio）、按需给的先查再调（stdio，工具多）、HTTP 服务上会写的 write_note（要请示）；
+      // 第二轮把看到的报回去：系统提示里有没有服务自带的用法、拿到了哪几件、各结果是什么
+      if (typeof lastUser === "string" && lastUser.includes("MCPTEST")) {
+        const n = toolResults.length,
+          names = (payload.tools || []).map(t => t.function.name);
+        const tool = (index, name, args) => ({
+          index,
+          id: `call_mcp${index}`,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) }
+        });
+        if (n === 0)
+          return sse(res, [
+            delta({ content: "用一下 MCP。" }),
+            delta({
+              tool_calls: [
+                tool(0, "mcp__local__echo", { text: "你好" }),
+                tool(1, "mcp_describe", { server: "big", tools: ["tool_07"] }),
+                tool(2, "mcp_call", { server: "big", tool: "tool_07", params: { n: "7" } }),
+                tool(3, "mcp_call", { server: "big", tool: "nope", arguments: {} }),
+                tool(4, "mcp__web__write_note", { text: "记下" })
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        const system = String(msgs.find(m => m.role === "system")?.content || "");
+        const describe = payload.tools.find(t => t.function.name === "mcp_describe")?.function.description || "";
+        return sse(res, [
+          delta({
+            content: `MCPTEST|hint:${system.includes("FAKE-MCP-HINT")}|inline:${names.filter(x => x.startsWith("mcp__")).join(",")}|lazy:${names.includes("mcp_call")}|dir:${/tool_39/.test(describe)}|${toolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 80)).join(" ▸ ")}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       if (typeof lastUser === "string" && lastUser.includes("NEWTOOLS")) {
         // 新工具一轮全用上：算一段 JS、调本机服务（放行）与内网地址（该拒）、下载本机文件与内网地址、列一份计划；第二轮把各结果回显
         const n = toolResults.length;
@@ -198,6 +303,52 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // 断线后页面自动请它接着写：STREAMERR 那段每回都断（接满两回仍断，才算中断），别的接上一句收尾
+      if (typeof lastUser === "string" && lastUser.startsWith("上一条回复在此处因连接中断")) {
+        const asked = [...msgs]
+          .reverse()
+          .find(m => m.role === "user" && typeof m.content === "string" && !m.content.startsWith("上一条回复在此处因连接中断"));
+        if (String(asked?.content || "").includes("STREAMERR"))
+          return sse(res, [{ error: { message: "rate limited again (fake)", type: "rate_limit_error" } }]);
+        return sse(res, [delta({ content: "接着写完。" }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
+      // FLAKY503：前两回装作上游忙（503），页面该等一等再试，第三回接通
+      if (typeof lastUser === "string" && lastUser.includes("FLAKY503")) {
+        if (flaky503 < 2) {
+          flaky503 += 1;
+          res.writeHead(503, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: { message: "overloaded (fake)" } }));
+        }
+        return sse(res, [delta({ content: "重试后接通。" }), delta({}, { usage: { total_tokens: 6 } })]);
+      }
+      // VIZDEMO：页内可视化只剩 HTML 一条路——新写法的 yan:echarts 与 <pre class="mermaid">，旧对话里的 mermaid / echarts 围栏照样成图
+      if (typeof lastUser === "string" && lastUser.includes("VIZDEMO"))
+        return sse(res, [
+          delta({
+            content: [
+              "四种画法：",
+              "",
+              "```html",
+              '<div class="card"><h3>季度营收</h3><div id="c" style="height:240px"></div><p class="muted">单位：万元</p></div>',
+              '<script src="yan:echarts"></script>',
+              '<script>echarts.init(document.getElementById("c")).setOption({ xAxis: { data: ["一", "二", "三", "四"] }, yAxis: {}, series: [{ data: [5, 8, 6, 9] }] });</script>',
+              "```",
+              "",
+              "```html",
+              '<pre class="mermaid">graph LR; A[落墨] --> B[成图] --> C[可交互]</pre>',
+              "```",
+              "",
+              "```mermaid",
+              "graph TD; 甲-->乙; 甲-->丙",
+              "```",
+              "",
+              "```echarts",
+              '{ "xAxis": { "data": ["a", "b", "c"] }, "yAxis": {}, "series": [{ "type": "line", "data": [1, 3, 2] }], }',
+              "```"
+            ].join("\n")
+          }),
+          delta({}, { usage: { total_tokens: 9 } })
+        ]);
       if (typeof lastUser === "string" && lastUser.includes("STREAMERR"))
         // 写了半截后流里夹一条报错（限流之类）就收：页面该按「连接中断」处理、已写的留着，而不是当写完了
         return sse(res, [
@@ -492,6 +643,17 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // LONGTHINK：一长串思绪慢慢写（思绪框装不下、自己会滚），随后一句很短的正文就收尾
+      if (typeof lastUser === "string" && lastUser.includes("LONGTHINK"))
+        return sse(
+          res,
+          [
+            ...Array.from({ length: 40 }, (_, i) => delta({ reasoning_content: `第 ${i + 1} 行思绪，慢慢想。\n` })),
+            delta({ content: "LONGTHINK done" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ],
+          60
+        );
       if (typeof lastUser === "string" && lastUser.includes("EDIT")) {
         const n = toolResults.length,
           call = (name, args) => [
@@ -646,7 +808,8 @@ http
         return sse(res, [
           ...Array.from({ length: 20 }, (_, i) => delta({ reasoning_content: `答复来了，再想 ${i + 1}。` })),
           delta({
-            content: `ASK|hint:${sys.includes("ask_user") ? "yes" : "no"}|tool:${names.includes("ask_user") ? "yes" : "no"}|${String(toolResults.at(-1).content).replace(/\s+/g, " ")}${note ? `|note:${note.replace(/\s+/g, " ")}` : ""}`
+            // 「拿不准就问」写在 ask_user 自己的说明里，不在系统提示里另说一遍
+            content: `ASK|hint:${/拿不准/.test((payload.tools || []).find(t => t.function.name === "ask_user")?.function.description || "") ? "yes" : "no"}|tool:${names.includes("ask_user") ? "yes" : "no"}|${String(toolResults.at(-1).content).replace(/\s+/g, " ")}${note ? `|note:${note.replace(/\s+/g, " ")}` : ""}`
           }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);
@@ -705,6 +868,32 @@ http
             delta({}, { usage: { total_tokens: 5 } })
           ]);
         return sse(res, [delta({ content: "CHAT-AUTO done" }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
+      // ESCALATE：问而后行里发一条严的沙箱会拦的指令（.. 上溯写），用户批了便出沙箱跑；收尾把结果报回去
+      if (typeof lastUser === "string" && lastUser.includes("ESCALATE")) {
+        const lastUserIndex = msgs.findLastIndex(m => m.role === "user"),
+          results = msgs.slice(lastUserIndex + 1).filter(m => m.role === "tool");
+        if (!results.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_escalate",
+                  type: "function",
+                  function: {
+                    name: "run_command",
+                    arguments: JSON.stringify({ command: "Set-Content ../escalate-probe.txt ok; Write-Output wrote" })
+                  }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({ content: `ESCALATE done｜${String(results[0].content).replace(/\s+/g, " ").slice(0, 80)}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
       }
       if (typeof lastUser === "string" && lastUser.includes("POLICY-REVIEW")) {
         const lastUserIndex = msgs.findLastIndex(m => m.role === "user"),

@@ -1,6 +1,6 @@
 // 言 · 对话引擎：历史装配、发送、流式回合、工具定义与系统提示
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
-function summarize(text, name, label) {
+function attachmentExcerpt(text, name, label) {
   const value = String(text || "");
   return value.length > HISTORY_TEXT_CHARS
     ? `\n\n--- 附件：${name}（${label}，摘要）---\n${value.slice(0, HISTORY_TEXT_CHARS)}\n[全文共 ${value.length} 字，此前已完整发送]`
@@ -15,38 +15,18 @@ function quotedText(message) {
     .map(line => `> ${line}`)
     .join("\n")}\n\n${message.content || "请就所引用的内容作答。"}`;
 }
-// 上一答动过文件、请示过、差遣过、检索翻阅过的，压成一行带给下一问：模型才记得自己读过、改过哪些文件、查到过哪几条，不必从头再探
-// label 是方括号里的标头：进历史时写「上一答的行迹」（见 historyForApi），存卷宗与压缩转写里写「行迹」
+// 上一答动过文件、请示过、差遣过、检索翻阅过的，压成一行带给下一问：模型才记得自己读过、改过哪些文件、查到过哪几条，不必从头再探。
+// 哪些步骤带、怎么写，由各工具登记的 digest 定。label 是方括号里的标头：进历史时写「上一答的行迹」（见 historyForApi），存卷宗与压缩转写里写「行迹」
 /** @param {Message} message */
 function stepsDigest(message, label = "行迹") {
-  const steps = (message.steps || []).filter(
-    step =>
-      WORK_TOOLS.has(step.name) ||
-      ["ask_user", "delegate", "search_web", "fetch_page", "user_note", "download_file", "update_plan"].includes(step.name)
-  );
+  const steps = (message.steps || []).filter(step => TOOLS.get(step.name)?.digest);
   if (!steps.length) return "";
-  const items = steps.slice(0, 16).map(step =>
-    step.name === "user_note"
-      ? `用户补言「${String(step.note || "").slice(0, 200)}」`
-      : step.name === "ask_user"
-        ? `请示 → ${step.answers ? String(step.note || "").slice(0, 200) : "用户未作答"}`
-        : step.name === "delegate"
-          ? `差遣「${String(step.title || "").slice(0, 40)}」→ ${step.result || step.status}${subChangedPaths(step).length ? `，改了 ${subChangedPaths(step).slice(0, 8).join("、")}` : ""}`
-          : step.name === "search_web"
-            ? `检索「${String(step.title || "").slice(0, 60)}」→ ${
-                (step.results || [])
-                  .slice(0, 3)
-                  .map(r => `${String(r.title || "").slice(0, 40)}（${r.url}）`)
-                  .join("；") ||
-                step.result ||
-                step.status
-              }`
-            : step.name === "fetch_page"
-              ? `翻阅 ${String(step.title || step.url || "").slice(0, 60)}${step.url && step.title ? `（${step.url}）` : ""} → ${step.status === "done" ? "已读" : step.result || step.status}`
-              : step.name === "update_plan"
-                ? `计划 → ${(step.plan || []).map(item => `${{ done: "✓", doing: "▶", skipped: "–" }[item.status] || "○"}${item.text.slice(0, 40)}`).join("；")}`
-                : `${step.name} ${String(step.title || "").slice(0, 80)} → ${step.status === "skipped" ? "用户跳过" : step.result || step.status}`
-  );
+  const items = steps.slice(0, 16).map(step => {
+    const digest = TOOLS.get(step.name).digest;
+    return digest === true
+      ? `${step.name} ${String(step.title || "").slice(0, 80)} → ${step.status === "skipped" ? "用户跳过" : step.result || step.status}`
+      : digest(step);
+  });
   return `［${label}］${items.join("；")}${steps.length > 16 ? `；…共 ${steps.length} 步` : ""}`;
 }
 // 最新一问的文本附件能整份随消息送出的上限：按模型窗口的一成半算（没填窗口按 24k token）。超过的只给一行元数据，
@@ -92,9 +72,14 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
   /** @type {Array<Record<string, any>>} 多段内容：首段文字，其后图片与文件原件 */
   const content = [{ type: "text", text: quotedText(message) || "请查看附件。" }];
   for (const metadata of message.attachments) {
+    // 早先消息里的图片只留一行占位，用不着原件：不必每问都把它从存储目录整份取回来
+    if (!latest && metadata.kind === "image") {
+      content[0].text += `\n\n[图片：${metadata.name}，${formatFileSize(metadata.size)}，已在此前发送]`;
+      continue;
+    }
     const file = metadata.data !== undefined ? metadata : await getAttachment(metadata.id);
     if (!file) {
-      content[0].text += `\n\n[附件 ${metadata.name} 的原件在此浏览器中已不可用]`;
+      content[0].text += `\n\n[附件 ${metadata.name} 的原件已找不到]`;
       continue;
     }
     if (file.kind === "text") {
@@ -102,7 +87,7 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
         ? tooLongToInline(file.data, budget)
           ? `\n\n[附件 ${file.name}：文本 ${String(file.data).length} 字，过长未随消息附上；需要时用 read_document 按页或关键词读取]`
           : `\n\n--- 附件：${file.name} ---\n${file.data}`
-        : summarize(file.data, file.name, "文本");
+        : attachmentExcerpt(file.data, file.name, "文本");
       continue;
     }
     if (file.kind !== "image" && file.extractedText) {
@@ -110,7 +95,7 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
         ? tooLongToInline(file.extractedText, budget)
           ? `\n\n[附件 ${file.name}：本机提取文本 ${String(file.extractedText).length} 字，过长未随消息附上；需要时用 read_document 按页或关键词读取]`
           : `\n\n--- 附件：${file.name}（本机提取）---\n${file.extractedText}`
-        : summarize(file.extractedText, file.name, "本机提取");
+        : attachmentExcerpt(file.extractedText, file.name, "本机提取");
       continue;
     }
     if (!latest) {
@@ -125,6 +110,8 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
 async function sendOrStop() {
   // 作答途中：输入框里有话就是补言，递给正在作答的模型；空着才是停止
   if (conversationRunning()) return composerHasContent() ? sendSupplement() : stopGeneration();
+  // 另一个页面正在这段对话里作答：这边只跟着看，写完再说（话留在输入框里）
+  if (runningElsewhere()) return toast("这段对话正在另一个页面作答，写完后这里会跟上，再发不迟");
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
   const text = input.value.trim();
   if (!text && !pendingAttachments.length && !pendingQuote) return;
@@ -146,7 +133,7 @@ async function sendOrStop() {
   let c = currentConversation();
   if (c && !(await ensureWorkReady(c))) return;
   if (!c) {
-    const pending = (store.settings.pendingWorkdir || "").trim();
+    const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
     if (pending) {
       // 行：先把工作目录立起来，立不起来就不发
       if (profile.tools === false) {
@@ -168,10 +155,13 @@ async function sendOrStop() {
       profileId: profile.id,
       messages: [],
       workdir: pending,
-      commandPolicy: normalizeCommandPolicy(store.settings.commandPolicyDefault),
-      reasoning: store.settings.reasoning || ""
+      presetId: presetOf(null)?.id || "",
+      groupId: pendingGroup()?.id || "",
+      commandPolicy: normalizeCommandPolicy(presetOf(null)?.policy || store.settings.commandPolicyDefault),
+      reasoning: normalizeReasoning(profile.reasoning)
     };
     if (!(await ensureWorkReady(c))) return;
+    delete store.settings.pendingGroupId;
     closeChipPop();
     store.conversations.unshift(c);
     currentId = c.id;
@@ -223,8 +213,12 @@ async function startTurn(c, user, profile) {
 // 就等它说到一个自然的落点（见 watchSteer：思考写完、句尾或段落尾、代码围栏闭合）把这一轮的流停下、已写的留着，随即连同补言
 // 再请它开口——它读了这句接着写，可就此改道；正在拟工具调用或跑着工具时不停，等结果交回、模型再开口之前递上；
 // 这一答若已在收尾、不再有下一回合，就在落笔后作为新的一问送出。引导是为了答得更好，从不硬掐
-const SUPPLEMENT_PREFIX = "［用户在你作答途中补充的话］",
-  STEER_PREFIX = "［用户在你作答途中插了一句，你写到此处暂停。读后接着作答，可据此改变方向；不必重复已写的内容］";
+// 断线后请模型接着写的那句话：手点「继续生成」与自动续写共用
+const AUTO_RESUMES = 2;
+// 一轮说完、下一轮起笔前隔一个空段；这一轮什么也没说（只调了工具）就不隔，免得正文攒下一串空行
+function paragraphBreak(text) {
+  return /\S/.test(text) && !text.endsWith("\n\n") ? `${text}\n\n` : text;
+}
 function sendSupplement() {
   const c = currentConversation(),
     job = c && requestJob(c.id),
@@ -285,7 +279,7 @@ async function deliverSupplements(job, history, budget, assistant, { steer = fal
   job.queue = [];
   for (const { user, step } of queue) {
     const entry = await messageForApi(user, true, budget),
-      prefix = steer ? STEER_PREFIX : SUPPLEMENT_PREFIX;
+      prefix = prompt(steer ? "assistant.steer" : "assistant.supplement");
     if (typeof entry.content === "string") entry.content = `${prefix}${entry.content}`;
     else entry.content[0].text = `${prefix}${entry.content[0].text}`;
     history.push(entry);
@@ -422,29 +416,51 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     roundStart = 0,
     releaseQuota = () => {};
   try {
-    const contextIndex = conversation.messages.map(m => m.role).lastIndexOf("context");
-    const source = conversation.messages
-      .slice(contextIndex + 1)
-      .filter(m => m.id !== assistant.id && m.status !== "error" && ["user", "assistant"].includes(m.role));
-    const lastUserId = source.filter(m => m.role === "user").at(-1)?.id,
-      budget = inlineTextBudget(profile);
-    history = summaryMessages(contextIndex >= 0 ? conversation.messages[contextIndex] : null);
-    history.push(...(await historyForApi(source, lastUserId, budget)));
+    const budget = inlineTextBudget(profile),
+      resumeFrom = resume ? assistant.content : "";
+    let lastUserId = "";
+    // 这一问之前的历史：上次压缩的摘要、此后的往来、续写时已写的那截。开头装一次；作答途中压了前文（compactHead）再装一次
+    const buildHead = async () => {
+      const contextIndex = conversation.messages.map(m => m.role).lastIndexOf("context");
+      const source = conversation.messages
+        .slice(contextIndex + 1)
+        .filter(m => m.id !== assistant.id && m.status !== "error" && ["user", "assistant"].includes(m.role));
+      lastUserId = source.filter(m => m.role === "user").at(-1)?.id;
+      const head = summaryMessages(contextIndex >= 0 ? conversation.messages[contextIndex] : null);
+      head.push(...(await historyForApi(source, lastUserId, budget)));
+      if (resumeFrom) head.push({ role: "assistant", content: resumeFrom }, { role: "user", content: prompt("assistant.resume") });
+      return head;
+    };
+    history = await buildHead();
     // 先把这一答预计的用量记到预留里（提示 + 最大输出），别的对话同时开工时看得见；收尾时换成实际用量
     // 预留只是估个数：一答的输出按八千算，不必与接口实际的上限一致
     releaseQuota = reserveTokens(profile, estimateTokens(history) + (Number(profile.maxTokens) || 8192));
-    if (resume && assistant.content) {
-      history.push({ role: "assistant", content: assistant.content });
-      history.push({ role: "user", content: "上一条回复在此处因连接中断。请仅从中断处继续，不要重复已生成的内容。" });
-    }
+    if (profile.tools !== false) await mcpReady();
     const tools = profile.tools !== false ? toolDefinitions(conversation) : null;
+    let retrying = false;
     const overrides = {
-      systemPrompt: assistantHint(profile, tools, conversation),
+      systemPrompt: systemPrompt(conversation, tools),
       tools,
-      reasoning: conversation.reasoning || ""
+      reasoning: conversation.reasoning || "",
+      onRetry: n => {
+        retrying = true;
+        setJobLabel(conversation, job, `网络不稳 · 第 ${n} 次重试`);
+      },
+      head: history.length,
+      onFold: busy => setJobLabel(conversation, job, busy ? "上下文将满 · 整理中" : "生成中"),
+      // 放不下的是这一问之前的对话：压成摘要落成分隔（下一问也用得上），换掉 history 里这一问之前的那截
+      compactHead: async signal => {
+        const user = conversation.messages.find(m => m.id === lastUserId);
+        if (!user || !(await compactContext(conversation, { auto: true, before: user, profile, signal }))) return false;
+        const head = await buildHead();
+        history.splice(0, overrides.head, ...head);
+        overrides.head = head.length;
+        return true;
+      }
     };
     const toolCache = new Map();
-    let rounds = 0;
+    let rounds = 0,
+      resumed = 0;
     for (;;) {
       assistant.toolCalls = null;
       assistant.usage = null;
@@ -457,8 +473,30 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       job.controller.signal.addEventListener("abort", stopRound, { once: true });
       job.reading = true;
       try {
-        await readReply(profile, history, round.signal, overrides, assistant, false, () => (roundOpen = opened = true));
+        await readReply(profile, history, round.signal, overrides, assistant, false, () => {
+          roundOpen = opened = true;
+          if (retrying) setJobLabel(conversation, job, "生成中");
+          retrying = false;
+        });
       } catch (error) {
+        // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
+        if (error.midStream && !job.controller.signal.aborted && resumed < AUTO_RESUMES) {
+          resumed += 1;
+          const said = assistant.content.slice(roundStart);
+          if (roundOpen) {
+            const spent = estimateTokens(history) + estimateTokens([{ content: said }]);
+            usage.prompt_tokens += spent;
+            usage.total_tokens += spent;
+            usageKnown = steered = true;
+            roundOpen = false;
+          }
+          assistant.toolCalls = null;
+          if (said.trim()) history.push({ role: "assistant", content: said }, { role: "user", content: prompt("assistant.resume") });
+          setJobLabel(conversation, job, "网络不稳 · 稍候接着写");
+          await restFor(2000 * resumed, job.controller.signal);
+          setJobLabel(conversation, job, "生成中");
+          continue;
+        }
         if (error.name !== "AbortError" || job.controller.signal.aborted || !job.queue?.length) throw error;
         // 补言停下的：这一轮写到落点为止（花的墨按估算记上），已写的话与补言一起进历史，没执行的工具调用一律作废，随即再开一轮
         const said = trimToBoundary(assistant.content.slice(roundStart)).replace(/\n+$/, "");
@@ -474,7 +512,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
         assistant.toolCalls = null;
         if (said.trim()) history.push({ role: "assistant", content: said });
         await deliverSupplements(job, history, budget, assistant, { steer: true });
-        if (assistant.content) assistant.content += "\n\n";
+        assistant.content = paragraphBreak(assistant.content);
         continue;
       } finally {
         job.reading = false;
@@ -483,6 +521,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
         job.steerTimer = 0;
         job.controller.signal.removeEventListener("abort", stopRound);
       }
+      resumed = 0; // 接续的次数按轮算：长活跑上几百轮，前面断过两回不该让后面再断就没得接
       if (assistant.usage) {
         usageKnown = true;
         roundOpen = false;
@@ -494,9 +533,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       if (++rounds > toolRoundLimit()) {
         const said = assistant.content.slice(roundStart).trim();
         if (said) history.push({ role: "assistant", content: said });
-        history.push({ role: "user", content: "工具调用轮次已达上限，请不要再调用工具，直接根据已有结果作答，并说明尚未完成的部分。" });
+        history.push({ role: "user", content: prompt("assistant.roundLimit") });
         overrides.tools = null;
-        if (assistant.content) assistant.content += "\n\n";
+        assistant.content = paragraphBreak(assistant.content);
         continue;
       }
       // 模型请求调用工具：记录步骤、执行、把结果作为 tool 消息回传，再让模型继续；历史里只带本轮新写的正文，前几轮的已经在各自的 assistant 消息里
@@ -515,13 +554,17 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       history.push({
         role: "assistant",
         content: assistant.content.slice(roundStart) || null,
-        tool_calls: steps.map(step => ({ id: step.id, type: "function", function: { name: step.name, arguments: step.arguments } })),
+        tool_calls: steps.map(step => ({
+          id: step.id,
+          type: "function",
+          function: { name: step.name, arguments: replayArguments(step.arguments) }
+        })),
         ...(assistant.thinkingBlocks?.length ? { thinking_blocks: assistant.thinkingBlocks } : {})
       });
       const outcomes = await runSteps(steps, conversation, assistant, job.controller.signal, toolCache);
       for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
       await deliverSupplements(job, history, budget, assistant);
-      if (assistant.content) assistant.content += "\n\n";
+      assistant.content = paragraphBreak(assistant.content);
       setJobLabel(conversation, job, "生成中");
     }
     leadTrim = assistant.content.match(/^\n*/)[0].length;
@@ -533,9 +576,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       );
     assistant.status = "complete";
     conversation.updatedAt = now();
-    setTimeout(() => maybeAutoCompact(conversation), 0);
+    setTimeout(() => maybeAutoCompact(conversation, profile), 0);
     // 言里动过文件的，卷宗目录多半有了新东西：重新翻一遍，新出的、改过的成品挂在答末，侧栏的件数跟着更新
-    if (archiveBefore && allSteps(assistant).some(step => WORK_TOOLS.has(step.name))) {
+    if (archiveBefore && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) {
       await refreshArchive();
       assistant.deliverables = (archiveEntries || [])
         .filter(entry => archiveBefore.get(entry.path) !== entry.modifiedAt)
@@ -590,7 +633,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
  */
 async function readReply(profile, history, signal, overrides, target, retried = false, onOpen = null, onFrame = null) {
   target.thinkingBlocks = null;
-  const response = await requestChat(profile, history, signal, overrides);
+  // 长活：这一答的工具往来快撑满窗口了，先压掉较早的几轮再发（见 18-context-outline.js 的 keepInWindow）
+  if (!retried) await keepInWindow(profile, history, signal, overrides);
+  const response = await requestPatiently(profile, history, signal, overrides);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     // 桥接回的 error 是一句话；直连 Anthropic 回的是 { error: { message } }
@@ -603,13 +648,26 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       renderModelTriggers();
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     }
+    // 接口回说放不下：压掉这一答较早的往来再发一回；已无可压的，原样报错。429 是限流（「tokens per min」也带 token 与 limit），不算
+    if (response.status !== 429 && contextOverflow(message) && (await keepInWindow(profile, history, signal, overrides, { overflow: true })))
+      return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     throw Error(message);
   }
   onOpen?.();
   const type = response.headers.get("content-type") || "";
   // 帮手与消息的流式字段一致（content / reasoning / toolCalls / usage），readSse 按消息处理
   const sink = /** @type {Message} */ (target);
-  if (type.includes("text/event-stream")) return readSse(response, sink, { onFrame });
+  // 记下这次请求实际的提示用量，下一轮据此估算会不会撑破窗口
+  const sentAt = history.length,
+    note = () => {
+      if (Number(target.usage?.prompt_tokens) > 0) overrides.seen = { at: sentAt, tokens: Number(target.usage.prompt_tokens) };
+    };
+  if (type.includes("text/event-stream"))
+    return readSse(response, sink, { onFrame }).then(note, error => {
+      // 开了口才断的（掉线、上游掐线、静默超时）：记一笔，streamReply 据此接着写而不是整答作废
+      if (error.name !== "AbortError") error.midStream = true;
+      throw error;
+    });
   const data = await response.json(),
     message = data?.choices?.[0]?.message;
   target.content += extractContent(data);
@@ -623,51 +681,49 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       name: call.function?.name || "",
       arguments: call.function?.arguments || ""
     }));
+  note();
 }
-// 把一批工具调用跑完，返回各步回给模型的结果。相邻的只读调用一起跑（读、搜、翻网页、翻记忆彼此无关）；会改状态或要请示的按原顺序逐个来。
-// 主模型与帮手共用这一段：assistant 是页面上那条消息（帮手的步骤也画在它的行迹里）
-/**
- * @param {Conversation} conversation
- * @param {Message} assistant
- */
-async function runSteps(steps, conversation, assistant, signal, toolCache) {
-  const outcomes = new Map();
-  const runOne = async step => {
-    const stepStarted = performance.now();
-    const cacheable = !WORK_TOOLS.has(step.name) && !MEMORY_TOOLS.has(step.name) && step.name !== "delegate",
-      cacheKey = toolCacheKey(step),
-      cached = cacheable ? toolCache.get(cacheKey) : null;
-    let outcome;
-    if (cached) {
-      Object.assign(step, structuredClone(cached.presentation));
-      step.cached = true;
-      outcome = structuredClone(cached.outcome);
-      outcome.display = `复用 · ${outcome.display}`;
-    } else {
-      outcome = await runTool(step, conversation, assistant, signal);
-      // 只缓存成功的：临时的 502、超时若也缓存，模型想重试只会一直拿到同一个旧失败
-      if (cacheable && outcome.ok) toolCache.set(cacheKey, { outcome: structuredClone(outcome), presentation: toolPresentation(step) });
+// 网络一晃就断太脆：接口没接下请求时（连不上、限流、5xx、过载）等一等再试，间隔渐长，接口给了 Retry-After 就照它等；
+// 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」
+const RETRY_DELAYS = [1000, 2000, 4000, 8000];
+const retryableStatus = status => status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+/** 等 ms 毫秒（断网就等到网回来）；中途停止即抛 AbortError */
+function restFor(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(Object.assign(Error("已停止"), { name: "AbortError" }));
+    const done = () => {
+      clearTimeout(timer);
+      removeEventListener("online", wake);
+      signal?.removeEventListener("abort", stop);
+    };
+    const wake = () => {
+      done();
+      resolve(null);
+    };
+    const stop = () => {
+      done();
+      reject(Object.assign(Error("已停止"), { name: "AbortError" }));
+    };
+    const timer = setTimeout(() => (navigator.onLine ? wake() : addEventListener("online", wake, { once: true })), ms);
+    signal?.addEventListener("abort", stop, { once: true });
+  });
+}
+/** @param {Profile} profile */
+async function requestPatiently(profile, history, signal, overrides) {
+  for (let attempt = 0; ; attempt++) {
+    let wait = RETRY_DELAYS[attempt];
+    try {
+      const response = await requestChat(profile, history, signal, overrides);
+      if (response.ok || !retryableStatus(response.status) || wait === undefined) return response;
+      const after = Number(response.headers.get("retry-after"));
+      if (after > 0) wait = Math.min(after * 1000, 60000);
+      response.body?.cancel().catch(() => {});
+    } catch (error) {
+      if (error.name === "AbortError" || wait === undefined) throw error;
     }
-    const remaining = MIN_TOOL_STATUS_MS - (performance.now() - stepStarted);
-    if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
-    step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
-    step.result = outcome.display;
-    outcomes.set(step.id, String(outcome.content).slice(0, 60000));
-    refreshSteps(assistant);
-    saveStore();
-  };
-  for (let i = 0; i < steps.length; ) {
-    if (!PARALLEL_TOOLS.has(steps[i].name)) {
-      await runOne(steps[i]);
-      i += 1;
-      continue;
-    }
-    let j = i;
-    while (j < steps.length && PARALLEL_TOOLS.has(steps[j].name)) j += 1;
-    await Promise.all(steps.slice(i, j).map(runOne));
-    i = j;
+    overrides.onRetry?.(attempt + 1);
+    await restFor(wait, signal);
   }
-  return outcomes;
 }
 // opened：接口至少接下过一次请求（没接下的——400、连不上——不花墨）；partialRound：最后一轮开了头却没等到它的 usage（停止、断网），
 // 那一轮按估算补上——提示全文加上这一轮写出的字；一次 usage 都没拿到的（直连不回 usage）整答按估算
@@ -771,90 +827,63 @@ async function maybeAutoTitle(conversation, profile) {
       setTimeout(() => void maybeAutoTitle(conversation, profile), 0);
   }
 }
-// 可读的文档：对话附件、浏览器内的旧卷宗，以及（设置允许时）磁盘卷宗里的文本与 Office / PDF——后者用到时才取回并抽正文
-const ARCHIVE_DOC_EXTENSIONS = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "ods", "odp"]);
-/** @param {Conversation} conversation */
-function availableDocuments(conversation) {
-  const seen = new Map();
-  for (const file of [...(conversation?.messages || []).flatMap(m => m.attachments || []), ...store.library])
-    if (file.id && !seen.has(file.name) && (file.kind === "text" || (file.kind === "file" && file.extracted))) seen.set(file.name, file);
-  if (store.settings.archiveRead !== false && archiveOnline())
-    for (const entry of archiveEntries || []) {
-      const extension = String(entry.name).split(".").pop().toLowerCase();
-      if (seen.has(entry.name) || !(ARCHIVE_DOC_EXTENSIONS.has(extension) || isTextFile({ name: entry.name, type: "" }))) continue;
-      seen.set(entry.name, { name: entry.name, archive: entry.path, size: entry.size, modifiedAt: entry.modifiedAt, kind: "archive" });
-    }
-  return [...seen.values()];
+// 系统提示：预设的提示词在最前，其后照 prompts/assistant.js 的 order 表逐段拼——每段何时带上（给了哪件工具、言还是行、主答 / 旁注 / 帮手）写在表里；
+// 要填值、或视情形不带的，在这里给出：给 null 即这回不带。工具各自做什么、何时用，在工具说明里说，这里不重复
+/** @type {Record<string, (ctx: { conversation: Conversation, tools: Set<string>, preset: Preset|null, anchor: boolean }) => Record<string, any>|null>} */
+const PROMPT_VARS = {
+  "assistant.today": () => ({ day: formatDay(now()), iso: new Date().toISOString().slice(0, 10) }),
+  "work.hint": ctx => workVars(ctx.conversation),
+  "work.archive": ctx => workVars(ctx.conversation),
+  "work.env": () => envVars(),
+  "memory.hint": () => ({ count: store.memory.items.length }),
+  "mcp.hint": ctx => mcpHintVars(ctx.tools, ctx.preset),
+  "side.passage": ctx => (ctx.anchor ? {} : null),
+  "side.whole": ctx => (ctx.anchor ? null : {}),
+  "side.noTools": ctx => (ctx.tools.size ? null : {})
+};
+/**
+ * @param {Conversation} conversation
+ * @param {any[]|null} tools 这回交给模型的工具定义
+ * @param {{ role?: "main"|"side"|"sub", anchor?: boolean }} [options] anchor：旁注注的是划选的一段（否则是整条回复）
+ */
+function systemPrompt(conversation, tools, { role = "main", anchor = false } = {}) {
+  const preset = presetOf(conversation),
+    ctx = { conversation, tools: new Set((tools || []).map(tool => tool?.function?.name)), preset, anchor },
+    mode = isWork(conversation) ? "work" : "chat",
+    lines = [];
+  for (const section of PROMPTS.order || []) {
+    if (
+      (section.tool && !ctx.tools.has(section.tool)) ||
+      (section.mode && section.mode !== mode) ||
+      (section.roles && !section.roles.includes(role))
+    )
+      continue;
+    const vars = PROMPT_VARS[section.key] ? PROMPT_VARS[section.key](ctx) : {};
+    if (vars) lines.push(prompt(section.key, vars));
+  }
+  const own = String(preset?.prompt || "").trim();
+  return own ? `${own}\n\n${lines.join("\n")}` : lines.join("\n");
 }
-// sub：给帮手的一套——同样的工具，但不再差遣、也不请示用户
+// 执事（work.hint）与卷宗（work.archive）两段的值：目录、平台、可及范围
 /** @param {Conversation} conversation */
-function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
-  // 描述与参数说明在 prompts/tools.js；这里只决定哪些工具在此对话里可用
-  // 言（对谈）的文件工具只为产出。带 brief 的用短说明，且不带 edit_file / search_files
-  // lookup：旁注用的只查不改的一套——检索、翻网页、翻文档、翻记忆与旧谈；不动文件、不请示、不差遣、不记不忘
-  const work = isWork(conversation) && !lookup;
-  const define = (name, vars = {}) => {
-    const spec = PROMPTS.tools?.[name];
-    if (!spec) {
-      console.error(`缺少工具定义：${name}`);
-      return null;
-    }
-    const text = !work && spec.brief ? prompt(`tools.${name}.brief`, vars) : prompt(`tools.${name}.description`, vars);
-    return { type: "function", function: { name, description: text, parameters: spec.parameters } };
-  };
-  const tools = [];
-  if (apiBase !== null) tools.push(define("search_web"), define("fetch_page"));
-  // 调接口能发 POST，不算纯查阅，旁注不给；算一段 JS 在浏览器里的隔离沙箱跑，不经桥接，谁都有
-  if (apiBase !== null && !lookup) tools.push(define("http_request"));
-  tools.push(define("run_js"));
-  // 文件工具：绑了目录是执事的六件，落在工作目录；没绑是言的四件，落在卷宗；都要桥接在线。下载也落在同一处
-  if (workRoot(conversation) && !lookup)
-    tools.push(...(work ? [...WORK_TOOLS] : CHAT_FILE_TOOLS).map(name => define(name)), define("download_file"));
-  // 计划：行里给用户看的清单，只有主模型维护
-  if (work && !sub) tools.push(define("update_plan"));
-  if (!sub && !lookup) tools.push(define("ask_user"));
-  // 帮手与旁注对记忆只读：翻记忆、查旧谈可以，记与忘留给主模型
-  if (memoryEnabled())
-    tools.push(...[...MEMORY_TOOLS].filter(name => (!sub && !lookup) || !MEMORY_WRITE_TOOLS.has(name)).map(name => define(name)));
-  const docs = availableDocuments(conversation);
-  if (docs.length) tools.push(define("read_document", { docs: docs.map(d => d.name).join("、") }));
-  // 有桥接、且有别的活能交出去时才可差遣；帮手自己不再差遣
-  if (!sub && !lookup && apiBase !== null && tools.some(tool => tool && tool.function.name !== "ask_user")) tools.push(define("delegate"));
-  const usable = tools.filter(Boolean);
-  return usable.length ? usable : null;
-}
-// 附加给模型的提示：日期、目录与做法（执事的，或言里卷宗的）、联网分寸、记忆分寸、页内可视化的写法。工具各自做什么、何时用，在工具说明里说，这里不重复
-/** @param {Conversation} conversation */
-function workHint(conversation) {
+function workVars(conversation) {
   const win = (bootstrap.work?.platform || "win32") === "win32",
     shell = bootstrap.work?.shell || (win ? "PowerShell" : "sh");
-  return prompt(isWork(conversation) ? "work.hint" : "work.archive", {
+  return {
     workdir: workRoot(conversation),
     scratch: scratchRel(conversation),
-    reach: prompt(sandboxed() ? "work.reachSandbox" : roamAllowed() ? "work.reachAnywhere" : "work.reachInside"),
+    // 沙箱两档：问而后行用严的（拦下的转请用户定夺），审而后行、径行用宽的（只守系统本身）
+    reach: prompt(
+      sandboxed()
+        ? commandPolicyOf(conversation) === "ask"
+          ? "work.reachSandbox"
+          : "work.reachSandboxLoose"
+        : roamAllowed()
+          ? "work.reachAnywhere"
+          : "work.reachInside"
+    ),
     platform: win ? "Windows" : bootstrap.work?.platform || "类 Unix",
     shell,
     shellNote: win ? prompt("work.windowsShell") : ""
-  });
-}
-/**
- * @param {Profile} profile
- * @param {Conversation} conversation
- */
-function assistantHint(profile, tools, conversation = null) {
-  const lines = [
-    prompt("assistant.today", { day: formatDay(now()), iso: new Date().toISOString().slice(0, 10) }),
-    prompt("assistant.judgement")
-  ];
-  const names = new Set((tools || []).map(tool => tool?.function?.name));
-  if (names.has("run_command") && conversation) lines.push(workHint(conversation));
-  if (names.has("search_web")) lines.push(prompt("assistant.search"));
-  if (names.has("ask_user")) lines.push(prompt("assistant.asking"));
-  // 何时差遣写在工具说明里；这一句只给行——对谈里差遣是少数，不必每问都背着
-  if (names.has("delegate") && conversation && isWork(conversation)) lines.push(prompt("assistant.delegating"));
-  if (names.has("remember")) lines.push(prompt("memory.hint", { count: store.memory.items.length }));
-  lines.push(prompt("assistant.drawing"));
-  if (!conversation || !isWork(conversation)) lines.push(prompt("assistant.manner"));
-  const base = String(profile.systemPrompt || "").trim();
-  return base ? `${base}\n\n${lines.join("\n")}` : lines.join("\n");
+  };
 }

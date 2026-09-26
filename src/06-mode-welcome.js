@@ -14,10 +14,10 @@ function workMode() {
   const c = currentConversation();
   return c ? isWork(c) : !!(store.settings.pendingWorkdir || "").trim();
 }
-// 卷宗目录：设置里改过就用改过的，否则桥接给的默认位置；没绑目录的对话，工具都落在这里
+// 卷宗目录：存储根里的 卷宗/（桥接报来的位置）；没绑目录的对话，工具都落在这里
 function archiveDir() {
   if (apiBase === null) return "";
-  return (store.settings.archiveDir || "").trim() || bootstrap.work?.archive || "";
+  return bootstrap.work?.archive || "";
 }
 // 言里的草稿：卷宗下的隐藏目录 .草稿/<对话id>/，脚本与中间文件放那里，成品放根目录；卷宗页不列它
 /** @param {Conversation} c */
@@ -79,10 +79,15 @@ function renderWelcome() {
 function renderWelcomeNotice() {
   const el = $("#welcomeNotice");
   if (!el) return;
+  if (location.protocol === "file:" && apiBase === null) {
+    el.classList.remove("hidden");
+    el.innerHTML = `<span class="seal" aria-hidden="true">地</span><span>这是直接打开的本地文件页，配置与桥接页面分开保存。要查看原来的模型、对话和环境，请运行 start.cmd 并打开 ${LOCAL_BRIDGE}。</span>`;
+    return;
+  }
   const none = !profiles().length;
   el.classList.toggle("hidden", !none);
   if (!none) return;
-  el.innerHTML = `<span class="seal" aria-hidden="true">始</span><span>尚未接入模型。任何 OpenAI 兼容接口均可使用，配置只存于此浏览器。</span><button type="button" data-open-models>前往设置 →</button>`;
+  el.innerHTML = `<span class="seal" aria-hidden="true">始</span><span>尚未接入模型。任何 OpenAI 兼容接口均可使用，配置只存于本机、不经云端。</span><button type="button" data-open-models>前往设置 →</button>`;
   el.querySelector("[data-open-models]").onclick = () => openSettings("models");
 }
 // 欢迎页输入框上方的一行小签：目录签（空着是言、落在卷宗；填了是行）、新对话的三档指令权限
@@ -94,7 +99,7 @@ function pathTail(dir) {
 }
 function renderChips(work, bridged) {
   const dirChip = $("#workdirChip"),
-    pending = (store.settings.pendingWorkdir || "").trim();
+    pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
   dirChip.classList.remove("hidden");
   dirChip.querySelector(".chip-text").textContent = pending ? pathTail(pending) : bridged ? "卷宗" : "未绑定";
   dirChip.title = pending
@@ -110,6 +115,7 @@ function renderChips(work, bridged) {
   approve.querySelector(".chip-text").textContent = meta[0];
   approve.classList.toggle("on", policy !== "ask");
   approve.title = `${meta[0]}：${meta[1]}（新对话默认）`;
+  renderGroupTags();
 }
 function closeChipPop() {
   document.querySelectorAll(".chip-pop").forEach(pop => pop.remove());
@@ -222,7 +228,7 @@ function openHistoryMenu(id, anchor) {
   if (document.querySelector(`.chip-pop[data-kind=history][data-for="${CSS.escape(id)}"]`)) return closeChipPop();
   const pop = openFloatingPop(
     anchor,
-    `<button type="button" data-menu="pin">${c.pinned ? "取消置顶" : "置顶"}</button><button type="button" data-menu="rename">改名</button><button type="button" data-menu="bind">${isWork(c) ? "更换目录" : "绑定目录"}</button><button type="button" data-menu="export"><span>导出</span><small>${archiveOnline() ? "存入卷宗" : "Markdown"}</small></button><button type="button" class="danger" data-menu="delete">删除</button>`,
+    `<button type="button" data-menu="pin">${c.pinned ? "取消置顶" : "置顶"}</button><button type="button" data-menu="rename">改名</button><button type="button" data-menu="bind">${isWork(c) ? "更换目录" : "绑定目录"}</button><button type="button" data-menu="group">${groupOf(c) ? "移至他组" : "移入分组"}</button><button type="button" data-menu="export"><span>导出</span><small>${archiveOnline() ? "存入卷宗" : "Markdown"}</small></button><button type="button" class="danger" data-menu="delete">删除</button>`,
     { align: "right" }
   );
   pop.dataset.kind = "history";
@@ -236,6 +242,7 @@ function openHistoryMenu(id, anchor) {
     else if (action === "rename") startRename(id);
     else if (action === "delete") deleteConversation(id);
     else if (action === "export") void exportConversationMarkdown(c);
+    else if (action === "group") openMoveMenu(c, anchor.closest(".history-item") || anchor);
     else if (action === "bind") {
       if (c.ended) return toast("此对话已收尾，请翻页后再绑定目录");
       openWorkdirPop({
@@ -344,6 +351,13 @@ function setupChips() {
         renderHistory();
       }
     });
+  $("#welcomeGroup").onclick = () => {
+    delete store.settings.pendingGroupId;
+    saveStore();
+    renderChips(workMode(), apiBase !== null);
+    renderHeader();
+  };
+  $("#chatGroup").onclick = () => openGroupsPage(groupOf(currentConversation())?.id || null);
   $("#approveChip").onclick = () => {
     store.settings.commandPolicyDefault = nextCommandPolicy(store.settings.commandPolicyDefault);
     saveStore();
@@ -395,7 +409,11 @@ function openConversation(id) {
   const c = currentConversation();
   if (c) {
     c.unread = false;
+    // 新对话照最近看的这段用的预设，与模型一样
+    store.settings.presetId = presetOf(c)?.id || "";
     c.profileId && selectProfile(c.profileId, false);
+    // 别处可能在这段里写过而这边没察觉（报到有间隔）：读一下目录里那份，新就跟上
+    void catchUpFromDisk([c.id]);
   }
   render();
   if (isMobile()) toggleSidebar(true);
@@ -403,6 +421,8 @@ function openConversation(id) {
 async function deleteConversation(id) {
   const removed = store.conversations.find(c => c.id === id);
   if (!removed) return;
+  // 那一处还在写，删了它也会写回来
+  if (runningElsewhere(id)) return toast("这段对话正在另一个页面作答，那边停下后再删");
   if (!(await askConfirm({ title: "删除这段对话？", body: `「${removed.title}」将连同其附件一起移除，无法撤销。`, ok: "删除" }))) return;
   if (conversationRunning(id)) stopGeneration(id);
   for (const [key, job] of requestJobs)
@@ -465,13 +485,21 @@ function renameConversation(id, value) {
   }
 }
 function selectProfile(id, shouldRender = true) {
-  if (!profiles().some(p => p.id === id)) return;
+  const profile = profiles().find(p => p.id === id);
+  if (!profile) return;
   const c = currentConversation(),
     wasDry = conversationDry(c);
+  // 旧对话里已有的档位首次打开时归给它自己的模型；切到另一模型时只取新模型记住的档位。
+  const initialized = c?.profileId === id && profile.reasoning === undefined;
+  if (initialized) profile.reasoning = normalizeReasoning(c.reasoning);
+  const reasoning = normalizeReasoning(profile.reasoning);
   // 开旧对话时也走这里，多半什么都没变：没变就不整份存一遍
-  const changed = store.settings.activeProfileId !== id || (!!c && c.profileId !== id);
+  const changed = initialized || store.settings.activeProfileId !== id || (!!c && (c.profileId !== id || c.reasoning !== reasoning));
   store.settings.activeProfileId = id;
-  if (c) c.profileId = id;
+  if (c) {
+    c.profileId = id;
+    c.reasoning = reasoning;
+  }
   if (changed) saveStore();
   closeModelMenu();
   if (shouldRender) {
@@ -494,5 +522,104 @@ function syncChatScrollGrabber() {
 }
 function syncDocumentTitle() {
   const c = currentConversation();
-  document.title = view === "library" ? "卷宗 · 言" : c ? `${c.title} · 言` : "言";
+  document.title = view === "library" ? "卷宗 · 言" : view === "groups" ? "分组 · 言" : c ? `${c.title} · 言` : "言";
+  renderRunningHead(); // 标题改了（手改、拟题），书眉跟着换
+}
+
+// 侧栏的对话历史（检索、点开、改名）与正文顶上的题名
+function bindHistoryEvents() {
+  $("#historySearch").addEventListener("input", e => {
+    historyQuery = e.target.value;
+    clearTimeout(historySearchTimer);
+    historySearchTimer = setTimeout(renderHistory, 120);
+  });
+  $("#historySearch").addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      toggleHistorySearch(false);
+    }
+  });
+  $("#historySearchToggle").onclick = () => toggleHistorySearch();
+  $("#historySearchClose").onclick = () => toggleHistorySearch(false);
+  $("#history").addEventListener("dblclick", e => {
+    const item = e.target.closest("[data-conversation]");
+    if (item && !e.target.closest(".history-rename, [data-history-action]")) startRename(item.dataset.conversation);
+  });
+  $("#history").addEventListener("click", e => {
+    const toggle = e.target.closest("[data-repo-toggle]");
+    if (toggle) {
+      const dir = toggle.dataset.repoToggle,
+        set = new Set(store.settings.collapsedRepos || []);
+      set.has(dir) ? set.delete(dir) : set.add(dir);
+      store.settings.collapsedRepos = [...set];
+      saveStoreSoon();
+      renderHistory();
+      return;
+    }
+    const repo = e.target.closest("[data-history-workdir]");
+    if (repo) {
+      store.settings.pendingWorkdir = repo.dataset.historyWorkdir;
+      saveStore();
+      newChat();
+      return;
+    }
+    const item = e.target.closest("[data-conversation]");
+    if (!item) return;
+    const id = item.dataset.conversation,
+      action = e.target.closest("[data-history-action]")?.dataset.historyAction;
+    if (action === "menu") {
+      e.stopPropagation();
+      openHistoryMenu(id, e.target.closest("[data-history-action]"));
+    } else if (!e.target.closest(".history-rename")) openConversation(id);
+  });
+  $("#history").addEventListener("keydown", e => {
+    const input = e.target.closest(".history-rename");
+    if (!input) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // Enter 本身就是明确提交；也照顾脚本/输入法最后一拍尚未来得及冒 input 事件的情形。
+      renamingDirty = true;
+      commitRename(input.value);
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      renamingId = null;
+      renamingDirty = false;
+      renderHistory();
+    }
+  });
+  $("#history").addEventListener("input", e => {
+    if (e.target.closest(".history-rename") && renamingId) renamingDirty = true;
+  });
+  $("#history").addEventListener("focusout", e => {
+    const input = e.target.closest(".history-rename");
+    if (input && renamingId && !renderingHistory) commitRename(input.value);
+  });
+  const title = $("#chatTitle");
+  let titleDirty = false,
+    titleCanceled = false;
+  title.addEventListener("focus", () => {
+    titleDirty = false;
+    titleCanceled = false;
+  });
+  title.addEventListener("input", () => (titleDirty = true));
+  title.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      title.blur();
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      titleCanceled = true;
+      title.textContent = currentConversation()?.title || "";
+      title.blur();
+    }
+  });
+  title.addEventListener("blur", () => {
+    const c = currentConversation();
+    if (!c) return;
+    const value = title.textContent.replace(/\s+/g, " ").trim();
+    if (!titleCanceled && titleDirty && value && value !== c.title) renameConversation(c.id, value);
+    else title.textContent = c.title;
+    titleDirty = false;
+    titleCanceled = false;
+  });
 }

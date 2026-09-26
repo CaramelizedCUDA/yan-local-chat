@@ -1,24 +1,38 @@
-// 对话的正本在本机的对话目录里（一段一个 JSON 文件）：旧版整份 localStorage 记录拆开迁走；改了会落盘、改名文件跟着改名、删了文件就没了；
-// 清空浏览器后从目录恢复对话与设置；导入旧版备份先按启动时同一套迁移规整
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { connect, check, sleep, PAGE, TMP } from "./lib.mjs";
-const CHATS = `${TMP}/chats`;
-const CUSTOM_CHATS = `${TMP}/chats-custom`;
+// 存储根（测试里是 .tmp/.yan）：对话一段一个 JSON 文件落在 对话/，配置（含 API Key）落在 配置.json，几个浏览器共用。
+// 旧版整份 localStorage 记录拆开迁走；改了会落盘、改名文件跟着改名、删了文件就没了；清空浏览器后从存储根恢复对话与配置；
+// 另一个浏览器头一回碰上这个根，两边的模型配置并起来；存储位置换到别处整份拷过去、再换回来用回原来的；导入旧版备份先按启动时同一套迁移规整
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { connect, check, sleep, PAGE, TMP, HOME, CHATS } from "./lib.mjs";
+const ELSEWHERE = `${TMP}/elsewhere`;
+const native = p => p.split("/").join(process.platform === "win32" ? "\\" : "/");
 const { send, evalJs, waitFor, close } = await connect();
-const filesAt = dir => (existsSync(dir) ? readdirSync(dir).filter(name => name.endsWith(".json") && name !== "设置.json") : []);
+const filesAt = dir =>
+  existsSync(dir) ? readdirSync(dir).filter(name => name.endsWith(".json") && name !== "设置.json" && name !== "删除记录.json") : [];
 const files = () => filesAt(CHATS);
 const readFile = name => JSON.parse(readFileSync(`${CHATS}/${name}`, "utf8"));
 const readRecords = `new Promise((resolve, reject) => { const q = indexedDB.open("yan-chat-state-v1", 2); q.onerror = () => reject(q.error); q.onsuccess = () => { const r = q.result.transaction("conversations", "readonly").objectStore("conversations").getAll(); r.onerror = () => reject(r.error); r.onsuccess = () => { q.result.close(); resolve(r.result); }; }; })`;
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
 // 上一个用例的页面离开时还会补写一两笔（对话、设置镜像），到这里它已经卸载了：把目录清干净再开始
-for (const dir of [CHATS, CUSTOM_CHATS])
+for (const dir of [CHATS, ELSEWHERE])
   for (let i = 0; i < 20 && existsSync(dir); i++) {
     try {
       rmSync(dir, { recursive: true, force: true });
     } catch {}
     if (existsSync(dir)) await sleep(150);
   }
+mkdirSync(`${HOME}/环境`, { recursive: true });
+writeFileSync(
+  `${HOME}/环境/已备.json`,
+  JSON.stringify({
+    python: "Python 3.12",
+    packs: ["python", "data", "office", "web", "image", "media", "node", "c", "go", "rust", "java"],
+    pip: [],
+    npm: [],
+    mirror: "china",
+    at: new Date().toISOString()
+  })
+);
 const seed = {
   version: 5,
   settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false },
@@ -84,52 +98,69 @@ check(
   (await evalJs(`(async () => (await (${readRecords})).length)()`)) === 0
 );
 check("history shows it", await evalJs(`document.querySelector("#history").textContent.includes("数据库里的长对话")`));
-const readMirror = () => {
+const readConfig = (root = HOME) => {
   try {
-    return JSON.parse(readFileSync(`${CHATS}/设置.json`, "utf8"));
+    return JSON.parse(readFileSync(`${root}/配置.json`, "utf8"));
   } catch {
     return null;
   }
 };
 t = Date.now();
-while (Date.now() - t < 6000 && readMirror()?.memory?.items?.[0]?.text !== "用户爱喝茶") await sleep(150);
-const mirrored = readMirror();
+while (Date.now() - t < 6000 && readConfig()?.memory?.items?.[0]?.text !== "用户爱喝茶") await sleep(150);
+const config = readConfig();
 check(
-  "settings are mirrored to the directory without API keys",
-  mirrored?.settings?.name === "测" &&
-    mirrored?.profiles?.[0]?.model === "fake" &&
-    !("apiKey" in (mirrored?.profiles?.[0] || {})) &&
-    mirrored?.memory?.items?.[0]?.text === "用户爱喝茶",
-  JSON.stringify(mirrored && Object.keys(mirrored))
+  "the config lands in 配置.json with the API key (browsers share it)",
+  config?.settings?.name === "测" &&
+    config?.profiles?.[0]?.model === "fake" &&
+    config?.profiles?.[0]?.apiKey === "k" &&
+    config?.memory?.items?.[0]?.text === "用户爱喝茶",
+  JSON.stringify(config && Object.keys(config))
 );
-// ---- 设置里的对话目录：当前对话复制到新目录；切回默认后仍能继续用，旧目录不被删除
-const customNative = CUSTOM_CHATS.split("/").join(process.platform === "win32" ? "\\" : "/");
+// ---- 存储位置：换到别处，整份（对话与配置）拷过去；再换回来，用回原来的那份；拷走的那份原样留着
 await evalJs(`document.querySelector("#openSettings").click(); true`);
 await sleep(200);
-await evalJs(
-  `(i => { i.value = ${JSON.stringify(customNative)}; i.dispatchEvent(new Event("input")); })(document.querySelector("#settingChats")); true`
+await evalJs(`document.querySelector('[data-tab="env"]').click(); true`);
+await waitFor(`document.querySelector("#envStatus")?.textContent.includes("已备好")`, 5000);
+await evalJs(`document.querySelector("#envPrepare").click(); true`);
+await waitFor(`!document.querySelector("#confirmModal").classList.contains("hidden")`, 3000);
+check(
+  "updating an environment would confirm before removing installed packs",
+  await evalJs(`document.querySelector("#confirmTitle").textContent.includes("卸载")`)
 );
+await evalJs(`document.querySelector("#confirmCancel").click(); document.querySelector('[data-tab="general"]').click(); true`);
+await evalJs(
+  `(i => { i.value = ${JSON.stringify(native(ELSEWHERE))}; i.dispatchEvent(new Event("change")); })(document.querySelector("#settingStore")); true`
+);
+const moved = `${ELSEWHERE}/.yan`;
 t = Date.now();
-while (
-  Date.now() - t < 10000 &&
-  (!filesAt(CUSTOM_CHATS).some(name => name.startsWith("数据库里的长对话·")) || !existsSync(`${CUSTOM_CHATS}/设置.json`))
-)
+while (Date.now() - t < 10000 && !(filesAt(`${moved}/对话`).some(name => name.startsWith("数据库里的长对话·")) && readConfig(moved)))
   await sleep(150);
 check(
-  "changing the chats directory copies current conversations there",
-  filesAt(CUSTOM_CHATS).some(name => name.startsWith("数据库里的长对话·")) &&
-    (await evalJs(`__yanState().settings.chatsDir`)).toLowerCase() === customNative.toLowerCase(),
-  JSON.stringify(filesAt(CUSTOM_CHATS))
+  "moving the storage copies conversations and config under <place>/.yan",
+  filesAt(`${moved}/对话`).some(name => name.startsWith("数据库里的长对话·")) && readConfig(moved)?.profiles?.[0]?.apiKey === "k",
+  JSON.stringify(filesAt(`${moved}/对话`))
 );
-const customMirror = JSON.parse(readFileSync(`${CUSTOM_CHATS}/设置.json`, "utf8"));
+await waitFor(`(document.querySelector("#settingStore")?.value || "").toLowerCase().includes("elsewhere")`, 5000).catch(() => {});
 check(
-  "the custom chats directory receives the settings mirror without API keys",
-  customMirror.settings?.chatsDir?.toLowerCase() === customNative.toLowerCase() &&
-    !customMirror.profiles?.some(profile => "apiKey" in profile)
+  "settings now show the new place",
+  (await evalJs(`document.querySelector("#settingStore").value`)).toLowerCase().includes("elsewhere")
 );
-await evalJs(`(i => { i.value = ""; i.dispatchEvent(new Event("input")); })(document.querySelector("#settingChats")); true`);
-await waitFor(`!__yanState().settings.chatsDir`, 10000);
-check("clearing the custom chats directory restores the default without deleting the old copy", existsSync(CUSTOM_CHATS));
+await evalJs(`document.querySelector('[data-tab="env"]').click(); true`);
+await waitFor(`document.querySelector("#envStatus")?.textContent.includes("尚未准备")`, 5000);
+check(
+  "moving storage refreshes the environment status for the new root",
+  await evalJs(`document.querySelector("#envStatus")?.textContent.includes("尚未准备")`)
+);
+await evalJs(`document.querySelector('[data-tab="general"]').click(); true`);
+await evalJs(
+  `(i => { i.value = ${JSON.stringify(native(TMP))}; i.dispatchEvent(new Event("change")); })(document.querySelector("#settingStore")); true`
+);
+// 等搬回来的那一次真正收尾（输入框是测试自己改的，不能拿它当信号）
+await waitFor(`(document.querySelector("#toast")?.textContent || "").includes("原有的数据")`, 10000).catch(() => {});
+check(
+  "moving back uses the original storage and leaves the copy in place",
+  !(await evalJs(`document.querySelector("#settingStore").value`)).toLowerCase().includes("elsewhere") && existsSync(`${moved}/配置.json`)
+);
 await evalJs(`document.querySelector("#closeSettings").click(); true`);
 await sleep(200);
 // ---- 改名：文件跟着改名；对话内容变了：落盘的时间戳往前走
@@ -199,6 +230,129 @@ check(
     `document.querySelector("#history").textContent.includes("改过名的对话") && __yanState().settings.name === "测" && __yanState().memory.items[0]?.text === "用户爱喝茶" && __yanState().profiles[0]?.model === "fake"`
   )
 );
+// ---- 另一个浏览器：本地有自己的一套模型（带版本标记，是正常用过的），头一回碰上这个存储根——两边并起来，写回 配置.json
+await send("Page.navigate", { url: PAGE + "preview.html" });
+await sleep(400);
+const other = {
+  version: 5,
+  settings: { name: "另一处", theme: "light", inkMotion: "off", activeProfileId: "p2", autoTitle: false },
+  profiles: [
+    {
+      id: "p2",
+      source: "custom",
+      name: "另一个模型",
+      model: "other",
+      baseUrl: "http://127.0.0.1:8798/v1",
+      apiKey: "k2",
+      temperature: 0.7,
+      quota: "",
+      usedTokens: 0,
+      systemPrompt: ""
+    }
+  ],
+  library: [],
+  memory: {
+    enabled: true,
+    items: [{ id: "m2", text: "另一处记下的", createdAt: "2026-01-02T00:00:00.000Z", updatedAt: "2026-01-02T00:00:00.000Z", source: null }]
+  },
+  drafts: {},
+  __yanStorage: { revision: 1, split: true, pendingDeletes: [] }
+};
+await evalJs(
+  `(async () => { localStorage.clear(); localStorage.setItem("yan-chat-v1", ${JSON.stringify(JSON.stringify(other))}); await new Promise(r => { const q = indexedDB.deleteDatabase("yan-chat-state-v1"); q.onsuccess = q.onerror = q.onblocked = r; }); return true; })()`
+);
+await send("Page.navigate", { url: PAGE });
+await sleep(1500);
+t = Date.now();
+while (Date.now() - t < 6000 && (readConfig()?.profiles || []).length < 2) await sleep(150);
+const joined = await evalJs(
+  `(s => ({ profiles: s.profiles.map(p => p.id).sort().join(), memory: s.memory.items.map(m => m.id).sort().join() }))(__yanState())`
+);
+check(
+  "a second browser meeting this storage merges its own models and memory with the shared config",
+  joined.profiles === "p1,p2" &&
+    joined.memory === "m1,m2" &&
+    (readConfig()?.profiles || [])
+      .map(p => p.id)
+      .sort()
+      .join() === "p1,p2",
+  JSON.stringify([joined, (readConfig()?.profiles || []).map(p => p.id)])
+);
+// ---- 两个浏览器同开：另一处刚往 配置.json 里加了模型，这边随后改个设置，不能拿自己手上的旧配置把它盖掉；
+// 只存对话、配置没变时，配置.json 一个字也不动
+{
+  const mtime = statSync(`${HOME}/配置.json`).mtimeMs;
+  await evalJs(
+    `(() => { __yanState().conversations[0] && (__yanState().conversations[0].updatedAt = new Date().toISOString()); __yanSave(); return true; })()`
+  );
+  await sleep(1800);
+  check("saving conversations without a config change leaves 配置.json alone", statSync(`${HOME}/配置.json`).mtimeMs === mtime);
+  const disk = readConfig();
+  disk.profiles.push({
+    id: "p3",
+    source: "custom",
+    name: "另一处刚加的",
+    model: "m3",
+    baseUrl: "http://127.0.0.1:8798/v1",
+    apiKey: "k3",
+    temperature: 0.7,
+    quota: "",
+    usedTokens: 0,
+    systemPrompt: ""
+  });
+  disk.savedAt = Date.now() + 5000;
+  writeFileSync(`${HOME}/配置.json`, JSON.stringify(disk));
+  await evalJs(`(() => { __yanState().settings.name = "这边改的名"; __yanSave(); return true; })()`);
+  t = Date.now();
+  while (Date.now() - t < 8000 && readConfig()?.settings?.name !== "这边改的名") await sleep(150);
+  const after = readConfig();
+  check(
+    "a config change here merges with one just written elsewhere instead of overwriting it",
+    after?.settings?.name === "这边改的名" && (after?.profiles || []).some(p => p.id === "p3" && p.apiKey === "k3"),
+    JSON.stringify({ name: after?.settings?.name, profiles: (after?.profiles || []).map(p => p.id) })
+  );
+  check("the page takes in the model added elsewhere", await evalJs(`__yanState().profiles.some(p => p.id === "p3")`));
+}
+// ---- 浏览器只丢了同步基准：旧缓存不能把磁盘里更多的环境选择写回默认三项
+{
+  await send("Page.navigate", { url: PAGE + "preview.html" });
+  await sleep(400);
+  const disk = readConfig();
+  disk.settings.env.packs = ["data", "office", "web", "image", "media", "node", "c", "go", "rust", "java"];
+  disk.savedAt = Date.now() + 5000;
+  writeFileSync(`${HOME}/配置.json`, JSON.stringify(disk));
+  await evalJs(
+    `(() => { const old = JSON.parse(localStorage.getItem("yan-chat-v1")); old.settings.env.packs = ["data", "office", "web"]; localStorage.setItem("yan-chat-v1", JSON.stringify(old)); localStorage.removeItem("yan-config-base"); return true; })()`
+  );
+  await send("Page.navigate", { url: PAGE });
+  await sleep(1800);
+  check(
+    "missing config merge base keeps the disk's installed tool selections",
+    readConfig()?.settings?.env?.packs?.length === 10 && (await evalJs(`__yanState().settings.env.packs.length`)) === 10
+  );
+}
+// ---- 旧版无标记缓存碰到已存在的配置，也不能强制清掉磁盘独有的模型和环境选择
+{
+  await send("Page.navigate", { url: PAGE + "preview.html" });
+  await sleep(400);
+  await evalJs(
+    `(() => { const old = JSON.parse(localStorage.getItem("yan-chat-v1")); old.profiles = old.profiles.filter(p => p.id === "p1"); old.settings.env.packs = ["data", "office", "web"]; delete old.__yanStorage; localStorage.setItem("yan-chat-v1", JSON.stringify(old)); localStorage.removeItem("yan-config-base"); return true; })()`
+  );
+  await send("Page.navigate", { url: PAGE });
+  await sleep(1800);
+  check(
+    "legacy local cache cannot replace the disk's profiles and tool selections",
+    readConfig()?.settings?.env?.packs?.length === 10 && readConfig()?.profiles?.some(p => p.id === "p3")
+  );
+}
+// ---- 配置保存遇到临时故障：页面提示，并且桥接恢复后自动补写，不等下一次手工修改
+await evalJs(
+  `(() => { const real = window.fetch.bind(window); let failed = false; window.fetch = (...args) => { if (!failed && String(args[0]).includes("/api/store/config/save")) { failed = true; return Promise.resolve(new Response('{"error":"临时故障"}', { status: 503, headers: { "Content-Type": "application/json" } })); } return real(...args); }; __yanState().settings.name = "重试后的名"; __yanSave(); return true; })()`
+);
+await waitFor(`document.querySelector("#toast")?.textContent.includes("配置尚未写入")`, 5000);
+t = Date.now();
+while (Date.now() - t < 12000 && readConfig()?.settings?.name !== "重试后的名") await sleep(150);
+check("a failed config save is reported and retried", readConfig()?.settings?.name === "重试后的名");
 // ---- 删对话：即使旧保存已经发出、尚未返回，删除也等它收尾后最后落锤，文件不会复活
 await evalJs(`document.querySelector('[data-conversation="stored-chat"] .history-open').click(); true`);
 await sleep(150);
@@ -265,4 +419,5 @@ check(
   files().some(name => name.startsWith("旧备份里的对话·")),
   JSON.stringify(files())
 );
+rmSync(ELSEWHERE, { recursive: true, force: true });
 close();

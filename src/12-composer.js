@@ -13,13 +13,20 @@ function sealGlyph(button, running) {
 }
 // 作答途中：案上空着，印是「止」；写了话，印又成「寄」——寄出去的是补言，递给正在作答的模型，它读了就改道
 function renderSendButtons() {
-  const running = conversationRunning(),
+  const elsewhere = runningElsewhere(),
+    running = conversationRunning() || elsewhere,
     ended = conversationDry(currentConversation()),
     has = composerHasContent(),
     stop = running && !has;
   document.querySelectorAll(".send-trigger").forEach(b => {
     sealGlyph(b, stop);
-    b.title = stop ? "停止生成" : running ? "插言引路：模型说到落点便读这句，可就此改道" : "发送";
+    b.title = elsewhere
+      ? "另一个页面正在这段对话里作答，这里跟着看"
+      : stop
+        ? "停止生成"
+        : running
+          ? "插言引路：模型说到落点便读这句，可就此改道"
+          : "发送";
     b.classList.toggle("stop-btn", stop);
     b.classList.toggle("empty", !running && !has);
     b.disabled = !running && ended;
@@ -69,7 +76,7 @@ function closeImageViewer() {
 async function openImageViewer(id, trigger = null) {
   try {
     const file = await getAttachment(id);
-    if (!file) return toast("图片原件已不在此浏览器中");
+    if (!file) return toast("图片原件已找不到");
     if (file.kind !== "image") return openFileViewer({ attachmentId: id }, file.name, trigger);
     imageViewerAttachmentId = id;
     imageViewerArchivePath = null;
@@ -376,7 +383,6 @@ function applyAppearance() {
   if (html.classList.contains("theme-fade")) themeFadeTimer = setTimeout(() => html.classList.remove("theme-fade"), 480);
   html.dataset.theme = nextTheme;
   html.dataset.inkMotion = inkMotion === "off" || (inkMotion === "system" && reducedMotion.matches) ? "off" : "on";
-  if (window.mermaid) setupMermaid();
   document.documentElement.style.setProperty("--read", `${Number(width) || 760}px`);
   document.documentElement.style.setProperty("--accent", accent || "#9b5540");
   const root = document.documentElement.style,
@@ -384,6 +390,7 @@ function applyAppearance() {
   html.dataset.font = FONT_STACKS[font] ? font : "mixed";
   root.setProperty("--body", stacks.body);
   root.setProperty("--title", stacks.title);
+  rethemeHtmlApps();
 }
 // 字体档。--title 是读的字（回复正文、标题、印），--body 是界面的字（侧栏、输入、设置）：混排（默认）界面黑、读宋；黑与宋是通体一种；
 // 楷与仿宋只换读的字，界面仍是黑——楷与仿宋清瘦，小字号的界面用它费眼。楷与仿宋取自系统（Windows 的 KaiTi / FangSong，
@@ -399,3 +406,99 @@ const FONT_STACKS = {
   kai: { body: SANS, title: KAI },
   fangsong: { body: SANS, title: FANGSONG }
 };
+
+// 输入：欢迎页的提示词、两处输入框（回车发送、粘贴图片）、输入区高度、引文
+function bindComposerEvents() {
+  const welcomeInput = $("#welcomeInput"),
+    restPlaceholder = welcomeInput.placeholder;
+  chatSuggestionsHtml = $("#welcome .suggestions").innerHTML;
+  bindSuggestions = () =>
+    document.querySelectorAll(".suggestion").forEach(button => {
+      const prompt = button.dataset.prompt || button.textContent;
+      button.onclick = () => {
+        welcomeInput.value = prompt;
+        welcomeInput.placeholder = restPlaceholder;
+        welcomeInput.classList.remove("previewing");
+        grow(welcomeInput);
+        persistDraft();
+        welcomeInput.focus();
+        const start = prompt.indexOf("（"),
+          end = start < 0 ? prompt.length : prompt.indexOf("）", start) + 1;
+        welcomeInput.setSelectionRange(start < 0 ? prompt.length : start, end);
+      };
+      // 预览只占一行：取提示词首句并加省略号，不撑高输入框、不推挤按钮
+      const preview = `${prompt.split(/\r?\n/)[0].slice(0, 60)}…`;
+      button.addEventListener("pointerenter", () => {
+        if (welcomeInput.value) return;
+        welcomeInput.placeholder = preview;
+        welcomeInput.classList.add("previewing");
+      });
+      button.addEventListener("pointerleave", () => {
+        if (welcomeInput.placeholder === preview) {
+          welcomeInput.placeholder = restPlaceholder;
+          welcomeInput.classList.remove("previewing");
+        }
+      });
+    });
+  bindSuggestions();
+  [$("#welcomeInput"), $("#chatInput")].forEach(input => {
+    input.addEventListener("input", () => {
+      grow(input);
+      persistDraft();
+      renderSendButtons();
+    });
+    input.addEventListener("keydown", e => {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const waiting = input.id === "chatInput" && !input.value.trim() ? pendingApprovalHere() : null;
+        if (waiting) return approveByEnter(waiting);
+        sendOrStop();
+      }
+    });
+    input.addEventListener("paste", e => {
+      const images = Array.from(e.clipboardData?.files || []).filter(file => file.type.startsWith("image/"));
+      if (!images.length) return;
+      e.preventDefault();
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "").slice(4);
+      void addFiles(
+        images.map(
+          (file, index) =>
+            new File(
+              [file],
+              `粘贴图片-${stamp}${images.length > 1 ? `-${index + 1}` : ""}.${file.type.split("/")[1]?.replace("jpeg", "jpg") || "png"}`,
+              { type: file.type }
+            )
+        )
+      );
+    });
+  });
+  // 输入框上方多了请示条、帮手条与改动摘要，正文底部留白随之增减，末句不被盖住
+  if ("ResizeObserver" in window)
+    new ResizeObserver(() => {
+      const area = $("#composerArea");
+      if (area && !area.classList.contains("hidden")) {
+        $("#chatScroll").style.paddingBottom = `${area.offsetHeight + 16}px`;
+        document.documentElement.style.setProperty("--composer-h", `${area.offsetHeight}px`);
+        syncChatScrollGrabber();
+      }
+    }).observe($("#composerArea"));
+  $("#composerQuoteClose").onclick = () => {
+    pendingQuote = null;
+    renderQuote();
+    persistDraft();
+    $("#chatInput").focus();
+  };
+  $("#messages").addEventListener("click", event => {
+    const block = event.target.closest(".user-quote");
+    if (!block) return;
+    const source =
+      block.dataset.quoteSource && document.querySelector(`#messages [data-message="${CSS.escape(block.dataset.quoteSource)}"]`);
+    if (!source) return toast("出处已不在当前页面");
+    followBottom = false;
+    scrollChatTo(source, "center");
+    source.classList.remove("flash");
+    void source.offsetWidth;
+    source.classList.add("flash");
+  });
+}

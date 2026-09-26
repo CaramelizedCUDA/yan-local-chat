@@ -1,5 +1,7 @@
 // 言 · 对话数据：分叉、模型、草稿
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 分叉：c.messages 始终是当前走的那条路；编辑或重答时被换下来的尾巴整段收进 c.forks（记下它接在哪条消息之后），随时可以切回来。
+// 同一位置的几个版本 = 当前这条 + 接在同一位置的 forks，按首条消息的时间排序
 /** @param {Conversation} c */
 function allMessages(c) {
   return [...(c.messages || []), ...(c.forks || []).flatMap(fork => fork.messages || [])];
@@ -100,7 +102,7 @@ function persistDraft() {
   saveStoreSoon();
 }
 function restoreDraft() {
-  if (view === "library") return;
+  if (view !== "chat") return;
   const draft = draftRecord();
   pendingAttachments = draft.attachments.map(file => ({ ...file }));
   pendingQuote = currentConversation() ? draft.quote : null;

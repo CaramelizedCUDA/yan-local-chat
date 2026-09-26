@@ -113,7 +113,9 @@ function textNodesIn(root) {
   const nodes = [],
     walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode: node =>
-        node.parentElement?.closest(".viz, .html-app, .math-pending, sup.note-ref") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+        node.parentElement?.closest(".viz-pending, .html-app, .math-pending, sup.note-ref")
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_ACCEPT
     });
   while (walker.nextNode()) nodes.push(walker.currentNode);
   return nodes;
@@ -226,7 +228,7 @@ function renderSidePanel() {
   if (sideFollow) scroller.scrollTop = scroller.scrollHeight;
 }
 // 目录：按所注消息在对话里的先后排，同一条消息上的按起注时间排；每条列所注的一段（整条回复的列第一问），
-// 下面一行是落在第几答、几问几答、最近一次动笔
+// 下面一行是落在第几答、几问几答、最近一次动笔。铺满整页时顶上另有题名，正文让了位也知道注的是哪段对话
 /** @param {Conversation} c */
 function renderSideIndex(c) {
   $("#sidePanel").dataset.mode = "index";
@@ -252,8 +254,10 @@ function renderSideIndex(c) {
     .join("");
   // 「＋」另起一条：正文里划着一段就注在那一段上；没划就是就整条回复而谈（从哪条回复进来的就是哪条，否则是最末一答）
   $("#sideMessages").innerHTML =
-    `<div class="side-index" data-message="__index"><button type="button" class="side-index-new" data-side-new title="划选正文中的一段即注在那一段上；未划选则就整条回复而谈"><span>＋</span>另起一条</button>${
-      items || `<div class="side-empty">还没有旁注<br>划选正文中的一段，或按上面的「＋」</div>`
+    `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? `${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="划选正文中的一段即注在那一段上；未划选则就整条回复而谈"><span>＋</span>另起一条</button></div></div>${
+      items
+        ? `${items}<p class="side-index-foot">划选正文中的一段，即可就那一段另起旁注</p>`
+        : `<div class="side-empty">还没有旁注<br>划选正文中的一段，或按上面的「另起一条」</div>`
     }</div>`;
   renderSideSend();
 }
@@ -547,9 +551,14 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     );
     // 旁注带只查不改的工具（检索、翻网页、翻文档、翻记忆）：模型说「我去查一下」就真能查，不会说完就断在那里；
     // 没有工具可用时（模型关了本机工具、没桥接）在提示里说明，免得它许诺去查
+    if (profile.tools !== false) await mcpReady();
     const tools = profile.tools !== false ? toolDefinitions(conversation, { lookup: true }) : null;
-    const systemPrompt = `${assistantHint(profile, tools, conversation)}\n\n${prompt(thread.anchor.text ? "side.passage" : "side.whole")}${tools ? "" : `\n${prompt("side.noTools")}`}`;
-    const overrides = { systemPrompt, tools, reasoning: conversation.reasoning || "" };
+    const overrides = {
+      systemPrompt: systemPrompt(conversation, tools, { role: "side", anchor: !!thread.anchor.text }),
+      tools,
+      reasoning: conversation.reasoning || "",
+      head: history.length
+    };
     const onFrame = () => {
       if (sideThreadId !== thread.id || !sideFollow) return;
       const el = $("#sideScroll");
@@ -571,9 +580,9 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       if (++rounds > toolRoundLimit()) {
         const said = assistant.content.slice(roundStart).trim();
         if (said) history.push({ role: "assistant", content: said });
-        history.push({ role: "user", content: "工具调用轮次已达上限，请不要再调用工具，直接根据已有结果作答。" });
+        history.push({ role: "user", content: prompt("assistant.roundLimit") });
         overrides.tools = null;
-        if (assistant.content) assistant.content += "\n\n";
+        assistant.content = paragraphBreak(assistant.content);
         continue;
       }
       /** @type {Step[]} */
@@ -590,12 +599,16 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       history.push({
         role: "assistant",
         content: assistant.content.slice(roundStart) || null,
-        tool_calls: steps.map(step => ({ id: step.id, type: "function", function: { name: step.name, arguments: step.arguments } })),
+        tool_calls: steps.map(step => ({
+          id: step.id,
+          type: "function",
+          function: { name: step.name, arguments: replayArguments(step.arguments) }
+        })),
         ...(assistant.thinkingBlocks?.length ? { thinking_blocks: assistant.thinkingBlocks } : {})
       });
       const outcomes = await runSteps(steps, conversation, assistant, job.controller.signal, toolCache);
       for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
-      if (assistant.content) assistant.content += "\n\n";
+      assistant.content = paragraphBreak(assistant.content);
     }
     const leadTrim = assistant.content.match(/^\n*/)[0].length;
     assistant.content = assistant.content.replace(/^\n+|\n+$/g, "");

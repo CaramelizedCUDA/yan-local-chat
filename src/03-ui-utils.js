@@ -28,12 +28,12 @@ function dayBucket(value) {
   const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(value).setHours(0, 0, 0, 0)) / 86400000);
   return days <= 0 ? "今天" : days < 7 ? "过去七天" : "更早";
 }
-function toast(message) {
+function toast(message, ms = 2200) {
   const el = $("#toast");
   el.textContent = message;
   showNow(el);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => hideWithFade(el), 2200);
+  toastTimer = setTimeout(() => hideWithFade(el), ms);
 }
 function setConnection(state, text) {
   $("#connection").dataset.state = state;
@@ -64,6 +64,7 @@ function setJobLabel(conversation, job, label) {
 function refreshConnection() {
   const job = requestJob();
   if (job) return setConnection("busy", job.label || "生成中");
+  if (runningElsewhere()) return setConnection("busy", "另一处作答中");
   if (navigator.onLine === false) return setConnection("error", "连接中断");
   const conversation = currentConversation(),
     last = [...(conversation?.messages || [])].reverse().find(message => message.role === "assistant");
@@ -115,12 +116,10 @@ function settleConfirm(value) {
   resolve(value);
 }
 
-// ---------- 大体积库按需加载：mermaid / echarts / KaTeX / pdf.js 只在真正用到时才拉，首屏只带 marked + purify + hljs ----------
+// ---------- 大体积库按需加载：KaTeX / pdf.js 只在真正用到时才拉，首屏只带 marked + purify + hljs（图表与流程图的库在交互预览里按需载） ----------
 const VENDOR = {
   pdf: { src: "./vendor/pdf.min.js", ready: () => window.pdfjsLib },
-  katex: { src: "./vendor/katex/katex.min.js", ready: () => window.katex },
-  mermaid: { src: "./vendor/mermaid.min.js", ready: () => window.mermaid },
-  echarts: { src: "./vendor/echarts.min.js", ready: () => window.echarts }
+  katex: { src: "./vendor/katex/katex.min.js", ready: () => window.katex }
 };
 const vendorLoads = new Map();
 function ensureLib(name) {
@@ -133,10 +132,7 @@ function ensureLib(name) {
       new Promise(resolve => {
         const script = document.createElement("script");
         script.src = lib.src;
-        script.onload = () => {
-          if (name === "mermaid") setupMermaid();
-          resolve(!!lib.ready());
-        };
+        script.onload = () => resolve(!!lib.ready());
         script.onerror = () => {
           vendorLoads.delete(name);
           script.remove();
@@ -175,6 +171,13 @@ function detailsInView(details) {
     rect = details.getBoundingClientRect(),
     frame = host.getBoundingClientRect();
   return rect.bottom > frame.top && rect.top < frame.bottom;
+}
+// 滚轮落在里层自己能滚的框里（思绪、代码、指令输出）且那框还能往上滚：滚的是它，对话没动，不算离开底部。
+// 不然边看边往上翻思绪，页面就当读者停下来读了：不再跟着底部，思绪也不收
+function wheelScrollsInner(event) {
+  for (let el = event.target; el && el !== event.currentTarget; el = el.parentElement)
+    if (el.scrollTop > 0 && el.scrollHeight > el.clientHeight && /auto|scroll/.test(getComputedStyle(el).overflowY)) return true;
+  return false;
 }
 // force：做完就收，不看读者是否正停在这块、用户是否亲手开过——运行中摊开、运行完收起，是行迹与帮手时间线的定例
 function settleDetails(details, open, onClose = null, force = false) {

@@ -2,7 +2,14 @@
 // 用法：node --test test/unit/    （npm test 会先跑这里，再跑 e2e）
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { load } from "./harness.mjs";
+
+// 图表 option 的修补跑在交互预览的 iframe 里（preview-runtime.js），那一段是纯函数：单独取出来测
+const runtime = readFileSync(new URL("../../preview-runtime.js", import.meta.url), "utf8");
+const repairEchartsOption = new Function(
+  `${runtime.match(/ {2}function repairEchartsOption[\s\S]*?\r?\n {2}\}\r?\n/)[0]}; return repairEchartsOption;`
+)();
 
 const f = load([
   "parseToolArguments",
@@ -31,12 +38,14 @@ const f = load([
   "limitLabel",
   "fileTypeLabel",
   "trailGroups",
-  "repairEchartsOption",
   "anthropicRequest",
   "anthropicToOpenAiStream",
   "anthropicEndpoint",
   "anthropicLike",
-  "PROMPTS"
+  "PROMPTS",
+  "mergeConfig3",
+  "looksLikeMermaid",
+  "liftBareMermaid"
 ]);
 // 工具的 schema 在 prompts/tools.js 里（挂在 window.YAN_PROMPTS 上）；这里把它接进来，参数归位才有 schema 可查
 const { createRequire } = await import("node:module");
@@ -206,7 +215,7 @@ test("splitDelimited：引号里的分隔符与转义引号", () => {
   assert.deepEqual(f.splitDelimited('a,"b,c","d""e"', ","), ["a", "b,c", 'd"e']);
   assert.deepEqual(f.splitDelimited("a\tb", "\t"), ["a", "b"]);
 });
-test("parseVizJson：注释、尾逗号、单引号、裸键名逐层修补", () => {
+test("parseVizJson：旧对话里 echarts 围栏的 JSON——注释、尾逗号、单引号、裸键名逐层修补", () => {
   assert.deepEqual(f.parseVizJson('{"a":1}'), { a: 1 });
   assert.deepEqual(f.parseVizJson('{ /* c */ "a": 1, // x\n "b": [1,2,], }'), { a: 1, b: [1, 2] });
   assert.deepEqual(f.parseVizJson("{ title: { text: 'T' } }"), { title: { text: "T" } });
@@ -249,7 +258,7 @@ test("trailGroups：同一轮的步骤归一组，记下这轮的话与思绪的
   assert.deepEqual([pushed[1].rfrom, pushed[1].rat], [8, 12]);
 });
 test("repairEchartsOption：系列指到不存在的轴、轴指到不存在的格子都收回来，漏了 type 按数据补", () => {
-  const fixed = f.repairEchartsOption({
+  const fixed = repairEchartsOption({
     grid: [{}, {}],
     xAxis: [{ gridIndex: 0 }, { gridIndex: 3 }],
     yAxis: [{ gridIndex: 0 }, { gridIndex: 1 }],
@@ -261,9 +270,27 @@ test("repairEchartsOption：系列指到不存在的轴、轴指到不存在的�
   assert.equal(fixed.xAxis[1].gridIndex, 1);
   assert.equal(fixed.series[0].xAxisIndex, 1);
   assert.equal(fixed.series[0].type, "bar");
-  const pie = f.repairEchartsOption({ series: { data: [{ name: "a", value: 1 }] } });
+  const pie = repairEchartsOption({ series: { data: [{ name: "a", value: 1 }] } });
   assert.equal(pie.series[0].type, "pie");
   assert.equal(pie.series[0].xAxisIndex, undefined);
+  assert.equal(pie.grid, undefined);
+});
+test("repairEchartsOption：直角坐标的标签算进格子，没写格子的头一回收紧四边，增量更新不动边距", () => {
+  const bare = repairEchartsOption({ xAxis: { data: ["a"] }, yAxis: {}, series: [{ type: "line", data: [1] }] });
+  assert.deepEqual(bare.grid, { containLabel: true, top: 16, bottom: 12, left: 12, right: 16 });
+  const dressed = repairEchartsOption({
+    title: { text: "t" },
+    legend: { bottom: 0 },
+    xAxis: { name: "n" },
+    yAxis: { name: "次数" },
+    series: [{ type: "line", data: [1] }]
+  });
+  assert.deepEqual(dressed.grid, { containLabel: true, top: 60, bottom: 40, left: 12, right: 48 });
+  const own = repairEchartsOption({ grid: [{ left: 80 }, { containLabel: false }], xAxis: {}, yAxis: {}, series: [] });
+  assert.deepEqual(own.grid, [{ left: 80, containLabel: true }, { containLabel: false }]);
+  const busy = repairEchartsOption({ dataZoom: [{ type: "slider" }], xAxis: {}, yAxis: {}, series: [] });
+  assert.deepEqual(busy.grid, { containLabel: true });
+  assert.equal(repairEchartsOption({ xAxis: { data: ["b"] } }, false).grid, undefined);
 });
 test("anthropicRequest：system 单列、工具结果并进 user、思考块回传、工具定义与思考预算换算", () => {
   const body = f.anthropicRequest({
@@ -296,7 +323,9 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
       { role: "user", content: "补一句" }
     ]
   });
-  assert.equal(body.system, "你是言");
+  // 提示缓存：系统提示末尾一处，整段对话最后一块一处
+  assert.deepEqual(body.system, [{ type: "text", text: "你是言", cache_control: { type: "ephemeral" } }]);
+  assert.deepEqual(body.messages.at(-1).content.at(-1), { type: "text", text: "补一句", cache_control: { type: "ephemeral" } });
   assert.equal(body.thinking.budget_tokens, 8192);
   assert.equal(body.max_tokens, 8192 + 4096);
   assert.equal(body.temperature, undefined);
@@ -321,6 +350,34 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
     "user"
   );
   assert.equal(f.anthropicRequest({ model: "m", messages: [{ role: "user", content: "x" }], temperature: 1.7 }).temperature, 1);
+  // 新模型：思考是 adaptive、深浅走 effort；4.7 起不带 temperature、要回思考摘要；5 起不选档位也在想
+  const opus5 = f.anthropicRequest({
+    model: "claude-opus-5",
+    messages: [{ role: "user", content: "x" }],
+    temperature: 0.7,
+    reasoning_effort: "high"
+  });
+  assert.deepEqual(opus5.thinking, { type: "adaptive", display: "summarized" });
+  assert.deepEqual(opus5.output_config, { effort: "high" });
+  assert.equal(opus5.temperature, undefined);
+  assert.equal(opus5.max_tokens, 32000);
+  const opus5Default = f.anthropicRequest({ model: "claude-opus-5", messages: [{ role: "user", content: "x" }], temperature: 0.7 });
+  assert.deepEqual(opus5Default.thinking, { type: "adaptive", display: "summarized" });
+  assert.equal(opus5Default.output_config, undefined);
+  const opus48 = f.anthropicRequest({ model: "claude-opus-4-8", messages: [{ role: "user", content: "x" }], temperature: 0.7 });
+  assert.equal(opus48.thinking, undefined);
+  assert.equal(opus48.temperature, undefined);
+  const sonnet46 = f.anthropicRequest({
+    model: "claude-sonnet-4-6",
+    messages: [{ role: "user", content: "x" }],
+    reasoning_effort: "xhigh"
+  });
+  assert.deepEqual(sonnet46.thinking, { type: "adaptive" });
+  assert.deepEqual(sonnet46.output_config, { effort: "high" });
+  const sonnet46Plain = f.anthropicRequest({ model: "claude-sonnet-4-6", messages: [{ role: "user", content: "x" }], temperature: 0.4 });
+  assert.equal(sonnet46Plain.temperature, 0.4);
+  const haiku = f.anthropicRequest({ model: "claude-haiku-4-5", messages: [{ role: "user", content: "x" }], reasoning_effort: "low" });
+  assert.equal(haiku.thinking.budget_tokens, 2048);
   assert.equal(f.anthropicEndpoint("https://api.anthropic.com/v1/"), "https://api.anthropic.com/v1/messages");
   assert.equal(f.anthropicLike({ baseUrl: "https://api.anthropic.com" }), true);
   assert.equal(f.anthropicLike({ baseUrl: "https://api.anthropic.com", api: "openai" }), false);
@@ -365,4 +422,144 @@ test("anthropicToOpenAiStream：事件流换成 OpenAI 风格分块——文字�
   assert.equal(last.choices[0].finish_reason, "tool_calls");
   assert.deepEqual(last.usage, { prompt_tokens: 10, completion_tokens: 7, total_tokens: 17 });
   assert.equal(last.model, "claude-x");
+});
+test("anthropicToOpenAiStream：流到半途的 error 事件按流里的报错交出，不写进正文", async () => {
+  const raw = [
+    ["message_start", { type: "message_start", message: { model: "claude-x", usage: { input_tokens: 3 } } }],
+    ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
+    ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "写到一半" } }],
+    ["error", { type: "error", error: { type: "overloaded_error", message: "Overloaded" } }]
+  ]
+    .map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
+    .join("");
+  const text = await new Response(new Blob([raw]).stream().pipeThrough(f.anthropicToOpenAiStream("claude"))).text();
+  const chunks = text
+    .split("\n\n")
+    .filter(Boolean)
+    .map(line => line.replace(/^data: /, ""));
+  const last = JSON.parse(chunks.at(-1));
+  assert.match(last.error.message, /overloaded_error/);
+  assert.equal(last.choices, undefined);
+  assert.ok(!chunks.some(c => c.includes("接口错误")));
+});
+test("isReadOnlyCommand：git 带 --output / --ext-diff 不算只读", () => {
+  assert.equal(f.isReadOnlyCommand("git log --oneline"), true);
+  assert.equal(f.isReadOnlyCommand("git log --output=out.txt"), false);
+  assert.equal(f.isReadOnlyCommand("git diff --ext-diff"), false);
+});
+test("mergeConfig3：自己改过的取自己的，没改的取对方的；按 id 并增删，用量相加", () => {
+  const base = {
+    version: 5,
+    settings: { name: "甲", theme: "light", width: 760 },
+    profiles: [
+      { id: "a", name: "A", quota: "", usedTokens: 100 },
+      { id: "b", name: "B", quota: "", usedTokens: 0 },
+      { id: "c", name: "C", quota: "", usedTokens: 0 }
+    ],
+    library: [],
+    memory: { enabled: true, items: [{ id: "m1", text: "旧" }] },
+    drafts: { x: { text: "草" } }
+  };
+  const mine = {
+    ...base,
+    settings: { name: "乙", theme: "light", width: 760 },
+    profiles: [
+      { id: "a", name: "A", quota: "", usedTokens: 130 },
+      { id: "c", name: "C", quota: "", usedTokens: 0 },
+      { id: "d", name: "D" }
+    ],
+    memory: {
+      enabled: true,
+      items: [
+        { id: "m1", text: "旧" },
+        { id: "m2", text: "我记的" }
+      ]
+    },
+    drafts: {}
+  };
+  const theirs = {
+    ...base,
+    settings: { name: "甲", theme: "dark", width: 760 },
+    profiles: [
+      { id: "a", name: "A 改名", quota: "", usedTokens: 150 },
+      { id: "b", name: "B", quota: "", usedTokens: 0 },
+      { id: "c", name: "C", quota: "", usedTokens: 0 },
+      { id: "e", name: "E" }
+    ],
+    memory: {
+      enabled: true,
+      items: [
+        { id: "m1", text: "旧" },
+        { id: "m3", text: "它记的" }
+      ]
+    },
+    drafts: { x: { text: "草" }, y: { text: "它的草稿" } }
+  };
+  const merged = f.mergeConfig3(base, mine, theirs);
+  assert.deepEqual(merged.settings, { name: "乙", theme: "dark", width: 760 });
+  // b 我删了、它没动：删；d 我新加、e 它新加：都留；a 两边都改：名字取它的，用量两边相加
+  assert.deepEqual(
+    merged.profiles.map(p => p.id),
+    ["a", "c", "e", "d"]
+  );
+  assert.equal(merged.profiles[0].name, "A 改名");
+  assert.equal(merged.profiles[0].usedTokens, 180);
+  assert.deepEqual(
+    merged.memory.items.map(item => item.id),
+    ["m1", "m3", "m2"]
+  );
+  // 草稿 x 我发出去了（删了）、它没动：删；y 它新写的：留
+  assert.deepEqual(Object.keys(merged.drafts), ["y"]);
+});
+test("mergeConfig3：两处各添预设、分组、MCP 与环境工具时都留下", () => {
+  const base = {
+    version: 5,
+    settings: {
+      presets: [{ id: "p0", name: "原有" }],
+      groups: [{ id: "g0", name: "原有" }],
+      mcpServers: { original: { command: "old" } },
+      env: { packs: ["data", "office", "web"], pip: "", npm: "", mirror: "china" }
+    },
+    profiles: [],
+    library: [],
+    memory: { enabled: true, items: [] },
+    drafts: {}
+  };
+  const mine = structuredClone(base),
+    theirs = structuredClone(base);
+  mine.settings.presets.push({ id: "p1", name: "这边" });
+  mine.settings.groups.push({ id: "g1", name: "这边" });
+  mine.settings.mcpServers.alpha = { command: "a" };
+  mine.settings.env.packs.push("image");
+  mine.settings.env.pip = "sympy";
+  theirs.settings.presets.push({ id: "p2", name: "那边" });
+  theirs.settings.groups.push({ id: "g2", name: "那边" });
+  theirs.settings.mcpServers.beta = { command: "b" };
+  theirs.settings.env.packs.push("media");
+  theirs.settings.env.mirror = "official";
+  const merged = f.mergeConfig3(base, mine, theirs).settings;
+  assert.deepEqual(
+    merged.presets.map(p => p.id),
+    ["p0", "p2", "p1"]
+  );
+  assert.deepEqual(
+    merged.groups.map(g => g.id),
+    ["g0", "g2", "g1"]
+  );
+  assert.deepEqual(Object.keys(merged.mcpServers), ["original", "beta", "alpha"]);
+  assert.deepEqual(merged.env.packs, ["data", "office", "web", "media", "image"]);
+  assert.equal(merged.env.pip, "sympy");
+  assert.equal(merged.env.mirror, "official");
+});
+test("looksLikeMermaid / liftBareMermaid：写岔了的流程图照样认得，普通代码与别的 pre 不误伤", () => {
+  assert.equal(f.looksLikeMermaid("flowchart TD\n  A --> B"), true);
+  assert.equal(f.looksLikeMermaid("%% 注\ngraph LR;\n  A --> B"), true);
+  assert.equal(f.looksLikeMermaid("sequenceDiagram\n  A->>B: hi"), true);
+  assert.equal(f.looksLikeMermaid("graph = build()\nprint(graph)"), false);
+  assert.equal(f.looksLikeMermaid("pie = 3.14"), false);
+  const lifted = f.liftBareMermaid('前文\n<pre class="mermaid">\nflowchart TD\n  A --> B\n</pre>\n后文 <pre>别的</pre>');
+  assert.match(lifted, /```mermaid\n+flowchart TD\n {2}A --> B\n+```/);
+  assert.match(lifted, /后文 <pre>别的<\/pre>/);
+  const fenced = '```html\n<pre class="mermaid">graph TD\nA-->B</pre>\n```';
+  assert.equal(f.liftBareMermaid(fenced), fenced);
 });

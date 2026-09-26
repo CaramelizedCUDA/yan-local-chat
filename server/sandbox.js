@@ -5,8 +5,10 @@
 //   环境——指令看不到机密环境变量（名字里带 KEY / TOKEN / SECRET / PASSWORD 之类的一律不传；页面配置里的 API Key 本就不进桥接进程）；
 //   指令——动系统的（注册表、服务、计划任务、防火墙、账户、磁盘、关机、提权、执行策略）、藏字的（编码指令、Invoke-Expression）、
 //         直接外联的（curl / iwr / wget 之类，指向本机的除外）一律拒绝，装依赖走包管理器。
+// 以上是严的一档（screenCommand），给「问而后行」：拦下的由页面转给用户请示，批了这一条就出沙箱跑。
+// 「审而后行」「径行」用宽的一档（screenLoose），只守系统本身，见其说明。
 // 这是静态筛查，不是进程隔离：脚本里的代码仍以用户的权限跑。筛出来的每一条都带一句原因回给模型，它改一改就能过。
-// 纯函数，不碰文件系统；由 server/work.js 装配，test/unit 直接测
+// 纯函数，不碰文件系统；由 server/work/index.js 装配，test/unit 直接测
 "use strict";
 const path = require("node:path");
 
@@ -43,14 +45,27 @@ const FORBIDDEN = [
   [/\bSet-ExecutionPolicy\b|\b(Set|Add|Remove)-MpPreference\b/i, "不改执行策略与安全设置"],
   [/\bInvoke-Expression\b|(^|[\s;&|(])iex\s|-EncodedCommand\b|(^|\s)-(enc|ec|e)\s+[A-Za-z0-9+=]{32,}/i, "不用编码或拼接的指令，直接写出来"],
   [ALIASING, "不定义别名，直接写出指令"],
-  [/\bcertutil(\.exe)?\b[^\n]*-urlcache|\bStart-BitsTransfer\b|\bNet\.WebClient\b|\bHttpClient\b|\bSystem\.Net\b/i, "沙箱里不直接外联"]
+  // .NET 联网只认真在用的写法（[System.Net.…]、New-Object Net.…、::new）：rg HttpClient、Select-String System.Net 这类只是搜字的不算
+  [
+    /\bcertutil(\.exe)?\b[^\n]*-urlcache|\bStart-BitsTransfer\b|\[(?:System\.)?Net\.[\w.]+\]|New-Object\s+(?:-TypeName\s+)?["']?(?:System\.)?Net\.|\[(?:System\.Net\.Http\.)?HttpClient\]/i,
+    "沙箱里不直接外联"
+  ]
 ];
 // 用户目录与系统目录：查看放行，写入拒绝。只在判定为「写」的指令上查
 const HOME_SYSTEM_PATH =
   /\$env:(USERPROFILE|HOME|HOMEPATH|HOMEDRIVE|APPDATA|LOCALAPPDATA|TEMP|TMP|ProgramData|ProgramFiles(\(x86\))?|ProgramW6432|SystemRoot|windir|Public|ALLUSERSPROFILE)\b|%(USERPROFILE|HOMEPATH|HOMEDRIVE|APPDATA|LOCALAPPDATA|TEMP|TMP|ProgramData|ProgramFiles(\(x86\))?|ProgramW6432|SystemRoot|windir|Public|ALLUSERSPROFILE)%|\$HOME\b|(^|[\s"'=])~([\\/]|$)/i;
-// 外联工具：只放行目标全在本机的（curl http://127.0.0.1:8787 这样测本地服务是常事）
+// 外联工具：只放行目标全在本机的（curl http://127.0.0.1:3000 这样测本地服务是常事；桥接自己的端口另有一条）
 const NET_TOOLS = /(^|[\s;&|(])(curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)(\.exe)?(\s|$)/i;
 const LOCAL_HOST = /^(localhost|127(\.\d{1,3}){3}|0\.0\.0\.0|\[::1\]|::1)$/i;
+// 桥接自己的端口：本机别的服务随便测，唯独桥接不行——它的执事接口不带请示与沙箱，指令借 curl、脚本调它就整个绕过去了。
+// 严宽两档都拦（径行开着沙箱时也拦：径行放开的是这段对话的指令，不是桥接的门禁）；静态筛查，脚本里拼出来的地址管不到。
+// 这是有意不再往下堵：能跑脚本就已有用户的全部权限（node -e 删用户目录一样过得去），调桥接并不多出什么；
+// 加口令也藏不住——页面只能把它存进浏览器的 localStorage，那在磁盘上是明文。真要管住脚本得靠进程隔离
+const BRIDGE_PORT = Number(process.env.YAN_PORT || 8787);
+function callsBridge(text) {
+  return new RegExp(String.raw`(?:localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])\s*:\s*${BRIDGE_PORT}(?!\d)`, "i").test(text);
+}
+const BRIDGE_WHY = "指令不调言的本机桥接（它的接口不经请示与沙箱）；要读写文件、跑指令直接用相应的工具";
 // 文件工具会用 screenPath 拦机密文件；指令通道也得拦显式点名，否则 `Get-Content .env` 能从 shell 绕过去。
 // 这里只认完整的路径片段，避免把 `dotnet user-secrets list`、`env.d.ts` 这类正常参数误判成文件。
 const SECRET_PATH_IN_COMMAND =
@@ -177,6 +192,7 @@ function screenWritePaths(text, workdir, win, prefix) {
  */
 function screenCommand(command, workdir, { platform = process.platform } = {}) {
   const text = String(command || "");
+  if (callsBridge(text)) return `沙箱拒绝：${BRIDGE_WHY}`;
   const win = platform === "win32";
   for (const [pattern, why] of FORBIDDEN) if (pattern.test(text)) return `沙箱拒绝：${why}`;
   if (SECRET_PATH_IN_COMMAND.test(text)) return "沙箱拒绝：指令不读写 .env、密钥或凭据文件；需要普通配置时请改用不含机密的文件";
@@ -200,10 +216,26 @@ function screenCommand(command, workdir, { platform = process.platform } = {}) {
  */
 function screenAutoReview(command) {
   const text = String(command || "");
+  if (callsBridge(text)) return `审查拒绝：${BRIDGE_WHY}`;
   for (const [pattern, why] of REVIEW_FORBIDDEN) if (pattern.test(text)) return `审查拒绝：${why}`;
   if (BROAD_DELETE.test(text)) return "审查拒绝：不代为执行整目录、通配符或磁盘级删除";
   if (DIRECT_FILE_MUTATION.test(text) && REVIEW_SYSTEM_PATH.test(stripReadSources(text)))
     return "审查拒绝：不往 Windows、Program Files 这类系统目录里写";
+  return null;
+}
+/**
+ * 宽的沙箱：给「审而后行」与「径行」。三档由严到宽是 问而后行 ≤ 审而后行 ≤ 径行——问而后行里沙箱拦下的会转给用户请示、
+ * 批了便出沙箱跑；后两档不向用户请示，沙箱就只守系统本身：注册表、服务、计划任务、账户、磁盘、提权、执行策略、
+ * 藏字与别名、往系统目录里写。联网、写目录之外、机密文件、.git 内部都放行。通过返回 null
+ * @param {string} command
+ */
+function screenLoose(command) {
+  const text = String(command || "");
+  if (callsBridge(text)) return `沙箱拒绝：${BRIDGE_WHY}`;
+  for (const [pattern, why] of REVIEW_FORBIDDEN) if (pattern.test(text)) return `沙箱拒绝：${why.replace(/^不代为/, "不")}`;
+  if (ALIASING.test(text)) return "沙箱拒绝：不定义别名，直接写出指令";
+  if (DIRECT_FILE_MUTATION.test(text) && REVIEW_SYSTEM_PATH.test(stripReadSources(text)))
+    return "沙箱拒绝：不往 Windows、Program Files 这类系统目录里写";
   return null;
 }
 /**
@@ -232,4 +264,4 @@ function screenPath(rel, { write = false } = {}) {
   return null;
 }
 
-module.exports = { screenCommand, screenAutoReview, sandboxEnv, screenPath, SECRET_ENV };
+module.exports = { screenCommand, screenLoose, screenAutoReview, sandboxEnv, screenPath, SECRET_ENV };

@@ -11,6 +11,8 @@ function estimateTokens(messages) {
   let score = 0;
   for (const message of messages) {
     score += 4;
+    // 工具调用的参数也随请求送出（写文件时整份内容都在这里），不算就会把长活的上下文估得太轻
+    for (const call of message.tool_calls || []) score += 8 + estimateText(String(call.function?.arguments || ""));
     if (typeof message.content === "string") {
       score += estimateText(message.content);
       continue;
@@ -240,7 +242,7 @@ async function probeReasoningLevels(profile) {
 async function requestChat(profile, messages, signal, overrides = {}) {
   const parameters = {
     messages,
-    systemPrompt: overrides.systemPrompt ?? (profile.systemPrompt || ""),
+    systemPrompt: overrides.systemPrompt ?? "",
     temperature: Number(overrides.temperature ?? profile.temperature ?? 0.7),
     // 输出上限：拟题、压缩、探档位这几处自己给；平时 OpenAI 兼容接口不传（服务端的默认就是模型的上限，
     // 手写一个反而常常把长回答截断），Anthropic 必填、按模型设置或默认值

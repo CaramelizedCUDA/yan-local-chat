@@ -140,6 +140,15 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* 沙箱会拦下的原因：一道印色细线领起，不铺底色（请示条与行迹里的请示共用） */
+.approval-sandbox {
+  margin: 8px 0 0;
+  padding: 1px 0 1px 9px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.6;
+}
 .approval-actions {
   display: flex;
   gap: 6px;
@@ -918,4 +927,44 @@ textarea::placeholder,
 .field::placeholder {
   color: var(--ink-3);
   opacity: 0.55;
+}
+/* 输入框左下「＋」旁的分组签：一方「集」印加组名；欢迎页的可撤（✕），对话页的点开分组页 */
+.group-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 180px;
+  margin-left: 4px;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 7px;
+  color: var(--ink-2);
+  font: 12px var(--title);
+  transition:
+    border-color 0.16s,
+    color 0.16s;
+}
+.group-tag:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.group-tag-seal {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  color: var(--accent);
+  font: 9px var(--title);
+}
+.group-tag-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.group-tag-x {
+  color: var(--ink-3);
+  font-size: 10px;
 }

@@ -3,7 +3,7 @@
 // ---------- 数据模型（JSDoc，供 tsc --checkJs 与编辑器；见 src/types.d.ts 的说明）----------
 // 存下来的东西只有这几种：Store 里挂着设置、模型、对话、卷宗（浏览器内的旧件）、记忆与草稿；对话里是消息，消息上挂步骤，步骤上可挂帮手
 /**
- * @typedef {Object} Attachment 附件的元数据；原件（data）另存 IndexedDB，只在读出时才带
+ * @typedef {Object} Attachment 附件的元数据；原件（data）另存存储根的 附件/（没桥接时暂存 IndexedDB），只在读出时才带
  * @property {string} id
  * @property {"image"|"text"|"file"} kind
  * @property {string} name
@@ -55,6 +55,8 @@
  * @property {Array<{ text: string, status: string }>} [plan] update_plan 的清单
  * @property {number} [exitCode]
  * @property {boolean} [readOnly] 只读指令，免确认
+ * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
+ * @property {boolean} [background] 后台指令
  * @property {{ old: string, new: string }} [diff]
  * @property {{ path: string, added: number, removed: number, created?: boolean }} [change]
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
@@ -117,6 +119,8 @@
  * @property {string} [workdir] 绑了目录即为行
  * @property {CommandPolicy} [commandPolicy] 指令权限模式
  * @property {string} [reasoning] 思考档位
+ * @property {string} [presetId] 用的哪个预设；空即言的本色
+ * @property {string} [groupId] 归在哪个分组；空即散列
  * @property {boolean} [pinned]
  * @property {boolean} [unread]
  * @property {boolean} [ended] 旧版：额度尽了整段锁死；现已不再写入，读到照旧尊重
@@ -138,12 +142,22 @@
  * @property {number} [maxTokens] 只对 Anthropic 有意义（Messages API 必填）；OpenAI 兼容接口不传，由服务端定
  * @property {string} quota 用量上限，如 "100k"；空则不限
  * @property {number} usedTokens
- * @property {string} systemPrompt
  * @property {boolean} [tools] 本机工具，默认开
  * @property {number} [contextWindow]
+ * @property {string} [reasoning] 此模型记住的思考档位；留空由接口决定
  * @property {string} [reasoningLevels] 此模型认的思考档位，逗号分隔；none 是不认；探到的与手填的都记在这里
  * @property {string} [reasoningProbed] 探过档位时模型的身份（接口|地址|模型 ID，见 reasoningProbeKey），亲手填的前面带 manual|；换了任一样再探
  * @property {string[]} [modelList]
+ */
+/**
+ * @typedef {Object} Preset 预设：一套打包好的做法，选了它的对话都照这一套——提示词排在系统提示最前，工具与 MCP 只给挑中的，可带默认模型与指令权限
+ * @property {string} id
+ * @property {string} name
+ * @property {string} prompt
+ * @property {string[]|null} tools 给哪几组内置工具（见 TOOL_GROUPS）；null 即全给
+ * @property {string[]|null} mcp 给哪几个 MCP 服务；null 即全给
+ * @property {string} profileId 选它时换到这个模型；空则不换
+ * @property {CommandPolicy|""} policy 选它时的指令权限；空则照设置里的默认
  */
 /** @typedef {{ id: string, text: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
 /** @typedef {{ text: string, attachments: Attachment[], quote?: Quote|null, updatedAt?: string }} Draft */
@@ -156,21 +170,25 @@
  * @property {number} width
  * @property {string} accent
  * @property {string} activeProfileId
+ * @property {Preset[]} presets
+ * @property {string} presetId 新对话用的预设（上回选的）；空即本色
+ * @property {{ id: string, name: string, createdAt: string, presetId: string, workdir: string }[]} groups 分组：自立的几组，对话各记 groupId；组里新起的对话用组的预设、绑组的默认目录
+ * @property {string} [pendingGroupId] 从组首「＋」另起的新对话归进这一组（用过即清）
  * @property {boolean} autoTitle
  * @property {string} [pendingWorkdir] 欢迎页目录签里待绑的目录
  * @property {string[]} collapsedRepos
- * @property {string} reasoning 新对话默认的思考档位
  * @property {CommandPolicy} commandPolicyDefault 新对话默认的指令权限模式
  * @property {boolean} [sandbox] 沙箱总开关（默认开）：桥接那头筛指令、锁目录、去机密环境变量
- * @property {number} compactAt
  * @property {"anywhere"|"inside"} toolReach
  * @property {boolean} archiveRead
  * @property {number} toolRounds
  * @property {number} subRounds
- * @property {string} [archiveDir]
- * @property {string} [chatsDir]
- * @property {"chat"|"library"} [lastView] 上次停在哪一页，刷新后回到原处
+ * @property {string} [archiveDir] 旧版的卷宗目录；只在头一回迁入存储根时读一次，此后删去
+ * @property {string} [chatsDir] 旧版的对话目录；同上
+ * @property {"chat"|"library"|"groups"} [lastView] 上次停在哪一页，刷新后回到原处
  * @property {string} [lastConversationId]
+ * @property {{ packs: string[], pip: string, npm: string, mirror: "china"|"official" }} env 沙箱环境：选了哪几组工具、另装的包、下载源
+ * @property {Record<string, Record<string, any>>} mcpServers 接入的 MCP 服务，照通行的 mcpServers 写法：{ 名字: { command, args, cwd, env } 或 { url, headers, type } }
  */
 /**
  * @typedef {Object} Store 整个本地存储（主体在 IndexedDB；localStorage 只留启动镜像）
@@ -198,6 +216,10 @@ function prompt(path, vars = {}) {
     console.error(`缺少内置提示词：${path}（prompts/ 目录未加载？）`);
     return "";
   }
+  return fillTemplate(text, vars);
+}
+// 提示词的写法：字符串或按行拼的数组，{{名字}} 在运行时填入
+function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
 const APP_VERSION = "0.3.0"; // 与 package.json 同步；桥接在线时以桥接返回的为准
@@ -217,13 +239,17 @@ const FOLLOW_THRESHOLD = 80;
 // Anthropic 的 max_tokens 没填时的值：今日的 Claude 都认得下这个数；OpenAI 兼容接口根本不传这个字段
 const DEFAULT_MAX_TOKENS = 32000;
 const MIN_TOOL_STATUS_MS = 240;
-// 一次回答里最多几轮工具调用（帮手另计），超过后收回工具、请模型直接收尾；默认值在这里，实际值在「设置 → 通用」里可改
+// 一次回答里最多几轮工具调用（帮手另计），超过后收回工具、请模型直接收尾；按轮计，同一轮并发的几次调用只算一轮。
+// 默认值在这里，实际值在「设置 → 工具」里可改，留空（记作 0）即不限
 const DEFAULT_TOOL_ROUNDS = 80,
   DEFAULT_SUB_ROUNDS = 40;
 function roundLimit(key, fallback) {
-  const value = Math.floor(Number(store?.settings?.[key]));
-  return value >= 1 ? Math.min(value, 500) : fallback;
+  const raw = store?.settings?.[key];
+  if (raw === 0) return Infinity;
+  const value = Math.floor(Number(raw));
+  return value >= 1 ? value : fallback;
 }
+const roundLimitText = limit => (Number.isFinite(limit) ? String(limit) : "");
 const toolRoundLimit = () => roundLimit("toolRounds", DEFAULT_TOOL_ROUNDS),
   subRoundLimit = () => roundLimit("subRounds", DEFAULT_SUB_ROUNDS);
 const REVEAL_RATE = 0.16,
@@ -244,17 +270,20 @@ const defaultStore = {
     width: 760,
     accent: "#9b5540",
     activeProfileId: "",
+    presets: [],
+    presetId: "",
+    groups: [],
     autoTitle: true,
     pendingWorkdir: "",
     collapsedRepos: [],
-    reasoning: "",
     commandPolicyDefault: "ask",
     sandbox: true,
-    compactAt: 0,
     toolReach: "anywhere",
     archiveRead: true,
     toolRounds: DEFAULT_TOOL_ROUNDS,
-    subRounds: DEFAULT_SUB_ROUNDS
+    subRounds: DEFAULT_SUB_ROUNDS,
+    mcpServers: {},
+    env: { packs: ["data", "office", "web"], pip: "", npm: "", mirror: "china" }
   },
   profiles: [],
   conversations: [],
@@ -296,7 +325,46 @@ function renderSuggestions(work) {
     : chatSuggestionsHtml;
   bindSuggestions();
 }
-const requestJobs = new Map();
+// 进行中的请求（主答、旁注）。有活在跑就攥着一把 Web Lock：熄屏、窗口被挡住时页面算「藏起来」，
+// 浏览器的睡眠标签页 / 节能模式会把藏久了的页面冻住——流不读、工具不跑，亮屏才接着动；持锁的页面不在冻结之列。
+// 用共享锁：开着几个言的标签页也各自攥得住
+class JobMap extends Map {
+  set(key, value) {
+    super.set(key, value);
+    holdAwake();
+    // 开工即报到，别处立刻知道这段在作答
+    void syncLeases();
+    return this;
+  }
+  delete(key) {
+    const had = super.delete(key);
+    holdAwake();
+    return had;
+  }
+  clear() {
+    super.clear();
+    holdAwake();
+  }
+}
+const requestJobs = new JobMap();
+// 几个页面同开同一个存储时，谁在作答（见 01-store/40-leases.js 的 syncLeases）：PAGE_ID 是这个页面的名号；
+// remoteBusy 是别处正在作答的对话；leaseHold 是这边作答过、最后一次存盘还没落地的对话——落了地才松手，别处读到的才是写完的
+const PAGE_ID = uid();
+const remoteBusy = new Set(),
+  leaseHold = new Set();
+/** @type {{ release: () => void }|null} */
+let awakeHold = null;
+function holdAwake() {
+  if (requestJobs.size && !awakeHold && globalThis.navigator?.locks) {
+    const hold = { release: () => {} },
+      done = new Promise(resolve => (hold.release = () => resolve(null)));
+    awakeHold = hold;
+    navigator.locks.request("yan-at-work", { mode: "shared" }, () => done).catch(() => {});
+  } else if (!requestJobs.size && awakeHold) {
+    awakeHold.release();
+    awakeHold = null;
+  }
+}
 let settingsTab = "general";
 let toastTimer = null;
 let fileDbPromise = null;
@@ -304,16 +372,23 @@ let stateDbPromise = null,
   stateDb = null;
 let metaRevision = 0,
   metaSaveWarned = false,
-  metaMirrorTimer = null;
-// 对话的存取状态：目录是否可用、正在合、指纹与时间戳、待写与在写、没删成的（见 01-store.js 开头的说明）
+  configSaveTimer = null,
+  configSyncedAt = 0;
+// 对话的存取状态：目录是否可用、正在合、指纹与时间戳、待写与在写、没删成的（见 01-store/10-state-db.js 开头的说明）
 let chatsBroken = false,
   chatsSyncing = false,
+  // 这一回开页后对话已从目录读全过：之后才敢按「没人用」清附件原件
+  chatsLoaded = false,
   freshBrowser = false,
+  // 开页时浏览器里是一份没带版本标记的记录（更老的版本，或测试灌进来的）：与 配置.json 对齐时以它为准
+  localSeeded = false,
   chatSaveWarned = false,
   unloading = false;
 const dirtyChatIds = new Set(),
   chatHashes = new Map(),
   chatStamps = new Map(),
+  // 每段对话上次与目录对齐时目录里那份的时间戳：写的时候带去，目录里那份若更新，桥接就不写（见 mergeConversation）
+  chatDiskStamps = new Map(),
   pendingChatWrites = new Map(),
   activeChatWrites = new Map(),
   chatWritePromises = new Map(),
@@ -323,9 +398,7 @@ const dirtyChatIds = new Set(),
 let libraryQuery = "",
   libraryKind = "all";
 const advancedOpen = new Set();
-const vizCharts = new Set();
 let suppressViz = false;
-const mermaidSvgCache = new Map();
 let saveTimer = null,
   historySearchTimer = null;
 let bridgeRetryAt = 0;
