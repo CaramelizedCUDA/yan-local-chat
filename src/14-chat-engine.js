@@ -478,6 +478,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
           if (retrying) setJobLabel(conversation, job, "生成中");
           retrying = false;
         });
+        // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾。
+        if (!assistant.content.slice(roundStart).trim() && !assistant.toolCalls?.some(call => call.name))
+          throw Object.assign(Error("模型本轮未返回正文或工具调用，回复尚未完成"), { midStream: true });
       } catch (error) {
         // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
         if (error.midStream && !job.controller.signal.aborted && resumed < AUTO_RESUMES) {
@@ -682,6 +685,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       arguments: call.function?.arguments || ""
     }));
   note();
+  if (data?.choices?.[0]?.finish_reason === "length") throw Object.assign(Error("模型达到输出长度上限，回复尚未完成"), { midStream: true });
 }
 // 网络一晃就断太脆：接口没接下请求时（连不上、限流、5xx、过载）等一等再试，间隔渐长，接口给了 Retry-After 就照它等；
 // 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」

@@ -8478,6 +8478,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
           if (retrying) setJobLabel(conversation, job, "生成中");
           retrying = false;
         });
+        // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾。
+        if (!assistant.content.slice(roundStart).trim() && !assistant.toolCalls?.some(call => call.name))
+          throw Object.assign(Error("模型本轮未返回正文或工具调用，回复尚未完成"), { midStream: true });
       } catch (error) {
         // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
         if (error.midStream && !job.controller.signal.aborted && resumed < AUTO_RESUMES) {
@@ -8682,6 +8685,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       arguments: call.function?.arguments || ""
     }));
   note();
+  if (data?.choices?.[0]?.finish_reason === "length") throw Object.assign(Error("模型达到输出长度上限，回复尚未完成"), { midStream: true });
 }
 // 网络一晃就断太脆：接口没接下请求时（连不上、限流、5xx、过载）等一等再试，间隔渐长，接口给了 Retry-After 就照它等；
 // 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」
@@ -11323,7 +11327,9 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   const reader = response.body.getReader(),
     decoder = new TextDecoder();
   let buffer = "",
-    scheduled = false;
+    scheduled = false,
+    ended = false,
+    finishReason = "";
   // 落墨节奏：正文不按网络分块一坨坨出现，而是每帧按积压量的一定比例匀速写出（积压越多写得越快，最多滞后零点几秒）；新写出的字带短暂渐显，末尾跟一支笔尖光标
   const paced = !inkMotionOff();
   let shown = paced ? assistant.content.length : Infinity,
@@ -11485,7 +11491,11 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   // 流被掐断（停止、补言改道）时这一段的帧循环到此为止：接下来的一轮另起一个，两个循环不能同时画一条消息
   try {
     await pump();
+    flushThink();
+    if (!ended) throw Error("接口未发送结束标志，连接已中断");
+    if (finishReason === "length") throw Error("模型达到输出长度上限，回复尚未完成");
   } catch (error) {
+    flushThink();
     closed = true;
     // 半途出错（流里的报错事件）：把还开着的连接收掉，别让桥接那头替一个没人读的流继续转发
     reader.cancel().catch(() => {});
@@ -11505,7 +11515,11 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       for (const line of lines) {
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
-        if (!data || data === "[DONE]") continue;
+        if (!data) continue;
+        if (data === "[DONE]") {
+          ended = true;
+          continue;
+        }
         let failure = "";
         try {
           const json = JSON.parse(data);
@@ -11513,6 +11527,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
           if (json.error && !json.choices)
             failure = (typeof json.error === "string" ? json.error : json.error?.message) || "接口在作答途中返回了错误";
           const delta = json.choices?.[0]?.delta;
+          if (json.choices?.[0]?.finish_reason) {
+            finishReason = json.choices[0].finish_reason;
+            ended = true;
+          }
           const text = normalizeContent(delta?.content),
             reasoning = normalizeContent(delta?.reasoning_content ?? delta?.reasoning);
           if (reasoning) {
@@ -11541,7 +11559,6 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       if (done) break;
     }
   }
-  flushThink();
   // 流结束后把积压的字写完再返回，收尾和下一轮工具调用都等在这后面；标签页不可见时直接补齐
   while (paced && shown < assistant.content.length) {
     schedule();

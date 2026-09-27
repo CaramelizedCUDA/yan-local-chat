@@ -349,7 +349,9 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   const reader = response.body.getReader(),
     decoder = new TextDecoder();
   let buffer = "",
-    scheduled = false;
+    scheduled = false,
+    ended = false,
+    finishReason = "";
   // 落墨节奏：正文不按网络分块一坨坨出现，而是每帧按积压量的一定比例匀速写出（积压越多写得越快，最多滞后零点几秒）；新写出的字带短暂渐显，末尾跟一支笔尖光标
   const paced = !inkMotionOff();
   let shown = paced ? assistant.content.length : Infinity,
@@ -511,7 +513,11 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   // 流被掐断（停止、补言改道）时这一段的帧循环到此为止：接下来的一轮另起一个，两个循环不能同时画一条消息
   try {
     await pump();
+    flushThink();
+    if (!ended) throw Error("接口未发送结束标志，连接已中断");
+    if (finishReason === "length") throw Error("模型达到输出长度上限，回复尚未完成");
   } catch (error) {
+    flushThink();
     closed = true;
     // 半途出错（流里的报错事件）：把还开着的连接收掉，别让桥接那头替一个没人读的流继续转发
     reader.cancel().catch(() => {});
@@ -531,7 +537,11 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       for (const line of lines) {
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
-        if (!data || data === "[DONE]") continue;
+        if (!data) continue;
+        if (data === "[DONE]") {
+          ended = true;
+          continue;
+        }
         let failure = "";
         try {
           const json = JSON.parse(data);
@@ -539,6 +549,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
           if (json.error && !json.choices)
             failure = (typeof json.error === "string" ? json.error : json.error?.message) || "接口在作答途中返回了错误";
           const delta = json.choices?.[0]?.delta;
+          if (json.choices?.[0]?.finish_reason) {
+            finishReason = json.choices[0].finish_reason;
+            ended = true;
+          }
           const text = normalizeContent(delta?.content),
             reasoning = normalizeContent(delta?.reasoning_content ?? delta?.reasoning);
           if (reasoning) {
@@ -567,7 +581,6 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       if (done) break;
     }
   }
-  flushThink();
   // 流结束后把积压的字写完再返回，收尾和下一轮工具调用都等在这后面；标签页不可见时直接补齐
   while (paced && shown < assistant.content.length) {
     schedule();
