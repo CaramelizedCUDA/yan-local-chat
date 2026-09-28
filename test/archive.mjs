@@ -262,6 +262,34 @@ mkdirSync(`${ARCHIVE}/课程/空夹`, { recursive: true });
 writeFileSync(`${ARCHIVE}/课程/讲义.txt`, "讲义");
 writeFileSync(`${ARCHIVE}/课程/深度学习/笔记.md`, "# 笔记");
 writeFileSync(`${ARCHIVE}/一声.mp3`, "not really audio");
+// 一答的成品条记着卷宗里的路径：件挪进夹后，条子跟着走
+writeFileSync(`${ARCHIVE}/成品.txt`, "成品");
+await fetch(PAGE + "api/chats/save", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    savedAt: Date.now(),
+    conversation: {
+      id: "deliver-follow",
+      title: "成品随行",
+      createdAt: "2026-09-28",
+      updatedAt: new Date().toISOString(),
+      forks: [],
+      threads: [],
+      messages: [
+        { id: "u", role: "user", content: "写个成品", timestamp: "2026-09-28" },
+        {
+          id: "a",
+          role: "assistant",
+          content: "写好了。",
+          status: "complete",
+          timestamp: "2026-09-28",
+          deliverables: [{ path: "成品.txt", name: "成品.txt", size: 6 }]
+        }
+      ]
+    }
+  })
+});
 await send("Page.navigate", { url: PAGE });
 await waitFor(`!!document.querySelector("#openLibrary")`);
 await sleep(600);
@@ -325,5 +353,17 @@ check(
   (await evalJs(
     `[...document.querySelectorAll("#libraryGrid .library-card")].map(c => c.querySelector("strong").textContent + c.querySelector(".library-glyph").textContent).join()`
   )) === "一声.mp3音"
+);
+await evalJs(`document.querySelector('[data-library-kind="all"]').click(); true`);
+await evalJs(`document.querySelector('#libraryCrumbs [data-library-dir=""]').click(); true`);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="成品.txt"]')`);
+await dragCard("成品.txt", "课程");
+await waitFor(`!document.querySelector('#libraryGrid [data-library-disk="成品.txt"]')`, 8000);
+check(
+  "a deliverable moved into a folder keeps its place on the reply",
+  existsSync(`${ARCHIVE}/课程/成品.txt`) &&
+    (await evalJs(
+      `(f => f.path + "|" + f.name)(__yanState().conversations.find(c => c.id === "deliver-follow").messages[1].deliverables[0])`
+    )) === "课程/成品.txt|成品.txt"
 );
 close();

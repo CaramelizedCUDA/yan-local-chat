@@ -332,6 +332,16 @@ async function moveArchiveFile(path, dir) {
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
       renamed = moved.name !== path.split("/").pop();
+    // 答末成品条记的是路径：件挪了，条子跟着改，不然就成了「已移出卷宗」
+    for (const c of store.conversations)
+      for (const message of allMessages(c))
+        for (const file of message.deliverables || [])
+          if (file.path === path) {
+            file.path = moved.path;
+            file.name = moved.name;
+            markDirty(c.id);
+          }
+    saveStoreSoon();
     toast(`已移入「${dir ? dir.split("/").pop() : "卷宗"}」${renamed ? `，同名已有，改作 ${moved.name}` : ""}`);
   } catch (error) {
     toast(`移动失败：${String(error.message || error).slice(0, 80)}`);
