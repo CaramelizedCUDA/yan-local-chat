@@ -423,9 +423,36 @@ function jumpToOutline(id) {
 }
 
 // ---------- 对话存成 Markdown：桥接在线时落到卷宗，否则下载 ----------
+// 元信息不是 Markdown 正文：路径、命令与文件名里的符号不能变成标题、链接或 HTML。
+function exportMarkdownLabel(value) {
+  return String(value || "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/[\\`*_{}\[\]()#+.!|~-]/g, "\\$&");
+}
+function exportToolTrail(message) {
+  const steps = message.steps || [];
+  if (!steps.length) return "";
+  // 模型上下文的 stepsDigest 会截短、只取前 16 步；导出单独排成纯文本，不把命令当 Markdown 解析。
+  const text = steps
+    .map(
+      (step, index) =>
+        `${index + 1}. ${TOOLS.get(step.name)?.label || step.name} · ${step.title || step.note || ""} → ${step.result || step.status || ""}`
+    )
+    .join("\n");
+  const fence = "`".repeat(Math.max(3, ...Array.from(text.matchAll(/`+/g), match => match[0].length + 1)));
+  return `行迹：\n\n${fence}text\n${text}\n${fence}`;
+}
 /** @param {Conversation} c */
 function conversationMarkdown(c) {
-  const lines = [`# ${c.title}`, "", `${formatDay(c.createdAt)}${isWork(c) ? ` · 工作目录 ${c.workdir}` : ""}`, ""];
+  const lines = [
+    `# ${exportMarkdownLabel(c.title)}`,
+    "",
+    `${formatDay(c.createdAt)}${isWork(c) ? ` · 工作目录 ${exportMarkdownLabel(c.workdir)}` : ""}`,
+    ""
+  ];
   for (const m of c.messages) {
     if (m.role === "context") {
       lines.push(
@@ -445,22 +472,18 @@ function conversationMarkdown(c) {
             .map(line => `> ${line}`),
           ""
         );
-      if (m.attachments?.length) lines.push(`*附件：${m.attachments.map(f => f.name).join("、")}*`, "");
+      if (m.attachments?.length) lines.push(`*附件：${m.attachments.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
       lines.push(String(m.content || ""), "");
     } else if (m.role === "assistant" && m.status !== "error") {
-      lines.push(`## 答${m.modelName ? ` · ${m.modelName}` : ""}`, "");
-      const trail = stepsDigest(m);
-      if (trail) lines.push(`*${trail}*`, "");
+      lines.push(`## 答${m.modelName ? ` · ${exportMarkdownLabel(m.modelName)}` : ""}`, "");
+      const trail = exportToolTrail(m);
+      if (trail) lines.push(trail, "");
       lines.push(String(m.content || ""), "");
-      if (m.deliverables?.length) lines.push(`*成品：${m.deliverables.map(f => f.name).join("、")}*`, "");
+      if (m.deliverables?.length) lines.push(`*成品：${m.deliverables.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
     }
   }
-  return (
-    lines
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim() + "\n"
-  );
+  // 不能全局合并空行：代码、HTML 与模板字符串里的换行本身就是内容。
+  return lines.join("\n").trim() + "\n";
 }
 /** @param {Conversation} c */
 async function exportConversationMarkdown(c) {
@@ -480,7 +503,7 @@ async function exportConversationMarkdown(c) {
     }
     return;
   }
-  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown" })),
+  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" })),
     anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = name;
