@@ -783,6 +783,57 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font: 10px var(--title);
   letter-spacing: 0.14em;
 }
+/* 书眉的另一种：翻在一段摊开的行迹中间时，换成那段行迹的题头与「收起」 */
+.running-trail {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.running-head.is-trail .running-head-title,
+.running-head.is-trail .running-head-meta {
+  display: none;
+}
+.running-head.is-trail .running-trail {
+  display: flex;
+}
+.running-trail-label {
+  flex: none;
+  font-size: 12px;
+}
+.running-head[data-live] .running-trail-label:after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+  animation: pulse 1s infinite;
+}
+.running-trail-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-3);
+  font: 10px var(--title);
+  letter-spacing: 0.1em;
+}
+.running-trail-fold {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--ink-3);
+  font: 10.5px var(--title);
+  letter-spacing: 0.1em;
+}
+.running-head.is-trail:hover .running-trail-fold {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
 .model-wrap {
   position: relative;
 }
@@ -3473,55 +3524,59 @@ sup.note-ref.active {
   width: min(100%, var(--read));
   margin: 0 auto 8px;
 }
-/* 帮手条：帮手工作期间常驻输入框上方，一行一名帮手，点一下滚到那张差遣卡片 */
+/* 工作条：一答生成期间附在输入框上方，一条淡墨底——左边改动合计，右边在做的帮手（金色）；
+   原先一名帮手一行的帮手条并进来了：帮手在行迹里有签，不必在输入框上再各占一行（见 设计稿/12-改动条与行迹 二·乙） */
 .helper-bar {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
   width: min(100%, var(--read));
   margin: 0 auto 8px;
-  padding: 7px 12px;
-  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line));
+  padding: 4px 6px;
+  border: 1px solid var(--line);
   border-radius: 11px;
-  background: color-mix(in srgb, var(--gold) 5%, var(--paper));
+  background: color-mix(in srgb, var(--paper-2) 45%, var(--paper));
   color: var(--ink-3);
   font: 11px var(--title);
   letter-spacing: 0.06em;
-  text-align: left;
-  cursor: pointer;
   animation: rise 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.helper-bar:hover {
-  border-color: var(--gold);
-}
-.helper-row {
+.work-changes,
+.work-helpers {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  padding: 3px 6px;
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
 }
-.helper-seal {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  border-color: var(--gold);
+.work-changes:hover,
+.work-helpers:hover {
+  background: color-mix(in srgb, var(--paper-3) 55%, transparent);
+}
+.work-changes .change-count {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+}
+.work-helpers {
+  margin-left: auto;
   color: var(--gold);
-  font-size: 10px;
 }
-.helper-title {
-  flex: none;
-  color: var(--gold);
-}
-.helper-doing {
+.helper-bar.only-helpers .work-helpers {
+  margin-left: 0;
   flex: 1;
+}
+.work-helpers-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ink-2);
-  letter-spacing: 0.02em;
 }
-.helper-doing:before {
+.work-helpers-text:before {
   content: "";
   display: inline-block;
   width: 4px;
@@ -3531,32 +3586,35 @@ sup.note-ref.active {
   background: var(--gold);
   animation: pulse 1.4s ease-in-out infinite;
 }
-.helper-count {
+.work-helpers-go {
   flex: none;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  letter-spacing: 0;
+  margin-left: auto;
 }
-.change-bar {
-  margin: 16px 0 6px;
-  font-family: var(--body);
+.helper-seal {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-color: var(--gold);
+  color: var(--gold);
+  font-size: 10px;
 }
-.assistant-block .change-summary {
-  padding: 9px 14px;
-  border-radius: 11px;
-  font-size: 12.5px;
-  letter-spacing: 0.06em;
+.change-seal {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  border-color: color-mix(in srgb, var(--ink-3) 55%, transparent);
   color: var(--ink-2);
+  font-size: 10px;
 }
-.assistant-block .change-summary:hover {
-  border-color: var(--ink-3);
-}
-.assistant-block .change-count {
-  font-size: 13px;
-}
-.assistant-block .change-files {
-  margin-top: 6px;
-  padding: 8px 14px;
-  font-size: 12px;
+/* 工作条的清单浮在条子上方，不把输入框往下推 */
+.helper-bar .work-files {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  width: min(100%, 460px);
+  margin: 0;
+  padding: 8px 12px;
+  box-shadow: 0 10px 30px rgba(35, 30, 22, 0.1);
 }
 .approval-bar {
   padding: 10px 12px 9px;
@@ -3802,51 +3860,72 @@ sup.note-ref.active {
   border-color: var(--accent);
   color: var(--paper);
 }
+/* 回复之下的改动条：一道细线隔开正文，无框无底；墨印「改」、合计与五枚增删小方块，点开清单缩进在下。
+   落选的：与成品条同式的淡墨签（两张签叠在回复下太重）；并进操作行（常显的一句挤在图标旁，清单只能浮着看） */
 .change-bar {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  margin: 18px 0 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
 }
 .change-summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  padding: 4px 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--paper);
+  padding: 2px 0;
   color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.08em;
+  font: 11.5px var(--title);
+  letter-spacing: 0.06em;
   cursor: pointer;
   text-align: left;
-}
-.change-count {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  letter-spacing: 0;
 }
 .change-summary:hover {
   color: var(--ink-2);
 }
-.change-bar .ins {
+.change-summary .change-count {
+  margin-left: auto;
+}
+.change-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+}
+.change-spark {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+.change-spark i {
+  width: 7px;
+  height: 7px;
+  border-radius: 1.5px;
+  background: var(--line);
+}
+.change-spark i.g {
+  background: color-mix(in srgb, var(--code-green) 75%, transparent);
+}
+.change-spark i.r {
+  background: color-mix(in srgb, var(--danger) 70%, transparent);
+}
+.change-bar .ins,
+.helper-bar .ins {
   color: var(--code-green);
 }
-.change-bar .del {
+.change-bar .del,
+.helper-bar .del {
   color: var(--danger);
 }
 .change-files {
-  width: 100%;
-  margin-top: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--paper);
-  max-height: 140px;
+  margin: 4px 0 0 25px;
+  max-height: 180px;
   overflow: auto;
   font:
-    11px/1.7 ui-monospace,
+    11.5px/1.9 ui-monospace,
     SFMono-Regular,
     Consolas,
     monospace;
@@ -3864,10 +3943,15 @@ sup.note-ref.active {
   white-space: nowrap;
 }
 .change-files em {
-  margin-left: 4px;
+  margin-left: 6px;
   color: var(--ink-3);
   font-style: normal;
   font-size: 10px;
+}
+.helper-bar .change-files {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
 }
 .tool-stack.is-work .tool-stack-body {
   max-height: none;
@@ -6343,6 +6427,64 @@ textarea::placeholder,
   padding-left: 0;
   border-left: 0;
 }
+/* 帮手行迹的题头：一行「行迹 · 几轮 · 几步」，右端收起 / 展开；收起后只剩回报 */
+.sub-fold {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 4px 0;
+  color: var(--ink-2);
+  font: 10.5px var(--title);
+  letter-spacing: 0.1em;
+  text-align: left;
+}
+.sub-fold-meta {
+  color: var(--ink-3);
+}
+.sub-fold-toggle {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--ink-3);
+}
+.sub-fold:hover .sub-fold-toggle {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+.sub-trail.folded > .sub-timeline {
+  display: none;
+}
+.sub-trail.folded > .sub-report {
+  margin-top: 4px;
+}
+/* 题头滚出面板顶上后，顶栏里浮出的同一枚「收起行迹」 */
+.helper-fold-head {
+  flex: none;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--ink-3);
+  font: 10.5px var(--title);
+  letter-spacing: 0.1em;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+.helper-fold-head.shown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+.helper-fold-head:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
 /* 帮手各轮的步骤折成一行「检索 18 · 翻阅网页 30    48 步」：与主行迹同一套折叠，但窗里不再套小滚动框。
    跑着时摊开、跑完收起，帮手说的话与回报就不会被几十条检索顶到几屏之下 */
 .helper-panel-body .sub-steps {
@@ -6402,15 +6544,19 @@ textarea::placeholder,
   }
 }
 
-/* 窗里一律不再有第二层滚动条：整个屏幕都给它了，diff 与输出正常展开就是，
+/* 窗里的 diff 与输出不再套第二层滚动条：整个屏幕都给它了，正常展开就是，
    套一个 220px 的小框再让人在里面滚，是把宽裕的地方又过成了窄的 */
 .helper-panel-body .tool-output,
 .helper-panel-body .tool-results,
-.helper-panel-body .tool-note,
-.helper-panel-body .reasoning-body,
-.helper-panel-body .sub-timeline .reasoning-body {
+.helper-panel-body .tool-note {
   max-height: none;
   overflow: visible;
+}
+/* 思绪例外：帮手一想就是几十行，全摊开会把它说的话与各步顶出几屏；比正文里的宽一些，余下的在框里滚 */
+.helper-panel-body .reasoning-body,
+.helper-panel-body .sub-timeline .reasoning-body {
+  max-height: 320px;
+  overflow: auto;
 }
 
 /* ---- 85-components.css ---- */

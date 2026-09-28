@@ -4087,10 +4087,34 @@ function renderRunningHead() {
   }
   syncRunningHead();
 }
+// 翻到一段摊开的行迹中间——它的题头已滚上去、身子还占着眼前——书眉换成这段行迹的题头，右端「收起」：一点即收，停回题头处。
+// 行迹一长，最上面那行题头就滚出屏外，要收得先翻回去找（见 设计稿/12-改动条与行迹 三·甲）
+function trailUnderHead() {
+  const top = $("#chatScroll").getBoundingClientRect().top;
+  for (const stack of document.querySelectorAll("#messages .assistant-block > details.tool-stack[open]")) {
+    const summary = stack.querySelector(":scope > summary");
+    if (summary && summary.getBoundingClientRect().bottom < top + 4 && stack.getBoundingClientRect().bottom > top + 90) return stack;
+  }
+  return null;
+}
 function syncRunningHead() {
-  $("#runningHead").classList.toggle(
+  const head = $("#runningHead"),
+    trail = currentConversation() ? trailUnderHead() : null;
+  head._trail = trail;
+  head.classList.toggle("is-trail", !!trail);
+  head.title = trail ? "收起这段行迹" : "回到开头";
+  if (trail) {
+    const label = trail.querySelector(":scope > summary .tool-stack-label")?.textContent || "",
+      meta = trail.querySelector(":scope > summary .tool-stack-meta")?.textContent || "";
+    if (head.querySelector(".running-trail-label").textContent !== label) head.querySelector(".running-trail-label").textContent = label;
+    if (head.querySelector(".running-trail-meta").textContent !== meta) head.querySelector(".running-trail-meta").textContent = meta;
+    if (trail.dataset.state === "streaming") head.dataset.live = "1";
+    else delete head.dataset.live;
+  }
+  head.classList.toggle(
     "shown",
-    !!currentConversation() && $("#chatTitle").getBoundingClientRect().bottom < $("#chatScroll").getBoundingClientRect().top + 4
+    !!trail ||
+      (!!currentConversation() && $("#chatTitle").getBoundingClientRect().bottom < $("#chatScroll").getBoundingClientRect().top + 4)
   );
 }
 function renderConversation(shouldScroll = false) {
@@ -4501,7 +4525,13 @@ function bindScrollEvents() {
     syncOutline();
     syncRunningHead();
   });
-  $("#runningHead").addEventListener("click", () => $("#chatScroll").scrollTo({ top: 0, behavior: "smooth" }));
+  $("#runningHead").addEventListener("click", () => {
+    const trail = $("#runningHead")._trail;
+    if (!trail?.isConnected) return $("#chatScroll").scrollTo({ top: 0, behavior: "smooth" });
+    // 与亲手点行迹题头同一条路：记在消息上，流式期间不再被自动摊开
+    trail.querySelector(":scope > summary").click();
+    scrollChatTo(trail);
+  });
   // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧
   if (typeof ResizeObserver === "function")
     new ResizeObserver(() => {
@@ -4947,7 +4977,7 @@ function delegateTrailHtml(step) {
         ? `<div class="sub-idle">帮手正在凝神</div>`
         : ""
   }</div>`;
-  // 面板里整条时间线不再折起来：这一栏就是为了看过程而开的，开了还要再点一下才见内容没有道理；折的是各轮的步骤
+  // 面板开着默认摊开（这一栏就是为了看过程而开的）；题头一行可整条收起，只看回报（见 syncSubFold）
   return `<div class="sub-trail"${live ? ' data-live="true"' : ""}><div class="sub-timeline">${groups}${tail}</div>${report ? `<div class="sub-report">${renderMarkdown(report)}</div>` : ""}</div>`;
 }
 // 帮手时间线就地更新（面板里那一条）。帮手每 350ms 刷一次，若整段换新：已画出的步骤输出会重新起入场动画
@@ -4961,7 +4991,7 @@ function syncDelegateTrail(trail, step, seen) {
   let timeline = trail.querySelector(":scope > .sub-timeline");
   if (!timeline) {
     trail.insertAdjacentHTML("afterbegin", `<div class="sub-timeline"><div class="sub-tail"></div></div>`);
-    timeline = trail.firstElementChild;
+    timeline = trail.querySelector(":scope > .sub-timeline");
   }
   let tail = timeline.querySelector(":scope > .sub-tail");
   if (!tail) {
@@ -5078,39 +5108,42 @@ function delegateDoing(step) {
       .find(Boolean);
   return said ? said.slice(0, 80) : sub?.reasoning ? "正在凝神" : "领命中";
 }
-// 帮手条：帮手工作期间常驻输入框上方，不必翻回行迹里找那张卡片；点一下滚到卡片
+// 工作条：一答生成期间附在输入框上方——左边这一答的改动合计（帮手改的也算进来，点开浮出清单），右边在做的帮手（点开差遣面板）。
+// 两样都没有就不挂；写完了改动落到回复之下，条子撤掉（见 设计稿/12-改动条与行迹 二·乙）
+let workFilesOpen = false;
 function renderHelperBar() {
   const bar = $("#helperBar");
   if (!bar) return;
   const c = currentConversation(),
     message = c && view === "chat" ? [...c.messages].reverse().find(m => m.role === "assistant" && m.status === "streaming") : null,
-    helpers = message ? runningDelegates(message) : [];
-  if (!helpers.length) {
-    bar.dataset.stepId = "";
+    helpers = message ? runningDelegates(message) : [],
+    stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 };
+  if (!helpers.length && !stats.files.length) {
+    workFilesOpen = false;
+    bar.dataset.sig = "";
     if (!bar.classList.contains("hidden")) hideWithFade(bar);
     return;
   }
-  // 几名帮手同时在做时一人一行；条上记着第一名的步骤 id，点一下滚到它
-  const key = helpers.map(h => h.id).join(",");
-  if (bar.dataset.key !== key) {
-    bar.dataset.key = key;
-    bar.dataset.stepId = helpers[0].id;
-    bar.innerHTML = helpers
-      .map(
-        h =>
-          `<span class="helper-row" data-helper="${escapeHtml(h.id)}"><span class="seal helper-seal" aria-hidden="true">帮</span><span class="helper-title"></span><span class="helper-doing"></span><span class="helper-count"></span></span>`
-      )
-      .join("");
+  const changes = stats.files.length
+      ? `<button type="button" class="work-changes" aria-expanded="${workFilesOpen}" title="这一答改过的文件"><span class="seal change-seal" aria-hidden="true">改</span><span>改 ${stats.files.length} 件</span><span class="change-count">${changeCountHtml(stats)}</span></button>`
+      : "",
+    // 题目逐次取：条子常在步骤刚入册、runDelegate 还没把题目填上时就搭好了
+    who =
+      helpers.length > 1
+        ? `${helpers.length} 名帮手 · 进行中`
+        : helpers.length
+          ? `帮手「${String(helpers[0].title || "").slice(0, 24)}」· ${delegateDoing(helpers[0])}`
+          : "",
+    helper = helpers.length
+      ? `<button type="button" class="work-helpers" data-helper="${escapeHtml(helpers[0].id)}" title="打开差遣面板"><span class="seal helper-seal" aria-hidden="true">帮</span><span class="work-helpers-text">${escapeHtml(who)}</span><span class="work-helpers-go" aria-hidden="true">›</span></button>`
+      : "",
+    html = `${changes}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
+  // 帮手每 350ms 刷一次，没变就不动，免得清单里的滚动位置被重画冲掉
+  if (bar.dataset.sig !== html) {
+    bar.dataset.sig = html;
+    bar.innerHTML = html;
   }
-  for (const h of helpers) {
-    const row = bar.querySelector(`.helper-row[data-helper="${CSS.escape(h.id)}"]`);
-    if (!row) continue;
-    // 题目逐次写：条子常在步骤刚入册、runDelegate 还没把题目填上时就搭好了，只在搭时写一次会一直是空的「」
-    const title = `差遣「${String(h.title || "").slice(0, 40)}」`;
-    if (row.querySelector(".helper-title").textContent !== title) row.querySelector(".helper-title").textContent = title;
-    row.querySelector(".helper-doing").textContent = delegateDoing(h);
-    rollText(row.querySelector(".helper-count"), `${h.sub?.steps.length || 0} 步`);
-  }
+  bar.classList.toggle("only-helpers", !changes);
   if (bar.classList.contains("hidden") || bar.classList.contains("leaving")) showNow(bar);
 }
 
@@ -5172,6 +5205,60 @@ function renderHelperList() {
     .join("");
 }
 /** @param {boolean} fresh 首次打开或换了一次差遣：整段重画；否则就地更新 */
+// 帮手行迹的收起：时间线上方一行题头（几轮 · 几步 · 收起），收起的记在这里，翻到别的帮手再翻回来仍是收着的。
+// 题头滚出面板顶上时，面板顶栏右侧浮出同一枚「收起行迹」，与主对话的书眉一个意思
+const helperFolded = new Set();
+/** @param {Step} step */
+function syncSubFold(trail, step) {
+  const { sub, steps, live } = delegateSubState(step);
+  if (!trail || !sub) return;
+  let head = trail.querySelector(":scope > .sub-fold");
+  if (!head) {
+    trail.insertAdjacentHTML(
+      "afterbegin",
+      `<button type="button" class="sub-fold"><span class="sub-fold-label">行迹</span><span class="sub-fold-meta"></span><span class="sub-fold-toggle"></span></button>`
+    );
+    head = trail.querySelector(":scope > .sub-fold");
+  }
+  const folded = helperFolded.has(step.id),
+    rounds = trailGroups(sub).length,
+    meta = live ? `${steps.length} 步 · 进行中` : `${rounds} 轮 · ${steps.length} 步`;
+  trail.classList.toggle("folded", folded);
+  head.setAttribute("aria-expanded", String(!folded));
+  rollText(head.querySelector(".sub-fold-meta"), meta);
+  head.querySelector(".sub-fold-toggle").textContent = folded ? "展开 ﹀" : "收起 ︿";
+  syncHelperFoldHead();
+}
+function toggleSubFold(fold) {
+  if (!helperStepId) return;
+  if (fold ?? !helperFolded.has(helperStepId)) helperFolded.add(helperStepId);
+  else helperFolded.delete(helperStepId);
+  const trail = $("#helperPanelBody > .sub-trail"),
+    step = helperStepById(helperStepId);
+  syncSubFold(trail, step);
+  // 从顶栏收起时，停回题头处
+  const head = trail?.querySelector(":scope > .sub-fold"),
+    scroll = $("#helperScroll");
+  if (head && head.getBoundingClientRect().top < scroll.getBoundingClientRect().top)
+    scroll.scrollTo({
+      top: scroll.scrollTop + head.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 12,
+      behavior: "smooth"
+    });
+}
+function syncHelperFoldHead() {
+  const button = $("#helperFoldHead"),
+    trail = $("#helperPanelBody > .sub-trail"),
+    head = trail?.querySelector(":scope > .sub-fold"),
+    timeline = trail?.querySelector(":scope > .sub-timeline");
+  if (!button) return;
+  const top = $("#helperScroll").getBoundingClientRect().top,
+    show =
+      !!head &&
+      !trail.classList.contains("folded") &&
+      head.getBoundingClientRect().bottom < top &&
+      timeline.getBoundingClientRect().bottom > top + 60;
+  button.classList.toggle("shown", show);
+}
 function renderHelperPanel(fresh = false) {
   if (!helperPanelOpen()) return;
   const step = helperStepById(helperStepId);
@@ -5216,9 +5303,10 @@ function renderHelperPanel(fresh = false) {
     if (sub)
       for (const group of trailGroups(sub))
         for (const s of group.steps) helperSeen.set(s.id, { html: stepHtml(s), hasBody: false, status: s.status });
-    return;
+    return syncSubFold(trail, step);
   }
   syncDelegateTrail(trail, step, helperSeen);
+  syncSubFold(trail, step);
 }
 
 function stepStateHtml(status) {
@@ -5548,9 +5636,19 @@ function bindTrailEvents() {
 
 // 差遣面板：帮手条与行迹里的签打开它，遮罩与合起关上它，‹ › 与列表翻帮手
 function bindHelperEvents() {
-  // 帮手条点一下开差遣面板：帮手的活在右边看，行迹里只留一枚签
+  // 帮手行迹的收起：时间线上方的题头，与翻过题头后顶栏右侧浮出的那一枚
+  $("#helperPanelBody").addEventListener("click", event => {
+    if (event.target.closest(".sub-fold")) toggleSubFold();
+  });
+  $("#helperFoldHead").addEventListener("click", () => toggleSubFold(true));
+  $("#helperScroll").addEventListener("scroll", syncHelperFoldHead, { passive: true });
+  // 工作条：左边的改动点开浮出清单，右边的帮手点开差遣面板
   $("#helperBar").addEventListener("click", event => {
-    const id = event.target.closest(".helper-row")?.dataset.helper || $("#helperBar").dataset.stepId || "";
+    if (event.target.closest(".work-changes")) {
+      workFilesOpen = !workFilesOpen;
+      return renderHelperBar();
+    }
+    const id = event.target.closest(".work-helpers")?.dataset.helper;
     if (id) openHelperPanel(id);
   });
   // 行迹里的那枚签：点它（或敲回车 / 空格）同样开面板
@@ -7415,6 +7513,16 @@ async function moveArchiveFile(path, dir) {
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
       renamed = moved.name !== path.split("/").pop();
+    // 答末成品条记的是路径：件挪了，条子跟着改，不然就成了「已移出卷宗」
+    for (const c of store.conversations)
+      for (const message of allMessages(c))
+        for (const file of message.deliverables || [])
+          if (file.path === path) {
+            file.path = moved.path;
+            file.name = moved.name;
+            markDirty(c.id);
+          }
+    saveStoreSoon();
     toast(`已移入「${dir ? dir.split("/").pop() : "卷宗"}」${renamed ? `，同名已有，改作 ${moved.name}` : ""}`);
   } catch (error) {
     toast(`移动失败：${String(error.message || error).slice(0, 80)}`);
@@ -10189,8 +10297,9 @@ async function ensureWorkReady(conversation) {
 }
 
   // ---- 15-tools/22-changes.js ----
-// 言 · 改动与成品：执事这一答改过哪些文件（挂在回复末尾的改动条），言这一答在卷宗里新出了哪几件（成品条）
-// 改动摘要：这一答里执事改过哪些文件、各增减多少行，挂在回复末尾，写入/修改一落地就实时累加，不等整条回复收尾
+// 言 · 改动与成品：执事这一答改过哪些文件（改动条），言这一答在卷宗里新出了哪几件（成品条）
+// 改动摘要：这一答里执事改过哪些文件、各增减多少行。生成中附在输入框上的工作条里实时累加（见 renderHelperBar），
+// 不跟着正文尾巴跑；写完才落到回复之下，是一道线而不是一只框（见 设计稿/12-改动条与行迹）
 function diffCounts(oldText, newText) {
   const a = String(oldText || "").split(/\r?\n/),
     b = String(newText || "").split(/\r?\n/);
@@ -10208,21 +10317,40 @@ function changeStats(message) {
   const files = new Map();
   for (const step of allSteps(message)) {
     if (!step.change || step.status !== "done") continue;
-    const entry = files.get(step.change.path) || { path: step.change.path, added: 0, removed: 0, created: false };
+    const entry = files.get(step.change.path) || { path: step.change.path, added: 0, removed: 0, created: false, helper: false };
     entry.added += step.change.added;
     entry.removed += step.change.removed;
     entry.created ||= !!step.change.created;
+    entry.helper ||= !!step.scope;
     files.set(step.change.path, entry);
   }
   const list = [...files.values()];
   return { files: list, added: list.reduce((sum, f) => sum + f.added, 0), removed: list.reduce((sum, f) => sum + f.removed, 0) };
 }
+// 增删的比例画成五枚小方块：绿的是增、朱的是删，余下留白
+function changeSpark(added, removed) {
+  const total = added + removed,
+    green = total ? Math.round((5 * added) / total) : 0,
+    red = total ? Math.min(5 - green, Math.round((5 * removed) / total)) : 0;
+  return `<span class="change-spark" aria-hidden="true">${'<i class="g"></i>'.repeat(green)}${'<i class="r"></i>'.repeat(red)}${"<i></i>".repeat(5 - green - red)}</span>`;
+}
+function changeCountHtml(stats) {
+  return `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
+}
+// 清单一件一行：路径、新建 / 帮手所改的小注、增删行数
+function changeFilesHtml(stats, open, extra = "") {
+  return `<div class="change-files${extra}${open ? "" : " hidden"}">${stats.files
+    .map(f => {
+      const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · ");
+      return `<div><span class="path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></div>`;
+    })
+    .join("")}</div>`;
+}
 /** @param {Message} message */
 function changeSummaryInner(message, open) {
   const stats = changeStats(message);
   if (!stats.files.length) return "";
-  const count = `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
-  return `<button type="button" class="change-summary" aria-expanded="${open}"><span>${stats.files.length} 个文件已更改</span><span class="change-count">${count}</span></button><div class="change-files${open ? "" : " hidden"}">${stats.files.map(f => `<div><span class="path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}${f.created ? " <em>新建</em>" : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></div>`).join("")}</div>`;
+  return `<button type="button" class="change-summary" aria-expanded="${open}"><span class="seal change-seal" aria-hidden="true">改</span><span class="change-title">改动 ${stats.files.length} 个文件</span><span class="change-count">${changeCountHtml(stats)}${changeSpark(stats.added, stats.removed)}</span></button>${changeFilesHtml(stats, open)}`;
 }
 // 成品：言里这一答在卷宗根目录新出或改过的文件。一件一行：类型、文件名、大小，右侧「看」（悬浮预览）与「下载」
 // 卷宗里已经删掉的成品：条目留着（这一答确实出过这件），但标成「已移出卷宗」，不再给看与下载的按钮
@@ -10257,15 +10385,15 @@ function syncDeliverables() {
 }
 /** @param {Message} message */
 function changeSummaryHtml(message, open = false) {
-  const inner = changeSummaryInner(message, open);
+  const inner = message.status === "streaming" ? "" : changeSummaryInner(message, open);
   return inner ? `<div class="change-bar">${inner}</div>` : "";
 }
-// 步骤每次刷新都把改动条同步到回复末尾：数字就地更新（展开状态保留），首次出现时轻浮一下
+// 回复之下的改动条：生成中不画（那时改动在输入框上方的工作条里），写完落下来时轻浮一下；数字就地更新，展开状态保留
 /** @param {Message} assistant */
 function syncChangeBar(block, assistant) {
   const bar = block.querySelector(":scope > .change-bar"),
     open = bar?.querySelector(".change-summary")?.getAttribute("aria-expanded") === "true",
-    inner = changeSummaryInner(assistant, open);
+    inner = assistant.status === "streaming" ? "" : changeSummaryInner(assistant, open);
   if (!inner) return bar?.remove();
   if (!bar) {
     block.insertAdjacentHTML("beforeend", `<div class="change-bar is-new">${inner}</div>`);
