@@ -89,8 +89,8 @@
   width: 17px;
   height: 17px;
   flex: none;
-  border-color: color-mix(in srgb, var(--ink-3) 55%, transparent);
-  color: var(--ink-2);
+  border-color: color-mix(in srgb, var(--rouge) 62%, transparent);
+  color: var(--rouge);
   font-size: 10px;
 }
 /* 工作条的清单浮在条子上方，不把输入框往下推 */

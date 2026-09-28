@@ -586,7 +586,7 @@ function renderHelperList() {
     .join("");
 }
 /** @param {boolean} fresh 首次打开或换了一次差遣：整段重画；否则就地更新 */
-// 帮手行迹的收起：时间线上方一行题头（几轮 · 几步 · 收起），收起的记在这里，翻到别的帮手再翻回来仍是收着的。
+// 帮手行迹的收起：时间线上方一行题头（折角 · 行迹 · 几轮 · 几步，与主行迹题头同一枚折角，点它开合），收起的记在这里，翻到别的帮手再翻回来仍是收着的。
 // 题头滚出面板顶上时，面板顶栏右侧浮出同一枚「收起行迹」，与主对话的书眉一个意思
 const helperFolded = new Set();
 /** @param {Step} step */
@@ -597,7 +597,7 @@ function syncSubFold(trail, step) {
   if (!head) {
     trail.insertAdjacentHTML(
       "afterbegin",
-      `<button type="button" class="sub-fold"><span class="sub-fold-label">行迹</span><span class="sub-fold-meta"></span><span class="sub-fold-toggle"></span></button>`
+      `<button type="button" class="sub-fold"><span class="sub-fold-label">行迹</span><span class="sub-fold-meta"></span></button>`
     );
     head = trail.querySelector(":scope > .sub-fold");
   }
@@ -607,7 +607,7 @@ function syncSubFold(trail, step) {
   trail.classList.toggle("folded", folded);
   head.setAttribute("aria-expanded", String(!folded));
   rollText(head.querySelector(".sub-fold-meta"), meta);
-  head.querySelector(".sub-fold-toggle").textContent = folded ? "展开 ﹀" : "收起 ︿";
+  head.title = folded ? "展开帮手的行迹" : "收起帮手的行迹，只看回报";
   syncHelperFoldHead();
 }
 function toggleSubFold(fold) {

@@ -293,8 +293,8 @@ function renderRunningHead() {
   }
   syncRunningHead();
 }
-// 翻到一段摊开的行迹中间——它的题头已滚上去、身子还占着眼前——书眉换成这段行迹的题头，右端「收起」：一点即收，停回题头处。
-// 行迹一长，最上面那行题头就滚出屏外，要收得先翻回去找（见 设计稿/12-改动条与行迹 三·甲）
+// 翻到一段摊开的行迹中间——它的题头已滚上去、身子还占着眼前——顶栏右侧、对话那一列的右缘处浮出一枚「收起行迹」：一点即收，停回题头处。
+// 行迹一长，最上面那行题头就滚出屏外，要收得先翻回去找。左边的书眉照旧是题名，不跟着换（见 设计稿/12-改动条与行迹 三·甲）
 function trailUnderHead() {
   const top = $("#chatScroll").getBoundingClientRect().top;
   for (const stack of document.querySelectorAll("#messages .assistant-block > details.tool-stack[open]")) {
@@ -304,24 +304,14 @@ function trailUnderHead() {
   return null;
 }
 function syncRunningHead() {
-  const head = $("#runningHead"),
-    trail = currentConversation() ? trailUnderHead() : null;
-  head._trail = trail;
-  head.classList.toggle("is-trail", !!trail);
-  head.title = trail ? "收起这段行迹" : "回到开头";
-  if (trail) {
-    const label = trail.querySelector(":scope > summary .tool-stack-label")?.textContent || "",
-      meta = trail.querySelector(":scope > summary .tool-stack-meta")?.textContent || "";
-    if (head.querySelector(".running-trail-label").textContent !== label) head.querySelector(".running-trail-label").textContent = label;
-    if (head.querySelector(".running-trail-meta").textContent !== meta) head.querySelector(".running-trail-meta").textContent = meta;
-    if (trail.dataset.state === "streaming") head.dataset.live = "1";
-    else delete head.dataset.live;
-  }
-  head.classList.toggle(
+  $("#runningHead").classList.toggle(
     "shown",
-    !!trail ||
-      (!!currentConversation() && $("#chatTitle").getBoundingClientRect().bottom < $("#chatScroll").getBoundingClientRect().top + 4)
+    !!currentConversation() && $("#chatTitle").getBoundingClientRect().bottom < $("#chatScroll").getBoundingClientRect().top + 4
   );
+  const fold = $("#trailFold"),
+    trail = currentConversation() ? trailUnderHead() : null;
+  fold._trail = trail;
+  fold.classList.toggle("shown", !!trail);
 }
 function renderConversation(shouldScroll = false) {
   const c = currentConversation();
@@ -731,9 +721,10 @@ function bindScrollEvents() {
     syncOutline();
     syncRunningHead();
   });
-  $("#runningHead").addEventListener("click", () => {
-    const trail = $("#runningHead")._trail;
-    if (!trail?.isConnected) return $("#chatScroll").scrollTo({ top: 0, behavior: "smooth" });
+  $("#runningHead").addEventListener("click", () => $("#chatScroll").scrollTo({ top: 0, behavior: "smooth" }));
+  $("#trailFold").addEventListener("click", () => {
+    const trail = $("#trailFold")._trail;
+    if (!trail?.isConnected) return;
     // 与亲手点行迹题头同一条路：记在消息上，流式期间不再被自动摊开
     trail.querySelector(":scope > summary").click();
     scrollChatTo(trail);

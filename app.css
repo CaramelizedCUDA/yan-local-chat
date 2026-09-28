@@ -82,6 +82,9 @@ input[type="number"]::-webkit-outer-spin-button {
   --keep: #4f6470;
   /* 石绿：出门取物——检索、翻阅网页与文档、调接口。远山是青的，去本机之外拿东西用这一色 */
   --reach: #4e6b5c;
+  /* 胭脂：改动的印。花鸟里点花瓣的紫红，比朱冷一档——回复之下与输入框上方那枚「改」印专用，
+     与「成」的朱印挨着也分得开（见 设计稿/14-改印候选与收起写法；落选：朱砂同「成」、雌黄近泥金、赭石太沉、花青撞黛） */
+  --rouge: #963a50;
   --code-green: #536d62;
   --code-blue: #5c6386;
   --shadow: 0 18px 55px rgba(61, 49, 32, 0.13);
@@ -216,6 +219,7 @@ input[type="number"]::-webkit-outer-spin-button {
   --gold-soft: #4a3f27;
   --keep: #8fa6b4;
   --reach: #8fb3a0;
+  --rouge: #d07d92;
   --code-green: #8fb3a3;
   --code-blue: #9aa3cc;
   --shadow: 0 22px 64px rgba(0, 0, 0, 0.36);
@@ -783,56 +787,38 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font: 10px var(--title);
   letter-spacing: 0.14em;
 }
-/* 书眉的另一种：翻在一段摊开的行迹中间时，换成那段行迹的题头与「收起」 */
-.running-trail {
-  display: none;
+/* 翻在一段摊开的行迹中间时，顶栏右侧浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
+   贴着对话那一列的右缘，窗窄时让开右边的状态。落选的：书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
+.trail-fold-head {
+  position: absolute;
+  top: 50%;
+  right: max(calc((100% - var(--read)) / 2), 300px);
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.running-head.is-trail .running-head-title,
-.running-head.is-trail .running-head-meta {
-  display: none;
-}
-.running-head.is-trail .running-trail {
-  display: flex;
-}
-.running-trail-label {
-  flex: none;
-  font-size: 12px;
-}
-.running-head[data-live] .running-trail-label:after {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-left: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  vertical-align: 1px;
-  animation: pulse 1s infinite;
-}
-.running-trail-meta {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 7px;
+  padding: 3px 7px;
+  border-radius: 6px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: 11px var(--title);
   letter-spacing: 0.1em;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-50% + 4px));
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
 }
-.running-trail-fold {
-  flex: none;
-  padding: 2px 8px;
-  border: 1px solid var(--line);
-  border-radius: 99px;
-  color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.1em;
+.trail-fold-head.shown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%);
 }
-.running-head.is-trail:hover .running-trail-fold {
-  border-color: var(--ink-3);
+.trail-fold-head:hover {
+  background: var(--paper-2);
   color: var(--ink);
+}
+.main:has(#chat.hidden) .trail-fold-head {
+  display: none;
 }
 .model-wrap {
   position: relative;
@@ -3602,8 +3588,8 @@ sup.note-ref.active {
   width: 17px;
   height: 17px;
   flex: none;
-  border-color: color-mix(in srgb, var(--ink-3) 55%, transparent);
-  color: var(--ink-2);
+  border-color: color-mix(in srgb, var(--rouge) 62%, transparent);
+  color: var(--rouge);
   font-size: 10px;
 }
 /* 工作条的清单浮在条子上方，不把输入框往下推 */
@@ -6427,32 +6413,41 @@ textarea::placeholder,
   padding-left: 0;
   border-left: 0;
 }
-/* 帮手行迹的题头：一行「行迹 · 几轮 · 几步」，右端收起 / 展开；收起后只剩回报 */
+/* 帮手行迹的题头：与主行迹「∨ 工作了 …」同一枚细折角，题头本身即开合；收起后只剩回报。
+   落选的：右端一枚圆角胶囊「收起 ︿」（现代 UI 的画法，与周围的折角、引线都不是一路） */
 .sub-fold {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  margin: 0 0 6px;
-  padding: 4px 0;
-  color: var(--ink-2);
+  gap: 7px;
+  margin: 0 0 6px -1px;
+  padding: 2px 6px 2px 1px;
+  border-radius: 6px;
+  color: var(--ink-3);
   font: 10.5px var(--title);
   letter-spacing: 0.1em;
   text-align: left;
 }
-.sub-fold-meta {
-  color: var(--ink-3);
+.sub-fold:before,
+.helper-fold-head:before,
+.trail-fold-head:before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 0.15s;
 }
-.sub-fold-toggle {
-  margin-left: auto;
-  padding: 1px 8px;
-  border: 1px solid var(--line);
-  border-radius: 99px;
-  color: var(--ink-3);
+.sub-trail.folded > .sub-fold:before {
+  transform: rotate(-45deg);
 }
-.sub-fold:hover .sub-fold-toggle {
-  border-color: var(--ink-3);
-  color: var(--ink);
+.sub-fold:hover {
+  background: var(--paper-2);
+  color: var(--ink-2);
+}
+.sub-fold-label {
+  color: var(--ink-2);
 }
 .sub-trail.folded > .sub-timeline {
   display: none;
@@ -6460,12 +6455,14 @@ textarea::placeholder,
 .sub-trail.folded > .sub-report {
   margin-top: 4px;
 }
-/* 题头滚出面板顶上后，顶栏里浮出的同一枚「收起行迹」 */
+/* 题头滚出面板顶上后，顶栏里浮出的同一枚：一行字带朝上的折角 */
 .helper-fold-head {
   flex: none;
-  padding: 2px 9px;
-  border: 1px solid var(--line);
-  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 7px;
+  border-radius: 6px;
   color: var(--ink-3);
   font: 10.5px var(--title);
   letter-spacing: 0.1em;
@@ -6476,13 +6473,17 @@ textarea::placeholder,
     opacity 0.2s ease,
     transform 0.2s ease;
 }
+.helper-fold-head:before,
+.trail-fold-head:before {
+  transform: rotate(-135deg) translate(-1px, -1px);
+}
 .helper-fold-head.shown {
   opacity: 1;
   pointer-events: auto;
   transform: none;
 }
 .helper-fold-head:hover {
-  border-color: var(--ink-3);
+  background: var(--paper-2);
   color: var(--ink);
 }
 /* 帮手各轮的步骤折成一行「检索 18 · 翻阅网页 30    48 步」：与主行迹同一套折叠，但窗里不再套小滚动框。

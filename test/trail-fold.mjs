@@ -163,27 +163,26 @@ check(
 );
 await shot("trail-change-bar.png");
 
-// 翻到行迹中间：书眉换成它的题头
+// 翻到行迹中间：顶栏右侧、对话列右缘处浮出「收起行迹」；左边的书眉照旧是题名
+const foldShown = () => evalJs(`document.querySelector("#trailFold").classList.contains("shown")`);
 await evalJs(`(h => { h.scrollTop = 0; h.dispatchEvent(new Event("scroll")); })(document.querySelector("#chatScroll")); true`);
 await sleep(200);
-check(
-  "while the trail head is on screen the running head stays quiet",
-  !(await evalJs(`document.querySelector("#runningHead").classList.contains("is-trail")`))
-);
+check("while the trail head is on screen no fold button floats", !(await foldShown()));
 await evalJs(
   `(() => { const host = document.querySelector("#chatScroll"), summary = document.querySelector(".message.assistant .tool-stack > summary"); host.scrollTop += summary.getBoundingClientRect().top - host.getBoundingClientRect().top + 160; host.dispatchEvent(new Event("scroll")); })(); true`
 );
 await sleep(300);
-const head = await evalJs(
-  `(h => ({ trail: h.classList.contains("is-trail"), shown: h.classList.contains("shown"), label: h.querySelector(".running-trail-label").textContent, fold: h.querySelector(".running-trail-fold").textContent }))(document.querySelector("#runningHead"))`
+const place = await evalJs(
+  `(() => { const f = document.querySelector("#trailFold").getBoundingClientRect(), col = document.querySelector("#messages").getBoundingClientRect(); return { right: Math.round(f.right), col: Math.round(col.right), title: document.querySelector("#runningHead .running-head-title").textContent }; })()`
 );
 check(
-  "inside a long open trail the running head becomes its head",
-  head.trail && head.shown && head.label.startsWith("工作了") && head.fold.startsWith("收起"),
-  JSON.stringify(head)
+  "inside a long open trail a fold button floats at the column's right edge, the title left as is",
+  // 贴着对话列的右缘；窗窄时让开右边的状态，往里收一截
+  (await foldShown()) && place.right <= place.col + 4 && place.right > place.col - 160 && place.title === "行迹收起",
+  JSON.stringify(place)
 );
 await shot("trail-running-head.png");
-await evalJs(`document.querySelector("#runningHead").click(); true`);
+await evalJs(`document.querySelector("#trailFold").click(); true`);
 await sleep(700);
 check(
   "clicking it folds the trail and remembers the choice",
@@ -193,10 +192,7 @@ check(
 );
 await evalJs(`document.querySelector("#chatScroll").dispatchEvent(new Event("scroll")); true`);
 await sleep(200);
-check(
-  "once folded the running head goes back to the title",
-  !(await evalJs(`document.querySelector("#runningHead").classList.contains("is-trail")`))
-);
+check("once folded the button goes away", !(await foldShown()));
 
 // 帮手面板：时间线上方的题头可收；思绪限高
 await evalJs(`document.querySelector(".message.assistant .tool-stack > summary").click(); true`);
@@ -205,7 +201,7 @@ await evalJs(`document.querySelector('.tool-step-delegate[data-step-id="d1"] .to
 await waitFor(`!!document.querySelector("#helperPanelBody .sub-fold")`, 5000);
 check(
   "the helper panel heads its trail with rounds and steps",
-  (await evalJs(`document.querySelector("#helperPanelBody .sub-fold").textContent`)) === "行迹2 轮 · 3 步收起 ︿"
+  (await evalJs(`document.querySelector("#helperPanelBody .sub-fold").textContent`)) === "行迹2 轮 · 3 步"
 );
 await evalJs(`document.querySelectorAll("#helperPanelBody .reasoning").forEach(d => (d.open = true)); true`);
 await sleep(300);

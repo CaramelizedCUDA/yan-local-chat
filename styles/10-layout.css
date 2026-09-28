@@ -549,56 +549,38 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font: 10px var(--title);
   letter-spacing: 0.14em;
 }
-/* 书眉的另一种：翻在一段摊开的行迹中间时，换成那段行迹的题头与「收起」 */
-.running-trail {
-  display: none;
+/* 翻在一段摊开的行迹中间时，顶栏右侧浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
+   贴着对话那一列的右缘，窗窄时让开右边的状态。落选的：书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
+.trail-fold-head {
+  position: absolute;
+  top: 50%;
+  right: max(calc((100% - var(--read)) / 2), 300px);
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.running-head.is-trail .running-head-title,
-.running-head.is-trail .running-head-meta {
-  display: none;
-}
-.running-head.is-trail .running-trail {
-  display: flex;
-}
-.running-trail-label {
-  flex: none;
-  font-size: 12px;
-}
-.running-head[data-live] .running-trail-label:after {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-left: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  vertical-align: 1px;
-  animation: pulse 1s infinite;
-}
-.running-trail-meta {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 7px;
+  padding: 3px 7px;
+  border-radius: 6px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: 11px var(--title);
   letter-spacing: 0.1em;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-50% + 4px));
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
 }
-.running-trail-fold {
-  flex: none;
-  padding: 2px 8px;
-  border: 1px solid var(--line);
-  border-radius: 99px;
-  color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.1em;
+.trail-fold-head.shown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%);
 }
-.running-head.is-trail:hover .running-trail-fold {
-  border-color: var(--ink-3);
+.trail-fold-head:hover {
+  background: var(--paper-2);
   color: var(--ink);
+}
+.main:has(#chat.hidden) .trail-fold-head {
+  display: none;
 }
 .model-wrap {
   position: relative;
