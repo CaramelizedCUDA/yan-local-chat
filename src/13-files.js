@@ -537,12 +537,26 @@ async function fileViewerBody(reader, name, kind) {
     return `<div class="file-viewer-empty">此类文件无法在此预览，请下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
   // 网页放进与页内 ```html 同一个隔离沙箱：不能读本站的存储，也不能联网
   if (kind === "html") {
-    const source = await reader.text(),
-      id = `app${uid().replace(/[^a-z0-9]/gi, "")}`;
+    let source = await reader.text();
+    let theme = vizTheme();
+    // 自带运行时的导出作品：在言里重新打开时取出原始源码，仍用当前的隔离预览，不嵌套导出外壳。
+    const outer = new DOMParser().parseFromString(source, "text/html"),
+      frameSource = outer.querySelector('iframe[sandbox="allow-scripts"][srcdoc]')?.getAttribute("srcdoc");
+    if (frameSource) {
+      const packed = new DOMParser().parseFromString(frameSource, "text/html").getElementById("yan-preview-export");
+      if (packed) {
+        const data = JSON.parse(packed.textContent);
+        if (typeof data.html === "string") {
+          source = data.html;
+          theme = data.theme || theme;
+        }
+      }
+    }
+    const id = `app${uid().replace(/[^a-z0-9]/gi, "")}`;
     setTimeout(() => {
       const frame = $("#fileViewerStage iframe");
       if (!frame) return;
-      frame.addEventListener("load", () => frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source }, "*"), {
+      frame.addEventListener("load", () => frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source, theme }, "*"), {
         once: true
       });
       frame.src = `./preview.html#${id}`;

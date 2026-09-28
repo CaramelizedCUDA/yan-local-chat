@@ -2620,6 +2620,49 @@ function parseVizJson(source) {
 function htmlAppSource(el) {
   return el.querySelector(".html-app-source code")?.textContent || "";
 }
+// 下载的是能独立打开的作品：把同一份沙箱运行时、所需本地库和主题装进文件，不依赖 yan: 地址或本站。
+async function standaloneHtmlApp(source) {
+  const parsed = new DOMParser().parseFromString(source, "text/html"),
+    names = new Set(
+      Array.from(
+        parsed.querySelectorAll("script[src]"),
+        node => (node.getAttribute("src") || "").match(/^yan:(echarts|mermaid)$/)?.[1]
+      ).filter(Boolean)
+    );
+  if (parsed.querySelector(".mermaid")) names.add("mermaid");
+  const read = async path => {
+    const response = await fetch(path, { signal: AbortSignal.timeout(30000) });
+    if (!response.ok) throw Error(`导出资源未能载入：${path}`);
+    return response.text();
+  };
+  const [runtime, libraries] = await Promise.all([
+    read("./preview-runtime.js"),
+    Promise.all(
+      [...names].map(async name => {
+        const [code, license] = await Promise.all([read(`./vendor/${name}.min.js`), read(`./vendor/${name.toUpperCase()}-LICENSE.txt`)]);
+        return [name, dataUrlFromText(`/* ${license.replace(/\*\//g, "* / ")} */\n${code}`, "text/javascript")];
+      })
+    )
+  ]);
+  const theme = vizTheme(),
+    config = JSON.stringify({ html: source, theme, libraries: Object.fromEntries(libraries) }).replace(/</g, "\\u003c"),
+    csp =
+      "default-src 'none'; script-src data: blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+    preview = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"></head><body><script type="application/json" id="yan-preview-export">${config}</script><script src="${dataUrlFromText(runtime, "text/javascript")}"></script></body></html>`;
+  return `<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(parsed.title || "言 · 交互作品")}</title><style>html,body{margin:0;height:100%}iframe{display:block;width:100%;height:100%;border:0}</style></head><body style="background:${escapeHtml(theme.vars.paper || "#fff")}"><iframe sandbox="allow-scripts" title="交互作品" srcdoc="${escapeHtml(preview)}"></iframe></body></html>`;
+}
+async function downloadHtmlApp(button) {
+  if (button.disabled) return;
+  const source = htmlAppSource(button.closest(".html-app"));
+  button.disabled = true;
+  try {
+    downloadText(await standaloneHtmlApp(source), "text/html;charset=utf-8", "言-交互作品.html");
+  } catch (error) {
+    toast(`下载失败：${String(error.message || error).slice(0, 160)}`);
+  } finally {
+    button.disabled = false;
+  }
+}
 // 交互内容与正文同一张纸：把言的色板、字体与明暗一并送进去（见 preview-runtime.js 的 applyTheme）
 const VIZ_TOKENS = [
   "paper",
@@ -2781,7 +2824,7 @@ function bindContentEvents() {
     }
     const appDownload = e.target.closest("[data-app-download]");
     if (appDownload) {
-      downloadText(htmlAppSource(appDownload.closest(".html-app")), "text/html;charset=utf-8", "言-交互作品.html");
+      void downloadHtmlApp(appDownload);
       return;
     }
     const expand = e.target.closest("[data-work-expand]");
@@ -7576,12 +7619,26 @@ async function fileViewerBody(reader, name, kind) {
     return `<div class="file-viewer-empty">此类文件无法在此预览，请下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
   // 网页放进与页内 ```html 同一个隔离沙箱：不能读本站的存储，也不能联网
   if (kind === "html") {
-    const source = await reader.text(),
-      id = `app${uid().replace(/[^a-z0-9]/gi, "")}`;
+    let source = await reader.text();
+    let theme = vizTheme();
+    // 自带运行时的导出作品：在言里重新打开时取出原始源码，仍用当前的隔离预览，不嵌套导出外壳。
+    const outer = new DOMParser().parseFromString(source, "text/html"),
+      frameSource = outer.querySelector('iframe[sandbox="allow-scripts"][srcdoc]')?.getAttribute("srcdoc");
+    if (frameSource) {
+      const packed = new DOMParser().parseFromString(frameSource, "text/html").getElementById("yan-preview-export");
+      if (packed) {
+        const data = JSON.parse(packed.textContent);
+        if (typeof data.html === "string") {
+          source = data.html;
+          theme = data.theme || theme;
+        }
+      }
+    }
+    const id = `app${uid().replace(/[^a-z0-9]/gi, "")}`;
     setTimeout(() => {
       const frame = $("#fileViewerStage iframe");
       if (!frame) return;
-      frame.addEventListener("load", () => frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source }, "*"), {
+      frame.addEventListener("load", () => frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source, theme }, "*"), {
         once: true
       });
       frame.src = `./preview.html#${id}`;
@@ -12983,23 +13040,30 @@ async function exportConversationMarkdown(c) {
       .replace(/[\\/:*?"<>|]/g, " ")
       .trim()
       .slice(0, 60)}.md`,
-    text = conversationMarkdown(c);
-  if (archiveOnline()) {
-    try {
+    original = conversationMarkdown(c);
+  try {
+    const sources = markdownVisuals(original),
+      files = [];
+    if (sources.length) toast("正在打包交互可视化…");
+    for (const [index, source] of sources.entries())
+      files.push({ name: `${name.slice(0, -3)}-可视化-${index + 1}.html`, text: await standaloneHtmlApp(source) });
+    if (archiveOnline()) {
+      const savedFiles = [];
+      for (const file of files) savedFiles.push(await putArchiveFile(file.name, dataUrlFromText(file.text, "text/html;charset=utf-8")));
+      const text = original + markdownAssetLinks(savedFiles);
       const saved = await putArchiveFile(name, dataUrlFromText(text, "text/markdown"));
       void refreshArchive();
-      toast(`已存入卷宗：${saved.name}`);
-    } catch (error) {
-      toast(`存入失败：${String(error.message || error).slice(0, 80)}`);
+      toast(`已存入卷宗：${saved.name}${files.length ? `（附 ${files.length} 个交互作品）` : ""}`);
+      return;
     }
-    return;
+    const text = original + markdownAssetLinks(files);
+    if (files.length) {
+      downloadHref(URL.createObjectURL(exportZip([{ name, text }, ...files])), `${name.slice(0, -3)}.zip`, true);
+      toast("已导出 Markdown 与交互作品，请解压后打开");
+    } else downloadText(text, "text/markdown;charset=utf-8", name);
+  } catch (error) {
+    toast(`导出失败：${String(error.message || error).slice(0, 160)}`);
   }
-  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" })),
-    anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // 压缩过的前文展开与折起；右侧的问题导航；右下角的上下文计数
@@ -13023,6 +13087,79 @@ function bindOutlineEvents() {
     openContextMenu(event.currentTarget);
   });
   $("#chatInput").addEventListener("input", () => scheduleContextGauge());
+}
+
+  // ---- 18-export-assets.js ----
+// Markdown 保留可编辑源码，交互作品另附离线 HTML；没有卷宗目录时把 Markdown 与作品打成一个包。
+function markdownVisuals(text) {
+  if (!window.marked) return [];
+  const sources = [];
+  window.marked.walkTokens(window.marked.lexer(liftBareMermaid(text)), token => {
+    if (token.type !== "code") return;
+    const lang = String(token.lang || "")
+      .trim()
+      .split(/\s+/)[0]
+      .toLowerCase();
+    let source = null;
+    if (["html", "interactive", "app"].includes(lang)) source = token.text;
+    else if (["mermaid", "echarts"].includes(lang) || ((!lang || lang === "pre") && looksLikeMermaid(token.text)))
+      source = legacyVizHtml(lang, token.text);
+    if (source !== null) sources.push(source);
+  });
+  return sources;
+}
+function markdownAssetLinks(files) {
+  if (!files.length) return "";
+  return `\n## 交互可视化\n\n源码保留在正文中；下列 HTML 文件可离线打开并交互，请与本文一起保留。\n\n${files
+    .map((file, index) => `- [可视化 ${index + 1}](<${encodeURIComponent(file.name)}>)`)
+    .join("\n")}\n`;
+}
+// ZIP 的 store 模式：UTF-8 文件名、CRC32 与标准目录记录，不引入压缩库，离线双击即可解包。
+function exportZip(files) {
+  const encoder = new TextEncoder(),
+    parts = [],
+    directory = [],
+    table = Array.from({ length: 256 }, (_, value) => {
+      for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+      return value >>> 0;
+    });
+  let offset = 0,
+    directorySize = 0;
+  for (const file of files) {
+    const name = encoder.encode(file.name),
+      data = encoder.encode(file.text),
+      local = new Uint8Array(30),
+      central = new Uint8Array(46),
+      l = new DataView(local.buffer),
+      c = new DataView(central.buffer);
+    let crc = 0xffffffff;
+    for (const byte of data) crc = (crc >>> 8) ^ table[(crc ^ byte) & 255];
+    crc = (crc ^ 0xffffffff) >>> 0;
+    l.setUint32(0, 0x04034b50, true);
+    l.setUint16(4, 20, true);
+    l.setUint16(6, 0x800, true);
+    l.setUint16(12, 33, true); // 1980-01-01
+    l.setUint32(14, crc, true);
+    l.setUint32(18, data.length, true);
+    l.setUint32(22, data.length, true);
+    l.setUint16(26, name.length, true);
+    c.setUint32(0, 0x02014b50, true);
+    c.setUint16(4, 20, true);
+    central.set(local.subarray(4, 28), 6);
+    c.setUint32(42, offset, true);
+    parts.push(local, name, data);
+    directory.push(central, name);
+    offset += local.length + name.length + data.length;
+    directorySize += central.length + name.length;
+  }
+  const end = new Uint8Array(22),
+    view = new DataView(end.buffer);
+  view.setUint32(0, 0x06054b50, true);
+  view.setUint16(8, files.length, true);
+  view.setUint16(10, files.length, true);
+  view.setUint32(12, directorySize, true);
+  view.setUint32(16, offset, true);
+  return new Blob([...parts, ...directory, end], { type: "application/zip" });
 }
 
   // ---- 19-anthropic.js ----

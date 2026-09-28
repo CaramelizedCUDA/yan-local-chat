@@ -315,6 +315,49 @@ function parseVizJson(source) {
 function htmlAppSource(el) {
   return el.querySelector(".html-app-source code")?.textContent || "";
 }
+// 下载的是能独立打开的作品：把同一份沙箱运行时、所需本地库和主题装进文件，不依赖 yan: 地址或本站。
+async function standaloneHtmlApp(source) {
+  const parsed = new DOMParser().parseFromString(source, "text/html"),
+    names = new Set(
+      Array.from(
+        parsed.querySelectorAll("script[src]"),
+        node => (node.getAttribute("src") || "").match(/^yan:(echarts|mermaid)$/)?.[1]
+      ).filter(Boolean)
+    );
+  if (parsed.querySelector(".mermaid")) names.add("mermaid");
+  const read = async path => {
+    const response = await fetch(path, { signal: AbortSignal.timeout(30000) });
+    if (!response.ok) throw Error(`导出资源未能载入：${path}`);
+    return response.text();
+  };
+  const [runtime, libraries] = await Promise.all([
+    read("./preview-runtime.js"),
+    Promise.all(
+      [...names].map(async name => {
+        const [code, license] = await Promise.all([read(`./vendor/${name}.min.js`), read(`./vendor/${name.toUpperCase()}-LICENSE.txt`)]);
+        return [name, dataUrlFromText(`/* ${license.replace(/\*\//g, "* / ")} */\n${code}`, "text/javascript")];
+      })
+    )
+  ]);
+  const theme = vizTheme(),
+    config = JSON.stringify({ html: source, theme, libraries: Object.fromEntries(libraries) }).replace(/</g, "\\u003c"),
+    csp =
+      "default-src 'none'; script-src data: blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+    preview = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"></head><body><script type="application/json" id="yan-preview-export">${config}</script><script src="${dataUrlFromText(runtime, "text/javascript")}"></script></body></html>`;
+  return `<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(parsed.title || "言 · 交互作品")}</title><style>html,body{margin:0;height:100%}iframe{display:block;width:100%;height:100%;border:0}</style></head><body style="background:${escapeHtml(theme.vars.paper || "#fff")}"><iframe sandbox="allow-scripts" title="交互作品" srcdoc="${escapeHtml(preview)}"></iframe></body></html>`;
+}
+async function downloadHtmlApp(button) {
+  if (button.disabled) return;
+  const source = htmlAppSource(button.closest(".html-app"));
+  button.disabled = true;
+  try {
+    downloadText(await standaloneHtmlApp(source), "text/html;charset=utf-8", "言-交互作品.html");
+  } catch (error) {
+    toast(`下载失败：${String(error.message || error).slice(0, 160)}`);
+  } finally {
+    button.disabled = false;
+  }
+}
 // 交互内容与正文同一张纸：把言的色板、字体与明暗一并送进去（见 preview-runtime.js 的 applyTheme）
 const VIZ_TOKENS = [
   "paper",
@@ -476,7 +519,7 @@ function bindContentEvents() {
     }
     const appDownload = e.target.closest("[data-app-download]");
     if (appDownload) {
-      downloadText(htmlAppSource(appDownload.closest(".html-app")), "text/html;charset=utf-8", "言-交互作品.html");
+      void downloadHtmlApp(appDownload);
       return;
     }
     const expand = e.target.closest("[data-work-expand]");

@@ -492,23 +492,30 @@ async function exportConversationMarkdown(c) {
       .replace(/[\\/:*?"<>|]/g, " ")
       .trim()
       .slice(0, 60)}.md`,
-    text = conversationMarkdown(c);
-  if (archiveOnline()) {
-    try {
+    original = conversationMarkdown(c);
+  try {
+    const sources = markdownVisuals(original),
+      files = [];
+    if (sources.length) toast("正在打包交互可视化…");
+    for (const [index, source] of sources.entries())
+      files.push({ name: `${name.slice(0, -3)}-可视化-${index + 1}.html`, text: await standaloneHtmlApp(source) });
+    if (archiveOnline()) {
+      const savedFiles = [];
+      for (const file of files) savedFiles.push(await putArchiveFile(file.name, dataUrlFromText(file.text, "text/html;charset=utf-8")));
+      const text = original + markdownAssetLinks(savedFiles);
       const saved = await putArchiveFile(name, dataUrlFromText(text, "text/markdown"));
       void refreshArchive();
-      toast(`已存入卷宗：${saved.name}`);
-    } catch (error) {
-      toast(`存入失败：${String(error.message || error).slice(0, 80)}`);
+      toast(`已存入卷宗：${saved.name}${files.length ? `（附 ${files.length} 个交互作品）` : ""}`);
+      return;
     }
-    return;
+    const text = original + markdownAssetLinks(files);
+    if (files.length) {
+      downloadHref(URL.createObjectURL(exportZip([{ name, text }, ...files])), `${name.slice(0, -3)}.zip`, true);
+      toast("已导出 Markdown 与交互作品，请解压后打开");
+    } else downloadText(text, "text/markdown;charset=utf-8", name);
+  } catch (error) {
+    toast(`导出失败：${String(error.message || error).slice(0, 160)}`);
   }
-  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" })),
-    anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // 压缩过的前文展开与折起；右侧的问题导航；右下角的上下文计数
