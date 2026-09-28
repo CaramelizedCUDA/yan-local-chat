@@ -293,11 +293,25 @@ function renderRunningHead() {
   }
   syncRunningHead();
 }
+// 翻到一段摊开的行迹中间——它的题头已滚上去、身子还占着眼前——顶栏右侧、对话那一列的右缘处浮出一枚「收起行迹」：一点即收，停回题头处。
+// 行迹一长，最上面那行题头就滚出屏外，要收得先翻回去找。左边的书眉照旧是题名，不跟着换（见 设计稿/12-改动条与行迹 三·甲）
+function trailUnderHead() {
+  const top = $("#chatScroll").getBoundingClientRect().top;
+  for (const stack of document.querySelectorAll("#messages .assistant-block > details.tool-stack[open]")) {
+    const summary = stack.querySelector(":scope > summary");
+    if (summary && summary.getBoundingClientRect().bottom < top + 4 && stack.getBoundingClientRect().bottom > top + 90) return stack;
+  }
+  return null;
+}
 function syncRunningHead() {
   $("#runningHead").classList.toggle(
     "shown",
     !!currentConversation() && $("#chatTitle").getBoundingClientRect().bottom < $("#chatScroll").getBoundingClientRect().top + 4
   );
+  const fold = $("#trailFold"),
+    trail = currentConversation() ? trailUnderHead() : null;
+  fold._trail = trail;
+  fold.classList.toggle("shown", !!trail);
 }
 function renderConversation(shouldScroll = false) {
   const c = currentConversation();
@@ -708,6 +722,13 @@ function bindScrollEvents() {
     syncRunningHead();
   });
   $("#runningHead").addEventListener("click", () => $("#chatScroll").scrollTo({ top: 0, behavior: "smooth" }));
+  $("#trailFold").addEventListener("click", () => {
+    const trail = $("#trailFold")._trail;
+    if (!trail?.isConnected) return;
+    // 与亲手点行迹题头同一条路：记在消息上，流式期间不再被自动摊开
+    trail.querySelector(":scope > summary").click();
+    scrollChatTo(trail);
+  });
   // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧
   if (typeof ResizeObserver === "function")
     new ResizeObserver(() => {

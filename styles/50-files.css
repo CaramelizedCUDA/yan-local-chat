@@ -43,10 +43,10 @@
   background: var(--accent);
   opacity: 0.5;
 }
-.attachment-card.sent {
+.attachment-card[role="button"] {
   cursor: pointer;
 }
-.attachment-card.sent:hover {
+.attachment-card[role="button"]:hover {
   border-color: var(--ink-3);
   box-shadow: 0 5px 15px rgba(55, 45, 31, 0.08);
   transform: translateY(-1px);
@@ -319,6 +319,66 @@
 .library-actions button:hover {
   background: var(--paper-2);
   color: var(--ink);
+}
+/* 夹与件同格：夹是一叠纸，点开即入；卡片拖到夹上时夹描一道朱边（见 设计稿/11-卷宗多级，
+   另两式：左侧目录树太像文件管理器；夹作目录行与分组页同式，但夹多时把文件推得太远） */
+.library-folder {
+  cursor: pointer;
+}
+.library-folder .library-preview {
+  background: var(--paper-2);
+}
+.library-sheets {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 70px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+  box-shadow:
+    5px -5px 0 -1px var(--paper),
+    5px -5px 0 0 var(--line),
+    10px -10px 0 -1px var(--paper),
+    10px -10px 0 0 var(--line);
+}
+.library-sheets span {
+  color: var(--accent);
+  font: 22px var(--title);
+  opacity: 0.55;
+}
+.library-card.drop-over,
+.library-crumbs button.drop-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.library-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: -6px 0 14px;
+  color: var(--ink-3);
+  font: 13px var(--title);
+  letter-spacing: 0.06em;
+}
+.library-crumbs button {
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink-3);
+}
+.library-crumbs button:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.library-crumbs .here {
+  padding: 2px 6px;
+  color: var(--ink);
+}
+.library-crumbs .sep {
+  opacity: 0.5;
 }
 .library-lead code {
   padding: 1px 5px;

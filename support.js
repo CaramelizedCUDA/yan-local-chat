@@ -2620,6 +2620,49 @@ function parseVizJson(source) {
 function htmlAppSource(el) {
   return el.querySelector(".html-app-source code")?.textContent || "";
 }
+// 下载的是能独立打开的作品：把同一份沙箱运行时、所需本地库和主题装进文件，不依赖 yan: 地址或本站。
+async function standaloneHtmlApp(source) {
+  const parsed = new DOMParser().parseFromString(source, "text/html"),
+    names = new Set(
+      Array.from(
+        parsed.querySelectorAll("script[src]"),
+        node => (node.getAttribute("src") || "").match(/^yan:(echarts|mermaid)$/)?.[1]
+      ).filter(Boolean)
+    );
+  if (parsed.querySelector(".mermaid")) names.add("mermaid");
+  const read = async path => {
+    const response = await fetch(path, { signal: AbortSignal.timeout(30000) });
+    if (!response.ok) throw Error(`导出资源未能载入：${path}`);
+    return response.text();
+  };
+  const [runtime, libraries] = await Promise.all([
+    read("./preview-runtime.js"),
+    Promise.all(
+      [...names].map(async name => {
+        const [code, license] = await Promise.all([read(`./vendor/${name}.min.js`), read(`./vendor/${name.toUpperCase()}-LICENSE.txt`)]);
+        return [name, dataUrlFromText(`/* ${license.replace(/\*\//g, "* / ")} */\n${code}`, "text/javascript")];
+      })
+    )
+  ]);
+  const theme = vizTheme(),
+    config = JSON.stringify({ html: source, theme, libraries: Object.fromEntries(libraries) }).replace(/</g, "\\u003c"),
+    csp =
+      "default-src 'none'; script-src data: blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+    preview = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"></head><body><script type="application/json" id="yan-preview-export">${config}</script><script src="${dataUrlFromText(runtime, "text/javascript")}"></script></body></html>`;
+  return `<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(parsed.title || "言 · 交互作品")}</title><style>html,body{margin:0;height:100%}iframe{display:block;width:100%;height:100%;border:0}</style></head><body style="background:${escapeHtml(theme.vars.paper || "#fff")}"><iframe sandbox="allow-scripts" title="交互作品" srcdoc="${escapeHtml(preview)}"></iframe></body></html>`;
+}
+async function downloadHtmlApp(button) {
+  if (button.disabled) return;
+  const source = htmlAppSource(button.closest(".html-app"));
+  button.disabled = true;
+  try {
+    downloadText(await standaloneHtmlApp(source), "text/html;charset=utf-8", "言-交互作品.html");
+  } catch (error) {
+    toast(`下载失败：${String(error.message || error).slice(0, 160)}`);
+  } finally {
+    button.disabled = false;
+  }
+}
 // 交互内容与正文同一张纸：把言的色板、字体与明暗一并送进去（见 preview-runtime.js 的 applyTheme）
 const VIZ_TOKENS = [
   "paper",
@@ -2781,7 +2824,7 @@ function bindContentEvents() {
     }
     const appDownload = e.target.closest("[data-app-download]");
     if (appDownload) {
-      downloadText(htmlAppSource(appDownload.closest(".html-app")), "text/html;charset=utf-8", "言-交互作品.html");
+      void downloadHtmlApp(appDownload);
       return;
     }
     const expand = e.target.closest("[data-work-expand]");
@@ -3297,11 +3340,11 @@ function openAttachMenu(anchor) {
     renderArchivePicker(pop, anchor);
   };
 }
-// 卷宗选件：一栏可查找的清单，磁盘上的与浏览器内的都列，点一件即置于案上
+// 卷宗选件：一栏可查找的清单，磁盘上的与浏览器内的都列，点一件即置于案上；子目录里的件注上它所在的夹，查找也认夹名
 function renderArchivePicker(pop, anchor) {
   const disk = archiveOnline() ? archiveEntries || [] : [],
     items = [
-      ...disk.map(file => ({ key: `disk:${file.path}`, name: file.name, size: file.size })),
+      ...disk.map(file => ({ key: `disk:${file.path}`, name: file.name, dir: parentDir(file.path), size: file.size })),
       ...store.library.map(file => ({ key: `item:${file.id}`, name: file.name, size: file.size }))
     ];
   pop.classList.add("attach-picker");
@@ -3310,12 +3353,12 @@ function renderArchivePicker(pop, anchor) {
     list = pop.querySelector(".chip-pop-list");
   const paint = () => {
     const query = input.value.trim().toLowerCase(),
-      shown = items.filter(item => !query || item.name.toLowerCase().includes(query));
+      shown = items.filter(item => !query || `${item.dir || ""}/${item.name}`.toLowerCase().includes(query));
     list.innerHTML = shown.length
       ? shown
           .map(
             item =>
-              `<button type="button" data-pick="${escapeHtml(item.key)}" title="${escapeHtml(item.name)}"><span>${escapeHtml(item.name)}</span><small>${formatFileSize(item.size)}</small></button>`
+              `<button type="button" data-pick="${escapeHtml(item.key)}" title="${escapeHtml(item.dir ? `${item.dir}/${item.name}` : item.name)}"><span>${escapeHtml(item.name)}</span><small>${item.dir ? `${escapeHtml(item.dir)} · ` : ""}${formatFileSize(item.size)}</small></button>`
           )
           .join("")
       : `<div class="chip-pop-label">没有匹配的卷宗</div>`;
@@ -4044,11 +4087,25 @@ function renderRunningHead() {
   }
   syncRunningHead();
 }
+// 翻到一段摊开的行迹中间——它的题头已滚上去、身子还占着眼前——顶栏右侧、对话那一列的右缘处浮出一枚「收起行迹」：一点即收，停回题头处。
+// 行迹一长，最上面那行题头就滚出屏外，要收得先翻回去找。左边的书眉照旧是题名，不跟着换（见 设计稿/12-改动条与行迹 三·甲）
+function trailUnderHead() {
+  const top = $("#chatScroll").getBoundingClientRect().top;
+  for (const stack of document.querySelectorAll("#messages .assistant-block > details.tool-stack[open]")) {
+    const summary = stack.querySelector(":scope > summary");
+    if (summary && summary.getBoundingClientRect().bottom < top + 4 && stack.getBoundingClientRect().bottom > top + 90) return stack;
+  }
+  return null;
+}
 function syncRunningHead() {
   $("#runningHead").classList.toggle(
     "shown",
     !!currentConversation() && $("#chatTitle").getBoundingClientRect().bottom < $("#chatScroll").getBoundingClientRect().top + 4
   );
+  const fold = $("#trailFold"),
+    trail = currentConversation() ? trailUnderHead() : null;
+  fold._trail = trail;
+  fold.classList.toggle("shown", !!trail);
 }
 function renderConversation(shouldScroll = false) {
   const c = currentConversation();
@@ -4459,6 +4516,13 @@ function bindScrollEvents() {
     syncRunningHead();
   });
   $("#runningHead").addEventListener("click", () => $("#chatScroll").scrollTo({ top: 0, behavior: "smooth" }));
+  $("#trailFold").addEventListener("click", () => {
+    const trail = $("#trailFold")._trail;
+    if (!trail?.isConnected) return;
+    // 与亲手点行迹题头同一条路：记在消息上，流式期间不再被自动摊开
+    trail.querySelector(":scope > summary").click();
+    scrollChatTo(trail);
+  });
   // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧
   if (typeof ResizeObserver === "function")
     new ResizeObserver(() => {
@@ -4904,7 +4968,7 @@ function delegateTrailHtml(step) {
         ? `<div class="sub-idle">帮手正在凝神</div>`
         : ""
   }</div>`;
-  // 面板里整条时间线不再折起来：这一栏就是为了看过程而开的，开了还要再点一下才见内容没有道理；折的是各轮的步骤
+  // 面板开着默认摊开（这一栏就是为了看过程而开的）；题头一行可整条收起，只看回报（见 syncSubFold）
   return `<div class="sub-trail"${live ? ' data-live="true"' : ""}><div class="sub-timeline">${groups}${tail}</div>${report ? `<div class="sub-report">${renderMarkdown(report)}</div>` : ""}</div>`;
 }
 // 帮手时间线就地更新（面板里那一条）。帮手每 350ms 刷一次，若整段换新：已画出的步骤输出会重新起入场动画
@@ -4918,7 +4982,7 @@ function syncDelegateTrail(trail, step, seen) {
   let timeline = trail.querySelector(":scope > .sub-timeline");
   if (!timeline) {
     trail.insertAdjacentHTML("afterbegin", `<div class="sub-timeline"><div class="sub-tail"></div></div>`);
-    timeline = trail.firstElementChild;
+    timeline = trail.querySelector(":scope > .sub-timeline");
   }
   let tail = timeline.querySelector(":scope > .sub-tail");
   if (!tail) {
@@ -5035,39 +5099,42 @@ function delegateDoing(step) {
       .find(Boolean);
   return said ? said.slice(0, 80) : sub?.reasoning ? "正在凝神" : "领命中";
 }
-// 帮手条：帮手工作期间常驻输入框上方，不必翻回行迹里找那张卡片；点一下滚到卡片
+// 工作条：一答生成期间附在输入框上方——左边这一答的改动合计（帮手改的也算进来，点开浮出清单），右边在做的帮手（点开差遣面板）。
+// 两样都没有就不挂；写完了改动落到回复之下，条子撤掉（见 设计稿/12-改动条与行迹 二·乙）
+let workFilesOpen = false;
 function renderHelperBar() {
   const bar = $("#helperBar");
   if (!bar) return;
   const c = currentConversation(),
     message = c && view === "chat" ? [...c.messages].reverse().find(m => m.role === "assistant" && m.status === "streaming") : null,
-    helpers = message ? runningDelegates(message) : [];
-  if (!helpers.length) {
-    bar.dataset.stepId = "";
+    helpers = message ? runningDelegates(message) : [],
+    stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 };
+  if (!helpers.length && !stats.files.length) {
+    workFilesOpen = false;
+    bar.dataset.sig = "";
     if (!bar.classList.contains("hidden")) hideWithFade(bar);
     return;
   }
-  // 几名帮手同时在做时一人一行；条上记着第一名的步骤 id，点一下滚到它
-  const key = helpers.map(h => h.id).join(",");
-  if (bar.dataset.key !== key) {
-    bar.dataset.key = key;
-    bar.dataset.stepId = helpers[0].id;
-    bar.innerHTML = helpers
-      .map(
-        h =>
-          `<span class="helper-row" data-helper="${escapeHtml(h.id)}"><span class="seal helper-seal" aria-hidden="true">帮</span><span class="helper-title"></span><span class="helper-doing"></span><span class="helper-count"></span></span>`
-      )
-      .join("");
+  const changes = stats.files.length
+      ? `<button type="button" class="work-changes" aria-expanded="${workFilesOpen}" title="这一答改过的文件"><span class="seal change-seal" aria-hidden="true">改</span><span>改 ${stats.files.length} 件</span><span class="change-count">${changeCountHtml(stats)}</span></button>`
+      : "",
+    // 题目逐次取：条子常在步骤刚入册、runDelegate 还没把题目填上时就搭好了
+    who =
+      helpers.length > 1
+        ? `${helpers.length} 名帮手 · 进行中`
+        : helpers.length
+          ? `帮手「${String(helpers[0].title || "").slice(0, 24)}」· ${delegateDoing(helpers[0])}`
+          : "",
+    helper = helpers.length
+      ? `<button type="button" class="work-helpers" data-helper="${escapeHtml(helpers[0].id)}" title="打开差遣面板"><span class="seal helper-seal" aria-hidden="true">帮</span><span class="work-helpers-text">${escapeHtml(who)}</span><span class="work-helpers-go" aria-hidden="true">›</span></button>`
+      : "",
+    html = `${changes}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
+  // 帮手每 350ms 刷一次，没变就不动，免得清单里的滚动位置被重画冲掉
+  if (bar.dataset.sig !== html) {
+    bar.dataset.sig = html;
+    bar.innerHTML = html;
   }
-  for (const h of helpers) {
-    const row = bar.querySelector(`.helper-row[data-helper="${CSS.escape(h.id)}"]`);
-    if (!row) continue;
-    // 题目逐次写：条子常在步骤刚入册、runDelegate 还没把题目填上时就搭好了，只在搭时写一次会一直是空的「」
-    const title = `差遣「${String(h.title || "").slice(0, 40)}」`;
-    if (row.querySelector(".helper-title").textContent !== title) row.querySelector(".helper-title").textContent = title;
-    row.querySelector(".helper-doing").textContent = delegateDoing(h);
-    rollText(row.querySelector(".helper-count"), `${h.sub?.steps.length || 0} 步`);
-  }
+  bar.classList.toggle("only-helpers", !changes);
   if (bar.classList.contains("hidden") || bar.classList.contains("leaving")) showNow(bar);
 }
 
@@ -5129,6 +5196,60 @@ function renderHelperList() {
     .join("");
 }
 /** @param {boolean} fresh 首次打开或换了一次差遣：整段重画；否则就地更新 */
+// 帮手行迹的收起：时间线上方一行题头（折角 · 行迹 · 几轮 · 几步，与主行迹题头同一枚折角，点它开合），收起的记在这里，翻到别的帮手再翻回来仍是收着的。
+// 题头滚出面板顶上时，面板顶栏右侧浮出同一枚「收起行迹」，与主对话的书眉一个意思
+const helperFolded = new Set();
+/** @param {Step} step */
+function syncSubFold(trail, step) {
+  const { sub, steps, live } = delegateSubState(step);
+  if (!trail || !sub) return;
+  let head = trail.querySelector(":scope > .sub-fold");
+  if (!head) {
+    trail.insertAdjacentHTML(
+      "afterbegin",
+      `<button type="button" class="sub-fold"><span class="sub-fold-label">行迹</span><span class="sub-fold-meta"></span></button>`
+    );
+    head = trail.querySelector(":scope > .sub-fold");
+  }
+  const folded = helperFolded.has(step.id),
+    rounds = trailGroups(sub).length,
+    meta = live ? `${steps.length} 步 · 进行中` : `${rounds} 轮 · ${steps.length} 步`;
+  trail.classList.toggle("folded", folded);
+  head.setAttribute("aria-expanded", String(!folded));
+  rollText(head.querySelector(".sub-fold-meta"), meta);
+  head.title = folded ? "展开帮手的行迹" : "收起帮手的行迹，只看回报";
+  syncHelperFoldHead();
+}
+function toggleSubFold(fold) {
+  if (!helperStepId) return;
+  if (fold ?? !helperFolded.has(helperStepId)) helperFolded.add(helperStepId);
+  else helperFolded.delete(helperStepId);
+  const trail = $("#helperPanelBody > .sub-trail"),
+    step = helperStepById(helperStepId);
+  syncSubFold(trail, step);
+  // 从顶栏收起时，停回题头处
+  const head = trail?.querySelector(":scope > .sub-fold"),
+    scroll = $("#helperScroll");
+  if (head && head.getBoundingClientRect().top < scroll.getBoundingClientRect().top)
+    scroll.scrollTo({
+      top: scroll.scrollTop + head.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 12,
+      behavior: "smooth"
+    });
+}
+function syncHelperFoldHead() {
+  const button = $("#helperFoldHead"),
+    trail = $("#helperPanelBody > .sub-trail"),
+    head = trail?.querySelector(":scope > .sub-fold"),
+    timeline = trail?.querySelector(":scope > .sub-timeline");
+  if (!button) return;
+  const top = $("#helperScroll").getBoundingClientRect().top,
+    show =
+      !!head &&
+      !trail.classList.contains("folded") &&
+      head.getBoundingClientRect().bottom < top &&
+      timeline.getBoundingClientRect().bottom > top + 60;
+  button.classList.toggle("shown", show);
+}
 function renderHelperPanel(fresh = false) {
   if (!helperPanelOpen()) return;
   const step = helperStepById(helperStepId);
@@ -5173,9 +5294,10 @@ function renderHelperPanel(fresh = false) {
     if (sub)
       for (const group of trailGroups(sub))
         for (const s of group.steps) helperSeen.set(s.id, { html: stepHtml(s), hasBody: false, status: s.status });
-    return;
+    return syncSubFold(trail, step);
   }
   syncDelegateTrail(trail, step, helperSeen);
+  syncSubFold(trail, step);
 }
 
 function stepStateHtml(status) {
@@ -5505,9 +5627,19 @@ function bindTrailEvents() {
 
 // 差遣面板：帮手条与行迹里的签打开它，遮罩与合起关上它，‹ › 与列表翻帮手
 function bindHelperEvents() {
-  // 帮手条点一下开差遣面板：帮手的活在右边看，行迹里只留一枚签
+  // 帮手行迹的收起：时间线上方的题头，与翻过题头后顶栏右侧浮出的那一枚
+  $("#helperPanelBody").addEventListener("click", event => {
+    if (event.target.closest(".sub-fold")) toggleSubFold();
+  });
+  $("#helperFoldHead").addEventListener("click", () => toggleSubFold(true));
+  $("#helperScroll").addEventListener("scroll", syncHelperFoldHead, { passive: true });
+  // 工作条：左边的改动点开浮出清单，右边的帮手点开差遣面板
   $("#helperBar").addEventListener("click", event => {
-    const id = event.target.closest(".helper-row")?.dataset.helper || $("#helperBar").dataset.stepId || "";
+    if (event.target.closest(".work-changes")) {
+      workFilesOpen = !workFilesOpen;
+      return renderHelperBar();
+    }
+    const id = event.target.closest(".work-helpers")?.dataset.helper;
     if (id) openHelperPanel(id);
   });
   // 行迹里的那枚签：点它（或敲回车 / 空格）同样开面板
@@ -5592,28 +5724,29 @@ function formatFileSize(value) {
       : `${(bytes / 1048576).toFixed(1)} MB`;
 }
 function kindGlyph(kind) {
-  return kind === "image" ? "画" : kind === "text" ? "文" : "卷";
+  return { image: "画", text: "文", audio: "音", video: "影" }[kind] || "卷";
 }
 function attachmentCard(file, index, sent = false) {
   const type = fileTypeLabel(file),
     title = `${file.name} · ${formatFileSize(file.size)}`;
   const thumb = file.kind === "image" && file.id ? `<img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt="">` : "";
-  const body = `${thumb}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-mark" aria-hidden="true">${kindGlyph(file.kind)}</span><span class="attachment-type">${escapeHtml(type)}</span>`;
+  const body = `${thumb}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-mark" aria-hidden="true">${kindGlyph(displayKind(file))}</span><span class="attachment-type">${escapeHtml(type)}</span>`;
   const save = file.id
     ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="收入卷宗" aria-label="收入卷宗">藏</button>`
     : "";
-  // 发出去的附件点开是看：图进图片查看器，文、表、PDF、网页进预览器——自己刚发的东西再下载一遍没有道理；
-  // 只有预览不了的（压缩包之类）才落到下载
+  // 附件点开是看：图进图片查看器，文、表、PDF、网页、音视频进预览器——自己刚拖进来、刚发出去的东西再下载一遍没有道理；
+  // 只有预览不了的（压缩包之类）：发出去的落到下载，案上的就不必点了
+  const view =
+    file.id && file.kind === "image"
+      ? `data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
+      : file.id && previewKind(file.name) !== "none"
+        ? `data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
+        : "";
   if (sent && file.id) {
-    const action =
-      file.kind === "image"
-        ? `data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
-        : previewKind(file.name) !== "none"
-          ? `data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
-          : `data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
+    const action = view || `data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
     return `<div class="attachment-card sent" role="button" tabindex="0" data-kind="${file.kind}" ${action}>${body}${save}</div>`;
   }
-  return `<div class="attachment-card pending" data-kind="${file.kind}" title="${escapeHtml(title)}">${body}${save}${index !== null ? `<button class="attachment-tool attachment-remove" data-remove-attachment="${index}" title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
+  return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${index !== null ? `<button class="attachment-tool attachment-remove" data-remove-attachment="${index}" title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
 }
 function renderAttachments() {
   const html = pendingAttachments.map((file, index) => attachmentCard(file, index)).join("");
@@ -7174,8 +7307,18 @@ async function ingestFile(file) {
 // 桥接在线时卷宗是磁盘上的一个目录（bootstrap.work.archive）：拖进来的文件落盘，没绑目录的对话里模型写出的文件也在这里，页面即目录的视图；
 // 直连没桥接时退回浏览器内的版本：原件存在 IndexedDB，元数据记录在 store.library。两边都有时，浏览器内的旧件另列一组，可一键落盘
 let archiveEntries = null,
+  archiveDirs = [],
   archiveScratch = null,
-  archiveLoading = null;
+  archiveLoading = null,
+  // 卷宗页此刻站在哪一层（相对卷宗根，"" 即根）：只列这一层的夹与件，拖进来的文件也落在这一层
+  libraryDir = "";
+// 夹上的字：卷宗的单件称「卷」，装几卷的夹子借古书的称谓
+const FOLDER_GLYPH = "函";
+const ARCHIVE_DRAG = "application/x-yan-archive";
+function parentDir(path) {
+  const at = String(path).lastIndexOf("/");
+  return at < 0 ? "" : path.slice(0, at);
+}
 function archiveOnline() {
   return apiBase !== null && !!archiveDir();
 }
@@ -7188,7 +7331,10 @@ async function refreshArchive() {
   archiveLoading = bridge("/api/archive/list", { root: archiveDir() }, AbortSignal.timeout(8000))
     .then(data => {
       archiveEntries = data.entries || [];
+      archiveDirs = data.dirs || [];
       archiveScratch = data.scratch || null;
+      // 站着的那一层在别处被删了：退回根
+      if (libraryDir && !archiveDirs.some(dir => dir.path === libraryDir)) libraryDir = "";
     })
     .catch(error => {
       if (archiveEntries === null) toast(`卷宗目录不可用：${String(error.message || error).slice(0, 80)}`);
@@ -7208,7 +7354,13 @@ function archiveKind(name) {
     .pop()
     .toLowerCase();
   if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(extension)) return "image";
+  if (PREVIEW_AUDIO.has(extension)) return "audio";
+  if (PREVIEW_VIDEO.has(extension)) return "video";
   return isTextFile({ name, type: "" }) ? "text" : "file";
+}
+// 附件与浏览器内卷宗记的 kind 只分 画 / 文 / 卷（送给模型时的读法）；画在卡片上、按类筛选时，卷里再分出音与影
+function displayKind(file) {
+  return file.kind === "file" ? archiveKind(file.name) : file.kind;
 }
 function openLibrary() {
   closeSidePanel();
@@ -7243,9 +7395,9 @@ function libraryEntry(file) {
     savedAt: now()
   };
 }
-function libraryCardHtml(file, disk) {
-  const kind = disk ? archiveKind(file.name) : file.kind,
-    key = disk ? `data-library-disk="${escapeHtml(file.path)}"` : `data-library-item="${escapeHtml(file.id)}"`,
+function libraryCardHtml(file, disk, showDir = true) {
+  const kind = disk ? archiveKind(file.name) : displayKind(file),
+    key = disk ? `data-library-disk="${escapeHtml(file.path)}" draggable="true"` : `data-library-item="${escapeHtml(file.id)}"`,
     thumb =
       kind !== "image"
         ? ""
@@ -7253,16 +7405,53 @@ function libraryCardHtml(file, disk) {
           ? `<img class="library-thumb" src="${escapeHtml(archiveFileUrl(file.path))}" alt="">`
           : `<img class="library-thumb" data-thumb="${escapeHtml(file.id)}" alt="">`,
     note = disk
-      ? `${formatFileSize(file.size)} · ${escapeHtml(formatDay(file.modifiedAt))}${file.path.includes("/") ? ` · ${escapeHtml(file.path.slice(0, file.path.lastIndexOf("/")))}` : ""}`
+      ? `${formatFileSize(file.size)} · ${escapeHtml(formatDay(file.modifiedAt))}${showDir && file.path.includes("/") ? ` · ${escapeHtml(parentDir(file.path))}` : ""}`
       : `${formatFileSize(file.size)} · 收于 ${escapeHtml(formatDay(file.savedAt))}${file.kind === "file" && !file.extracted ? " · 未能提取正文" : ""}`;
   return `<div class="library-card${disk && kind === "image" ? " has-thumb" : ""}" ${key}><div class="library-preview"${kind === "image" ? ` role="button" tabindex="0" ${disk ? `data-open-disk-image="${escapeHtml(file.path)}"` : `data-open-image="${escapeHtml(file.id)}"`} title="查看 ${escapeHtml(file.name)}"` : ""}>${thumb}<span class="library-glyph" aria-hidden="true">${kindGlyph(kind)}</span><span class="attachment-type">${escapeHtml(fileTypeLabel(file))}</span></div><div class="library-body"><strong title="${escapeHtml(disk ? file.path : file.name)}">${escapeHtml(file.name)}</strong><small>${note}</small></div><div class="library-actions">${disk || previewKind(file.name) !== "none" ? `<button data-library-action="view" title="在此预览，不必下载">预览</button>` : ""}<button data-library-action="download">下载</button><button data-library-action="remove">${disk ? "删除" : "移出"}</button></div></div>`;
+}
+// 一个夹：一叠纸，下注里头共几件（连同更深的层）、有几个子夹、最近一件的日子
+function libraryFolderHtml(dir) {
+  const inside = (archiveEntries || []).filter(file => file.path.startsWith(`${dir.path}/`)),
+    subs = archiveDirs.filter(other => parentDir(other.path) === dir.path).length,
+    latest = inside.reduce((last, file) => (file.modifiedAt > last ? file.modifiedAt : last), ""),
+    note = [`${inside.length} 件`, subs ? `${subs} 夹` : "", latest ? escapeHtml(formatDay(latest)) : ""].filter(Boolean).join(" · ");
+  return `<div class="library-card library-folder" role="button" tabindex="0" data-library-dir="${escapeHtml(dir.path)}" title="打开 ${escapeHtml(dir.name)}"><div class="library-preview"><span class="library-sheets" aria-hidden="true"><span>${FOLDER_GLYPH}</span></span></div><div class="library-body"><strong>${escapeHtml(dir.name)}</strong><small>${note}</small></div></div>`;
+}
+// 路径：卷宗 › 课程 › 深度学习。点哪一级回哪一级；各级也接得住拖来的卡片（挪回上一层）
+function renderLibraryCrumbs(show) {
+  const crumbs = $("#libraryCrumbs");
+  crumbs.classList.toggle("hidden", !show);
+  if (!show) return (crumbs.innerHTML = "");
+  const parts = libraryDir.split("/");
+  crumbs.innerHTML = `<button type="button" data-library-dir="">卷宗</button>${parts
+    .map((part, index) =>
+      index === parts.length - 1
+        ? `<span class="sep" aria-hidden="true">›</span><span class="here">${escapeHtml(part)}</span>`
+        : `<span class="sep" aria-hidden="true">›</span><button type="button" data-library-dir="${escapeHtml(parts.slice(0, index + 1).join("/"))}">${escapeHtml(part)}</button>`
+    )
+    .join("")}`;
+}
+function enterLibraryDir(dir) {
+  libraryDir = dir;
+  renderLibrary();
+  $("#library").scrollTop = 0;
 }
 function renderLibrary() {
   const query = libraryQuery.trim().toLowerCase(),
     disk = archiveOnline(),
-    matches = (name, kind) => (libraryKind === "all" || kind === libraryKind) && (!query || String(name).toLowerCase().includes(query));
-  const diskItems = disk ? (archiveEntries || []).filter(file => matches(file.name, archiveKind(file.name))) : [],
-    items = store.library.filter(file => matches(file.name, file.kind));
+    matches = (name, kind) => (libraryKind === "all" || kind === libraryKind) && (!query || String(name).toLowerCase().includes(query)),
+    // 逐层看；一旦查找或按类筛选，就跨各层平铺，卡片下注它所在的路径
+    browsing = disk && !query && libraryKind === "all";
+  const diskItems = !disk
+      ? []
+      : browsing
+        ? (archiveEntries || []).filter(file => parentDir(file.path) === libraryDir)
+        : (archiveEntries || []).filter(file => matches(file.name, archiveKind(file.name))),
+    folders = browsing
+      ? archiveDirs.filter(dir => parentDir(dir.path) === libraryDir).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
+      : [],
+    items = browsing && libraryDir ? [] : store.library.filter(file => matches(file.name, displayKind(file)));
+  renderLibraryCrumbs(browsing && !!libraryDir);
   const total = libraryTotal(),
     bytes = [...(disk ? archiveEntries || [] : []), ...store.library].reduce((sum, file) => sum + Number(file.size || 0), 0);
   $("#libraryCountText").textContent = total ? `现存 ${total} 件 · ${formatFileSize(bytes)}` : "";
@@ -7280,13 +7469,21 @@ function renderLibrary() {
     .querySelectorAll("[data-library-kind]")
     .forEach(button => button.classList.toggle("active", button.dataset.libraryKind === libraryKind));
   const legacy =
-    disk && store.library.length
+    disk && items.length
       ? `<div class="library-section"><span>浏览器内的旧件 · ${store.library.length}</span><button type="button" id="libraryMigrate" class="outline-btn">全部落盘</button></div>`
       : "";
   $("#libraryGrid").innerHTML =
-    diskItems.length || items.length
-      ? `${diskItems.map(file => libraryCardHtml(file, true)).join("")}${legacy}${items.map(file => libraryCardHtml(file, false)).join("")}`
-      : `<div class="library-empty">${total ? "没有匹配的卷宗" : disk && archiveEntries === null ? "正在翻开卷宗…" : "卷宗尚空<br>拖入文件即收入"}</div>`;
+    folders.length || diskItems.length || items.length
+      ? `${folders.map(libraryFolderHtml).join("")}${diskItems.map(file => libraryCardHtml(file, true, !browsing)).join("")}${legacy}${items.map(file => libraryCardHtml(file, false)).join("")}`
+      : `<div class="library-empty">${
+          browsing && libraryDir
+            ? "此夹尚空<br>拖入文件即收于此夹"
+            : total
+              ? "没有匹配的卷宗"
+              : disk && archiveEntries === null
+                ? "正在翻开卷宗…"
+                : "卷宗尚空<br>拖入文件即收入"
+        }</div>`;
   $("#libraryMigrate")?.addEventListener("click", () => void migrateLibraryToArchive());
   void loadThumbnails($("#libraryGrid"));
 }
@@ -7297,8 +7494,31 @@ function dataUrlFromText(text, mime = "text/plain") {
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return `data:${mime};base64,${btoa(binary)}`;
 }
-async function putArchiveFile(name, data) {
-  return bridge("/api/archive/put", { root: archiveDir(), name, data }, AbortSignal.timeout(120000));
+/** dir：落进卷宗的哪一层，缺省为根（导出、附件上的「藏」都落在根上；卷宗页上拖入的落在此刻所在的那一层） */
+async function putArchiveFile(name, data, dir = "") {
+  return bridge("/api/archive/put", { root: archiveDir(), name, data, dir }, AbortSignal.timeout(120000));
+}
+// 卡片拖到夹上、或拖回路径里的上一级：挪进那一层；那一层有同名的就另取名
+async function moveArchiveFile(path, dir) {
+  if (parentDir(path) === dir) return;
+  try {
+    const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
+      renamed = moved.name !== path.split("/").pop();
+    // 答末成品条记的是路径：件挪了，条子跟着改，不然就成了「已移出卷宗」
+    for (const c of store.conversations)
+      for (const message of allMessages(c))
+        for (const file of message.deliverables || [])
+          if (file.path === path) {
+            file.path = moved.path;
+            file.name = moved.name;
+            markDirty(c.id);
+          }
+    saveStoreSoon();
+    toast(`已移入「${dir ? dir.split("/").pop() : "卷宗"}」${renamed ? `，同名已有，改作 ${moved.name}` : ""}`);
+  } catch (error) {
+    toast(`移动失败：${String(error.message || error).slice(0, 80)}`);
+  }
+  await refreshArchive();
 }
 // 清草稿：给对话则只清它那一处（删对话时顺手），不给则整个 .草稿 目录（卷宗页上的「清理」）
 /** @param {Conversation} conversation */
@@ -7323,7 +7543,7 @@ async function cleanScratch(conversation) {
     if (!conversation) toast(`清理失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
-async function addLibraryFiles(fileList) {
+async function addLibraryFiles(fileList, dir = libraryDir) {
   const files = Array.from(fileList || []);
   let added = 0;
   if (archiveOnline()) {
@@ -7333,7 +7553,7 @@ async function addLibraryFiles(fileList) {
         continue;
       }
       try {
-        await putArchiveFile(file.name, await readFile(file, "data"));
+        await putArchiveFile(file.name, await readFile(file, "data"), dir);
         added += 1;
       } catch (error) {
         toast(`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
@@ -7471,9 +7691,11 @@ async function placeFromArchive(path) {
     toast(`置入失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
-// ---------- 卷宗文件的悬浮预览：图看画、文看字、表看格、网页进沙箱、PDF 交给浏览器；都不必先下载 ----------
-const PREVIEW_IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif"]),
-  PREVIEW_DOC = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "ods", "odp"]);
+// ---------- 卷宗文件的悬浮预览：图看画、文看字、表看格、网页进沙箱、PDF 交给浏览器、音视频就地放；都不必先下载 ----------
+const PREVIEW_IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "ico"]),
+  PREVIEW_DOC = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "ods", "odp"]),
+  PREVIEW_AUDIO = new Set(["mp3", "wav", "ogg", "oga", "opus", "m4a", "aac", "flac", "weba"]),
+  PREVIEW_VIDEO = new Set(["mp4", "m4v", "webm", "ogv", "mov", "mkv"]);
 function fileExtension(name) {
   return String(name || "")
     .split(".")
@@ -7485,6 +7707,8 @@ function previewKind(name) {
   if (PREVIEW_IMAGE.has(extension)) return "image";
   if (extension === "svg") return "svg";
   if (extension === "pdf") return "pdf";
+  if (PREVIEW_AUDIO.has(extension)) return "audio";
+  if (PREVIEW_VIDEO.has(extension)) return "video";
   if (extension === "html" || extension === "htm") return "html";
   if (extension === "csv" || extension === "tsv") return "table";
   if (extension === "md" || extension === "markdown") return "markdown";
@@ -7508,16 +7732,23 @@ function revokeViewerUrls() {
   for (const url of viewerObjectUrls) URL.revokeObjectURL(url);
   viewerObjectUrls = [];
 }
-/** 取一件东西的三种读法：直链（图与 PDF 交给浏览器）、正文、字节。卷宗的直链是桥接地址；附件的是就地造的 blob 地址 */
+/** 取一件东西的三种读法：直链（图、PDF、音视频交给浏览器）、正文、字节。
+ * 卷宗与落了盘的附件都走桥接的同源地址——页面的 CSP 只许同源的框架与媒体，blob: 的 PDF 会被挡；
+ * 只有没桥接（file:// 打开，没有 CSP）或原件只在浏览器里时，才就地造 blob 地址 */
+function urlReader(url) {
+  const fetched = async () => {
+    const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+    if (!response.ok) throw Error("取回失败");
+    return response;
+  };
+  return { url: () => url, text: async () => (await fetched()).text(), blob: async () => (await fetched()).blob(), extracted: "" };
+}
 async function viewerReader(source) {
-  if (source.path) {
-    const url = archiveFileUrl(source.path),
-      fetched = async () => {
-        const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
-        if (!response.ok) throw Error("取回失败");
-        return response;
-      };
-    return { url: () => url, text: async () => (await fetched()).text(), blob: async () => (await fetched()).blob(), extracted: "" };
+  if (source.path) return urlReader(archiveFileUrl(source.path));
+  if (apiBase !== null) {
+    const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
+      head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
+    if (head?.ok) return urlReader(url);
   }
   const file = await getAttachment(source.attachmentId);
   if (!file) throw Error("附件原件已找不到");
@@ -7572,16 +7803,35 @@ async function fileViewerBody(reader, name, kind) {
     return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;
   // PDF 交给浏览器自带的阅读器；卷宗的响应带 CSP: sandbox，脚本不会以本站身份运行
   if (kind === "pdf") return `<iframe class="file-viewer-frame" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></iframe>`;
+  // 音视频交给浏览器自带的播放器；编码认不得（如某些 mkv）时换成下载提示，见 bindViewerEvents
+  if (kind === "audio")
+    return `<div class="file-viewer-media"><audio controls preload="metadata" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></audio></div>`;
+  if (kind === "video")
+    return `<div class="file-viewer-media"><video controls preload="metadata" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></video></div>`;
   if (kind === "none")
     return `<div class="file-viewer-empty">此类文件无法在此预览，请下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
   // 网页放进与页内 ```html 同一个隔离沙箱：不能读本站的存储，也不能联网
   if (kind === "html") {
-    const source = await reader.text(),
-      id = `app${uid().replace(/[^a-z0-9]/gi, "")}`;
+    let source = await reader.text();
+    let theme = vizTheme();
+    // 自带运行时的导出作品：在言里重新打开时取出原始源码，仍用当前的隔离预览，不嵌套导出外壳。
+    const outer = new DOMParser().parseFromString(source, "text/html"),
+      frameSource = outer.querySelector('iframe[sandbox="allow-scripts"][srcdoc]')?.getAttribute("srcdoc");
+    if (frameSource) {
+      const packed = new DOMParser().parseFromString(frameSource, "text/html").getElementById("yan-preview-export");
+      if (packed) {
+        const data = JSON.parse(packed.textContent);
+        if (typeof data.html === "string") {
+          source = data.html;
+          theme = data.theme || theme;
+        }
+      }
+    }
+    const id = `app${uid().replace(/[^a-z0-9]/gi, "")}`;
     setTimeout(() => {
       const frame = $("#fileViewerStage iframe");
       if (!frame) return;
-      frame.addEventListener("load", () => frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source }, "*"), {
+      frame.addEventListener("load", () => frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source, theme }, "*"), {
         once: true
       });
       frame.src = `./preview.html#${id}`;
@@ -7873,6 +8123,16 @@ function bindViewerEvents() {
     if (e.target.closest("[data-viewer-download]")) return downloadViewerFile();
     if (e.target === $("#fileViewer") || e.target === $("#fileViewerStage")) closeFileViewer();
   });
+  // 媒体的 error 不冒泡，在捕获阶段接：浏览器放不了这种编码，就别留一个转不动的播放器
+  $("#fileViewerStage").addEventListener(
+    "error",
+    e => {
+      if (!e.target.matches?.("audio, video")) return;
+      e.target.closest(".file-viewer-media").outerHTML =
+        `<div class="file-viewer-empty">浏览器放不了这种编码，请下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
+    },
+    true
+  );
   $("#imageViewerClose").onclick = closeImageViewer;
   $("#imageViewerDownload").onclick = () => {
     if (imageViewerAttachmentId) void downloadAttachment(imageViewerAttachmentId);
@@ -7904,7 +8164,13 @@ function bindLibraryEvents() {
         renderLibrary();
       })
   );
+  $("#libraryCrumbs").addEventListener("click", e => {
+    const crumb = e.target.closest("[data-library-dir]");
+    if (crumb) enterLibraryDir(crumb.dataset.libraryDir);
+  });
   $("#libraryGrid").addEventListener("click", e => {
+    const folder = e.target.closest("[data-library-dir]");
+    if (folder) return enterLibraryDir(folder.dataset.libraryDir);
     const disk = e.target.closest("[data-open-disk-image]");
     if (disk) return openArchiveImage(disk.dataset.openDiskImage, disk);
     const button = e.target.closest("[data-library-action]");
@@ -7927,9 +8193,48 @@ function bindLibraryEvents() {
   });
   $("#libraryGrid").addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target.matches?.("[data-library-dir]")) {
+      e.preventDefault();
+      enterLibraryDir(e.target.dataset.libraryDir);
+      $("#libraryGrid .library-card, #libraryCrumbs button")?.focus();
+      return;
+    }
     if (!e.target.matches?.("[data-open-disk-image]")) return;
     e.preventDefault();
     openArchiveImage(e.target.dataset.openDiskImage, e.target);
+  });
+  // 卷宗里的卡片拖到夹上（或路径里的上一级）即挪进去：落点提亮，松手就挪
+  const library = $("#library"),
+    dropTarget = event =>
+      Array.from(event.dataTransfer?.types || []).includes(ARCHIVE_DRAG) ? event.target.closest?.("#library [data-library-dir]") : null,
+    clearDropMark = () => library.querySelectorAll(".drop-over").forEach(node => node.classList.remove("drop-over"));
+  library.addEventListener("dragstart", event => {
+    const card = event.target.closest?.("[data-library-disk]");
+    if (!card) return;
+    event.dataTransfer.setData(ARCHIVE_DRAG, card.dataset.libraryDisk);
+    event.dataTransfer.effectAllowed = "move";
+  });
+  library.addEventListener("dragover", event => {
+    const target = dropTarget(event);
+    if (!target) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (!target.classList.contains("drop-over")) {
+      clearDropMark();
+      target.classList.add("drop-over");
+    }
+  });
+  library.addEventListener("dragleave", event => {
+    const target = dropTarget(event);
+    if (target && !target.contains(event.relatedTarget)) target.classList.remove("drop-over");
+  });
+  library.addEventListener("dragend", clearDropMark);
+  library.addEventListener("drop", event => {
+    const target = dropTarget(event);
+    clearDropMark();
+    if (!target) return;
+    event.preventDefault();
+    void moveArchiveFile(event.dataTransfer.getData(ARCHIVE_DRAG), target.dataset.libraryDir);
   });
   let dragHideTimer = null,
     dragFromPage = false;
@@ -7944,7 +8249,9 @@ function bindLibraryEvents() {
     $("#dropTitle").textContent = toLibrary ? "松手，收入卷宗" : "松手，置于案上";
     $("#dropHint").textContent = toLibrary
       ? archiveOnline()
-        ? "任何文件 · 落到本机的卷宗目录"
+        ? libraryDir
+          ? `任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
+          : "任何文件 · 落到本机的卷宗目录"
         : `图片、文档与代码文件 · 单件不超过 ${limitLabel(MAX_FILE_BYTES)}`
       : `图片、文档与代码文件 · 单次共 ${limitLabel(MAX_PENDING_BYTES)}`;
     $("#dropVeil").classList.remove("hidden");
@@ -8478,6 +8785,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
           if (retrying) setJobLabel(conversation, job, "生成中");
           retrying = false;
         });
+        // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾。
+        if (!assistant.content.slice(roundStart).trim() && !assistant.toolCalls?.some(call => call.name))
+          throw Object.assign(Error("模型本轮未返回正文或工具调用，回复尚未完成"), { midStream: true });
       } catch (error) {
         // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
         if (error.midStream && !job.controller.signal.aborted && resumed < AUTO_RESUMES) {
@@ -8637,9 +8947,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
   if (!retried) await keepInWindow(profile, history, signal, overrides);
   const response = await requestPatiently(profile, history, signal, overrides);
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    // 桥接回的 error 是一句话；直连 Anthropic 回的是 { error: { message } }
-    const message = (typeof data.error === "string" ? data.error : data.error?.message) || `请求失败（${response.status}）`;
+    const message = await describeResponseError(response);
     // 接口不认这个思考档位：记下它认的几档，换成最接近的一档重发一次；再不行才算失败
     const sent = reasoningFields(profile, overrides.reasoning).reasoning_effort;
     if (!retried && sent && learnReasoningLevels(profile, message, sent)) {
@@ -8649,11 +8957,9 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     }
     // 接口回说放不下：压掉这一答较早的往来再发一回；已无可压的，原样报错。429 是限流（「tokens per min」也带 token 与 limit），不算
-    if (
-      response.status !== 429 &&
-      contextOverflow(message) &&
-      (await keepInWindow(profile, history, signal, overrides, { overflow: true }))
-    )
+    const overflow = response.status !== 429 && contextOverflow(message);
+    if (overflow) learnContextWindow(profile, message);
+    if (overflow && (await keepInWindow(profile, history, signal, overrides, { overflow: true })))
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     throw Error(message);
   }
@@ -8686,6 +8992,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       arguments: call.function?.arguments || ""
     }));
   note();
+  if (data?.choices?.[0]?.finish_reason === "length") throw Object.assign(Error("模型达到输出长度上限，回复尚未完成"), { midStream: true });
 }
 // 网络一晃就断太脆：接口没接下请求时（连不上、限流、5xx、过载）等一等再试，间隔渐长，接口给了 Retry-After 就照它等；
 // 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」
@@ -9981,8 +10288,9 @@ async function ensureWorkReady(conversation) {
 }
 
   // ---- 15-tools/22-changes.js ----
-// 言 · 改动与成品：执事这一答改过哪些文件（挂在回复末尾的改动条），言这一答在卷宗里新出了哪几件（成品条）
-// 改动摘要：这一答里执事改过哪些文件、各增减多少行，挂在回复末尾，写入/修改一落地就实时累加，不等整条回复收尾
+// 言 · 改动与成品：执事这一答改过哪些文件（改动条），言这一答在卷宗里新出了哪几件（成品条）
+// 改动摘要：这一答里执事改过哪些文件、各增减多少行。生成中附在输入框上的工作条里实时累加（见 renderHelperBar），
+// 不跟着正文尾巴跑；写完才落到回复之下，是一道线而不是一只框（见 设计稿/12-改动条与行迹）
 function diffCounts(oldText, newText) {
   const a = String(oldText || "").split(/\r?\n/),
     b = String(newText || "").split(/\r?\n/);
@@ -10000,21 +10308,40 @@ function changeStats(message) {
   const files = new Map();
   for (const step of allSteps(message)) {
     if (!step.change || step.status !== "done") continue;
-    const entry = files.get(step.change.path) || { path: step.change.path, added: 0, removed: 0, created: false };
+    const entry = files.get(step.change.path) || { path: step.change.path, added: 0, removed: 0, created: false, helper: false };
     entry.added += step.change.added;
     entry.removed += step.change.removed;
     entry.created ||= !!step.change.created;
+    entry.helper ||= !!step.scope;
     files.set(step.change.path, entry);
   }
   const list = [...files.values()];
   return { files: list, added: list.reduce((sum, f) => sum + f.added, 0), removed: list.reduce((sum, f) => sum + f.removed, 0) };
 }
+// 增删的比例画成五枚小方块：绿的是增、朱的是删，余下留白
+function changeSpark(added, removed) {
+  const total = added + removed,
+    green = total ? Math.round((5 * added) / total) : 0,
+    red = total ? Math.min(5 - green, Math.round((5 * removed) / total)) : 0;
+  return `<span class="change-spark" aria-hidden="true">${'<i class="g"></i>'.repeat(green)}${'<i class="r"></i>'.repeat(red)}${"<i></i>".repeat(5 - green - red)}</span>`;
+}
+function changeCountHtml(stats) {
+  return `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
+}
+// 清单一件一行：路径、新建 / 帮手所改的小注、增删行数
+function changeFilesHtml(stats, open, extra = "") {
+  return `<div class="change-files${extra}${open ? "" : " hidden"}">${stats.files
+    .map(f => {
+      const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · ");
+      return `<div><span class="path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></div>`;
+    })
+    .join("")}</div>`;
+}
 /** @param {Message} message */
 function changeSummaryInner(message, open) {
   const stats = changeStats(message);
   if (!stats.files.length) return "";
-  const count = `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
-  return `<button type="button" class="change-summary" aria-expanded="${open}"><span>${stats.files.length} 个文件已更改</span><span class="change-count">${count}</span></button><div class="change-files${open ? "" : " hidden"}">${stats.files.map(f => `<div><span class="path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}${f.created ? " <em>新建</em>" : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></div>`).join("")}</div>`;
+  return `<button type="button" class="change-summary" aria-expanded="${open}"><span class="seal change-seal" aria-hidden="true">改</span><span class="change-title">改动 ${stats.files.length} 个文件</span><span class="change-count">${changeCountHtml(stats)}${changeSpark(stats.added, stats.removed)}</span></button>${changeFilesHtml(stats, open)}`;
 }
 // 成品：言里这一答在卷宗根目录新出或改过的文件。一件一行：类型、文件名、大小，右侧「看」（悬浮预览）与「下载」
 // 卷宗里已经删掉的成品：条目留着（这一答确实出过这件），但标成「已移出卷宗」，不再给看与下载的按钮
@@ -10049,15 +10376,15 @@ function syncDeliverables() {
 }
 /** @param {Message} message */
 function changeSummaryHtml(message, open = false) {
-  const inner = changeSummaryInner(message, open);
+  const inner = message.status === "streaming" ? "" : changeSummaryInner(message, open);
   return inner ? `<div class="change-bar">${inner}</div>` : "";
 }
-// 步骤每次刷新都把改动条同步到回复末尾：数字就地更新（展开状态保留），首次出现时轻浮一下
+// 回复之下的改动条：生成中不画（那时改动在输入框上方的工作条里），写完落下来时轻浮一下；数字就地更新，展开状态保留
 /** @param {Message} assistant */
 function syncChangeBar(block, assistant) {
   const bar = block.querySelector(":scope > .change-bar"),
     open = bar?.querySelector(".change-summary")?.getAttribute("aria-expanded") === "true",
-    inner = changeSummaryInner(assistant, open);
+    inner = assistant.status === "streaming" ? "" : changeSummaryInner(assistant, open);
   if (!inner) return bar?.remove();
   if (!bar) {
     block.insertAdjacentHTML("beforeend", `<div class="change-bar is-new">${inner}</div>`);
@@ -10870,8 +11197,9 @@ async function runDelegate(step, args, ctx) {
       if (sub.usage) for (const key of Object.keys(usage)) usage[key] += Number(sub.usage[key] || 0);
       const calls = (sub.toolCalls || []).filter(call => call.name);
       if (!calls.length || !overrides.tools) break;
+      // 进 history 的只是这一轮新写的：断线前那截在接续时已经单独进过 history 了（reportStart 管的是回报，续写前的也算在内）
       if (++sub.rounds > subRoundLimit()) {
-        const said = sub.content.slice(reportStart).trim();
+        const said = sub.content.slice(roundStart).trim();
         if (said) history.push({ role: "assistant", content: said });
         history.push({ role: "user", content: prompt("delegate.limit") });
         overrides.tools = null;
@@ -10892,7 +11220,7 @@ async function runDelegate(step, args, ctx) {
       refreshSteps(assistant);
       history.push({
         role: "assistant",
-        content: sub.content.slice(reportStart) || null,
+        content: sub.content.slice(roundStart) || null,
         tool_calls: steps.map(s => ({ id: s.id, type: "function", function: { name: s.name, arguments: replayArguments(s.arguments) } })),
         ...(sub.thinkingBlocks?.length ? { thinking_blocks: sub.thinkingBlocks } : {})
       });
@@ -11171,9 +11499,12 @@ function reasoningManual(profile) {
 }
 // 走到这里就是身份变了（或亲手要求重探）：此前记的档位是旧模型的，一律不沿用——接口照单全收就按通用四档，
 // 不然旧模型的 none 会跟着新模型走，把一个认档位的模型永远标成不认
-/** @param {Profile} profile */
-async function probeReasoningLevels(profile) {
-  if (!profile?.model || reasoningProbed(profile)) return null;
+/**
+ * @param {Profile} profile
+ * @param {boolean} [force] 探过也再探（测试连接）；亲手填的由调用方拦下
+ */
+async function probeReasoningLevels(profile, force = false) {
+  if (!profile?.model || (!force && reasoningProbed(profile))) return null;
   const key = reasoningProbeKey(profile);
   if (anthropicLike(profile) || /dashscope|aliyuncs/i.test(profile.baseUrl || "")) {
     profile.reasoningLevels = "";
@@ -11194,8 +11525,7 @@ async function probeReasoningLevels(profile) {
     let learned;
     if (response.ok) learned = REASONING_DEFAULT_LEVELS;
     else {
-      const data = await response.json().catch(() => ({})),
-        message = (typeof data.error === "string" ? data.error : data.error?.message) || "";
+      const message = await describeResponseError(response);
       const found = parseReasoningLevels(message, "probe");
       if (found.length) learned = found;
       // 只有明说不认识这个字段的才记成不认；「Invalid reasoning_effort value」这种只是嫌 probe 不对、又没列它认的几档——
@@ -11214,6 +11544,25 @@ async function probeReasoningLevels(profile) {
     clearTimeout(timer);
     controller.abort();
   }
+}
+// 接口没接下请求时回的那句话。各家的样子不一：OpenAI 系 { error: { message } }、桥接 { error: "…" }、旧版 vLLM { message }、
+// FastAPI 写的自建服务 { detail }（参数校验错是一串对象，整串交出去，思考档位的报错才读得出它认哪几档）；不是 JSON 的取原文开头
+async function describeResponseError(response) {
+  const raw = await response.text().catch(() => "");
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return raw.trim().slice(0, 300) || `请求失败（${response.status}）`;
+  }
+  const error = data?.error,
+    detail = data?.detail;
+  return (
+    (typeof error === "string" ? error : error?.message) ||
+    (typeof data?.message === "string" ? data.message : "") ||
+    (typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : "") ||
+    `请求失败（${response.status}）`
+  );
 }
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
@@ -11305,7 +11654,9 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   const reader = response.body.getReader(),
     decoder = new TextDecoder();
   let buffer = "",
-    scheduled = false;
+    scheduled = false,
+    ended = false,
+    finishReason = "";
   // 落墨节奏：正文不按网络分块一坨坨出现，而是每帧按积压量的一定比例匀速写出（积压越多写得越快，最多滞后零点几秒）；新写出的字带短暂渐显，末尾跟一支笔尖光标
   const paced = !inkMotionOff();
   let shown = paced ? assistant.content.length : Infinity,
@@ -11467,7 +11818,11 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   // 流被掐断（停止、补言改道）时这一段的帧循环到此为止：接下来的一轮另起一个，两个循环不能同时画一条消息
   try {
     await pump();
+    flushThink();
+    if (!ended) throw Error("接口未发送结束标志，连接已中断");
+    if (finishReason === "length") throw Error("模型达到输出长度上限，回复尚未完成");
   } catch (error) {
+    flushThink();
     closed = true;
     // 半途出错（流里的报错事件）：把还开着的连接收掉，别让桥接那头替一个没人读的流继续转发
     reader.cancel().catch(() => {});
@@ -11487,7 +11842,11 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       for (const line of lines) {
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
-        if (!data || data === "[DONE]") continue;
+        if (!data) continue;
+        if (data === "[DONE]") {
+          ended = true;
+          continue;
+        }
         let failure = "";
         try {
           const json = JSON.parse(data);
@@ -11495,6 +11854,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
           if (json.error && !json.choices)
             failure = (typeof json.error === "string" ? json.error : json.error?.message) || "接口在作答途中返回了错误";
           const delta = json.choices?.[0]?.delta;
+          if (json.choices?.[0]?.finish_reason) {
+            finishReason = json.choices[0].finish_reason;
+            ended = true;
+          }
           const text = normalizeContent(delta?.content),
             reasoning = normalizeContent(delta?.reasoning_content ?? delta?.reasoning);
           if (reasoning) {
@@ -11523,7 +11886,6 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       if (done) break;
     }
   }
-  flushThink();
   // 流结束后把积压的字写完再返回，收尾和下一轮工具调用都等在这后面；标签页不可见时直接补齐
   while (paced && shown < assistant.content.length) {
     schedule();
@@ -12160,15 +12522,16 @@ function bindSettingsEvents() {
 const probeSerial = new Map();
 /** @param {Profile} profile */
 async function reportReasoningProbe(profile, card, force = false) {
-  if (force && !reasoningManual(profile)) profile.reasoningProbed = "";
   if (!profile.model) return;
+  // 重探不能靠清掉「探过」的标记：reasoningProbed 会把「有档位、没标记」当旧版手填的，重探一回反倒成了手填
+  const redo = force && !reasoningManual(profile);
   const status = () => document.querySelector(`[data-profile-card="${profile.id}"] .profile-status`);
   // 状态行上此前的话留着（「可用 · 4 ms」），但上一回探到的档位不留——刷新列表探了一次、再从下拉里选一个又探一次，不能越接越长
   const before = (status()?.textContent || "")
     .split(" · ")
     .filter(part => !/^(探测)?思考档位/.test(part))
     .join(" · ");
-  if (reasoningProbed(profile)) {
+  if (!redo && reasoningProbed(profile)) {
     if (force && status()) {
       const levels = profileReasoningLevels(profile);
       status().textContent = `${before ? `${before} · ` : ""}思考档位 ${levels.length ? levels.map(reasoningLabel).join(" / ") : "此模型不认"}${reasoningManual(profile) ? "（手填）" : ""}`;
@@ -12178,7 +12541,7 @@ async function reportReasoningProbe(profile, card, force = false) {
   const serial = (probeSerial.get(profile.id) || 0) + 1;
   probeSerial.set(profile.id, serial);
   if (status()) status().textContent = `${before ? `${before} · ` : ""}探测思考档位…`;
-  const levels = await probeReasoningLevels(profile);
+  const levels = await probeReasoningLevels(profile, redo);
   const el = status();
   if (!el || probeSerial.get(profile.id) !== serial) return;
   if (levels === null) el.textContent = before;
@@ -12265,9 +12628,7 @@ async function handleProfileAction(profile, action, card) {
               body: JSON.stringify({ profile: profileForRequest(profile) })
             })
           : await fetch(directModelsRequest(profile).url, { headers: directModelsRequest(profile).headers });
-      const type = response.headers.get("content-type") || "";
-      const data = type.includes("application/json") ? await response.json() : {};
-      if (!response.ok) throw Error(data.error || data.message || `连接失败（${response.status}）`);
+      if (!response.ok) throw Error(await describeResponseError(response));
       status.textContent = `可用 · ${Math.round(performance.now() - started)} ms`;
       // 测试连接是亲手要的一次核对：档位也重探一遍
       void reportReasoningProbe(profile, card, true);
@@ -12292,8 +12653,8 @@ async function fetchModelList(profile) {
     return [...new Set(data.models || [])].sort();
   }
   response = await fetch(directModelsRequest(profile).url, { headers: directModelsRequest(profile).headers });
+  if (!response.ok) throw Error(await describeResponseError(response));
   data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Error(data.error?.message || data.message || `请求失败（${response.status}）`);
   return [
     ...new Set((Array.isArray(data.data) ? data.data : []).map(item => (typeof item === "string" ? item : item?.id)).filter(Boolean))
   ].sort();
@@ -12575,7 +12936,12 @@ async function compactContext(c, { auto = false, before = null, profile = active
   try {
     // 转写可能很长、模型可能先思考再写：超时给足五分钟。这段对话开了思考档位的，压缩时降到最低一档：摘要用不着深想
     const timeout = AbortSignal.timeout(300000),
-      summary = await summarize(profile, prompt("assistant.compact", { transcript }), signal ? AbortSignal.any([signal, timeout]) : timeout, c.reasoning);
+      summary = await summarize(
+        profile,
+        prompt("assistant.compact", { transcript }),
+        signal ? AbortSignal.any([signal, timeout]) : timeout,
+        c.reasoning
+      );
     const at = c.messages.indexOf(lastCompacted);
     if (at < 0) throw Error("对话在压缩期间已改动");
     // 期间又压过一次（分隔已在这条之后）就作废，以后来的为准
@@ -12601,11 +12967,6 @@ async function compactContext(c, { auto = false, before = null, profile = active
   } finally {
     compactingIds.delete(c.id);
   }
-}
-async function describeResponseError(response) {
-  const data = await response.json().catch(() => ({}));
-  const error = data.error;
-  return (typeof error === "string" ? error : error?.message) || `请求失败（${response.status}）`;
 }
 // 请模型把一段文字压成摘要：前文压缩与轮内压缩共用。不带系统提示；输出上限不另给，随平时的走；花的墨记在模型上
 /** @param {Profile} profile */
@@ -12663,21 +13024,38 @@ function maybeAutoCompact(c, profile) {
 const FOLD_KEEP_ROUNDS = 2;
 // 各家接口「放不下」的说法：OpenAI 系 maximum context length、Anthropic prompt is too long / exceed context limit、
 // Gemini exceeds the maximum number of tokens、Qwen Range of input length、Kimi token limit、GLM exceeds max length……
-// 输出上限（max_tokens）太大、上游超时（context deadline exceeded）不算
+// 输出上限（max_tokens）太大、上游超时（context deadline exceeded）不算。vLLM 的说法两样都列（you requested 0 output tokens and
+// your prompt contains at least 32769 input tokens）：要的输出本身放得进窗口，就是输入太长、压了有用；输出一项就超窗口才是 max_tokens 给大了
 function contextOverflow(message) {
   const text = String(message || "");
-  return (
-    /context.{0,24}(length|window|limit|size)|prompt is too long|too many tokens|token.{0,20}limit|exceed.{0,40}(limit|length|tokens)|input.{0,20}(too long|length)|上下文.{0,8}(长度|窗口|上限|超)|超出.{0,12}(上下文|长度|限制)|超长/i.test(
+  if (
+    !/context.{0,24}(length|window|limit|size)|prompt is too long|too many tokens|token.{0,20}limit|exceed.{0,40}(limit|length|tokens)|input.{0,20}(too long|length)|上下文.{0,8}(长度|窗口|上限|超)|超出.{0,12}(上下文|长度|限制)|超长/i.test(
       text
-    ) && !/deadline|output tokens?|max_completion/i.test(text)
-  );
+    ) ||
+    /deadline|max_completion/i.test(text)
+  )
+    return false;
+  if (!/output tokens?/i.test(text)) return true;
+  const limit = Number(text.match(/context length is (\d+)/i)?.[1]),
+    output = Number(text.match(/(\d+) output tokens?/i)?.[1]);
+  return /input tokens?/i.test(text) && limit > 0 && output < limit;
+}
+// 报错里说了窗口多大（maximum context length is 32768 tokens）而模型上没填：记下来，此后送出前就按它提前压，不必每回先撞一次放不下
+/** @param {Profile} profile */
+function learnContextWindow(profile, message) {
+  const limit = Number(String(message || "").match(/context length is (\d+)/i)?.[1]);
+  if (Number(profile.contextWindow) > 0 || !(limit >= 1000)) return;
+  profile.contextWindow = limit;
+  saveStoreSoon();
 }
 // 下一次请求约有多大：上一轮接口报了实际的提示用量就以它为底，只估此后新添的；没报就整份估（连同系统提示与工具定义）
 function requestSize(history, overrides) {
   const seen = overrides.seen;
   if (seen && seen.at <= history.length) return seen.tokens + estimateTokens(history.slice(seen.at));
   return (
-    estimateTokens(history) + estimateText(String(overrides.systemPrompt || "")) + (overrides.tools ? estimateText(JSON.stringify(overrides.tools)) : 0)
+    estimateTokens(history) +
+    estimateText(String(overrides.systemPrompt || "")) +
+    (overrides.tools ? estimateText(JSON.stringify(overrides.tools)) : 0)
   );
 }
 const plainContent = content =>
@@ -12691,7 +13069,10 @@ function foldTranscript(region, budget) {
       if (m.role === "tool") return `结果：${clip(plainContent(m.content), limit)}`;
       if (m.role === "user") return `用户：${clip(plainContent(m.content), 4000)}`;
       const said = plainContent(m.content).trim();
-      return [said && `你：${clip(said, 4000)}`, ...(m.tool_calls || []).map(c => `调用 ${c.function?.name}：${clip(String(c.function?.arguments || ""), limit / 4)}`)]
+      return [
+        said && `你：${clip(said, 4000)}`,
+        ...(m.tool_calls || []).map(c => `调用 ${c.function?.name}：${clip(String(c.function?.arguments || ""), limit / 4)}`)
+      ]
         .filter(Boolean)
         .join("\n");
     });
@@ -12750,7 +13131,12 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
       AbortSignal.any([signal, AbortSignal.timeout(300000)]),
       overrides.reasoning
     );
-    history.splice(head, cut - head, { role: "assistant", content: `［工作笔记］\n${note}` }, { role: "user", content: prompt("assistant.folded") });
+    history.splice(
+      head,
+      cut - head,
+      { role: "assistant", content: `［工作笔记］\n${note}` },
+      { role: "user", content: prompt("assistant.folded") }
+    );
     overrides.seen = null;
     overrides.folds = (overrides.folds || 0) + 1;
     return true;
@@ -12855,9 +13241,36 @@ function jumpToOutline(id) {
 }
 
 // ---------- 对话存成 Markdown：桥接在线时落到卷宗，否则下载 ----------
+// 元信息不是 Markdown 正文：路径、命令与文件名里的符号不能变成标题、链接或 HTML。
+function exportMarkdownLabel(value) {
+  return String(value || "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/[\\`*_{}\[\]()#+.!|~-]/g, "\\$&");
+}
+function exportToolTrail(message) {
+  const steps = message.steps || [];
+  if (!steps.length) return "";
+  // 模型上下文的 stepsDigest 会截短、只取前 16 步；导出单独排成纯文本，不把命令当 Markdown 解析。
+  const text = steps
+    .map(
+      (step, index) =>
+        `${index + 1}. ${TOOLS.get(step.name)?.label || step.name} · ${step.title || step.note || ""} → ${step.result || step.status || ""}`
+    )
+    .join("\n");
+  const fence = "`".repeat(Math.max(3, ...Array.from(text.matchAll(/`+/g), match => match[0].length + 1)));
+  return `行迹：\n\n${fence}text\n${text}\n${fence}`;
+}
 /** @param {Conversation} c */
 function conversationMarkdown(c) {
-  const lines = [`# ${c.title}`, "", `${formatDay(c.createdAt)}${isWork(c) ? ` · 工作目录 ${c.workdir}` : ""}`, ""];
+  const lines = [
+    `# ${exportMarkdownLabel(c.title)}`,
+    "",
+    `${formatDay(c.createdAt)}${isWork(c) ? ` · 工作目录 ${exportMarkdownLabel(c.workdir)}` : ""}`,
+    ""
+  ];
   for (const m of c.messages) {
     if (m.role === "context") {
       lines.push(
@@ -12877,22 +13290,18 @@ function conversationMarkdown(c) {
             .map(line => `> ${line}`),
           ""
         );
-      if (m.attachments?.length) lines.push(`*附件：${m.attachments.map(f => f.name).join("、")}*`, "");
+      if (m.attachments?.length) lines.push(`*附件：${m.attachments.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
       lines.push(String(m.content || ""), "");
     } else if (m.role === "assistant" && m.status !== "error") {
-      lines.push(`## 答${m.modelName ? ` · ${m.modelName}` : ""}`, "");
-      const trail = stepsDigest(m);
-      if (trail) lines.push(`*${trail}*`, "");
+      lines.push(`## 答${m.modelName ? ` · ${exportMarkdownLabel(m.modelName)}` : ""}`, "");
+      const trail = exportToolTrail(m);
+      if (trail) lines.push(trail, "");
       lines.push(String(m.content || ""), "");
-      if (m.deliverables?.length) lines.push(`*成品：${m.deliverables.map(f => f.name).join("、")}*`, "");
+      if (m.deliverables?.length) lines.push(`*成品：${m.deliverables.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
     }
   }
-  return (
-    lines
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim() + "\n"
-  );
+  // 不能全局合并空行：代码、HTML 与模板字符串里的换行本身就是内容。
+  return lines.join("\n").trim() + "\n";
 }
 /** @param {Conversation} c */
 async function exportConversationMarkdown(c) {
@@ -12901,23 +13310,30 @@ async function exportConversationMarkdown(c) {
       .replace(/[\\/:*?"<>|]/g, " ")
       .trim()
       .slice(0, 60)}.md`,
-    text = conversationMarkdown(c);
-  if (archiveOnline()) {
-    try {
+    original = conversationMarkdown(c);
+  try {
+    const sources = markdownVisuals(original),
+      files = [];
+    if (sources.length) toast("正在打包交互可视化…");
+    for (const [index, source] of sources.entries())
+      files.push({ name: `${name.slice(0, -3)}-可视化-${index + 1}.html`, text: await standaloneHtmlApp(source) });
+    if (archiveOnline()) {
+      const savedFiles = [];
+      for (const file of files) savedFiles.push(await putArchiveFile(file.name, dataUrlFromText(file.text, "text/html;charset=utf-8")));
+      const text = original + markdownAssetLinks(savedFiles);
       const saved = await putArchiveFile(name, dataUrlFromText(text, "text/markdown"));
       void refreshArchive();
-      toast(`已存入卷宗：${saved.name}`);
-    } catch (error) {
-      toast(`存入失败：${String(error.message || error).slice(0, 80)}`);
+      toast(`已存入卷宗：${saved.name}${files.length ? `（附 ${files.length} 个交互作品）` : ""}`);
+      return;
     }
-    return;
+    const text = original + markdownAssetLinks(files);
+    if (files.length) {
+      downloadHref(URL.createObjectURL(exportZip([{ name, text }, ...files])), `${name.slice(0, -3)}.zip`, true);
+      toast("已导出 Markdown 与交互作品，请解压后打开");
+    } else downloadText(text, "text/markdown;charset=utf-8", name);
+  } catch (error) {
+    toast(`导出失败：${String(error.message || error).slice(0, 160)}`);
   }
-  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown" })),
-    anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // 压缩过的前文展开与折起；右侧的问题导航；右下角的上下文计数
@@ -12941,6 +13357,79 @@ function bindOutlineEvents() {
     openContextMenu(event.currentTarget);
   });
   $("#chatInput").addEventListener("input", () => scheduleContextGauge());
+}
+
+  // ---- 18-export-assets.js ----
+// Markdown 保留可编辑源码，交互作品另附离线 HTML；没有卷宗目录时把 Markdown 与作品打成一个包。
+function markdownVisuals(text) {
+  if (!window.marked) return [];
+  const sources = [];
+  window.marked.walkTokens(window.marked.lexer(liftBareMermaid(text)), token => {
+    if (token.type !== "code") return;
+    const lang = String(token.lang || "")
+      .trim()
+      .split(/\s+/)[0]
+      .toLowerCase();
+    let source = null;
+    if (["html", "interactive", "app"].includes(lang)) source = token.text;
+    else if (["mermaid", "echarts"].includes(lang) || ((!lang || lang === "pre") && looksLikeMermaid(token.text)))
+      source = legacyVizHtml(lang, token.text);
+    if (source !== null) sources.push(source);
+  });
+  return sources;
+}
+function markdownAssetLinks(files) {
+  if (!files.length) return "";
+  return `\n## 交互可视化\n\n源码保留在正文中；下列 HTML 文件可离线打开并交互，请与本文一起保留。\n\n${files
+    .map((file, index) => `- [可视化 ${index + 1}](<${encodeURIComponent(file.name)}>)`)
+    .join("\n")}\n`;
+}
+// ZIP 的 store 模式：UTF-8 文件名、CRC32 与标准目录记录，不引入压缩库，离线双击即可解包。
+function exportZip(files) {
+  const encoder = new TextEncoder(),
+    parts = [],
+    directory = [],
+    table = Array.from({ length: 256 }, (_, value) => {
+      for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+      return value >>> 0;
+    });
+  let offset = 0,
+    directorySize = 0;
+  for (const file of files) {
+    const name = encoder.encode(file.name),
+      data = encoder.encode(file.text),
+      local = new Uint8Array(30),
+      central = new Uint8Array(46),
+      l = new DataView(local.buffer),
+      c = new DataView(central.buffer);
+    let crc = 0xffffffff;
+    for (const byte of data) crc = (crc >>> 8) ^ table[(crc ^ byte) & 255];
+    crc = (crc ^ 0xffffffff) >>> 0;
+    l.setUint32(0, 0x04034b50, true);
+    l.setUint16(4, 20, true);
+    l.setUint16(6, 0x800, true);
+    l.setUint16(12, 33, true); // 1980-01-01
+    l.setUint32(14, crc, true);
+    l.setUint32(18, data.length, true);
+    l.setUint32(22, data.length, true);
+    l.setUint16(26, name.length, true);
+    c.setUint32(0, 0x02014b50, true);
+    c.setUint16(4, 20, true);
+    central.set(local.subarray(4, 28), 6);
+    c.setUint32(42, offset, true);
+    parts.push(local, name, data);
+    directory.push(central, name);
+    offset += local.length + name.length + data.length;
+    directorySize += central.length + name.length;
+  }
+  const end = new Uint8Array(22),
+    view = new DataView(end.buffer);
+  view.setUint32(0, 0x06054b50, true);
+  view.setUint16(8, files.length, true);
+  view.setUint16(10, files.length, true);
+  view.setUint32(12, directorySize, true);
+  view.setUint32(16, offset, true);
+  return new Blob([...parts, ...directory, end], { type: "application/zip" });
 }
 
   // ---- 19-anthropic.js ----

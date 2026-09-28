@@ -173,11 +173,11 @@ function openAttachMenu(anchor) {
     renderArchivePicker(pop, anchor);
   };
 }
-// 卷宗选件：一栏可查找的清单，磁盘上的与浏览器内的都列，点一件即置于案上
+// 卷宗选件：一栏可查找的清单，磁盘上的与浏览器内的都列，点一件即置于案上；子目录里的件注上它所在的夹，查找也认夹名
 function renderArchivePicker(pop, anchor) {
   const disk = archiveOnline() ? archiveEntries || [] : [],
     items = [
-      ...disk.map(file => ({ key: `disk:${file.path}`, name: file.name, size: file.size })),
+      ...disk.map(file => ({ key: `disk:${file.path}`, name: file.name, dir: parentDir(file.path), size: file.size })),
       ...store.library.map(file => ({ key: `item:${file.id}`, name: file.name, size: file.size }))
     ];
   pop.classList.add("attach-picker");
@@ -186,12 +186,12 @@ function renderArchivePicker(pop, anchor) {
     list = pop.querySelector(".chip-pop-list");
   const paint = () => {
     const query = input.value.trim().toLowerCase(),
-      shown = items.filter(item => !query || item.name.toLowerCase().includes(query));
+      shown = items.filter(item => !query || `${item.dir || ""}/${item.name}`.toLowerCase().includes(query));
     list.innerHTML = shown.length
       ? shown
           .map(
             item =>
-              `<button type="button" data-pick="${escapeHtml(item.key)}" title="${escapeHtml(item.name)}"><span>${escapeHtml(item.name)}</span><small>${formatFileSize(item.size)}</small></button>`
+              `<button type="button" data-pick="${escapeHtml(item.key)}" title="${escapeHtml(item.dir ? `${item.dir}/${item.name}` : item.name)}"><span>${escapeHtml(item.name)}</span><small>${item.dir ? `${escapeHtml(item.dir)} · ` : ""}${formatFileSize(item.size)}</small></button>`
           )
           .join("")
       : `<div class="chip-pop-label">没有匹配的卷宗</div>`;

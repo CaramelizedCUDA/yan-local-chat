@@ -366,7 +366,11 @@ http
         return;
       }
       if (typeof lastUser === "string" && lastUser.includes("NOEOL"))
-        return sseNoEol(res, [delta({ content: "开头，" }), delta({ content: "结尾在此" }), delta({}, { usage: { total_tokens: 77 } })]);
+        return sseNoEol(res, [
+          delta({ content: "开头，" }),
+          delta({ content: "结尾在此" }),
+          delta({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { total_tokens: 77 } })
+        ]);
       if (typeof lastUser === "string" && lastUser.includes("TRUNC")) {
         // 参数被截断：写文件的 content 只有一半、JSON 没闭合——不能救成 {"path"} 去把文件写空；只读的 list_files 截断了照样能跑
         const n = toolResults.length;

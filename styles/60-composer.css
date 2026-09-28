@@ -11,55 +11,59 @@
   width: min(100%, var(--read));
   margin: 0 auto 8px;
 }
-/* 帮手条：帮手工作期间常驻输入框上方，一行一名帮手，点一下滚到那张差遣卡片 */
+/* 工作条：一答生成期间附在输入框上方，一条淡墨底——左边改动合计，右边在做的帮手（金色）；
+   原先一名帮手一行的帮手条并进来了：帮手在行迹里有签，不必在输入框上再各占一行（见 设计稿/12-改动条与行迹 二·乙） */
 .helper-bar {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
   width: min(100%, var(--read));
   margin: 0 auto 8px;
-  padding: 7px 12px;
-  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line));
+  padding: 4px 6px;
+  border: 1px solid var(--line);
   border-radius: 11px;
-  background: color-mix(in srgb, var(--gold) 5%, var(--paper));
+  background: color-mix(in srgb, var(--paper-2) 45%, var(--paper));
   color: var(--ink-3);
   font: 11px var(--title);
   letter-spacing: 0.06em;
-  text-align: left;
-  cursor: pointer;
   animation: rise 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.helper-bar:hover {
-  border-color: var(--gold);
-}
-.helper-row {
+.work-changes,
+.work-helpers {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  padding: 3px 6px;
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
 }
-.helper-seal {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  border-color: var(--gold);
+.work-changes:hover,
+.work-helpers:hover {
+  background: color-mix(in srgb, var(--paper-3) 55%, transparent);
+}
+.work-changes .change-count {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+}
+.work-helpers {
+  margin-left: auto;
   color: var(--gold);
-  font-size: 10px;
 }
-.helper-title {
-  flex: none;
-  color: var(--gold);
-}
-.helper-doing {
+.helper-bar.only-helpers .work-helpers {
+  margin-left: 0;
   flex: 1;
+}
+.work-helpers-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ink-2);
-  letter-spacing: 0.02em;
 }
-.helper-doing:before {
+.work-helpers-text:before {
   content: "";
   display: inline-block;
   width: 4px;
@@ -69,32 +73,35 @@
   background: var(--gold);
   animation: pulse 1.4s ease-in-out infinite;
 }
-.helper-count {
+.work-helpers-go {
   flex: none;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  letter-spacing: 0;
+  margin-left: auto;
 }
-.change-bar {
-  margin: 16px 0 6px;
-  font-family: var(--body);
+.helper-seal {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-color: var(--gold);
+  color: var(--gold);
+  font-size: 10px;
 }
-.assistant-block .change-summary {
-  padding: 9px 14px;
-  border-radius: 11px;
-  font-size: 12.5px;
-  letter-spacing: 0.06em;
-  color: var(--ink-2);
+.change-seal {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  border-color: color-mix(in srgb, var(--rouge) 62%, transparent);
+  color: var(--rouge);
+  font-size: 10px;
 }
-.assistant-block .change-summary:hover {
-  border-color: var(--ink-3);
-}
-.assistant-block .change-count {
-  font-size: 13px;
-}
-.assistant-block .change-files {
-  margin-top: 6px;
-  padding: 8px 14px;
-  font-size: 12px;
+/* 工作条的清单浮在条子上方，不把输入框往下推 */
+.helper-bar .work-files {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  width: min(100%, 460px);
+  margin: 0;
+  padding: 8px 12px;
+  box-shadow: 0 10px 30px rgba(35, 30, 22, 0.1);
 }
 .approval-bar {
   padding: 10px 12px 9px;
@@ -340,51 +347,72 @@
   border-color: var(--accent);
   color: var(--paper);
 }
+/* 回复之下的改动条：一道细线隔开正文，无框无底；墨印「改」、合计与五枚增删小方块，点开清单缩进在下。
+   落选的：与成品条同式的淡墨签（两张签叠在回复下太重）；并进操作行（常显的一句挤在图标旁，清单只能浮着看） */
 .change-bar {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  margin: 18px 0 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
 }
 .change-summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  padding: 4px 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--paper);
+  padding: 2px 0;
   color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.08em;
+  font: 11.5px var(--title);
+  letter-spacing: 0.06em;
   cursor: pointer;
   text-align: left;
-}
-.change-count {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  letter-spacing: 0;
 }
 .change-summary:hover {
   color: var(--ink-2);
 }
-.change-bar .ins {
+.change-summary .change-count {
+  margin-left: auto;
+}
+.change-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+}
+.change-spark {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+.change-spark i {
+  width: 7px;
+  height: 7px;
+  border-radius: 1.5px;
+  background: var(--line);
+}
+.change-spark i.g {
+  background: color-mix(in srgb, var(--code-green) 75%, transparent);
+}
+.change-spark i.r {
+  background: color-mix(in srgb, var(--danger) 70%, transparent);
+}
+.change-bar .ins,
+.helper-bar .ins {
   color: var(--code-green);
 }
-.change-bar .del {
+.change-bar .del,
+.helper-bar .del {
   color: var(--danger);
 }
 .change-files {
-  width: 100%;
-  margin-top: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--paper);
-  max-height: 140px;
+  margin: 4px 0 0 25px;
+  max-height: 180px;
   overflow: auto;
   font:
-    11px/1.7 ui-monospace,
+    11.5px/1.9 ui-monospace,
     SFMono-Regular,
     Consolas,
     monospace;
@@ -402,10 +430,15 @@
   white-space: nowrap;
 }
 .change-files em {
-  margin-left: 4px;
+  margin-left: 6px;
   color: var(--ink-3);
   font-style: normal;
   font-size: 10px;
+}
+.helper-bar .change-files {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
 }
 .tool-stack.is-work .tool-stack-body {
   max-height: none;

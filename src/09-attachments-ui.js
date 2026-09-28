@@ -30,28 +30,29 @@ function formatFileSize(value) {
       : `${(bytes / 1048576).toFixed(1)} MB`;
 }
 function kindGlyph(kind) {
-  return kind === "image" ? "画" : kind === "text" ? "文" : "卷";
+  return { image: "画", text: "文", audio: "音", video: "影" }[kind] || "卷";
 }
 function attachmentCard(file, index, sent = false) {
   const type = fileTypeLabel(file),
     title = `${file.name} · ${formatFileSize(file.size)}`;
   const thumb = file.kind === "image" && file.id ? `<img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt="">` : "";
-  const body = `${thumb}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-mark" aria-hidden="true">${kindGlyph(file.kind)}</span><span class="attachment-type">${escapeHtml(type)}</span>`;
+  const body = `${thumb}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-mark" aria-hidden="true">${kindGlyph(displayKind(file))}</span><span class="attachment-type">${escapeHtml(type)}</span>`;
   const save = file.id
     ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="收入卷宗" aria-label="收入卷宗">藏</button>`
     : "";
-  // 发出去的附件点开是看：图进图片查看器，文、表、PDF、网页进预览器——自己刚发的东西再下载一遍没有道理；
-  // 只有预览不了的（压缩包之类）才落到下载
+  // 附件点开是看：图进图片查看器，文、表、PDF、网页、音视频进预览器——自己刚拖进来、刚发出去的东西再下载一遍没有道理；
+  // 只有预览不了的（压缩包之类）：发出去的落到下载，案上的就不必点了
+  const view =
+    file.id && file.kind === "image"
+      ? `data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
+      : file.id && previewKind(file.name) !== "none"
+        ? `data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
+        : "";
   if (sent && file.id) {
-    const action =
-      file.kind === "image"
-        ? `data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
-        : previewKind(file.name) !== "none"
-          ? `data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
-          : `data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
+    const action = view || `data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
     return `<div class="attachment-card sent" role="button" tabindex="0" data-kind="${file.kind}" ${action}>${body}${save}</div>`;
   }
-  return `<div class="attachment-card pending" data-kind="${file.kind}" title="${escapeHtml(title)}">${body}${save}${index !== null ? `<button class="attachment-tool attachment-remove" data-remove-attachment="${index}" title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
+  return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${index !== null ? `<button class="attachment-tool attachment-remove" data-remove-attachment="${index}" title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
 }
 function renderAttachments() {
   const html = pendingAttachments.map((file, index) => attachmentCard(file, index)).join("");

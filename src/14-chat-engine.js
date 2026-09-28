@@ -478,6 +478,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
           if (retrying) setJobLabel(conversation, job, "生成中");
           retrying = false;
         });
+        // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾。
+        if (!assistant.content.slice(roundStart).trim() && !assistant.toolCalls?.some(call => call.name))
+          throw Object.assign(Error("模型本轮未返回正文或工具调用，回复尚未完成"), { midStream: true });
       } catch (error) {
         // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
         if (error.midStream && !job.controller.signal.aborted && resumed < AUTO_RESUMES) {
@@ -637,9 +640,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
   if (!retried) await keepInWindow(profile, history, signal, overrides);
   const response = await requestPatiently(profile, history, signal, overrides);
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    // 桥接回的 error 是一句话；直连 Anthropic 回的是 { error: { message } }
-    const message = (typeof data.error === "string" ? data.error : data.error?.message) || `请求失败（${response.status}）`;
+    const message = await describeResponseError(response);
     // 接口不认这个思考档位：记下它认的几档，换成最接近的一档重发一次；再不行才算失败
     const sent = reasoningFields(profile, overrides.reasoning).reasoning_effort;
     if (!retried && sent && learnReasoningLevels(profile, message, sent)) {
@@ -649,11 +650,9 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     }
     // 接口回说放不下：压掉这一答较早的往来再发一回；已无可压的，原样报错。429 是限流（「tokens per min」也带 token 与 limit），不算
-    if (
-      response.status !== 429 &&
-      contextOverflow(message) &&
-      (await keepInWindow(profile, history, signal, overrides, { overflow: true }))
-    )
+    const overflow = response.status !== 429 && contextOverflow(message);
+    if (overflow) learnContextWindow(profile, message);
+    if (overflow && (await keepInWindow(profile, history, signal, overrides, { overflow: true })))
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     throw Error(message);
   }
@@ -686,6 +685,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       arguments: call.function?.arguments || ""
     }));
   note();
+  if (data?.choices?.[0]?.finish_reason === "length") throw Object.assign(Error("模型达到输出长度上限，回复尚未完成"), { midStream: true });
 }
 // 网络一晃就断太脆：接口没接下请求时（连不上、限流、5xx、过载）等一等再试，间隔渐长，接口给了 Retry-After 就照它等；
 // 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」

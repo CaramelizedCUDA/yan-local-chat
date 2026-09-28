@@ -1,5 +1,6 @@
-// 言 · 改动与成品：执事这一答改过哪些文件（挂在回复末尾的改动条），言这一答在卷宗里新出了哪几件（成品条）
-// 改动摘要：这一答里执事改过哪些文件、各增减多少行，挂在回复末尾，写入/修改一落地就实时累加，不等整条回复收尾
+// 言 · 改动与成品：执事这一答改过哪些文件（改动条），言这一答在卷宗里新出了哪几件（成品条）
+// 改动摘要：这一答里执事改过哪些文件、各增减多少行。生成中附在输入框上的工作条里实时累加（见 renderHelperBar），
+// 不跟着正文尾巴跑；写完才落到回复之下，是一道线而不是一只框（见 设计稿/12-改动条与行迹）
 function diffCounts(oldText, newText) {
   const a = String(oldText || "").split(/\r?\n/),
     b = String(newText || "").split(/\r?\n/);
@@ -17,21 +18,40 @@ function changeStats(message) {
   const files = new Map();
   for (const step of allSteps(message)) {
     if (!step.change || step.status !== "done") continue;
-    const entry = files.get(step.change.path) || { path: step.change.path, added: 0, removed: 0, created: false };
+    const entry = files.get(step.change.path) || { path: step.change.path, added: 0, removed: 0, created: false, helper: false };
     entry.added += step.change.added;
     entry.removed += step.change.removed;
     entry.created ||= !!step.change.created;
+    entry.helper ||= !!step.scope;
     files.set(step.change.path, entry);
   }
   const list = [...files.values()];
   return { files: list, added: list.reduce((sum, f) => sum + f.added, 0), removed: list.reduce((sum, f) => sum + f.removed, 0) };
 }
+// 增删的比例画成五枚小方块：绿的是增、朱的是删，余下留白
+function changeSpark(added, removed) {
+  const total = added + removed,
+    green = total ? Math.round((5 * added) / total) : 0,
+    red = total ? Math.min(5 - green, Math.round((5 * removed) / total)) : 0;
+  return `<span class="change-spark" aria-hidden="true">${'<i class="g"></i>'.repeat(green)}${'<i class="r"></i>'.repeat(red)}${"<i></i>".repeat(5 - green - red)}</span>`;
+}
+function changeCountHtml(stats) {
+  return `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
+}
+// 清单一件一行：路径、新建 / 帮手所改的小注、增删行数
+function changeFilesHtml(stats, open, extra = "") {
+  return `<div class="change-files${extra}${open ? "" : " hidden"}">${stats.files
+    .map(f => {
+      const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · ");
+      return `<div><span class="path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></div>`;
+    })
+    .join("")}</div>`;
+}
 /** @param {Message} message */
 function changeSummaryInner(message, open) {
   const stats = changeStats(message);
   if (!stats.files.length) return "";
-  const count = `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
-  return `<button type="button" class="change-summary" aria-expanded="${open}"><span>${stats.files.length} 个文件已更改</span><span class="change-count">${count}</span></button><div class="change-files${open ? "" : " hidden"}">${stats.files.map(f => `<div><span class="path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}${f.created ? " <em>新建</em>" : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></div>`).join("")}</div>`;
+  return `<button type="button" class="change-summary" aria-expanded="${open}"><span class="seal change-seal" aria-hidden="true">改</span><span class="change-title">改动 ${stats.files.length} 个文件</span><span class="change-count">${changeCountHtml(stats)}${changeSpark(stats.added, stats.removed)}</span></button>${changeFilesHtml(stats, open)}`;
 }
 // 成品：言里这一答在卷宗根目录新出或改过的文件。一件一行：类型、文件名、大小，右侧「看」（悬浮预览）与「下载」
 // 卷宗里已经删掉的成品：条目留着（这一答确实出过这件），但标成「已移出卷宗」，不再给看与下载的按钮
@@ -66,15 +86,15 @@ function syncDeliverables() {
 }
 /** @param {Message} message */
 function changeSummaryHtml(message, open = false) {
-  const inner = changeSummaryInner(message, open);
+  const inner = message.status === "streaming" ? "" : changeSummaryInner(message, open);
   return inner ? `<div class="change-bar">${inner}</div>` : "";
 }
-// 步骤每次刷新都把改动条同步到回复末尾：数字就地更新（展开状态保留），首次出现时轻浮一下
+// 回复之下的改动条：生成中不画（那时改动在输入框上方的工作条里），写完落下来时轻浮一下；数字就地更新，展开状态保留
 /** @param {Message} assistant */
 function syncChangeBar(block, assistant) {
   const bar = block.querySelector(":scope > .change-bar"),
     open = bar?.querySelector(".change-summary")?.getAttribute("aria-expanded") === "true",
-    inner = changeSummaryInner(assistant, open);
+    inner = assistant.status === "streaming" ? "" : changeSummaryInner(assistant, open);
   if (!inner) return bar?.remove();
   if (!bar) {
     block.insertAdjacentHTML("beforeend", `<div class="change-bar is-new">${inner}</div>`);

@@ -17,8 +17,9 @@ await evalJs(
 // 进行中：行迹里只该有一枚签（帮手的步骤不再嵌在里面）；点帮手条开右侧的差遣面板，帮手的时间线在那儿跟着流
 let panelLiveSeen = false,
   bothRunning = false,
-  barRows = 0,
-  barDoing = "",
+  barBoth = "",
+  barChanges = "",
+  endBarWhileStreaming = false,
   thoughtLive = false,
   nestedInTrail = 0,
   metaHelpers = "",
@@ -28,21 +29,22 @@ const seen = [];
 for (let i = 0; i < 200; i++) {
   // 帮手都到齐了就把面板点开（开在最后一名身上——面板一次只看一名，思绪不一定落在头一名），此后它随 350ms 的心跳自己更新
   if (!panelOpened) {
-    const rows = await evalJs(`document.querySelectorAll("#helperBar:not(.hidden) .helper-row").length`);
-    if (rows >= 2 || (rows >= 1 && i > 20)) {
-      await evalJs(`[...document.querySelectorAll("#helperBar .helper-row")].at(-1).click(); true`);
+    const cards = await evalJs(`document.querySelectorAll('.message.assistant .tool-step-delegate[data-status="running"]').length`);
+    if (cards >= 2 || (cards >= 1 && i > 20)) {
+      await evalJs(`[...document.querySelectorAll(".message.assistant .tool-step-delegate > .tool-step-head")].at(-1).click(); true`);
       panelOpened = true;
     }
   }
   const s = await evalJs(
-    `(d => d ? { status: d.dataset.status, trailNested: d.querySelectorAll(".tool-step").length, panelNested: document.querySelectorAll("#helperModal .tool-step").length, panelLive: document.querySelector("#helperModal .sub-trail")?.dataset.live, panelOpen: !document.querySelector("#helperModal").classList.contains("hidden"), running: document.querySelectorAll('.message.assistant .tool-step-delegate[data-status="running"]').length, barRows: document.querySelectorAll("#helperBar:not(.hidden) .helper-row").length, barDoing: [...document.querySelectorAll("#helperBar .helper-doing")].map(n => n.textContent).join("|"), thought: !!document.querySelector('#helperModal .sub-timeline .reasoning[data-state="live"]'), meta: document.querySelector(".message.assistant .tool-stack-meta")?.textContent || "" } : null)(document.querySelector(".message.assistant .tool-step-delegate"))`
+    `(d => d ? { status: d.dataset.status, trailNested: d.querySelectorAll(".tool-step").length, panelNested: document.querySelectorAll("#helperModal .tool-step").length, panelLive: document.querySelector("#helperModal .sub-trail")?.dataset.live, panelOpen: !document.querySelector("#helperModal").classList.contains("hidden"), running: document.querySelectorAll('.message.assistant .tool-step-delegate[data-status="running"]').length, bar: document.querySelector("#helperBar:not(.hidden)")?.textContent || "", endBar: !!document.querySelector(".message.assistant .change-bar"), streaming: document.querySelector(".message.assistant")?.dataset.status === "streaming", thought: !!document.querySelector('#helperModal .sub-timeline .reasoning[data-state="live"]'), meta: document.querySelector(".message.assistant .tool-stack-meta")?.textContent || "" } : null)(document.querySelector(".message.assistant .tool-step-delegate"))`
   );
   if (s) seen.push(JSON.stringify(s));
   if (s?.status === "running" && s.panelOpen && s.panelNested >= 1 && s.panelLive === "true") panelLiveSeen = true;
   nestedInTrail = Math.max(nestedInTrail, s?.trailNested || 0);
   if (s?.running === 2) bothRunning = true;
-  barRows = Math.max(barRows, s?.barRows || 0);
-  if (s?.barDoing && /正在|等待确认|凝神/.test(s.barDoing)) barDoing = s.barDoing;
+  if ((s?.bar || "").includes("2 名帮手 · 进行中")) barBoth = s.bar;
+  if (/改 \d+ 件/.test(s?.bar || "")) barChanges = s.bar;
+  if (s?.streaming && s.endBar) endBarWhileStreaming = true;
   if (s?.thought) thoughtLive = true;
   if (s?.status === "running") breathing = true;
   if (/名帮手|帮手「/.test(s?.meta || "")) metaHelpers = s.meta;
@@ -57,8 +59,9 @@ for (let i = 0; i < 200; i++) {
 check("helper timeline runs live in the side panel", panelLiveSeen, [...new Set(seen)].slice(0, 6).join(" | "));
 check("the trail keeps only a marker, no nested helper steps", nestedInTrail === 0, String(nestedInTrail));
 check("two helpers ran in parallel", bothRunning, [...new Set(seen)].slice(0, 6).join(" | "));
-check("helper bar above the composer listed both helpers", barRows === 2, String(barRows));
-check("helper bar tells what a helper is doing", /正在 (读取|修改|写入)|凝神|等待确认/.test(barDoing), barDoing);
+check("the work bar above the composer names both running helpers", !!barBoth, [...new Set(seen)].slice(-3).join(" | "));
+check("the work bar tallies files changed while the reply is still being written", !!barChanges, barChanges);
+check("no change bar trails the reply while it is still being written", !endBarWhileStreaming);
 check("helper's live thought shown in the panel", thoughtLive);
 // 呼吸是纯 CSS：无头浏览器强制 prefers-reduced-motion: reduce，那一档本就该把动画压掉（用户要少动效就该不动），
 // 在这里量计算样式量不出东西。所以验两件真能验的：运行时那枚签确实带着 running 态（CSS 就钩在这上面），且规则确实进了产物
@@ -195,7 +198,7 @@ check(
 check(
   "change bar counts both helpers' changes",
   (await evalJs(`document.querySelector(".message.assistant .change-summary")?.textContent.replace(/\\s+/g, " ").trim()`)) ===
-    "2 个文件已更改+2 −1",
+    "改改动 2 个文件+2 −1",
   await evalJs(`document.querySelector(".message.assistant .change-summary")?.textContent`)
 );
 check(

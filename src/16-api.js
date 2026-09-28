@@ -194,9 +194,12 @@ function reasoningManual(profile) {
 }
 // 走到这里就是身份变了（或亲手要求重探）：此前记的档位是旧模型的，一律不沿用——接口照单全收就按通用四档，
 // 不然旧模型的 none 会跟着新模型走，把一个认档位的模型永远标成不认
-/** @param {Profile} profile */
-async function probeReasoningLevels(profile) {
-  if (!profile?.model || reasoningProbed(profile)) return null;
+/**
+ * @param {Profile} profile
+ * @param {boolean} [force] 探过也再探（测试连接）；亲手填的由调用方拦下
+ */
+async function probeReasoningLevels(profile, force = false) {
+  if (!profile?.model || (!force && reasoningProbed(profile))) return null;
   const key = reasoningProbeKey(profile);
   if (anthropicLike(profile) || /dashscope|aliyuncs/i.test(profile.baseUrl || "")) {
     profile.reasoningLevels = "";
@@ -217,8 +220,7 @@ async function probeReasoningLevels(profile) {
     let learned;
     if (response.ok) learned = REASONING_DEFAULT_LEVELS;
     else {
-      const data = await response.json().catch(() => ({})),
-        message = (typeof data.error === "string" ? data.error : data.error?.message) || "";
+      const message = await describeResponseError(response);
       const found = parseReasoningLevels(message, "probe");
       if (found.length) learned = found;
       // 只有明说不认识这个字段的才记成不认；「Invalid reasoning_effort value」这种只是嫌 probe 不对、又没列它认的几档——
@@ -237,6 +239,25 @@ async function probeReasoningLevels(profile) {
     clearTimeout(timer);
     controller.abort();
   }
+}
+// 接口没接下请求时回的那句话。各家的样子不一：OpenAI 系 { error: { message } }、桥接 { error: "…" }、旧版 vLLM { message }、
+// FastAPI 写的自建服务 { detail }（参数校验错是一串对象，整串交出去，思考档位的报错才读得出它认哪几档）；不是 JSON 的取原文开头
+async function describeResponseError(response) {
+  const raw = await response.text().catch(() => "");
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return raw.trim().slice(0, 300) || `请求失败（${response.status}）`;
+  }
+  const error = data?.error,
+    detail = data?.detail;
+  return (
+    (typeof error === "string" ? error : error?.message) ||
+    (typeof data?.message === "string" ? data.message : "") ||
+    (typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : "") ||
+    `请求失败（${response.status}）`
+  );
 }
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
@@ -328,7 +349,9 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   const reader = response.body.getReader(),
     decoder = new TextDecoder();
   let buffer = "",
-    scheduled = false;
+    scheduled = false,
+    ended = false,
+    finishReason = "";
   // 落墨节奏：正文不按网络分块一坨坨出现，而是每帧按积压量的一定比例匀速写出（积压越多写得越快，最多滞后零点几秒）；新写出的字带短暂渐显，末尾跟一支笔尖光标
   const paced = !inkMotionOff();
   let shown = paced ? assistant.content.length : Infinity,
@@ -490,7 +513,11 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   // 流被掐断（停止、补言改道）时这一段的帧循环到此为止：接下来的一轮另起一个，两个循环不能同时画一条消息
   try {
     await pump();
+    flushThink();
+    if (!ended) throw Error("接口未发送结束标志，连接已中断");
+    if (finishReason === "length") throw Error("模型达到输出长度上限，回复尚未完成");
   } catch (error) {
+    flushThink();
     closed = true;
     // 半途出错（流里的报错事件）：把还开着的连接收掉，别让桥接那头替一个没人读的流继续转发
     reader.cancel().catch(() => {});
@@ -510,7 +537,11 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       for (const line of lines) {
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
-        if (!data || data === "[DONE]") continue;
+        if (!data) continue;
+        if (data === "[DONE]") {
+          ended = true;
+          continue;
+        }
         let failure = "";
         try {
           const json = JSON.parse(data);
@@ -518,6 +549,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
           if (json.error && !json.choices)
             failure = (typeof json.error === "string" ? json.error : json.error?.message) || "接口在作答途中返回了错误";
           const delta = json.choices?.[0]?.delta;
+          if (json.choices?.[0]?.finish_reason) {
+            finishReason = json.choices[0].finish_reason;
+            ended = true;
+          }
           const text = normalizeContent(delta?.content),
             reasoning = normalizeContent(delta?.reasoning_content ?? delta?.reasoning);
           if (reasoning) {
@@ -546,7 +581,6 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       if (done) break;
     }
   }
-  flushThink();
   // 流结束后把积压的字写完再返回，收尾和下一轮工具调用都等在这后面；标签页不可见时直接补齐
   while (paced && shown < assistant.content.length) {
     schedule();

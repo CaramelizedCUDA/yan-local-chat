@@ -3,7 +3,7 @@
 // 一件附件两份文件：原件本身「<id>.<扩展名>」（文本就是文本，图片就是图片，双击能开）与「<id>.json」（名字、类型、大小、抽出的正文）。
 // 页面按 id 存取，交出去的还是它原先在 IndexedDB 里的样子：{ id, kind, name, mime, size, data, extractedText… }，data 是文本或 data: URL
 "use strict";
-const { sendJson, jsonRoute, errorText, writeAtomic } = require("./http.js");
+const { sendJson, jsonRoute, errorText, writeAtomic, sendFile } = require("./http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -82,6 +82,20 @@ module.exports = function createFiles({ filesHome }) {
     },
     error => errorText(error, 200)
   );
+  // 原件直取：GET /api/files/raw?id=…。预览器看 PDF、放音视频用它——同源地址，不必把整份原件编成 data: URL 经 JSON 取回，也免得 blob: 地址被页面的 CSP 挡住
+  async function handleRaw(req, res) {
+    try {
+      const query = new URL(req.url, "http://127.0.0.1").searchParams,
+        id = checkId(query.get("id")),
+        dir = home(),
+        meta = readMeta(dir, id),
+        raw = meta && rawFileOf(dir, id, meta);
+      if (!raw) return sendJson(res, 404, { error: "附件原件不在存储目录里" });
+      await sendFile(req, res, path.join(dir, raw), { name: meta.name || raw, download: !!query.get("download") });
+    } catch (error) {
+      if (!res.headersSent) sendJson(res, 404, { error: errorText(error, 200) });
+    }
+  }
   // 只问在不在：迁入时用，不必把原件整个读回来
   const handleHas = jsonRoute(
     async body => {
@@ -140,6 +154,7 @@ module.exports = function createFiles({ filesHome }) {
     routes: {
       "POST /api/files/put": handlePut,
       "POST /api/files/get": handleGet,
+      "GET /api/files/raw": handleRaw,
       "POST /api/files/has": handleHas,
       "POST /api/files/delete": handleDelete,
       "POST /api/files/clean": handleClean

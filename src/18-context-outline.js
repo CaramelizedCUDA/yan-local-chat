@@ -118,7 +118,12 @@ async function compactContext(c, { auto = false, before = null, profile = active
   try {
     // 转写可能很长、模型可能先思考再写：超时给足五分钟。这段对话开了思考档位的，压缩时降到最低一档：摘要用不着深想
     const timeout = AbortSignal.timeout(300000),
-      summary = await summarize(profile, prompt("assistant.compact", { transcript }), signal ? AbortSignal.any([signal, timeout]) : timeout, c.reasoning);
+      summary = await summarize(
+        profile,
+        prompt("assistant.compact", { transcript }),
+        signal ? AbortSignal.any([signal, timeout]) : timeout,
+        c.reasoning
+      );
     const at = c.messages.indexOf(lastCompacted);
     if (at < 0) throw Error("对话在压缩期间已改动");
     // 期间又压过一次（分隔已在这条之后）就作废，以后来的为准
@@ -144,11 +149,6 @@ async function compactContext(c, { auto = false, before = null, profile = active
   } finally {
     compactingIds.delete(c.id);
   }
-}
-async function describeResponseError(response) {
-  const data = await response.json().catch(() => ({}));
-  const error = data.error;
-  return (typeof error === "string" ? error : error?.message) || `请求失败（${response.status}）`;
 }
 // 请模型把一段文字压成摘要：前文压缩与轮内压缩共用。不带系统提示；输出上限不另给，随平时的走；花的墨记在模型上
 /** @param {Profile} profile */
@@ -206,21 +206,38 @@ function maybeAutoCompact(c, profile) {
 const FOLD_KEEP_ROUNDS = 2;
 // 各家接口「放不下」的说法：OpenAI 系 maximum context length、Anthropic prompt is too long / exceed context limit、
 // Gemini exceeds the maximum number of tokens、Qwen Range of input length、Kimi token limit、GLM exceeds max length……
-// 输出上限（max_tokens）太大、上游超时（context deadline exceeded）不算
+// 输出上限（max_tokens）太大、上游超时（context deadline exceeded）不算。vLLM 的说法两样都列（you requested 0 output tokens and
+// your prompt contains at least 32769 input tokens）：要的输出本身放得进窗口，就是输入太长、压了有用；输出一项就超窗口才是 max_tokens 给大了
 function contextOverflow(message) {
   const text = String(message || "");
-  return (
-    /context.{0,24}(length|window|limit|size)|prompt is too long|too many tokens|token.{0,20}limit|exceed.{0,40}(limit|length|tokens)|input.{0,20}(too long|length)|上下文.{0,8}(长度|窗口|上限|超)|超出.{0,12}(上下文|长度|限制)|超长/i.test(
+  if (
+    !/context.{0,24}(length|window|limit|size)|prompt is too long|too many tokens|token.{0,20}limit|exceed.{0,40}(limit|length|tokens)|input.{0,20}(too long|length)|上下文.{0,8}(长度|窗口|上限|超)|超出.{0,12}(上下文|长度|限制)|超长/i.test(
       text
-    ) && !/deadline|output tokens?|max_completion/i.test(text)
-  );
+    ) ||
+    /deadline|max_completion/i.test(text)
+  )
+    return false;
+  if (!/output tokens?/i.test(text)) return true;
+  const limit = Number(text.match(/context length is (\d+)/i)?.[1]),
+    output = Number(text.match(/(\d+) output tokens?/i)?.[1]);
+  return /input tokens?/i.test(text) && limit > 0 && output < limit;
+}
+// 报错里说了窗口多大（maximum context length is 32768 tokens）而模型上没填：记下来，此后送出前就按它提前压，不必每回先撞一次放不下
+/** @param {Profile} profile */
+function learnContextWindow(profile, message) {
+  const limit = Number(String(message || "").match(/context length is (\d+)/i)?.[1]);
+  if (Number(profile.contextWindow) > 0 || !(limit >= 1000)) return;
+  profile.contextWindow = limit;
+  saveStoreSoon();
 }
 // 下一次请求约有多大：上一轮接口报了实际的提示用量就以它为底，只估此后新添的；没报就整份估（连同系统提示与工具定义）
 function requestSize(history, overrides) {
   const seen = overrides.seen;
   if (seen && seen.at <= history.length) return seen.tokens + estimateTokens(history.slice(seen.at));
   return (
-    estimateTokens(history) + estimateText(String(overrides.systemPrompt || "")) + (overrides.tools ? estimateText(JSON.stringify(overrides.tools)) : 0)
+    estimateTokens(history) +
+    estimateText(String(overrides.systemPrompt || "")) +
+    (overrides.tools ? estimateText(JSON.stringify(overrides.tools)) : 0)
   );
 }
 const plainContent = content =>
@@ -234,7 +251,10 @@ function foldTranscript(region, budget) {
       if (m.role === "tool") return `结果：${clip(plainContent(m.content), limit)}`;
       if (m.role === "user") return `用户：${clip(plainContent(m.content), 4000)}`;
       const said = plainContent(m.content).trim();
-      return [said && `你：${clip(said, 4000)}`, ...(m.tool_calls || []).map(c => `调用 ${c.function?.name}：${clip(String(c.function?.arguments || ""), limit / 4)}`)]
+      return [
+        said && `你：${clip(said, 4000)}`,
+        ...(m.tool_calls || []).map(c => `调用 ${c.function?.name}：${clip(String(c.function?.arguments || ""), limit / 4)}`)
+      ]
         .filter(Boolean)
         .join("\n");
     });
@@ -293,7 +313,12 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
       AbortSignal.any([signal, AbortSignal.timeout(300000)]),
       overrides.reasoning
     );
-    history.splice(head, cut - head, { role: "assistant", content: `［工作笔记］\n${note}` }, { role: "user", content: prompt("assistant.folded") });
+    history.splice(
+      head,
+      cut - head,
+      { role: "assistant", content: `［工作笔记］\n${note}` },
+      { role: "user", content: prompt("assistant.folded") }
+    );
     overrides.seen = null;
     overrides.folds = (overrides.folds || 0) + 1;
     return true;
@@ -398,9 +423,36 @@ function jumpToOutline(id) {
 }
 
 // ---------- 对话存成 Markdown：桥接在线时落到卷宗，否则下载 ----------
+// 元信息不是 Markdown 正文：路径、命令与文件名里的符号不能变成标题、链接或 HTML。
+function exportMarkdownLabel(value) {
+  return String(value || "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/[\\`*_{}\[\]()#+.!|~-]/g, "\\$&");
+}
+function exportToolTrail(message) {
+  const steps = message.steps || [];
+  if (!steps.length) return "";
+  // 模型上下文的 stepsDigest 会截短、只取前 16 步；导出单独排成纯文本，不把命令当 Markdown 解析。
+  const text = steps
+    .map(
+      (step, index) =>
+        `${index + 1}. ${TOOLS.get(step.name)?.label || step.name} · ${step.title || step.note || ""} → ${step.result || step.status || ""}`
+    )
+    .join("\n");
+  const fence = "`".repeat(Math.max(3, ...Array.from(text.matchAll(/`+/g), match => match[0].length + 1)));
+  return `行迹：\n\n${fence}text\n${text}\n${fence}`;
+}
 /** @param {Conversation} c */
 function conversationMarkdown(c) {
-  const lines = [`# ${c.title}`, "", `${formatDay(c.createdAt)}${isWork(c) ? ` · 工作目录 ${c.workdir}` : ""}`, ""];
+  const lines = [
+    `# ${exportMarkdownLabel(c.title)}`,
+    "",
+    `${formatDay(c.createdAt)}${isWork(c) ? ` · 工作目录 ${exportMarkdownLabel(c.workdir)}` : ""}`,
+    ""
+  ];
   for (const m of c.messages) {
     if (m.role === "context") {
       lines.push(
@@ -420,22 +472,18 @@ function conversationMarkdown(c) {
             .map(line => `> ${line}`),
           ""
         );
-      if (m.attachments?.length) lines.push(`*附件：${m.attachments.map(f => f.name).join("、")}*`, "");
+      if (m.attachments?.length) lines.push(`*附件：${m.attachments.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
       lines.push(String(m.content || ""), "");
     } else if (m.role === "assistant" && m.status !== "error") {
-      lines.push(`## 答${m.modelName ? ` · ${m.modelName}` : ""}`, "");
-      const trail = stepsDigest(m);
-      if (trail) lines.push(`*${trail}*`, "");
+      lines.push(`## 答${m.modelName ? ` · ${exportMarkdownLabel(m.modelName)}` : ""}`, "");
+      const trail = exportToolTrail(m);
+      if (trail) lines.push(trail, "");
       lines.push(String(m.content || ""), "");
-      if (m.deliverables?.length) lines.push(`*成品：${m.deliverables.map(f => f.name).join("、")}*`, "");
+      if (m.deliverables?.length) lines.push(`*成品：${m.deliverables.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
     }
   }
-  return (
-    lines
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim() + "\n"
-  );
+  // 不能全局合并空行：代码、HTML 与模板字符串里的换行本身就是内容。
+  return lines.join("\n").trim() + "\n";
 }
 /** @param {Conversation} c */
 async function exportConversationMarkdown(c) {
@@ -444,23 +492,30 @@ async function exportConversationMarkdown(c) {
       .replace(/[\\/:*?"<>|]/g, " ")
       .trim()
       .slice(0, 60)}.md`,
-    text = conversationMarkdown(c);
-  if (archiveOnline()) {
-    try {
+    original = conversationMarkdown(c);
+  try {
+    const sources = markdownVisuals(original),
+      files = [];
+    if (sources.length) toast("正在打包交互可视化…");
+    for (const [index, source] of sources.entries())
+      files.push({ name: `${name.slice(0, -3)}-可视化-${index + 1}.html`, text: await standaloneHtmlApp(source) });
+    if (archiveOnline()) {
+      const savedFiles = [];
+      for (const file of files) savedFiles.push(await putArchiveFile(file.name, dataUrlFromText(file.text, "text/html;charset=utf-8")));
+      const text = original + markdownAssetLinks(savedFiles);
       const saved = await putArchiveFile(name, dataUrlFromText(text, "text/markdown"));
       void refreshArchive();
-      toast(`已存入卷宗：${saved.name}`);
-    } catch (error) {
-      toast(`存入失败：${String(error.message || error).slice(0, 80)}`);
+      toast(`已存入卷宗：${saved.name}${files.length ? `（附 ${files.length} 个交互作品）` : ""}`);
+      return;
     }
-    return;
+    const text = original + markdownAssetLinks(files);
+    if (files.length) {
+      downloadHref(URL.createObjectURL(exportZip([{ name, text }, ...files])), `${name.slice(0, -3)}.zip`, true);
+      toast("已导出 Markdown 与交互作品，请解压后打开");
+    } else downloadText(text, "text/markdown;charset=utf-8", name);
+  } catch (error) {
+    toast(`导出失败：${String(error.message || error).slice(0, 160)}`);
   }
-  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown" })),
-    anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // 压缩过的前文展开与折起；右侧的问题导航；右下角的上下文计数

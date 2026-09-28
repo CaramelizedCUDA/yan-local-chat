@@ -502,12 +502,12 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   position: relative;
   z-index: 5;
 }
-/* 书眉：标题滚走后，顶栏左边留一行题名与问数，与正文同一左缘；没滚过标题时不显示，不与标题重复。点一下回到开头。
+/* 书眉：标题滚走后，顶栏左边靠侧栏留一行题名与问数；没滚过标题时不显示，不与标题重复。点一下回到开头。
    落选的：居中疏排只留题名（像书页页眉，但与右侧的状态挤在一条线上，题名一长就难看） */
 .running-head {
   position: absolute;
   top: 0;
-  left: max(42px, calc(50% - var(--read) / 2));
+  left: 22px;
   right: 300px;
   height: 55px;
   display: flex;
@@ -548,6 +548,39 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   color: var(--ink-3);
   font: 10px var(--title);
   letter-spacing: 0.14em;
+}
+/* 翻在一段摊开的行迹中间时，顶栏右侧浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
+   贴着对话那一列的右缘，窗窄时让开右边的状态。落选的：书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
+.trail-fold-head {
+  position: absolute;
+  top: 50%;
+  right: max(calc((100% - var(--read)) / 2), 300px);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: var(--ink-3);
+  font: 11px var(--title);
+  letter-spacing: 0.1em;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-50% + 4px));
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+.trail-fold-head.shown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%);
+}
+.trail-fold-head:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.main:has(#chat.hidden) .trail-fold-head {
+  display: none;
 }
 .model-wrap {
   position: relative;

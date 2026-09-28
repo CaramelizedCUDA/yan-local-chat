@@ -84,7 +84,7 @@ check("file actually changed", readFileSync(WORK + "/src/a.js", "utf8").includes
 check(
   "change summary sits at the end of that reply",
   await evalJs(
-    `(b => !!b && b.querySelector(".change-summary").textContent.replace(/\\s+/g, " ").trim() === "1 个文件已更改+1 −1" && b.previousElementSibling?.classList.contains("markdown"))(document.querySelector(".message.assistant .assistant-block .change-bar"))`
+    `(b => !!b && b.querySelector(".change-summary").textContent.replace(/\\s+/g, " ").trim() === "改改动 1 个文件+1 −1" && b.previousElementSibling?.classList.contains("markdown"))(document.querySelector(".message.assistant .assistant-block .change-bar"))`
   ),
   await evalJs(`document.querySelector(".message.assistant .change-summary")?.textContent`)
 );

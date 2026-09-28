@@ -757,6 +757,79 @@
   padding-left: 0;
   border-left: 0;
 }
+/* 帮手行迹的题头：与主行迹「∨ 工作了 …」同一枚细折角，题头本身即开合；收起后只剩回报。
+   落选的：右端一枚圆角胶囊「收起 ︿」（现代 UI 的画法，与周围的折角、引线都不是一路） */
+.sub-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 6px -1px;
+  padding: 2px 6px 2px 1px;
+  border-radius: 6px;
+  color: var(--ink-3);
+  font: 10.5px var(--title);
+  letter-spacing: 0.1em;
+  text-align: left;
+}
+.sub-fold:before,
+.helper-fold-head:before,
+.trail-fold-head:before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 0.15s;
+}
+.sub-trail.folded > .sub-fold:before {
+  transform: rotate(-45deg);
+}
+.sub-fold:hover {
+  background: var(--paper-2);
+  color: var(--ink-2);
+}
+.sub-fold-label {
+  color: var(--ink-2);
+}
+.sub-trail.folded > .sub-timeline {
+  display: none;
+}
+.sub-trail.folded > .sub-report {
+  margin-top: 4px;
+}
+/* 题头滚出面板顶上后，顶栏里浮出的同一枚：一行字带朝上的折角 */
+.helper-fold-head {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: var(--ink-3);
+  font: 10.5px var(--title);
+  letter-spacing: 0.1em;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+.helper-fold-head:before,
+.trail-fold-head:before {
+  transform: rotate(-135deg) translate(-1px, -1px);
+}
+.helper-fold-head.shown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+.helper-fold-head:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
 /* 帮手各轮的步骤折成一行「检索 18 · 翻阅网页 30    48 步」：与主行迹同一套折叠，但窗里不再套小滚动框。
    跑着时摊开、跑完收起，帮手说的话与回报就不会被几十条检索顶到几屏之下 */
 .helper-panel-body .sub-steps {
@@ -816,13 +889,17 @@
   }
 }
 
-/* 窗里一律不再有第二层滚动条：整个屏幕都给它了，diff 与输出正常展开就是，
+/* 窗里的 diff 与输出不再套第二层滚动条：整个屏幕都给它了，正常展开就是，
    套一个 220px 的小框再让人在里面滚，是把宽裕的地方又过成了窄的 */
 .helper-panel-body .tool-output,
 .helper-panel-body .tool-results,
-.helper-panel-body .tool-note,
-.helper-panel-body .reasoning-body,
-.helper-panel-body .sub-timeline .reasoning-body {
+.helper-panel-body .tool-note {
   max-height: none;
   overflow: visible;
+}
+/* 思绪例外：帮手一想就是几十行，全摊开会把它说的话与各步顶出几屏；比正文里的宽一些，余下的在框里滚 */
+.helper-panel-body .reasoning-body,
+.helper-panel-body .sub-timeline .reasoning-body {
+  max-height: 320px;
+  overflow: auto;
 }

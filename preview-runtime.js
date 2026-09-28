@@ -4,9 +4,14 @@
   // 正文里的 ```html 就地渲染成可交互的一块：与正文同一张纸——色板与字体取自言，底色透明，高度随内容；
   // 数据图表用 yan:echarts、流程与结构图用 <pre class="mermaid">，库随项目本地分发，按需才载
   let scriptUrls = [];
+  // 独立导出的 HTML 带着源码、主题与库；普通页内预览仍由父页送入。
+  const exported = document.getElementById("yan-preview-export"),
+    standalone = exported ? JSON.parse(exported.textContent) : null;
   const previewId = location.hash.slice(1);
-  const notify = (state, detail = "") =>
+  const notify = (state, detail = "") => {
+    document.documentElement.dataset.previewState = state;
     parent.postMessage({ type: "yan-preview-state", id: previewId, state, detail: String(detail).slice(0, 240) }, "*");
+  };
   function clearScriptUrls() {
     for (const url of scriptUrls) URL.revokeObjectURL(url);
     scriptUrls = [];
@@ -76,7 +81,8 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
     if (!LIBS[name]) return Promise.reject(Error(`没有名为 yan:${name} 的库，可用的是 yan:echarts、yan:mermaid`));
     return (loading[name] ||= new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = LIBS[name];
+      if (standalone && !standalone.libraries[name]) return reject(Error(`导出文件缺少库：${name}`));
+      script.src = standalone ? standalone.libraries[name] : LIBS[name];
       script.onload = () => {
         if (name === "echarts") setupEcharts();
         resolve(null);
@@ -438,5 +444,8 @@ self.postMessage({ type: "loaded" });
   addEventListener("keydown", event => {
     if (event.key === "Escape") parent.postMessage({ type: "yan-preview-escape", id: previewId }, "*");
   });
-  parent.postMessage({ type: "yan-preview-ready", id: previewId }, "*");
+  if (standalone) {
+    applyTheme(standalone.theme);
+    run(standalone.html).catch(showError);
+  } else parent.postMessage({ type: "yan-preview-ready", id: previewId }, "*");
 })();
