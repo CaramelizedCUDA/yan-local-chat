@@ -1,6 +1,6 @@
 // 言 / 行合一：没绑目录的对话是言——桥接在线时工具落在卷宗目录（存储根里的 卷宗/），脚本落在隐藏的草稿目录、非只读指令先问；
 // 中途绑上目录即为行，提示词随之而变，解开又回到言；卷宗页面即目录的视图，不列草稿
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK, ARCHIVE } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
 await send("Page.navigate", { url: PAGE + "preview.html" });
@@ -254,5 +254,76 @@ check(
   "drags that start inside the page do not raise the drop veil; external ones still do",
   !drag.inside && drag.outside,
   JSON.stringify(drag)
+);
+
+// ---- 卷宗多级：逐层看，夹与件同格；查找与按类筛选跨层平铺；拖入落进当前层；卡片拖到夹上即挪进去
+mkdirSync(`${ARCHIVE}/课程/深度学习`, { recursive: true });
+mkdirSync(`${ARCHIVE}/课程/空夹`, { recursive: true });
+writeFileSync(`${ARCHIVE}/课程/讲义.txt`, "讲义");
+writeFileSync(`${ARCHIVE}/课程/深度学习/笔记.md`, "# 笔记");
+writeFileSync(`${ARCHIVE}/一声.mp3`, "not really audio");
+await send("Page.navigate", { url: PAGE });
+await waitFor(`!!document.querySelector("#openLibrary")`);
+await sleep(600);
+await evalJs(`document.querySelector("#library").classList.contains("hidden") && document.querySelector("#openLibrary").click(); true`);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程"]')`);
+check(
+  "the root lists the folder and its own files only",
+  await evalJs(
+    `!!document.querySelector('#libraryGrid [data-library-disk="一声.mp3"]') && !document.querySelector('#libraryGrid [data-library-disk="课程/讲义.txt"]') && document.querySelector("#libraryCrumbs").classList.contains("hidden")`
+  )
+);
+check(
+  "a folder card counts what is inside, deeper layers included",
+  (await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程"] small').textContent`)).startsWith("2 件 · 2 夹")
+);
+await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程"]').click(); true`);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="课程/讲义.txt"]')`);
+await shot("archive-folders.png");
+check(
+  "inside a folder: its subfolders first, then its files, with a path to climb back",
+  (await evalJs(
+    `[...document.querySelectorAll("#libraryGrid .library-card strong")].map(n => n.textContent).join() + "|" + document.querySelector("#libraryCrumbs").textContent`
+  )) === "空夹,深度学习,讲义.txt|卷宗›课程"
+);
+await evalJs(
+  `(() => { const dt = new DataTransfer(); dt.items.add(new File(["新"], "新.txt", { type: "text/plain" })); window.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt })); })(); true`
+);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="课程/新.txt"]')`, 8000);
+check("files dropped in land in the folder being viewed", existsSync(`${ARCHIVE}/课程/新.txt`));
+const dragCard = (path, dir) =>
+  evalJs(
+    `(() => { const dt = new DataTransfer(), fire = (type, node) => node.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt })),
+      card = document.querySelector(${JSON.stringify(`#libraryGrid [data-library-disk="${path}"]`)}), target = document.querySelector(${JSON.stringify(`#library [data-library-dir="${dir}"]`)});
+      fire("dragstart", card); fire("dragover", target); const lit = target.classList.contains("drop-over"); fire("drop", target); fire("dragend", card); return lit; })()`
+  );
+check("dragging a card over a folder lights it up", await dragCard("课程/讲义.txt", "课程/空夹"));
+await waitFor(`!document.querySelector('#libraryGrid [data-library-disk="课程/讲义.txt"]')`, 8000);
+check(
+  "dropping it moves the file into that folder",
+  existsSync(`${ARCHIVE}/课程/空夹/讲义.txt`) && !existsSync(`${ARCHIVE}/课程/讲义.txt`)
+);
+await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程/空夹"]').click(); true`);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="课程/空夹/讲义.txt"]')`);
+await dragCard("课程/空夹/讲义.txt", "");
+await waitFor(`!document.querySelector('#libraryGrid [data-library-disk="课程/空夹/讲义.txt"]')`, 8000);
+check("dragging onto a level in the path moves it back up", existsSync(`${ARCHIVE}/讲义.txt`));
+await evalJs(
+  `(() => { const s = document.querySelector("#librarySearch"); s.value = "笔记"; s.dispatchEvent(new Event("input")); })(); true`
+);
+check(
+  "searching lists matches from every level, each noting its folder",
+  await evalJs(
+    `(() => { const card = document.querySelector('#libraryGrid [data-library-disk="课程/深度学习/笔记.md"]'); return !!card && card.querySelector("small").textContent.endsWith("课程/深度学习") && document.querySelector("#libraryCrumbs").classList.contains("hidden") && !document.querySelector("#libraryGrid [data-library-dir]"); })()`
+  )
+);
+await evalJs(
+  `(() => { const s = document.querySelector("#librarySearch"); s.value = ""; s.dispatchEvent(new Event("input")); document.querySelector('[data-library-kind="audio"]').click(); })(); true`
+);
+check(
+  "the 音 filter picks out audio, marked with 音",
+  (await evalJs(
+    `[...document.querySelectorAll("#libraryGrid .library-card")].map(c => c.querySelector("strong").textContent + c.querySelector(".library-glyph").textContent).join()`
+  )) === "一声.mp3音"
 );
 close();

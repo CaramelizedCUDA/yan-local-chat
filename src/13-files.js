@@ -135,8 +135,18 @@ async function ingestFile(file) {
 // 桥接在线时卷宗是磁盘上的一个目录（bootstrap.work.archive）：拖进来的文件落盘，没绑目录的对话里模型写出的文件也在这里，页面即目录的视图；
 // 直连没桥接时退回浏览器内的版本：原件存在 IndexedDB，元数据记录在 store.library。两边都有时，浏览器内的旧件另列一组，可一键落盘
 let archiveEntries = null,
+  archiveDirs = [],
   archiveScratch = null,
-  archiveLoading = null;
+  archiveLoading = null,
+  // 卷宗页此刻站在哪一层（相对卷宗根，"" 即根）：只列这一层的夹与件，拖进来的文件也落在这一层
+  libraryDir = "";
+// 夹上的字：卷宗的单件称「卷」，装几卷的夹子借古书的称谓
+const FOLDER_GLYPH = "函";
+const ARCHIVE_DRAG = "application/x-yan-archive";
+function parentDir(path) {
+  const at = String(path).lastIndexOf("/");
+  return at < 0 ? "" : path.slice(0, at);
+}
 function archiveOnline() {
   return apiBase !== null && !!archiveDir();
 }
@@ -149,7 +159,10 @@ async function refreshArchive() {
   archiveLoading = bridge("/api/archive/list", { root: archiveDir() }, AbortSignal.timeout(8000))
     .then(data => {
       archiveEntries = data.entries || [];
+      archiveDirs = data.dirs || [];
       archiveScratch = data.scratch || null;
+      // 站着的那一层在别处被删了：退回根
+      if (libraryDir && !archiveDirs.some(dir => dir.path === libraryDir)) libraryDir = "";
     })
     .catch(error => {
       if (archiveEntries === null) toast(`卷宗目录不可用：${String(error.message || error).slice(0, 80)}`);
@@ -169,7 +182,13 @@ function archiveKind(name) {
     .pop()
     .toLowerCase();
   if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(extension)) return "image";
+  if (PREVIEW_AUDIO.has(extension)) return "audio";
+  if (PREVIEW_VIDEO.has(extension)) return "video";
   return isTextFile({ name, type: "" }) ? "text" : "file";
+}
+// 附件与浏览器内卷宗记的 kind 只分 画 / 文 / 卷（送给模型时的读法）；画在卡片上、按类筛选时，卷里再分出音与影
+function displayKind(file) {
+  return file.kind === "file" ? archiveKind(file.name) : file.kind;
 }
 function openLibrary() {
   closeSidePanel();
@@ -204,9 +223,9 @@ function libraryEntry(file) {
     savedAt: now()
   };
 }
-function libraryCardHtml(file, disk) {
-  const kind = disk ? archiveKind(file.name) : file.kind,
-    key = disk ? `data-library-disk="${escapeHtml(file.path)}"` : `data-library-item="${escapeHtml(file.id)}"`,
+function libraryCardHtml(file, disk, showDir = true) {
+  const kind = disk ? archiveKind(file.name) : displayKind(file),
+    key = disk ? `data-library-disk="${escapeHtml(file.path)}" draggable="true"` : `data-library-item="${escapeHtml(file.id)}"`,
     thumb =
       kind !== "image"
         ? ""
@@ -214,16 +233,53 @@ function libraryCardHtml(file, disk) {
           ? `<img class="library-thumb" src="${escapeHtml(archiveFileUrl(file.path))}" alt="">`
           : `<img class="library-thumb" data-thumb="${escapeHtml(file.id)}" alt="">`,
     note = disk
-      ? `${formatFileSize(file.size)} · ${escapeHtml(formatDay(file.modifiedAt))}${file.path.includes("/") ? ` · ${escapeHtml(file.path.slice(0, file.path.lastIndexOf("/")))}` : ""}`
+      ? `${formatFileSize(file.size)} · ${escapeHtml(formatDay(file.modifiedAt))}${showDir && file.path.includes("/") ? ` · ${escapeHtml(parentDir(file.path))}` : ""}`
       : `${formatFileSize(file.size)} · 收于 ${escapeHtml(formatDay(file.savedAt))}${file.kind === "file" && !file.extracted ? " · 未能提取正文" : ""}`;
   return `<div class="library-card${disk && kind === "image" ? " has-thumb" : ""}" ${key}><div class="library-preview"${kind === "image" ? ` role="button" tabindex="0" ${disk ? `data-open-disk-image="${escapeHtml(file.path)}"` : `data-open-image="${escapeHtml(file.id)}"`} title="查看 ${escapeHtml(file.name)}"` : ""}>${thumb}<span class="library-glyph" aria-hidden="true">${kindGlyph(kind)}</span><span class="attachment-type">${escapeHtml(fileTypeLabel(file))}</span></div><div class="library-body"><strong title="${escapeHtml(disk ? file.path : file.name)}">${escapeHtml(file.name)}</strong><small>${note}</small></div><div class="library-actions">${disk || previewKind(file.name) !== "none" ? `<button data-library-action="view" title="在此预览，不必下载">预览</button>` : ""}<button data-library-action="download">下载</button><button data-library-action="remove">${disk ? "删除" : "移出"}</button></div></div>`;
+}
+// 一个夹：一叠纸，下注里头共几件（连同更深的层）、有几个子夹、最近一件的日子
+function libraryFolderHtml(dir) {
+  const inside = (archiveEntries || []).filter(file => file.path.startsWith(`${dir.path}/`)),
+    subs = archiveDirs.filter(other => parentDir(other.path) === dir.path).length,
+    latest = inside.reduce((last, file) => (file.modifiedAt > last ? file.modifiedAt : last), ""),
+    note = [`${inside.length} 件`, subs ? `${subs} 夹` : "", latest ? escapeHtml(formatDay(latest)) : ""].filter(Boolean).join(" · ");
+  return `<div class="library-card library-folder" role="button" tabindex="0" data-library-dir="${escapeHtml(dir.path)}" title="打开 ${escapeHtml(dir.name)}"><div class="library-preview"><span class="library-sheets" aria-hidden="true"><span>${FOLDER_GLYPH}</span></span></div><div class="library-body"><strong>${escapeHtml(dir.name)}</strong><small>${note}</small></div></div>`;
+}
+// 路径：卷宗 › 课程 › 深度学习。点哪一级回哪一级；各级也接得住拖来的卡片（挪回上一层）
+function renderLibraryCrumbs(show) {
+  const crumbs = $("#libraryCrumbs");
+  crumbs.classList.toggle("hidden", !show);
+  if (!show) return (crumbs.innerHTML = "");
+  const parts = libraryDir.split("/");
+  crumbs.innerHTML = `<button type="button" data-library-dir="">卷宗</button>${parts
+    .map((part, index) =>
+      index === parts.length - 1
+        ? `<span class="sep" aria-hidden="true">›</span><span class="here">${escapeHtml(part)}</span>`
+        : `<span class="sep" aria-hidden="true">›</span><button type="button" data-library-dir="${escapeHtml(parts.slice(0, index + 1).join("/"))}">${escapeHtml(part)}</button>`
+    )
+    .join("")}`;
+}
+function enterLibraryDir(dir) {
+  libraryDir = dir;
+  renderLibrary();
+  $("#library").scrollTop = 0;
 }
 function renderLibrary() {
   const query = libraryQuery.trim().toLowerCase(),
     disk = archiveOnline(),
-    matches = (name, kind) => (libraryKind === "all" || kind === libraryKind) && (!query || String(name).toLowerCase().includes(query));
-  const diskItems = disk ? (archiveEntries || []).filter(file => matches(file.name, archiveKind(file.name))) : [],
-    items = store.library.filter(file => matches(file.name, file.kind));
+    matches = (name, kind) => (libraryKind === "all" || kind === libraryKind) && (!query || String(name).toLowerCase().includes(query)),
+    // 逐层看；一旦查找或按类筛选，就跨各层平铺，卡片下注它所在的路径
+    browsing = disk && !query && libraryKind === "all";
+  const diskItems = !disk
+      ? []
+      : browsing
+        ? (archiveEntries || []).filter(file => parentDir(file.path) === libraryDir)
+        : (archiveEntries || []).filter(file => matches(file.name, archiveKind(file.name))),
+    folders = browsing
+      ? archiveDirs.filter(dir => parentDir(dir.path) === libraryDir).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
+      : [],
+    items = browsing && libraryDir ? [] : store.library.filter(file => matches(file.name, displayKind(file)));
+  renderLibraryCrumbs(browsing && !!libraryDir);
   const total = libraryTotal(),
     bytes = [...(disk ? archiveEntries || [] : []), ...store.library].reduce((sum, file) => sum + Number(file.size || 0), 0);
   $("#libraryCountText").textContent = total ? `现存 ${total} 件 · ${formatFileSize(bytes)}` : "";
@@ -241,13 +297,21 @@ function renderLibrary() {
     .querySelectorAll("[data-library-kind]")
     .forEach(button => button.classList.toggle("active", button.dataset.libraryKind === libraryKind));
   const legacy =
-    disk && store.library.length
+    disk && items.length
       ? `<div class="library-section"><span>浏览器内的旧件 · ${store.library.length}</span><button type="button" id="libraryMigrate" class="outline-btn">全部落盘</button></div>`
       : "";
   $("#libraryGrid").innerHTML =
-    diskItems.length || items.length
-      ? `${diskItems.map(file => libraryCardHtml(file, true)).join("")}${legacy}${items.map(file => libraryCardHtml(file, false)).join("")}`
-      : `<div class="library-empty">${total ? "没有匹配的卷宗" : disk && archiveEntries === null ? "正在翻开卷宗…" : "卷宗尚空<br>拖入文件即收入"}</div>`;
+    folders.length || diskItems.length || items.length
+      ? `${folders.map(libraryFolderHtml).join("")}${diskItems.map(file => libraryCardHtml(file, true, !browsing)).join("")}${legacy}${items.map(file => libraryCardHtml(file, false)).join("")}`
+      : `<div class="library-empty">${
+          browsing && libraryDir
+            ? "此夹尚空<br>拖入文件即收于此夹"
+            : total
+              ? "没有匹配的卷宗"
+              : disk && archiveEntries === null
+                ? "正在翻开卷宗…"
+                : "卷宗尚空<br>拖入文件即收入"
+        }</div>`;
   $("#libraryMigrate")?.addEventListener("click", () => void migrateLibraryToArchive());
   void loadThumbnails($("#libraryGrid"));
 }
@@ -258,8 +322,21 @@ function dataUrlFromText(text, mime = "text/plain") {
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return `data:${mime};base64,${btoa(binary)}`;
 }
-async function putArchiveFile(name, data) {
-  return bridge("/api/archive/put", { root: archiveDir(), name, data }, AbortSignal.timeout(120000));
+/** dir：落进卷宗的哪一层，缺省为根（导出、附件上的「藏」都落在根上；卷宗页上拖入的落在此刻所在的那一层） */
+async function putArchiveFile(name, data, dir = "") {
+  return bridge("/api/archive/put", { root: archiveDir(), name, data, dir }, AbortSignal.timeout(120000));
+}
+// 卡片拖到夹上、或拖回路径里的上一级：挪进那一层；那一层有同名的就另取名
+async function moveArchiveFile(path, dir) {
+  if (parentDir(path) === dir) return;
+  try {
+    const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
+      renamed = moved.name !== path.split("/").pop();
+    toast(`已移入「${dir ? dir.split("/").pop() : "卷宗"}」${renamed ? `，同名已有，改作 ${moved.name}` : ""}`);
+  } catch (error) {
+    toast(`移动失败：${String(error.message || error).slice(0, 80)}`);
+  }
+  await refreshArchive();
 }
 // 清草稿：给对话则只清它那一处（删对话时顺手），不给则整个 .草稿 目录（卷宗页上的「清理」）
 /** @param {Conversation} conversation */
@@ -284,7 +361,7 @@ async function cleanScratch(conversation) {
     if (!conversation) toast(`清理失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
-async function addLibraryFiles(fileList) {
+async function addLibraryFiles(fileList, dir = libraryDir) {
   const files = Array.from(fileList || []);
   let added = 0;
   if (archiveOnline()) {
@@ -294,7 +371,7 @@ async function addLibraryFiles(fileList) {
         continue;
       }
       try {
-        await putArchiveFile(file.name, await readFile(file, "data"));
+        await putArchiveFile(file.name, await readFile(file, "data"), dir);
         added += 1;
       } catch (error) {
         toast(`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
@@ -905,7 +982,13 @@ function bindLibraryEvents() {
         renderLibrary();
       })
   );
+  $("#libraryCrumbs").addEventListener("click", e => {
+    const crumb = e.target.closest("[data-library-dir]");
+    if (crumb) enterLibraryDir(crumb.dataset.libraryDir);
+  });
   $("#libraryGrid").addEventListener("click", e => {
+    const folder = e.target.closest("[data-library-dir]");
+    if (folder) return enterLibraryDir(folder.dataset.libraryDir);
     const disk = e.target.closest("[data-open-disk-image]");
     if (disk) return openArchiveImage(disk.dataset.openDiskImage, disk);
     const button = e.target.closest("[data-library-action]");
@@ -928,9 +1011,48 @@ function bindLibraryEvents() {
   });
   $("#libraryGrid").addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target.matches?.("[data-library-dir]")) {
+      e.preventDefault();
+      enterLibraryDir(e.target.dataset.libraryDir);
+      $("#libraryGrid .library-card, #libraryCrumbs button")?.focus();
+      return;
+    }
     if (!e.target.matches?.("[data-open-disk-image]")) return;
     e.preventDefault();
     openArchiveImage(e.target.dataset.openDiskImage, e.target);
+  });
+  // 卷宗里的卡片拖到夹上（或路径里的上一级）即挪进去：落点提亮，松手就挪
+  const library = $("#library"),
+    dropTarget = event =>
+      Array.from(event.dataTransfer?.types || []).includes(ARCHIVE_DRAG) ? event.target.closest?.("#library [data-library-dir]") : null,
+    clearDropMark = () => library.querySelectorAll(".drop-over").forEach(node => node.classList.remove("drop-over"));
+  library.addEventListener("dragstart", event => {
+    const card = event.target.closest?.("[data-library-disk]");
+    if (!card) return;
+    event.dataTransfer.setData(ARCHIVE_DRAG, card.dataset.libraryDisk);
+    event.dataTransfer.effectAllowed = "move";
+  });
+  library.addEventListener("dragover", event => {
+    const target = dropTarget(event);
+    if (!target) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (!target.classList.contains("drop-over")) {
+      clearDropMark();
+      target.classList.add("drop-over");
+    }
+  });
+  library.addEventListener("dragleave", event => {
+    const target = dropTarget(event);
+    if (target && !target.contains(event.relatedTarget)) target.classList.remove("drop-over");
+  });
+  library.addEventListener("dragend", clearDropMark);
+  library.addEventListener("drop", event => {
+    const target = dropTarget(event);
+    clearDropMark();
+    if (!target) return;
+    event.preventDefault();
+    void moveArchiveFile(event.dataTransfer.getData(ARCHIVE_DRAG), target.dataset.libraryDir);
   });
   let dragHideTimer = null,
     dragFromPage = false;
@@ -945,7 +1067,9 @@ function bindLibraryEvents() {
     $("#dropTitle").textContent = toLibrary ? "松手，收入卷宗" : "松手，置于案上";
     $("#dropHint").textContent = toLibrary
       ? archiveOnline()
-        ? "任何文件 · 落到本机的卷宗目录"
+        ? libraryDir
+          ? `任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
+          : "任何文件 · 落到本机的卷宗目录"
         : `图片、文档与代码文件 · 单件不超过 ${limitLabel(MAX_FILE_BYTES)}`
       : `图片、文档与代码文件 · 单次共 ${limitLabel(MAX_PENDING_BYTES)}`;
     $("#dropVeil").classList.remove("hidden");

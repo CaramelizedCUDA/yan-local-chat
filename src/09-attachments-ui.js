@@ -30,13 +30,13 @@ function formatFileSize(value) {
       : `${(bytes / 1048576).toFixed(1)} MB`;
 }
 function kindGlyph(kind) {
-  return kind === "image" ? "画" : kind === "text" ? "文" : "卷";
+  return { image: "画", text: "文", audio: "音", video: "影" }[kind] || "卷";
 }
 function attachmentCard(file, index, sent = false) {
   const type = fileTypeLabel(file),
     title = `${file.name} · ${formatFileSize(file.size)}`;
   const thumb = file.kind === "image" && file.id ? `<img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt="">` : "";
-  const body = `${thumb}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-mark" aria-hidden="true">${kindGlyph(file.kind)}</span><span class="attachment-type">${escapeHtml(type)}</span>`;
+  const body = `${thumb}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-mark" aria-hidden="true">${kindGlyph(displayKind(file))}</span><span class="attachment-type">${escapeHtml(type)}</span>`;
   const save = file.id
     ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="收入卷宗" aria-label="收入卷宗">藏</button>`
     : "";
