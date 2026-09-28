@@ -72,4 +72,96 @@ check(
     `(async () => { document.querySelector(".history [data-conversation]").click(); await new Promise(r => setTimeout(r, 400)); document.querySelector(".message.user .attachment-card.sent[data-open-attachment]").click(); for (let i = 0; i < 40 && !document.querySelector("#fileViewerStage .file-viewer-table td"); i++) await new Promise(r => setTimeout(r, 150)); return document.querySelectorAll("#fileViewerStage .file-viewer-table td").length === 4; })()`
   )
 );
+// 案上的附件不必等发出：点开即看。PDF、音频走桥接的同源地址（页面 CSP 只许同源框架与媒体，blob: 会被挡），音频可拖进度（Range）
+await evalJs(`document.querySelector("#newChat")?.click(); true`);
+await sleep(400);
+// 一份合法的单页 PDF：xref 里的偏移按字节算准，阅读器才肯打开
+const pdfText = "BT /F1 28 Tf 30 50 Td (Yan PDF) Tj ET",
+  pdfObjects = [
+    "<</Type/Catalog/Pages 2 0 R>>",
+    "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+    "<</Type/Page/Parent 2 0 R/MediaBox[0 0 240 120]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>",
+    `<</Length ${pdfText.length}>>\nstream\n${pdfText}\nendstream`,
+    "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>"
+  ];
+let pdf = "%PDF-1.4\n";
+const pdfOffsets = pdfObjects.map((body, index) => {
+  const at = pdf.length;
+  pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  return at;
+});
+const xref = pdf.length;
+pdf += `xref\n0 ${pdfObjects.length + 1}\n0000000000 65535 f \n${pdfOffsets.map(at => `${String(at).padStart(10, "0")} 00000 n \n`).join("")}`;
+pdf += `trailer\n<</Size ${pdfObjects.length + 1}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF`;
+await evalJs(
+  `(async () => {
+    const wav = new Uint8Array(44 + 8000), v = new DataView(wav.buffer), w = (o, t) => [...t].forEach((c, i) => (wav[o + i] = c.charCodeAt(0)));
+    w(0, "RIFF"); v.setUint32(4, 36 + 8000, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, 8000, true);
+    // 一秒的 webm：画布逐帧换色，就地录下
+    const canvas = Object.assign(document.createElement("canvas"), { width: 320, height: 180 }), g = canvas.getContext("2d"),
+      recorder = new MediaRecorder(canvas.captureStream(20), { mimeType: "video/webm" }), parts = [];
+    let hue = 0;
+    const paint = setInterval(() => { g.fillStyle = "hsl(" + (hue += 15) + ",45%,60%)"; g.fillRect(0, 0, 320, 180); }, 50);
+    recorder.ondataavailable = e => parts.push(e.data);
+    recorder.start();
+    await new Promise(r => setTimeout(r, 1200));
+    await new Promise(r => { recorder.onstop = r; recorder.stop(); });
+    clearInterval(paint);
+    const dt = new DataTransfer();
+    dt.items.add(new File([${JSON.stringify(pdf)}], "讲义.pdf", { type: "application/pdf" }));
+    dt.items.add(new File([wav], "一声.wav", { type: "audio/wav" }));
+    dt.items.add(new File(parts, "一片.webm", { type: "video/webm" }));
+    dt.items.add(new File(["not a video"], "坏片.mp4", { type: "video/mp4" }));
+    window.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+    return true;
+  })()`
+);
+await waitFor(`document.querySelectorAll("#welcomeAttachments .attachment-card[data-open-attachment]").length === 4`, 8000);
+const openPending = name =>
+  evalJs(
+    `(() => { document.querySelector(${JSON.stringify(`#welcomeAttachments .attachment-card[data-name="${name}"]`)}).click(); return true; })()`
+  );
+await openPending("讲义.pdf");
+await waitFor(`!!document.querySelector("#fileViewerStage iframe.file-viewer-frame")`, 8000);
+await sleep(800);
+await shot("attachment-pdf.png");
+const pdfSrc = await evalJs(`document.querySelector("#fileViewerStage iframe").src`);
+const pdfHead = await fetch(pdfSrc, { method: "HEAD" });
+check(
+  "a PDF still on the desk previews from a same-origin bridge address",
+  pdfSrc.startsWith(PAGE + "api/files/raw?id=") && pdfHead.ok && pdfHead.headers.get("content-type") === "application/pdf",
+  pdfSrc
+);
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+await openPending("一声.wav");
+await waitFor(`document.querySelector("#fileViewerStage audio")?.readyState >= 1`, 8000);
+await shot("attachment-audio.png");
+const audio = await evalJs(`(a => ({ src: a.src, duration: a.duration }))(document.querySelector("#fileViewerStage audio"))`);
+check("audio plays in place with its duration known", Math.abs(audio.duration - 1) < 0.05, JSON.stringify(audio));
+const part = await fetch(audio.src, { headers: { Range: "bytes=0-3" } });
+check(
+  "media answers byte ranges so the player can seek",
+  part.status === 206 && part.headers.get("content-range") === "bytes 0-3/8044" && (await part.text()) === "RIFF"
+);
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+await openPending("一片.webm");
+await waitFor(`document.querySelector("#fileViewerStage video")?.readyState >= 1`, 8000);
+await evalJs(`document.querySelector("#fileViewerStage video").currentTime = 0.5; true`);
+await sleep(500);
+await shot("attachment-video.png");
+check("video plays in place at its own size", await evalJs(`document.querySelector("#fileViewerStage video").videoWidth === 320`));
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+await openPending("坏片.mp4");
+await waitFor(
+  `!!document.querySelector("#fileViewerStage [data-viewer-download]") || !!document.querySelector("#fileViewerStage video")?.error`,
+  8000
+);
+await sleep(300);
+check(
+  "a video the browser cannot decode turns into a download hint",
+  await evalJs(
+    `!document.querySelector("#fileViewerStage video") && document.querySelector("#fileViewerStage").textContent.includes("放不了")`
+  )
+);
 await close();

@@ -43,10 +43,10 @@
   background: var(--accent);
   opacity: 0.5;
 }
-.attachment-card.sent {
+.attachment-card[role="button"] {
   cursor: pointer;
 }
-.attachment-card.sent:hover {
+.attachment-card[role="button"]:hover {
   border-color: var(--ink-3);
   box-shadow: 0 5px 15px rgba(55, 45, 31, 0.08);
   transform: translateY(-1px);

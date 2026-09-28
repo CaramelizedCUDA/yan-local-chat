@@ -225,7 +225,7 @@ await waitFor(`!!document.querySelector('.chip-pop[data-kind=attach] [data-attac
 await evalJs(`document.querySelector('.chip-pop[data-kind=attach] [data-attach="archive"]').click(); true`);
 await waitFor(`!!document.querySelector('.chip-pop.attach-picker [data-pick="disk:报表.csv"]')`);
 await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="disk:报表.csv"]').click(); true`);
-await waitFor(`!!document.querySelector("#welcomeAttachments .attachment-card[title^='报表.csv']")`);
+await waitFor(`!!document.querySelector("#welcomeAttachments .attachment-card[data-name='报表.csv']")`);
 check(
   "picking from the archive menu lands the file on the desk",
   await evalJs(`!document.querySelector(".chip-pop") && document.querySelector("#library").classList.contains("hidden")`)

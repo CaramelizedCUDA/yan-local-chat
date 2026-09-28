@@ -61,4 +61,84 @@ function writeAtomic(file, data) {
   fs.renameSync(temp, file);
 }
 
-module.exports = { sendJson, readJson, jsonRoute, errorText, writeAtomic };
+// 交给页面看的文件（卷宗、附件原件）：类型按扩展名定。网页、SVG、脚本一律当纯文本——文件是模型写的或随手拖进来的，
+// 若以本站源头当网页打开，脚本便能读到页面的 localStorage；再加 CSP: sandbox 兜底
+const FILE_MIME = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  avif: "image/avif",
+  ico: "image/x-icon",
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  odp: "application/vnd.oasis.opendocument.presentation",
+  zip: "application/zip",
+  json: "application/json; charset=utf-8",
+  csv: "text/csv; charset=utf-8",
+  md: "text/markdown; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  oga: "audio/ogg",
+  opus: "audio/ogg",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  weba: "audio/webm",
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  webm: "video/webm",
+  ogv: "video/ogg",
+  mov: "video/quicktime",
+  mkv: "video/x-matroska"
+};
+function fileMime(name) {
+  const extension = String(name || "")
+    .split(".")
+    .pop()
+    .toLowerCase();
+  if (["html", "htm", "svg", "xml", "js", "mjs", "cjs"].includes(extension)) return "text/plain; charset=utf-8";
+  return FILE_MIME[extension] || "application/octet-stream";
+}
+// 送出一件文件：带 Range（音视频拖进度条只取那一段），?download 时让浏览器另存
+async function sendFile(req, res, file, { name, download = false }) {
+  const stat = await fs.promises.stat(file).catch(() => null);
+  if (!stat?.isFile()) throw Error("文件不存在");
+  const size = stat.size,
+    range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ""));
+  let start = 0,
+    end = size - 1;
+  if (range && size && (range[1] || range[2])) {
+    if (range[1]) {
+      start = Number(range[1]);
+      if (range[2]) end = Math.min(Number(range[2]), size - 1);
+    } else start = Math.max(0, size - Number(range[2]));
+    if (start > end) {
+      res.writeHead(416, { "Content-Range": `bytes */${size}` });
+      return res.end();
+    }
+  }
+  const partial = start > 0 || end < size - 1;
+  res.writeHead(partial ? 206 : 200, {
+    "Content-Type": fileMime(name),
+    "Content-Length": size ? end - start + 1 : 0,
+    "Accept-Ranges": "bytes",
+    ...(partial ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}),
+    "Cache-Control": "no-cache",
+    "Last-Modified": stat.mtime.toUTCString(),
+    "Content-Security-Policy": "sandbox",
+    "Content-Disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(name)}`
+  });
+  if (req.method === "HEAD" || !size) return res.end();
+  fs.createReadStream(file, { start, end }).pipe(res);
+}
+
+module.exports = { sendJson, readJson, jsonRoute, errorText, writeAtomic, fileMime, sendFile };

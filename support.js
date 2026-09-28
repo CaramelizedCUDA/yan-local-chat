@@ -5645,18 +5645,19 @@ function attachmentCard(file, index, sent = false) {
   const save = file.id
     ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="收入卷宗" aria-label="收入卷宗">藏</button>`
     : "";
-  // 发出去的附件点开是看：图进图片查看器，文、表、PDF、网页进预览器——自己刚发的东西再下载一遍没有道理；
-  // 只有预览不了的（压缩包之类）才落到下载
+  // 附件点开是看：图进图片查看器，文、表、PDF、网页、音视频进预览器——自己刚拖进来、刚发出去的东西再下载一遍没有道理；
+  // 只有预览不了的（压缩包之类）：发出去的落到下载，案上的就不必点了
+  const view =
+    file.id && file.kind === "image"
+      ? `data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
+      : file.id && previewKind(file.name) !== "none"
+        ? `data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
+        : "";
   if (sent && file.id) {
-    const action =
-      file.kind === "image"
-        ? `data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
-        : previewKind(file.name) !== "none"
-          ? `data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
-          : `data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
+    const action = view || `data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
     return `<div class="attachment-card sent" role="button" tabindex="0" data-kind="${file.kind}" ${action}>${body}${save}</div>`;
   }
-  return `<div class="attachment-card pending" data-kind="${file.kind}" title="${escapeHtml(title)}">${body}${save}${index !== null ? `<button class="attachment-tool attachment-remove" data-remove-attachment="${index}" title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
+  return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${index !== null ? `<button class="attachment-tool attachment-remove" data-remove-attachment="${index}" title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
 }
 function renderAttachments() {
   const html = pendingAttachments.map((file, index) => attachmentCard(file, index)).join("");
@@ -7514,9 +7515,11 @@ async function placeFromArchive(path) {
     toast(`置入失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
-// ---------- 卷宗文件的悬浮预览：图看画、文看字、表看格、网页进沙箱、PDF 交给浏览器；都不必先下载 ----------
-const PREVIEW_IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif"]),
-  PREVIEW_DOC = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "ods", "odp"]);
+// ---------- 卷宗文件的悬浮预览：图看画、文看字、表看格、网页进沙箱、PDF 交给浏览器、音视频就地放；都不必先下载 ----------
+const PREVIEW_IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "ico"]),
+  PREVIEW_DOC = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "ods", "odp"]),
+  PREVIEW_AUDIO = new Set(["mp3", "wav", "ogg", "oga", "opus", "m4a", "aac", "flac", "weba"]),
+  PREVIEW_VIDEO = new Set(["mp4", "m4v", "webm", "ogv", "mov", "mkv"]);
 function fileExtension(name) {
   return String(name || "")
     .split(".")
@@ -7528,6 +7531,8 @@ function previewKind(name) {
   if (PREVIEW_IMAGE.has(extension)) return "image";
   if (extension === "svg") return "svg";
   if (extension === "pdf") return "pdf";
+  if (PREVIEW_AUDIO.has(extension)) return "audio";
+  if (PREVIEW_VIDEO.has(extension)) return "video";
   if (extension === "html" || extension === "htm") return "html";
   if (extension === "csv" || extension === "tsv") return "table";
   if (extension === "md" || extension === "markdown") return "markdown";
@@ -7551,16 +7556,23 @@ function revokeViewerUrls() {
   for (const url of viewerObjectUrls) URL.revokeObjectURL(url);
   viewerObjectUrls = [];
 }
-/** 取一件东西的三种读法：直链（图与 PDF 交给浏览器）、正文、字节。卷宗的直链是桥接地址；附件的是就地造的 blob 地址 */
+/** 取一件东西的三种读法：直链（图、PDF、音视频交给浏览器）、正文、字节。
+ * 卷宗与落了盘的附件都走桥接的同源地址——页面的 CSP 只许同源的框架与媒体，blob: 的 PDF 会被挡；
+ * 只有没桥接（file:// 打开，没有 CSP）或原件只在浏览器里时，才就地造 blob 地址 */
+function urlReader(url) {
+  const fetched = async () => {
+    const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+    if (!response.ok) throw Error("取回失败");
+    return response;
+  };
+  return { url: () => url, text: async () => (await fetched()).text(), blob: async () => (await fetched()).blob(), extracted: "" };
+}
 async function viewerReader(source) {
-  if (source.path) {
-    const url = archiveFileUrl(source.path),
-      fetched = async () => {
-        const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
-        if (!response.ok) throw Error("取回失败");
-        return response;
-      };
-    return { url: () => url, text: async () => (await fetched()).text(), blob: async () => (await fetched()).blob(), extracted: "" };
+  if (source.path) return urlReader(archiveFileUrl(source.path));
+  if (apiBase !== null) {
+    const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
+      head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
+    if (head?.ok) return urlReader(url);
   }
   const file = await getAttachment(source.attachmentId);
   if (!file) throw Error("附件原件已找不到");
@@ -7615,6 +7627,11 @@ async function fileViewerBody(reader, name, kind) {
     return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;
   // PDF 交给浏览器自带的阅读器；卷宗的响应带 CSP: sandbox，脚本不会以本站身份运行
   if (kind === "pdf") return `<iframe class="file-viewer-frame" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></iframe>`;
+  // 音视频交给浏览器自带的播放器；编码认不得（如某些 mkv）时换成下载提示，见 bindViewerEvents
+  if (kind === "audio")
+    return `<div class="file-viewer-media"><audio controls preload="metadata" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></audio></div>`;
+  if (kind === "video")
+    return `<div class="file-viewer-media"><video controls preload="metadata" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></video></div>`;
   if (kind === "none")
     return `<div class="file-viewer-empty">此类文件无法在此预览，请下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
   // 网页放进与页内 ```html 同一个隔离沙箱：不能读本站的存储，也不能联网
@@ -7930,6 +7947,16 @@ function bindViewerEvents() {
     if (e.target.closest("[data-viewer-download]")) return downloadViewerFile();
     if (e.target === $("#fileViewer") || e.target === $("#fileViewerStage")) closeFileViewer();
   });
+  // 媒体的 error 不冒泡，在捕获阶段接：浏览器放不了这种编码，就别留一个转不动的播放器
+  $("#fileViewerStage").addEventListener(
+    "error",
+    e => {
+      if (!e.target.matches?.("audio, video")) return;
+      e.target.closest(".file-viewer-media").outerHTML =
+        `<div class="file-viewer-empty">浏览器放不了这种编码，请下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
+    },
+    true
+  );
   $("#imageViewerClose").onclick = closeImageViewer;
   $("#imageViewerDownload").onclick = () => {
     if (imageViewerAttachmentId) void downloadAttachment(imageViewerAttachmentId);

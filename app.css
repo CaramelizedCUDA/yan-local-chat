@@ -2957,10 +2957,10 @@ sup.note-ref.active {
   background: var(--accent);
   opacity: 0.5;
 }
-.attachment-card.sent {
+.attachment-card[role="button"] {
   cursor: pointer;
 }
-.attachment-card.sent:hover {
+.attachment-card[role="button"]:hover {
   border-color: var(--ink-3);
   box-shadow: 0 5px 15px rgba(55, 45, 31, 0.08);
   transform: translateY(-1px);
@@ -6794,6 +6794,23 @@ button.source-local {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper);
+}
+/* 音视频：视频与图同样居中托一层影；音频只是一条播放器，放在纸面正中 */
+.file-viewer-media {
+  margin: auto;
+  display: flex;
+  justify-content: center;
+  width: min(100%, 1000px);
+}
+.file-viewer-media video {
+  max-width: 100%;
+  max-height: calc(100dvh - 110px);
+  border-radius: 4px;
+  background: #000;
+  box-shadow: 0 16px 55px rgba(35, 30, 22, 0.18);
+}
+.file-viewer-media audio {
+  width: min(100%, 520px);
 }
 .file-viewer-text {
   width: min(100%, var(--read));
