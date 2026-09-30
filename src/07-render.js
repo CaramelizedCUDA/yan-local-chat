@@ -644,12 +644,18 @@ function bindScrollEvents() {
     trail.querySelector(":scope > summary").click();
     scrollChatTo(trail);
   });
-  // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧
-  if (typeof ResizeObserver === "function")
-    new ResizeObserver(() => {
+  // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧。
+  // 「回到最新」也跟着尺寸重算：下方的行迹、思绪一收短，人没动、没有滚动事件，已到底了按钮却还挂着；
+  // 输入框长高变矮改的是视口，一并看着
+  if (typeof ResizeObserver === "function") {
+    const sizes = new ResizeObserver(() => {
       if (followBottom && view === "chat" && currentId) scrollBottom();
+      syncJumpBottom();
       syncChatScrollGrabber();
-    }).observe($("#messages"));
+    });
+    sizes.observe($("#messages"));
+    sizes.observe($("#chatScroll"));
+  }
   $("#chatScroll").addEventListener(
     "wheel",
     e => {
