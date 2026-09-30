@@ -84,19 +84,3 @@ function syncDeliverables() {
     if (current !== html) bar.querySelectorAll(".deliver-file").forEach(node => node.remove()), bar.insertAdjacentHTML("beforeend", html);
   }
 }
-/** @param {Message} message */
-function changeSummaryHtml(message, open = false) {
-  const inner = message.status === "streaming" ? "" : changeSummaryInner(message, open);
-  return inner ? `<div class="change-bar">${inner}</div>` : "";
-}
-// 回复之下的改动条：生成中不画（那时改动在输入框上方的工作条里），写完落下来时轻浮一下；数字就地更新，展开状态保留
-/** @param {Message} assistant */
-function syncChangeBar(block, assistant) {
-  const bar = block.querySelector(":scope > .change-bar"),
-    open = bar?.querySelector(".change-summary")?.getAttribute("aria-expanded") === "true",
-    inner = assistant.status === "streaming" ? "" : changeSummaryInner(assistant, open);
-  if (!inner) return bar?.remove();
-  if (!bar) {
-    block.insertAdjacentHTML("beforeend", `<div class="change-bar is-new">${inner}</div>`);
-  } else if (bar.innerHTML !== inner) bar.innerHTML = inner;
-}

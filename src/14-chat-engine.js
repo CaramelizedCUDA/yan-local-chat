@@ -481,7 +481,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   renderSendButtons();
   renderHistory();
   const started = performance.now();
-  let leadTrim = 0;
   const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
   const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
@@ -542,7 +541,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       budget,
       onStatus: label => setJobLabel(conversation, job, label)
     });
-    leadTrim = trimReply(assistant);
+    trimReply(assistant);
     if (!assistant.content)
       throw Error(
         assistant.steps?.length ? "模型执行工具后未返回正文，可点「继续生成」请它收尾" : "模型未返回正文，请适当提高最大输出长度后重试"
@@ -595,7 +594,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     saveStore();
     renderHistory();
     if (currentId === conversation.id && view === "chat") {
-      finalizeAssistant(conversation, assistant, leadTrim);
+      finalizeAssistant(conversation, assistant);
       renderChatMeta(conversation);
       renderOutline();
       updateContextGauge();
@@ -754,11 +753,17 @@ async function runRounds(target, history, run) {
       ...(run.scope ? { scope: run.scope } : {})
     }));
     (target.steps ||= []).push(...steps);
+    // 拟好的调用已入册成步骤，「正在拟」那一行随之撤下
+    target.toolCalls = null;
     refreshSteps(host);
     history.push({
       role: "assistant",
       content: target.content.slice(roundStart) || null,
-      tool_calls: steps.map(step => ({ id: step.id, type: "function", function: { name: step.name, arguments: replayArguments(step.arguments) } })),
+      tool_calls: steps.map(step => ({
+        id: step.id,
+        type: "function",
+        function: { name: step.name, arguments: replayArguments(step.arguments) }
+      })),
       ...(target.thinkingBlocks?.length ? { thinking_blocks: target.thinkingBlocks } : {})
     });
     const outcomes = await runSteps(steps, conversation, host, signal, toolCache);

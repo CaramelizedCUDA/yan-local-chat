@@ -19,12 +19,7 @@ let leaks = [],
   hopped = false;
 for (;;) {
   // 第二轮思绪流到一半时翻去欢迎页再翻回来：生成期间页面上没有「当前对话」，时间线也不该乱
-  if (
-    !hopped &&
-    (await evalJs(
-      `!!document.querySelector('.message.assistant .trail-group.trail-live .reasoning, .message.assistant .reasoning[data-round-live="true"]')`
-    ))
-  ) {
+  if (!hopped && (await evalJs(`!!document.querySelector('.message.assistant .tool-stack .reasoning[data-state="live"]')`))) {
     hopped = true;
     await evalJs(`document.querySelector("#newChat").click(); true`);
     await sleep(300);
@@ -59,7 +54,8 @@ await evalJs(
   `document.querySelector("#welcomeInput").value = "DUPTAIL"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
 );
 const tailArticle = `[...document.querySelectorAll(".message.assistant")].at(-1)`,
-  openChat = match => `[...document.querySelectorAll("#history .history-item")].find(n => ${match}).querySelector(".history-open").click(); true`;
+  openChat = match =>
+    `[...document.querySelectorAll("#history .history-item")].find(n => ${match}).querySelector(".history-open").click(); true`;
 await waitFor(`(${tailArticle})?.querySelector(".trail-live")?.textContent.includes("尾段第2句")`, 10000);
 await evalJs(openChat(`n.textContent.includes("DUP") && !n.textContent.includes("DUPTAIL")`));
 await sleep(300);
@@ -68,10 +64,18 @@ await sleep(400);
 const mid = await evalJs(
   `(a => ({ streaming: a.dataset.status === "streaming", copies: [...a.querySelectorAll(".markdown")].filter(m => m.textContent.includes("尾段第1句")).length, outer: !!a.querySelector(".assistant-block > .markdown") }))(${tailArticle})`
 );
-check("text after the last step is painted once after switching back", mid.streaming && mid.copies === 1 && !mid.outer, JSON.stringify(mid));
+check(
+  "text after the last step is painted once after switching back",
+  mid.streaming && mid.copies === 1 && !mid.outer,
+  JSON.stringify(mid)
+);
 await waitFor(`(${tailArticle}).dataset.status !== "streaming"`, 10000);
 const done = await evalJs(
   `(a => ({ outer: a.querySelector(".assistant-block > .markdown")?.textContent.trim(), live: !!a.querySelector(".trail-live"), copies: [...a.querySelectorAll(".markdown")].filter(m => m.textContent.includes("尾段第1句")).length }))(${tailArticle})`
 );
-check("the tail lands in the body once when done", done.outer?.startsWith("尾段第1句") && !done.live && done.copies === 1, JSON.stringify(done));
+check(
+  "the tail lands in the body once when done",
+  done.outer?.startsWith("尾段第1句") && !done.live && done.copies === 1,
+  JSON.stringify(done)
+);
 await close();

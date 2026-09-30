@@ -3811,6 +3811,532 @@ function bindHistoryEvents() {
   });
 }
 
+  // ---- 07-paint.js ----
+// 言 · 一条回复的画法：给它此刻的样子，就画出它该有的样子
+// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 整页重画、流式逐帧、步骤变动、收尾，还有差遣面板里帮手的时间线，都走这一支笔：同一个状态画出来一定是同一个样子，
+// 不必事后去擦另一支笔多画的东西。一条回复拆成若干部件（思绪、行迹、正文、改动条……），各带键与签名：
+// 签名没变的一律不碰（展开状态、图表、沙箱都留着），变了的就地更新，页上多出来的撤掉。正文里已收尾的段落画一次就缓存，流式时每帧只重画最后一段
+
+// 落墨节奏：readSse 每帧记下这一答已写出多少字、最近几帧各写出几个（新字渐显用）；画的时候照它截。
+// 没有记的（别处在写、动效关着、已写完）整段都画
+/** @type {Map<string, { shown: number, fresh: Array<{ count: number, age: number }> }>} */
+const inkReveal = new Map();
+const partTemplate = document.createElement("template");
+function elementFrom(html) {
+  partTemplate.innerHTML = html;
+  return /** @type {HTMLElement} */ (partTemplate.content.firstElementChild);
+}
+/**
+ * @typedef {Object} Part 一个部件
+ * @property {string} key 同一处的键不变，节点就留着
+ * @property {string} [sig] 签名：没变就不碰
+ * @property {() => string} html 造出这个部件的外壳（或整个部件）
+ * @property {(el: HTMLElement, created: boolean) => void} [paint] 就地画；没有的部件签名一变整个换
+ * @property {boolean} [always] 不看签名，每回都画（里面自有分寸）
+ * @property {boolean} [enter] 已在页上的回复里新出时带入场动效
+ */
+// 按键对齐 host 的子节点：缺的造、多的撤、次序不对的挪
+/** @param {Element} host @param {Part[]} parts @param {boolean} animate */
+function syncParts(host, parts, animate = false) {
+  const existing = new Map();
+  for (const el of host.children) if (el._part) existing.set(el._part, el);
+  let cursor = host.firstElementChild;
+  for (const part of parts) {
+    const old = existing.get(part.key);
+    existing.delete(part.key);
+    let el = old;
+    if (!old || (!part.paint && old._sig !== part.sig)) {
+      el = elementFrom(part.html());
+      el._part = part.key;
+      if (animate && part.enter) el.classList.add("is-new");
+    }
+    if (old && el !== old) {
+      if (old === cursor) cursor = cursor.nextElementSibling;
+      old.remove();
+    }
+    if (el === cursor) cursor = cursor.nextElementSibling;
+    else host.insertBefore(el, cursor);
+    if (part.paint && (el !== old || part.always || el._sig !== part.sig)) part.paint(el, el !== old);
+    el._sig = part.sig;
+  }
+  // 游标之后全是没被点到名的（撤掉的部件、旧的画法留下的）
+  while (cursor) {
+    const stale = cursor;
+    cursor = cursor.nextElementSibling;
+    stale.remove();
+  }
+}
+
+// 页上这条回复（正文或旁注里）照它此刻的样子重画；不在页上就不画。返回画到的那一条
+/** @param {Message} message @param {{ steps?: boolean }} [options] */
+function paintMessage(message, options = {}) {
+  const article = document.querySelector(`[data-message="${CSS.escape(message.id)}"]`);
+  if (article?.classList.contains("assistant")) paintAssistant(/** @type {HTMLElement} */ (article), message, options);
+  return article;
+}
+/** @param {Message} message */
+function assistantShellHtml(message) {
+  return `<article class="message assistant" data-message="${escapeHtml(message.id)}" data-status="${escapeHtml(message.status || "complete")}"></article>`;
+}
+/** @param {Message} message 当前对话里这一答的分支位置（翻版本的 ‹ n/m ›） */
+function branchFor(message) {
+  const c = currentConversation(),
+    index = c ? c.messages.indexOf(message) : -1;
+  return index >= 0 ? branchAt(c, index) : null;
+}
+/**
+ * @param {HTMLElement} article
+ * @param {Message} message
+ * @param {{ steps?: boolean, side?: boolean, branch?: any }} [options]
+ *   steps 为假：只是正文、思绪多写了几个字（流式逐帧），步骤没动，不必逐步核对；side：旁注里的答，动作不同、不标旁注数
+ */
+function paintAssistant(article, message, { steps = true, side = !!article.closest("#sideMessages"), branch = undefined } = {}) {
+  if (branch === undefined) branch = side ? null : branchFor(message);
+  const status = message.status || "complete",
+    meta = `<div class="message-meta"><span class="meta-seal" aria-hidden="true">言</span><span>${escapeHtml(message.modelName || "模型")} · ${formatTime(message.timestamp)}</span>${side ? "" : noteMarkHtml(message)}</div>`,
+    // 旁注里的答：复制、重新生成（不分叉，直接换掉）；出错或停止了也能重来
+    actions = side
+      ? status === "streaming"
+        ? ""
+        : `${message.content ? actionIcon("copy", "复制回复", icons.copy) : ""}${actionIcon("regenerate", status === "complete" ? "重新生成" : "重试", icons.regenerate)}`
+      : assistantActionsHtml(message) + branchNavHtml(branch),
+    bar = actions ? `<div class="message-actions${branch ? " has-branch" : ""}">${actions}</div>` : "";
+  /** @type {Part[]} */
+  const parts = [
+    { key: "meta", sig: meta, html: () => meta },
+    { key: "block", sig: "", html: () => `<div class="assistant-block"></div>` }
+  ];
+  if (bar) parts.push({ key: "actions", sig: bar, html: () => bar });
+  syncParts(article, parts);
+  paintBlock(article.querySelector(":scope > .assistant-block"), message, { steps, animate: !!article._painted });
+  const was = article.dataset.status;
+  article.dataset.status = status;
+  // 写完落印：只在眼看着它写完时盖一下，重画出来的旧答不再盖
+  if (was === "streaming" && status === "complete") article.querySelector(".meta-seal")?.classList.add("stamped");
+  article._painted = true;
+  if (status !== "streaming" && !side && article.isConnected) decorateNoteAnchors(article);
+}
+/**
+ * 回复的身子：思绪、行迹、正文、成品、改动、出处
+ * @param {Element} block
+ * @param {Message} message
+ * @param {{ steps: boolean, animate: boolean }} o
+ */
+function paintBlock(block, message, o) {
+  // 正文开头带 <think> 的旧消息按思绪 + 正文拆开看（不改存下的原文）；开合、步骤这些仍记在消息本身
+  const source = inlineThinkView(message),
+    streaming = message.status === "streaming",
+    reveal = streaming ? inkReveal.get(message.id) : null,
+    content = String(source.content || ""),
+    reasoning = String(source.reasoning || ""),
+    visible = reveal ? content.slice(0, reveal.shown) : content,
+    fresh = reveal?.fresh || [],
+    work = trailWork(message);
+  /** @type {Part[]} */
+  const parts = [];
+  const stack = message.steps?.length
+    ? stackPart(message, source, { streaming, visible, fresh, work, steps: o.steps, animate: o.animate })
+    : null;
+  // 执事的行迹在前：思绪各归各轮；做完后最后一轮的思绪落在行迹之后。对谈里思绪在前、行迹是折起的注脚
+  if (work) {
+    parts.push(stack);
+    const tail = reasoning.slice(trailReasoningBase(message));
+    if (!streaming && tail.trim()) parts.push(thoughtPart("tail-thought", tail, false, message));
+  } else {
+    if (reasoning.trim()) parts.push(thoughtPart("reasoning", reasoning, reasoningLive({ ...source, content: visible }), message));
+    if (stack) parts.push(stack);
+  }
+  // 正文：执事生成中，最后一步之后的话还在行迹里「进行中」那组（见 paintTimeline），写完才落到这里
+  if (streaming && !visible) parts.push(placeholderPart("正在凝神"));
+  else if (!content && message.status === "stopped") parts.push(placeholderPart("搁笔于此"));
+  else {
+    const text = work ? (streaming ? "" : content.slice(trailBase(message)).trim()) : visible;
+    if (text)
+      parts.push({
+        key: "main",
+        sig: `${streaming}|${text}`,
+        html: () => `<div class="markdown"></div>`,
+        paint: el => paintMarkdown(el, text, { streaming, fresh })
+      });
+  }
+  const drafting = !work && streaming ? draftingLabel(message) : "";
+  if (drafting) parts.push(draftingPart(drafting));
+  const note = assistantNoteHtml(message);
+  if (note) parts.push({ key: "note", sig: note, enter: true, html: () => note });
+  const deliver = deliverablesHtml(message);
+  if (deliver) parts.push({ key: "deliver", sig: deliver, html: () => deliver });
+  // 改动条：生成中不画（那时在输入框上方的工作条里），写完落下来时轻浮一下；数字就地更新，展开状态保留
+  const changes = streaming ? "" : changeSummaryInner(message, false);
+  if (changes)
+    parts.push({
+      key: "change",
+      sig: changes,
+      enter: true,
+      html: () => `<div class="change-bar">${changes}</div>`,
+      paint: (el, created) => {
+        if (!created)
+          el.innerHTML = changeSummaryInner(message, el.querySelector(".change-summary")?.getAttribute("aria-expanded") === "true");
+      }
+    });
+  const sources = sourceCardsHtml(message);
+  if (sources) parts.push({ key: "sources", sig: sources, enter: true, html: () => sources });
+  syncParts(block, parts, o.animate);
+}
+function placeholderPart(text) {
+  return { key: "thinking", sig: text, html: () => `<div class="thinking">${text}</div>` };
+}
+/** @param {string} label */
+function draftingPart(label) {
+  return {
+    key: "drafting",
+    sig: label,
+    html: () =>
+      `<div class="trail-drafting"><span class="tool-state spinning" aria-hidden="true"></span><span class="trail-drafting-text"></span></div>`,
+    paint: el => rollText(el.querySelector(".trail-drafting-text"), label)
+  };
+}
+// 模型正拟着工具调用（参数还在流）：一行「正在拟 …」，参数长了带上字数
+/** @param {Message|SubAgent} source */
+function draftingLabel(source) {
+  const drafting = (source.toolCalls || []).filter(call => call.name);
+  if (!drafting.length) return "";
+  const label = drafting
+    .map(call => {
+      const path = call.arguments.match(/"(?:path|command|query|url|title)"\s*:\s*"((?:[^"\\]|\\.){1,80})/)?.[1];
+      return `${toolLabel(call.name)}${path ? ` ${path}` : ""}`;
+    })
+    .join("、");
+  const chars = drafting.reduce((sum, call) => sum + call.arguments.length, 0);
+  return `正在拟 ${label}${chars > 200 ? ` · ${chars} 字` : ""}`;
+}
+// 思绪块（正文区里的那一块）：开合记在消息上——用户亲手开合过的就不替他动；写完了收起（收尾时不看读者在不在看）
+/** @param {Message} message */
+function thoughtPart(key, text, live, message) {
+  const streaming = message.status === "streaming";
+  return {
+    key,
+    sig: `${streaming}|${live}|${text}`,
+    enter: true,
+    html: () =>
+      `<details class="reasoning"${(message.reasoningTouched ? message.reasoningOpen : live) ? " open" : ""} data-state="${live ? "live" : "done"}"><summary>思绪</summary><div class="reasoning-body"></div></details>`,
+    paint: el => paintThought(el, text, live, { touched: !!message.reasoningTouched, force: !streaming })
+  };
+}
+// 思绪写进块里：接着上回画到的地方追加（思绪可能已有几十万字，每帧整块替换会卡住输入）；进行中摊开，写完就收
+function paintThought(details, text, live, { touched = false, force = false } = {}) {
+  const body = details.querySelector(":scope > .reasoning-body"),
+    painted = body._paintedThought ?? body.textContent;
+  if (painted !== text) {
+    const last = body.lastChild;
+    if (painted && text.startsWith(painted) && last?.nodeType === 3) last.appendData(text.slice(painted.length));
+    else body.textContent = text;
+    body._paintedThought = text;
+    // 软跟踪：没往上翻就跟着最新一行走
+    if (details.open && body._follow !== false) body.scrollTop = body.scrollHeight;
+  }
+  details.dataset.state = live ? "live" : "done";
+  if (touched) return;
+  if (live) {
+    if (!details.open) settleDetails(details, true);
+  } else if (details.open) settleDetails(details, false, null, force);
+}
+/**
+ * 一段正文画进 el：已收尾的段落（空行分开、不在代码围栏里）画一次存进 md-stable，每回只重画最后一段 md-tail，长回复不会越写越卡；
+ * 写完时若页上正是这段话流出来的样子，只把尾段按定稿重画一次（交互内容此时才挂上），否则整段画
+ * @param {Element} el
+ * @param {string} text
+ * @param {{ streaming?: boolean, fresh?: Array<{ count: number, age: number }> }} [options]
+ */
+function paintMarkdown(el, text, { streaming = false, fresh = [] } = {}) {
+  const src = String(text || "").replace(/^\n+/, "");
+  if (el._mdText === src && el._mdFinal === !streaming) return;
+  let stable = el._mdStable,
+    tail = el.querySelector(":scope > .md-tail");
+  const cached = stable !== undefined && !!tail && src.startsWith(stable);
+  el._mdText = src;
+  el._mdFinal = !streaming;
+  if (!streaming) {
+    if (cached) {
+      tail.innerHTML = renderMarkdown(src.slice(stable.length));
+      if (el.isConnected) renderEnhancements(tail);
+    } else {
+      el.innerHTML = renderMarkdown(src);
+      delete el._mdStable;
+      if (el.isConnected) renderEnhancements(el);
+    }
+    return;
+  }
+  if (!cached) {
+    el.innerHTML = `<div class="md-stable"></div><div class="md-tail"></div>`;
+    stable = "";
+    tail = el.querySelector(":scope > .md-tail");
+  }
+  const cut = stableCut(src);
+  if (cut > stable.length) {
+    const part = el.querySelector(":scope > .md-stable");
+    part.insertAdjacentHTML("beforeend", renderMarkdown(src.slice(stable.length, cut)));
+    stable = src.slice(0, cut);
+    renderEnhancements(part);
+  }
+  el._mdStable = stable;
+  // 生成中不起可视化：尾段里没闭合的交互内容先画成占位框
+  suppressViz = true;
+  try {
+    paintTail(tail, renderMarkdown(src.slice(stable.length)));
+  } finally {
+    suppressViz = false;
+  }
+  decorateTail(tail, fresh);
+}
+
+// ---------- 行迹 ----------
+/**
+ * @param {Message} message
+ * @param {Message} source 拆过 <think> 的样子
+ * @param {{ streaming: boolean, visible: string, fresh: any[], work: boolean, steps: boolean, animate: boolean }} view
+ */
+function stackPart(message, source, view) {
+  return {
+    key: view.work ? "trail" : "stack",
+    always: true,
+    enter: true,
+    html: () => {
+      const open = message.steps.some(step => step.status === "pending") || (message.toolsTouched ? !!message.toolsOpen : view.streaming);
+      return `<details class="tool-stack${view.work ? " is-work" : ""}"${open ? " open" : ""} data-state="${escapeHtml(message.status || "complete")}"><summary><span class="tool-stack-label"></span><span class="tool-stack-meta"></span></summary><div class="tool-stack-body"></div></details>`;
+    },
+    paint: (el, created) => paintStack(el, message, source, view, created)
+  };
+}
+/** @param {Message} message @param {Message} source */
+function paintStack(stack, message, source, view, created) {
+  const label = stack.querySelector(":scope > summary > .tool-stack-label"),
+    text = trailLabel(message);
+  if (label.textContent !== text) label.textContent = text;
+  rollText(stack.querySelector(":scope > summary > .tool-stack-meta"), trailMeta(message));
+  stack.dataset.state = message.status || "complete";
+  const body = stack.querySelector(":scope > .tool-stack-body"),
+    seen = stepSeen(message.id),
+    steps = view.steps || created;
+  // 执事的行迹是一条时间线：模型边做边说的话与各步穿插排列；对谈里仍是一列步骤
+  if (view.work)
+    paintTimeline(body, source, {
+      live: view.streaming,
+      visible: view.visible,
+      fresh: view.fresh,
+      merge: true,
+      steps,
+      animate: view.animate,
+      seen
+    });
+  else {
+    if (body.childElementCount !== 1 || !body.firstElementChild.classList.contains("tool-steps"))
+      body.innerHTML = `<div class="tool-steps"></div>`;
+    if (steps) syncStepList(body.firstElementChild, message.steps, seen, view.animate);
+  }
+  // 一答只开一次、收一次：第一步起就摊开，整答写完才收（言里模型说话的间隙也不收）；请示时必开。
+  // 收是在眼看着它写完的那一刻（不看读者是否正停在这块、是否亲手开过），此后用户再开合就随他
+  const was = stack._status;
+  stack._status = message.status;
+  if (view.streaming) {
+    if (message.steps.some(step => step.status === "pending") || !message.toolsTouched) settleDetails(stack, true);
+  } else if (was === "streaming")
+    settleDetails(
+      stack,
+      false,
+      () => {
+        message.toolsOpen = false;
+        message.toolsTouched = false;
+      },
+      true
+    );
+}
+// 各条消息的步骤台账（syncStep 据此判断哪一步是新来的、哪一步变了）；只留最近的几十条
+function stepSeen(id) {
+  let seen = knownStepIds.get(id);
+  if (!seen) {
+    seen = new Map();
+    knownStepIds.set(id, seen);
+    if (knownStepIds.size > 32) knownStepIds.delete(knownStepIds.keys().next().value);
+  }
+  return seen;
+}
+// 一列步骤按 id 对齐：新的接在后头，变了的就地换，撤下的（没递出去的补言）拿掉
+/** @param {Step[]} steps */
+function syncStepList(list, steps, seen, animate) {
+  const ids = new Set();
+  for (const step of steps) {
+    syncStep(list, step, seen, animate);
+    ids.add(step.id);
+  }
+  for (const el of [...list.children]) if (!ids.has(el.dataset.stepId)) el.remove();
+}
+/**
+ * 一条时间线：一轮一组（这一轮的思绪 · 说的话 · 各步），末尾是还在进行的那一轮（思绪、正写着的话、正拟的调用）。
+ * 组按先后编号，不按正文偏移：收尾裁掉开头空行时偏移会整体前移，编号不变，节点就还是那一个；进行中的那一轮有了步骤，就地转成下一组。
+ * 主答的行迹与差遣面板里帮手的时间线都画在这里（helper：各轮的步骤折成一行，末尾那一轮的思绪写完也留在原处）
+ * @param {Element} body
+ * @param {Message|SubAgent} source
+ * @param {{ live: boolean, visible: string, fresh?: any[], merge?: boolean, helper?: boolean, steps: boolean, animate: boolean, seen: Map<string, any> }} o
+ *   merge：进行中那一轮还没开口、只是接着想时，思绪续进上一组那一块（「想一阵 → 调工具 → 再想」是同一段思路，不另起一枚签）
+ */
+function paintTimeline(body, source, o) {
+  const groups = trailGroups(source),
+    last = groups.at(-1),
+    reasoning = String(source.reasoning || ""),
+    base = last ? last.at : 0,
+    thinking = reasoningLive({ .../** @type {Message} */ (source), content: o.visible }),
+    thought = reasoning.slice(groups.reduce((max, group) => Math.max(max, group.rat), 0)).trim(),
+    said = o.visible.slice(base);
+  const merged = !!(o.merge && o.live && last && thought && reasoning.slice(last.rfrom, last.rat).trim());
+  /** @type {Part[]} */
+  const parts = groups.map((group, i) => {
+    const tip = i === groups.length - 1;
+    return {
+      key: `g${i}`,
+      // 流式逐帧只动最后一组（它的思绪可能还在续）；更早的组此时不会变
+      always: o.steps || tip,
+      html: () => `<div class="trail-group"></div>`,
+      paint: (el, created) =>
+        paintTrailGroup(
+          el,
+          {
+            at: group.at,
+            thought: reasoning.slice(group.rfrom, tip && merged ? undefined : group.rat).trim(),
+            thinking: tip && merged && thinking,
+            note: String(source.content || "")
+              .slice(group.from, group.at)
+              .trim(),
+            steps: group.steps
+          },
+          source,
+          { ...o, steps: o.steps || created }
+        )
+    };
+  });
+  const tail = {
+    tail: true,
+    thought: merged ? "" : thought,
+    thinking,
+    note: o.helper ? (o.live ? said.trim() : "") : o.live ? said : "",
+    drafting: !o.helper && o.live ? draftingLabel(source) : "",
+    idle: !!(o.helper && o.live && !thought && !said.trim() && !groups.length)
+  };
+  if (o.helper ? tail.thought || tail.note || tail.idle : o.live && (tail.thought || tail.note.trim() || tail.drafting))
+    parts.push({
+      key: `g${groups.length}`,
+      always: true,
+      html: () => `<div class="trail-group"></div>`,
+      paint: el => paintTrailGroup(el, tail, source, o)
+    });
+  syncParts(body, parts, o.animate);
+}
+/**
+ * 一组：思绪、说的话、各步；末尾进行中的那一组另有正拟的调用、帮手的「正在凝神」
+ * @param {Element} el
+ * @param {{ tail?: boolean, at?: number, thought: string, thinking: boolean, note: string, steps?: Step[], drafting?: string, idle?: boolean }} g
+ * @param {Message|SubAgent} source
+ */
+function paintTrailGroup(el, g, source, o) {
+  const tail = !!g.tail;
+  el.classList.toggle("trail-live", tail && !o.helper);
+  el.classList.toggle("sub-tail", tail && !!o.helper);
+  if (tail) delete el.dataset.at;
+  else el.dataset.at = String(g.at);
+  /** @type {Part[]} */
+  const parts = [];
+  if (g.thought)
+    parts.push({
+      key: "thought",
+      sig: `${o.live}|${g.thinking}|${g.thought}`,
+      enter: tail,
+      html: () =>
+        `<details class="reasoning trail-reasoning"${g.thinking ? " open" : ""} data-state="${g.thinking ? "live" : "done"}"><summary>思绪</summary><div class="reasoning-body"></div></details>`,
+      // 写着的时候读者停在这块上就先不收；整段写完了不再等
+      paint: node => paintThought(node, g.thought, g.thinking, { touched: !!node.dataset.touched, force: !o.live })
+    });
+  // 说的话：进行中那一轮的按流式画（已收尾的段落缓存）；各组的与帮手正说着的整段画
+  const streamingNote = tail && !o.helper;
+  if (g.note.trim())
+    parts.push({
+      key: "note",
+      sig: `${streamingNote}|${g.note}`,
+      html: () => `<div class="trail-note"></div>`,
+      paint: node => {
+        node.classList.toggle("sub-said", tail && !!o.helper);
+        if (!streamingNote) return paintMarkdown(node, g.note);
+        if (node.childElementCount !== 1 || !node.firstElementChild.classList.contains("markdown")) {
+          node.innerHTML = `<div class="markdown"></div>`;
+          delete node._mdText;
+          delete node._mdStable;
+        }
+        paintMarkdown(node.firstElementChild, g.note, { streaming: true, fresh: o.fresh || [] });
+      }
+    });
+  if (!tail)
+    parts.push(
+      o.helper
+        ? {
+            // 帮手一轮里的各步折成一行：几十次检索摊开要占几屏，帮手说的话与回报就被顶得看不见了
+            key: "steps",
+            always: true,
+            html: () => subStepsShell(/** @type {SubAgent} */ (source), g.steps),
+            paint: (node, created) => {
+              if (o.steps || created) syncStepList(node.querySelector(".tool-steps"), g.steps, o.seen, o.animate);
+              syncSubSteps(node, /** @type {SubAgent} */ (source), g.steps);
+            }
+          }
+        : {
+            key: "steps",
+            always: true,
+            html: () => `<div class="tool-steps"></div>`,
+            paint: (node, created) => {
+              if (o.steps || created) syncStepList(node, g.steps, o.seen, o.animate);
+            }
+          }
+    );
+  if (g.drafting) parts.push(draftingPart(g.drafting));
+  if (g.idle) parts.push({ key: "idle", sig: "", html: () => `<div class="sub-idle">帮手正在凝神</div>` });
+  syncParts(el, parts, o.animate);
+}
+
+// ---------- 差遣面板里帮手的那一条：题头（可收起）、时间线、回报 ----------
+/** @param {Element} trail @param {Step} step @param {boolean} animate */
+function paintHelperTrail(trail, step, animate) {
+  const { sub, live, report } = delegateSubState(step);
+  if (live) trail.dataset.live = "true";
+  else delete trail.dataset.live;
+  /** @type {Part[]} */
+  const parts = [];
+  if (sub)
+    parts.push({
+      key: "fold",
+      sig: "",
+      html: () =>
+        `<button type="button" class="sub-fold"><span class="sub-fold-label">行迹</span><span class="sub-fold-meta"></span></button>`
+    });
+  parts.push({
+    key: "timeline",
+    always: true,
+    html: () => `<div class="sub-timeline"></div>`,
+    paint: (el, created) => {
+      if (sub)
+        paintTimeline(el, sub, {
+          live,
+          visible: String(sub.content || ""),
+          helper: true,
+          steps: true,
+          animate: animate && !created,
+          seen: helperSeen
+        });
+    }
+  });
+  if (report)
+    parts.push({ key: "report", sig: report, html: () => `<div class="sub-report"></div>`, paint: el => paintMarkdown(el, report) });
+  syncParts(trail, parts, animate);
+  if (sub) syncSubFold(trail, step);
+}
+
   // ---- 07-render.js ----
 // 言 · 整体渲染：顶栏、模型菜单、历史、对话与消息
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
@@ -4218,7 +4744,7 @@ function foldCompacted(c) {
   }
 }
 // 消息列表按 id 增量同步：没变的节点原样留下（图表、沙箱、展开状态都不动），只插入、替换或移除有变化的那几条。
-// 正在流式生成的那条由 readSse 就地更新，这里一律不碰。
+// 回复就地重画（见 07-paint.js，画法是幂等的，正在写的那条也一样画）；用户消息、分隔与提示签名一变整条换。
 // 只有会改变呈现的字段才算变化；展开/收起这类界面状态用户已经在页面上操作过了，不必因此重画
 const UI_STATE_FIELDS = new Set(["toolsOpen", "toolsTouched", "reasoningOpen", "reasoningTouched", "showCompacted"]);
 /** @param {Message} message */
@@ -4252,25 +4778,25 @@ function syncNodes(host, items, converged) {
   for (const item of items) {
     const node = existing.get(item.key);
     existing.delete(item.key);
+    const sig = item.html ?? messageSig(item.message, item.branch),
+      reply = item.message?.role === "assistant";
     let next = node;
-    // 正在流式写的那条由逐帧的那一路刷，这里不动；别处在写、这边跟着看的，没有那一路，照常按新内容重画
-    const streaming = node && item.message?.status === "streaming" && node.dataset.status === "streaming" && !runningElsewhere();
-    if (!streaming) {
-      const sig = item.html ?? messageSig(item.message, item.branch);
-      if (!node || nodeSig.get(node) !== sig) {
-        template.innerHTML = item.html ?? renderMessage(item.message, item.branch, item.side);
-        next = template.content.firstElementChild;
-        nodeSig.set(next, sig);
-        added.push(next);
-        if (!node && !converged) next.classList.add("is-new");
-      } else node.classList.remove("is-new");
-    }
+    if (!node || (!reply && nodeSig.get(node) !== sig)) {
+      template.innerHTML = item.html ?? (reply ? assistantShellHtml(item.message) : renderMessage(item.message, item.branch, item.side));
+      next = template.content.firstElementChild;
+      added.push(next);
+      if (!node && !converged) next.classList.add("is-new");
+    } else node.classList.remove("is-new");
     if (node && next !== node) {
       if (node === cursor) cursor = cursor.nextElementSibling;
       node.remove();
     }
     if (next === cursor) cursor = cursor.nextElementSibling;
     else host.insertBefore(next, cursor);
+    // 先挂上再画：交互内容、开合动效都要在页上才量得准
+    if (reply && (next !== node || item.message.status === "streaming" || nodeSig.get(next) !== sig))
+      paintAssistant(next, item.message, { side: !!item.side, branch: item.branch });
+    nodeSig.set(next, sig);
   }
   // 游标之后全是没被点到名的旧节点（删掉的消息、重生成时截掉的尾巴、旧的收尾提示）
   while (cursor) {
@@ -4290,6 +4816,7 @@ function noteMarkHtml(message) {
     ? `<button class="note-mark" type="button" data-note-mark title="查看这条消息的旁注">注${count > 1 ? ` ${count}` : ""}</button>`
     : "";
 }
+// 用户消息与上下文分隔的整条 HTML；回复另有画法（见 07-paint.js）
 /** @param {Message} message */
 function renderMessage(message, branch = null, side = false) {
   if (message.role === "context")
@@ -4307,14 +4834,7 @@ function renderMessage(message, branch = null, side = false) {
       : "";
     return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", "复制消息", icons.copy)}${actionIcon("edit", "编辑消息", icons.edit)}</div></article>`;
   }
-  // 旁注里的答：复制、重新生成（不分叉，直接换掉）；出错或停止了也能重来
-  const actions = side
-    ? message.status === "streaming"
-      ? ""
-      : `${message.content ? actionIcon("copy", "复制回复", icons.copy) : ""}${actionIcon("regenerate", message.status === "complete" ? "重新生成" : "重试", icons.regenerate)}`
-    : assistantActionsHtml(message) + branchNavHtml(branch);
-  message = inlineThinkView(message);
-  return `<article class="message assistant" data-message="${escapeHtml(message.id)}" data-status="${escapeHtml(message.status || "complete")}"><div class="message-meta"><span class="meta-seal" aria-hidden="true">言</span><span>${escapeHtml(message.modelName || "模型")} · ${formatTime(message.timestamp)}</span>${side ? "" : noteMarkHtml(message)}</div><div class="assistant-block">${trailWork(message) ? stepsHtml(message) + reasoningHtml(message) : reasoningHtml(message) + stepsHtml(message)}${assistantMainHtml(message)}${deliverablesHtml(message)}${changeSummaryHtml(message)}${sourceCardsHtml(message)}</div>${actions ? `<div class="message-actions${branch ? " has-branch" : ""}">${actions}</div>` : ""}</article>`;
+  return assistantShellHtml(message);
 }
 // 正文开头带 <think>…</think> 的旧消息（导入或此前的版本）：渲染时按思考 + 正文拆开看，不改动存下的原文
 const INLINE_THINK = /^\s*<think>([\s\S]*?)<\/think>\s*/;
@@ -4342,35 +4862,6 @@ function assistantNoteHtml(message) {
       : "";
 }
 /** @param {Message} message */
-function assistantMainHtml(message) {
-  const work = trailWork(message),
-    base = trailBase(message),
-    // 执事生成中，最后一步之后的话还在行迹里「进行中」那组（见 stepsHtml），写完才落到正文区。
-    // 看 trailWork 而非 base：第一步之前没说话时 base 是 0
-    text =
-      work && message.status === "streaming"
-        ? ""
-        : work
-          ? String(message.content || "")
-              .slice(base)
-              .trim()
-          : message.content;
-  if (!message.content && message.status === "streaming") return `<div class="thinking">正在凝神</div>`;
-  if (!message.content && message.status === "stopped") return `<div class="thinking">搁笔于此</div>`;
-  return `${text ? contentMarkdownHtml(message, text, base) : ""}${assistantNoteHtml(message)}`;
-}
-// 一段正文画成 .markdown：data-cut / data-base 记它从 content 的哪里起，流式接着画时据此续上；生成中不起可视化
-/** @param {Message} message */
-function contentMarkdownHtml(message, text, base) {
-  const previous = suppressViz;
-  suppressViz = message.status === "streaming";
-  try {
-    return `<div class="markdown" data-cut="${base}" data-base="${base}">${renderMarkdown(text)}</div>`;
-  } finally {
-    suppressViz = previous;
-  }
-}
-/** @param {Message} message */
 function assistantActionsHtml(message) {
   return message.status === "streaming"
     ? ""
@@ -4388,74 +4879,16 @@ function messageCostHtml(message) {
   const heavy = n >= CONTEXT_HEAVY;
   return `<span class="message-cost${heavy ? " heavy" : ""}" title="这一答共耗约 ${formatTokens(n)} token${message.tokenEstimated ? "（估算）" : ""}${heavy ? "；上下文已重，可压缩前文" : ""}">耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}</span>`;
 }
-// 流式结束只就地收尾这一条消息：不重建整段对话，图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下
+// 一答收尾：就地画成定稿的样子（图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下）；这条不在页上就整段重画
 /**
  * @param {Conversation} conversation
  * @param {Message} assistant
  */
-function finalizeAssistant(conversation, assistant, leadTrim = 0) {
-  const article = document.querySelector(`#messages [data-message="${CSS.escape(assistant.id)}"]`),
-    block = article?.querySelector(".assistant-block");
-  if (!block || conversation.ended) return renderConversation(followBottom);
-  // 步骤可能收尾时全撤了（只排着补言、没递出去就停了）：行迹整块撤掉
-  if (assistant.steps?.length) refreshSteps(assistant);
-  else block.querySelector(":scope > .tool-stack")?.remove();
-  if (assistant.deliverables?.length && !block.querySelector(":scope > .deliver-bar"))
-    (block.querySelector(":scope > .change-bar") || block.querySelector(":scope > .markdown") || block).insertAdjacentHTML(
-      "afterend",
-      deliverablesHtml(assistant)
-    );
-  block.querySelector(".thinking")?.remove();
-  const reasoning = block.querySelector(":scope > .reasoning"),
-    thought = String(assistant.reasoning || "").slice(trailReasoningBase(assistant));
-  if (reasoning && thought.trim()) {
-    reasoning.querySelector(".reasoning-body").textContent = thought;
-    reasoning.dataset.state = "done";
-    // 做完就收，与行迹同一个定例：流式期间读者往上翻着看时没收成的，这里补上；用户亲手开合过的不动
-    if (!assistant.reasoningTouched) settleDetails(reasoning, false, null, true);
-  } else if (reasoning) reasoning.remove();
-  else if (thought.trim()) {
-    const stack = block.querySelector(":scope > .tool-stack");
-    if (stack) stack.insertAdjacentHTML("afterend", reasoningHtml(assistant, thought));
-    else block.insertAdjacentHTML("afterbegin", reasoningHtml(assistant, thought));
-  }
-  block.querySelectorAll(".message-error, .resume-note, .source-stack").forEach(node => node.remove());
-  block.querySelector(".tool-stack.is-work .trail-group.trail-live")?.remove();
-  block.querySelectorAll(".trail-drafting").forEach(node => node.remove());
-  const markdown = block.querySelector(":scope > .markdown");
-  if (!assistant.content) {
-    markdown?.remove();
-    block.insertAdjacentHTML("beforeend", assistantMainHtml(assistant));
-  } else if (markdown?.querySelector(".md-tail")) {
-    // 已渲染的稳定段保持不动，只把尾段按最终文本重绘一次——此时交互内容才真正挂载
-    const cut = Math.max(trailBase(assistant), Math.min(Number(markdown.dataset.cut || 0) - leadTrim, assistant.content.length)),
-      tail = markdown.querySelector(".md-tail");
-    markdown.dataset.cut = String(cut);
-    tail.innerHTML = renderMarkdown(assistant.content.slice(cut));
-    renderEnhancements(tail);
-    block.insertAdjacentHTML("beforeend", assistantNoteHtml(assistant));
-  } else {
-    markdown?.remove();
-    block.insertAdjacentHTML("beforeend", assistantMainHtml(assistant));
-    renderEnhancements(block);
-  }
-  // 改动条生成中就已实时累加，这里只挪到收尾正文之后（原节点搬家，展开状态不丢）再对一次数；来源卡片压在最底
-  const bar = block.querySelector(":scope > .change-bar");
-  if (bar) {
-    bar.classList.remove("is-new");
-    block.append(bar);
-  }
-  syncChangeBar(block, assistant);
-  block.insertAdjacentHTML("beforeend", sourceCardsHtml(assistant));
-  block.querySelectorAll(".message-error, .resume-note, .source-stack").forEach(node => node.classList.add("is-new"));
-  const branch = branchAt(conversation, conversation.messages.indexOf(assistant));
-  article.querySelector(".message-actions")?.remove();
-  const actions = assistantActionsHtml(assistant) + branchNavHtml(branch);
-  if (actions) article.insertAdjacentHTML("beforeend", `<div class="message-actions${branch ? " has-branch" : ""}">${actions}</div>`);
-  article.dataset.status = assistant.status;
-  if (assistant.status === "complete") article.querySelector(".meta-seal")?.classList.add("stamped");
-  nodeSig.set(article, messageSig(assistant, branch));
-  decorateNoteAnchors(article);
+function finalizeAssistant(conversation, assistant) {
+  const article = conversation.ended ? null : document.querySelector(`#messages [data-message="${CSS.escape(assistant.id)}"]`);
+  if (!article) return renderConversation(followBottom);
+  paintAssistant(/** @type {HTMLElement} */ (article), assistant);
+  nodeSig.set(article, messageSig(assistant, branchFor(assistant)));
   $("#chatScroll").classList.remove("generating");
   renderHelperBar();
   if (followBottom) requestAnimationFrame(scrollBottom);
@@ -4685,100 +5118,6 @@ function trailGroups(message) {
 function trailReasoningBase(message) {
   return trailWork(message) ? Math.max(0, ...message.steps.map(step => Number(step.rat) || 0)) : 0;
 }
-/** @param {Message|SubAgent} message */
-function trailReasoningHtml(message, group) {
-  const text = String(message.reasoning || "")
-    .slice(group.rfrom, group.rat)
-    .trim();
-  return text
-    ? `<details class="reasoning trail-reasoning" data-state="done"><summary>思绪</summary><div class="reasoning-body">${escapeHtml(text)}</div></details>`
-    : "";
-}
-// 一组没有夹着正文、只是「想一阵 → 调工具 → 再想」时，后半段思绪仍属于同一组。
-// 沿用组里原来的那枚签，重新切回 live；否则旧签一直打勾，下面又短暂冒出一枚新签，看起来像没有继续思考。
-/** @param {Element} block @param {Message} message @param {string} visible */
-function reusableTrailReasoning(block, message, visible) {
-  if (!trailWork(message) || message.status !== "streaming") return null;
-  const groups = trailGroups(message),
-    active = block.querySelector('.tool-stack.is-work .trail-group > .reasoning[data-round-live="true"]');
-  const group = active ? groups.find(item => active.parentElement?.dataset.at === String(item.at)) : groups.at(-1);
-  if (!group) return null;
-  const details =
-    active ||
-    [...block.querySelectorAll(".tool-stack.is-work .tool-stack-body > .trail-group")]
-      .find(host => host.dataset.at === String(group.at))
-      ?.querySelector(":scope > .reasoning");
-  if (!details) return null;
-  if (!active) {
-    if (
-      String(visible || "")
-        .slice(group.at)
-        .trim()
-    )
-      return null;
-    if (
-      !String(message.reasoning || "")
-        .slice(group.rat)
-        .trim()
-    )
-      return null;
-    details.dataset.roundLive = "true";
-    // 生成中切去别处再回来时，整页渲染会先把尾段思绪画在行迹之后；既然能归回上一组，就撤掉那份临时副本。
-    block.querySelector(":scope > .reasoning")?.remove();
-  }
-  return {
-    details,
-    text: String(message.reasoning || "")
-      .slice(group.rfrom)
-      .trim()
-  };
-}
-/** @param {Element} host @param {Message} message @param {ReturnType<typeof trailGroups>[number]} group */
-function syncTrailGroupReasoning(host, message, group) {
-  const text = String(message.reasoning || "")
-      .slice(group.rfrom, group.rat)
-      .trim(),
-    details = host.querySelector(":scope > .reasoning");
-  if (!text) return details?.remove();
-  if (!details) return host.insertAdjacentHTML("afterbegin", trailReasoningHtml(message, group));
-  const body = /** @type {HTMLElement & { _paintedThought?: string }} */ (details.querySelector(".reasoning-body"));
-  if (body.textContent !== text) body.textContent = text;
-  body._paintedThought = text;
-  details.dataset.state = "done";
-  delete details.dataset.roundLive;
-  if (details.open && !details.dataset.touched) settleDetails(details, false);
-}
-/** @param {Message|SubAgent} message */
-function trailNoteHtml(message, group) {
-  const text = String(message.content || "")
-    .slice(group.from, group.at)
-    .trim();
-  return text ? `<div class="trail-note">${renderMarkdown(text)}</div>` : "";
-}
-/** @param {Message} assistant */
-function paintDrafting(host, assistant) {
-  const drafting = (assistant.toolCalls || []).filter(call => call.name);
-  let line = host.querySelector(":scope > .trail-drafting");
-  if (!drafting.length) {
-    line?.remove();
-    return;
-  }
-  const label = drafting
-    .map(call => {
-      const path = call.arguments.match(/"(?:path|command|query|url|title)"\s*:\s*"((?:[^"\\]|\\.){1,80})/)?.[1];
-      return `${toolLabel(call.name)}${path ? ` ${path}` : ""}`;
-    })
-    .join("、");
-  const chars = drafting.reduce((sum, call) => sum + call.arguments.length, 0);
-  if (!line) {
-    host.insertAdjacentHTML(
-      "beforeend",
-      `<div class="trail-drafting"><span class="tool-state spinning" aria-hidden="true"></span><span class="trail-drafting-text"></span></div>`
-    );
-    line = host.querySelector(":scope > .trail-drafting");
-  }
-  rollText(line.querySelector(".trail-drafting-text"), `正在拟 ${label}${chars > 200 ? ` · ${chars} 字` : ""}`);
-}
 function rollText(el, text) {
   const prev = el.dataset.rollText ?? el.textContent;
   if (prev === text) return;
@@ -4798,28 +5137,6 @@ function rollText(el, text) {
   setTimeout(() => {
     if (el.dataset.rollText === text) el.textContent = text;
   }, 380);
-}
-/** @param {Message} message */
-function trailLiveHost(block, message) {
-  if (!trailWork(message) || message.status !== "streaming") return null;
-  const body = block.querySelector(".tool-stack.is-work .tool-stack-body");
-  if (!body) return null;
-  let live = body.querySelector(":scope > .trail-group.trail-live");
-  if (!live) {
-    body.insertAdjacentHTML("beforeend", `<div class="trail-group trail-live"><div class="trail-note"></div></div>`);
-    live = body.lastElementChild;
-  }
-  return live.querySelector(".trail-note");
-}
-/**
- * @param {Message|SubAgent} message
- * @param {boolean} [fold] 帮手时间线：这一轮的各步折进一个「n 步」里，只留思绪与说的话在外
- */
-function trailGroupHtml(message, group, fold = false) {
-  const steps = fold
-    ? subStepsHtml(/** @type {SubAgent} */ (message), group)
-    : `<div class="tool-steps">${group.steps.map(stepHtml).join("")}</div>`;
-  return `<div class="trail-group" data-at="${group.at}">${trailReasoningHtml(message, group)}${trailNoteHtml(message, group)}${steps}</div>`;
 }
 // 帮手时间线里一轮的各步折成一行：一轮里几十次检索摊开要占几屏，帮手说的话与回报就被顶得看不见了。
 // 与主行迹同一套开合：这一轮还在跑时摊开，跑完收起，用户亲手开合过的不动。标题行是各工具的计数，点开才看各步
@@ -4841,10 +5158,11 @@ function subStepsMeta(sub, steps) {
     skipped = steps.filter(step => step.status === "skipped").length;
   return `${steps.length} 步${skipped ? ` · ${skipped} 跳过` : ""}${failed ? ` · ${failed} 失败` : ""}`;
 }
+// 折叠行的外壳：标题、计数与各步由 syncSubSteps 与 syncStepList 填
 /** @param {SubAgent} sub */
-function subStepsHtml(sub, group) {
-  const running = subStepsRunning(sub, group.steps);
-  return `<details class="tool-stack sub-steps"${running ? " open" : ""} data-state="${running ? "streaming" : "complete"}"><summary><span class="tool-stack-label">${escapeHtml(subStepsLabel(group.steps))}</span><span class="tool-stack-meta">${escapeHtml(subStepsMeta(sub, group.steps))}</span></summary><div class="tool-stack-body"><div class="tool-steps">${group.steps.map(stepHtml).join("")}</div></div></details>`;
+function subStepsShell(sub, steps) {
+  const running = subStepsRunning(sub, steps);
+  return `<details class="tool-stack sub-steps"${running ? " open" : ""} data-state="${running ? "streaming" : "complete"}"><summary><span class="tool-stack-label"></span><span class="tool-stack-meta"></span></summary><div class="tool-stack-body"><div class="tool-steps"></div></div></details>`;
 }
 // 一轮的折叠行就地更新：标题与计数跟着步骤走；这一轮跑完就收起（用户亲手开合过的不动）
 /** @param {SubAgent} sub */
@@ -4886,26 +5204,6 @@ function trailMeta(message) {
       .map(step => step.change.path)
   ).size;
   return changed ? `${base} · 改 ${changed} 个文件` : base;
-}
-/** @param {Message} message */
-function stepsHtml(message) {
-  if (!message.steps?.length) return "";
-  const work = trailWork(message),
-    pending = message.steps.some(step => step.status === "pending"),
-    running = message.status === "streaming" && message.steps.some(step => step.status === "running" || pending);
-  const open =
-    pending ||
-    (message.toolsTouched ? !!message.toolsOpen : message.status === "streaming" && (work || running || message.steps.length > 0));
-  const base = trailBase(message),
-    tail = work && message.status === "streaming" ? String(message.content || "").slice(base).trim() : "";
-  const body = work
-    ? trailGroups(message)
-        .map(group => trailGroupHtml(message, group))
-        .join("") +
-      // 生成中最后一步之后已写的话：与流式逐帧画的同一处（trailLiveHost），整页重画后流接着往这里续
-      (tail ? `<div class="trail-group trail-live"><div class="trail-note">${contentMarkdownHtml(message, tail, base)}</div></div>` : "")
-    : `<div class="tool-steps">${message.steps.map(stepHtml).join("")}</div>`;
-  return `<details class="tool-stack${work ? " is-work" : ""}"${open ? " open" : ""} data-state="${escapeHtml(message.status || "complete")}"><summary><span class="tool-stack-label">${escapeHtml(trailLabel(message))}</span><span class="tool-stack-meta">${escapeHtml(trailMeta(message))}</span></summary><div class="tool-stack-body">${body}</div></details>`;
 }
 // 一步的卡片：工具自己登记了画法（指令、文件、请示、差遣、计划、补言）就照它画，其余（检索、翻阅、计算、调接口、翻记忆）用下面通用的一种
 /** @param {Step} step */
@@ -4956,150 +5254,45 @@ function plainStepHtml(step, title) {
     folded = foldable && (step.expanded === undefined ? true : !step.expanded);
   return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? "展开" : "收起"}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "工具执行失败") : ""}">${status === "running" ? "查阅中" : status === "error" ? escapeHtml(step.result || "失败") : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div>${body}</div>`;
 }
-// 帮手自己的一条小时间线——每轮的思绪、说的话、各步，与主行迹同一套画法；进行中时最新的思绪与话跟着流。
-// 它画在右侧的差遣面板里（不在行迹里：差遣是并行的活，线性的时间线盛不下）；首次画整段，此后由 syncDelegateTrail 就地更新
+// 一次差遣此刻的样子：帮手（它自己的一条时间线画在右侧的差遣面板里，见 paintHelperTrail——差遣是并行的活，线性的行迹盛不下）、
+// 在不在做、回报、签上那一句计数
 /** @param {Step} step */
 function delegateSubState(step) {
   const sub = step.sub,
     status = step.status || "done",
     steps = sub?.steps || [],
     live = status === "running";
-  const base = Math.max(0, ...steps.map(s => Number(s.at) || 0)),
-    rbase = Math.max(0, ...steps.map(s => Number(s.rat) || 0));
   return {
     sub,
     status,
     steps,
     live,
-    thought: String(sub?.reasoning || "")
-      .slice(rbase)
-      .trim(),
-    said: (live ? String(sub?.content || "").slice(base) : "").trim(),
     report: live ? "" : String(sub?.report || "").trim(),
     meta: live ? (steps.length ? `${steps.length} 步 · 进行中` : "领命中") : String(step.result || "")
   };
 }
-function delegateTailThoughtHtml(thought, state) {
-  return thought
-    ? `<details class="reasoning trail-reasoning" data-state="${state}"${state === "live" ? " open" : ""}><summary>思绪</summary><div class="reasoning-body">${escapeHtml(thought)}</div></details>`
-    : "";
-}
-/** @param {Step} step */
-function delegateTrailHtml(step) {
-  const { sub, steps, live, thought, said, report } = delegateSubState(step);
-  if (!sub) return "";
-  const groups = trailGroups(sub)
-    .map(group => trailGroupHtml(sub, group, true))
-    .join("");
-  // 最后一轮：进行中时思绪跟着流（有话了就收起）、话按最新文本画；做完后这轮思绪收进折叠区，话即回报，留在外面
-  const tail = `<div class="sub-tail">${delegateTailThoughtHtml(thought, live && !said ? "live" : "done")}${
-    live && said
-      ? `<div class="trail-note sub-said" data-text="${escapeHtml(said)}">${renderMarkdown(said)}</div>`
-      : live && !thought && !steps.length
-        ? `<div class="sub-idle">帮手正在凝神</div>`
-        : ""
-  }</div>`;
-  // 面板开着默认摊开（这一栏就是为了看过程而开的）；题头一行可整条收起，只看回报（见 syncSubFold）
-  return `<div class="sub-trail"${live ? ' data-live="true"' : ""}><div class="sub-timeline">${groups}${tail}</div>${report ? `<div class="sub-report">${renderMarkdown(report)}</div>` : ""}</div>`;
-}
-// 帮手时间线就地更新（面板里那一条）。帮手每 350ms 刷一次，若整段换新：已画出的步骤输出会重新起入场动画
-// （列目录的结果闪一下又空一片）、用户收起的思绪又被摊开。这里只动变了的部分：新出的分组与步骤、最后一轮的思绪与话、回报
-/** @param {Step} step */
-function syncDelegateTrail(trail, step, seen) {
-  const { sub, steps, live, thought, said, report } = delegateSubState(step);
-  if (!trail || !sub) return;
-  if (live) trail.dataset.live = "true";
-  else delete trail.dataset.live;
-  let timeline = trail.querySelector(":scope > .sub-timeline");
-  if (!timeline) {
-    trail.insertAdjacentHTML("afterbegin", `<div class="sub-timeline"><div class="sub-tail"></div></div>`);
-    timeline = trail.querySelector(":scope > .sub-timeline");
-  }
-  let tail = timeline.querySelector(":scope > .sub-tail");
-  if (!tail) {
-    timeline.insertAdjacentHTML("beforeend", `<div class="sub-tail"></div>`);
-    tail = timeline.lastElementChild;
-  }
-  for (const group of trailGroups(sub)) {
-    let host = timeline.querySelector(`:scope > .trail-group[data-at="${group.at}"]`);
-    if (!host) {
-      tail.insertAdjacentHTML("beforebegin", trailGroupHtml(sub, group, true));
-      host = tail.previousElementSibling;
-      const note = host.querySelector(".trail-note");
-      if (note) renderEnhancements(note);
-    } else {
-      // 同一轮后来的步骤会把分组的思绪边界再往后推一点
-      const body = host.querySelector(":scope > .reasoning .reasoning-body"),
-        text = String(sub.reasoning || "")
-          .slice(group.rfrom, group.rat)
-          .trim();
-      if (body && body.textContent !== text) body.textContent = text;
-      else if (!body && text) host.insertAdjacentHTML("afterbegin", trailReasoningHtml(sub, group));
-    }
-    const fold = host.querySelector(":scope > .sub-steps");
-    for (const s of group.steps) syncStep(fold.querySelector(".tool-steps"), s, seen);
-    syncSubSteps(fold, sub, group.steps);
-  }
-  const state = live && !said ? "live" : "done";
-  let thoughtEl = tail.querySelector(":scope > .reasoning");
-  if (!thought) thoughtEl?.remove();
-  else if (!thoughtEl) tail.insertAdjacentHTML("afterbegin", delegateTailThoughtHtml(thought, state));
-  else {
-    const body = thoughtEl.querySelector(".reasoning-body");
-    if (body.textContent !== thought) {
-      body.textContent = thought;
-      if (thoughtEl.dataset.state === "live") body.scrollTop = body.scrollHeight;
-    }
-    if (thoughtEl.dataset.state !== state) {
-      thoughtEl.dataset.state = state;
-      if (state === "done" && thoughtEl.open && !thoughtEl.dataset.touched) settleDetails(thoughtEl, false);
-    }
-  }
-  let saidEl = tail.querySelector(":scope > .sub-said");
-  if (!(live && said)) saidEl?.remove();
-  else {
-    if (!saidEl) {
-      tail.insertAdjacentHTML("beforeend", `<div class="trail-note sub-said"></div>`);
-      saidEl = tail.lastElementChild;
-    }
-    if (saidEl.dataset.text !== said) {
-      saidEl.dataset.text = said;
-      saidEl.innerHTML = renderMarkdown(said);
-      renderEnhancements(saidEl);
-    }
-  }
-  const idle = live && !thought && !said && !steps.length,
-    idleEl = tail.querySelector(":scope > .sub-idle");
-  if (!idle) idleEl?.remove();
-  else if (!idleEl) tail.insertAdjacentHTML("beforeend", `<div class="sub-idle">帮手正在凝神</div>`);
-  const reportEl = trail.querySelector(":scope > .sub-report");
-  if (!report) reportEl?.remove();
-  else if (!reportEl) {
-    trail.insertAdjacentHTML("beforeend", `<div class="sub-report">${renderMarkdown(report)}</div>`);
-    renderEnhancements(trail.lastElementChild);
-  }
-}
 // 步骤按 id 就地更新：没变的节点一律不动（转圈不重启、已展开的结果不跳）；新步骤淡入上移，结果首次出现或状态翻转时只让那一条轻浮。
-// 主行迹与帮手的时间线都走这里；差遣卡片本身不整张换，交给 syncDelegateCard
+// 主行迹与帮手的时间线都走这里；差遣卡片本身不整张换，交给 syncDelegateCard。animate 为假（整条刚画出来）时只记台账，不起动效
 /** @param {Step} step */
-function syncStep(list, step, seen) {
+function syncStep(list, step, seen, animate = true) {
   if (!list) return;
   const html = stepHtml(step),
     hasBody = /class="tool-(results|note|output|approve)"/.test(html),
     prev = seen.get(step.id);
   let el = list.querySelector(`:scope > [data-step-id="${CSS.escape(step.id)}"]`);
-  if (!el) {
+  const added = !el;
+  if (added) {
     list.insertAdjacentHTML("beforeend", html);
     el = list.lastElementChild;
   } else if (TOOLS.get(step.name)?.sync) TOOLS.get(step.name).sync(el, step, prev);
-  else if (prev && prev.html !== html) {
+  else if (prev?.html !== html) {
     el.insertAdjacentHTML("afterend", html);
     const next = el.nextElementSibling;
     el.remove();
     el = next;
   }
-  if (!prev) el.classList.add("is-new");
-  else {
+  if (animate && added) el.classList.add("is-new");
+  else if (animate && prev) {
     if (hasBody && !prev.hasBody) el.classList.add("body-new");
     if (prev.status !== step.status) el.classList.add("status-new");
   }
@@ -5229,22 +5422,14 @@ function renderHelperList() {
     })
     .join("");
 }
-/** @param {boolean} fresh 首次打开或换了一次差遣：整段重画；否则就地更新 */
 // 帮手行迹的收起：时间线上方一行题头（折角 · 行迹 · 几轮 · 几步，与主行迹题头同一枚折角，点它开合），收起的记在这里，翻到别的帮手再翻回来仍是收着的。
 // 题头滚出面板顶上时，面板顶栏右侧浮出同一枚「收起行迹」，与主对话的书眉一个意思
 const helperFolded = new Set();
 /** @param {Step} step */
 function syncSubFold(trail, step) {
   const { sub, steps, live } = delegateSubState(step);
-  if (!trail || !sub) return;
-  let head = trail.querySelector(":scope > .sub-fold");
-  if (!head) {
-    trail.insertAdjacentHTML(
-      "afterbegin",
-      `<button type="button" class="sub-fold"><span class="sub-fold-label">行迹</span><span class="sub-fold-meta"></span></button>`
-    );
-    head = trail.querySelector(":scope > .sub-fold");
-  }
+  const head = trail?.querySelector(":scope > .sub-fold");
+  if (!head || !sub) return;
   const folded = helperFolded.has(step.id),
     rounds = trailGroups(sub).length,
     meta = live ? `${steps.length} 步 · 进行中` : `${rounds} 轮 · ${steps.length} 步`;
@@ -5284,6 +5469,7 @@ function syncHelperFoldHead() {
       timeline.getBoundingClientRect().bottom > top + 60;
   button.classList.toggle("shown", show);
 }
+/** @param {boolean} fresh 首次打开或换了一次差遣：从空白画起；否则就地更新 */
 function renderHelperPanel(fresh = false) {
   if (!helperPanelOpen()) return;
   const step = helperStepById(helperStepId);
@@ -5318,20 +5504,16 @@ function renderHelperPanel(fresh = false) {
   }
   const host = $("#helperPanelBody");
   if (!host) return;
+  // 帮手就是一条回复：与主答的行迹同一支笔（见 paintTimeline）。帮手每 350ms 刷一次，只动变了的部分——
+  // 已画出的步骤输出不重起入场动画、用户收起的思绪不被摊开
   let trail = host.querySelector(":scope > .sub-trail");
-  if (fresh || !trail) {
+  const blank = fresh || !trail;
+  if (blank) {
     helperSeen.clear();
-    host.innerHTML = delegateTrailHtml(step) || `<div class="sub-trail"><div class="sub-timeline"></div></div>`;
-    trail = host.querySelector(":scope > .sub-trail");
-    trail?.querySelectorAll(".trail-note, .sub-report").forEach(node => renderEnhancements(node));
-    // 首次画完把台账补齐，免得下一轮把已画出的步骤当新的又闪一次
-    if (sub)
-      for (const group of trailGroups(sub))
-        for (const s of group.steps) helperSeen.set(s.id, { html: stepHtml(s), hasBody: false, status: s.status });
-    return syncSubFold(trail, step);
+    host.innerHTML = `<div class="sub-trail"></div>`;
+    trail = host.firstElementChild;
   }
-  syncDelegateTrail(trail, step, helperSeen);
-  syncSubFold(trail, step);
+  paintHelperTrail(trail, step, !blank);
 }
 
 function stepStateHtml(status) {
@@ -5382,117 +5564,12 @@ function workStepHtml(step, title) {
     folded = foldable && (step.expanded === undefined ? !openByDefault : !step.expanded);
   return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}${step.readOnly ? " is-read-only" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? "展开输出" : "收起输出"}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title${command ? " tool-cmd" : ""}" title="${escapeHtml(title)}">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "执行失败") : ""}">${meta}</span>${stepStateHtml(status)}</div>${body}</div>`;
 }
+// 步骤有了变动（入册、跑完、请示、帮手有进展）：照这一答此刻的样子重画，工作条与差遣面板跟着更新
 /** @param {Message} assistant */
 function refreshSteps(assistant) {
-  const block = document.querySelector(`[data-message="${assistant.id}"] .assistant-block`);
-  if (!block) return;
-  block.querySelectorAll(".trail-drafting").forEach(node => node.remove());
-  let stack = block.querySelector(".tool-stack");
-  if (!stack) {
-    const anchor = block.querySelector(".reasoning");
-    if (anchor) anchor.insertAdjacentHTML("afterend", stepsHtml(assistant));
-    else block.insertAdjacentHTML("afterbegin", stepsHtml(assistant));
-    stack = block.querySelector(".tool-stack");
-    stack?.classList.add("is-new");
-  }
-  if (stack) {
-    stack.querySelector(".tool-stack-label").textContent = trailLabel(assistant);
-    rollText(stack.querySelector(".tool-stack-meta"), trailMeta(assistant));
-    stack.dataset.state = assistant.status || "complete";
-    const work = trailWork(assistant),
-      bodyHost = stack.querySelector(".tool-stack-body"),
-      groups = work ? trailGroups(assistant) : [];
-    if (work)
-      for (const group of groups) {
-        const existing = [...bodyHost.querySelectorAll(":scope > .trail-group")].find(
-          host => !host.classList.contains("trail-live") && host.dataset.at === String(group.at)
-        );
-        if (existing) {
-          syncTrailGroupReasoning(existing, assistant, group);
-          continue;
-        }
-        // 正在承接这一轮话的「进行中」分组就地转正：话按最终文本重画一遍（流式可能还差几个字），再挂上步骤容器
-        const live = bodyHost.querySelector(":scope > .trail-group.trail-live");
-        if (live) {
-          live.classList.remove("trail-live");
-          live.dataset.at = String(group.at);
-          live.innerHTML = `${trailReasoningHtml(assistant, group)}${trailNoteHtml(assistant, group)}<div class="tool-steps"></div>`;
-        } else
-          bodyHost.insertAdjacentHTML(
-            "beforeend",
-            `<div class="trail-group" data-at="${group.at}">${trailReasoningHtml(assistant, group)}${trailNoteHtml(assistant, group)}<div class="tool-steps"></div></div>`
-          );
-        const note = (live || bodyHost.lastElementChild).querySelector(".trail-note");
-        if (note) renderEnhancements(note);
-      }
-    // 分组是按 at 定位的，而 at 会变：一答收尾时裁掉正文开头的空行，所有步骤的 at 都往前挪一截（见 streamReply 的 leadTrim）。
-    // 键一变就当成新分组重画一份，旧的那份连同里面画好的步骤还留在页上——同一次差遣便出现两遍。落单的分组撤掉
-    if (work) {
-      const alive = new Set(groups.map(group => String(group.at)));
-      for (const el of bodyHost.querySelectorAll(":scope > .trail-group"))
-        if (!el.classList.contains("trail-live") && !alive.has(el.dataset.at)) el.remove();
-    }
-    if (work && assistant.status !== "streaming") bodyHost.querySelector(":scope > .trail-group.trail-live")?.remove();
-    // 时间线消息里，行迹之前的顶层思绪是第一轮留下的旧块（那段思绪已收进第一个分组），撤掉；最后一轮的思绪收尾时画在行迹之后
-    if (work) {
-      const stale = block.querySelector(":scope > .reasoning");
-      if (stale && stale.compareDocumentPosition(stack) & Node.DOCUMENT_POSITION_FOLLOWING) stale.remove();
-    }
-    // 这一轮说的话已收进分组，正文区从下一轮起笔：还画着旧起点的正文块撤掉，下一帧从新的起点重画
-    if (work) {
-      const main = block.querySelector(":scope > .markdown");
-      if (main && Number(main.dataset.base ?? main.dataset.cut ?? 0) < trailBase(assistant)) {
-        main.remove();
-        block.querySelector(":scope > .thinking")?.remove();
-      }
-    }
-    let seen = knownStepIds.get(assistant.id);
-    if (!seen) {
-      seen = new Map();
-      knownStepIds.set(assistant.id, seen);
-      if (knownStepIds.size > 32) {
-        for (const key of knownStepIds.keys())
-          if (key !== assistant.id) {
-            knownStepIds.delete(key);
-            break;
-          }
-      }
-    }
-    for (const step of assistant.steps || [])
-      syncStep(
-        work ? bodyHost.querySelector(`.trail-group[data-at="${Number(step.at) || 0}"] > .tool-steps`) : stack.querySelector(".tool-steps"),
-        step,
-        seen
-      );
-    // 没递出去就撤下的补言（收尾时另作新一问、或停了放回案上）：页上那一步也撤
-    const ids = new Set((assistant.steps || []).map(step => step.id));
-    for (const el of stack.querySelectorAll(".tool-step-note[data-step-id]")) if (!ids.has(el.dataset.stepId)) el.remove();
-    renderHelperBar();
-    renderHelperPanel();
-    // 一答只开一次、收一次：第一步起就摊开，整答写完才收（言里模型说话的间隙也不收）；请示时必开
-    const pending = assistant.steps.some(step => step.status === "pending");
-    if (assistant.status === "streaming") {
-      if (pending || !assistant.toolsTouched) settleDetails(stack, true);
-    } else
-      settleDetails(
-        stack,
-        false,
-        () => {
-          assistant.toolsOpen = false;
-          assistant.toolsTouched = false;
-        },
-        true
-      );
-  }
-  syncChangeBar(block, assistant);
-  if (!assistant.content && assistant.status === "streaming" && !block.querySelector(".thinking"))
-    insertAboveChangeBar(block, `<div class="thinking">正在凝神</div>`);
-}
-// 回复末尾挂着改动条时，新起笔的正文 / 凝神占位都插到它上面，改动条始终压底
-function insertAboveChangeBar(block, html) {
-  const bar = block.querySelector(":scope > .change-bar");
-  if (bar) bar.insertAdjacentHTML("beforebegin", html);
-  else block.insertAdjacentHTML("beforeend", html);
+  paintMessage(assistant);
+  renderHelperBar();
+  renderHelperPanel();
 }
 // 思绪块带状态：进行中一点呼吸的朱色，写完打一个勾；时间线消息只画最后一轮的思绪，前几轮的各在自己的分组里
 // 思绪是否还在写：按「轮」看而不是按整答看——最后一次工具调用之后又来了新思绪、而这一轮的正文尚未起笔，就是在写。
@@ -5512,14 +5589,6 @@ function reasoningLive(message) {
       .slice(at)
       .trim()
   );
-}
-/** @param {Message} message */
-function reasoningHtml(message, text = null) {
-  text = text ?? (trailWork(message) ? String(message.reasoning || "").slice(trailReasoningBase(message)) : message.reasoning);
-  if (!text?.trim()) return "";
-  const live = reasoningLive(message),
-    open = message.reasoningTouched ? !!message.reasoningOpen : live;
-  return `<details class="reasoning"${open ? " open" : ""} data-state="${live ? "live" : "done"}"><summary>思绪</summary><div class="reasoning-body">${escapeHtml(text)}</div></details>`;
 }
 /** @param {Message} message */
 function sourceCardsHtml(message) {
@@ -8689,7 +8758,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   renderSendButtons();
   renderHistory();
   const started = performance.now();
-  let leadTrim = 0;
   const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
   const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
@@ -8750,7 +8818,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       budget,
       onStatus: label => setJobLabel(conversation, job, label)
     });
-    leadTrim = trimReply(assistant);
+    trimReply(assistant);
     if (!assistant.content)
       throw Error(
         assistant.steps?.length ? "模型执行工具后未返回正文，可点「继续生成」请它收尾" : "模型未返回正文，请适当提高最大输出长度后重试"
@@ -8803,7 +8871,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     saveStore();
     renderHistory();
     if (currentId === conversation.id && view === "chat") {
-      finalizeAssistant(conversation, assistant, leadTrim);
+      finalizeAssistant(conversation, assistant);
       renderChatMeta(conversation);
       renderOutline();
       updateContextGauge();
@@ -8962,11 +9030,17 @@ async function runRounds(target, history, run) {
       ...(run.scope ? { scope: run.scope } : {})
     }));
     (target.steps ||= []).push(...steps);
+    // 拟好的调用已入册成步骤，「正在拟」那一行随之撤下
+    target.toolCalls = null;
     refreshSteps(host);
     history.push({
       role: "assistant",
       content: target.content.slice(roundStart) || null,
-      tool_calls: steps.map(step => ({ id: step.id, type: "function", function: { name: step.name, arguments: replayArguments(step.arguments) } })),
+      tool_calls: steps.map(step => ({
+        id: step.id,
+        type: "function",
+        function: { name: step.name, arguments: replayArguments(step.arguments) }
+      })),
       ...(target.thinkingBlocks?.length ? { thinking_blocks: target.thinkingBlocks } : {})
     });
     const outcomes = await runSteps(steps, conversation, host, signal, toolCache);
@@ -10417,22 +10491,6 @@ function syncDeliverables() {
     if (current !== html) bar.querySelectorAll(".deliver-file").forEach(node => node.remove()), bar.insertAdjacentHTML("beforeend", html);
   }
 }
-/** @param {Message} message */
-function changeSummaryHtml(message, open = false) {
-  const inner = message.status === "streaming" ? "" : changeSummaryInner(message, open);
-  return inner ? `<div class="change-bar">${inner}</div>` : "";
-}
-// 回复之下的改动条：生成中不画（那时改动在输入框上方的工作条里），写完落下来时轻浮一下；数字就地更新，展开状态保留
-/** @param {Message} assistant */
-function syncChangeBar(block, assistant) {
-  const bar = block.querySelector(":scope > .change-bar"),
-    open = bar?.querySelector(".change-summary")?.getAttribute("aria-expanded") === "true",
-    inner = assistant.status === "streaming" ? "" : changeSummaryInner(assistant, open);
-  if (!inner) return bar?.remove();
-  if (!bar) {
-    block.insertAdjacentHTML("beforeend", `<div class="change-bar is-new">${inner}</div>`);
-  } else if (bar.innerHTML !== inner) bar.innerHTML = inner;
-}
 
   // ---- 15-tools/30-plan.js ----
 // 言 · 计划：行里给用户看的任务清单，每次给完整的一份，画在行迹里；只有主模型维护，回给它一行计数就够
@@ -11639,10 +11697,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     if (closed) return;
     const target = assistant.content.length,
       at = performance.now();
-    const block = document.querySelector(`[data-message="${assistant.id}"] .assistant-block`);
-    if (!block) {
+    if (!document.querySelector(`[data-message="${CSS.escape(assistant.id)}"]`)) {
       shown = target;
       freshGroups = [];
+      inkReveal.delete(assistant.id);
       return;
     }
     if (paced) {
@@ -11653,77 +11711,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
         freshGroups.unshift({ at, count: step });
       }
       freshGroups = freshGroups.filter(group => at - group.at < FRESH_MS);
+      inkReveal.set(assistant.id, { shown, fresh: freshGroups.map(group => ({ count: group.count, age: at - group.at })) });
     }
-    const visible = paced ? assistant.content.slice(0, shown) : assistant.content;
-    const base = trailBase(assistant),
-      reusedReasoning = reusableTrailReasoning(block, assistant, visible),
-      // 还只有思绪时直接沿用上一组，不先在下面造一枚重复的签；正文起笔才需要新的进行中容器。
-      host = reusedReasoning && !visible.slice(base).trim() ? null : trailLiveHost(block, assistant) || block,
-      rbase = trailReasoningBase(assistant),
-      thought = reusedReasoning?.text ?? String(assistant.reasoning || "").slice(rbase);
-    if (thought.trim()) {
-      let details = reusedReasoning?.details || host?.querySelector(":scope > .reasoning");
-      if (!details) {
-        host.insertAdjacentHTML("afterbegin", reasoningHtml(assistant, thought));
-        details = host.querySelector(":scope > .reasoning");
-        details.classList.add("is-new");
-      }
-      const body = /** @type {HTMLElement & { _paintedThought?: string }} */ (details.querySelector(".reasoning-body"));
-      // 思绪可能已积累几十万字；每帧替换整块文本会卡住输入与发送。
-      const painted = body._paintedThought ?? body.textContent;
-      if (painted !== thought) {
-        const tail = /** @type {Text|null} */ (body.lastChild);
-        if (thought.startsWith(painted) && tail?.nodeType === Node.TEXT_NODE) tail.appendData(thought.slice(painted.length));
-        else body.textContent = thought;
-      }
-      body._paintedThought = thought;
-      // 按轮判断在写与否；新一轮的思绪来了就再摊开，正文起笔即收——与行迹一样：运行中打开，运行完关闭
-      const live = reasoningLive({ ...assistant, content: visible });
-      details.dataset.state = live ? "live" : "done";
-      if (details.open && body._follow !== false) body.scrollTop = body.scrollHeight; // 软跟踪：没往上翻就跟着最新一行走
-      if (!(reusedReasoning ? details.dataset.touched : assistant.reasoningTouched)) {
-        if (!live && details.open) settleDetails(details, false);
-        else if (live && !details.open) settleDetails(details, true);
-      }
-    }
-    if (!visible) {
-      if (!block.querySelector(".thinking")) insertAboveChangeBar(block, `<div class="thinking">正在凝神</div>`);
-    } else if (!visible.slice(base).trim()) {
-      /* 新一轮尚未起笔 */
-    } else {
-      let markdown = host.querySelector(":scope > .markdown");
-      if (!markdown?.querySelector(".md-tail")) {
-        block.querySelector(".thinking")?.remove();
-        markdown?.remove();
-        insertAboveChangeBar(
-          host,
-          `<div class="markdown" data-cut="${base}" data-base="${base}"><div class="md-stable"></div><div class="md-tail"></div></div>`
-        );
-        markdown = host.querySelector(":scope > .markdown");
-      }
-      // 已经收尾的段落只渲染一次追加进 md-stable，每帧只重绘最后一段，长回复不会越来越卡；已渲染位置记在 data-cut 上，跨工具轮次也不会重复
-      let renderedCut = Number(markdown.dataset.cut || 0);
-      const cut = stableCut(visible);
-      if (cut > renderedCut) {
-        const stable = markdown.querySelector(".md-stable");
-        stable.insertAdjacentHTML("beforeend", renderMarkdown(visible.slice(renderedCut, cut)));
-        renderedCut = cut;
-        markdown.dataset.cut = String(cut);
-        renderEnhancements(stable);
-      }
-      const tail = markdown.querySelector(".md-tail");
-      suppressViz = true;
-      try {
-        paintTail(tail, renderMarkdown(visible.slice(renderedCut)));
-      } finally {
-        suppressViz = false;
-      }
-      decorateTail(
-        tail,
-        freshGroups.map(group => ({ count: group.count, age: at - group.at }))
-      );
-    }
-    paintDrafting(host || block, assistant);
+    // 画法与整页重画是同一支笔（见 07-paint.js）：这里只报写到了哪，步骤没动
+    paintMessage(assistant, { steps: false });
     if (onFrame) onFrame();
     else if (followBottom) scrollBottom();
     else syncJumpBottom();
@@ -11803,6 +11794,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   } catch (error) {
     flushThink();
     closed = true;
+    inkReveal.delete(assistant.id);
     // 半途出错（流里的报错事件）：把还开着的连接收掉，别让桥接那头替一个没人读的流继续转发
     reader.cancel().catch(() => {});
     throw error;
@@ -11871,6 +11863,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     await new Promise(resolve => setTimeout(resolve, 16));
     if (document.hidden) shown = assistant.content.length;
   }
+  inkReveal.delete(assistant.id);
   closed = true; // 之后迟到的帧一律作废：后台标签页里 rAF 会攒到切回来才跑，那时收尾已把图表画好，再用 suppressViz 重绘会把它们打回占位
 }
 // 把尾段末尾最近写出的字按帧分组包进 .ink-fresh（用负 animation-delay 对齐各自的年龄，重绘也不会重放），并在最后一个字后放一支光标

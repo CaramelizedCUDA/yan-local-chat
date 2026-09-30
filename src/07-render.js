@@ -404,7 +404,7 @@ function foldCompacted(c) {
   }
 }
 // 消息列表按 id 增量同步：没变的节点原样留下（图表、沙箱、展开状态都不动），只插入、替换或移除有变化的那几条。
-// 正在流式生成的那条由 readSse 就地更新，这里一律不碰。
+// 回复就地重画（见 07-paint.js，画法是幂等的，正在写的那条也一样画）；用户消息、分隔与提示签名一变整条换。
 // 只有会改变呈现的字段才算变化；展开/收起这类界面状态用户已经在页面上操作过了，不必因此重画
 const UI_STATE_FIELDS = new Set(["toolsOpen", "toolsTouched", "reasoningOpen", "reasoningTouched", "showCompacted"]);
 /** @param {Message} message */
@@ -438,25 +438,25 @@ function syncNodes(host, items, converged) {
   for (const item of items) {
     const node = existing.get(item.key);
     existing.delete(item.key);
+    const sig = item.html ?? messageSig(item.message, item.branch),
+      reply = item.message?.role === "assistant";
     let next = node;
-    // 正在流式写的那条由逐帧的那一路刷，这里不动；别处在写、这边跟着看的，没有那一路，照常按新内容重画
-    const streaming = node && item.message?.status === "streaming" && node.dataset.status === "streaming" && !runningElsewhere();
-    if (!streaming) {
-      const sig = item.html ?? messageSig(item.message, item.branch);
-      if (!node || nodeSig.get(node) !== sig) {
-        template.innerHTML = item.html ?? renderMessage(item.message, item.branch, item.side);
-        next = template.content.firstElementChild;
-        nodeSig.set(next, sig);
-        added.push(next);
-        if (!node && !converged) next.classList.add("is-new");
-      } else node.classList.remove("is-new");
-    }
+    if (!node || (!reply && nodeSig.get(node) !== sig)) {
+      template.innerHTML = item.html ?? (reply ? assistantShellHtml(item.message) : renderMessage(item.message, item.branch, item.side));
+      next = template.content.firstElementChild;
+      added.push(next);
+      if (!node && !converged) next.classList.add("is-new");
+    } else node.classList.remove("is-new");
     if (node && next !== node) {
       if (node === cursor) cursor = cursor.nextElementSibling;
       node.remove();
     }
     if (next === cursor) cursor = cursor.nextElementSibling;
     else host.insertBefore(next, cursor);
+    // 先挂上再画：交互内容、开合动效都要在页上才量得准
+    if (reply && (next !== node || item.message.status === "streaming" || nodeSig.get(next) !== sig))
+      paintAssistant(next, item.message, { side: !!item.side, branch: item.branch });
+    nodeSig.set(next, sig);
   }
   // 游标之后全是没被点到名的旧节点（删掉的消息、重生成时截掉的尾巴、旧的收尾提示）
   while (cursor) {
@@ -476,6 +476,7 @@ function noteMarkHtml(message) {
     ? `<button class="note-mark" type="button" data-note-mark title="查看这条消息的旁注">注${count > 1 ? ` ${count}` : ""}</button>`
     : "";
 }
+// 用户消息与上下文分隔的整条 HTML；回复另有画法（见 07-paint.js）
 /** @param {Message} message */
 function renderMessage(message, branch = null, side = false) {
   if (message.role === "context")
@@ -493,14 +494,7 @@ function renderMessage(message, branch = null, side = false) {
       : "";
     return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", "复制消息", icons.copy)}${actionIcon("edit", "编辑消息", icons.edit)}</div></article>`;
   }
-  // 旁注里的答：复制、重新生成（不分叉，直接换掉）；出错或停止了也能重来
-  const actions = side
-    ? message.status === "streaming"
-      ? ""
-      : `${message.content ? actionIcon("copy", "复制回复", icons.copy) : ""}${actionIcon("regenerate", message.status === "complete" ? "重新生成" : "重试", icons.regenerate)}`
-    : assistantActionsHtml(message) + branchNavHtml(branch);
-  message = inlineThinkView(message);
-  return `<article class="message assistant" data-message="${escapeHtml(message.id)}" data-status="${escapeHtml(message.status || "complete")}"><div class="message-meta"><span class="meta-seal" aria-hidden="true">言</span><span>${escapeHtml(message.modelName || "模型")} · ${formatTime(message.timestamp)}</span>${side ? "" : noteMarkHtml(message)}</div><div class="assistant-block">${trailWork(message) ? stepsHtml(message) + reasoningHtml(message) : reasoningHtml(message) + stepsHtml(message)}${assistantMainHtml(message)}${deliverablesHtml(message)}${changeSummaryHtml(message)}${sourceCardsHtml(message)}</div>${actions ? `<div class="message-actions${branch ? " has-branch" : ""}">${actions}</div>` : ""}</article>`;
+  return assistantShellHtml(message);
 }
 // 正文开头带 <think>…</think> 的旧消息（导入或此前的版本）：渲染时按思考 + 正文拆开看，不改动存下的原文
 const INLINE_THINK = /^\s*<think>([\s\S]*?)<\/think>\s*/;
@@ -528,35 +522,6 @@ function assistantNoteHtml(message) {
       : "";
 }
 /** @param {Message} message */
-function assistantMainHtml(message) {
-  const work = trailWork(message),
-    base = trailBase(message),
-    // 执事生成中，最后一步之后的话还在行迹里「进行中」那组（见 stepsHtml），写完才落到正文区。
-    // 看 trailWork 而非 base：第一步之前没说话时 base 是 0
-    text =
-      work && message.status === "streaming"
-        ? ""
-        : work
-          ? String(message.content || "")
-              .slice(base)
-              .trim()
-          : message.content;
-  if (!message.content && message.status === "streaming") return `<div class="thinking">正在凝神</div>`;
-  if (!message.content && message.status === "stopped") return `<div class="thinking">搁笔于此</div>`;
-  return `${text ? contentMarkdownHtml(message, text, base) : ""}${assistantNoteHtml(message)}`;
-}
-// 一段正文画成 .markdown：data-cut / data-base 记它从 content 的哪里起，流式接着画时据此续上；生成中不起可视化
-/** @param {Message} message */
-function contentMarkdownHtml(message, text, base) {
-  const previous = suppressViz;
-  suppressViz = message.status === "streaming";
-  try {
-    return `<div class="markdown" data-cut="${base}" data-base="${base}">${renderMarkdown(text)}</div>`;
-  } finally {
-    suppressViz = previous;
-  }
-}
-/** @param {Message} message */
 function assistantActionsHtml(message) {
   return message.status === "streaming"
     ? ""
@@ -574,74 +539,16 @@ function messageCostHtml(message) {
   const heavy = n >= CONTEXT_HEAVY;
   return `<span class="message-cost${heavy ? " heavy" : ""}" title="这一答共耗约 ${formatTokens(n)} token${message.tokenEstimated ? "（估算）" : ""}${heavy ? "；上下文已重，可压缩前文" : ""}">耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}</span>`;
 }
-// 流式结束只就地收尾这一条消息：不重建整段对话，图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下
+// 一答收尾：就地画成定稿的样子（图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下）；这条不在页上就整段重画
 /**
  * @param {Conversation} conversation
  * @param {Message} assistant
  */
-function finalizeAssistant(conversation, assistant, leadTrim = 0) {
-  const article = document.querySelector(`#messages [data-message="${CSS.escape(assistant.id)}"]`),
-    block = article?.querySelector(".assistant-block");
-  if (!block || conversation.ended) return renderConversation(followBottom);
-  // 步骤可能收尾时全撤了（只排着补言、没递出去就停了）：行迹整块撤掉
-  if (assistant.steps?.length) refreshSteps(assistant);
-  else block.querySelector(":scope > .tool-stack")?.remove();
-  if (assistant.deliverables?.length && !block.querySelector(":scope > .deliver-bar"))
-    (block.querySelector(":scope > .change-bar") || block.querySelector(":scope > .markdown") || block).insertAdjacentHTML(
-      "afterend",
-      deliverablesHtml(assistant)
-    );
-  block.querySelector(".thinking")?.remove();
-  const reasoning = block.querySelector(":scope > .reasoning"),
-    thought = String(assistant.reasoning || "").slice(trailReasoningBase(assistant));
-  if (reasoning && thought.trim()) {
-    reasoning.querySelector(".reasoning-body").textContent = thought;
-    reasoning.dataset.state = "done";
-    // 做完就收，与行迹同一个定例：流式期间读者往上翻着看时没收成的，这里补上；用户亲手开合过的不动
-    if (!assistant.reasoningTouched) settleDetails(reasoning, false, null, true);
-  } else if (reasoning) reasoning.remove();
-  else if (thought.trim()) {
-    const stack = block.querySelector(":scope > .tool-stack");
-    if (stack) stack.insertAdjacentHTML("afterend", reasoningHtml(assistant, thought));
-    else block.insertAdjacentHTML("afterbegin", reasoningHtml(assistant, thought));
-  }
-  block.querySelectorAll(".message-error, .resume-note, .source-stack").forEach(node => node.remove());
-  block.querySelector(".tool-stack.is-work .trail-group.trail-live")?.remove();
-  block.querySelectorAll(".trail-drafting").forEach(node => node.remove());
-  const markdown = block.querySelector(":scope > .markdown");
-  if (!assistant.content) {
-    markdown?.remove();
-    block.insertAdjacentHTML("beforeend", assistantMainHtml(assistant));
-  } else if (markdown?.querySelector(".md-tail")) {
-    // 已渲染的稳定段保持不动，只把尾段按最终文本重绘一次——此时交互内容才真正挂载
-    const cut = Math.max(trailBase(assistant), Math.min(Number(markdown.dataset.cut || 0) - leadTrim, assistant.content.length)),
-      tail = markdown.querySelector(".md-tail");
-    markdown.dataset.cut = String(cut);
-    tail.innerHTML = renderMarkdown(assistant.content.slice(cut));
-    renderEnhancements(tail);
-    block.insertAdjacentHTML("beforeend", assistantNoteHtml(assistant));
-  } else {
-    markdown?.remove();
-    block.insertAdjacentHTML("beforeend", assistantMainHtml(assistant));
-    renderEnhancements(block);
-  }
-  // 改动条生成中就已实时累加，这里只挪到收尾正文之后（原节点搬家，展开状态不丢）再对一次数；来源卡片压在最底
-  const bar = block.querySelector(":scope > .change-bar");
-  if (bar) {
-    bar.classList.remove("is-new");
-    block.append(bar);
-  }
-  syncChangeBar(block, assistant);
-  block.insertAdjacentHTML("beforeend", sourceCardsHtml(assistant));
-  block.querySelectorAll(".message-error, .resume-note, .source-stack").forEach(node => node.classList.add("is-new"));
-  const branch = branchAt(conversation, conversation.messages.indexOf(assistant));
-  article.querySelector(".message-actions")?.remove();
-  const actions = assistantActionsHtml(assistant) + branchNavHtml(branch);
-  if (actions) article.insertAdjacentHTML("beforeend", `<div class="message-actions${branch ? " has-branch" : ""}">${actions}</div>`);
-  article.dataset.status = assistant.status;
-  if (assistant.status === "complete") article.querySelector(".meta-seal")?.classList.add("stamped");
-  nodeSig.set(article, messageSig(assistant, branch));
-  decorateNoteAnchors(article);
+function finalizeAssistant(conversation, assistant) {
+  const article = conversation.ended ? null : document.querySelector(`#messages [data-message="${CSS.escape(assistant.id)}"]`);
+  if (!article) return renderConversation(followBottom);
+  paintAssistant(/** @type {HTMLElement} */ (article), assistant);
+  nodeSig.set(article, messageSig(assistant, branchFor(assistant)));
   $("#chatScroll").classList.remove("generating");
   renderHelperBar();
   if (followBottom) requestAnimationFrame(scrollBottom);

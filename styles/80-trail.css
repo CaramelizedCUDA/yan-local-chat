@@ -175,7 +175,11 @@
   margin-right: 2px;
   border-radius: 5px;
   color: var(--ink-3);
-  font: 13px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font:
+    13px/1 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
   transition:
     color 0.15s,
     background 0.15s;
@@ -366,6 +370,11 @@
 }
 .sub-timeline .trail-group {
   padding: 2px 0 3px;
+}
+/* 末尾还在进行的那一轮（正想着、正说着）贴着上一组，不另起一组的间距；有了步骤就转成一组 */
+.sub-timeline .trail-group.sub-tail {
+  margin-top: 0;
+  padding: 0;
 }
 .sub-timeline .trail-note {
   margin: 2px 0 4px 4px;

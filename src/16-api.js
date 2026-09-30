@@ -303,10 +303,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     if (closed) return;
     const target = assistant.content.length,
       at = performance.now();
-    const block = document.querySelector(`[data-message="${assistant.id}"] .assistant-block`);
-    if (!block) {
+    if (!document.querySelector(`[data-message="${CSS.escape(assistant.id)}"]`)) {
       shown = target;
       freshGroups = [];
+      inkReveal.delete(assistant.id);
       return;
     }
     if (paced) {
@@ -317,77 +317,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
         freshGroups.unshift({ at, count: step });
       }
       freshGroups = freshGroups.filter(group => at - group.at < FRESH_MS);
+      inkReveal.set(assistant.id, { shown, fresh: freshGroups.map(group => ({ count: group.count, age: at - group.at })) });
     }
-    const visible = paced ? assistant.content.slice(0, shown) : assistant.content;
-    const base = trailBase(assistant),
-      reusedReasoning = reusableTrailReasoning(block, assistant, visible),
-      // 还只有思绪时直接沿用上一组，不先在下面造一枚重复的签；正文起笔才需要新的进行中容器。
-      host = reusedReasoning && !visible.slice(base).trim() ? null : trailLiveHost(block, assistant) || block,
-      rbase = trailReasoningBase(assistant),
-      thought = reusedReasoning?.text ?? String(assistant.reasoning || "").slice(rbase);
-    if (thought.trim()) {
-      let details = reusedReasoning?.details || host?.querySelector(":scope > .reasoning");
-      if (!details) {
-        host.insertAdjacentHTML("afterbegin", reasoningHtml(assistant, thought));
-        details = host.querySelector(":scope > .reasoning");
-        details.classList.add("is-new");
-      }
-      const body = /** @type {HTMLElement & { _paintedThought?: string }} */ (details.querySelector(".reasoning-body"));
-      // 思绪可能已积累几十万字；每帧替换整块文本会卡住输入与发送。
-      const painted = body._paintedThought ?? body.textContent;
-      if (painted !== thought) {
-        const tail = /** @type {Text|null} */ (body.lastChild);
-        if (thought.startsWith(painted) && tail?.nodeType === Node.TEXT_NODE) tail.appendData(thought.slice(painted.length));
-        else body.textContent = thought;
-      }
-      body._paintedThought = thought;
-      // 按轮判断在写与否；新一轮的思绪来了就再摊开，正文起笔即收——与行迹一样：运行中打开，运行完关闭
-      const live = reasoningLive({ ...assistant, content: visible });
-      details.dataset.state = live ? "live" : "done";
-      if (details.open && body._follow !== false) body.scrollTop = body.scrollHeight; // 软跟踪：没往上翻就跟着最新一行走
-      if (!(reusedReasoning ? details.dataset.touched : assistant.reasoningTouched)) {
-        if (!live && details.open) settleDetails(details, false);
-        else if (live && !details.open) settleDetails(details, true);
-      }
-    }
-    if (!visible) {
-      if (!block.querySelector(".thinking")) insertAboveChangeBar(block, `<div class="thinking">正在凝神</div>`);
-    } else if (!visible.slice(base).trim()) {
-      /* 新一轮尚未起笔 */
-    } else {
-      let markdown = host.querySelector(":scope > .markdown");
-      if (!markdown?.querySelector(".md-tail")) {
-        block.querySelector(".thinking")?.remove();
-        markdown?.remove();
-        insertAboveChangeBar(
-          host,
-          `<div class="markdown" data-cut="${base}" data-base="${base}"><div class="md-stable"></div><div class="md-tail"></div></div>`
-        );
-        markdown = host.querySelector(":scope > .markdown");
-      }
-      // 已经收尾的段落只渲染一次追加进 md-stable，每帧只重绘最后一段，长回复不会越来越卡；已渲染位置记在 data-cut 上，跨工具轮次也不会重复
-      let renderedCut = Number(markdown.dataset.cut || 0);
-      const cut = stableCut(visible);
-      if (cut > renderedCut) {
-        const stable = markdown.querySelector(".md-stable");
-        stable.insertAdjacentHTML("beforeend", renderMarkdown(visible.slice(renderedCut, cut)));
-        renderedCut = cut;
-        markdown.dataset.cut = String(cut);
-        renderEnhancements(stable);
-      }
-      const tail = markdown.querySelector(".md-tail");
-      suppressViz = true;
-      try {
-        paintTail(tail, renderMarkdown(visible.slice(renderedCut)));
-      } finally {
-        suppressViz = false;
-      }
-      decorateTail(
-        tail,
-        freshGroups.map(group => ({ count: group.count, age: at - group.at }))
-      );
-    }
-    paintDrafting(host || block, assistant);
+    // 画法与整页重画是同一支笔（见 07-paint.js）：这里只报写到了哪，步骤没动
+    paintMessage(assistant, { steps: false });
     if (onFrame) onFrame();
     else if (followBottom) scrollBottom();
     else syncJumpBottom();
@@ -467,6 +400,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   } catch (error) {
     flushThink();
     closed = true;
+    inkReveal.delete(assistant.id);
     // 半途出错（流里的报错事件）：把还开着的连接收掉，别让桥接那头替一个没人读的流继续转发
     reader.cancel().catch(() => {});
     throw error;
@@ -535,6 +469,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     await new Promise(resolve => setTimeout(resolve, 16));
     if (document.hidden) shown = assistant.content.length;
   }
+  inkReveal.delete(assistant.id);
   closed = true; // 之后迟到的帧一律作废：后台标签页里 rAF 会攒到切回来才跑，那时收尾已把图表画好，再用 suppressViz 重绘会把它们打回占位
 }
 // 把尾段末尾最近写出的字按帧分组包进 .ink-fresh（用负 animation-delay 对齐各自的年龄，重绘也不会重放），并在最后一个字后放一支光标
