@@ -381,4 +381,12 @@ check(
   twice.mark === "StructRAG" && twice.before.includes("StructRAG") && twice.occurrence === 1,
   JSON.stringify(twice)
 );
+// 旁注与主答同一个轮次循环：上游写到一半掐线，稍候接着写完，而不是整条报错
+await evalJs(`document.querySelector("#sideInput").value = "STREAMCUT 旁注"; document.querySelector("#sideSend").click(); true`);
+await waitFor(
+  `(m => m && m.role === "assistant" && m.status !== "streaming")(__yanState().conversations[0].threads.at(-1).messages.at(-1))`,
+  20000
+).catch(() => {});
+const cut = await evalJs(`(m => ({ status: m.status, content: m.content }))(__yanState().conversations[0].threads.at(-1).messages.at(-1))`);
+check("a side note cut mid-stream resumes and finishes", cut.status === "complete" && cut.content === "写到一半接着写完。", JSON.stringify(cut));
 close();

@@ -527,11 +527,9 @@ async function streamSideReply(conversation, thread, assistant, profile) {
   renderSideSend();
   // 旁注是折起注脚式的行迹，不是执事的时间线（正文那侧的画法记在消息上，见 streamReply）
   assistant.work = false;
-  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  const tally = newTally();
   /** @type {Array<Record<string, any>>} */
   let history = [];
-  let opened = false,
-    usageKnown = false;
   try {
     const anchorIndex = conversation.messages.findIndex(m => m.id === thread.anchor.messageId);
     const main = anchorIndex >= 0 ? conversation.messages.slice(0, anchorIndex + 1) : conversation.messages;
@@ -564,55 +562,18 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       const el = $("#sideScroll");
       if (el) el.scrollTop = el.scrollHeight;
     };
-    const toolCache = new Map();
-    let rounds = 0;
-    for (;;) {
-      assistant.toolCalls = null;
-      assistant.usage = null;
-      const roundStart = assistant.content.length;
-      await readReply(profile, history, job.controller.signal, overrides, assistant, false, () => (opened = true), onFrame);
-      if (assistant.usage) {
-        usageKnown = true;
-        for (const key of Object.keys(usage)) usage[key] += Number(assistant.usage[key] || 0);
-      }
-      const calls = (assistant.toolCalls || []).filter(call => call.name);
-      if (!calls.length || !overrides.tools) break;
-      if (++rounds > toolRoundLimit()) {
-        const said = assistant.content.slice(roundStart).trim();
-        if (said) history.push({ role: "assistant", content: said });
-        history.push({ role: "user", content: prompt("assistant.roundLimit") });
-        overrides.tools = null;
-        assistant.content = paragraphBreak(assistant.content);
-        continue;
-      }
-      /** @type {Step[]} */
-      const steps = calls.map(call => ({
-        id: call.id || `call_${uid().slice(0, 8)}`,
-        name: call.name,
-        arguments: call.arguments || "{}",
-        status: "running",
-        at: assistant.content.length,
-        rat: String(assistant.reasoning || "").length
-      }));
-      (assistant.steps ||= []).push(...steps);
-      refreshSteps(assistant);
-      history.push({
-        role: "assistant",
-        content: assistant.content.slice(roundStart) || null,
-        tool_calls: steps.map(step => ({
-          id: step.id,
-          type: "function",
-          function: { name: step.name, arguments: replayArguments(step.arguments) }
-        })),
-        ...(assistant.thinkingBlocks?.length ? { thinking_blocks: assistant.thinkingBlocks } : {})
-      });
-      const outcomes = await runSteps(steps, conversation, assistant, job.controller.signal, toolCache);
-      for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
-      assistant.content = paragraphBreak(assistant.content);
-    }
-    const leadTrim = assistant.content.match(/^\n*/)[0].length;
-    assistant.content = assistant.content.replace(/^\n+|\n+$/g, "");
-    if (leadTrim) for (const step of assistant.steps || []) if (typeof step.at === "number") step.at = Math.max(0, step.at - leadTrim);
+    await runRounds(assistant, history, {
+      profile,
+      conversation,
+      host: assistant,
+      signal: job.controller.signal,
+      overrides,
+      tally,
+      roundLimit: toolRoundLimit(),
+      limitPrompt: "assistant.roundLimit",
+      onFrame
+    });
+    trimReply(assistant);
     if (!assistant.content) throw Error(assistant.steps?.length ? "模型查阅后未返回正文" : "模型未返回正文");
     assistant.status = "complete";
     thread.updatedAt = now();
@@ -625,8 +586,13 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     }
   } finally {
     // 停止或中断也结算：接口接下了请求就花了墨；查阅了几轮的，各轮用量相加
-    assistant.usage = usageKnown ? usage : null;
-    accountUsage(profile, assistant, history, conversation, { opened });
+    assistant.usage = tally.usageKnown ? tally.usage : null;
+    accountUsage(profile, assistant, history, conversation, {
+      opened: tally.opened,
+      partialRound: tally.roundOpen,
+      roundStart: tally.roundStart,
+      steered: tally.steered
+    });
     if (requestJobs.get(key) === job) requestJobs.delete(key);
     markDirty(conversation.id);
     saveStore();

@@ -36,7 +36,6 @@
  * @property {Step[]} steps
  * @property {"streaming"|"complete"|"stopped"|"error"} status
  * @property {Usage|null} usage
- * @property {number} rounds
  * @property {{ thinking: string, signature: string }[]|null} [thinkingBlocks]
  * @property {string} [report] 最后一轮说的话，即交回主模型的回报
  * @property {number} [durationMs]
@@ -6461,11 +6460,9 @@ async function streamSideReply(conversation, thread, assistant, profile) {
   renderSideSend();
   // 旁注是折起注脚式的行迹，不是执事的时间线（正文那侧的画法记在消息上，见 streamReply）
   assistant.work = false;
-  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  const tally = newTally();
   /** @type {Array<Record<string, any>>} */
   let history = [];
-  let opened = false,
-    usageKnown = false;
   try {
     const anchorIndex = conversation.messages.findIndex(m => m.id === thread.anchor.messageId);
     const main = anchorIndex >= 0 ? conversation.messages.slice(0, anchorIndex + 1) : conversation.messages;
@@ -6498,55 +6495,18 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       const el = $("#sideScroll");
       if (el) el.scrollTop = el.scrollHeight;
     };
-    const toolCache = new Map();
-    let rounds = 0;
-    for (;;) {
-      assistant.toolCalls = null;
-      assistant.usage = null;
-      const roundStart = assistant.content.length;
-      await readReply(profile, history, job.controller.signal, overrides, assistant, false, () => (opened = true), onFrame);
-      if (assistant.usage) {
-        usageKnown = true;
-        for (const key of Object.keys(usage)) usage[key] += Number(assistant.usage[key] || 0);
-      }
-      const calls = (assistant.toolCalls || []).filter(call => call.name);
-      if (!calls.length || !overrides.tools) break;
-      if (++rounds > toolRoundLimit()) {
-        const said = assistant.content.slice(roundStart).trim();
-        if (said) history.push({ role: "assistant", content: said });
-        history.push({ role: "user", content: prompt("assistant.roundLimit") });
-        overrides.tools = null;
-        assistant.content = paragraphBreak(assistant.content);
-        continue;
-      }
-      /** @type {Step[]} */
-      const steps = calls.map(call => ({
-        id: call.id || `call_${uid().slice(0, 8)}`,
-        name: call.name,
-        arguments: call.arguments || "{}",
-        status: "running",
-        at: assistant.content.length,
-        rat: String(assistant.reasoning || "").length
-      }));
-      (assistant.steps ||= []).push(...steps);
-      refreshSteps(assistant);
-      history.push({
-        role: "assistant",
-        content: assistant.content.slice(roundStart) || null,
-        tool_calls: steps.map(step => ({
-          id: step.id,
-          type: "function",
-          function: { name: step.name, arguments: replayArguments(step.arguments) }
-        })),
-        ...(assistant.thinkingBlocks?.length ? { thinking_blocks: assistant.thinkingBlocks } : {})
-      });
-      const outcomes = await runSteps(steps, conversation, assistant, job.controller.signal, toolCache);
-      for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
-      assistant.content = paragraphBreak(assistant.content);
-    }
-    const leadTrim = assistant.content.match(/^\n*/)[0].length;
-    assistant.content = assistant.content.replace(/^\n+|\n+$/g, "");
-    if (leadTrim) for (const step of assistant.steps || []) if (typeof step.at === "number") step.at = Math.max(0, step.at - leadTrim);
+    await runRounds(assistant, history, {
+      profile,
+      conversation,
+      host: assistant,
+      signal: job.controller.signal,
+      overrides,
+      tally,
+      roundLimit: toolRoundLimit(),
+      limitPrompt: "assistant.roundLimit",
+      onFrame
+    });
+    trimReply(assistant);
     if (!assistant.content) throw Error(assistant.steps?.length ? "模型查阅后未返回正文" : "模型未返回正文");
     assistant.status = "complete";
     thread.updatedAt = now();
@@ -6559,8 +6519,13 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     }
   } finally {
     // 停止或中断也结算：接口接下了请求就花了墨；查阅了几轮的，各轮用量相加
-    assistant.usage = usageKnown ? usage : null;
-    accountUsage(profile, assistant, history, conversation, { opened });
+    assistant.usage = tally.usageKnown ? tally.usage : null;
+    accountUsage(profile, assistant, history, conversation, {
+      opened: tally.opened,
+      partialRound: tally.roundOpen,
+      roundStart: tally.roundStart,
+      steered: tally.steered
+    });
     if (requestJobs.get(key) === job) requestJobs.delete(key);
     markDirty(conversation.id);
     saveStore();
@@ -8729,16 +8694,11 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
   const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
   // 用量在 finally 里结算：停止、断网、工具链中途出错，前面几轮已经花掉的墨也得记上，不能只在整答顺利收尾时记账
-  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  const tally = newTally(),
     stepsBefore = (assistant.steps || []).length;
   /** @type {Array<Record<string, any>>} 送给接口的消息列表 */
   let history = [];
-  let usageKnown = false,
-    roundOpen = false,
-    opened = false,
-    steered = false,
-    roundStart = 0,
-    releaseQuota = () => {};
+  let releaseQuota = () => {};
   try {
     const budget = inlineTextBudget(profile),
       resumeFrom = resume ? assistant.content : "";
@@ -8761,15 +8721,10 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     releaseQuota = reserveTokens(profile, estimateTokens(history) + (Number(profile.maxTokens) || 8192));
     if (profile.tools !== false) await mcpForTurn();
     const tools = profile.tools !== false ? toolDefinitions(conversation) : null;
-    let retrying = false;
     const overrides = {
       systemPrompt: systemPrompt(conversation, tools),
       tools,
       reasoning: conversation.reasoning || "",
-      onRetry: n => {
-        retrying = true;
-        setJobLabel(conversation, job, `网络不稳 · 第 ${n} 次重试`);
-      },
       head: history.length,
       onFold: busy => setJobLabel(conversation, job, busy ? "上下文将满 · 整理中" : ""),
       // 放不下的是这一问之前的对话：压成摘要落成分隔（下一问也用得上），换掉 history 里这一问之前的那截
@@ -8782,129 +8737,20 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
         return true;
       }
     };
-    const toolCache = new Map();
-    let rounds = 0,
-      resumed = 0;
-    for (;;) {
-      assistant.toolCalls = null;
-      assistant.usage = null;
-      roundStart = job.roundStart = assistant.content.length;
-      roundOpen = false;
-      // 每一轮自己一个中止器：补言只停这一轮的流，整答的 controller 留给「停止」
-      const round = new AbortController(),
-        stopRound = () => round.abort();
-      job.round = round;
-      job.controller.signal.addEventListener("abort", stopRound, { once: true });
-      job.reading = true;
-      try {
-        await readReply(profile, history, round.signal, overrides, assistant, false, () => {
-          roundOpen = opened = true;
-          if (retrying) setJobLabel(conversation, job);
-          retrying = false;
-        });
-        // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾。
-        if (!assistant.content.slice(roundStart).trim() && !assistant.toolCalls?.some(call => call.name))
-          throw Object.assign(Error("模型本轮未返回正文或工具调用，回复尚未完成"), { midStream: true });
-      } catch (error) {
-        // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
-        if (error.midStream && !job.controller.signal.aborted && resumed < AUTO_RESUMES) {
-          resumed += 1;
-          const said = assistant.content.slice(roundStart);
-          if (roundOpen) {
-            const spent = estimateTokens(history) + estimateTokens([{ content: said }]);
-            usage.prompt_tokens += spent;
-            usage.total_tokens += spent;
-            usageKnown = steered = true;
-            roundOpen = false;
-          }
-          assistant.toolCalls = null;
-          if (said.trim()) history.push({ role: "assistant", content: said }, { role: "user", content: prompt("assistant.resume") });
-          setJobLabel(conversation, job, "网络不稳 · 稍候接着写");
-          await restFor(2000 * resumed, job.controller.signal);
-          setJobLabel(conversation, job);
-          continue;
-        }
-        if (error.name !== "AbortError" || job.controller.signal.aborted || !job.queue?.length) throw error;
-        // 补言停下的：这一轮写到落点为止（花的墨按估算记上），已写的话与补言一起进历史，没执行的工具调用一律作废，随即再开一轮
-        const said = trimToBoundary(assistant.content.slice(roundStart)).replace(/\n+$/, "");
-        assistant.content = assistant.content.slice(0, roundStart) + said;
-        for (const { step } of job.queue) if (typeof step.at === "number") step.at = Math.min(step.at, assistant.content.length);
-        if (roundOpen) {
-          const spent = estimateTokens(history) + estimateTokens([{ content: said }]);
-          usage.prompt_tokens += spent;
-          usage.total_tokens += spent;
-          usageKnown = steered = true;
-          roundOpen = false;
-        }
-        assistant.toolCalls = null;
-        if (said.trim()) history.push({ role: "assistant", content: said });
-        await deliverSupplements(job, history, budget, assistant, { steer: true });
-        assistant.content = paragraphBreak(assistant.content);
-        continue;
-      } finally {
-        job.reading = false;
-        job.round = null;
-        clearInterval(job.steerTimer);
-        job.steerTimer = 0;
-        job.controller.signal.removeEventListener("abort", stopRound);
-      }
-      resumed = 0; // 接续的次数按轮算：长活跑上几百轮，前面断过两回不该让后面再断就没得接
-      if (assistant.usage) {
-        usageKnown = true;
-        roundOpen = false;
-        for (const key of Object.keys(usage)) usage[key] += Number(assistant.usage[key] || 0);
-      }
-      const calls = (assistant.toolCalls || []).filter(call => call.name);
-      if (!calls.length || !overrides.tools) {
-        // 只剩用户的补言时照旧收尾，补言由 settleSupplements 作下一问送出
-        if (!job.helpers && !job.queue.some(item => item.report !== undefined)) break;
-        // 这一轮说完了，帮手还在后台：不收尾，等收件口——帮手回报或补言，谁先到先递上，再请它开口
-        const said = assistant.content.slice(roundStart).trim();
-        if (said) history.push({ role: "assistant", content: said });
-        await waitInbox(job);
-        await deliverSupplements(job, history, budget, assistant);
-        assistant.content = paragraphBreak(assistant.content);
-        continue;
-      }
-      // 轮次到顶：不再受理这一批调用，收回工具，让模型就已有结果收尾
-      if (++rounds > toolRoundLimit()) {
-        const said = assistant.content.slice(roundStart).trim();
-        if (said) history.push({ role: "assistant", content: said });
-        history.push({ role: "user", content: prompt("assistant.roundLimit") });
-        overrides.tools = null;
-        assistant.content = paragraphBreak(assistant.content);
-        continue;
-      }
-      // 模型请求调用工具：记录步骤、执行、把结果作为 tool 消息回传，再让模型继续；历史里只带本轮新写的正文，前几轮的已经在各自的 assistant 消息里
-      /** @type {Step[]} */
-      const steps = calls.map(call => ({
-        id: call.id || `call_${uid().slice(0, 8)}`,
-        name: call.name,
-        arguments: call.arguments || "{}",
-        status: "running",
-        at: assistant.content.length,
-        rat: String(assistant.reasoning || "").length
-      }));
-      (assistant.steps ||= []).push(...steps);
-      refreshSteps(assistant);
-      history.push({
-        role: "assistant",
-        content: assistant.content.slice(roundStart) || null,
-        tool_calls: steps.map(step => ({
-          id: step.id,
-          type: "function",
-          function: { name: step.name, arguments: replayArguments(step.arguments) }
-        })),
-        ...(assistant.thinkingBlocks?.length ? { thinking_blocks: assistant.thinkingBlocks } : {})
-      });
-      const outcomes = await runSteps(steps, conversation, assistant, job.controller.signal, toolCache);
-      for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
-      await deliverSupplements(job, history, budget, assistant);
-      assistant.content = paragraphBreak(assistant.content);
-    }
-    leadTrim = assistant.content.match(/^\n*/)[0].length;
-    assistant.content = assistant.content.replace(/^\n+|\n+$/g, "");
-    if (leadTrim) for (const step of assistant.steps || []) if (typeof step.at === "number") step.at = Math.max(0, step.at - leadTrim);
+    await runRounds(assistant, history, {
+      profile,
+      conversation,
+      host: assistant,
+      signal: job.controller.signal,
+      overrides,
+      tally,
+      roundLimit: toolRoundLimit(),
+      limitPrompt: "assistant.roundLimit",
+      inbox: job,
+      budget,
+      onStatus: label => setJobLabel(conversation, job, label)
+    });
+    leadTrim = trimReply(assistant);
     if (!assistant.content)
       throw Error(
         assistant.steps?.length ? "模型执行工具后未返回正文，可点「继续生成」请它收尾" : "模型未返回正文，请适当提高最大输出长度后重试"
@@ -8939,12 +8785,17 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     // 帮手（差遣）自己跑的几轮也是这一答花的墨：这一次新起的步骤里的帮手用量一并计入（续写时此前的已经记过）
     for (const step of (assistant.steps || []).slice(stepsBefore))
       if (step.sub?.usage) {
-        usageKnown = true;
-        for (const key of Object.keys(usage)) usage[key] += Number(step.sub.usage[key] || 0);
+        tally.usageKnown = true;
+        for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(step.sub.usage[key] || 0);
       }
-    assistant.usage = usageKnown ? usage : null;
+    assistant.usage = tally.usageKnown ? tally.usage : null;
     releaseQuota();
-    accountUsage(profile, assistant, history, conversation, { opened, partialRound: roundOpen, roundStart, steered });
+    accountUsage(profile, assistant, history, conversation, {
+      opened: tally.opened,
+      partialRound: tally.roundOpen,
+      roundStart: tally.roundStart,
+      steered: tally.steered
+    });
     if (requestJobs.get(conversation.id) === job) requestJobs.delete(conversation.id);
     settleSupplements(conversation, assistant, job, profile);
     if (currentId !== conversation.id || view !== "chat") conversation.unread = true;
@@ -8960,6 +8811,177 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     renderSendButtons();
     if (assistant.status === "complete") void maybeAutoTitle(conversation, profile);
   }
+}
+// ---------- 一答的轮次循环：主答、旁注、帮手共用 ----------
+// 请模型开口 → 有工具调用就记成步骤、执行、把结果交回 → 再开口，直到它不再调工具。写到一半断了稍候接着写（同一轮最多两回）；
+// 一轮既没说话也没调工具不算收尾；轮次到顶收回工具，请它就已有结果收尾。
+// 带收件口（inbox，即这一答的 job）的还收补言与后台帮手的回报：补言等落点停下这一轮递上，帮手未回时不收尾、等收件口。
+// 用量记在 tally 上——停了、断了也照样有——由调用方收尾时结算
+function newTally() {
+  return {
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    usageKnown: false,
+    opened: false,
+    roundOpen: false,
+    roundStart: 0,
+    // 最后一段话从哪起：断线接着写的那几轮不算新起，帮手的回报从这里截
+    replyStart: 0,
+    steered: false
+  };
+}
+/**
+ * @param {Message|SubAgent} target 写进哪里：主答、旁注的消息，或帮手
+ * @param {Array<Record<string, any>>} history 送给接口的消息，就地追加
+ * @param {{ profile: Profile, conversation: Conversation, host: Message, signal: AbortSignal, overrides: Record<string, any>,
+ *   tally: ReturnType<typeof newTally>, roundLimit: number, limitPrompt: string, scope?: string, inbox?: any, budget?: number,
+ *   onFrame?: (() => void)|null, onStatus?: (label?: string) => void }} run
+ *   host：步骤画在哪条消息上（帮手的步骤画在主答的差遣卡里）；scope：步骤记上属于哪名帮手；onStatus：网络重试这类状态
+ */
+async function runRounds(target, history, run) {
+  const { profile, conversation, host, signal, overrides, tally, inbox = null } = run,
+    status = run.onStatus || (() => {}),
+    toolCache = new Map();
+  let rounds = 0,
+    resumed = 0,
+    retrying = false;
+  overrides.onRetry = n => {
+    retrying = true;
+    status(`网络不稳 · 第 ${n} 次重试`);
+  };
+  // 这一轮开了头又没写完（断线、补言停下）：花的墨按估算记上
+  const chargePartial = said => {
+    if (!tally.roundOpen) return;
+    const spent = estimateTokens(history) + estimateTokens([{ content: said }]);
+    tally.usage.prompt_tokens += spent;
+    tally.usage.total_tokens += spent;
+    tally.usageKnown = tally.steered = true;
+    tally.roundOpen = false;
+  };
+  for (;;) {
+    target.toolCalls = null;
+    target.usage = null;
+    const roundStart = (tally.roundStart = target.content.length);
+    if (!resumed) tally.replyStart = roundStart;
+    tally.roundOpen = false;
+    // 每一轮自己一个中止器：补言只停这一轮的流，整答的 signal 留给「停止」
+    const round = new AbortController(),
+      stopRound = () => round.abort();
+    signal.addEventListener("abort", stopRound, { once: true });
+    if (inbox) {
+      inbox.round = round;
+      inbox.roundStart = roundStart;
+      inbox.reading = true;
+    }
+    try {
+      await readReply(
+        profile,
+        history,
+        round.signal,
+        overrides,
+        target,
+        false,
+        () => {
+          tally.roundOpen = tally.opened = true;
+          if (retrying) status();
+          retrying = false;
+        },
+        run.onFrame || null
+      );
+      // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾
+      if (!target.content.slice(roundStart).trim() && !target.toolCalls?.some(call => call.name))
+        throw Object.assign(Error("模型本轮未返回正文或工具调用，回复尚未完成"), { midStream: true });
+    } catch (error) {
+      // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
+      if (error.midStream && !signal.aborted && resumed < AUTO_RESUMES) {
+        resumed += 1;
+        const said = target.content.slice(roundStart);
+        chargePartial(said);
+        target.toolCalls = null;
+        if (said.trim()) history.push({ role: "assistant", content: said }, { role: "user", content: prompt("assistant.resume") });
+        status("网络不稳 · 稍候接着写");
+        await restFor(2000 * resumed, signal);
+        status();
+        continue;
+      }
+      if (error.name !== "AbortError" || signal.aborted || !inbox?.queue.length) throw error;
+      // 补言停下的：这一轮写到落点为止，已写的话与补言一起进历史，没执行的工具调用一律作废，随即再开一轮
+      const said = trimToBoundary(target.content.slice(roundStart)).replace(/\n+$/, "");
+      target.content = target.content.slice(0, roundStart) + said;
+      for (const { step } of inbox.queue) if (typeof step.at === "number") step.at = Math.min(step.at, target.content.length);
+      chargePartial(said);
+      target.toolCalls = null;
+      if (said.trim()) history.push({ role: "assistant", content: said });
+      await deliverSupplements(inbox, history, run.budget, host, { steer: true });
+      target.content = paragraphBreak(target.content);
+      continue;
+    } finally {
+      signal.removeEventListener("abort", stopRound);
+      if (inbox) {
+        inbox.reading = false;
+        inbox.round = null;
+        clearInterval(inbox.steerTimer);
+        inbox.steerTimer = 0;
+      }
+    }
+    resumed = 0; // 接续的次数按轮算：长活跑上几百轮，前面断过两回不该让后面再断就没得接
+    if (target.usage) {
+      tally.usageKnown = true;
+      tally.roundOpen = false;
+      for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(target.usage[key] || 0);
+    }
+    const calls = (target.toolCalls || []).filter(call => call.name);
+    if (!calls.length || !overrides.tools) {
+      // 只剩用户的补言时照旧收尾，补言由 settleSupplements 作下一问送出
+      if (!inbox || (!inbox.helpers && !inbox.queue.some(item => item.report !== undefined))) break;
+      // 这一轮说完了，帮手还在后台：不收尾，等收件口——帮手回报或补言，谁先到先递上，再请它开口
+      const said = target.content.slice(roundStart).trim();
+      if (said) history.push({ role: "assistant", content: said });
+      await waitInbox(inbox);
+      await deliverSupplements(inbox, history, run.budget, host);
+      target.content = paragraphBreak(target.content);
+      continue;
+    }
+    // 轮次到顶：不再受理这一批调用，收回工具，让模型就已有结果收尾
+    if (++rounds > run.roundLimit) {
+      const said = target.content.slice(roundStart).trim();
+      if (said) history.push({ role: "assistant", content: said });
+      history.push({ role: "user", content: prompt(run.limitPrompt) });
+      overrides.tools = null;
+      target.content = paragraphBreak(target.content);
+      continue;
+    }
+    // 模型请求调用工具：记成步骤、执行、把结果作为 tool 消息回传，再让模型继续；历史里只带本轮新写的正文，前几轮的已在各自的 assistant 消息里
+    /** @type {Step[]} */
+    const steps = calls.map(call => ({
+      id: call.id || `call_${uid().slice(0, 8)}`,
+      name: call.name,
+      arguments: call.arguments || "{}",
+      status: "running",
+      at: target.content.length,
+      rat: String(target.reasoning || "").length,
+      ...(run.scope ? { scope: run.scope } : {})
+    }));
+    (target.steps ||= []).push(...steps);
+    refreshSteps(host);
+    history.push({
+      role: "assistant",
+      content: target.content.slice(roundStart) || null,
+      tool_calls: steps.map(step => ({ id: step.id, type: "function", function: { name: step.name, arguments: replayArguments(step.arguments) } })),
+      ...(target.thinkingBlocks?.length ? { thinking_blocks: target.thinkingBlocks } : {})
+    });
+    const outcomes = await runSteps(steps, conversation, host, signal, toolCache);
+    for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
+    if (inbox) await deliverSupplements(inbox, history, run.budget, host);
+    target.content = paragraphBreak(target.content);
+  }
+}
+// 收尾：裁掉正文首尾的空行；开头裁了几行，步骤记的偏移一起前移，不然时间线上每段话都错位、被切在字中间
+/** @param {Message|SubAgent} target */
+function trimReply(target) {
+  const lead = target.content.match(/^\n*/)[0].length;
+  target.content = target.content.replace(/^\n+|\n+$/g, "");
+  if (lead) for (const step of target.steps || []) if (typeof step.at === "number") step.at = Math.max(0, step.at - lead);
+  return lead;
 }
 // 向模型要一轮回复，写进 target（正文、思绪、工具调用、用量）：流式按 SSE 逐字进，否则整段一次到
 // onOpen：接口接下请求、开始回话时叫一声——从这一刻起这一轮就在花墨了，中途停止也得记账；onFrame 逐帧交给 readSse（旁注面板用来跟随滚动）
@@ -11205,7 +11227,7 @@ async function runDelegate(step, args, ctx) {
   const tools = toolDefinitions(conversation, { sub: true });
   if (!tools) return { ok: false, content: "此对话里没有可交给帮手的工具", display: "无工具可用" };
   /** @type {SubAgent} */
-  const sub = { id: `sub-${uid()}`, task, content: "", reasoning: "", steps: [], status: "streaming", usage: null, rounds: 0 };
+  const sub = { id: `sub-${uid()}`, task, content: "", reasoning: "", steps: [], status: "streaming", usage: null };
   step.sub = sub;
   const history = [{ role: "user", content: task }];
   const overrides = {
@@ -11216,8 +11238,7 @@ async function runDelegate(step, args, ctx) {
     head: history.length,
     onFold: busy => job && setJobLabel(conversation, job, busy ? "帮手整理上下文" : "")
   };
-  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-    toolCache = new Map(),
+  const tally = newTally(),
     started = performance.now();
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
   let painted = "";
@@ -11228,62 +11249,20 @@ async function runDelegate(step, args, ctx) {
     refreshSteps(assistant);
   };
   const ticker = setInterval(paint, 350);
-  let reportStart = 0,
-    failure = "",
-    resumed = 0;
+  let failure = "";
   try {
-    for (;;) {
-      sub.toolCalls = null;
-      sub.usage = null;
-      const roundStart = sub.content.length;
-      if (!resumed) reportStart = roundStart;
-      try {
-        await readReply(profile, history, signal, overrides, sub);
-      } catch (error) {
-        // 与主答一样：写到一半断了，稍候接着写，最多两回
-        if (!error.midStream || signal.aborted || resumed >= AUTO_RESUMES) throw error;
-        resumed += 1;
-        const said = sub.content.slice(roundStart);
-        sub.toolCalls = null;
-        if (said.trim()) history.push({ role: "assistant", content: said }, { role: "user", content: prompt("assistant.resume") });
-        await restFor(2000 * resumed, signal);
-        continue;
-      }
-      resumed = 0;
-      if (sub.usage) for (const key of Object.keys(usage)) usage[key] += Number(sub.usage[key] || 0);
-      const calls = (sub.toolCalls || []).filter(call => call.name);
-      if (!calls.length || !overrides.tools) break;
-      // 进 history 的只是这一轮新写的：断线前那截在接续时已经单独进过 history 了（reportStart 管的是回报，续写前的也算在内）
-      if (++sub.rounds > subRoundLimit()) {
-        const said = sub.content.slice(roundStart).trim();
-        if (said) history.push({ role: "assistant", content: said });
-        history.push({ role: "user", content: prompt("delegate.limit") });
-        overrides.tools = null;
-        sub.content = paragraphBreak(sub.content);
-        continue;
-      }
-      /** @type {Step[]} */
-      const steps = calls.map(call => ({
-        id: call.id || `call_${uid().slice(0, 8)}`,
-        name: call.name,
-        arguments: call.arguments || "{}",
-        status: "running",
-        at: sub.content.length,
-        rat: String(sub.reasoning || "").length,
-        scope: sub.id
-      }));
-      sub.steps.push(...steps);
-      refreshSteps(assistant);
-      history.push({
-        role: "assistant",
-        content: sub.content.slice(roundStart) || null,
-        tool_calls: steps.map(s => ({ id: s.id, type: "function", function: { name: s.name, arguments: replayArguments(s.arguments) } })),
-        ...(sub.thinkingBlocks?.length ? { thinking_blocks: sub.thinkingBlocks } : {})
-      });
-      const outcomes = await runSteps(steps, conversation, assistant, signal, toolCache);
-      for (const s of steps) history.push({ role: "tool", tool_call_id: s.id, content: outcomes.get(s.id) ?? "" });
-      sub.content = paragraphBreak(sub.content);
-    }
+    // 与主答同一个轮次循环；步骤记在帮手身上、画在主答的差遣卡里
+    await runRounds(sub, history, {
+      profile,
+      conversation,
+      host: assistant,
+      signal,
+      overrides,
+      tally,
+      roundLimit: subRoundLimit(),
+      limitPrompt: "delegate.limit",
+      scope: sub.id
+    });
     sub.status = "complete";
   } catch (error) {
     if (error.name === "AbortError") {
@@ -11294,14 +11273,11 @@ async function runDelegate(step, args, ctx) {
     failure = friendlyError(String(error.message || error));
   } finally {
     clearInterval(ticker);
-    sub.usage = usage.total_tokens ? usage : null;
+    sub.usage = tally.usageKnown ? tally.usage : null;
     sub.durationMs = Math.round(performance.now() - started);
-    sub.report = sub.content.slice(reportStart).trim();
-    // 裁掉开头的空行就得把步骤记的偏移一起前移，否则帮手那条时间线上每一段话都错位、被切在字中间
-    // （主循环里是补偿了的，见 streamReply 的 leadTrim）
-    const leadTrim = sub.content.match(/^\n*/)[0].length;
-    sub.content = sub.content.replace(/^\n+|\n+$/g, "");
-    if (leadTrim) for (const s of sub.steps) if (typeof s.at === "number") s.at = Math.max(0, s.at - leadTrim);
+    // 回报是最后一段话；裁掉开头的空行，偏移跟着前移
+    const lead = trimReply(sub);
+    sub.report = sub.content.slice(Math.max(0, tally.replyStart - lead)).trim();
     paint();
   }
   const changed = subChangedPaths(step),

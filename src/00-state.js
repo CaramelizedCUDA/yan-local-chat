@@ -33,7 +33,6 @@
  * @property {Step[]} steps
  * @property {"streaming"|"complete"|"stopped"|"error"} status
  * @property {Usage|null} usage
- * @property {number} rounds
  * @property {{ thinking: string, signature: string }[]|null} [thinkingBlocks]
  * @property {string} [report] 最后一轮说的话，即交回主模型的回报
  * @property {number} [durationMs]

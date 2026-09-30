@@ -73,7 +73,7 @@ async function runDelegate(step, args, ctx) {
   const tools = toolDefinitions(conversation, { sub: true });
   if (!tools) return { ok: false, content: "此对话里没有可交给帮手的工具", display: "无工具可用" };
   /** @type {SubAgent} */
-  const sub = { id: `sub-${uid()}`, task, content: "", reasoning: "", steps: [], status: "streaming", usage: null, rounds: 0 };
+  const sub = { id: `sub-${uid()}`, task, content: "", reasoning: "", steps: [], status: "streaming", usage: null };
   step.sub = sub;
   const history = [{ role: "user", content: task }];
   const overrides = {
@@ -84,8 +84,7 @@ async function runDelegate(step, args, ctx) {
     head: history.length,
     onFold: busy => job && setJobLabel(conversation, job, busy ? "帮手整理上下文" : "")
   };
-  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-    toolCache = new Map(),
+  const tally = newTally(),
     started = performance.now();
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
   let painted = "";
@@ -96,62 +95,20 @@ async function runDelegate(step, args, ctx) {
     refreshSteps(assistant);
   };
   const ticker = setInterval(paint, 350);
-  let reportStart = 0,
-    failure = "",
-    resumed = 0;
+  let failure = "";
   try {
-    for (;;) {
-      sub.toolCalls = null;
-      sub.usage = null;
-      const roundStart = sub.content.length;
-      if (!resumed) reportStart = roundStart;
-      try {
-        await readReply(profile, history, signal, overrides, sub);
-      } catch (error) {
-        // 与主答一样：写到一半断了，稍候接着写，最多两回
-        if (!error.midStream || signal.aborted || resumed >= AUTO_RESUMES) throw error;
-        resumed += 1;
-        const said = sub.content.slice(roundStart);
-        sub.toolCalls = null;
-        if (said.trim()) history.push({ role: "assistant", content: said }, { role: "user", content: prompt("assistant.resume") });
-        await restFor(2000 * resumed, signal);
-        continue;
-      }
-      resumed = 0;
-      if (sub.usage) for (const key of Object.keys(usage)) usage[key] += Number(sub.usage[key] || 0);
-      const calls = (sub.toolCalls || []).filter(call => call.name);
-      if (!calls.length || !overrides.tools) break;
-      // 进 history 的只是这一轮新写的：断线前那截在接续时已经单独进过 history 了（reportStart 管的是回报，续写前的也算在内）
-      if (++sub.rounds > subRoundLimit()) {
-        const said = sub.content.slice(roundStart).trim();
-        if (said) history.push({ role: "assistant", content: said });
-        history.push({ role: "user", content: prompt("delegate.limit") });
-        overrides.tools = null;
-        sub.content = paragraphBreak(sub.content);
-        continue;
-      }
-      /** @type {Step[]} */
-      const steps = calls.map(call => ({
-        id: call.id || `call_${uid().slice(0, 8)}`,
-        name: call.name,
-        arguments: call.arguments || "{}",
-        status: "running",
-        at: sub.content.length,
-        rat: String(sub.reasoning || "").length,
-        scope: sub.id
-      }));
-      sub.steps.push(...steps);
-      refreshSteps(assistant);
-      history.push({
-        role: "assistant",
-        content: sub.content.slice(roundStart) || null,
-        tool_calls: steps.map(s => ({ id: s.id, type: "function", function: { name: s.name, arguments: replayArguments(s.arguments) } })),
-        ...(sub.thinkingBlocks?.length ? { thinking_blocks: sub.thinkingBlocks } : {})
-      });
-      const outcomes = await runSteps(steps, conversation, assistant, signal, toolCache);
-      for (const s of steps) history.push({ role: "tool", tool_call_id: s.id, content: outcomes.get(s.id) ?? "" });
-      sub.content = paragraphBreak(sub.content);
-    }
+    // 与主答同一个轮次循环；步骤记在帮手身上、画在主答的差遣卡里
+    await runRounds(sub, history, {
+      profile,
+      conversation,
+      host: assistant,
+      signal,
+      overrides,
+      tally,
+      roundLimit: subRoundLimit(),
+      limitPrompt: "delegate.limit",
+      scope: sub.id
+    });
     sub.status = "complete";
   } catch (error) {
     if (error.name === "AbortError") {
@@ -162,14 +119,11 @@ async function runDelegate(step, args, ctx) {
     failure = friendlyError(String(error.message || error));
   } finally {
     clearInterval(ticker);
-    sub.usage = usage.total_tokens ? usage : null;
+    sub.usage = tally.usageKnown ? tally.usage : null;
     sub.durationMs = Math.round(performance.now() - started);
-    sub.report = sub.content.slice(reportStart).trim();
-    // 裁掉开头的空行就得把步骤记的偏移一起前移，否则帮手那条时间线上每一段话都错位、被切在字中间
-    // （主循环里是补偿了的，见 streamReply 的 leadTrim）
-    const leadTrim = sub.content.match(/^\n*/)[0].length;
-    sub.content = sub.content.replace(/^\n+|\n+$/g, "");
-    if (leadTrim) for (const s of sub.steps) if (typeof s.at === "number") s.at = Math.max(0, s.at - leadTrim);
+    // 回报是最后一段话；裁掉开头的空行，偏移跟着前移
+    const lead = trimReply(sub);
+    sub.report = sub.content.slice(Math.max(0, tally.replyStart - lead)).trim();
     paint();
   }
   const changed = subChangedPaths(step),
