@@ -66,7 +66,12 @@ function saveConfigNow({ force = false } = {}) {
     })
     .catch(error => {
       if (unloading) return;
-      if (!configSaveFailures) toast(`配置尚未写入存储目录，稍后重试：${String(error.message || error).slice(0, 60)}`);
+      if (!configSaveFailures)
+        toast(
+          bridgeTimedOut(error)
+            ? "本机桥接响应超时，配置仍在本页，稍后自动重试"
+            : `配置尚未写入存储目录，稍后重试：${String(error.message || error).slice(0, 60)}`
+        );
       configSaveFailures += 1;
       clearTimeout(configSaveTimer);
       configSaveTimer = setTimeout(saveConfigNow, Math.min(5000 * 2 ** Math.min(configSaveFailures - 1, 4), 60000));

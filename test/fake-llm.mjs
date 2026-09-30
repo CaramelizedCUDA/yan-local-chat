@@ -106,6 +106,14 @@ http
       const msgs = payload.messages || [],
         toolResults = msgs.filter(m => m.role === "tool");
       const lastUser = [...msgs].reverse().find(m => m.role === "user")?.content || "";
+      // 多任务压力用例：占着流连接，直到测试结束或请求取消。
+      if (typeof lastUser === "string" && lastUser.includes("HOLDSTREAM")) {
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify(delta({ content: "已接通" }))}\n\n`);
+        const timer = setTimeout(() => res.end("data: [DONE]\n\n"), 8000);
+        res.on("close", () => clearTimeout(timer));
+        return;
+      }
       // 学有的中转：回传的工具调用参数逐个当 JSON 解析，有一个坏的整个请求就报错（页面得回传合法的 JSON 对象）
       for (const call of msgs.flatMap(m => m.tool_calls || []))
         try {

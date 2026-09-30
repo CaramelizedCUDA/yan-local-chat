@@ -38,6 +38,7 @@ const stubs = {
   localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
   matchMedia: media,
   navigator: { onLine: true },
+  location: { protocol: "http:", hostname: "127.0.0.1" },
   innerWidth: 1200,
   innerHeight: 800,
   requestAnimationFrame: noop,

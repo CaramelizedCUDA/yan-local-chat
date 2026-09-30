@@ -57,8 +57,25 @@ function jsonRoute(handle, describe = errorText) {
 // 先写临时文件再改名：写到一半断电、进程被杀，正本也不会只剩半截
 function writeAtomic(file, data) {
   const temp = `${file}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`;
-  fs.writeFileSync(temp, data, typeof data === "string" ? "utf8" : undefined);
-  fs.renameSync(temp, file);
+  try {
+    fs.writeFileSync(temp, data, typeof data === "string" ? "utf8" : undefined);
+    // Windows 上目标文件被索引器或杀毒程序短暂打开时，替换可能报 EPERM / EBUSY。
+    // 等几个很短的间隔再试同一份临时文件；永久错误仍原样交给调用方。
+    const wait = new Int32Array(new SharedArrayBuffer(4));
+    for (let attempt = 0; ; attempt++)
+      try {
+        fs.renameSync(temp, file);
+        break;
+      } catch (error) {
+        if (attempt >= 3 || !["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
+        Atomics.wait(wait, 0, 0, 15 * 2 ** attempt);
+      }
+  } catch (error) {
+    try {
+      fs.rmSync(temp, { force: true });
+    } catch {}
+    throw error;
+  }
 }
 
 // 交给页面看的文件（卷宗、附件原件）：类型按扩展名定。网页、SVG、脚本一律当纯文本——文件是模型写的或随手拖进来的，

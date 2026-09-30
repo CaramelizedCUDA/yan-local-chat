@@ -34,6 +34,28 @@ for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 250));
   }
 }
+const chatBases = (await (await fetch(BASE + "/api/bootstrap")).json()).chatBases || [];
+check("model streams have three separate loopback ports", chatBases.length === 3 && chatBases.every(base => new URL(base).hostname === "127.0.0.1"));
+for (const base of chatBases) {
+  let response = await fetch(base + "/api/work/prepare", { method: "POST" });
+  check("model stream port cannot reach work routes", response.status === 404, String(response.status));
+  response = await fetch(base + "/api/chat", { method: "OPTIONS", headers: { Origin: BASE, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
+  check("own page can preflight the model stream port", response.status === 204 && response.headers.get("access-control-allow-origin") === BASE, String(response.status));
+  response = await fetch(base + "/api/chat", { method: "POST", headers: { Origin: "https://evil.example", "Content-Type": "application/json" }, body: "{}" });
+  check("foreign origin cannot use the model stream port", response.status === 403, String(response.status));
+}
+if (chatBases.length) {
+  const port = Number(new URL(chatBases[0]).port);
+  const status = await new Promise(resolve => {
+    const request = http.request({ host: "127.0.0.1", port, path: "/api/chat", headers: { Host: `evil.example:${port}` } }, response => {
+      response.resume();
+      resolve(response.statusCode);
+    });
+    request.on("error", () => resolve(0));
+    request.end();
+  });
+  check("model stream port rejects DNS rebinding hosts", status === 421, String(status));
+}
 const win = process.platform === "win32",
   workdir = WORK.split("/").join(win ? "\\" : "/");
 // 静态服务只给页面资源：仓库源码、测试与 .git 即使同在服务根目录，也不能被其他本地网页读走。

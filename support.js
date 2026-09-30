@@ -423,18 +423,82 @@ let imageViewerAttachmentId = null,
   // ---- 01-store/00-records.js ----
 // 言 · 本地存储 · 记录：调桥接的口子、结构迁移、各类数据的规整
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 模型流走独立端口后，主桥接可同时跑四件工具，仍留连接给发送、配置与对话存储。
+// 多个任务排队时，先给当前占用更少的任务；同一任务的帮手共用停止信号，也共用这份公平调度。
+function bridgeToolLimit() {
+  return apiBase === "" && servedByBridge() && bootstrap.chatBases?.length ? 4 : 2;
+}
+let bridgeToolsActive = 0;
+const bridgeToolQueue = [];
+const bridgeToolsBySignal = new Map();
+function startBridgeTool(signal) {
+  bridgeToolsActive += 1;
+  bridgeToolsBySignal.set(signal, (bridgeToolsBySignal.get(signal) || 0) + 1);
+}
+function reserveBridgeTool(signal) {
+  if (signal?.aborted) return Promise.reject(signal.reason || Error("已停止"));
+  if (bridgeToolsActive < bridgeToolLimit()) {
+    startBridgeTool(signal);
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const queued = {
+      signal,
+      start: () => {
+        signal?.removeEventListener("abort", abort);
+        startBridgeTool(signal);
+        resolve();
+      }
+    };
+    const abort = () => {
+      const index = bridgeToolQueue.indexOf(queued);
+      if (index >= 0) bridgeToolQueue.splice(index, 1);
+      reject(signal.reason || Error("已停止"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    bridgeToolQueue.push(queued);
+  });
+}
+function releaseBridgeTool(signal) {
+  bridgeToolsActive -= 1;
+  const count = bridgeToolsBySignal.get(signal) || 0;
+  if (count <= 1) bridgeToolsBySignal.delete(signal);
+  else bridgeToolsBySignal.set(signal, count - 1);
+  // 已排队的另一段对话优先获得空位，不让一段长活的几十个步骤把别的任务压在后面。
+  if (!bridgeToolQueue.length || bridgeToolsActive >= bridgeToolLimit()) return;
+  let choice = 0,
+    least = Infinity;
+  for (let i = 0; i < bridgeToolQueue.length; i++) {
+    const active = bridgeToolsBySignal.get(bridgeToolQueue[i].signal) || 0;
+    if (active < least) {
+      choice = i;
+      least = active;
+    }
+  }
+  bridgeToolQueue.splice(choice, 1)[0].start();
+}
+function bridgeTimedOut(error) {
+  return error?.name === "TimeoutError" || /signal timed out/i.test(String(error?.message || error));
+}
 // 调本机桥接：存储、卷宗、工具都走这一个口子；桥接回的错误是一句话，原样抛出（状态码与回来的内容挂在 status / data 上）
 async function bridge(path, payload, signal) {
   if (apiBase === null) throw Error("本机工具需要本机桥接");
-  const response = await fetch(`${apiBase}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
-  return data;
+  const toolRequest = !/^\/api\/(?:work\/prepare|store\/|chats\/|mcp\/list)/.test(path);
+  if (toolRequest) await reserveBridgeTool(signal);
+  try {
+    const base = toolRequest && apiBase === "" && servedByBridge() ? bootstrap.toolBase || apiBase : apiBase;
+    const response = await fetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
+    return data;
+  } finally {
+    if (toolRequest) releaseBridgeTool(signal);
+  }
 }
 
 // 结构迁移按版本递增：老数据按字段补默认值，不清空；将来调整结构时在 migrateStoreVx 里写迁移
@@ -809,7 +873,12 @@ function saveConfigNow({ force = false } = {}) {
     })
     .catch(error => {
       if (unloading) return;
-      if (!configSaveFailures) toast(`配置尚未写入存储目录，稍后重试：${String(error.message || error).slice(0, 60)}`);
+      if (!configSaveFailures)
+        toast(
+          bridgeTimedOut(error)
+            ? "本机桥接响应超时，配置仍在本页，稍后自动重试"
+            : `配置尚未写入存储目录，稍后重试：${String(error.message || error).slice(0, 60)}`
+        );
       configSaveFailures += 1;
       clearTimeout(configSaveTimer);
       configSaveTimer = setTimeout(saveConfigNow, Math.min(5000 * 2 ** Math.min(configSaveFailures - 1, 4), 60000));
@@ -4715,8 +4784,9 @@ function syncTrailGroupReasoning(host, message, group) {
     details = host.querySelector(":scope > .reasoning");
   if (!text) return details?.remove();
   if (!details) return host.insertAdjacentHTML("afterbegin", trailReasoningHtml(message, group));
-  const body = details.querySelector(".reasoning-body");
+  const body = /** @type {HTMLElement & { _paintedThought?: string }} */ (details.querySelector(".reasoning-body"));
   if (body.textContent !== text) body.textContent = text;
+  body._paintedThought = text;
   details.dataset.state = "done";
   delete details.dataset.roundLive;
   if (details.open && !details.dataset.touched) settleDetails(details, false);
@@ -6686,8 +6756,10 @@ function renderSendButtons() {
     stop = running && !has;
   document.querySelectorAll(".send-trigger").forEach(b => {
     sealGlyph(b, stop);
-    b.title = elsewhere
-      ? "另一个页面正在这段对话里作答，这里跟着看"
+    b.title = sendPreparing
+      ? "正在准备发送"
+      : elsewhere
+        ? "另一个页面正在这段对话里作答，这里跟着看"
       : stop
         ? "停止生成"
         : running
@@ -6695,7 +6767,8 @@ function renderSendButtons() {
           : "发送";
     b.classList.toggle("stop-btn", stop);
     b.classList.toggle("empty", !running && !has);
-    b.disabled = !running && ended;
+    b.disabled = sendPreparing || (!running && ended);
+    b.setAttribute("aria-busy", String(sendPreparing));
   });
   const input = $("#chatInput");
   if (input && !input.disabled) input.placeholder = "续言于此"; // 生成中也不换提示语，能插言这件事由印上的「寄」示意
@@ -8414,7 +8487,10 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
   }
   return { role: "user", content };
 }
+// 准备工作目录或重连桥接时还没有生成任务；这段等待里再次点发送不能再起一问。
+let sendPreparing = false;
 async function sendOrStop() {
+  if (sendPreparing) return;
   // 作答途中：输入框里有话就是补言，递给正在作答的模型；空着才是停止
   if (conversationRunning()) return composerHasContent() ? sendSupplement() : stopGeneration();
   // 另一个页面正在这段对话里作答：这边只跟着看，写完再说（话留在输入框里）
@@ -8422,59 +8498,66 @@ async function sendOrStop() {
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
   const text = input.value.trim();
   if (!text && !pendingAttachments.length && !pendingQuote) return;
-  let profile = activeProfile();
-  if (!profile) {
-    toast("请先接入模型");
-    return openSettings("models");
-  }
-  if (profile.tools !== false && apiBase === null) {
-    await ensureLocalBridge();
-    profile = activeProfile() || profile;
-  }
-  if (quotaBlocked(profile)) {
-    if (currentConversation()) renderConversation();
-    toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候或调高上限");
-    return;
-  }
-  const sendingDraftKey = draftKey();
-  let c = currentConversation();
-  if (c && !(await ensureWorkReady(c))) return;
-  if (!c) {
-    const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
-    if (pending) {
-      // 行：先把工作目录立起来，立不起来就不发
-      if (profile.tools === false) {
-        toast("当前模型已关闭本机工具，请在模型高级配置中开启");
-        return;
-      }
-      if (apiBase === null && !(await ensureLocalBridge())) {
-        toast("执事需要本机桥接，请先运行 start.cmd");
-        return;
-      }
+  sendPreparing = true;
+  renderSendButtons();
+  try {
+    let profile = activeProfile();
+    if (!profile) {
+      toast("请先接入模型");
+      return openSettings("models");
     }
-    c = {
-      id: uid(),
-      title: titleFrom(text || pendingQuote?.text || "", pendingAttachments),
-      forks: [],
-      threads: [],
-      createdAt: now(),
-      updatedAt: now(),
-      profileId: profile.id,
-      messages: [],
-      workdir: pending,
-      presetId: presetOf(null)?.id || "",
-      groupId: pendingGroup()?.id || "",
-      commandPolicy: normalizeCommandPolicy(presetOf(null)?.policy || store.settings.commandPolicyDefault),
-      reasoning: normalizeReasoning(profile.reasoning)
-    };
-    if (!(await ensureWorkReady(c))) return;
-    delete store.settings.pendingGroupId;
-    closeChipPop();
-    store.conversations.unshift(c);
-    currentId = c.id;
+    if (profile.tools !== false && apiBase === null) {
+      await ensureLocalBridge();
+      profile = activeProfile() || profile;
+    }
+    if (quotaBlocked(profile)) {
+      if (currentConversation()) renderConversation();
+      toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候或调高上限");
+      return;
+    }
+    const sendingDraftKey = draftKey();
+    let c = currentConversation();
+    if (c && !(await ensureWorkReady(c))) return;
+    if (!c) {
+      const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
+      if (pending) {
+        // 行：先把工作目录立起来，立不起来就不发
+        if (profile.tools === false) {
+          toast("当前模型已关闭本机工具，请在模型高级配置中开启");
+          return;
+        }
+        if (apiBase === null && !(await ensureLocalBridge())) {
+          toast("执事需要本机桥接，请先运行 start.cmd");
+          return;
+        }
+      }
+      c = {
+        id: uid(),
+        title: titleFrom(text || pendingQuote?.text || "", pendingAttachments),
+        forks: [],
+        threads: [],
+        createdAt: now(),
+        updatedAt: now(),
+        profileId: profile.id,
+        messages: [],
+        workdir: pending,
+        presetId: presetOf(null)?.id || "",
+        groupId: pendingGroup()?.id || "",
+        commandPolicy: normalizeCommandPolicy(presetOf(null)?.policy || store.settings.commandPolicyDefault),
+        reasoning: normalizeReasoning(profile.reasoning)
+      };
+      if (!(await ensureWorkReady(c))) return;
+      delete store.settings.pendingGroupId;
+      closeChipPop();
+      store.conversations.unshift(c);
+      currentId = c.id;
+    }
+    const user = takeComposer(input, sendingDraftKey);
+    return startTurn(c, user, profile);
+  } finally {
+    sendPreparing = false;
+    renderSendButtons();
   }
-  const user = takeComposer(input, sendingDraftKey);
-  await startTurn(c, user, profile);
 }
 // 把案上的东西（话、附件、引文）收成一条用户消息，输入框与草稿随之清空
 /** @returns {Message} */
@@ -10281,7 +10364,11 @@ async function ensureWorkReady(conversation) {
     if (prepared.created) toast("工作目录不存在，已新建");
     conversation.workdir = prepared.workdir;
   } catch (error) {
-    toast(`工作目录不可用：${String(error.message || error)}`);
+    toast(
+      bridgeTimedOut(error)
+        ? "本机桥接响应超时，消息未发送，文字仍在输入框"
+        : `工作目录不可用：${String(error.message || error)}`
+    );
     return false;
   }
   return true;
@@ -11564,6 +11651,14 @@ async function describeResponseError(response) {
     `请求失败（${response.status}）`
   );
 }
+// 桥接直开的页面把长时间占连接的模型流轮流送到独立端口；VS Code Webview 等环境仍用原来的桥接地址。
+let chatLaneCursor = Math.floor(Math.random() * 0x7fffffff);
+function chatRelayBase() {
+  const lanes = bootstrap.chatBases;
+  return apiBase === "" && servedByBridge() && Array.isArray(lanes) && lanes.length
+    ? lanes[chatLaneCursor++ % lanes.length]
+    : apiBase;
+}
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
   const parameters = {
@@ -11585,7 +11680,7 @@ async function requestChat(profile, messages, signal, overrides = {}) {
     ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
   if (apiBase !== null)
-    return fetch(`${apiBase}/api/chat`, {
+    return fetch(`${chatRelayBase()}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }),
@@ -11696,8 +11791,15 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
         details = host.querySelector(":scope > .reasoning");
         details.classList.add("is-new");
       }
-      const body = details.querySelector(".reasoning-body");
-      body.textContent = thought;
+      const body = /** @type {HTMLElement & { _paintedThought?: string }} */ (details.querySelector(".reasoning-body"));
+      // 思绪可能已积累几十万字；每帧替换整块文本会卡住输入与发送。
+      const painted = body._paintedThought ?? body.textContent;
+      if (painted !== thought) {
+        const tail = /** @type {Text|null} */ (body.lastChild);
+        if (thought.startsWith(painted) && tail?.nodeType === Node.TEXT_NODE) tail.appendData(thought.slice(painted.length));
+        else body.textContent = thought;
+      }
+      body._paintedThought = thought;
       // 按轮判断在写与否；新一轮的思绪来了就再摊开，正文起笔即收——与行迹一样：运行中打开，运行完关闭
       const live = reasoningLive({ ...assistant, content: visible });
       details.dataset.state = live ? "live" : "done";

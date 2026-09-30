@@ -6,7 +6,7 @@
 //   close()        主动收掉
 // stdio：本机起一个进程，逐行一条 JSON；http：可流式的 HTTP（每次 POST，回的是 JSON 或一段事件流）；sse：旧式 HTTP+SSE（先 GET 一条事件流拿到投递地址）
 "use strict";
-const { spawn, execFileSync } = require("node:child_process");
+const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -85,8 +85,18 @@ class StdioTransport {
     // 服务可能又起了子进程：Windows 上连同整棵进程树一起结束
     if (process.platform === "win32") {
       try {
-        execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
-      } catch {}
+        const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true
+        });
+        killer.on("error", () => child.kill());
+        killer.on("close", code => {
+          if (code !== 0 && child.exitCode === null) child.kill();
+        });
+        killer.unref();
+      } catch {
+        child.kill();
+      }
     } else child.kill();
   }
 }

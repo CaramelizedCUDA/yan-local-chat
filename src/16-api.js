@@ -259,6 +259,14 @@ async function describeResponseError(response) {
     `请求失败（${response.status}）`
   );
 }
+// 桥接直开的页面把长时间占连接的模型流轮流送到独立端口；VS Code Webview 等环境仍用原来的桥接地址。
+let chatLaneCursor = Math.floor(Math.random() * 0x7fffffff);
+function chatRelayBase() {
+  const lanes = bootstrap.chatBases;
+  return apiBase === "" && servedByBridge() && Array.isArray(lanes) && lanes.length
+    ? lanes[chatLaneCursor++ % lanes.length]
+    : apiBase;
+}
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
   const parameters = {
@@ -280,7 +288,7 @@ async function requestChat(profile, messages, signal, overrides = {}) {
     ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
   if (apiBase !== null)
-    return fetch(`${apiBase}/api/chat`, {
+    return fetch(`${chatRelayBase()}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }),
@@ -391,8 +399,15 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
         details = host.querySelector(":scope > .reasoning");
         details.classList.add("is-new");
       }
-      const body = details.querySelector(".reasoning-body");
-      body.textContent = thought;
+      const body = /** @type {HTMLElement & { _paintedThought?: string }} */ (details.querySelector(".reasoning-body"));
+      // 思绪可能已积累几十万字；每帧替换整块文本会卡住输入与发送。
+      const painted = body._paintedThought ?? body.textContent;
+      if (painted !== thought) {
+        const tail = /** @type {Text|null} */ (body.lastChild);
+        if (thought.startsWith(painted) && tail?.nodeType === Node.TEXT_NODE) tail.appendData(thought.slice(painted.length));
+        else body.textContent = thought;
+      }
+      body._paintedThought = thought;
       // 按轮判断在写与否；新一轮的思绪来了就再摊开，正文起笔即收——与行迹一样：运行中打开，运行完关闭
       const live = reasoningLive({ ...assistant, content: visible });
       details.dataset.state = live ? "live" : "done";

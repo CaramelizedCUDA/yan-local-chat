@@ -239,7 +239,11 @@ async function ensureWorkReady(conversation) {
     if (prepared.created) toast("工作目录不存在，已新建");
     conversation.workdir = prepared.workdir;
   } catch (error) {
-    toast(`工作目录不可用：${String(error.message || error)}`);
+    toast(
+      bridgeTimedOut(error)
+        ? "本机桥接响应超时，消息未发送，文字仍在输入框"
+        : `工作目录不可用：${String(error.message || error)}`
+    );
     return false;
   }
   return true;

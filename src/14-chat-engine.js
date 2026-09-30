@@ -107,7 +107,10 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
   }
   return { role: "user", content };
 }
+// 准备工作目录或重连桥接时还没有生成任务；这段等待里再次点发送不能再起一问。
+let sendPreparing = false;
 async function sendOrStop() {
+  if (sendPreparing) return;
   // 作答途中：输入框里有话就是补言，递给正在作答的模型；空着才是停止
   if (conversationRunning()) return composerHasContent() ? sendSupplement() : stopGeneration();
   // 另一个页面正在这段对话里作答：这边只跟着看，写完再说（话留在输入框里）
@@ -115,59 +118,66 @@ async function sendOrStop() {
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
   const text = input.value.trim();
   if (!text && !pendingAttachments.length && !pendingQuote) return;
-  let profile = activeProfile();
-  if (!profile) {
-    toast("请先接入模型");
-    return openSettings("models");
-  }
-  if (profile.tools !== false && apiBase === null) {
-    await ensureLocalBridge();
-    profile = activeProfile() || profile;
-  }
-  if (quotaBlocked(profile)) {
-    if (currentConversation()) renderConversation();
-    toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候或调高上限");
-    return;
-  }
-  const sendingDraftKey = draftKey();
-  let c = currentConversation();
-  if (c && !(await ensureWorkReady(c))) return;
-  if (!c) {
-    const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
-    if (pending) {
-      // 行：先把工作目录立起来，立不起来就不发
-      if (profile.tools === false) {
-        toast("当前模型已关闭本机工具，请在模型高级配置中开启");
-        return;
-      }
-      if (apiBase === null && !(await ensureLocalBridge())) {
-        toast("执事需要本机桥接，请先运行 start.cmd");
-        return;
-      }
+  sendPreparing = true;
+  renderSendButtons();
+  try {
+    let profile = activeProfile();
+    if (!profile) {
+      toast("请先接入模型");
+      return openSettings("models");
     }
-    c = {
-      id: uid(),
-      title: titleFrom(text || pendingQuote?.text || "", pendingAttachments),
-      forks: [],
-      threads: [],
-      createdAt: now(),
-      updatedAt: now(),
-      profileId: profile.id,
-      messages: [],
-      workdir: pending,
-      presetId: presetOf(null)?.id || "",
-      groupId: pendingGroup()?.id || "",
-      commandPolicy: normalizeCommandPolicy(presetOf(null)?.policy || store.settings.commandPolicyDefault),
-      reasoning: normalizeReasoning(profile.reasoning)
-    };
-    if (!(await ensureWorkReady(c))) return;
-    delete store.settings.pendingGroupId;
-    closeChipPop();
-    store.conversations.unshift(c);
-    currentId = c.id;
+    if (profile.tools !== false && apiBase === null) {
+      await ensureLocalBridge();
+      profile = activeProfile() || profile;
+    }
+    if (quotaBlocked(profile)) {
+      if (currentConversation()) renderConversation();
+      toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候或调高上限");
+      return;
+    }
+    const sendingDraftKey = draftKey();
+    let c = currentConversation();
+    if (c && !(await ensureWorkReady(c))) return;
+    if (!c) {
+      const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
+      if (pending) {
+        // 行：先把工作目录立起来，立不起来就不发
+        if (profile.tools === false) {
+          toast("当前模型已关闭本机工具，请在模型高级配置中开启");
+          return;
+        }
+        if (apiBase === null && !(await ensureLocalBridge())) {
+          toast("执事需要本机桥接，请先运行 start.cmd");
+          return;
+        }
+      }
+      c = {
+        id: uid(),
+        title: titleFrom(text || pendingQuote?.text || "", pendingAttachments),
+        forks: [],
+        threads: [],
+        createdAt: now(),
+        updatedAt: now(),
+        profileId: profile.id,
+        messages: [],
+        workdir: pending,
+        presetId: presetOf(null)?.id || "",
+        groupId: pendingGroup()?.id || "",
+        commandPolicy: normalizeCommandPolicy(presetOf(null)?.policy || store.settings.commandPolicyDefault),
+        reasoning: normalizeReasoning(profile.reasoning)
+      };
+      if (!(await ensureWorkReady(c))) return;
+      delete store.settings.pendingGroupId;
+      closeChipPop();
+      store.conversations.unshift(c);
+      currentId = c.id;
+    }
+    const user = takeComposer(input, sendingDraftKey);
+    return startTurn(c, user, profile);
+  } finally {
+    sendPreparing = false;
+    renderSendButtons();
   }
-  const user = takeComposer(input, sendingDraftKey);
-  await startTurn(c, user, profile);
 }
 // 把案上的东西（话、附件、引文）收成一条用户消息，输入框与草稿随之清空
 /** @returns {Message} */

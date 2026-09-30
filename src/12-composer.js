@@ -20,8 +20,10 @@ function renderSendButtons() {
     stop = running && !has;
   document.querySelectorAll(".send-trigger").forEach(b => {
     sealGlyph(b, stop);
-    b.title = elsewhere
-      ? "另一个页面正在这段对话里作答，这里跟着看"
+    b.title = sendPreparing
+      ? "正在准备发送"
+      : elsewhere
+        ? "另一个页面正在这段对话里作答，这里跟着看"
       : stop
         ? "停止生成"
         : running
@@ -29,7 +31,8 @@ function renderSendButtons() {
           : "发送";
     b.classList.toggle("stop-btn", stop);
     b.classList.toggle("empty", !running && !has);
-    b.disabled = !running && ended;
+    b.disabled = sendPreparing || (!running && ended);
+    b.setAttribute("aria-busy", String(sendPreparing));
   });
   const input = $("#chatInput");
   if (input && !input.disabled) input.placeholder = "续言于此"; // 生成中也不换提示语，能插言这件事由印上的「寄」示意

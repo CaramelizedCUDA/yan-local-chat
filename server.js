@@ -29,6 +29,11 @@ const WEB = require("./server/web.js");
 const ROOT = __dirname;
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.YAN_PORT || 8787);
+// 模型流会长时间占着 HTTP/1.1 连接；分到独立端口，发送、存储和工具留在主桥接。
+// 三条本机通道各有浏览器自己的连接池，可供多个任务和帮手同时作答。
+const CHAT_LANE_COUNT = 3;
+const chatBases = [];
+const chatLaneServers = [];
 // 工具定义一次最多带多少件：超过不再静默截掉后面的，明确报错，接入更多工具时一眼能看出来
 const TOOLS_LIMIT = 128;
 const MIME = {
@@ -55,7 +60,7 @@ function securityHeaders(req, res) {
     "Content-Security-Policy",
     isPreview
       ? "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
-      : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+      : `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:${PORT} http://localhost:${PORT} ${chatBases.join(" ")}; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`
   );
 }
 // 能调桥接的页面：本机的与 VS Code Webview。别的网站连模型转发、列模型也不许借道——那等于让任意网页经桥接往局域网里发请求。
@@ -70,9 +75,9 @@ function allowedOrigin(origin) {
 }
 // Host 头只认本机的这个端口：防 DNS 重绑定——恶意域名解析到 127.0.0.1 后，它的页面对桥接发的是「同源」请求，GET 不带 Origin，
 // 只看 Origin 就会被当成本机脚本放行（卷宗的取件接口能读到任意路径）
-function trustedHost(req) {
+function trustedHost(req, port = PORT) {
   const host = String(req.headers.host || "").toLowerCase();
-  return host === `127.0.0.1:${PORT}` || host === `localhost:${PORT}`;
+  return host === `127.0.0.1:${port}` || host === `localhost:${port}`;
 }
 function corsHeaders(req, res) {
   const origin = req.headers.origin;
@@ -165,6 +170,9 @@ function handleBootstrap(req, res) {
   sendJson(res, 200, {
     version: APP_VERSION,
     stale: bridgeStale(),
+    chatBases: [...chatBases],
+    // 与页面所用的主机名相反，给工具请求单独一组浏览器连接；只在桥接直开的页面使用。
+    toolBase: String(req.headers.host || "").toLowerCase().startsWith("localhost:") ? `http://${HOST}:${PORT}` : `http://localhost:${PORT}`,
     // store：存储根的位置，fresh 是这个根还没立起来（页面据此把旧数据迁进来）
     store: STORE.describe(),
     work: {
@@ -441,6 +449,7 @@ const server = http.createServer(async (req, res) => {
 server.on("error", error => {
   if (error.code === "EADDRINUSE") console.error(`端口 ${PORT} 已被占用，可设置 YAN_PORT 后重试。`);
   else console.error(error);
+  for (const lane of chatLaneServers) lane.close();
   process.exitCode = 1;
 });
 server.on("clientError", (error, socket) => {
@@ -457,18 +466,68 @@ process.on("unhandledRejection", error => console.error(`${stamp()} 桥接内部
 // Ctrl+C、关掉窗口、结束进程时 Node 默认直接退出，不发 exit 事件：还在跑的指令与后台指令（开发服务器之类）就留在了后台占着端口。
 // 接住这几个信号走一遍正常退出，exit 里的收尾（见 server/work/shell.js）才会执行
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) process.on(signal, () => process.exit(signal === "SIGINT" ? 130 : 0));
-server.listen(PORT, HOST, () => {
-  const address = `http://${HOST}:${PORT}`;
-  try {
-    bundler.build({ quiet: true });
-  } catch (error) {
-    console.log(`  （产出 support.js / app.css 失败：${error.message}）`);
-  }
-  console.log(`\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  存储    ${STORE.paths().root}\n`);
-  console.log("  请保持此窗口开启；关闭后页面刷新、模型转发、联网与执事都会停止。按 Ctrl+C 退出。");
-  console.log("  此窗口不会显示 API Key。\n");
-  if (process.argv.includes("--open") && process.platform === "win32") {
-    const child = spawn("cmd.exe", ["/c", "start", "", address], { detached: true, stdio: "ignore", windowsHide: true });
-    child.unref();
-  }
-});
+// 只开放 /api/chat 的端口：不能借模型流通道访问磁盘、MCP 或页面资源。
+function listenChatLane() {
+  return new Promise((resolve, reject) => {
+    let port = 0;
+    const lane = http.createServer(async (req, res) => {
+      try {
+        securityHeaders(req, res);
+        if (!trustedHost(req, port)) {
+          res.writeHead(421, { "Content-Type": "text/plain; charset=utf-8" });
+          return res.end("只受理发往本机桥接地址的请求");
+        }
+        const urlPath = new URL(req.url, `http://${HOST}`).pathname;
+        if (urlPath !== "/api/chat") return sendJson(res, 404, { error: "未找到接口" });
+        if (req.headers[WEB.OUTBOUND_MARK] !== undefined) return sendJson(res, 403, { error: "桥接不受理自己转出的请求" });
+        if (req.headers.origin && !allowedOrigin(req.headers.origin))
+          return sendJson(res, 403, { error: "此页面无权调用本机桥接" });
+        corsHeaders(req, res);
+        if (req.method === "OPTIONS") {
+          res.writeHead(204);
+          return res.end();
+        }
+        if (req.method === "POST") return await handleChat(req, res);
+        sendJson(res, 405, { error: "不支持此请求" });
+      } catch (error) {
+        if (!res.headersSent) sendJson(res, 500, { error: String(error.message || error).slice(0, 500) });
+        else res.end();
+      }
+    });
+    lane.keepAliveTimeout = 65000;
+    lane.headersTimeout = 66000;
+    lane.once("error", reject);
+    lane.listen(0, HOST, () => {
+      lane.removeListener("error", reject);
+      port = lane.address().port;
+      lane.on("error", error => console.error(`${stamp()} 模型流通道错误：`, error));
+      resolve({ lane, base: `http://${HOST}:${port}` });
+    });
+  });
+}
+async function startBridge() {
+  for (let i = 0; i < CHAT_LANE_COUNT; i++)
+    try {
+      const { lane, base } = await listenChatLane();
+      chatLaneServers.push(lane);
+      chatBases.push(base);
+    } catch (error) {
+      console.error(`${stamp()} 无法启动模型流通道：${error.message}`);
+    }
+  server.listen(PORT, HOST, () => {
+    const address = `http://${HOST}:${PORT}`;
+    try {
+      bundler.build({ quiet: true });
+    } catch (error) {
+      console.log(`  （产出 support.js / app.css 失败：${error.message}）`);
+    }
+    console.log(`\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  存储    ${STORE.paths().root}\n`);
+    console.log("  请保持此窗口开启；关闭后页面刷新、模型转发、联网与执事都会停止。按 Ctrl+C 退出。");
+    console.log("  此窗口不会显示 API Key。\n");
+    if (process.argv.includes("--open") && process.platform === "win32") {
+      const child = spawn("cmd.exe", ["/c", "start", "", address], { detached: true, stdio: "ignore", windowsHide: true });
+      child.unref();
+    }
+  });
+}
+void startBridge();

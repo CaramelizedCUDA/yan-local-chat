@@ -1,17 +1,81 @@
 // 言 · 本地存储 · 记录：调桥接的口子、结构迁移、各类数据的规整
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 模型流走独立端口后，主桥接可同时跑四件工具，仍留连接给发送、配置与对话存储。
+// 多个任务排队时，先给当前占用更少的任务；同一任务的帮手共用停止信号，也共用这份公平调度。
+function bridgeToolLimit() {
+  return apiBase === "" && servedByBridge() && bootstrap.chatBases?.length ? 4 : 2;
+}
+let bridgeToolsActive = 0;
+const bridgeToolQueue = [];
+const bridgeToolsBySignal = new Map();
+function startBridgeTool(signal) {
+  bridgeToolsActive += 1;
+  bridgeToolsBySignal.set(signal, (bridgeToolsBySignal.get(signal) || 0) + 1);
+}
+function reserveBridgeTool(signal) {
+  if (signal?.aborted) return Promise.reject(signal.reason || Error("已停止"));
+  if (bridgeToolsActive < bridgeToolLimit()) {
+    startBridgeTool(signal);
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const queued = {
+      signal,
+      start: () => {
+        signal?.removeEventListener("abort", abort);
+        startBridgeTool(signal);
+        resolve();
+      }
+    };
+    const abort = () => {
+      const index = bridgeToolQueue.indexOf(queued);
+      if (index >= 0) bridgeToolQueue.splice(index, 1);
+      reject(signal.reason || Error("已停止"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    bridgeToolQueue.push(queued);
+  });
+}
+function releaseBridgeTool(signal) {
+  bridgeToolsActive -= 1;
+  const count = bridgeToolsBySignal.get(signal) || 0;
+  if (count <= 1) bridgeToolsBySignal.delete(signal);
+  else bridgeToolsBySignal.set(signal, count - 1);
+  // 已排队的另一段对话优先获得空位，不让一段长活的几十个步骤把别的任务压在后面。
+  if (!bridgeToolQueue.length || bridgeToolsActive >= bridgeToolLimit()) return;
+  let choice = 0,
+    least = Infinity;
+  for (let i = 0; i < bridgeToolQueue.length; i++) {
+    const active = bridgeToolsBySignal.get(bridgeToolQueue[i].signal) || 0;
+    if (active < least) {
+      choice = i;
+      least = active;
+    }
+  }
+  bridgeToolQueue.splice(choice, 1)[0].start();
+}
+function bridgeTimedOut(error) {
+  return error?.name === "TimeoutError" || /signal timed out/i.test(String(error?.message || error));
+}
 // 调本机桥接：存储、卷宗、工具都走这一个口子；桥接回的错误是一句话，原样抛出（状态码与回来的内容挂在 status / data 上）
 async function bridge(path, payload, signal) {
   if (apiBase === null) throw Error("本机工具需要本机桥接");
-  const response = await fetch(`${apiBase}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
-  return data;
+  const toolRequest = !/^\/api\/(?:work\/prepare|store\/|chats\/|mcp\/list)/.test(path);
+  if (toolRequest) await reserveBridgeTool(signal);
+  try {
+    const base = toolRequest && apiBase === "" && servedByBridge() ? bootstrap.toolBase || apiBase : apiBase;
+    const response = await fetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
+    return data;
+  } finally {
+    if (toolRequest) releaseBridgeTool(signal);
+  }
 }
 
 // 结构迁移按版本递增：老数据按字段补默认值，不清空；将来调整结构时在 migrateStoreVx 里写迁移

@@ -105,8 +105,9 @@ function syncTrailGroupReasoning(host, message, group) {
     details = host.querySelector(":scope > .reasoning");
   if (!text) return details?.remove();
   if (!details) return host.insertAdjacentHTML("afterbegin", trailReasoningHtml(message, group));
-  const body = details.querySelector(".reasoning-body");
+  const body = /** @type {HTMLElement & { _paintedThought?: string }} */ (details.querySelector(".reasoning-body"));
   if (body.textContent !== text) body.textContent = text;
+  body._paintedThought = text;
   details.dataset.state = "done";
   delete details.dataset.roundLive;
   if (details.open && !details.dataset.touched) settleDetails(details, false);
