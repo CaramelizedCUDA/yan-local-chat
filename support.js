@@ -1621,10 +1621,7 @@ function syncLeases() {
       for (const id of busy) remoteBusy.add(id);
       const follow = [...remoteBusy, ...released].filter(id => store.conversations.some(c => c.id === id));
       if (follow.length) await followConversations(follow, released);
-      if (currentId && (remoteBusy.has(currentId) || released.includes(currentId))) {
-        renderSendButtons();
-        refreshConnection();
-      }
+      if (currentId && (remoteBusy.has(currentId) || released.includes(currentId))) renderSendButtons();
     })
     .catch(() => {})
     .finally(() => (leasing = null));
@@ -2152,10 +2149,6 @@ function toast(message, ms = 2200) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => hideWithFade(el), ms);
 }
-function setConnection(state, text) {
-  $("#connection").dataset.state = state;
-  $("#connectionText").textContent = text;
-}
 // 把正文里的某条消息滚到视口：只滚 #chatScroll 自己，不用 scrollIntoView——它会连带滚动外层容器（页面整体跟着偏一截，尤其在 VS Code 预览与移动端）
 function scrollChatTo(article, block = "start", margin = 12) {
   const host = $("#chatScroll");
@@ -2173,22 +2166,12 @@ function requestJob(id = currentId) {
 function conversationRunning(id = currentId) {
   return !!requestJob(id);
 }
+// 作答途中不寻常的状态：等待确认、网络重试、整理上下文。平常写着、跑着不必说，label 为空；
+// 等待确认由请示条与侧栏的「问」示意，其余挂在输入框上方的工作条里（见 renderHelperBar）
 /** @param {Conversation} conversation */
-function setJobLabel(conversation, job, label) {
+function setJobLabel(conversation, job, label = "") {
   job.label = label;
-  if (requestJobs.get(conversation.id) === job && currentId === conversation.id && view === "chat") setConnection("busy", label);
-}
-function refreshConnection() {
-  const job = requestJob();
-  if (job) return setConnection("busy", job.label || "生成中");
-  if (runningElsewhere()) return setConnection("busy", "另一处作答中");
-  if (navigator.onLine === false) return setConnection("error", "连接中断");
-  const conversation = currentConversation(),
-    last = [...(conversation?.messages || [])].reverse().find(message => message.role === "assistant");
-  if (last?.status === "error") return setConnection("error", "请求失败");
-  if (last?.status === "interrupted") return setConnection("error", "连接中断");
-  if (last?.status === "stopped") return setConnection("idle", "已停止");
-  setConnection("idle", conversation?.ended ? "额度已尽" : "就绪");
+  if (currentId === conversation.id) renderHelperBar();
 }
 function grow(el) {
   el.style.height = "auto";
@@ -3216,8 +3199,6 @@ function bindEvents() {
       void refreshEnv();
     }
   });
-  window.addEventListener("offline", () => setConnection("error", "连接中断"));
-  window.addEventListener("online", refreshConnection);
   let wasMobile = isMobile();
   window.addEventListener("resize", () => {
     const mobile = isMobile();
@@ -3952,7 +3933,6 @@ function renderHeader() {
   renderQuota();
   renderModelMenu();
   renderLibraryCount();
-  refreshConnection();
 }
 // 余墨：设了上限时显示还剩多少、墨池随之见底；没设（不限）时墨池常满，改报已耗多少
 function renderQuota() {
@@ -5216,8 +5196,11 @@ function renderHelperBar() {
   const c = currentConversation(),
     message = c && view === "chat" ? [...c.messages].reverse().find(m => m.role === "assistant" && m.status === "streaming") : null,
     helpers = message ? runningDelegates(message) : [],
-    stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 };
-  if (!helpers.length && !stats.files.length) {
+    stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 },
+    // 等待确认有请示条，不在这里重说
+    label = c && requestJob(c.id)?.label,
+    notice = label && label !== "等待确认" ? label : "";
+  if (!helpers.length && !stats.files.length && !notice) {
     workFilesOpen = false;
     bar.dataset.sig = "";
     if (!bar.classList.contains("hidden")) hideWithFade(bar);
@@ -5236,7 +5219,7 @@ function renderHelperBar() {
     helper = helpers.length
       ? `<button type="button" class="work-helpers" data-helper="${escapeHtml(helpers[0].id)}" title="打开差遣面板"><span class="seal helper-seal" aria-hidden="true">帮</span><span class="work-helpers-text">${escapeHtml(who)}</span><span class="work-helpers-go" aria-hidden="true">›</span></button>`
       : "",
-    html = `${changes}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
+    html = `${changes}${notice ? `<span class="work-notice" role="status">${escapeHtml(notice)}</span>` : ""}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
   // 帮手每 350ms 刷一次，没变就不动，免得清单里的滚动位置被重画冲掉
   if (bar.dataset.sig !== html) {
     bar.dataset.sig = html;
@@ -8825,7 +8808,6 @@ function stopGeneration(id = currentId) {
   saveStore();
   renderHistory();
   renderSendButtons();
-  if (currentId === id) setConnection("idle", "已停止");
 }
 function stopAllGenerations() {
   for (const [id, job] of requestJobs) {
@@ -8855,7 +8837,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   const job = {
     controller: new AbortController(),
     assistantId: assistant.id,
-    label: "生成中",
+    label: "",
     profile,
     queue: [],
     round: null,
@@ -8866,7 +8848,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   requestJobs.set(conversation.id, job);
   renderSendButtons();
   renderHistory();
-  setJobLabel(conversation, job, "生成中");
   const started = performance.now();
   let leadTrim = 0;
   const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
@@ -8915,7 +8896,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
         setJobLabel(conversation, job, `网络不稳 · 第 ${n} 次重试`);
       },
       head: history.length,
-      onFold: busy => setJobLabel(conversation, job, busy ? "上下文将满 · 整理中" : "生成中"),
+      onFold: busy => setJobLabel(conversation, job, busy ? "上下文将满 · 整理中" : ""),
       // 放不下的是这一问之前的对话：压成摘要落成分隔（下一问也用得上），换掉 history 里这一问之前的那截
       compactHead: async signal => {
         const user = conversation.messages.find(m => m.id === lastUserId);
@@ -8943,7 +8924,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       try {
         await readReply(profile, history, round.signal, overrides, assistant, false, () => {
           roundOpen = opened = true;
-          if (retrying) setJobLabel(conversation, job, "生成中");
+          if (retrying) setJobLabel(conversation, job);
           retrying = false;
         });
         // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾。
@@ -8965,7 +8946,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
           if (said.trim()) history.push({ role: "assistant", content: said }, { role: "user", content: prompt("assistant.resume") });
           setJobLabel(conversation, job, "网络不稳 · 稍候接着写");
           await restFor(2000 * resumed, job.controller.signal);
-          setJobLabel(conversation, job, "生成中");
+          setJobLabel(conversation, job);
           continue;
         }
         if (error.name !== "AbortError" || job.controller.signal.aborted || !job.queue?.length) throw error;
@@ -9021,7 +9002,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }));
       (assistant.steps ||= []).push(...steps);
       refreshSteps(assistant);
-      setJobLabel(conversation, job, isWork(conversation) ? "执行中" : "查阅中");
       history.push({
         role: "assistant",
         content: assistant.content.slice(roundStart) || null,
@@ -9036,7 +9016,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
       await deliverSupplements(job, history, budget, assistant);
       assistant.content = paragraphBreak(assistant.content);
-      setJobLabel(conversation, job, "生成中");
     }
     leadTrim = assistant.content.match(/^\n*/)[0].length;
     assistant.content = assistant.content.replace(/^\n+|\n+$/g, "");
@@ -9092,7 +9071,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       updateContextGauge();
     }
     renderSendButtons();
-    refreshConnection();
     if (assistant.status === "complete") void maybeAutoTitle(conversation, profile);
   }
 }
@@ -9775,11 +9753,11 @@ function schemaHint(spec) {
 // 请示条从输入框上方浮出，不必去行迹里找那一行；条上画什么由那件工具的 approval 定。输入框留空时按 Enter 即运行或翻到下一题
 const pendingApprovals = new Map();
 /**
- * 挂起这一步，等用户在请示条上定夺，返回定夺的结果；定了之后任务条上写 label
+ * 挂起这一步，等用户在请示条上定夺，返回定夺的结果
  * @param {Step} step
  * @param {ToolContext} ctx
  */
-async function askApproval(step, { conversation, assistant, signal }, label) {
+async function askApproval(step, { conversation, assistant, signal }) {
   const job = requestJob(conversation.id);
   step.status = "pending";
   if (job) setJobLabel(conversation, job, "等待确认");
@@ -9801,7 +9779,7 @@ async function askApproval(step, { conversation, assistant, signal }, label) {
     renderApprovalBar();
   }).finally(renderApprovalBar);
   step.status = "running";
-  if (job) setJobLabel(conversation, job, label);
+  if (job) setJobLabel(conversation, job);
   refreshSteps(assistant);
   renderHistory();
   return answer;
@@ -10095,14 +10073,11 @@ defineTool({
     }
     let escalated = false;
     if (policy === "ask" && (!step.readOnly || step.sandboxWhy)) {
-      if (!(await askApproval(step, ctx, "执行中"))) {
+      if (!(await askApproval(step, ctx))) {
         step.skipped = true;
         return { ok: false, content: prompt("work.skipped"), display: "已跳过" };
       }
       escalated = !!step.sandboxWhy;
-    } else {
-      const job = requestJob(conversation.id);
-      if (job) setJobLabel(conversation, job, "执行中");
     }
     // 用户可能在请示条上把这一段对话切成了径行：执行前再取一次，不沿用旧档位
     policy = commandPolicyOf(conversation);
@@ -10647,7 +10622,7 @@ defineTool({
       .map(q => q.header || q.question)
       .join(" · ")
       .slice(0, 80);
-    const answers = await askApproval(step, ctx, "生成中");
+    const answers = await askApproval(step, ctx);
     if (!Array.isArray(answers)) {
       step.skipped = true;
       return { ok: false, content: "用户没有作答。请按你的最佳判断继续，并在正文里说明你做了什么假设。", display: "未作答" };
@@ -11226,7 +11201,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
   step.title ||= spec.title || tool;
   step.code = JSON.stringify(args, null, 2);
   const ask = !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
-  if (ask && !(await askApproval(step, ctx, "执行中"))) {
+  if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
     return { ok: false, content: prompt("mcp.skipped"), display: "已跳过" };
   }
@@ -11323,7 +11298,7 @@ async function runDelegate(step, args, ctx) {
     reasoning: conversation.reasoning || "",
     // 跑得久了上下文会满：任务说明之后的往来由 readReply 按需压成工作笔记（见 keepInWindow），帮手接着做
     head: history.length,
-    onFold: busy => job && setJobLabel(conversation, job, busy ? "帮手整理上下文" : "帮手工作中")
+    onFold: busy => job && setJobLabel(conversation, job, busy ? "帮手整理上下文" : "")
   };
   const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     toolCache = new Map(),
@@ -11392,7 +11367,6 @@ async function runDelegate(step, args, ctx) {
       const outcomes = await runSteps(steps, conversation, assistant, signal, toolCache);
       for (const s of steps) history.push({ role: "tool", tool_call_id: s.id, content: outcomes.get(s.id) ?? "" });
       sub.content = paragraphBreak(sub.content);
-      if (job) setJobLabel(conversation, job, "帮手工作中");
     }
     sub.status = "complete";
   } catch (error) {
@@ -11412,7 +11386,6 @@ async function runDelegate(step, args, ctx) {
     const leadTrim = sub.content.match(/^\n*/)[0].length;
     sub.content = sub.content.replace(/^\n+|\n+$/g, "");
     if (leadTrim) for (const s of sub.steps) if (typeof s.at === "number") s.at = Math.max(0, s.at - leadTrim);
-    if (job) setJobLabel(conversation, job, "生成中");
     paint();
   }
   const changed = subChangedPaths(step),

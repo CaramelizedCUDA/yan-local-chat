@@ -407,7 +407,6 @@ function stopGeneration(id = currentId) {
   saveStore();
   renderHistory();
   renderSendButtons();
-  if (currentId === id) setConnection("idle", "已停止");
 }
 function stopAllGenerations() {
   for (const [id, job] of requestJobs) {
@@ -437,7 +436,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   const job = {
     controller: new AbortController(),
     assistantId: assistant.id,
-    label: "生成中",
+    label: "",
     profile,
     queue: [],
     round: null,
@@ -448,7 +447,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   requestJobs.set(conversation.id, job);
   renderSendButtons();
   renderHistory();
-  setJobLabel(conversation, job, "生成中");
   const started = performance.now();
   let leadTrim = 0;
   const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
@@ -497,7 +495,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
         setJobLabel(conversation, job, `网络不稳 · 第 ${n} 次重试`);
       },
       head: history.length,
-      onFold: busy => setJobLabel(conversation, job, busy ? "上下文将满 · 整理中" : "生成中"),
+      onFold: busy => setJobLabel(conversation, job, busy ? "上下文将满 · 整理中" : ""),
       // 放不下的是这一问之前的对话：压成摘要落成分隔（下一问也用得上），换掉 history 里这一问之前的那截
       compactHead: async signal => {
         const user = conversation.messages.find(m => m.id === lastUserId);
@@ -525,7 +523,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       try {
         await readReply(profile, history, round.signal, overrides, assistant, false, () => {
           roundOpen = opened = true;
-          if (retrying) setJobLabel(conversation, job, "生成中");
+          if (retrying) setJobLabel(conversation, job);
           retrying = false;
         });
         // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾。
@@ -547,7 +545,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
           if (said.trim()) history.push({ role: "assistant", content: said }, { role: "user", content: prompt("assistant.resume") });
           setJobLabel(conversation, job, "网络不稳 · 稍候接着写");
           await restFor(2000 * resumed, job.controller.signal);
-          setJobLabel(conversation, job, "生成中");
+          setJobLabel(conversation, job);
           continue;
         }
         if (error.name !== "AbortError" || job.controller.signal.aborted || !job.queue?.length) throw error;
@@ -603,7 +601,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }));
       (assistant.steps ||= []).push(...steps);
       refreshSteps(assistant);
-      setJobLabel(conversation, job, isWork(conversation) ? "执行中" : "查阅中");
       history.push({
         role: "assistant",
         content: assistant.content.slice(roundStart) || null,
@@ -618,7 +615,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
       await deliverSupplements(job, history, budget, assistant);
       assistant.content = paragraphBreak(assistant.content);
-      setJobLabel(conversation, job, "生成中");
     }
     leadTrim = assistant.content.match(/^\n*/)[0].length;
     assistant.content = assistant.content.replace(/^\n+|\n+$/g, "");
@@ -674,7 +670,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       updateContextGauge();
     }
     renderSendButtons();
-    refreshConnection();
     if (assistant.status === "complete") void maybeAutoTitle(conversation, profile);
   }
 }

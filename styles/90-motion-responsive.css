@@ -596,9 +596,6 @@ button:focus:not(:focus-visible) {
   .profile-full {
     grid-column: auto;
   }
-  .connection span:last-child {
-    display: none;
-  }
   .quota {
     gap: 5px;
     padding: 4px;

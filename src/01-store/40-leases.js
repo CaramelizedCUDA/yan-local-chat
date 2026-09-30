@@ -21,10 +21,7 @@ function syncLeases() {
       for (const id of busy) remoteBusy.add(id);
       const follow = [...remoteBusy, ...released].filter(id => store.conversations.some(c => c.id === id));
       if (follow.length) await followConversations(follow, released);
-      if (currentId && (remoteBusy.has(currentId) || released.includes(currentId))) {
-        renderSendButtons();
-        refreshConnection();
-      }
+      if (currentId && (remoteBusy.has(currentId) || released.includes(currentId))) renderSendButtons();
     })
     .catch(() => {})
     .finally(() => (leasing = null));

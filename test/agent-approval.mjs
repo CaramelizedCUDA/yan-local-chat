@@ -11,7 +11,7 @@ await evalJs(
 );
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
-check("boot: bridge connected", (await evalJs(`document.querySelector("#connectionText").textContent`)) === "就绪");
+check("boot: bridge connected", await evalJs(`__yanBridgeFetch("/api/store/config/load", "{}").then(r => r.ok, () => false)`));
 console.log(
   "  debug:",
   await evalJs(
@@ -36,7 +36,7 @@ check(
     "Write-Output '你好，世界'"
 );
 check("tool stack forced open", await evalJs(`document.querySelector(".tool-stack").open`));
-check("connection label 等待确认", (await evalJs(`document.querySelector("#connectionText").textContent`)) === "等待确认");
+check("work strip leaves 等待确认 to the approval bar", await evalJs(`!document.querySelector("#helperBar .work-notice")`));
 check("sidebar waiting marker", await evalJs(`!!document.querySelector(".history-state.waiting")`));
 check("meta 等待确认", (await evalJs(`document.querySelector(".tool-stack-meta").textContent`)) === "等待确认");
 check(

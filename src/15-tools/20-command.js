@@ -26,14 +26,11 @@ defineTool({
     }
     let escalated = false;
     if (policy === "ask" && (!step.readOnly || step.sandboxWhy)) {
-      if (!(await askApproval(step, ctx, "执行中"))) {
+      if (!(await askApproval(step, ctx))) {
         step.skipped = true;
         return { ok: false, content: prompt("work.skipped"), display: "已跳过" };
       }
       escalated = !!step.sandboxWhy;
-    } else {
-      const job = requestJob(conversation.id);
-      if (job) setJobLabel(conversation, job, "执行中");
     }
     // 用户可能在请示条上把这一段对话切成了径行：执行前再取一次，不沿用旧档位
     policy = commandPolicyOf(conversation);

@@ -215,7 +215,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
   step.title ||= spec.title || tool;
   step.code = JSON.stringify(args, null, 2);
   const ask = !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
-  if (ask && !(await askApproval(step, ctx, "执行中"))) {
+  if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
     return { ok: false, content: prompt("mcp.skipped"), display: "已跳过" };
   }

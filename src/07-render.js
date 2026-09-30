@@ -51,7 +51,6 @@ function renderHeader() {
   renderQuota();
   renderModelMenu();
   renderLibraryCount();
-  refreshConnection();
 }
 // 余墨：设了上限时显示还剩多少、墨池随之见底；没设（不限）时墨池常满，改报已耗多少
 function renderQuota() {

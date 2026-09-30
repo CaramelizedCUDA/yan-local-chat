@@ -252,8 +252,6 @@ function bindEvents() {
       void refreshEnv();
     }
   });
-  window.addEventListener("offline", () => setConnection("error", "连接中断"));
-  window.addEventListener("online", refreshConnection);
   let wasMobile = isMobile();
   window.addEventListener("resize", () => {
     const mobile = isMobile();

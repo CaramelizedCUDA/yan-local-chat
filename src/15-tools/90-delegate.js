@@ -46,7 +46,7 @@ async function runDelegate(step, args, ctx) {
     reasoning: conversation.reasoning || "",
     // 跑得久了上下文会满：任务说明之后的往来由 readReply 按需压成工作笔记（见 keepInWindow），帮手接着做
     head: history.length,
-    onFold: busy => job && setJobLabel(conversation, job, busy ? "帮手整理上下文" : "帮手工作中")
+    onFold: busy => job && setJobLabel(conversation, job, busy ? "帮手整理上下文" : "")
   };
   const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     toolCache = new Map(),
@@ -115,7 +115,6 @@ async function runDelegate(step, args, ctx) {
       const outcomes = await runSteps(steps, conversation, assistant, signal, toolCache);
       for (const s of steps) history.push({ role: "tool", tool_call_id: s.id, content: outcomes.get(s.id) ?? "" });
       sub.content = paragraphBreak(sub.content);
-      if (job) setJobLabel(conversation, job, "帮手工作中");
     }
     sub.status = "complete";
   } catch (error) {
@@ -135,7 +134,6 @@ async function runDelegate(step, args, ctx) {
     const leadTrim = sub.content.match(/^\n*/)[0].length;
     sub.content = sub.content.replace(/^\n+|\n+$/g, "");
     if (leadTrim) for (const s of sub.steps) if (typeof s.at === "number") s.at = Math.max(0, s.at - leadTrim);
-    if (job) setJobLabel(conversation, job, "生成中");
     paint();
   }
   const changed = subChangedPaths(step),

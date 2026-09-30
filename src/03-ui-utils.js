@@ -35,10 +35,6 @@ function toast(message, ms = 2200) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => hideWithFade(el), ms);
 }
-function setConnection(state, text) {
-  $("#connection").dataset.state = state;
-  $("#connectionText").textContent = text;
-}
 // 把正文里的某条消息滚到视口：只滚 #chatScroll 自己，不用 scrollIntoView——它会连带滚动外层容器（页面整体跟着偏一截，尤其在 VS Code 预览与移动端）
 function scrollChatTo(article, block = "start", margin = 12) {
   const host = $("#chatScroll");
@@ -56,22 +52,12 @@ function requestJob(id = currentId) {
 function conversationRunning(id = currentId) {
   return !!requestJob(id);
 }
+// 作答途中不寻常的状态：等待确认、网络重试、整理上下文。平常写着、跑着不必说，label 为空；
+// 等待确认由请示条与侧栏的「问」示意，其余挂在输入框上方的工作条里（见 renderHelperBar）
 /** @param {Conversation} conversation */
-function setJobLabel(conversation, job, label) {
+function setJobLabel(conversation, job, label = "") {
   job.label = label;
-  if (requestJobs.get(conversation.id) === job && currentId === conversation.id && view === "chat") setConnection("busy", label);
-}
-function refreshConnection() {
-  const job = requestJob();
-  if (job) return setConnection("busy", job.label || "生成中");
-  if (runningElsewhere()) return setConnection("busy", "另一处作答中");
-  if (navigator.onLine === false) return setConnection("error", "连接中断");
-  const conversation = currentConversation(),
-    last = [...(conversation?.messages || [])].reverse().find(message => message.role === "assistant");
-  if (last?.status === "error") return setConnection("error", "请求失败");
-  if (last?.status === "interrupted") return setConnection("error", "连接中断");
-  if (last?.status === "stopped") return setConnection("idle", "已停止");
-  setConnection("idle", conversation?.ended ? "额度已尽" : "就绪");
+  if (currentId === conversation.id) renderHelperBar();
 }
 function grow(el) {
   el.style.height = "auto";

@@ -499,8 +499,11 @@ function renderHelperBar() {
   const c = currentConversation(),
     message = c && view === "chat" ? [...c.messages].reverse().find(m => m.role === "assistant" && m.status === "streaming") : null,
     helpers = message ? runningDelegates(message) : [],
-    stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 };
-  if (!helpers.length && !stats.files.length) {
+    stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 },
+    // 等待确认有请示条，不在这里重说
+    label = c && requestJob(c.id)?.label,
+    notice = label && label !== "等待确认" ? label : "";
+  if (!helpers.length && !stats.files.length && !notice) {
     workFilesOpen = false;
     bar.dataset.sig = "";
     if (!bar.classList.contains("hidden")) hideWithFade(bar);
@@ -519,7 +522,7 @@ function renderHelperBar() {
     helper = helpers.length
       ? `<button type="button" class="work-helpers" data-helper="${escapeHtml(helpers[0].id)}" title="打开差遣面板"><span class="seal helper-seal" aria-hidden="true">帮</span><span class="work-helpers-text">${escapeHtml(who)}</span><span class="work-helpers-go" aria-hidden="true">›</span></button>`
       : "",
-    html = `${changes}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
+    html = `${changes}${notice ? `<span class="work-notice" role="status">${escapeHtml(notice)}</span>` : ""}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
   // 帮手每 350ms 刷一次，没变就不动，免得清单里的滚动位置被重画冲掉
   if (bar.dataset.sig !== html) {
     bar.dataset.sig = html;
