@@ -39,11 +39,9 @@ function moveToGroup(c, groupId) {
   renderGroupTags();
   if (view === "groups") renderGroupsPage();
 }
-// 在此组另起一段：新对话归进这一组；组带了预设的，模型菜单先换上（预设带模型的连模型一起）
+// 在此组另起一段：新对话归进这一组；组带了预设的就用组的预设（预设带模型的连模型一起，见 activeProfile）
 function newChatInGroup(id) {
   store.settings.pendingGroupId = id;
-  const preset = presetOf(null);
-  if (preset?.profileId && profiles().some(p => p.id === preset.profileId)) selectProfile(preset.profileId, false);
   saveStore();
   newChat();
 }

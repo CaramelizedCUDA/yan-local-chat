@@ -113,7 +113,7 @@ function renderModelMenu() {
   $("#modelMenu").innerHTML = all.length
     ? all
         .map(p => {
-          const active = p.id === store.settings.activeProfileId;
+          const active = p.id === activeProfile()?.id;
           // 只列显示名：模型原名与接口地址长短不一，行高参差；要看去模型设置
           return `<button class="model-option${active ? " active" : ""}" data-profile="${escapeHtml(p.id)}"${active ? ' aria-current="true"' : ""} title="${escapeHtml(p.model)}"><strong><span class="model-dot"></span><span class="model-option-name">${escapeHtml(p.name)}</span></strong></button>`;
         })
@@ -383,7 +383,6 @@ function restorePlace() {
     currentId = lastConversationId;
     const c = currentConversation();
     c.unread = false;
-    if (c.profileId) selectProfile(c.profileId, false);
   }
 }
 // 压缩过的前文在页面上折起（记录都在，只是不占地方）；最近一次压缩的分隔上有「展开前文 / 收起前文」

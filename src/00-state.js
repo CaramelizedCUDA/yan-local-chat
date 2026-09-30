@@ -158,7 +158,7 @@
  * @property {string} profileId 选它时换到这个模型；空则不换
  * @property {CommandPolicy|""} policy 选它时的指令权限；空则照设置里的默认
  */
-/** @typedef {{ id: string, text: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
+/** @typedef {{ id: string, text: string, category?: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
 /** @typedef {{ text: string, attachments: Attachment[], quote?: Quote|null, updatedAt?: string }} Draft */
 /**
  * @typedef {Object} Settings
@@ -168,7 +168,7 @@
  * @property {"sans"|"serif"|"mixed"|"kai"|"fangsong"} font
  * @property {number} width
  * @property {string} accent
- * @property {string} activeProfileId
+ * @property {string} activeProfileId 默认模型：新对话起手用它；只在设置里「设为默认」时改，打开旧对话、在菜单里换模型都不动它
  * @property {Preset[]} presets
  * @property {string} presetId 新对话用的预设（上回选的）；空即本色
  * @property {{ id: string, name: string, createdAt: string, presetId: string, workdir: string }[]} groups 分组：自立的几组，对话各记 groupId；组里新起的对话用组的预设、绑组的默认目录
@@ -307,6 +307,8 @@ let renamingId = null,
 let historyQuery = "";
 /** @type {Attachment[]} 案上待发的附件 */
 let pendingAttachments = [];
+// 欢迎页上为这段还没发出的新对话挑的模型；空即照预设带的、再照默认。发出后记在对话上，另起新对话时清空
+let pendingProfileId = "";
 /** @type {Quote|null} */
 let pendingQuote = null;
 let chatSuggestionsHtml = "",
@@ -398,6 +400,8 @@ const dirtyChatIds = new Set(),
 let libraryQuery = "",
   libraryKind = "all";
 const advancedOpen = new Set();
+// 模型设置里摊开着的那几个（一个模型平时收成一行，点开才是整张表）
+const profileOpen = new Set();
 let suppressViz = false;
 let saveTimer = null,
   historySearchTimer = null;

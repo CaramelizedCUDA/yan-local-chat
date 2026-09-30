@@ -367,6 +367,7 @@ function newChat() {
   persistDraft();
   rememberScrollPosition();
   pendingAttachments = [];
+  pendingProfileId = "";
   currentId = null;
   editingMessageId = null;
   view = "chat";
@@ -387,9 +388,8 @@ function openConversation(id) {
   const c = currentConversation();
   if (c) {
     c.unread = false;
-    // 新对话照最近看的这段用的预设，与模型一样
+    // 新对话照最近看的这段用的预设（预设带了模型的，新对话也就用那个模型）
     store.settings.presetId = presetOf(c)?.id || "";
-    c.profileId && selectProfile(c.profileId, false);
     // 别处可能在这段里写过而这边没察觉（报到有间隔）：读一下目录里那份，新就跟上
     void catchUpFromDisk([c.id]);
   }
@@ -467,18 +467,16 @@ function selectProfile(id, shouldRender = true) {
   if (!profile) return;
   const c = currentConversation(),
     wasDry = conversationDry(c);
-  // 旧对话里已有的档位首次打开时归给它自己的模型；切到另一模型时只取新模型记住的档位。
-  const initialized = c?.profileId === id && profile.reasoning === undefined;
-  if (initialized) profile.reasoning = normalizeReasoning(c.reasoning);
+  // 换模型只换眼前这段（还没发出的新对话记在 pendingProfileId），默认模型不动；档位取新模型记住的那档
   const reasoning = normalizeReasoning(profile.reasoning);
-  // 开旧对话时也走这里，多半什么都没变：没变就不整份存一遍
-  const changed = initialized || store.settings.activeProfileId !== id || (!!c && (c.profileId !== id || c.reasoning !== reasoning));
-  store.settings.activeProfileId = id;
   if (c) {
-    c.profileId = id;
-    c.reasoning = reasoning;
-  }
-  if (changed) saveStore();
+    if (c.profileId !== id || c.reasoning !== reasoning) {
+      c.profileId = id;
+      c.reasoning = reasoning;
+      markDirty(c.id);
+      saveStore();
+    }
+  } else pendingProfileId = id;
   closeModelMenu();
   if (shouldRender) {
     renderHeader();
