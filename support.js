@@ -423,82 +423,120 @@ let imageViewerAttachmentId = null,
   // ---- 01-store/00-records.js ----
 // 言 · 本地存储 · 记录：调桥接的口子、结构迁移、各类数据的规整
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
-// 模型流走独立端口后，主桥接可同时跑四件工具，仍留连接给发送、配置与对话存储。
-// 多个任务排队时，先给当前占用更少的任务；同一任务的帮手共用停止信号，也共用这份公平调度。
-function bridgeToolLimit() {
-  return apiBase === "" && servedByBridge() && bootstrap.chatBases?.length ? 4 : 2;
+// 总线：长请求（模型流、工具、指令）不再各占一条浏览器连接，响应都从这一页的一条事件流回来（桥接那头见 server/bus.js）。
+// 浏览器对同一个 host:port 只开 6 条连接，几段对话连同帮手一起跑，长请求一多，存配置、建目录这类短请求就排队排到超时。
+// bridgeFetch 与 fetch 一样交回 Response：接的人照旧读 ok、status、headers、body，不知道底下走的是总线。
+// 总线没接通（连不上事件流的环境、桥接刚重启）就直接 fetch，功能一样，只是回到一请求一连接
+/** @type {EventSource|null} */
+let busSource = null,
+  busBase = "",
+  busOpen = false,
+  busTried = false;
+const busJobs = new Map(),
+  busWaiters = [];
+function busConnect() {
+  if (busSource && busBase === apiBase) return;
+  busSource?.close();
+  busSource = null;
+  busOpen = busTried = false;
+  busBase = apiBase;
+  if (apiBase === null || typeof EventSource !== "function") return;
+  busSource = new EventSource(`${apiBase}/api/bus?page=${encodeURIComponent(PAGE_ID)}`);
+  const settle = open => {
+    busOpen = open;
+    busTried = true;
+    for (const resolve of busWaiters.splice(0)) resolve(open);
+  };
+  busSource.onopen = () => settle(true);
+  // 流断了（桥接重启、关了）：在途的一律按连不上结束，与直连时掐线一样；EventSource 自己会重连
+  busSource.onerror = () => {
+    for (const job of [...busJobs.values()]) job.fail(new TypeError("Failed to fetch"));
+    settle(false);
+  };
+  busSource.onmessage = event => {
+    const message = JSON.parse(event.data);
+    busJobs.get(message.id)?.[message.t](message);
+  };
 }
-let bridgeToolsActive = 0;
-const bridgeToolQueue = [];
-const bridgeToolsBySignal = new Map();
-function startBridgeTool(signal) {
-  bridgeToolsActive += 1;
-  bridgeToolsBySignal.set(signal, (bridgeToolsBySignal.get(signal) || 0) + 1);
-}
-function reserveBridgeTool(signal) {
-  if (signal?.aborted) return Promise.reject(signal.reason || Error("已停止"));
-  if (bridgeToolsActive < bridgeToolLimit()) {
-    startBridgeTool(signal);
-    return Promise.resolve();
-  }
-  return new Promise((resolve, reject) => {
-    const queued = {
-      signal,
-      start: () => {
-        signal?.removeEventListener("abort", abort);
-        startBridgeTool(signal);
-        resolve();
-      }
-    };
-    const abort = () => {
-      const index = bridgeToolQueue.indexOf(queued);
-      if (index >= 0) bridgeToolQueue.splice(index, 1);
-      reject(signal.reason || Error("已停止"));
-    };
-    signal?.addEventListener("abort", abort, { once: true });
-    bridgeToolQueue.push(queued);
+function busReady() {
+  busConnect();
+  // 头一回连给一点时间；连过而没连上的不再等，直接走 fetch
+  if (busOpen || !busSource || busTried) return Promise.resolve(busOpen);
+  return new Promise(resolve => {
+    busWaiters.push(resolve);
+    setTimeout(() => resolve(busOpen), 3000);
   });
 }
-function releaseBridgeTool(signal) {
-  bridgeToolsActive -= 1;
-  const count = bridgeToolsBySignal.get(signal) || 0;
-  if (count <= 1) bridgeToolsBySignal.delete(signal);
-  else bridgeToolsBySignal.set(signal, count - 1);
-  // 已排队的另一段对话优先获得空位，不让一段长活的几十个步骤把别的任务压在后面。
-  if (!bridgeToolQueue.length || bridgeToolsActive >= bridgeToolLimit()) return;
-  let choice = 0,
-    least = Infinity;
-  for (let i = 0; i < bridgeToolQueue.length; i++) {
-    const active = bridgeToolsBySignal.get(bridgeToolQueue[i].signal) || 0;
-    if (active < least) {
-      choice = i;
-      least = active;
-    }
-  }
-  bridgeToolQueue.splice(choice, 1)[0].start();
+/** @returns {Promise<Response>} */
+async function bridgeFetch(path, body, signal) {
+  const direct = () => fetch(`${apiBase}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
+  if (!(await busReady())) return direct();
+  signal?.throwIfAborted();
+  const id = uid(),
+    post = (to, payload) =>
+      fetch(`${apiBase}${to}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  return new Promise((resolve, reject) => {
+    const encoder = new TextEncoder();
+    /** @type {ReadableStreamDefaultController<Uint8Array>} */
+    let stream;
+    // 停了（signal 中止，或读的人不读了）：告诉桥接那头作废，接口从 close 事件知道
+    const stop = () => {
+      if (!busJobs.has(id)) return false;
+      busJobs.delete(id);
+      signal?.removeEventListener("abort", abort);
+      void post("/api/bus/cancel", { page: PAGE_ID, id }).catch(() => {});
+      return true;
+    };
+    const stream_ = new ReadableStream({ start: controller => void (stream = controller), cancel: () => void stop() });
+    const finish = () => {
+      busJobs.delete(id);
+      signal?.removeEventListener("abort", abort);
+    };
+    const job = {
+      head: ({ status, headers }) => resolve(new Response([101, 204, 205, 304].includes(status) ? null : stream_, { status, headers })),
+      data: ({ text }) => stream.enqueue(encoder.encode(text)),
+      end: () => {
+        finish();
+        stream.close();
+      },
+      // 桥接那头没写完就断了：与直连时连接被掐一样，报网络错误
+      drop: () => job.fail(new TypeError("network error")),
+      fail: error => {
+        finish();
+        reject(error);
+        try {
+          stream.error(error);
+        } catch {}
+      }
+    };
+    // 与 fetch 被中止时一样，以 signal 的缘由结束（超时是 TimeoutError，停止是 AbortError）
+    const abort = () => stop() && job.fail(signal.reason);
+    signal?.addEventListener("abort", abort, { once: true });
+    busJobs.set(id, job);
+    post("/api/bus/send", { page: PAGE_ID, id, path, body }).then(
+      async response => {
+        if (response.ok || !busJobs.has(id)) return;
+        finish();
+        // 桥接那头这一页的流恰好断了：这一次改走直连
+        if (response.status === 409) return direct().then(resolve, reject);
+        reject(Error((await response.json().catch(() => ({}))).error || `请求失败（${response.status}）`));
+      },
+      error => job.fail(error)
+    );
+  });
 }
+// 给端到端测试直接压总线（见 test/bridge-bus.mjs）
+window.__yanBridgeFetch = bridgeFetch;
 function bridgeTimedOut(error) {
   return error?.name === "TimeoutError" || /signal timed out/i.test(String(error?.message || error));
 }
 // 调本机桥接：存储、卷宗、工具都走这一个口子；桥接回的错误是一句话，原样抛出（状态码与回来的内容挂在 status / data 上）
 async function bridge(path, payload, signal) {
   if (apiBase === null) throw Error("本机工具需要本机桥接");
-  const toolRequest = !/^\/api\/(?:work\/prepare|store\/|chats\/|mcp\/list)/.test(path);
-  if (toolRequest) await reserveBridgeTool(signal);
-  try {
-    const base = toolRequest && apiBase === "" && servedByBridge() ? bootstrap.toolBase || apiBase : apiBase;
-    const response = await fetch(`${base}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
-    return data;
-  } finally {
-    if (toolRequest) releaseBridgeTool(signal);
-  }
+  const response = await bridgeFetch(path, JSON.stringify(payload), signal);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
+  return data;
 }
 
 // 结构迁移按版本递增：老数据按字段补默认值，不清空；将来调整结构时在 migrateStoreVx 里写迁移
@@ -11651,14 +11689,6 @@ async function describeResponseError(response) {
     `请求失败（${response.status}）`
   );
 }
-// 桥接直开的页面把长时间占连接的模型流轮流送到独立端口；VS Code Webview 等环境仍用原来的桥接地址。
-let chatLaneCursor = Math.floor(Math.random() * 0x7fffffff);
-function chatRelayBase() {
-  const lanes = bootstrap.chatBases;
-  return apiBase === "" && servedByBridge() && Array.isArray(lanes) && lanes.length
-    ? lanes[chatLaneCursor++ % lanes.length]
-    : apiBase;
-}
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
   const parameters = {
@@ -11680,12 +11710,7 @@ async function requestChat(profile, messages, signal, overrides = {}) {
     ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
   if (apiBase !== null)
-    return fetch(`${chatRelayBase()}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }),
-      signal
-    });
+    return bridgeFetch("/api/chat", JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }), signal);
   const payload = {
     model: profile.model,
     messages: parameters.systemPrompt ? [{ role: "system", content: parameters.systemPrompt }, ...messages] : messages,

@@ -34,27 +34,40 @@ for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 250));
   }
 }
-const chatBases = (await (await fetch(BASE + "/api/bootstrap")).json()).chatBases || [];
-check("model streams have three separate loopback ports", chatBases.length === 3 && chatBases.every(base => new URL(base).hostname === "127.0.0.1"));
-for (const base of chatBases) {
-  let response = await fetch(base + "/api/work/prepare", { method: "POST" });
-  check("model stream port cannot reach work routes", response.status === 404, String(response.status));
-  response = await fetch(base + "/api/chat", { method: "OPTIONS", headers: { Origin: BASE, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
-  check("own page can preflight the model stream port", response.status === 204 && response.headers.get("access-control-allow-origin") === BASE, String(response.status));
-  response = await fetch(base + "/api/chat", { method: "POST", headers: { Origin: "https://evil.example", "Content-Type": "application/json" }, body: "{}" });
-  check("foreign origin cannot use the model stream port", response.status === 403, String(response.status));
-}
-if (chatBases.length) {
-  const port = Number(new URL(chatBases[0]).port);
-  const status = await new Promise(resolve => {
-    const request = http.request({ host: "127.0.0.1", port, path: "/api/chat", headers: { Host: `evil.example:${port}` } }, response => {
-      response.resume();
-      resolve(response.statusCode);
+// 总线：外站开不了事件流；本机别的端口的页面能开，但借总线转进去的请求照旧按它自己的来源过门禁，碰不到执事接口
+const openBus = (page, origin) =>
+  new Promise(resolve => {
+    const events = [];
+    const request = http.get(`${BASE}/api/bus?page=${page}`, { headers: { Origin: origin } }, response => {
+      let buffer = "";
+      response.setEncoding("utf8");
+      response.on("data", chunk => {
+        buffer += chunk;
+        for (let at; (at = buffer.indexOf("\n\n")) >= 0; buffer = buffer.slice(at + 2)) {
+          const line = buffer.slice(0, at);
+          if (line.startsWith("data: ")) events.push(JSON.parse(line.slice(6)));
+        }
+      });
+      resolve({ status: response.statusCode, events, close: () => request.destroy() });
     });
-    request.on("error", () => resolve(0));
-    request.end();
+    request.on("error", () => resolve({ status: 0, events: [], close: () => {} }));
   });
-  check("model stream port rejects DNS rebinding hosts", status === 421, String(status));
+{
+  const foreign = await openBus("foreign-page-1", "https://evil.example");
+  check("foreign origin cannot open the bus", foreign.status === 403, String(foreign.status));
+  foreign.close();
+  const other = "http://localhost:5173",
+    bus = await openBus("other-port-page", other);
+  check("another local port may open the bus", bus.status === 200, String(bus.status));
+  const sent = await post("/api/bus/send", { page: "other-port-page", id: "w1", path: "/api/work/prepare", body: JSON.stringify({ workdir: WORK }) }, { Origin: other });
+  await new Promise(r => setTimeout(r, 300));
+  const head = bus.events.find(event => event.id === "w1" && event.t === "head");
+  check("bus keeps the work gate of the original origin", sent.status === 202 && head?.status === 403, JSON.stringify({ sent: sent.status, head }));
+  const nested = await post("/api/bus/send", { page: "other-port-page", id: "w2", path: "/api/bus/send", body: "{}" }, { Origin: other });
+  check("bus cannot be sent into itself", nested.status === 400, String(nested.status));
+  const unknown = await post("/api/bus/send", { page: "no-such-page-1", id: "w3", path: "/api/bootstrap", body: "{}" });
+  check("sending to a page without a stream is refused", unknown.status === 409, String(unknown.status));
+  bus.close();
 }
 const win = process.platform === "win32",
   workdir = WORK.split("/").join(win ? "\\" : "/");

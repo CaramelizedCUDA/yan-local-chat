@@ -16,7 +16,9 @@ await evalJs(`(() => {
   const gate = new Promise(resolve => release = resolve);
   window.__preflight = { calls: 0, release, original };
   window.fetch = (...args) => {
-    if (String(args[0]).includes("/api/work/prepare") && ++window.__preflight.calls === 1)
+    // 走总线时路径在请求体里
+    const prepare = String(args[0]).includes("/api/work/prepare") || String(args[1]?.body || "").includes('"path":"/api/work/prepare"');
+    if (prepare && ++window.__preflight.calls === 1)
       return gate.then(() => new Response('{"error":"临时故障"}', { status: 503, headers: { "Content-Type": "application/json" } }));
     return original(...args);
   };

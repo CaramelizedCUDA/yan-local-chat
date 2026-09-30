@@ -259,14 +259,6 @@ async function describeResponseError(response) {
     `请求失败（${response.status}）`
   );
 }
-// 桥接直开的页面把长时间占连接的模型流轮流送到独立端口；VS Code Webview 等环境仍用原来的桥接地址。
-let chatLaneCursor = Math.floor(Math.random() * 0x7fffffff);
-function chatRelayBase() {
-  const lanes = bootstrap.chatBases;
-  return apiBase === "" && servedByBridge() && Array.isArray(lanes) && lanes.length
-    ? lanes[chatLaneCursor++ % lanes.length]
-    : apiBase;
-}
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
   const parameters = {
@@ -288,12 +280,7 @@ async function requestChat(profile, messages, signal, overrides = {}) {
     ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
   if (apiBase !== null)
-    return fetch(`${chatRelayBase()}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }),
-      signal
-    });
+    return bridgeFetch("/api/chat", JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }), signal);
   const payload = {
     model: profile.model,
     messages: parameters.systemPrompt ? [{ role: "system", content: parameters.systemPrompt }, ...messages] : messages,

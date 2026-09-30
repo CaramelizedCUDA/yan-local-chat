@@ -17,6 +17,7 @@ interface Window {
   YAN_PROMPTS: any;
   __yanState: () => any; // 端到端测试读内存里的记录
   __yanSave: () => void;
+  __yanBridgeFetch: (path: string, body: string, signal?: AbortSignal | null) => Promise<Response>; // 端到端测试压总线
 }
 
 // ---- 宽松的 DOM：代码里 querySelector / closest / e.target 拿到的节点直接当表单控件、details、文本节点用，
