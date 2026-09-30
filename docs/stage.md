@@ -6,13 +6,13 @@
 
 ## 接法
 
-浏览器仍由 MCP 起、关与操作，只多三个启动参数：开调试口 `9223`、放行言的页面、窗口挪到屏幕外。以 playwright 为例，写一份配置文件（如 `stage.json`）：
+浏览器仍由 MCP 起、关与操作，只多三个启动参数：开调试口 `9288`、放行言的页面、窗口挪到屏幕外。以 playwright 为例，写一份配置文件（如 `stage.json`）：
 
 ```json
 {
   "browser": {
     "launchOptions": {
-      "args": ["--remote-debugging-port=9223", "--remote-allow-origins=http://127.0.0.1:8787", "--window-position=-32000,-32000"]
+      "args": ["--remote-debugging-port=9288", "--remote-allow-origins=http://127.0.0.1:8787", "--window-position=-32000,-32000"]
     }
   }
 }
@@ -28,6 +28,9 @@
 }
 ```
 
+- 调试口取 `9288` 而不取常见的 9222 / 9223：那两个常被远程调试的端口转发占着（`netsh interface portproxy`），占了 IPv4 的，浏览器只能退到 IPv6 上听，看台便找不到它。要换端口，改这里与 `src/26-stage.js` 里的 `port`。
+- 任务栏上会多一枚 Edge：那就是这个浏览器，窗口在屏幕外，点它看不到东西，看它请到看台。
+- 在服务的「给模型的话」里写一句「我说打开浏览器即指这个」，模型便不会去开系统默认的浏览器。
 - 窗口挪到屏幕外而不用无头模式：无头的 Edge 在 UA 里带 `HeadlessChrome`，有的站点认得出来；屏幕外的窗口与平常无异，画面照出。
 - `--remote-allow-origins` 只放行言的页面；别的网站连不上这个调试口。换了桥接端口（`YAN_PORT`）的，这里跟着改。
 - 多个项目的网页（要构建的）照常起开发服务器，模型在浏览器里开 `localhost`。

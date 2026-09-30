@@ -11732,7 +11732,7 @@ const MCP_INLINE_LIMIT = 12000;
 /** @type {{ key: string, loading: Promise<void>|null, servers: Record<string, McpServerState>, lazy: string[], retryAt: number, waitWarned: boolean }} */
 const mcp = { key: "", loading: null, servers: {}, lazy: [], retryAt: 0, waitWarned: false };
 
-/** 设置里的全部配置：{ 名字: { command, args, cwd, env } 或 { url, headers, type }，另可带 disabled / autoApprove / timeout / load } */
+/** 设置里的全部配置：{ 名字: { command, args, cwd, env } 或 { url, headers, type }，另可带 disabled / autoApprove / timeout / load / note } */
 function mcpConfigs() {
   return store.settings.mcpServers;
 }
@@ -11969,19 +11969,28 @@ function mcpResultText(result) {
   if (!parts.length && result.structuredContent) parts.push(JSON.stringify(result.structuredContent, null, 2));
   return parts.join("\n\n") || "（无输出）";
 }
-// 系统提示里 mcp.hint 那一段的值：交给模型的工具里有哪几个服务的，就附上那几个服务自带的用法；一个都没有就不带这段
+// 系统提示里 mcp.hint 那一段的值：交给模型的工具里有哪几个服务的，就附上那几个服务的用法——用户在配置里写的 note 在前
+//（模型无从自知的约定，如「我说打开浏览器即指这个」），服务握手时自带的 instructions 在后；一个都没有就不带这段
 /** @param {Set<string>} names @param {Preset|null} preset */
 function mcpHintVars(names, preset) {
-  const lazy = names.has("mcp_call") ? mcpLazyServers(preset) : [];
+  const lazy = names.has("mcp_call") ? mcpLazyServers(preset) : [],
+    configs = mcpConfigs(),
+    usage = (server, state) =>
+      [
+        String(configs[server]?.note || "").trim(),
+        String(state.instructions || "")
+          .trim()
+          .slice(0, 1500)
+      ]
+        .filter(Boolean)
+        .join("\n");
   const servers = Object.entries(mcp.servers).filter(
     ([server, state]) =>
       state.ok &&
-      state.instructions &&
+      usage(server, state) &&
       (mcp.lazy.includes(server) ? lazy.includes(server) : state.tools.some(tool => names.has(mcpFunctionName(server, tool.name))))
   );
-  return servers.length
-    ? { servers: servers.map(([server, state]) => `【${server}】${state.instructions.trim().slice(0, 1500)}`).join("\n") }
-    : null;
+  return servers.length ? { servers: servers.map(([server, state]) => `【${server}】${usage(server, state)}`).join("\n") } : null;
 }
 
   // ---- 15-tools/90-delegate.js ----
@@ -14500,7 +14509,7 @@ function mcpFormHtml(name) {
     .map(([value, label]) => `<button type="button" data-mcp-load="${value}" class="${load === value ? "active" : ""}">${label}</button>`)
     .join(
       ""
-    )}</div></label>${field("免请示的工具", "autoApprove", (config.autoApprove || []).join(", "), "工具名，逗号分隔；只读的本就不问")}</div><div class="card-form-foot"><button type="button" class="outline-btn" data-mcp-form="save">保存</button><button type="button" class="outline-btn" data-mcp-form="cancel">取消</button><button type="button" class="outline-btn" data-mcp-form="reveal">${mcpRevealed ? "遮住密钥" : "显示密钥"}</button><span class="card-error"></span>${name ? `<button type="button" class="danger-btn" data-mcp-form="delete">删除</button>` : ""}</div></div>`;
+    )}</div></label>${field("免请示的工具", "autoApprove", (config.autoApprove || []).join(", "), "工具名，逗号分隔；只读的本就不问")}${area("给模型的话", "note", config.note || "", "随系统提示交给模型，如：我说「打开浏览器」即指这个")}</div><div class="card-form-foot"><button type="button" class="outline-btn" data-mcp-form="save">保存</button><button type="button" class="outline-btn" data-mcp-form="cancel">取消</button><button type="button" class="outline-btn" data-mcp-form="reveal">${mcpRevealed ? "遮住密钥" : "显示密钥"}</button><span class="card-error"></span>${name ? `<button type="button" class="danger-btn" data-mcp-form="delete">删除</button>` : ""}</div></div>`;
 }
 /** @type {"local"|"remote"|null} 表单里切了接法、还没存时记在这里 */
 let mcpFormKind = null;
@@ -14564,7 +14573,7 @@ function mcpFormConfig(form, previous) {
         .map(line => [line.slice(0, line.indexOf(sep)).trim(), line.slice(line.indexOf(sep) + 1).trim()])
         .filter(([k]) => k)
     );
-  const { command, args, cwd, env, url, headers, type, transport, timeout, load, autoApprove, ...rest } = previous || {};
+  const { command, args, cwd, env, url, headers, type, transport, timeout, load, autoApprove, note, ...rest } = previous || {};
   const local = !!form.querySelector('[data-mcp-kind="local"].active');
   /** @type {Record<string, any>} */
   const config = local
@@ -14590,7 +14599,8 @@ function mcpFormConfig(form, previous) {
     ...config,
     ...(seconds > 0 ? { timeout: seconds } : {}),
     ...(chosen !== "auto" ? { load: chosen } : {}),
-    ...(approve.length ? { autoApprove: approve } : {})
+    ...(approve.length ? { autoApprove: approve } : {}),
+    ...(value("note") ? { note: value("note") } : {})
   };
 }
 function bindMcpEvents() {
@@ -15214,7 +15224,7 @@ const GUIDE = [
       },
       {
         h: "看台",
-        body: "模型所用的浏览器可收进言的右侧，不再另开一扇窗：令浏览器以调试口 `9223` 起、放行言的页面（playwright 的写法见仓库 docs/stage.md）。模型一开浏览器，顶栏便挂出一架小屏，点开即见其画面，可点、可滚、可打字，标签与浏览器同步。拖左缘调宽窄，「阔」铺满整页。",
+        body: "模型所用的浏览器可收进言的右侧，不再另开一扇窗：令浏览器以调试口 `9288` 起、放行言的页面（playwright 的写法见仓库 docs/stage.md）。模型一开浏览器，顶栏便挂出一架小屏，点开即见其画面，可点、可滚、可打字，标签与浏览器同步。拖左缘调宽窄，「阔」铺满整页。",
         note: "模型正操作浏览器时，小屏与地址栏旁各有一粒朱。旁注开着时看台暂让，收起旁注即回。"
       }
     ]
@@ -16172,7 +16182,7 @@ function listenViewerClosed(stop) {
 
 const stage = {
   // 调试口：模型所用的浏览器以 --remote-debugging-port 起在这里（见 docs/stage.md）
-  port: 9223,
+  port: 9288,
   /** @type {WebSocket | null} */
   ws: null,
   /** @type {Promise<void> | null} */

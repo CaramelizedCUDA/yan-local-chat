@@ -8,7 +8,7 @@
 
 const stage = {
   // 调试口：模型所用的浏览器以 --remote-debugging-port 起在这里（见 docs/stage.md）
-  port: 9223,
+  port: 9288,
   /** @type {WebSocket | null} */
   ws: null,
   /** @type {Promise<void> | null} */
