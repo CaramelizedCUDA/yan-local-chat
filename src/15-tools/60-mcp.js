@@ -11,7 +11,7 @@ const MCP_INLINE_LIMIT = 12000;
 /** @type {{ key: string, loading: Promise<void>|null, servers: Record<string, McpServerState>, lazy: string[], retryAt: number, waitWarned: boolean }} */
 const mcp = { key: "", loading: null, servers: {}, lazy: [], retryAt: 0, waitWarned: false };
 
-/** 设置里的全部配置：{ 名字: { command, args, cwd, env } 或 { url, headers, type }，另可带 disabled / autoApprove / timeout / load } */
+/** 设置里的全部配置：{ 名字: { command, args, cwd, env } 或 { url, headers, type }，另可带 disabled / autoApprove / timeout / load / note } */
 function mcpConfigs() {
   return store.settings.mcpServers;
 }
@@ -248,17 +248,26 @@ function mcpResultText(result) {
   if (!parts.length && result.structuredContent) parts.push(JSON.stringify(result.structuredContent, null, 2));
   return parts.join("\n\n") || "（无输出）";
 }
-// 系统提示里 mcp.hint 那一段的值：交给模型的工具里有哪几个服务的，就附上那几个服务自带的用法；一个都没有就不带这段
+// 系统提示里 mcp.hint 那一段的值：交给模型的工具里有哪几个服务的，就附上那几个服务的用法——用户在配置里写的 note 在前
+//（模型无从自知的约定，如「我说打开浏览器即指这个」），服务握手时自带的 instructions 在后；一个都没有就不带这段
 /** @param {Set<string>} names @param {Preset|null} preset */
 function mcpHintVars(names, preset) {
-  const lazy = names.has("mcp_call") ? mcpLazyServers(preset) : [];
+  const lazy = names.has("mcp_call") ? mcpLazyServers(preset) : [],
+    configs = mcpConfigs(),
+    usage = (server, state) =>
+      [
+        String(configs[server]?.note || "").trim(),
+        String(state.instructions || "")
+          .trim()
+          .slice(0, 1500)
+      ]
+        .filter(Boolean)
+        .join("\n");
   const servers = Object.entries(mcp.servers).filter(
     ([server, state]) =>
       state.ok &&
-      state.instructions &&
+      usage(server, state) &&
       (mcp.lazy.includes(server) ? lazy.includes(server) : state.tools.some(tool => names.has(mcpFunctionName(server, tool.name))))
   );
-  return servers.length
-    ? { servers: servers.map(([server, state]) => `【${server}】${state.instructions.trim().slice(0, 1500)}`).join("\n") }
-    : null;
+  return servers.length ? { servers: servers.map(([server, state]) => `【${server}】${usage(server, state)}`).join("\n") } : null;
 }

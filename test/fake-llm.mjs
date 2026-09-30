@@ -408,7 +408,7 @@ http
         const describe = payload.tools.find(t => t.function.name === "mcp_describe")?.function.description || "";
         return sse(res, [
           delta({
-            content: `MCPTEST|hint:${system.includes("FAKE-MCP-HINT")}|inline:${names.filter(x => x.startsWith("mcp__")).join(",")}|lazy:${names.includes("mcp_call")}|dir:${/tool_39/.test(describe)}|${toolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 80)).join(" ▸ ")}`
+            content: `MCPTEST|hint:${system.includes("FAKE-MCP-HINT")}|note:${system.includes("【web】USER-NOTE-WEB")}|inline:${names.filter(x => x.startsWith("mcp__")).join(",")}|lazy:${names.includes("mcp_call")}|dir:${/tool_39/.test(describe)}|${toolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 80)).join(" ▸ ")}`
           }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);

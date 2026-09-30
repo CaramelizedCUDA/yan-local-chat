@@ -61,7 +61,7 @@ function mcpFormHtml(name) {
     .map(([value, label]) => `<button type="button" data-mcp-load="${value}" class="${load === value ? "active" : ""}">${label}</button>`)
     .join(
       ""
-    )}</div></label>${field("免请示的工具", "autoApprove", (config.autoApprove || []).join(", "), "工具名，逗号分隔；只读的本就不问")}</div><div class="card-form-foot"><button type="button" class="outline-btn" data-mcp-form="save">保存</button><button type="button" class="outline-btn" data-mcp-form="cancel">取消</button><button type="button" class="outline-btn" data-mcp-form="reveal">${mcpRevealed ? "遮住密钥" : "显示密钥"}</button><span class="card-error"></span>${name ? `<button type="button" class="danger-btn" data-mcp-form="delete">删除</button>` : ""}</div></div>`;
+    )}</div></label>${field("免请示的工具", "autoApprove", (config.autoApprove || []).join(", "), "工具名，逗号分隔；只读的本就不问")}${area("给模型的话", "note", config.note || "", "随系统提示交给模型，如：我说「打开浏览器」即指这个")}</div><div class="card-form-foot"><button type="button" class="outline-btn" data-mcp-form="save">保存</button><button type="button" class="outline-btn" data-mcp-form="cancel">取消</button><button type="button" class="outline-btn" data-mcp-form="reveal">${mcpRevealed ? "遮住密钥" : "显示密钥"}</button><span class="card-error"></span>${name ? `<button type="button" class="danger-btn" data-mcp-form="delete">删除</button>` : ""}</div></div>`;
 }
 /** @type {"local"|"remote"|null} 表单里切了接法、还没存时记在这里 */
 let mcpFormKind = null;
@@ -125,7 +125,7 @@ function mcpFormConfig(form, previous) {
         .map(line => [line.slice(0, line.indexOf(sep)).trim(), line.slice(line.indexOf(sep) + 1).trim()])
         .filter(([k]) => k)
     );
-  const { command, args, cwd, env, url, headers, type, transport, timeout, load, autoApprove, ...rest } = previous || {};
+  const { command, args, cwd, env, url, headers, type, transport, timeout, load, autoApprove, note, ...rest } = previous || {};
   const local = !!form.querySelector('[data-mcp-kind="local"].active');
   /** @type {Record<string, any>} */
   const config = local
@@ -151,7 +151,8 @@ function mcpFormConfig(form, previous) {
     ...config,
     ...(seconds > 0 ? { timeout: seconds } : {}),
     ...(chosen !== "auto" ? { load: chosen } : {}),
-    ...(approve.length ? { autoApprove: approve } : {})
+    ...(approve.length ? { autoApprove: approve } : {}),
+    ...(value("note") ? { note: value("note") } : {})
   };
 }
 function bindMcpEvents() {
