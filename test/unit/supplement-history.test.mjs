@@ -63,3 +63,15 @@ test("补言落在答的开头：前面不留空的助手消息", () => {
     ["user", "assistant"]
   );
 });
+
+test("补言摊开全文时题头不再重复第一行；一句短话只占题头", () => {
+  const { noteStepHtml } = load(["noteStepHtml"]);
+  const count = (html, text) => html.split(text).length - 1;
+  const long = noteStepHtml({ id: "n", name: "user_note", arguments: "{}", status: "done", note: "先停一下\n换成另一种做法，理由如下" });
+  assert.equal(count(long.replace(/title="[^"]*"/g, ""), "先停一下"), 1);
+  const withFile = noteStepHtml({ id: "n", name: "user_note", arguments: "{}", status: "done", note: "看这张图", attachments: [{ name: "a.png" }] });
+  assert.equal(count(withFile.replace(/title="[^"]*"/g, ""), "看这张图"), 1);
+  const short = noteStepHtml({ id: "n", name: "user_note", arguments: "{}", status: "done", note: "换个思路" });
+  assert.match(short, /class="tool-title"[^>]*>换个思路</);
+  assert.ok(!short.includes("tool-note"));
+});
