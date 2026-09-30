@@ -140,7 +140,7 @@ function openFloatingPop(anchor, html, { align = "left", menu = true } = {}) {
   left = Math.max(edge, Math.min(left, innerWidth - width - edge));
   pop.style.top = `${Math.max(edge, top)}px`;
   pop.style.left = `${left}px`;
-  const scroller = anchor.closest("#history, #chatScroll, .composer-area");
+  const scroller = anchor.closest("#history, #chatScroll, .composer-area, #settingsContent");
   scroller?.addEventListener("scroll", closeChipPop, { once: true, passive: true });
   return pop;
 }

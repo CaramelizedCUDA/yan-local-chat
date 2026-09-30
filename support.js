@@ -3364,7 +3364,7 @@ function openFloatingPop(anchor, html, { align = "left", menu = true } = {}) {
   left = Math.max(edge, Math.min(left, innerWidth - width - edge));
   pop.style.top = `${Math.max(edge, top)}px`;
   pop.style.left = `${left}px`;
-  const scroller = anchor.closest("#history, #chatScroll, .composer-area");
+  const scroller = anchor.closest("#history, #chatScroll, .composer-area, #settingsContent");
   scroller?.addEventListener("scroll", closeChipPop, { once: true, passive: true });
   return pop;
 }
@@ -6723,8 +6723,8 @@ function memoryIndexHtml(categories) {
         .join("")}</div>`
     : `<p class="memory-empty">尚无一条。</p>`;
 }
-// 一类里的条目：正文可改，太长的先收起几行，点进去即全文；条下注日子、来源、所属分类（可改归别类）
-function memoryCategoryHtml(cat, names) {
+// 一类里的条目：正文可改，太长的先收起几行，点进去即全文；条下注日子、来源、所属分类（点开可改归别类）
+function memoryCategoryHtml(cat) {
   const row = item => {
     const source =
       item.source?.conversationId && store.conversations.some(c => c.id === item.source.conversationId)
@@ -6732,11 +6732,10 @@ function memoryCategoryHtml(cat, names) {
         : item.source?.title
           ? `<span>${escapeHtml(item.source.title)}</span>`
           : `<span>手记</span>`;
-    return `<div class="memory-item" data-memory="${escapeHtml(item.id)}"><textarea class="memory-text" rows="1" spellcheck="false" aria-label="记忆内容">${escapeHtml(item.text)}</textarea><div class="memory-meta"><span>${escapeHtml(formatDay(item.updatedAt || item.createdAt))}</span>${source}<span class="memory-spacer"></span><input class="memory-move" list="memoryCatNames" value="${escapeHtml(memoryCategoryOf(item))}" spellcheck="false" aria-label="所属分类" title="所属分类"><button type="button" data-memory-delete title="删去这条">删去</button></div></div>`;
+    return `<div class="memory-item" data-memory="${escapeHtml(item.id)}"><textarea class="memory-text" rows="1" spellcheck="false" aria-label="记忆内容">${escapeHtml(item.text)}</textarea><div class="memory-meta"><span>${escapeHtml(formatDay(item.updatedAt || item.createdAt))}</span>${source}<span class="memory-spacer"></span><button type="button" class="memory-move" title="改归别类" aria-haspopup="menu">${escapeHtml(memoryCategoryOf(item))}</button><button type="button" data-memory-delete title="删去这条">删去</button></div></div>`;
   };
   return (
     `<div class="memory-crumbs"><button type="button" class="memory-back" data-memory-cat="">‹ 记忆</button><input id="memoryCatName" class="memory-cat-name" value="${escapeHtml(cat.name)}" maxlength="24" spellcheck="false" aria-label="分类名"><span class="memory-cat-count">${cat.items.length} 条</span></div>` +
-    `<datalist id="memoryCatNames">${names.map(name => `<option value="${escapeHtml(name)}"></option>`).join("")}</datalist>` +
     `<div class="memory-list">${cat.items.map(row).join("")}</div>`
   );
 }
@@ -6757,12 +6756,7 @@ function memorySettingsHtml() {
       ],
       String(enabled)
     ) +
-    (open
-      ? memoryCategoryHtml(
-          open,
-          categories.map(cat => cat.name)
-        )
-      : memoryIndexHtml(categories)) +
+    (open ? memoryCategoryHtml(open) : memoryIndexHtml(categories)) +
     `<div class="memory-foot"><button id="addMemory" class="outline-btn" type="button">手记一条</button>${
       open
         ? `<button id="dropMemoryCat" class="outline-btn" type="button">删去此类</button>`
@@ -6771,6 +6765,15 @@ function memorySettingsHtml() {
           : ""
     }</div>`
   );
+}
+function fileMemory(item, category) {
+  const to = cleanMemoryCategory(category);
+  if (to === memoryCategoryOf(item)) return renderSettings();
+  item.category = to;
+  item.updatedAt = now();
+  saveStore();
+  toast(`已归入「${to}」`);
+  renderSettings();
 }
 function openMemoryCategory(name) {
   memoryCategoryOpen = name;
@@ -6822,15 +6825,48 @@ function bindMemoryEvents() {
         renderSettings();
       }
     });
-    // 改归别类：这条从眼前这一类里移走
-    row.querySelector(".memory-move").addEventListener("change", e => {
-      const to = cleanMemoryCategory(e.target.value);
-      if (to === memoryCategoryOf(item)) return;
-      item.category = to;
-      item.updatedAt = now();
-      saveStore();
-      toast(`已归入「${to}」`);
-      renderSettings();
+    // 改归别类：弹出各类（与侧栏「移入分组」同一副菜单），另可起一类；归走了这条就从眼前这一类里移走。
+    // 落选：原生 <datalist> 的候选框——样子由浏览器画，一点开是一块黑底，与纸面不搭
+    const move = row.querySelector(".memory-move");
+    move.addEventListener("click", event => {
+      // 这一下点击若冒泡到页面，「点别处即收」会把刚弹出的菜单收掉
+      event.stopPropagation();
+      const others = memoryCategories()
+        .map(cat => cat.name)
+        .filter(name => name !== memoryCategoryOf(item));
+      const pop = openFloatingPop(
+        move,
+        `${others.map(name => `<button type="button" data-move-to="${escapeHtml(name)}">${escapeHtml(name)}</button>`).join("")}<button type="button" data-move-to="">另起一类…</button>`,
+        { align: "right" }
+      );
+      pop.addEventListener("click", event => {
+        const choice = event.target.closest("[data-move-to]");
+        if (!choice) return;
+        closeChipPop();
+        if (choice.dataset.moveTo) return fileMemory(item, choice.dataset.moveTo);
+        // 另起一类：就地换成一个输入框，回车落定，Esc 作罢
+        const field = document.createElement("input");
+        field.className = "memory-move";
+        field.placeholder = "新类名";
+        field.maxLength = 24;
+        move.replaceWith(field);
+        field.focus();
+        let settled = false;
+        const settle = keep => {
+          if (settled) return;
+          settled = true;
+          if (keep && field.value.trim()) fileMemory(item, field.value);
+          else renderSettings();
+        };
+        field.addEventListener("keydown", e => {
+          if (e.key === "Enter") settle(true);
+          else if (e.key === "Escape") {
+            e.stopPropagation();
+            settle(false);
+          }
+        });
+        field.addEventListener("blur", () => settle(true));
+      });
     });
     row.querySelector("[data-memory-delete]").addEventListener("click", () => {
       store.memory.items = store.memory.items.filter(entry => entry !== item);

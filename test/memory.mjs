@@ -143,8 +143,19 @@ check("hand-written item added", (await memory()).items.length === 2 && (await m
 await evalJs(`document.querySelector('#settingsContent .memory-item [data-memory-delete]').click(); true`);
 await sleep(200);
 check("delete removes one", (await memory()).items.length === 1);
+// 改归别类：点条下的分类名弹出各类，另起一类即就地写名、回车落定
+await evalJs(`document.querySelector("#settingsContent .memory-move").click(); true`);
+await sleep(150);
+check(
+  "the category menu is the app's own pop, above the settings window",
+  await evalJs(
+    `(p => !!p && getComputedStyle(p).zIndex === "60" && !!p.querySelector('[data-move-to=""]'))(document.querySelector(".chip-pop.floating"))`
+  )
+);
+await evalJs(`document.querySelector('.chip-pop.floating [data-move-to=""]').click(); true`);
+await sleep(100);
 await evalJs(
-  `(i => { i.value = "工作"; i.dispatchEvent(new Event("change")); })(document.querySelector("#settingsContent .memory-move")); true`
+  `(i => { i.value = "工作"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })(document.querySelector("#settingsContent input.memory-move")); true`
 );
 await sleep(200);
 check(
