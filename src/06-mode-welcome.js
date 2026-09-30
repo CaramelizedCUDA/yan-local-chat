@@ -266,7 +266,7 @@ function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating =
     return toast("绑定目录需要本机桥接，请先运行 start.cmd");
   }
   if ((floating ? document : host).querySelector(".chip-pop[data-kind=workdir]")) return closeChipPop();
-  const html = `<div class="chip-pop-row"><input id="workdirInput" class="field" spellcheck="false" autocomplete="off" placeholder="${live ? "留空则为言" : "输入或选择目录"}" value="${escapeHtml(value || "")}"><button id="workdirPick" class="outline-btn" type="button">选择…</button>${live ? "" : `<button id="workdirCommit" class="outline-btn" type="button">${bound ? "更换" : "绑定"}</button>`}</div>${bound ? `<button type="button" class="chip-pop-unbind" data-unbind>解开目录，回到言</button>` : live ? `<button type="button" class="chip-pop-unbind${value ? "" : " hidden"}" data-unbind>不绑目录，回到言</button>` : ""}<small>指令由 ${escapeHtml(bootstrap.work?.shell || "本机 shell")} 执行；${live ? `不绑目录时落在卷宗 ${escapeHtml(archiveDir())}` : "上下文不变，此后的改动落在该目录"}</small>`;
+  const html = `<div class="chip-pop-row"><input id="workdirInput" class="field" spellcheck="false" autocomplete="off" placeholder="${live ? "留空则为言" : "输入或选择目录"}" value="${escapeHtml(value || "")}"><button id="workdirPick" class="outline-btn" type="button">选择…</button>${live ? "" : `<button id="workdirCommit" class="outline-btn" type="button">${bound ? "更换" : "绑定"}</button>`}</div>${bound ? `<button type="button" class="chip-pop-unbind" data-unbind>解开目录，回到言</button>` : live ? `<button type="button" class="chip-pop-unbind${value ? "" : " hidden"}" data-unbind>不绑目录，回到言</button>` : ""}`;
   const pop = floating ? openFloatingPop(anchor, html, { align: "right", menu: false }) : openChipPop(anchor, host, html);
   pop.dataset.kind = "workdir";
   const input = pop.querySelector("#workdirInput"),

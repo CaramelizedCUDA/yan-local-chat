@@ -3521,7 +3521,7 @@ function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating =
     return toast("绑定目录需要本机桥接，请先运行 start.cmd");
   }
   if ((floating ? document : host).querySelector(".chip-pop[data-kind=workdir]")) return closeChipPop();
-  const html = `<div class="chip-pop-row"><input id="workdirInput" class="field" spellcheck="false" autocomplete="off" placeholder="${live ? "留空则为言" : "输入或选择目录"}" value="${escapeHtml(value || "")}"><button id="workdirPick" class="outline-btn" type="button">选择…</button>${live ? "" : `<button id="workdirCommit" class="outline-btn" type="button">${bound ? "更换" : "绑定"}</button>`}</div>${bound ? `<button type="button" class="chip-pop-unbind" data-unbind>解开目录，回到言</button>` : live ? `<button type="button" class="chip-pop-unbind${value ? "" : " hidden"}" data-unbind>不绑目录，回到言</button>` : ""}<small>指令由 ${escapeHtml(bootstrap.work?.shell || "本机 shell")} 执行；${live ? `不绑目录时落在卷宗 ${escapeHtml(archiveDir())}` : "上下文不变，此后的改动落在该目录"}</small>`;
+  const html = `<div class="chip-pop-row"><input id="workdirInput" class="field" spellcheck="false" autocomplete="off" placeholder="${live ? "留空则为言" : "输入或选择目录"}" value="${escapeHtml(value || "")}"><button id="workdirPick" class="outline-btn" type="button">选择…</button>${live ? "" : `<button id="workdirCommit" class="outline-btn" type="button">${bound ? "更换" : "绑定"}</button>`}</div>${bound ? `<button type="button" class="chip-pop-unbind" data-unbind>解开目录，回到言</button>` : live ? `<button type="button" class="chip-pop-unbind${value ? "" : " hidden"}" data-unbind>不绑目录，回到言</button>` : ""}`;
   const pop = floating ? openFloatingPop(anchor, html, { align: "right", menu: false }) : openChipPop(anchor, host, html);
   pop.dataset.kind = "workdir";
   const input = pop.querySelector("#workdirInput"),
@@ -4000,7 +4000,7 @@ function renderModelMenu() {
           return `<button class="model-option${active ? " active" : ""}" data-profile="${escapeHtml(p.id)}"${active ? ' aria-current="true"' : ""} title="${escapeHtml(p.model)}"><strong><span class="model-dot"></span><span class="model-option-name">${escapeHtml(p.name)}</span></strong></button>`;
         })
         .join("")
-    : `<button class="model-option" id="configureFirst"><strong>接入模型</strong><small>任何 OpenAI 兼容接口</small></button>`;
+    : `<button class="model-option" id="configureFirst"><strong>接入模型</strong></button>`;
   const c = currentConversation(),
     profile = activeProfile(),
     level = (c ? c.reasoning : profile?.reasoning) || "",
@@ -6252,8 +6252,8 @@ function renderSideIndex(c) {
   $("#sideMessages").innerHTML =
     `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? `${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="划选正文中的一段即注在那一段上；未划选则就整条回复而谈"><span>＋</span>另起一条</button></div></div>${
       items
-        ? `${items}<p class="side-index-foot">划选正文中的一段，即可就那一段另起旁注</p>`
-        : `<div class="side-empty">还没有旁注<br>划选正文中的一段，或按上面的「另起一条」</div>`
+        ? items
+        : `<div class="side-empty">还没有旁注</div>`
     }</div>`;
   renderSideSend();
 }
@@ -6689,10 +6689,10 @@ function memorySettingsHtml() {
     return `<div class="memory-item" data-memory="${escapeHtml(item.id)}"><textarea class="memory-text" rows="1" spellcheck="false" aria-label="记忆内容">${escapeHtml(item.text)}</textarea><div class="memory-meta"><span>${escapeHtml(formatDay(item.updatedAt || item.createdAt))}</span>${source}<span class="memory-spacer"></span><button type="button" data-memory-delete title="删去这条">删去</button></div></div>`;
   };
   return (
-    `<div class="about-head memory-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="about-version">${items.length} / ${MAX_MEMORY_ITEMS} 条</span></div><p class="settings-lead">模型在对谈中记下长期有效的事，跨对话可翻阅。何时记、何时看由它判断；条目不随请求发送，也不经云端。</p>` +
+    `<div class="about-head memory-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="about-version">${items.length} / ${MAX_MEMORY_ITEMS} 条</span></div>` +
     segmentRow(
       "启用记忆",
-      "关闭后模型不再记入、也看不到已有条目；条目仍保留在此",
+      "关闭后条目仍保留",
       "memoryEnabled",
       [
         ["true", "开"],
@@ -6700,7 +6700,7 @@ function memorySettingsHtml() {
       ],
       String(enabled)
     ) +
-    `<div class="memory-list">${items.length ? items.map(row).join("") : `<p class="memory-empty">尚无一条。模型记下的事会在此出现，亦可手记。</p>`}</div>` +
+    `<div class="memory-list">${items.length ? items.map(row).join("") : `<p class="memory-empty">尚无一条。</p>`}</div>` +
     `<div class="memory-foot"><button id="addMemory" class="outline-btn" type="button">手记一条</button>${items.length ? `<button id="clearMemory" class="outline-btn" type="button">清空记忆</button>` : ""}</div>`
   );
 }
@@ -7563,12 +7563,12 @@ function renderLibrary() {
   const lead = $("#libraryLead");
   if (lead)
     lead.innerHTML = disk
-      ? `常用的文件收于此处；置于案上，便随下一问送出。卷宗即本机的一个目录：<code title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</code>（在存储位置里，可在设置里更换）；未绑目录的对话里，模型写出的文件亦落于此。${
+      ? `<code title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</code>${
           archiveScratch?.count
             ? `<span class="library-scratch">草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}<button type="button" id="libraryCleanScratch" title="清理模型留下的脚本与中间文件（${escapeHtml(bootstrap.work?.scratch || ".草稿")}）">清理</button></span>`
             : ""
         }`
-      : "常用的文件收于此处；置于案上，便随下一问送出。原件只存于此浏览器；运行 start.cmd 后，卷宗便落于本机目录。";
+      : "原件只存于此浏览器";
   $("#libraryCleanScratch")?.addEventListener("click", () => void cleanScratch(null));
   document
     .querySelectorAll("[data-library-kind]")
@@ -12286,15 +12286,15 @@ function storageSettingsHtml() {
   if (apiBase === null) return "";
   const info = bootstrap.store || {},
     parent = info.parent || "";
-  return `<div class="setting-row"><div class="setting-copy"><strong>存储位置</strong><small>对话、卷宗与配置（含模型配置）都在 <code title="${escapeHtml(info.root || "")}">${escapeHtml(info.root || "")}</code> 里，几个浏览器共用这一份。填一个目录，就在它下面立 .yan 并把整份拷过去，旧处原样留着；那里已有言的数据则直接用它</small></div><div class="setting-actions setting-directory"><input id="settingStore" class="field" spellcheck="false" autocomplete="off" placeholder="${escapeHtml(parent)}" value="${escapeHtml(parent)}"><button id="settingStorePick" class="outline-btn" type="button">选择…</button></div></div>`;
+  return `<div class="setting-row"><div class="setting-copy"><strong>存储位置</strong><small><code title="${escapeHtml(info.root || "")}">${escapeHtml(info.root || "")}</code></small></div><div class="setting-actions setting-directory"><input id="settingStore" class="field" spellcheck="false" autocomplete="off" placeholder="${escapeHtml(parent)}" value="${escapeHtml(parent)}"><button id="settingStorePick" class="outline-btn" type="button">选择…</button></div></div>`;
 }
 function generalSettingsHtml() {
-  return `<h2>通用</h2><p class="settings-lead">数据只存于本机；桥接在线时，对话、卷宗与配置都落在存储位置里。</p><div class="setting-row"><div class="setting-copy"><strong>显示名称</strong><small>侧栏中显示的称呼</small></div><input id="settingName" class="field" value="${escapeHtml(store.settings.name)}"></div><div class="setting-row"><div class="setting-copy"><strong>自动拟题</strong><small>首次问答后由模型拟题，略耗额度；手动修改过的标题不再覆盖</small></div><div class="segmented"><button data-setting="autoTitle" data-value="true" class="${store.settings.autoTitle ? "active" : ""}">开</button><button data-setting="autoTitle" data-value="false" class="${store.settings.autoTitle ? "" : "active"}">关</button></div></div>${storageSettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>本机数据</strong><small>${store.conversations.length} 段对话 · ${store.library.length} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">含附件原件</label><button id="exportData" class="outline-btn">导出备份</button><button id="importData" class="outline-btn">导入备份</button></div></div><div class="setting-row"><div class="setting-copy"><strong>清空所有对话</strong><small>模型配置、个性化与卷宗将保留</small></div><button id="clearAll" class="danger-btn">清空对话</button></div>`;
+  return `<h2>通用</h2><div class="setting-row"><div class="setting-copy"><strong>显示名称</strong><small>侧栏中显示的称呼</small></div><input id="settingName" class="field" value="${escapeHtml(store.settings.name)}"></div><div class="setting-row"><div class="setting-copy"><strong>自动拟题</strong><small>由模型拟题，略耗额度</small></div><div class="segmented"><button data-setting="autoTitle" data-value="true" class="${store.settings.autoTitle ? "active" : ""}">开</button><button data-setting="autoTitle" data-value="false" class="${store.settings.autoTitle ? "" : "active"}">关</button></div></div>${storageSettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>本机数据</strong><small>${store.conversations.length} 段对话 · ${store.library.length} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">含附件原件</label><button id="exportData" class="outline-btn">导出备份</button><button id="importData" class="outline-btn">导入备份</button></div></div><div class="setting-row"><div class="setting-copy"><strong>清空所有对话</strong><small>模型配置、个性化与卷宗将保留</small></div><button id="clearAll" class="danger-btn">清空对话</button></div>`;
 }
 // 工具：沙箱、三档指令权限、可及范围、卷宗可读、轮次上限——模型能动手的边界都在这一栏
 function toolsSettingsHtml() {
   const policy = normalizeCommandPolicy(store.settings.commandPolicyDefault);
-  return `<h2>工具</h2><p class="settings-lead">模型能做什么、做到哪一步问一声，都在这里定。</p><div class="setting-row"><div class="setting-copy"><strong>沙箱</strong><small>言与行的指令与文件工具都套着一层：改动不出工作目录、机密文件不碰、动系统与直接外联的指令拒绝、指令看不到机密环境变量；查看则可及整台机器，要它看看电脑也走得通。在桥接那头守，模型绕不过。这是静态筛查，不是进程隔离。非要让模型改目录之外的东西时再关</small></div><div class="segmented"><button data-setting="sandbox" data-value="true" class="${store.settings.sandbox !== false ? "active" : ""}">开</button><button data-setting="sandbox" data-value="false" class="${store.settings.sandbox === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>指令权限</strong><small>新对话默认档位：问而后行逐条请示，明确只读的径直跑；审而后行由桥接代审，常规改动、整机查看、写到目录之外都放行，只把伤及系统与难以恢复的当场回绝，不来打扰；径行不再审查。三档都不另调模型，沙箱开着时那道界仍在</small></div><div class="segmented"><button data-setting="commandPolicyDefault" data-value="ask" class="${policy === "ask" ? "active" : ""}">问而后行</button><button data-setting="commandPolicyDefault" data-value="review" class="${policy === "review" ? "active" : ""}">审而后行</button><button data-setting="commandPolicyDefault" data-value="auto" class="${policy === "auto" ? "active" : ""}">径行</button></div></div><div class="setting-row"><div class="setting-copy"><strong>文件工具可及范围</strong><small>没套沙箱时，模型读写文件、列目录与搜索能否越出工作目录或卷宗：「全盘」可指向任何绝对路径，「目录内」一律拒绝越出；指令不受此限。沙箱开着时一律目录内</small></div><div class="segmented"><button data-setting="toolReach" data-value="anywhere" class="${store.settings.toolReach !== "inside" ? "active" : ""}">全盘</button><button data-setting="toolReach" data-value="inside" class="${store.settings.toolReach === "inside" ? "active" : ""}">目录内</button></div></div><div class="setting-row"><div class="setting-copy"><strong>卷宗对模型可读</strong><small>开启后，模型可在任何对话中翻阅卷宗里的文档（PDF、Office、文本），用到时才取回并在本机提取正文</small></div><div class="segmented"><button data-setting="archiveRead" data-value="true" class="${store.settings.archiveRead !== false ? "active" : ""}">开</button><button data-setting="archiveRead" data-value="false" class="${store.settings.archiveRead === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>工具轮次上限</strong><small>一次回答里模型最多调几轮工具，同一轮并发的几次调用只算一轮；到顶后收回工具请它收尾。帮手另计，留空即不限</small></div><div class="setting-actions"><label class="setting-inline">一答<input id="settingToolRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(toolRoundLimit())}"></label><label class="setting-inline">帮手<input id="settingSubRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(subRoundLimit())}"></label></div></div>`;
+  return `<h2>工具</h2><div class="setting-row"><div class="setting-copy"><strong>沙箱</strong><small>改动不出目录，不碰机密，不动系统</small></div><div class="segmented"><button data-setting="sandbox" data-value="true" class="${store.settings.sandbox !== false ? "active" : ""}">开</button><button data-setting="sandbox" data-value="false" class="${store.settings.sandbox === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>指令权限</strong><small>新对话的默认档位</small></div><div class="segmented"><button data-setting="commandPolicyDefault" data-value="ask" class="${policy === "ask" ? "active" : ""}">问而后行</button><button data-setting="commandPolicyDefault" data-value="review" class="${policy === "review" ? "active" : ""}">审而后行</button><button data-setting="commandPolicyDefault" data-value="auto" class="${policy === "auto" ? "active" : ""}">径行</button></div></div><div class="setting-row"><div class="setting-copy"><strong>文件工具可及范围</strong><small>未开沙箱时，文件工具能否越出目录</small></div><div class="segmented"><button data-setting="toolReach" data-value="anywhere" class="${store.settings.toolReach !== "inside" ? "active" : ""}">全盘</button><button data-setting="toolReach" data-value="inside" class="${store.settings.toolReach === "inside" ? "active" : ""}">目录内</button></div></div><div class="setting-row"><div class="setting-copy"><strong>卷宗对模型可读</strong><small>模型可翻阅卷宗里的文档</small></div><div class="segmented"><button data-setting="archiveRead" data-value="true" class="${store.settings.archiveRead !== false ? "active" : ""}">开</button><button data-setting="archiveRead" data-value="false" class="${store.settings.archiveRead === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>工具轮次上限</strong><small>留空不限</small></div><div class="setting-actions"><label class="setting-inline">一答<input id="settingToolRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(toolRoundLimit())}"></label><label class="setting-inline">帮手<input id="settingSubRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(subRoundLimit())}"></label></div></div>`;
 }
 function appearanceSettingsHtml() {
   const s = store.settings;
@@ -12388,7 +12388,7 @@ function fontRow(active = "mixed") {
     ["kai", "楷体"],
     ["fangsong", "仿宋"]
   ];
-  return `<div class="setting-row"><div class="setting-copy"><strong>字体</strong><small>回复与标题用的字；楷体与仿宋取自系统，没有的机器落回宋体</small></div><div class="segmented font-segmented">${items.map(([v, label]) => `<button data-setting="font" data-value="${v}" class="${(active || "mixed") === v ? "active" : ""}" style="font-family:${escapeHtml(FONT_STACKS[v].title)}">${label}</button>`).join("")}</div></div>`;
+  return `<div class="setting-row"><div class="setting-copy"><strong>字体</strong><small>回复与标题用的字</small></div><div class="segmented font-segmented">${items.map(([v, label]) => `<button data-setting="font" data-value="${v}" class="${(active || "mixed") === v ? "active" : ""}" style="font-family:${escapeHtml(FONT_STACKS[v].title)}">${label}</button>`).join("")}</div></div>`;
 }
 function segmentRow(title, desc, key, items, active) {
   return `<div class="setting-row"><div class="setting-copy"><strong>${title}</strong><small>${desc}</small></div><div class="segmented">${items.map(([v, label]) => `<button data-setting="${key}" data-value="${v}" class="${String(active) === String(v) ? "active" : ""}">${label}</button>`).join("")}</div></div>`;
@@ -12398,11 +12398,7 @@ function modelsSettingsHtml() {
     apiBase !== null
       ? `本机桥接已接通${apiBase ? "（VS Code 预览）" : ""}，联网与转发均可用。`
       : "当前由浏览器直连模型，联网检索不可用；本机桥接启动后将自动接通。";
-  const keyNote =
-    apiBase !== null
-      ? "API Key 与其余配置一起存于本机存储位置的 配置.json，几个浏览器共用；导出的备份不含它。"
-      : "API Key 暂存于此浏览器，桥接接上后存进本机的存储位置；导出的备份不含它。";
-  return `<h2>模型</h2><p class="settings-lead">任何 OpenAI 兼容接口均可接入。${keyNote}${transport}</p>${bootstrap.notice ? `<div class="server-notice">${escapeHtml(bootstrap.notice)}</div>` : ""}<div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">＋ 接入模型</button>`;
+  return `<h2>模型</h2><p class="settings-lead">${transport}</p>${bootstrap.notice ? `<div class="server-notice">${escapeHtml(bootstrap.notice)}</div>` : ""}<div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">＋ 接入模型</button>`;
 }
 function quotaParts(value) {
   const match = String(value ?? "")
@@ -12425,7 +12421,7 @@ function profileCardHtml(p) {
   ]
     .map(([v, label]) => `<option value="${v}"${quota.unit === v ? " selected" : ""}>${label}</option>`)
     .join("")}</select></div>`;
-  return `<div class="profile-card" data-profile-card="${escapeHtml(p.id)}"><div class="profile-head"><strong>${escapeHtml(p.name)}</strong>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</div><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>用量上限${quotaField}<small>留空不限，只计已耗；改动后重新计量</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}">OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button></div><small>${anthropicLike(p) ? "Messages API；思考档位换算成思考预算" : "chat/completions；大多数服务与中转站"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">模型${modelField}<small>填写 Base URL 与 API Key 后可获取列表，亦可手动输入</small></label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${p.tools === false ? "本机工具关" : ""}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>由本机桥接执行检索、网页读取与文档翻阅；需接口支持 function calling</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number(p.temperature ?? 0.7)}"><small>0–2，默认 0.7；数值越高越发散</small></label>${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>Messages API 必填的输出上限；留空按 ${DEFAULT_MAX_TOKENS}，模型嫌大会报错，照报错调小即可</small></label>` : ""}<label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>此模型一次可读的 token 数；填写后右下角按比例计量，逾七成半即把前文自动压成摘要。留空则等接口回说放不下时再压；想早些压、省些墨，填小一点即可</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>此模型所认的 <code>reasoning_effort</code> 档位，逗号分隔（minimal、low、medium、high、xhigh、max）；选定模型时会自动探测并填在这里（none 是不认）；留空按 low / medium / high / max 四档列，接口拒绝某档时也会记下</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}<button class="danger-btn" data-profile-action="delete">删除</button><span class="profile-status">${invalidQuota ? "请填写大于 0 的数值，或留空不限" : ""}</span></div></div>`;
+  return `<div class="profile-card" data-profile-card="${escapeHtml(p.id)}"><div class="profile-head"><strong>${escapeHtml(p.name)}</strong>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</div><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>用量上限${quotaField}<small>留空不限</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}">OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button></div><small>${anthropicLike(p) ? "Messages API" : "chat/completions"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">模型${modelField}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${p.tools === false ? "本机工具关" : ""}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>需接口支持 function calling</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number(p.temperature ?? 0.7)}"><small>0–2，默认 0.7</small></label>${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>留空按 ${DEFAULT_MAX_TOKENS}</small></label>` : ""}<label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>过七成半自动压缩前文</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>逗号分隔；选定模型时自动探测</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}<button class="danger-btn" data-profile-action="delete">删除</button><span class="profile-status">${invalidQuota ? "请填写大于 0 的数值，或留空不限" : ""}</span></div></div>`;
 }
 function storageSize() {
   const bytes = new Blob([JSON.stringify(store)]).size;
@@ -13838,7 +13834,7 @@ let mcpEditing = null,
 
 function mcpSettingsHtml() {
   const bridged = apiBase !== null;
-  return `<div id="mcpPage"><h2>MCP</h2><p class="settings-lead">接入外部的 MCP 服务，它们的工具便归模型所用。本机程序填命令与参数，远端服务填地址${bridged ? "" : "；MCP 服务由本机桥接起、连，桥接接通后才可用"}。</p><div id="mcpList" class="card-list">${mcpCardsHtml()}</div><div class="card-foot"><button id="mcpAdd" class="outline-btn" type="button">＋ 新增服务</button><button id="mcpJson" class="outline-btn" type="button">${mcpJsonOpen ? "收起 JSON" : "以 JSON 编辑"}</button></div><div id="mcpJsonBox" class="json-box${mcpJsonOpen ? "" : " hidden"}">${mcpJsonHtml()}</div><p class="settings-note">服务标为只读的工具径直调用，其余在「问而后行」下逐次请示。工具多的服务只给模型一张目录、按需取用。MCP 服务以你的权限运行在本机，不受沙箱约束；导出备份时不带环境变量与请求头。</p></div>`;
+  return `<div id="mcpPage"><h2>MCP</h2>${bridged ? "" : `<p class="settings-lead">桥接接通后才可用</p>`}<div id="mcpList" class="card-list">${mcpCardsHtml()}</div><div class="card-foot"><button id="mcpAdd" class="outline-btn" type="button">＋ 新增服务</button><button id="mcpJson" class="outline-btn" type="button">${mcpJsonOpen ? "收起 JSON" : "以 JSON 编辑"}</button></div><div id="mcpJsonBox" class="json-box${mcpJsonOpen ? "" : " hidden"}">${mcpJsonHtml()}</div></div>`;
 }
 function mcpCardsHtml() {
   const names = Object.keys(mcpConfigs());
@@ -14106,7 +14102,7 @@ async function refreshEnv() {
 }
 function envSettingsHtml() {
   const s = envSettings();
-  return `<div id="envPage"><h2>环境</h2><p class="settings-lead">给模型备一套自带的开发环境：独立的 Python 与常用工具，装在存储位置的「环境」目录里，不依赖、也不改动系统。模型的指令与 MCP 服务都接着它；缺的库模型会自己装进这里。</p><div id="envStatus">${envStatusHtml()}</div><h3 class="settings-sub">工具包</h3><div id="envPacks" class="card-list">${envPacksHtml()}</div><div class="setting-row"><div class="setting-copy"><strong>另装</strong><small>清单之外常用的，包名以空格分开</small></div><div class="setting-actions env-extra"><label class="setting-inline">Python<input id="envPip" class="field" spellcheck="false" placeholder="如 sympy jieba" value="${escapeHtml(s.pip)}"></label><label class="setting-inline">Node<input id="envNpm" class="field" spellcheck="false" placeholder="如 pnpm" value="${escapeHtml(s.npm)}"></label></div></div><div class="setting-row"><div class="setting-copy"><strong>下载源</strong><small>国内镜像走清华、中科大与 npmmirror；官方走 PyPI、GitHub 与 npmjs。模型往后自己装包也走这一路</small></div><div class="segmented">${[
+  return `<div id="envPage"><h2>环境</h2><div id="envStatus">${envStatusHtml()}</div><h3 class="settings-sub">工具包</h3><div id="envPacks" class="card-list">${envPacksHtml()}</div><div class="setting-row"><div class="setting-copy"><strong>另装</strong><small>包名以空格分开</small></div><div class="setting-actions env-extra"><label class="setting-inline">Python<input id="envPip" class="field" spellcheck="false" placeholder="如 sympy jieba" value="${escapeHtml(s.pip)}"></label><label class="setting-inline">Node<input id="envNpm" class="field" spellcheck="false" placeholder="如 pnpm" value="${escapeHtml(s.npm)}"></label></div></div><div class="setting-row"><div class="setting-copy"><strong>下载源</strong><small>模型自装的包也走这一路</small></div><div class="segmented">${[
     ["china", "国内镜像"],
     ["official", "官方"]
   ]
@@ -14274,7 +14270,7 @@ function presetMenuHtml() {
 
 function presetsSettingsHtml() {
   const presets = store.settings.presets;
-  return `<div id="presetPage"><h2>预设</h2><p class="settings-lead">将提示词、工具、MCP 服务、模型与指令权限合为一套，即是预设。于输入框旁的模型菜单中选用，所选的对话皆依此行事；不选即为本色。</p><div class="card-list">${
+  return `<div id="presetPage"><h2>预设</h2><div class="card-list">${
     presets.map(preset => (preset.id === presetEditing ? presetFormHtml(preset) : presetCardHtml(preset))).join("") ||
     `<p class="card-note">尚无预设。</p>`
   }</div><div class="card-foot"><button id="presetAdd" class="outline-btn" type="button">＋ 新添预设</button></div></div>`;
@@ -14407,11 +14403,11 @@ const GUIDE = [
     id: "start",
     title: "起步",
     lead: "接入模型，落笔初问",
-    summary: "接入一个模型，便可落笔。顶栏右侧三件，标示言此刻的情形。",
+    summary: "接入一个模型，便可落笔。",
     steps: [
       {
         h: "接入模型",
-        body: "设置 → 模型 → 新增：填显示名称、Base URL 与 API Key，点「获取列表」择定模型，亦可手填模型 ID。接口分 **OpenAI 兼容**（多数服务与中转站）与 **Anthropic** 两种。填毕以「测试连接」验一遍。",
+        body: "设置 → 模型 → 新增：填显示名称、Base URL 与 API Key，点「获取列表」择定模型，亦可手填模型 ID。接口分 **OpenAI 兼容**（多数服务与中转站）与 **Anthropic** 两种。填毕以「测试连接」验一遍；思考档位在选定模型时自动探测。",
         noteLabel: "留意",
         note: "API Key 只存于本机的 配置.json，导出的备份不含它。"
       },
@@ -14421,8 +14417,13 @@ const GUIDE = [
       },
       {
         h: "识顶栏",
-        body: "右上三件：一点印泥是连接——静时空心，作答时朱色呼吸，断开则转赤；中间一方砚台，点之明暗互换；右侧一笔墨是用量，未设上限记所耗，设了便是余墨，随用随减。",
-        note: "印泥转赤，多是 start.cmd 的窗口已关。重新打开，下一回寄出时页面自会接上。"
+        body: "右上两件：一方砚台，点之明暗互换；一笔墨是用量，未设上限记所耗，设了便是余墨，随用随减。作答途中网络不稳而重试、上下文将满而整理时，输入框上方的工作条会说一声。",
+        note: "页面提示桥接未接通，多是 start.cmd 的窗口已关。重新打开，下一回寄出时页面自会接上。"
+      },
+      {
+        h: "上下文",
+        body: "右下角「上下文」是下一问约送出多少 token，点之可把前文压成摘要。模型设置里填了上下文窗口，过七成半便自动压；没填则等接口回说放不下时再压，想早些压、省些墨，填小一点即可。",
+        note: "首问之后模型自动拟题，略耗额度；手改过的标题不再覆盖。设置 → 通用可关。"
       }
     ]
   },
@@ -14462,6 +14463,10 @@ const GUIDE = [
         body: "问而后行下从严：改动不出工作目录，机密文件不碰，动系统或直接外联的指令拦下，转请你定夺。审而后行与径行只守系统本身。总开关在设置 → 工具。",
         noteLabel: "留意",
         note: "沙箱是静态筛查，并非进程隔离；MCP 服务以你的权限运行，不受其约束。"
+      },
+      {
+        h: "可及范围与轮次",
+        body: "未开沙箱时，文件工具能否越出目录由设置 → 工具的「可及范围」定：**全盘**可指向任何绝对路径，**目录内**一律不出；指令不受此限。「工具轮次上限」限一答（帮手另计）最多调几轮工具，同一轮并发的几次只算一轮，到顶即收回工具请模型收尾。"
       },
       {
         h: "止",
@@ -14584,7 +14589,7 @@ const GUIDE = [
       },
       {
         h: "于设置中添入",
-        body: "设置 → MCP → 新增服务，填入命令或地址；令牌置于环境变量或请求头中，页面上遮蔽显示。"
+        body: "设置 → MCP → 新增服务，填入命令或地址；令牌置于环境变量或请求头中，页面上遮蔽显示，导出备份时不带。"
       },
       {
         h: "交予模型",
@@ -14606,7 +14611,7 @@ const GUIDE = [
       },
       {
         h: "准备",
-        body: "点「准备环境」，环境即与勾选对齐：勾上者装，取消者卸。国内镜像下载较快；工具链体量较大，卡上注明约数。",
+        body: "点「准备环境」，环境即与勾选对齐：勾上者装，取消者卸。国内镜像走清华、中科大与 npmmirror，下载较快，模型往后自装的包也走这一路；工具链体量较大，卡上注明约数。",
         note: "模型的指令与 MCP 服务皆接此环境；所缺之库，模型自行装入即可。"
       }
     ]
@@ -14623,7 +14628,7 @@ const GUIDE = [
       },
       {
         h: "改与忘",
-        body: "设置 → 记忆中每条皆可修改、删除，亦可手记一条；整份记忆可以关闭。",
+        body: "设置 → 记忆中每条皆可修改、删除，亦可手记一条；整份记忆可以关闭，关闭后条目仍在。",
         noteLabel: "留意",
         note: "记忆的内容不入系统提示，只告知模型现有几条；用到时方才翻阅。"
       }
@@ -14641,7 +14646,7 @@ const GUIDE = [
       },
       {
         h: "迁移",
-        body: "设置 → 通用 → 存储位置，填一目录，整份拷至其下，旧处原样保留。",
+        body: "设置 → 通用 → 存储位置，填一目录，整份拷至其下，旧处原样保留；那里已有言的数据则直接用它。",
         note: "环境不随之迁移，至新处重新准备一遍即可。"
       },
       {
@@ -14878,7 +14883,7 @@ function groupListHtml() {
   const groups = [...groupsList()].sort((a, b) =>
     (lastTouched(groupMembers(b.id)) || b.createdAt).localeCompare(lastTouched(groupMembers(a.id)) || a.createdAt)
   );
-  return `<div class="eyebrow"><span class="seal">集</span><span>GROUPS</span></div><h1>分组</h1><p class="library-lead">相关的对话聚为一组，不至散落。组可带一个预设与一个默认目录，组里新起的对话皆依此。</p><div class="library-tools"><button id="groupsAdd" class="outline-btn" type="button">＋ 新建分组</button></div>${
+  return `<div class="eyebrow"><span class="seal">集</span><span>GROUPS</span></div><h1>分组</h1><div class="library-tools"><button id="groupsAdd" class="outline-btn" type="button">＋ 新建分组</button></div>${
     groups.length
       ? `<div class="group-toc">${groups
           .map(group => {
@@ -14896,21 +14901,21 @@ function groupListHtml() {
             return `<button type="button" class="group-row" data-group-page="${escapeHtml(group.id)}"><span class="repo-seal" aria-hidden="true">集</span><span class="group-row-name">${escapeHtml(group.name)}</span><span class="guide-lead-line" aria-hidden="true"></span><span class="group-row-gist">${escapeHtml(gist)}</span></button>`;
           })
           .join("")}</div>`
-      : `<p class="card-note">尚无分组。对话「⋯」里的「移入分组」也可就地新建。</p>`
+      : `<p class="card-note">尚无分组。</p>`
   }`;
 }
 /** @param {ReturnType<typeof groupsList>[number]} group */
 function groupDetailHtml(group) {
   const members = groupMembers(group.id),
     presets = store.settings.presets;
-  return `<div class="guide-top"><button type="button" class="guide-back" data-group-page="">‹ 分组</button></div><div class="group-title"><span class="repo-seal" aria-hidden="true">集</span><input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="组名"></div><p class="library-lead">${members.length ? `${members.length} 段对话` : "此组尚无对话"}；以下两样只管组里新起的对话。</p><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>预设</strong><small>组里新起的对话用它：提示词、工具、模型与权限一并换上。${presets.length ? "" : "尚无预设，可在设置 → 预设里新添"}</small></div><select id="groupPreset" class="field select"><option value="">本色（不带预设）</option>${presets
+  return `<div class="guide-top"><button type="button" class="guide-back" data-group-page="">‹ 分组</button></div><div class="group-title"><span class="repo-seal" aria-hidden="true">集</span><input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="组名"></div><p class="library-lead">${members.length ? `${members.length} 段对话` : "此组尚无对话"}</p><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>预设</strong><small>${presets.length ? "" : "尚无预设"}</small></div><select id="groupPreset" class="field select"><option value="">本色（不带预设）</option>${presets
     .map(
       preset =>
         `<option value="${escapeHtml(preset.id)}"${preset.id === group.presetId ? " selected" : ""}>${escapeHtml(preset.name)}</option>`
     )
     .join(
       ""
-    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>默认目录</strong><small>组里新起的对话绑上此目录，即为行；留空则为言</small></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="不绑目录" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">选择…</button></div></div></div><div class="group-actions"><button id="groupNewChat" class="outline-btn" type="button">在此组新建</button><button id="groupDissolve" class="danger-btn" type="button">解散</button></div><h3 class="settings-sub">组里的对话</h3>${
+    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>默认目录</strong></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="不绑目录" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">选择…</button></div></div></div><div class="group-actions"><button id="groupNewChat" class="outline-btn" type="button">在此组新建</button><button id="groupDissolve" class="danger-btn" type="button">解散</button></div><h3 class="settings-sub">组里的对话</h3>${
     members.length
       ? `<div class="group-toc">${members
           .map(
@@ -14918,7 +14923,7 @@ function groupDetailHtml(group) {
               `<div class="group-member"><button type="button" class="group-row" data-group-chat="${escapeHtml(c.id)}">${c.pinned ? `<span class="group-pin" title="组内置顶" aria-label="组内置顶"></span>` : ""}<span class="group-row-name">${escapeHtml(c.title)}</span><span class="guide-lead-line" aria-hidden="true"></span><span class="group-row-gist">${escapeHtml(formatDay(c.updatedAt))}</span></button><button type="button" class="group-member-out" data-group-out="${escapeHtml(c.id)}" title="移出此组，退回散列">移出</button></div>`
           )
           .join("")}</div>`
-      : `<p class="card-note">对话「⋯」里的「移入分组」可把已有的对话移进来。</p>`
+      : ""
   }`;
 }
 // 分组页上的点击与改动：一个委托，页面每画一回都还在

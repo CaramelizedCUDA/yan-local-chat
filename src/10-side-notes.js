@@ -256,8 +256,8 @@ function renderSideIndex(c) {
   $("#sideMessages").innerHTML =
     `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? `${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="划选正文中的一段即注在那一段上；未划选则就整条回复而谈"><span>＋</span>另起一条</button></div></div>${
       items
-        ? `${items}<p class="side-index-foot">划选正文中的一段，即可就那一段另起旁注</p>`
-        : `<div class="side-empty">还没有旁注<br>划选正文中的一段，或按上面的「另起一条」</div>`
+        ? items
+        : `<div class="side-empty">还没有旁注</div>`
     }</div>`;
   renderSideSend();
 }

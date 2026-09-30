@@ -118,7 +118,7 @@ function renderModelMenu() {
           return `<button class="model-option${active ? " active" : ""}" data-profile="${escapeHtml(p.id)}"${active ? ' aria-current="true"' : ""} title="${escapeHtml(p.model)}"><strong><span class="model-dot"></span><span class="model-option-name">${escapeHtml(p.name)}</span></strong></button>`;
         })
         .join("")
-    : `<button class="model-option" id="configureFirst"><strong>接入模型</strong><small>任何 OpenAI 兼容接口</small></button>`;
+    : `<button class="model-option" id="configureFirst"><strong>接入模型</strong></button>`;
   const c = currentConversation(),
     profile = activeProfile(),
     level = (c ? c.reasoning : profile?.reasoning) || "",

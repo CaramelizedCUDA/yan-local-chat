@@ -10,7 +10,7 @@ let mcpEditing = null,
 
 function mcpSettingsHtml() {
   const bridged = apiBase !== null;
-  return `<div id="mcpPage"><h2>MCP</h2><p class="settings-lead">接入外部的 MCP 服务，它们的工具便归模型所用。本机程序填命令与参数，远端服务填地址${bridged ? "" : "；MCP 服务由本机桥接起、连，桥接接通后才可用"}。</p><div id="mcpList" class="card-list">${mcpCardsHtml()}</div><div class="card-foot"><button id="mcpAdd" class="outline-btn" type="button">＋ 新增服务</button><button id="mcpJson" class="outline-btn" type="button">${mcpJsonOpen ? "收起 JSON" : "以 JSON 编辑"}</button></div><div id="mcpJsonBox" class="json-box${mcpJsonOpen ? "" : " hidden"}">${mcpJsonHtml()}</div><p class="settings-note">服务标为只读的工具径直调用，其余在「问而后行」下逐次请示。工具多的服务只给模型一张目录、按需取用。MCP 服务以你的权限运行在本机，不受沙箱约束；导出备份时不带环境变量与请求头。</p></div>`;
+  return `<div id="mcpPage"><h2>MCP</h2>${bridged ? "" : `<p class="settings-lead">桥接接通后才可用</p>`}<div id="mcpList" class="card-list">${mcpCardsHtml()}</div><div class="card-foot"><button id="mcpAdd" class="outline-btn" type="button">＋ 新增服务</button><button id="mcpJson" class="outline-btn" type="button">${mcpJsonOpen ? "收起 JSON" : "以 JSON 编辑"}</button></div><div id="mcpJsonBox" class="json-box${mcpJsonOpen ? "" : " hidden"}">${mcpJsonHtml()}</div></div>`;
 }
 function mcpCardsHtml() {
   const names = Object.keys(mcpConfigs());

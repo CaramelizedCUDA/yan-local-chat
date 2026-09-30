@@ -186,7 +186,7 @@ function groupListHtml() {
   const groups = [...groupsList()].sort((a, b) =>
     (lastTouched(groupMembers(b.id)) || b.createdAt).localeCompare(lastTouched(groupMembers(a.id)) || a.createdAt)
   );
-  return `<div class="eyebrow"><span class="seal">集</span><span>GROUPS</span></div><h1>分组</h1><p class="library-lead">相关的对话聚为一组，不至散落。组可带一个预设与一个默认目录，组里新起的对话皆依此。</p><div class="library-tools"><button id="groupsAdd" class="outline-btn" type="button">＋ 新建分组</button></div>${
+  return `<div class="eyebrow"><span class="seal">集</span><span>GROUPS</span></div><h1>分组</h1><div class="library-tools"><button id="groupsAdd" class="outline-btn" type="button">＋ 新建分组</button></div>${
     groups.length
       ? `<div class="group-toc">${groups
           .map(group => {
@@ -204,21 +204,21 @@ function groupListHtml() {
             return `<button type="button" class="group-row" data-group-page="${escapeHtml(group.id)}"><span class="repo-seal" aria-hidden="true">集</span><span class="group-row-name">${escapeHtml(group.name)}</span><span class="guide-lead-line" aria-hidden="true"></span><span class="group-row-gist">${escapeHtml(gist)}</span></button>`;
           })
           .join("")}</div>`
-      : `<p class="card-note">尚无分组。对话「⋯」里的「移入分组」也可就地新建。</p>`
+      : `<p class="card-note">尚无分组。</p>`
   }`;
 }
 /** @param {ReturnType<typeof groupsList>[number]} group */
 function groupDetailHtml(group) {
   const members = groupMembers(group.id),
     presets = store.settings.presets;
-  return `<div class="guide-top"><button type="button" class="guide-back" data-group-page="">‹ 分组</button></div><div class="group-title"><span class="repo-seal" aria-hidden="true">集</span><input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="组名"></div><p class="library-lead">${members.length ? `${members.length} 段对话` : "此组尚无对话"}；以下两样只管组里新起的对话。</p><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>预设</strong><small>组里新起的对话用它：提示词、工具、模型与权限一并换上。${presets.length ? "" : "尚无预设，可在设置 → 预设里新添"}</small></div><select id="groupPreset" class="field select"><option value="">本色（不带预设）</option>${presets
+  return `<div class="guide-top"><button type="button" class="guide-back" data-group-page="">‹ 分组</button></div><div class="group-title"><span class="repo-seal" aria-hidden="true">集</span><input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="组名"></div><p class="library-lead">${members.length ? `${members.length} 段对话` : "此组尚无对话"}</p><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>预设</strong><small>${presets.length ? "" : "尚无预设"}</small></div><select id="groupPreset" class="field select"><option value="">本色（不带预设）</option>${presets
     .map(
       preset =>
         `<option value="${escapeHtml(preset.id)}"${preset.id === group.presetId ? " selected" : ""}>${escapeHtml(preset.name)}</option>`
     )
     .join(
       ""
-    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>默认目录</strong><small>组里新起的对话绑上此目录，即为行；留空则为言</small></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="不绑目录" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">选择…</button></div></div></div><div class="group-actions"><button id="groupNewChat" class="outline-btn" type="button">在此组新建</button><button id="groupDissolve" class="danger-btn" type="button">解散</button></div><h3 class="settings-sub">组里的对话</h3>${
+    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>默认目录</strong></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="不绑目录" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">选择…</button></div></div></div><div class="group-actions"><button id="groupNewChat" class="outline-btn" type="button">在此组新建</button><button id="groupDissolve" class="danger-btn" type="button">解散</button></div><h3 class="settings-sub">组里的对话</h3>${
     members.length
       ? `<div class="group-toc">${members
           .map(
@@ -226,7 +226,7 @@ function groupDetailHtml(group) {
               `<div class="group-member"><button type="button" class="group-row" data-group-chat="${escapeHtml(c.id)}">${c.pinned ? `<span class="group-pin" title="组内置顶" aria-label="组内置顶"></span>` : ""}<span class="group-row-name">${escapeHtml(c.title)}</span><span class="guide-lead-line" aria-hidden="true"></span><span class="group-row-gist">${escapeHtml(formatDay(c.updatedAt))}</span></button><button type="button" class="group-member-out" data-group-out="${escapeHtml(c.id)}" title="移出此组，退回散列">移出</button></div>`
           )
           .join("")}</div>`
-      : `<p class="card-note">对话「⋯」里的「移入分组」可把已有的对话移进来。</p>`
+      : ""
   }`;
 }
 // 分组页上的点击与改动：一个委托，页面每画一回都还在

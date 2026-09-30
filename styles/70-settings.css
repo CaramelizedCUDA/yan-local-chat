@@ -421,6 +421,9 @@
   color: var(--ink-3);
   font-size: 11px;
 }
+.setting-copy small:empty {
+  display: none;
+}
 .setting-actions {
   flex: none;
   display: flex;

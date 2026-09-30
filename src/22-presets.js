@@ -38,7 +38,7 @@ function presetMenuHtml() {
 
 function presetsSettingsHtml() {
   const presets = store.settings.presets;
-  return `<div id="presetPage"><h2>预设</h2><p class="settings-lead">将提示词、工具、MCP 服务、模型与指令权限合为一套，即是预设。于输入框旁的模型菜单中选用，所选的对话皆依此行事；不选即为本色。</p><div class="card-list">${
+  return `<div id="presetPage"><h2>预设</h2><div class="card-list">${
     presets.map(preset => (preset.id === presetEditing ? presetFormHtml(preset) : presetCardHtml(preset))).join("") ||
     `<p class="card-note">尚无预设。</p>`
   }</div><div class="card-foot"><button id="presetAdd" class="outline-btn" type="button">＋ 新添预设</button></div></div>`;
