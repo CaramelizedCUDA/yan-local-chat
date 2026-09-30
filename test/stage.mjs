@@ -179,6 +179,17 @@ check(
 await evalJs(`document.querySelector("#stageClose").click(); true`);
 await waitFor(`!document.querySelector("#stagePin").classList.contains("hidden")`);
 check("closing the stage brings the pin back", true);
+// 书口签平时伏着（只露一道朱线），指针到右缘才抽出
+const slipX = () => evalJs(`new DOMMatrix(getComputedStyle(document.querySelector(".stage-pin-text")).transform).m41`);
+check("the slip lies tucked at the edge", (await slipX()) > 20);
+const pin = await evalJs(
+  `(r => ({ x: r.right - 6, y: r.top + r.height / 2 }))(document.querySelector("#stagePin").getBoundingClientRect())`
+);
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pin.x, y: pin.y });
+await sleep(400);
+check("the slip slides out when the pointer comes near", (await slipX()) === 0);
+await shot("stage-pin.png");
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 600, y: 400 });
 check("screencast stops when closed", await evalJs(`__yanStage.state.session === ""`));
 await browserSend("Target.closeTarget", { targetId });
 await waitFor(`!__yanStage.state.tabs.has(${JSON.stringify(targetId)})`);

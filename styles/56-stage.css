@@ -1,4 +1,4 @@
-/* 看台：对话右侧一栏，拖左缘调宽窄；「阔」铺满整页。见 src/26-stage.js 与 设计稿/24-看台 */
+/* 游目（看台）：对话右侧一栏，拖左缘调宽窄；「阔」铺满整页。见 src/26-stage.js 与 设计稿/24–25 */
 .stage-panel {
   position: relative;
   flex: none;
@@ -12,7 +12,7 @@
   background: var(--paper-2);
   animation: fadeIn 0.18s ease;
 }
-/* 旁注也在右侧：它开着时看台让位，收起便回来 */
+/* 旁注也在右侧：它开着时游目让位，收起便回来 */
 .side-panel:not(.hidden) ~ .stage-panel {
   display: none;
 }
@@ -65,41 +65,41 @@
   pointer-events: none;
 }
 
-/* 标签：照浏览器自己的一行，当前那页与下面的纸面连成一片 */
+/* 签条：一张张纸条立在栏顶，不圆角、不描边，靠深浅分；当前一张与下面的纸连成一片，顶上一道朱。见 设计稿/25 乙 */
 .stage-head {
   flex: none;
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: 3px;
   min-height: 44px;
-  padding: 8px 8px 0 12px;
-  border-bottom: 1px solid var(--line);
+  padding: 9px 10px 0 12px;
 }
 .stage-tabs {
   flex: 0 1 auto;
   min-width: 0;
   display: flex;
-  gap: 2px;
+  gap: 3px;
   overflow-x: auto;
   scrollbar-width: none;
 }
 .stage-tab {
+  position: relative;
   flex: 0 1 auto;
   min-width: 64px;
   max-width: 190px;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 4px 7px 11px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 7px 7px 0 0;
+  padding: 7px 5px 8px 13px;
+  background: color-mix(in srgb, var(--paper) 45%, var(--paper-2));
   color: var(--ink-3);
   font: 12px var(--title);
   letter-spacing: 0.03em;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
 }
 .stage-tab span {
   flex: 1;
@@ -109,14 +109,21 @@
 }
 .stage-tab:hover {
   color: var(--ink-2);
+  background: color-mix(in srgb, var(--paper) 70%, var(--paper-2));
 }
 .stage-tab.on {
-  position: relative;
-  margin-bottom: -1px;
-  padding-bottom: 8px;
-  border-color: var(--line);
+  padding-bottom: 10px;
   background: var(--paper);
   color: var(--ink);
+}
+.stage-tab.on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
 }
 .stage-tab-x {
   flex: none;
@@ -124,7 +131,7 @@
   height: 18px;
   display: grid;
   place-items: center;
-  border-radius: 5px;
+  border-radius: 4px;
   color: var(--ink-3);
   font-size: 12px;
   opacity: 0;
@@ -138,38 +145,105 @@
   opacity: 1;
   background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
+/* 签条末的＋：新开一页；没开浏览器时先把浏览器请起来 */
+.stage-new {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: 0 0 4px 3px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--ink-3);
+  font-size: 14px;
+}
+.stage-new:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+/* 阔、×：与旁注栏顶同一套——阔是一方小印字，× 与它隔一道细线 */
 .stage-tools {
   flex: none;
-  margin-left: auto;
   display: flex;
-  gap: 2px;
-  padding-bottom: 6px;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding-bottom: 8px;
+}
+.stage-tools .icon-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--ink-3) 35%, var(--line));
+  border-radius: 4px;
+  color: var(--ink-2);
+  font: 12px/1 var(--title);
+  transition:
+    color 0.16s,
+    border-color 0.16s,
+    background 0.16s,
+    transform 0.25s cubic-bezier(0.22, 0.72, 0.2, 1);
+}
+.stage-tools .icon-btn:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--accent);
+  transform: rotate(-4deg);
+}
+.stage-tools #stageWide[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.stage-tools #stageClose {
+  position: relative;
+  margin-left: 7px;
+  border-color: transparent;
+  border-radius: 7px;
+  color: var(--ink-3);
+  font-size: 16px;
+}
+.stage-tools #stageClose::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: 5px;
+  bottom: 5px;
+  border-left: 1px solid var(--line);
+}
+.stage-tools #stageClose:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  transform: none;
 }
 
-/* 退、进、重载、地址：一行，不描框 */
+/* 后退、前进、重载、地址、收藏：一行在纸上，与当前那张签连成一片；按钮是笔意小画 */
 .stage-nav {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 2px;
-  height: 36px;
-  padding: 0 12px 0 8px;
-  border-bottom: 1px solid var(--line);
+  gap: 1px;
+  height: 38px;
+  padding: 0 10px 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   background: var(--paper);
 }
 .stage-nav button {
+  flex: none;
   width: 26px;
   height: 26px;
   display: grid;
   place-items: center;
   border-radius: 6px;
-  color: var(--ink-3);
-  font-size: 15px;
-  line-height: 1;
+  transition: background 0.15s;
+}
+.stage-nav button .brush {
+  width: 17px;
+  height: 17px;
 }
 .stage-nav button:hover {
-  color: var(--ink);
   background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.stage-nav button:hover .brush {
+  transform: translateY(-1px);
 }
 .stage-url {
   flex: 1;
@@ -191,20 +265,19 @@
   background: var(--paper-2);
   color: var(--ink);
 }
-/* 模型正在操作：一粒朱，与顶栏小屏上的同一种 */
+/* 模型正在操作：一粒朱 */
 .stage-busy {
   flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: 8px;
+  margin: 0 6px 0 8px;
   color: var(--accent);
   font: 11px var(--title);
   letter-spacing: 0.1em;
   white-space: nowrap;
 }
-.stage-busy::before,
-.stage-pin.busy::after {
+.stage-busy::before {
   content: "";
   width: 6px;
   height: 6px;
@@ -218,7 +291,7 @@
   }
 }
 
-/* 画面：按 1280×720 之类的原尺寸取景，宽、高哪边先顶到就按哪边缩，不放大过原尺寸 */
+/* 画面：按原尺寸取景，宽、高哪边先顶到就按哪边缩，不放大过原尺寸 */
 .stage-view {
   position: relative;
   flex: 1;
@@ -233,7 +306,7 @@
   display: block;
   width: min(calc(100cqw - 24px), calc((100cqh - 24px) * var(--ar, 1.7778)), calc(var(--fw, 1280) * 1px));
   aspect-ratio: var(--ar, 1.7778);
-  border-radius: 4px;
+  border-radius: 3px;
   box-shadow:
     0 0 0 1px var(--line),
     0 10px 30px rgba(40, 30, 20, 0.08);
@@ -260,68 +333,84 @@
   resize: none;
   pointer-events: none;
 }
+/* 空台：一句状态，底下一枚按钮 */
 .stage-empty {
   position: absolute;
   inset: 0;
   margin: 0;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 14px;
   color: var(--ink-3);
   font: 13px var(--title);
   letter-spacing: 0.14em;
 }
 
-/* 顶栏小屏：浏览器开着、看台收着时挂出 */
+/* 书口签：夹在正文纸页右缘上方的一张竖写的签。平时伏着，只露一道朱线；指针到了右缘这一小块才抽出，走开再伏下。
+   让开顶栏（玉佩的绳垂在那里）与中段按问题跳转的短横。模型正操作浏览器时，那道朱线一明一暗 */
 .stage-pin {
+  position: absolute;
+  right: 0;
+  top: 66px;
+  z-index: 6;
+  width: 34px;
+  height: 76px;
+  padding: 0;
+}
+.stage-pin-text {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 26px;
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 9px 0 6px;
-  border-radius: 9px;
-  color: var(--ink-3);
-  font: 12px var(--title);
-  letter-spacing: 0.1em;
-  transition:
-    background 0.16s,
-    color 0.16s;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 5px 0 0 5px;
+  background: color-mix(in srgb, var(--paper-2) 70%, var(--paper));
+  box-shadow: -2px 2px 8px rgba(40, 30, 20, 0.06);
+  color: var(--ink-2);
+  font: 12.5px var(--title);
+  letter-spacing: 0.3em;
+  writing-mode: vertical-rl;
+  transform: translateX(24px);
+  transition: transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.stage-pin:hover {
+.stage-pin-text::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.stage-pin:hover .stage-pin-text,
+.stage-pin:focus-visible .stage-pin-text {
+  transform: none;
+}
+.stage-pin:hover .stage-pin-text {
   color: var(--ink);
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
 }
-.stage-pin .brush {
-  width: 18px;
-  height: 18px;
+.stage-pin.busy .stage-pin-text::before {
+  animation: stageLine 1.6s ease-in-out infinite;
 }
-.stage-pin:hover .brush {
-  transform: translateY(-1px);
+@keyframes stageLine {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-pin-text {
+    transition: none;
+  }
 }
 
-/* 标签行末的＋：新开一页；没开浏览器时先把浏览器请起来 */
-.stage-new {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  margin: 0 0 5px 2px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  color: var(--ink-3);
-  font-size: 14px;
-}
-.stage-new:hover {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--ink) 6%, transparent);
-}
-/* 地址栏右端的「收藏」与浮出的清单：夹名淡、缩进表层次 */
-.stage-nav .stage-marks-btn {
-  width: auto;
-  margin-left: 6px;
-  padding: 0 8px;
-  font: 12px var(--title);
-  letter-spacing: 0.08em;
-}
+/* 收藏浮出的清单：夹名淡、缩进表层次 */
 .chip-pop.stage-marks {
   max-height: min(60vh, 520px);
   min-width: 220px;
@@ -340,9 +429,4 @@
   color: var(--ink-3);
   font: 11px var(--title);
   letter-spacing: 0.12em;
-}
-/* 空台：一句状态，底下一枚按钮 */
-.stage-empty {
-  gap: 14px;
-  align-content: center;
 }

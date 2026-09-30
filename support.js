@@ -2108,6 +2108,25 @@ const BRUSH_ICONS = {
     brushStroke([10, 13.2, 10.1, 14.8, 10, 16.2], 1.2, { tail: 0.6 }) +
     brushStroke([6, 16.6, 10, 16.1, 14, 16.6], 1.6, { tail: 0.3 }) +
     brushSeal(12.2, 9.6, 2),
+  // 看台的几件小工具，只用墨、不落朱（朱留给「正在操作」）。后退：一笔自右向左的横，左端一撇一捺作头；前进反之
+  back: () =>
+    brushStroke([16, 10.2, 10, 9.6, 4.2, 10], 1.7, { tail: 0.2 }) +
+    brushStroke([8.6, 5.6, 6, 7.6, 4.2, 10], 1.3, { tail: 0.3 }) +
+    brushStroke([4.4, 10.2, 6.4, 12.4, 8.8, 14.2], 1.2),
+  forward: () =>
+    brushStroke([4, 10, 10, 9.6, 15.8, 10.2], 1.7, { tail: 0.2 }) +
+    brushStroke([11.4, 5.6, 14, 7.6, 15.8, 10], 1.3, { tail: 0.3 }) +
+    brushStroke([15.6, 10.2, 13.6, 12.4, 11.2, 14.2], 1.2),
+  // 重载：一笔圆相留一口，口上一点
+  reload: () => brushArc(10, 10.4, 5.6, -60, 230, 1.6, { tail: 0.15 }) + brushDot(13.4, 4.6, 1.1),
+  // 收藏：一条书签带——顶上一笔横，两侧两笔竖，底下剪成燕尾，带面染一层淡墨（五角星是别家的记号）
+  mark: () =>
+    `<path class="wash" d="M6.2 3.4H13.8V16.4L10 13.4L6.2 16.4Z"/>` +
+    brushStroke([5.6, 3.3, 10, 2.9, 14.4, 3.4], 1.6, { tail: 0.5 }) +
+    brushStroke([6.2, 3.6, 6.4, 10, 6.2, 16.4], 1.3, { tail: 0.4 }) +
+    brushStroke([13.8, 3.6, 13.6, 10, 13.8, 16.4], 1.3, { tail: 0.4 }) +
+    brushStroke([6.4, 16.2, 8.2, 14.6, 10, 13.4], 1, { tail: 0.3 }) +
+    brushStroke([10, 13.4, 11.8, 14.6, 13.6, 16.2], 1, { tail: 0.2 }),
   // 关于：一笔圆相，旁落一方小印
   about: () => brushArc(9.6, 9.8, 6.4, 200, 505, 2.2, { tail: 0.15 }) + brushSeal(14.8, 14.8, 2.2)
 };
@@ -15225,9 +15244,9 @@ const GUIDE = [
         note: "标为只读的工具径直调用，其余在问而后行下逐次请示。"
       },
       {
-        h: "看台",
-        body: "模型所用的浏览器可收进言的右侧，不再另开一扇窗：令浏览器以调试口 `9288` 起、放行言的页面（playwright 的写法见仓库 docs/stage.md）。接上之后顶栏挂着一架小屏，点开即见其画面，可点、可滚、可打字，标签与浏览器同步；浏览器未开时点「打开浏览器」，言经那个服务把它请起来。「＋」新开一页，「收藏」列出浏览器里的收藏。拖左缘调宽窄，浏览器的窗口随之变大小；「阔」铺满整页。",
-        note: "模型正操作浏览器时，小屏与地址栏旁各有一粒朱。旁注开着时看台暂让，收起旁注即回。"
+        h: "游目",
+        body: "模型所用的浏览器可收进言的右侧，不再另开一扇窗：令浏览器以调试口 `9288` 起、放行言的页面（playwright 的写法见仓库 docs/stage.md）。接上之后正文右缘上方夹着一张书口签（平时伏着只露一道朱线，指针靠近才抽出），点开即见其画面，可点、可滚、可打字，标签与浏览器同步；浏览器未开时点「打开浏览器」，言经那个服务把它请起来。「＋」新开一页，「收藏」列出浏览器里的收藏。拖左缘调宽窄，浏览器的窗口随之变大小；「阔」铺满整页。",
+        note: "模型正操作浏览器时，书口签那道朱线一明一暗，地址栏旁一粒朱。旁注开着时游目暂让，收起旁注即回。"
       }
     ]
   },
@@ -16174,7 +16193,7 @@ function listenViewerClosed(stop) {
 }
 
   // ---- 26-stage.js ----
-// 言 · 看台：模型所用的那个浏览器，画面固定在对话右侧——不再是屏幕上另开、挡人的一个窗口。
+// 言 · 游目（代码里叫看台 stage）：模型所用的那个浏览器，画面固定在对话右侧——不再是屏幕上另开、挡人的一个窗口。
 // 巧处：浏览器仍归 MCP（如 playwright）起、关与操作；看台只是另一个连上它调试口的看客——Page.startScreencast 收画面，Input.* 递点按。
 // 页面直接连调试口（浏览器以 --remote-allow-origins 放行言的页面），画面不过桥接；桥接只替页面问出连接的地址（server/stage.js）。
 // 标签照抄浏览器自己的（Target.setDiscoverTargets），不另分「成品」与「网页」：模型做的网页由它自己在浏览器里开，也就上了台。
@@ -16236,7 +16255,7 @@ function stageConnect(url, front) {
       stage.tabs.clear();
       stage.current = stage.attached = stage.session = "";
       stage.framed = false;
-      for (const waiter of stage.pending.values()) waiter.reject(Error("看台已断开"));
+      for (const waiter of stage.pending.values()) waiter.reject(Error("游目已断开"));
       stage.pending.clear();
       $("#stageFrame").removeAttribute("src");
       stageSync();
@@ -16259,7 +16278,7 @@ function stageConnect(url, front) {
 /** @param {string} method @param {Record<string, any>} [params] @param {string} [sessionId] */
 function stageSend(method, params = {}, sessionId = "") {
   const ws = stage.ws;
-  if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(Error("看台未连上"));
+  if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(Error("游目未连上"));
   const id = ++stage.seq;
   ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
   return new Promise((resolve, reject) => stage.pending.set(id, { resolve, reject }));
@@ -16414,7 +16433,7 @@ function stageSetWidth(px) {
   stage.width = Math.round(Math.max(320, Math.min(px, innerWidth - 420)));
   $("#stagePanel").style.width = `${stage.width}px`;
 }
-// 顶栏那枚小屏：接了浏览器类的 MCP（或浏览器已开着）、看台收着时挂着；模型正在操作浏览器时屏边一粒朱
+// 书口签：接了浏览器类的 MCP（或浏览器已开着）、游目收着时夹在正文右缘（平时伏着只露一道朱线）；模型正操作浏览器时那道线一明一暗
 function stageSync() {
   const pin = $("#stagePin");
   pin.classList.toggle("hidden", (!stage.ws && !stageServer()) || stageShown());
@@ -16458,7 +16477,7 @@ async function stageLaunch() {
       timeout: 60
     });
     await stageLocate();
-    if (!stage.ws) toast(`浏览器已开，看台却连不上它的调试口 ${stage.port}`);
+    if (!stage.ws) toast(`浏览器已开，游目却连不上它的调试口 ${stage.port}`);
   } catch (error) {
     toast(`打不开浏览器：${String(error.message || error).slice(0, 80)}`);
   } finally {

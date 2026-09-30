@@ -1,4 +1,4 @@
-// 言 · 看台：模型所用的那个浏览器，画面固定在对话右侧——不再是屏幕上另开、挡人的一个窗口。
+// 言 · 游目（代码里叫看台 stage）：模型所用的那个浏览器，画面固定在对话右侧——不再是屏幕上另开、挡人的一个窗口。
 // 巧处：浏览器仍归 MCP（如 playwright）起、关与操作；看台只是另一个连上它调试口的看客——Page.startScreencast 收画面，Input.* 递点按。
 // 页面直接连调试口（浏览器以 --remote-allow-origins 放行言的页面），画面不过桥接；桥接只替页面问出连接的地址（server/stage.js）。
 // 标签照抄浏览器自己的（Target.setDiscoverTargets），不另分「成品」与「网页」：模型做的网页由它自己在浏览器里开，也就上了台。
@@ -60,7 +60,7 @@ function stageConnect(url, front) {
       stage.tabs.clear();
       stage.current = stage.attached = stage.session = "";
       stage.framed = false;
-      for (const waiter of stage.pending.values()) waiter.reject(Error("看台已断开"));
+      for (const waiter of stage.pending.values()) waiter.reject(Error("游目已断开"));
       stage.pending.clear();
       $("#stageFrame").removeAttribute("src");
       stageSync();
@@ -83,7 +83,7 @@ function stageConnect(url, front) {
 /** @param {string} method @param {Record<string, any>} [params] @param {string} [sessionId] */
 function stageSend(method, params = {}, sessionId = "") {
   const ws = stage.ws;
-  if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(Error("看台未连上"));
+  if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(Error("游目未连上"));
   const id = ++stage.seq;
   ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
   return new Promise((resolve, reject) => stage.pending.set(id, { resolve, reject }));
@@ -238,7 +238,7 @@ function stageSetWidth(px) {
   stage.width = Math.round(Math.max(320, Math.min(px, innerWidth - 420)));
   $("#stagePanel").style.width = `${stage.width}px`;
 }
-// 顶栏那枚小屏：接了浏览器类的 MCP（或浏览器已开着）、看台收着时挂着；模型正在操作浏览器时屏边一粒朱
+// 书口签：接了浏览器类的 MCP（或浏览器已开着）、游目收着时夹在正文右缘（平时伏着只露一道朱线）；模型正操作浏览器时那道线一明一暗
 function stageSync() {
   const pin = $("#stagePin");
   pin.classList.toggle("hidden", (!stage.ws && !stageServer()) || stageShown());
@@ -282,7 +282,7 @@ async function stageLaunch() {
       timeout: 60
     });
     await stageLocate();
-    if (!stage.ws) toast(`浏览器已开，看台却连不上它的调试口 ${stage.port}`);
+    if (!stage.ws) toast(`浏览器已开，游目却连不上它的调试口 ${stage.port}`);
   } catch (error) {
     toast(`打不开浏览器：${String(error.message || error).slice(0, 80)}`);
   } finally {
