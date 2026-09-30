@@ -96,10 +96,9 @@ function listenInit() {
   if (el.dataset.bound) return;
   el.dataset.bound = "1";
   for (const type of ["play", "pause", "emptied", "loadedmetadata"]) el.addEventListener(type, listenSync);
+  // 放完接下一首，末一首放完回到头一首；只有一首就停在末尾
   el.addEventListener("ended", () => {
-    const list = listenTrack?.list || [],
-      at = list.findIndex(item => item.key === listenTrack?.key);
-    if (at >= 0 && at < list.length - 1) void listenLoad(list[at + 1], true);
+    if ((listenTrack?.list.length || 0) > 1) listenStep(1);
   });
   // 浏览器解不了这种编码：整页换成下载提示，喇叭收掉
   el.addEventListener("error", () => {
@@ -169,8 +168,8 @@ function listenStep(dir, track = listenTrack) {
     el = listenEl();
   // 上一首：放过三秒先回到这一曲开头
   if (dir < 0 && listenTrack?.key === track.key && el.currentTime > 3) return void (el.currentTime = 0);
-  const next = list[at + dir];
-  if (next) return void listenLoad(next, true);
+  // 列表首尾相接：末一首再往下回到头一首，头一首再往上到末一首
+  if (list.length > 1) return void listenLoad(list[(at + dir + list.length) % list.length], true);
   if (dir < 0 && listenTrack?.key === track.key) el.currentTime = 0;
 }
 async function listenSeek(ratio, track = listenTrack) {

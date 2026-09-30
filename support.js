@@ -61,7 +61,8 @@
  * @property {boolean} [background] 后台指令
  * @property {{ old: string, new: string }} [diff]
  * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
- * @property {{ path: string, added: number, removed: number, created?: boolean }} [change]
+ * @property {string} [previous] write_file 覆盖掉的原文（过长只留开头），与 written 比出红绿
+ * @property {{ path: string, added: number, removed: number, created?: boolean, lines?: number }} [change] lines：这一步之后这件的行数
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
  * @property {number} [rat] 调用发起时思绪的长度
  * @property {string} [scope] 帮手的步骤记它所属的帮手 id
@@ -4997,12 +4998,18 @@ function bindScrollEvents() {
     trail.querySelector(":scope > summary").click();
     scrollChatTo(trail);
   });
-  // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧
-  if (typeof ResizeObserver === "function")
-    new ResizeObserver(() => {
+  // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧。
+  // 「回到最新」也跟着尺寸重算：下方的行迹、思绪一收短，人没动、没有滚动事件，已到底了按钮却还挂着；
+  // 输入框长高变矮改的是视口，一并看着
+  if (typeof ResizeObserver === "function") {
+    const sizes = new ResizeObserver(() => {
       if (followBottom && view === "chat" && currentId) scrollBottom();
+      syncJumpBottom();
       syncChatScrollGrabber();
-    }).observe($("#messages"));
+    });
+    sizes.observe($("#messages"));
+    sizes.observe($("#chatScroll"));
+  }
   $("#chatScroll").addEventListener(
     "wheel",
     e => {
@@ -5722,8 +5729,9 @@ function bindTrailEvents() {
     const summary = event.target.closest(".change-summary");
     if (!summary) return;
     const files = summary.parentElement.querySelector(".change-files"),
-      open = files.classList.toggle("hidden");
-    summary.setAttribute("aria-expanded", String(!open));
+      closed = files.classList.toggle("hidden");
+    files.classList.toggle("opening", !closed);
+    summary.setAttribute("aria-expanded", String(!closed));
   });
   // 思绪与行迹的开合：正文、旁注面板与差遣面板同一套——用户亲手开合的记在消息上，流式期间的自动开合就不再替他动
   const onProcessToggle = event => {
@@ -5767,7 +5775,9 @@ function bindHelperEvents() {
   $("#helperBar").addEventListener("click", event => {
     if (event.target.closest(".work-changes")) {
       workFilesOpen = !workFilesOpen;
-      return renderHelperBar();
+      renderHelperBar();
+      if (workFilesOpen) $("#helperBar .work-files")?.classList.add("opening");
+      return;
     }
     const file = event.target.closest("[data-change-path]"),
       message =
@@ -10807,13 +10817,21 @@ defineTool({
     step.title = data.path;
     markSeen(conversation, data.path, step);
     step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
-    step.change = { path: data.path, added: data.lines, removed: data.existed ? data.previousLines : 0, created: !data.existed };
-    // 写下的内容留一份给改动清单点开看（见 changeDiffHtml）；太长只留开头，免得对话记录跟着胖
-    const content = String(args.content);
-    step.written =
-      content.length > WRITTEN_KEEP_CHARS
-        ? `${content.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${content.length - WRITTEN_KEEP_CHARS} 字未留存）`
-        : content;
+    // 覆盖时的增删由桥接按前后两版逐行比出（旧桥接只给原有行数，退回整删整增）；lines 是写后这件的行数，新建的件按它算净增
+    step.change = {
+      path: data.path,
+      added: data.added ?? data.lines,
+      removed: data.removed ?? (data.existed ? data.previousLines : 0),
+      created: !data.existed,
+      lines: data.lines
+    };
+    // 写下的内容与覆盖掉的原文各留一份给改动清单点开看（见 changeDiffHtml）；太长只留开头，免得对话记录跟着胖
+    const keep = text =>
+      text.length > WRITTEN_KEEP_CHARS
+        ? `${text.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${text.length - WRITTEN_KEEP_CHARS} 字未留存）`
+        : text;
+    step.written = keep(String(args.content));
+    if (data.previous) step.previous = String(data.previous);
     return {
       ok: true,
       content: `已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? "，覆盖了原文件" : ""}）`,
@@ -10843,7 +10861,7 @@ defineTool({
     step.title = data.path;
     step.diff = { old: args.old.slice(0, 1500), new: args.new.slice(0, 1500) };
     const counts = diffCounts(args.old, args.new);
-    step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced };
+    step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced, lines: data.lines };
     return {
       ok: true,
       content: `已修改 ${data.path}：第 ${data.line} 行起替换 ${data.replaced} 处，文件现为 ${data.lines} 行`,
@@ -11061,13 +11079,28 @@ function changeStats(message) {
   const files = new Map();
   for (const step of allSteps(message)) {
     if (!step.change || step.status !== "done") continue;
-    const entry = files.get(step.change.path) || { path: step.change.path, added: 0, removed: 0, created: false, helper: false };
+    const entry = files.get(step.change.path) || {
+      path: step.change.path,
+      added: 0,
+      removed: 0,
+      created: false,
+      helper: false,
+      lines: undefined
+    };
     entry.added += step.change.added;
     entry.removed += step.change.removed;
     entry.created ||= !!step.change.created;
     entry.helper ||= !!step.scope;
+    // 早先记下的步骤没有 lines；整份写入那一步的增即是写后的行数
+    entry.lines = step.change.lines ?? (step.written !== undefined ? step.change.added : undefined);
     files.set(step.change.path, entry);
   }
+  // 这一答里新建的件，净改动就是「增了它现在这么多行」：中途重写几遍删去的，是删自己刚写的，不算删
+  for (const entry of files.values())
+    if (entry.created && entry.lines !== undefined) {
+      entry.added = entry.lines;
+      entry.removed = 0;
+    }
   const list = [...files.values()];
   return { files: list, added: list.reduce((sum, f) => sum + f.added, 0), removed: list.reduce((sum, f) => sum + f.removed, 0) };
 }
@@ -11081,26 +11114,70 @@ function changeSpark(added, removed) {
 function changeCountHtml(stats) {
   return `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
 }
-// 清单一件一行：路径、新建 / 帮手所改的小注、增删行数；点一行看这件的改动
+// 清单一件一行：目录淡、文件名浓，新建 / 帮手所改的小注，增删行数（为零的不着色）；点一行看这件的改动
 function changeFilesHtml(stats, open, extra = "") {
   return `<div class="change-files${extra}${open ? "" : " hidden"}">${stats.files
-    .map(f => {
-      const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · ");
-      return `<button type="button" data-change-path="${escapeHtml(f.path)}" title="看 ${escapeHtml(f.path)} 的改动"><span class="path">${escapeHtml(f.path)}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></button>`;
+    .map((f, i) => {
+      const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · "),
+        cut = f.path.lastIndexOf("/") + 1;
+      return `<button type="button" data-change-path="${escapeHtml(f.path)}" title="看 ${escapeHtml(f.path)} 的改动" style="--i:${Math.min(i, 12)}"><span class="path">${cut ? `<span class="dir">${escapeHtml(f.path.slice(0, cut))}</span>` : ""}${escapeHtml(f.path.slice(cut))}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins${f.added ? "" : " zero"}">+${f.added}</span><span class="del${f.removed ? "" : " zero"}">−${f.removed}</span></button>`;
     })
     .join("")}</div>`;
 }
+// 覆盖写的前后两版逐行对齐：删的红、增的绿，成片相同的只留上下两行、中间折成一行「⋯」
+function lineDiffHtml(oldText, newText) {
+  const a = String(oldText)
+      .replace(/\r?\n$/, "")
+      .split(/\r?\n/),
+    b = String(newText)
+      .replace(/\r?\n$/, "")
+      .split(/\r?\n/);
+  if (a.length * b.length > 250000)
+    return `<pre class="tool-output diff-del">${escapeHtml(oldText)}</pre><pre class="tool-output diff-ins">${escapeHtml(newText)}</pre>`;
+  const dp = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--)
+    for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const rows = [];
+  let i = 0,
+    j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      rows.push(["s", a[i]]);
+      i++;
+      j++;
+      // 两样都行时先删后增：删去的旧行排在补上的新行之前
+    } else if (i < a.length && (j >= b.length || dp[i + 1][j] >= dp[i][j + 1])) rows.push(["d", a[i++]]);
+    else rows.push(["i", b[j++]]);
+  }
+  const near = rows.map((_, k) => rows.slice(Math.max(0, k - 2), k + 3).some(row => row[0] !== "s"));
+  let html = "",
+    skipped = 0;
+  rows.forEach(([kind, text], k) => {
+    if (kind === "s" && !near[k]) return void skipped++;
+    if (skipped) html += `<span class="gap">⋯ ${skipped} 行未动</span>`;
+    skipped = 0;
+    html += `<span class="${kind}">${escapeHtml(text) || " "}</span>`;
+  });
+  if (skipped) html += `<span class="gap">⋯ ${skipped} 行未动</span>`;
+  return `<pre class="tool-output diff-lines">${html}</pre>`;
+}
 // 一件文件在这一答里的改动：不另起接口、不另存一份，用的就是各步本来记着的——改文件那步的前后两段（行迹里同一副红绿），
-// 写文件那步写下的内容（整份写入，全算增）；按先后排，摊在预览浮层里。帮手改的也在内
+// 写文件那步写下的内容与它覆盖掉的原文（逐行比出红绿）；按先后排，摊在预览浮层里。帮手改的也在内。
+// 这一答里新建的件，从它最后一回整份写入看起：之前几版是草稿，与清单上「只增不删」对得上
 /** @param {Message} message @param {string} path */
 function changeDiffHtml(message, path) {
-  const steps = allSteps(message).filter(step => step.change?.path === path && step.status === "done");
+  let steps = allSteps(message).filter(step => step.change?.path === path && step.status === "done");
+  const created = steps.some(step => step.change.created),
+    lastWrite = steps.findLastIndex(step => step.written !== undefined);
+  if (created && lastWrite > 0) steps = steps.slice(lastWrite);
   return `<div class="file-viewer-text change-diff">${steps
     .map(step => {
       const note = [toolLabel(step.name), step.scope ? "帮手" : "", step.result || step.note || ""].filter(Boolean).join(" · "),
         head = `<p class="file-viewer-note">${escapeHtml(note)}</p>`;
       if (step.diff)
         return `${head}<div class="tool-diff"><pre class="tool-output diff-del">${escapeHtml(step.diff.old)}</pre><pre class="tool-output diff-ins">${escapeHtml(step.diff.new)}</pre></div>`;
+      if (step.written !== undefined && step.previous !== undefined && !created)
+        return `${head}<div class="tool-diff">${lineDiffHtml(step.previous, step.written)}</div>`;
       if (step.written !== undefined)
         return `${head}<div class="tool-diff"><pre class="tool-output diff-ins">${escapeHtml(step.written)}</pre></div>`;
       return head;
@@ -15611,10 +15688,9 @@ function listenInit() {
   if (el.dataset.bound) return;
   el.dataset.bound = "1";
   for (const type of ["play", "pause", "emptied", "loadedmetadata"]) el.addEventListener(type, listenSync);
+  // 放完接下一首，末一首放完回到头一首；只有一首就停在末尾
   el.addEventListener("ended", () => {
-    const list = listenTrack?.list || [],
-      at = list.findIndex(item => item.key === listenTrack?.key);
-    if (at >= 0 && at < list.length - 1) void listenLoad(list[at + 1], true);
+    if ((listenTrack?.list.length || 0) > 1) listenStep(1);
   });
   // 浏览器解不了这种编码：整页换成下载提示，喇叭收掉
   el.addEventListener("error", () => {
@@ -15684,8 +15760,8 @@ function listenStep(dir, track = listenTrack) {
     el = listenEl();
   // 上一首：放过三秒先回到这一曲开头
   if (dir < 0 && listenTrack?.key === track.key && el.currentTime > 3) return void (el.currentTime = 0);
-  const next = list[at + dir];
-  if (next) return void listenLoad(next, true);
+  // 列表首尾相接：末一首再往下回到头一首，头一首再往上到末一首
+  if (list.length > 1) return void listenLoad(list[(at + dir + list.length) % list.length], true);
   if (dir < 0 && listenTrack?.key === track.key) el.currentTime = 0;
 }
 async function listenSeek(ratio, track = listenTrack) {
