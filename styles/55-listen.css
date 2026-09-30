@@ -160,6 +160,8 @@
   align-self: flex-start;
   width: 0;
   height: 55px;
+  /* 佩上全是按键与状态：点快了不选字，免得弹出引用条 */
+  user-select: none;
 }
 :root[data-theme="dark"] .listen-pendant {
   --j0: color-mix(in srgb, var(--reach) 62%, var(--paper));
@@ -270,11 +272,12 @@
 .listen-side[data-listen="next"]:hover {
   transform: translateX(1.2px) rotate(-7deg);
 }
-/* 题名浮在佩左，不衬卡片，垫一圈纸色晕开；点它回整页，× 是停 */
+/* 题名浮在佩左，不衬卡片，垫一圈纸色晕开；点它回整页，× 是停。
+   与上一首那枚冲牙的尖（约在 69px 处）隔开十来像素：挨着时点冲牙常落在时间上 */
 .listen-label {
   position: absolute;
   top: 36px;
-  right: 72px;
+  right: 84px;
   display: grid;
   grid-template-columns: auto auto;
   justify-items: end;
