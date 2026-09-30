@@ -4411,25 +4411,32 @@ function assistantNoteHtml(message) {
 }
 /** @param {Message} message */
 function assistantMainHtml(message) {
-  const base = trailBase(message),
-    text = base
-      ? String(message.content || "")
-          .slice(base)
-          .trim()
-      : message.content;
+  const work = trailWork(message),
+    base = trailBase(message),
+    // 执事生成中，最后一步之后的话还在行迹里「进行中」那组（见 stepsHtml），写完才落到正文区。
+    // 看 trailWork 而非 base：第一步之前没说话时 base 是 0
+    text =
+      work && message.status === "streaming"
+        ? ""
+        : work
+          ? String(message.content || "")
+              .slice(base)
+              .trim()
+          : message.content;
   if (!message.content && message.status === "streaming") return `<div class="thinking">正在凝神</div>`;
   if (!message.content && message.status === "stopped") return `<div class="thinking">搁笔于此</div>`;
-  let rendered = "";
-  if (text) {
-    const previous = suppressViz;
-    suppressViz = message.status === "streaming";
-    try {
-      rendered = renderMarkdown(text);
-    } finally {
-      suppressViz = previous;
-    }
+  return `${text ? contentMarkdownHtml(message, text, base) : ""}${assistantNoteHtml(message)}`;
+}
+// 一段正文画成 .markdown：data-cut / data-base 记它从 content 的哪里起，流式接着画时据此续上；生成中不起可视化
+/** @param {Message} message */
+function contentMarkdownHtml(message, text, base) {
+  const previous = suppressViz;
+  suppressViz = message.status === "streaming";
+  try {
+    return `<div class="markdown" data-cut="${base}" data-base="${base}">${renderMarkdown(text)}</div>`;
+  } finally {
+    suppressViz = previous;
   }
-  return `${text ? `<div class="markdown" data-cut="${base}" data-base="${base}">${rendered}</div>` : ""}${assistantNoteHtml(message)}`;
 }
 /** @param {Message} message */
 function assistantActionsHtml(message) {
@@ -4957,10 +4964,14 @@ function stepsHtml(message) {
   const open =
     pending ||
     (message.toolsTouched ? !!message.toolsOpen : message.status === "streaming" && (work || running || message.steps.length > 0));
+  const base = trailBase(message),
+    tail = work && message.status === "streaming" ? String(message.content || "").slice(base).trim() : "";
   const body = work
     ? trailGroups(message)
         .map(group => trailGroupHtml(message, group))
-        .join("")
+        .join("") +
+      // 生成中最后一步之后已写的话：与流式逐帧画的同一处（trailLiveHost），整页重画后流接着往这里续
+      (tail ? `<div class="trail-group trail-live"><div class="trail-note">${contentMarkdownHtml(message, tail, base)}</div></div>` : "")
     : `<div class="tool-steps">${message.steps.map(stepHtml).join("")}</div>`;
   return `<details class="tool-stack${work ? " is-work" : ""}"${open ? " open" : ""} data-state="${escapeHtml(message.status || "complete")}"><summary><span class="tool-stack-label">${escapeHtml(trailLabel(message))}</span><span class="tool-stack-meta">${escapeHtml(trailMeta(message))}</span></summary><div class="tool-stack-body">${body}</div></details>`;
 }

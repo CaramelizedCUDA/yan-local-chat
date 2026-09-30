@@ -628,6 +628,17 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // DUPTAIL：第一轮调 read_file，第二轮慢慢说一段话（约 3 秒）；用于确认生成中切走再回来，最后一步之后的话不被画两份
+      if (typeof lastUser === "string" && lastUser.includes("DUPTAIL")) {
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [{ index: 0, id: "call_t0", type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: "src/a.js" }) } }]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [...Array.from({ length: 12 }, (_, i) => delta({ content: `尾段第${i + 1}句。` })), delta({}, { usage: { total_tokens: 5 } })], 250);
+      }
       if (typeof lastUser === "string" && lastUser.includes("DUP")) {
         // 时间线复现：第一轮多段正文（段落间带空行）后调用 read_file，第二轮慢慢流一段思绪再说话；用于确认第一轮的话只在分组里出现一次
         const n = toolResults.length;

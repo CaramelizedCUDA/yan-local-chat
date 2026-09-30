@@ -260,10 +260,14 @@ function stepsHtml(message) {
   const open =
     pending ||
     (message.toolsTouched ? !!message.toolsOpen : message.status === "streaming" && (work || running || message.steps.length > 0));
+  const base = trailBase(message),
+    tail = work && message.status === "streaming" ? String(message.content || "").slice(base).trim() : "";
   const body = work
     ? trailGroups(message)
         .map(group => trailGroupHtml(message, group))
-        .join("")
+        .join("") +
+      // 生成中最后一步之后已写的话：与流式逐帧画的同一处（trailLiveHost），整页重画后流接着往这里续
+      (tail ? `<div class="trail-group trail-live"><div class="trail-note">${contentMarkdownHtml(message, tail, base)}</div></div>` : "")
     : `<div class="tool-steps">${message.steps.map(stepHtml).join("")}</div>`;
   return `<details class="tool-stack${work ? " is-work" : ""}"${open ? " open" : ""} data-state="${escapeHtml(message.status || "complete")}"><summary><span class="tool-stack-label">${escapeHtml(trailLabel(message))}</span><span class="tool-stack-meta">${escapeHtml(trailMeta(message))}</span></summary><div class="tool-stack-body">${body}</div></details>`;
 }

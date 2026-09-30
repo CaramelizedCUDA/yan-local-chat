@@ -50,4 +50,28 @@ const final = await evalJs(
 );
 check("final body is only the last round", final.outer === "DUP done", JSON.stringify(final));
 check("round-1 text sits in the group note once", final.notes.length === 1 && final.notes[0].startsWith("两个都做"), JSON.stringify(final));
+
+// 最后一步之后正写着的话（此时在行迹「进行中」那组里）：切去另一段对话再回来，整页重画不能在正文区另画一份大字的。
+// 第一步之前没说话（步骤记在 0 处）也一样
+await evalJs(`document.querySelector("#newChat").click(); true`);
+await sleep(300);
+await evalJs(
+  `document.querySelector("#welcomeInput").value = "DUPTAIL"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
+);
+const tailArticle = `[...document.querySelectorAll(".message.assistant")].at(-1)`,
+  openChat = match => `[...document.querySelectorAll("#history .history-item")].find(n => ${match}).querySelector(".history-open").click(); true`;
+await waitFor(`(${tailArticle})?.querySelector(".trail-live")?.textContent.includes("尾段第2句")`, 10000);
+await evalJs(openChat(`n.textContent.includes("DUP") && !n.textContent.includes("DUPTAIL")`));
+await sleep(300);
+await evalJs(openChat(`n.textContent.includes("DUPTAIL")`));
+await sleep(400);
+const mid = await evalJs(
+  `(a => ({ streaming: a.dataset.status === "streaming", copies: [...a.querySelectorAll(".markdown")].filter(m => m.textContent.includes("尾段第1句")).length, outer: !!a.querySelector(".assistant-block > .markdown") }))(${tailArticle})`
+);
+check("text after the last step is painted once after switching back", mid.streaming && mid.copies === 1 && !mid.outer, JSON.stringify(mid));
+await waitFor(`(${tailArticle}).dataset.status !== "streaming"`, 10000);
+const done = await evalJs(
+  `(a => ({ outer: a.querySelector(".assistant-block > .markdown")?.textContent.trim(), live: !!a.querySelector(".trail-live"), copies: [...a.querySelectorAll(".markdown")].filter(m => m.textContent.includes("尾段第1句")).length }))(${tailArticle})`
+);
+check("the tail lands in the body once when done", done.outer?.startsWith("尾段第1句") && !done.live && done.copies === 1, JSON.stringify(done));
 await close();

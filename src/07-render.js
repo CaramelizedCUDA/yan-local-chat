@@ -529,25 +529,32 @@ function assistantNoteHtml(message) {
 }
 /** @param {Message} message */
 function assistantMainHtml(message) {
-  const base = trailBase(message),
-    text = base
-      ? String(message.content || "")
-          .slice(base)
-          .trim()
-      : message.content;
+  const work = trailWork(message),
+    base = trailBase(message),
+    // 执事生成中，最后一步之后的话还在行迹里「进行中」那组（见 stepsHtml），写完才落到正文区。
+    // 看 trailWork 而非 base：第一步之前没说话时 base 是 0
+    text =
+      work && message.status === "streaming"
+        ? ""
+        : work
+          ? String(message.content || "")
+              .slice(base)
+              .trim()
+          : message.content;
   if (!message.content && message.status === "streaming") return `<div class="thinking">正在凝神</div>`;
   if (!message.content && message.status === "stopped") return `<div class="thinking">搁笔于此</div>`;
-  let rendered = "";
-  if (text) {
-    const previous = suppressViz;
-    suppressViz = message.status === "streaming";
-    try {
-      rendered = renderMarkdown(text);
-    } finally {
-      suppressViz = previous;
-    }
+  return `${text ? contentMarkdownHtml(message, text, base) : ""}${assistantNoteHtml(message)}`;
+}
+// 一段正文画成 .markdown：data-cut / data-base 记它从 content 的哪里起，流式接着画时据此续上；生成中不起可视化
+/** @param {Message} message */
+function contentMarkdownHtml(message, text, base) {
+  const previous = suppressViz;
+  suppressViz = message.status === "streaming";
+  try {
+    return `<div class="markdown" data-cut="${base}" data-base="${base}">${renderMarkdown(text)}</div>`;
+  } finally {
+    suppressViz = previous;
   }
-  return `${text ? `<div class="markdown" data-cut="${base}" data-base="${base}">${rendered}</div>` : ""}${assistantNoteHtml(message)}`;
 }
 /** @param {Message} message */
 function assistantActionsHtml(message) {
