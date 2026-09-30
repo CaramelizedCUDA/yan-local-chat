@@ -1,11 +1,10 @@
 // 言 · 本地存储 · 对话：一段一个文件落进对话目录，脏标记、落盘、巡检与读回
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
-// 对话目录可用：桥接在线、桥接报了目录、上次读它没出错
+// 对话目录可用：桥接报了目录、上次读它没出错
 function chatsOnline() {
-  return apiBase !== null && !!chatsDir() && !chatsBroken;
+  return !!chatsDir() && !chatsBroken;
 }
 function chatsDir() {
-  if (apiBase === null) return "";
   return bootstrap.work?.chats || "";
 }
 // 标记这段对话有改动（改名、置顶、后台一答收尾这些不在「当前对话」上的改动要亲手标；当前这段与正在生成的自动算在内）
@@ -387,7 +386,7 @@ async function hydrateStore() {
 // 与对话目录合一次：开页接上桥接时、桥接中途断了又接上时都来一遍。
 // 目录里没有的推过去，目录里更新的换进来（正在生成的、改了还没存的不换），两边一样的把表里的暂存清掉；先前没删成的补删
 async function syncChatsWithDisk() {
-  if (apiBase === null || !chatsDir() || chatsSyncing) return;
+  if (!chatsDir() || chatsSyncing) return;
   chatsSyncing = true;
   try {
     const data = await bridge("/api/chats/load", { root: chatsDir() }, AbortSignal.timeout(120000));

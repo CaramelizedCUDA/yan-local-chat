@@ -17,7 +17,7 @@ function busConnect() {
   busSource = null;
   busOpen = busTried = false;
   busBase = apiBase;
-  if (apiBase === null || typeof EventSource !== "function") return;
+  if (typeof EventSource !== "function") return;
   busSource = new EventSource(`${apiBase}/api/bus?page=${encodeURIComponent(PAGE_ID)}`);
   const settle = open => {
     busOpen = open;
@@ -25,7 +25,7 @@ function busConnect() {
     for (const resolve of busWaiters.splice(0)) resolve(open);
   };
   busSource.onopen = () => settle(true);
-  // 流断了（桥接重启、关了）：在途的一律按连不上结束，与直连时掐线一样；EventSource 自己会重连
+  // 流断了（桥接重启、关了）：在途的一律按连不上结束，与直接 fetch 时掐线一样；EventSource 自己会重连
   busSource.onerror = () => {
     for (const job of [...busJobs.values()]) job.fail(new TypeError("Failed to fetch"));
     settle(false);
@@ -76,7 +76,7 @@ async function bridgeFetch(path, body, signal) {
         finish();
         stream.close();
       },
-      // 桥接那头没写完就断了：与直连时连接被掐一样，报网络错误
+      // 桥接那头没写完就断了：与直接 fetch 时连接被掐一样，报网络错误
       drop: () => job.fail(new TypeError("network error")),
       fail: error => {
         finish();
@@ -94,7 +94,7 @@ async function bridgeFetch(path, body, signal) {
       async response => {
         if (response.ok || !busJobs.has(id)) return;
         finish();
-        // 桥接那头这一页的流恰好断了：这一次改走直连
+        // 桥接那头这一页的流恰好断了：这一次改为直接 fetch
         if (response.status === 409) return direct().then(resolve, reject);
         reject(Error((await response.json().catch(() => ({}))).error || `请求失败（${response.status}）`));
       },
@@ -109,7 +109,6 @@ function bridgeTimedOut(error) {
 }
 // 调本机桥接：存储、卷宗、工具都走这一个口子；桥接回的错误是一句话，原样抛出（状态码与回来的内容挂在 status / data 上）
 async function bridge(path, payload, signal) {
-  if (apiBase === null) throw Error("本机工具需要本机桥接");
   const response = await bridgeFetch(path, JSON.stringify(payload), signal);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });

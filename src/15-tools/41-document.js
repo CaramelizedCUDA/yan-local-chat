@@ -69,9 +69,9 @@ const ARCHIVE_DOC_EXTENSIONS = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "o
 /** @param {Conversation} conversation */
 function availableDocuments(conversation) {
   const seen = new Map();
-  for (const file of [...(conversation?.messages || []).flatMap(m => m.attachments || []), ...store.library])
+  for (const file of (conversation?.messages || []).flatMap(m => m.attachments || []))
     if (file.id && !seen.has(file.name) && (file.kind === "text" || (file.kind === "file" && file.extracted))) seen.set(file.name, file);
-  if (store.settings.archiveRead !== false && archiveOnline())
+  if (store.settings.archiveRead !== false)
     for (const entry of archiveEntries || []) {
       const extension = String(entry.name).split(".").pop().toLowerCase();
       if (seen.has(entry.name) || !(ARCHIVE_DOC_EXTENSIONS.has(extension) || isTextFile({ name: entry.name, type: "" }))) continue;

@@ -230,10 +230,6 @@ async function ensureWorkReady(conversation) {
     toast("当前模型已关闭本机工具，请在模型高级配置中开启");
     return false;
   }
-  if (apiBase === null && !(await ensureLocalBridge())) {
-    toast("执事需要本机桥接，请先运行 start.cmd");
-    return false;
-  }
   try {
     const prepared = await bridge("/api/work/prepare", { workdir: conversation.workdir }, AbortSignal.timeout(8000));
     if (prepared.created) toast("工作目录不存在，已新建");

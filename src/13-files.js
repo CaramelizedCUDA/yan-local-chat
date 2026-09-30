@@ -71,7 +71,6 @@ async function addFiles(fileList) {
   if (!files.length) return;
   if (view === "library") return addLibraryFiles(files);
   let total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0),
-    attachmentUsage = usedAttachmentBytes(),
     added = 0;
   for (const file of files) {
     if (pendingAttachments.length >= 10) {
@@ -86,15 +85,9 @@ async function addFiles(fileList) {
       toast(`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`);
       break;
     }
-    // 合计上限只管浏览器里的暂存；桥接在线时原件落在存储目录，不受它限
-    if (apiBase === null && attachmentUsage + file.size > MAX_ATTACHMENTS_BYTES) {
-      toast(`卷宗与附件原件合计已达 ${limitLabel(MAX_ATTACHMENTS_BYTES)} 上限，请先清理`);
-      break;
-    }
     try {
       pendingAttachments.push(await ingestFile(file));
       total += file.size;
-      attachmentUsage += file.size;
       added += 1;
     } catch {
       toast(`${file.name} 读取失败`);
@@ -132,8 +125,8 @@ async function ingestFile(file) {
 }
 
 // ---------- 卷宗：跨对话保存的文件库 ----------
-// 桥接在线时卷宗是磁盘上的一个目录（bootstrap.work.archive）：拖进来的文件落盘，没绑目录的对话里模型写出的文件也在这里，页面即目录的视图；
-// 直连没桥接时退回浏览器内的版本：原件存在 IndexedDB，元数据记录在 store.library。两边都有时，浏览器内的旧件另列一组，可一键落盘
+// 卷宗是存储根里的一个目录（bootstrap.work.archive）：拖进来的文件落盘，没绑目录的对话里模型写出的文件也在这里，页面即目录的视图。
+// 早先直连时收在浏览器里的旧件（store.library）开页时逐件落进目录（见 migrateLibraryToArchive）
 let archiveEntries = null,
   archiveDirs = [],
   archiveScratch = null,
@@ -147,14 +140,10 @@ function parentDir(path) {
   const at = String(path).lastIndexOf("/");
   return at < 0 ? "" : path.slice(0, at);
 }
-function archiveOnline() {
-  return apiBase !== null && !!archiveDir();
-}
 function archiveFileUrl(path, download = false) {
   return `${apiBase}/api/archive/file?root=${encodeURIComponent(archiveDir())}&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
 }
 async function refreshArchive() {
-  if (!archiveOnline()) return;
   if (archiveLoading) return archiveLoading;
   archiveLoading = bridge("/api/archive/list", { root: archiveDir() }, AbortSignal.timeout(8000))
     .then(data => {
@@ -186,7 +175,7 @@ function archiveKind(name) {
   if (PREVIEW_VIDEO.has(extension)) return "video";
   return isTextFile({ name, type: "" }) ? "text" : "file";
 }
-// 附件与浏览器内卷宗记的 kind 只分 画 / 文 / 卷（送给模型时的读法）；画在卡片上、按类筛选时，卷里再分出音与影
+// 附件记的 kind 只分 画 / 文 / 卷（送给模型时的读法）；画在卡片上、按类筛选时，卷里再分出音与影
 function displayKind(file) {
   return file.kind === "file" ? archiveKind(file.name) : file.kind;
 }
@@ -205,37 +194,17 @@ function closeLibrary() {
   render();
 }
 function libraryTotal() {
-  return (archiveOnline() ? (archiveEntries || []).length : 0) + store.library.length;
+  return (archiveEntries || []).length;
 }
 function renderLibraryCount() {
   const total = libraryTotal();
   $("#libraryCount").textContent = total ? String(total) : "";
 }
-function libraryEntry(file) {
-  return {
-    id: file.id,
-    kind: file.kind,
-    name: file.name,
-    mime: file.mime,
-    size: file.size,
-    modifiedAt: file.modifiedAt,
-    extracted: !!file.extracted,
-    savedAt: now()
-  };
-}
-function libraryCardHtml(file, disk, showDir = true) {
-  const kind = disk ? archiveKind(file.name) : displayKind(file),
-    key = disk ? `data-library-disk="${escapeHtml(file.path)}" draggable="true"` : `data-library-item="${escapeHtml(file.id)}"`,
-    thumb =
-      kind !== "image"
-        ? ""
-        : disk
-          ? `<img class="library-thumb" src="${escapeHtml(archiveFileUrl(file.path))}" alt="">`
-          : `<img class="library-thumb" data-thumb="${escapeHtml(file.id)}" alt="">`,
-    note = disk
-      ? `${formatFileSize(file.size)} · ${escapeHtml(formatDay(file.modifiedAt))}${showDir && file.path.includes("/") ? ` · ${escapeHtml(parentDir(file.path))}` : ""}`
-      : `${formatFileSize(file.size)} · 收于 ${escapeHtml(formatDay(file.savedAt))}${file.kind === "file" && !file.extracted ? " · 未能提取正文" : ""}`;
-  return `<div class="library-card${disk && kind === "image" ? " has-thumb" : ""}" ${key}><div class="library-preview"${kind === "image" ? ` role="button" tabindex="0" ${disk ? `data-open-disk-image="${escapeHtml(file.path)}"` : `data-open-image="${escapeHtml(file.id)}"`} title="查看 ${escapeHtml(file.name)}"` : ""}>${thumb}<span class="library-glyph" aria-hidden="true">${kindGlyph(kind)}</span><span class="attachment-type">${escapeHtml(fileTypeLabel(file))}</span></div><div class="library-body"><strong title="${escapeHtml(disk ? file.path : file.name)}">${escapeHtml(file.name)}</strong><small>${note}</small></div><div class="library-actions">${disk || previewKind(file.name) !== "none" ? `<button data-library-action="view" title="在此预览，不必下载">预览</button>` : ""}<button data-library-action="download">下载</button><button data-library-action="remove">${disk ? "删除" : "移出"}</button></div></div>`;
+function libraryCardHtml(file, showDir = true) {
+  const kind = archiveKind(file.name),
+    thumb = kind === "image" ? `<img class="library-thumb" src="${escapeHtml(archiveFileUrl(file.path))}" alt="">` : "",
+    note = `${formatFileSize(file.size)} · ${escapeHtml(formatDay(file.modifiedAt))}${showDir && file.path.includes("/") ? ` · ${escapeHtml(parentDir(file.path))}` : ""}`;
+  return `<div class="library-card${kind === "image" ? " has-thumb" : ""}" data-library-disk="${escapeHtml(file.path)}" draggable="true"><div class="library-preview"${kind === "image" ? ` role="button" tabindex="0" data-open-disk-image="${escapeHtml(file.path)}" title="查看 ${escapeHtml(file.name)}"` : ""}>${thumb}<span class="library-glyph" aria-hidden="true">${kindGlyph(kind)}</span><span class="attachment-type">${escapeHtml(fileTypeLabel(file))}</span></div><div class="library-body"><strong title="${escapeHtml(file.path)}">${escapeHtml(file.name)}</strong><small>${note}</small></div><div class="library-actions"><button data-library-action="view" title="在此预览，不必下载">预览</button><button data-library-action="download">下载</button><button data-library-action="remove">删除</button></div></div>`;
 }
 // 一个夹：一叠纸，下注里头共几件（连同更深的层）、有几个子夹、最近一件的日子
 function libraryFolderHtml(dir) {
@@ -266,54 +235,42 @@ function enterLibraryDir(dir) {
 }
 function renderLibrary() {
   const query = libraryQuery.trim().toLowerCase(),
-    disk = archiveOnline(),
     matches = (name, kind) => (libraryKind === "all" || kind === libraryKind) && (!query || String(name).toLowerCase().includes(query)),
     // 逐层看；一旦查找或按类筛选，就跨各层平铺，卡片下注它所在的路径
-    browsing = disk && !query && libraryKind === "all";
-  const diskItems = !disk
-      ? []
-      : browsing
-        ? (archiveEntries || []).filter(file => parentDir(file.path) === libraryDir)
-        : (archiveEntries || []).filter(file => matches(file.name, archiveKind(file.name))),
+    browsing = !query && libraryKind === "all";
+  const diskItems = browsing
+      ? (archiveEntries || []).filter(file => parentDir(file.path) === libraryDir)
+      : (archiveEntries || []).filter(file => matches(file.name, archiveKind(file.name))),
     folders = browsing
       ? archiveDirs.filter(dir => parentDir(dir.path) === libraryDir).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
-      : [],
-    items = browsing && libraryDir ? [] : store.library.filter(file => matches(file.name, displayKind(file)));
+      : [];
   renderLibraryCrumbs(browsing && !!libraryDir);
   const total = libraryTotal(),
-    bytes = [...(disk ? archiveEntries || [] : []), ...store.library].reduce((sum, file) => sum + Number(file.size || 0), 0);
+    bytes = (archiveEntries || []).reduce((sum, file) => sum + Number(file.size || 0), 0);
   $("#libraryCountText").textContent = total ? `现存 ${total} 件 · ${formatFileSize(bytes)}` : "";
   const lead = $("#libraryLead");
   if (lead)
-    lead.innerHTML = disk
-      ? `<code title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</code>${
-          archiveScratch?.count
-            ? `<span class="library-scratch">草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}<button type="button" id="libraryCleanScratch" title="清理模型留下的脚本与中间文件（${escapeHtml(bootstrap.work?.scratch || ".草稿")}）">清理</button></span>`
-            : ""
-        }`
-      : "原件只存于此浏览器";
+    lead.innerHTML = `<code title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</code>${
+      archiveScratch?.count
+        ? `<span class="library-scratch">草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}<button type="button" id="libraryCleanScratch" title="清理模型留下的脚本与中间文件（${escapeHtml(bootstrap.work?.scratch || ".草稿")}）">清理</button></span>`
+        : ""
+    }`;
   $("#libraryCleanScratch")?.addEventListener("click", () => void cleanScratch(null));
   document
     .querySelectorAll("[data-library-kind]")
     .forEach(button => button.classList.toggle("active", button.dataset.libraryKind === libraryKind));
-  const legacy =
-    disk && items.length
-      ? `<div class="library-section"><span>浏览器内的旧件 · ${store.library.length}</span><button type="button" id="libraryMigrate" class="outline-btn">全部落盘</button></div>`
-      : "";
   $("#libraryGrid").innerHTML =
-    folders.length || diskItems.length || items.length
-      ? `${folders.map(libraryFolderHtml).join("")}${diskItems.map(file => libraryCardHtml(file, true, !browsing)).join("")}${legacy}${items.map(file => libraryCardHtml(file, false)).join("")}`
+    folders.length || diskItems.length
+      ? `${folders.map(libraryFolderHtml).join("")}${diskItems.map(file => libraryCardHtml(file, !browsing)).join("")}`
       : `<div class="library-empty">${
           browsing && libraryDir
             ? "此夹尚空<br>拖入文件即收于此夹"
             : total
               ? "没有匹配的卷宗"
-              : disk && archiveEntries === null
+              : archiveEntries === null
                 ? "正在翻开卷宗…"
                 : "卷宗尚空<br>拖入文件即收入"
         }</div>`;
-  $("#libraryMigrate")?.addEventListener("click", () => void migrateLibraryToArchive());
-  void loadThumbnails($("#libraryGrid"));
 }
 // 文本以 UTF-8 编成 data: URL；二进制附件本就是 data: URL
 function dataUrlFromText(text, mime = "text/plain") {
@@ -351,7 +308,7 @@ async function moveArchiveFile(path, dir) {
 // 清草稿：给对话则只清它那一处（删对话时顺手），不给则整个 .草稿 目录（卷宗页上的「清理」）
 /** @param {Conversation} conversation */
 async function cleanScratch(conversation) {
-  if (!archiveOnline() || (conversation && isWork(conversation))) return;
+  if (conversation && isWork(conversation)) return;
   if (
     !conversation &&
     !(await askConfirm({ title: "清理全部草稿？", body: "模型在卷宗里留下的脚本与中间文件将被删除，成品不受影响。", ok: "清理" }))
@@ -374,45 +331,22 @@ async function cleanScratch(conversation) {
 async function addLibraryFiles(fileList, dir = libraryDir) {
   const files = Array.from(fileList || []);
   let added = 0;
-  if (archiveOnline()) {
-    for (const file of files) {
-      if (file.size > MAX_ARCHIVE_FILE_BYTES) {
-        toast(`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
-        continue;
-      }
-      try {
-        await putArchiveFile(file.name, await readFile(file, "data"), dir);
-        added += 1;
-      } catch (error) {
-        toast(`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
-      }
-    }
-    await refreshArchive();
-    if (added) toast(`已收入 ${added} 件`);
-    return;
-  }
   for (const file of files) {
-    if (file.size > MAX_FILE_BYTES) {
-      toast(`${file.name} 超过 ${limitLabel(MAX_FILE_BYTES)}，未收入`);
-      continue;
-    }
-    if (usedAttachmentBytes() + file.size > MAX_ATTACHMENTS_BYTES) {
-      toast(`卷宗与附件原件合计已达 ${limitLabel(MAX_ATTACHMENTS_BYTES)} 上限，请先清理`);
+    if (file.size > MAX_ARCHIVE_FILE_BYTES) {
+      toast(`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
       continue;
     }
     try {
-      store.library.unshift(libraryEntry(await ingestFile(file)));
+      await putArchiveFile(file.name, await readFile(file, "data"), dir);
       added += 1;
-    } catch {
-      toast(`${file.name} 读取失败`);
+    } catch (error) {
+      toast(`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
     }
   }
-  saveStore();
-  if (view === "library") renderLibrary();
-  renderLibraryCount();
+  await refreshArchive();
   if (added) toast(`已收入 ${added} 件`);
 }
-// 附件上的「藏」：桥接在线时原件落盘到卷宗目录，否则记进浏览器内的卷宗
+// 附件上的「藏」：原件落进卷宗目录
 async function saveToLibrary(id) {
   const metadata =
     pendingAttachments.find(file => file.id === id) ||
@@ -422,25 +356,17 @@ async function saveToLibrary(id) {
       .find(file => file.id === id);
   const file = metadata && (await getAttachment(id));
   if (!file) return toast("附件原件已找不到");
-  if (archiveOnline()) {
-    try {
-      const saved = await putArchiveFile(metadata.name, file.kind === "text" ? dataUrlFromText(file.data, file.mime) : file.data);
-      void refreshArchive();
-      toast(`${saved.name} 已收入卷宗`);
-    } catch (error) {
-      toast(`收入失败：${String(error.message || error).slice(0, 80)}`);
-    }
-    return;
+  try {
+    const saved = await putArchiveFile(metadata.name, file.kind === "text" ? dataUrlFromText(file.data, file.mime) : file.data);
+    void refreshArchive();
+    toast(`${saved.name} 已收入卷宗`);
+  } catch (error) {
+    toast(`收入失败：${String(error.message || error).slice(0, 80)}`);
   }
-  if (inLibrary(id)) return toast("已在卷宗中");
-  store.library.unshift(libraryEntry(metadata));
-  saveStore();
-  renderLibraryCount();
-  toast(`${metadata.name} 已收入卷宗`);
 }
-// 浏览器内的旧件逐件落盘；落盘成功的从浏览器内移出（原件若没被对话引用则一并删去）
+// 早先直连时收在浏览器里的旧件（开页时、导入旧备份后）：逐件落进卷宗目录，落成了的从浏览器里移出（原件若没被对话引用则一并删去）
 async function migrateLibraryToArchive() {
-  if (!archiveOnline()) return;
+  if (!store.library.length) return;
   let moved = 0;
   for (const item of [...store.library]) {
     const file = await getAttachment(item.id);
@@ -457,14 +383,7 @@ async function migrateLibraryToArchive() {
   }
   saveStore();
   await refreshArchive();
-  toast(moved ? `已落盘 ${moved} 件` : "没有可落盘的文件");
-}
-async function removeFromLibrary(id) {
-  store.library = store.library.filter(file => file.id !== id);
-  saveStore();
-  if (!isReferenced(id)) void deleteAttachment(id);
-  renderLibrary();
-  renderLibraryCount();
+  if (moved) toast(`浏览器里的 ${moved} 件旧卷宗已落进卷宗目录`);
 }
 async function removeArchiveFile(path) {
   if (!(await askConfirm({ title: "删除这件卷宗？", body: `将从本机目录删除「${path}」，无法撤销。`, ok: "删除" }))) return;
@@ -483,18 +402,6 @@ function canPlaceAttachment(size) {
   const total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0);
   if (total + Number(size || 0) > MAX_PENDING_BYTES) return toast(`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`), false;
   return true;
-}
-function placeFromLibrary(id) {
-  const item = store.library.find(file => file.id === id);
-  if (!item) return;
-  if (pendingAttachments.some(file => file.id === id)) return toast("此件已在案上");
-  if (!canPlaceAttachment(item.size)) return;
-  const { savedAt, ...metadata } = item;
-  pendingAttachments.push(metadata);
-  persistDraft();
-  closeLibrary();
-  toast(`${item.name} 已置于案上`);
-  setTimeout(() => (currentConversation() ? $("#chatInput") : $("#welcomeInput")).focus(), 0);
 }
 // 磁盘上的卷宗置于案上：取回原件，按普通附件收进浏览器（图片、可提取的文档照常处理）
 async function placeFromArchive(path) {
@@ -562,7 +469,7 @@ function revokeViewerUrls() {
 }
 /** 取一件东西的三种读法：直链（图、PDF、音视频交给浏览器）、正文、字节。
  * 卷宗与落了盘的附件都走桥接的同源地址——页面的 CSP 只许同源的框架与媒体，blob: 的 PDF 会被挡；
- * 只有没桥接（file:// 打开，没有 CSP）或原件只在浏览器里时，才就地造 blob 地址 */
+ * 原件只暂存在浏览器里（桥接中途断过、还没推进目录）时，才就地造 blob 地址 */
 function urlReader(url) {
   const fetched = async () => {
     const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
@@ -573,11 +480,9 @@ function urlReader(url) {
 }
 async function viewerReader(source) {
   if (source.path) return urlReader(archiveFileUrl(source.path));
-  if (apiBase !== null) {
-    const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
-      head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
-    if (head?.ok) return urlReader(url);
-  }
+  const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
+    head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (head?.ok) return urlReader(url);
   const file = await getAttachment(source.attachmentId);
   if (!file) throw Error("附件原件已找不到");
   const blob = file.kind === "text" ? new Blob([file.data], { type: file.mime || "text/plain" }) : await (await fetch(file.data)).blob();
@@ -594,7 +499,6 @@ async function openFileViewer(target, name = "", trigger = null) {
   const source = typeof target === "string" ? { path: target } : target;
   const viewer = $("#fileViewer");
   if (!viewer) return;
-  if (source.path && !archiveOnline()) return toast("预览需要本机桥接");
   const title =
       name ||
       String(source.path || "")
@@ -1004,20 +908,12 @@ function bindLibraryEvents() {
     const button = e.target.closest("[data-library-action]");
     if (!button) return;
     const path = button.closest("[data-library-disk]")?.dataset.libraryDisk,
-      id = button.closest("[data-library-item]")?.dataset.libraryItem,
       action = button.dataset.libraryAction;
-    if (path) {
-      if (action === "view") void openFileViewer(path, "", button);
-      else if (action === "place") void placeFromArchive(path);
-      else if (action === "download") downloadArchiveFile(path);
-      else if (action === "remove") void removeArchiveFile(path);
-      return;
-    }
-    if (action === "place") placeFromLibrary(id);
-    else if (action === "view")
-      void openFileViewer({ attachmentId: id }, button.closest(".library-card")?.querySelector("strong")?.textContent || "", button);
-    else if (action === "download") void downloadAttachment(id);
-    else if (action === "remove") void removeFromLibrary(id);
+    if (!path) return;
+    if (action === "view") void openFileViewer(path, "", button);
+    else if (action === "place") void placeFromArchive(path);
+    else if (action === "download") downloadArchiveFile(path);
+    else if (action === "remove") void removeArchiveFile(path);
   });
   $("#libraryGrid").addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
@@ -1076,11 +972,9 @@ function bindLibraryEvents() {
     const toLibrary = view === "library";
     $("#dropTitle").textContent = toLibrary ? "松手，收入卷宗" : "松手，置于案上";
     $("#dropHint").textContent = toLibrary
-      ? archiveOnline()
-        ? libraryDir
-          ? `任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
-          : "任何文件 · 落到本机的卷宗目录"
-        : `图片、文档与代码文件 · 单件不超过 ${limitLabel(MAX_FILE_BYTES)}`
+      ? libraryDir
+        ? `任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
+        : "任何文件 · 落到本机的卷宗目录"
       : `图片、文档与代码文件 · 单次共 ${limitLabel(MAX_PENDING_BYTES)}`;
     $("#dropVeil").classList.remove("hidden");
   };
@@ -1115,7 +1009,6 @@ function bindLibraryEvents() {
     if (!link) return;
     event.preventDefault();
     const name = link.dataset.file;
-    if (!archiveOnline()) return toast(`链接无处可去：「${name}」不在卷宗里`);
     if (archiveEntries === null) await refreshArchive();
     const entry = (archiveEntries || []).find(file => file.name === name || file.path === name);
     if (!entry) return toast(`卷宗里没有「${name}」`);

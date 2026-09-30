@@ -31,7 +31,6 @@ function restoreConfigBase() {
   } catch {}
 }
 function scheduleConfigSave() {
-  if (apiBase === null) return;
   clearTimeout(configSaveTimer);
   configSaveTimer = setTimeout(saveConfigNow, 1000);
 }
@@ -39,7 +38,6 @@ function scheduleConfigSave() {
 function saveConfigNow({ force = false } = {}) {
   clearTimeout(configSaveTimer);
   configSaveTimer = null;
-  if (apiBase === null) return;
   // 上一次还在路上：等它回来再写这一次，免得两次互相比时间戳
   if (configSaving && !unloading) {
     configSaveAgain = true;
@@ -224,7 +222,6 @@ const STORE_ROOT_KEY = "yan-store-root";
 // 存储根头一回立起来：先把旧的对话与卷宗拷进来（旧处留着）。然后看两边谁新：
 // 全新的浏览器取磁盘那份；灌进来的（没带版本标记的旧记录）以浏览器为准；这台浏览器头一回碰上这个根就合并；其余按时间戳，新的为准
 async function syncConfigWithDisk() {
-  if (apiBase === null) return;
   const info = bootstrap.store || {};
   let met = "";
   try {
@@ -264,7 +261,7 @@ async function syncConfigWithDisk() {
 }
 // 从后台切回来：另一个浏览器可能改过配置，与磁盘上的对一对（这边有没写下去的改动也不丢，见 reconcileConfig）
 async function refreshConfigFromDisk() {
-  if (apiBase === null || configSaving) return;
+  if (configSaving) return;
   try {
     const disk = await bridge("/api/store/config/load", {}, AbortSignal.timeout(8000));
     if (disk.config && !configSaving) reconcileConfig(disk.config, Number(disk.savedAt) || 0);

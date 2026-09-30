@@ -16,7 +16,6 @@ function workMode() {
 }
 // 卷宗目录：存储根里的 卷宗/（桥接报来的位置）；没绑目录的对话，工具都落在这里
 function archiveDir() {
-  if (apiBase === null) return "";
   return bootstrap.work?.archive || "";
 }
 // 言里的草稿：卷宗下的隐藏目录 .草稿/<对话id>/，脚本与中间文件放那里，成品放根目录；卷宗页不列它
@@ -26,10 +25,10 @@ function scratchRel(c) {
     .replace(/[^A-Za-z0-9_-]/g, "")
     .slice(0, 12)}`;
 }
-// 这段对话的工具落脚在哪：绑了目录是它，没绑是卷宗；直连没桥接时为空（也就没有文件工具）
+// 这段对话的工具落脚在哪：绑了目录是它，没绑是卷宗
 /** @param {Conversation} c */
 function workRoot(c) {
-  return c?.workdir || (apiBase !== null ? archiveDir() : "");
+  return c?.workdir || archiveDir();
 }
 // 侧栏的一枚印：只显示当前的态（言 / 行），改态的入口是目录签
 function renderModeSwitch() {
@@ -67,11 +66,10 @@ function renderWorkAuto() {
   button.classList.toggle("on", policy !== "ask");
 }
 function renderWelcome() {
-  const work = workMode(),
-    bridged = apiBase !== null;
+  const work = workMode();
   $("#welcome .seal").textContent = work ? "行" : "言";
   $("#welcomeSub").textContent = work ? "以目录为案，言起而事行" : "长问慢答，尽付纸墨";
-  renderChips(work, bridged);
+  renderChips(work);
   renderSuggestions(work);
   renderWelcomeNotice();
 }
@@ -79,11 +77,6 @@ function renderWelcome() {
 function renderWelcomeNotice() {
   const el = $("#welcomeNotice");
   if (!el) return;
-  if (location.protocol === "file:" && apiBase === null) {
-    el.classList.remove("hidden");
-    el.innerHTML = `<span class="seal" aria-hidden="true">地</span><span>这是直接打开的本地文件页，配置与桥接页面分开保存。要查看原来的模型、对话和环境，请运行 start.cmd 并打开 ${LOCAL_BRIDGE}。</span>`;
-    return;
-  }
   const none = !profiles().length;
   el.classList.toggle("hidden", !none);
   if (!none) return;
@@ -97,21 +90,17 @@ function pathTail(dir) {
     .filter(Boolean);
   return parts.at(-1) || dir;
 }
-function renderChips(work, bridged) {
+function renderChips(work) {
   const dirChip = $("#workdirChip"),
     pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
   dirChip.classList.remove("hidden");
-  dirChip.querySelector(".chip-text").textContent = pending ? pathTail(pending) : bridged ? "卷宗" : "未绑定";
-  dirChip.title = pending
-    ? `${pending}\n行：指令与改动落在此目录`
-    : bridged
-      ? `言：产出收入卷宗（${archiveDir()}）`
-      : "言：绑定目录与生成文件需本机桥接（start.cmd）";
+  dirChip.querySelector(".chip-text").textContent = pending ? pathTail(pending) : "卷宗";
+  dirChip.title = pending ? `${pending}\n行：指令与改动落在此目录` : `言：产出收入卷宗（${archiveDir()}）`;
   dirChip.classList.toggle("on", !!pending);
   const approve = $("#approveChip");
   const policy = normalizeCommandPolicy(store.settings.commandPolicyDefault),
     meta = COMMAND_POLICY_META[policy];
-  approve.classList.toggle("hidden", !bridged);
+  approve.classList.remove("hidden");
   approve.querySelector(".chip-text").textContent = meta[0];
   approve.classList.toggle("on", policy !== "ask");
   approve.title = `${meta[0]}：${meta[1]}（新对话默认）`;
@@ -173,13 +162,9 @@ function openAttachMenu(anchor) {
     renderArchivePicker(pop, anchor);
   };
 }
-// 卷宗选件：一栏可查找的清单，磁盘上的与浏览器内的都列，点一件即置于案上；子目录里的件注上它所在的夹，查找也认夹名
+// 卷宗选件：一栏可查找的清单，点一件即置于案上；子目录里的件注上它所在的夹，查找也认夹名
 function renderArchivePicker(pop, anchor) {
-  const disk = archiveOnline() ? archiveEntries || [] : [],
-    items = [
-      ...disk.map(file => ({ key: `disk:${file.path}`, name: file.name, dir: parentDir(file.path), size: file.size })),
-      ...store.library.map(file => ({ key: `item:${file.id}`, name: file.name, size: file.size }))
-    ];
+  const items = (archiveEntries || []).map(file => ({ key: file.path, name: file.name, dir: parentDir(file.path), size: file.size }));
   pop.classList.add("attach-picker");
   pop.innerHTML = `<input class="field" placeholder="按文件名查找" aria-label="查找卷宗"><div class="chip-pop-list"></div>`;
   const input = pop.querySelector("input"),
@@ -207,10 +192,8 @@ function renderArchivePicker(pop, anchor) {
   list.addEventListener("click", event => {
     const button = event.target.closest("[data-pick]");
     if (!button) return;
-    const [kind, ...rest] = button.dataset.pick.split(":"),
-      key = rest.join(":");
     closeChipPop();
-    void (kind === "disk" ? placeFromArchive(key) : placeFromLibrary(key));
+    void placeFromArchive(button.dataset.pick);
   });
   // 清单比菜单高，重新贴一次锚点
   const rect = anchor.getBoundingClientRect(),
@@ -228,7 +211,7 @@ function openHistoryMenu(id, anchor) {
   if (document.querySelector(`.chip-pop[data-kind=history][data-for="${CSS.escape(id)}"]`)) return closeChipPop();
   const pop = openFloatingPop(
     anchor,
-    `<button type="button" data-menu="pin">${c.pinned ? "取消置顶" : "置顶"}</button><button type="button" data-menu="rename">改名</button><button type="button" data-menu="bind">${isWork(c) ? "更换目录" : "绑定目录"}</button><button type="button" data-menu="group">${groupOf(c) ? "移至他组" : "移入分组"}</button><button type="button" data-menu="export"><span>导出</span><small>${archiveOnline() ? "存入卷宗" : "Markdown"}</small></button><button type="button" class="danger" data-menu="delete">删除</button>`,
+    `<button type="button" data-menu="pin">${c.pinned ? "取消置顶" : "置顶"}</button><button type="button" data-menu="rename">改名</button><button type="button" data-menu="bind">${isWork(c) ? "更换目录" : "绑定目录"}</button><button type="button" data-menu="group">${groupOf(c) ? "移至他组" : "移入分组"}</button><button type="button" data-menu="export"><span>导出</span><small>存入卷宗</small></button><button type="button" class="danger" data-menu="delete">删除</button>`,
     { align: "right" }
   );
   pop.dataset.kind = "history";
@@ -261,10 +244,6 @@ function openHistoryMenu(id, anchor) {
 // live 时每敲一字都落值（欢迎页记到待绑目录），否则回车、点选才落值（对话页要经桥接绑定）
 // floating：不挂在 host 里而是浮在锚点旁（侧栏历史条目的「绑定目录」用），其余一样
 function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating = false }) {
-  if (apiBase === null) {
-    void ensureLocalBridge();
-    return toast("绑定目录需要本机桥接，请先运行 start.cmd");
-  }
   if ((floating ? document : host).querySelector(".chip-pop[data-kind=workdir]")) return closeChipPop();
   const html = `<div class="chip-pop-row"><input id="workdirInput" class="field" spellcheck="false" autocomplete="off" placeholder="${live ? "留空则为言" : "输入或选择目录"}" value="${escapeHtml(value || "")}"><button id="workdirPick" class="outline-btn" type="button">选择…</button>${live ? "" : `<button id="workdirCommit" class="outline-btn" type="button">${bound ? "更换" : "绑定"}</button>`}</div>${bound ? `<button type="button" class="chip-pop-unbind" data-unbind>解开目录，回到言</button>` : live ? `<button type="button" class="chip-pop-unbind${value ? "" : " hidden"}" data-unbind>不绑目录，回到言</button>` : ""}`;
   const pop = floating ? openFloatingPop(anchor, html, { align: "right", menu: false }) : openChipPop(anchor, host, html);
@@ -319,7 +298,6 @@ async function bindWorkdir(c, dir) {
     return;
   }
   if (activeProfile()?.tools === false) return toast("当前模型已关闭本机工具，请在模型高级配置中开启");
-  if (apiBase === null && !(await ensureLocalBridge())) return toast("绑定目录需要本机桥接，请先运行 start.cmd");
   try {
     const prepared = await bridge("/api/work/prepare", { workdir: dir }, AbortSignal.timeout(8000));
     if (prepared.workdir === c.workdir) return;
@@ -354,14 +332,14 @@ function setupChips() {
   $("#welcomeGroup").onclick = () => {
     delete store.settings.pendingGroupId;
     saveStore();
-    renderChips(workMode(), apiBase !== null);
+    renderChips(workMode());
     renderHeader();
   };
   $("#chatGroup").onclick = () => openGroupsPage(groupOf(currentConversation())?.id || null);
   $("#approveChip").onclick = () => {
     store.settings.commandPolicyDefault = nextCommandPolicy(store.settings.commandPolicyDefault);
     saveStore();
-    renderChips(workMode(), apiBase !== null);
+    renderChips(workMode());
   };
   // 对话页标题下的目录签：绑上、更换或解开
   const meta = $("#chatMeta");

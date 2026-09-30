@@ -16,7 +16,6 @@ function setup(replies = []) {
       document.hidden = true;
       saveStoreSoon = saveStore = renderSendButtons = renderHistory =
         setJobLabel = refreshSteps = markDirty = accountUsage = () => {};
-      archiveOnline = () => false;
       keepInWindow = mcpForTurn = maybeAutoCompact = maybeAutoTitle = async () => {};
       reserveTokens = () => () => {};
       restFor = async () => {};

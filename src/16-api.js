@@ -279,61 +279,7 @@ async function requestChat(profile, messages, signal, overrides = {}) {
     // probe 是探档位时故意送的、不存在的一档，原样送出去让接口报错（见 probeReasoningLevels）
     ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
-  if (apiBase !== null)
-    return bridgeFetch("/api/chat", JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }), signal);
-  const payload = {
-    model: profile.model,
-    messages: parameters.systemPrompt ? [{ role: "system", content: parameters.systemPrompt }, ...messages] : messages,
-    stream: true,
-    stream_options: { include_usage: true },
-    temperature: parameters.temperature,
-    ...(parameters.maxTokens ? { max_tokens: parameters.maxTokens } : {}),
-    ...extras
-  };
-  // 直连 Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格，后面的读法不变
-  if (anthropicLike(profile)) {
-    const upstream = await fetch(anthropicEndpoint(profile.baseUrl), {
-      method: "POST",
-      headers: anthropicHeaders(profile.apiKey, true),
-      body: JSON.stringify(anthropicRequest(payload)),
-      signal
-    });
-    if (!upstream.ok || !upstream.body) return upstream;
-    return new Response(upstream.body.pipeThrough(anthropicToOpenAiStream(profile.model)), {
-      status: 200,
-      headers: { "Content-Type": "text/event-stream; charset=utf-8" }
-    });
-  }
-  payload.messages = payload.messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
-  return fetch(completionEndpoint(profile.baseUrl), {
-    method: "POST",
-    headers: directHeaders(profile),
-    body: JSON.stringify(payload),
-    signal
-  });
-}
-// 直连时列模型的地址与请求头：Anthropic 与 OpenAI 兼容的各一套
-/** @param {Profile} profile */
-function directModelsRequest(profile) {
-  return anthropicLike(profile)
-    ? { url: anthropicEndpoint(profile.baseUrl, "/v1/models"), headers: anthropicHeaders(profile.apiKey, true) }
-    : { url: modelsEndpoint(profile.baseUrl), headers: directHeaders(profile) };
-}
-function completionEndpoint(baseUrl) {
-  const url = String(baseUrl || "")
-    .trim()
-    .replace(/\/$/, "");
-  if (!/^https?:\/\//i.test(url)) throw Error("Base URL 只支持 http 或 https");
-  return /\/chat\/completions$/i.test(url) ? url : `${url}/chat/completions`;
-}
-function modelsEndpoint(baseUrl) {
-  const url = new URL(String(baseUrl || "").trim());
-  url.pathname = `${url.pathname.replace(/\/chat\/completions\/?$/i, "").replace(/\/$/, "")}/models`;
-  return url.href;
-}
-/** @param {Profile} profile */
-function directHeaders(profile) {
-  return { "Content-Type": "application/json; charset=utf-8", ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {}) };
+  return bridgeFetch("/api/chat", JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }), signal);
 }
 /** @param {Profile} profile */
 function profileForRequest(profile) {
@@ -500,7 +446,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     think.held = "";
     think.mode = "body";
   };
-  // 直连时流静默太久没人管（桥接那头 Node 自带五分钟的读超时）：五分钟一个字节都没有就当断了，按中断处理、可续写
+  // 流静默太久（桥接那头 Node 自带五分钟的读超时）：五分钟一个字节都没有就当断了，按中断处理、可续写
   const readChunk = () =>
     new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -632,9 +578,7 @@ function extractContent(data) {
 }
 function friendlyError(message) {
   if (/Failed to fetch|NetworkError|Load failed/i.test(message))
-    return apiBase === null
-      ? "浏览器无法直连该接口，通常是接口未开放 CORS。请运行 start.cmd 或 VS Code 任务「言：启动模型桥接」后重试。"
-      : "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
+    return "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
   return String(message).slice(0, 500);
 }
 function scrollBottom() {

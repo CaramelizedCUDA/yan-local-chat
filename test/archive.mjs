@@ -1,4 +1,4 @@
-// 言 / 行合一：没绑目录的对话是言——桥接在线时工具落在卷宗目录（存储根里的 卷宗/），脚本落在隐藏的草稿目录、非只读指令先问；
+// 言 / 行合一：没绑目录的对话是言——工具落在卷宗目录（存储根里的 卷宗/），脚本落在隐藏的草稿目录、非只读指令先问；
 // 中途绑上目录即为行，提示词随之而变，解开又回到言；卷宗页面即目录的视图，不列草稿
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK, ARCHIVE } from "./lib.mjs";
@@ -223,8 +223,8 @@ await waitFor(`!document.querySelector("#welcome").classList.contains("hidden")`
 await evalJs(`document.querySelector("#welcome .attach-trigger").click(); true`);
 await waitFor(`!!document.querySelector('.chip-pop[data-kind=attach] [data-attach="archive"]')`);
 await evalJs(`document.querySelector('.chip-pop[data-kind=attach] [data-attach="archive"]').click(); true`);
-await waitFor(`!!document.querySelector('.chip-pop.attach-picker [data-pick="disk:报表.csv"]')`);
-await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="disk:报表.csv"]').click(); true`);
+await waitFor(`!!document.querySelector('.chip-pop.attach-picker [data-pick="报表.csv"]')`);
+await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="报表.csv"]').click(); true`);
 await waitFor(`!!document.querySelector("#welcomeAttachments .attachment-card[data-name='报表.csv']")`);
 check(
   "picking from the archive menu lands the file on the desk",

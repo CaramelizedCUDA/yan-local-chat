@@ -8,7 +8,6 @@ const f = load([
   "conversationMarkdown",
   "dataUrlFromText",
   "markdownVisuals",
-  "exportZip",
   "setMarked: value => { window.marked = value; }"
 ]);
 f.setMarked(marked);

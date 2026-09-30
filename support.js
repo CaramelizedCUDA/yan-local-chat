@@ -6,7 +6,7 @@
 // ---------- 数据模型（JSDoc，供 tsc --checkJs 与编辑器；见 src/types.d.ts 的说明）----------
 // 存下来的东西只有这几种：Store 里挂着设置、模型、对话、卷宗（浏览器内的旧件）、记忆与草稿；对话里是消息，消息上挂步骤，步骤上可挂帮手
 /**
- * @typedef {Object} Attachment 附件的元数据；原件（data）另存存储根的 附件/（没桥接时暂存 IndexedDB），只在读出时才带
+ * @typedef {Object} Attachment 附件的元数据；原件（data）另存存储根的 附件/（落盘不成时暂存 IndexedDB），只在读出时才带
  * @property {string} id
  * @property {"image"|"text"|"file"} kind
  * @property {string} name
@@ -199,7 +199,7 @@
  * @property {Settings} settings
  * @property {Profile[]} profiles
  * @property {Conversation[]} conversations
- * @property {Attachment[]} library 浏览器内的卷宗（没桥接时）
+ * @property {Attachment[]} library 早先直连时收在浏览器里的卷宗旧件：开页时落进卷宗目录（见 migrateLibraryToArchive）
  * @property {{ enabled: boolean, items: MemoryItem[] }} memory
  * @property {Record<string, Draft>} drafts
  */
@@ -208,7 +208,7 @@ const STORAGE_META_KEY = "__yanStorage";
 const STATE_DB_NAME = "yan-chat-state-v1";
 const STATE_STORE_NAME = "state"; // 旧版整份记录的表（main 一条），迁走后就空着
 const STATE_RECORD_KEY = "main";
-const CHATS_STORE_NAME = "conversations"; // 没桥接时对话存这里，一段一条
+const CHATS_STORE_NAME = "conversations"; // 落盘不成与离页时对话暂存这里，一段一条
 const CHAT_DISK_INTERVAL = 1200, // 静止时同一段对话连续落盘的最短间隔（毫秒）
   CHAT_STREAM_DISK_INTERVAL = 3000; // 流式生成时少改几遍整份 JSON；收尾会恢复上面的短间隔
 // 内置提示词都在 prompts/ 目录里，这里只做取值与填空；{{名字}} 由 vars 填入，缺文件时报错并给空串，不让请求整个失败
@@ -225,7 +225,7 @@ function prompt(path, vars = {}) {
 function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
-const APP_VERSION = "0.3.0"; // 与 package.json 同步；桥接在线时以桥接返回的为准
+const APP_VERSION = "0.3.0"; // 与 package.json 同步；以桥接返回的为准
 const LOCAL_BRIDGE = "http://127.0.0.1:8787";
 const FILE_DB_NAME = "yan-chat-files-v1";
 const FILE_STORE_NAME = "attachments";
@@ -233,7 +233,6 @@ const FILE_STORE_NAME = "attachments";
 const MB = 1024 * 1024;
 const MAX_FILE_BYTES = 32 * MB;
 const MAX_PENDING_BYTES = 64 * MB;
-const MAX_ATTACHMENTS_BYTES = 2048 * MB;
 const MAX_ARCHIVE_FILE_BYTES = 256 * MB;
 const limitLabel = bytes => (bytes >= 1024 * MB ? `${bytes / (1024 * MB)} GB` : `${Math.round(bytes / MB)} MB`);
 const MAX_EXTRACTED_CHARS = 300000;
@@ -406,7 +405,6 @@ const advancedOpen = new Set();
 let suppressViz = false;
 let saveTimer = null,
   historySearchTimer = null;
-let bridgeRetryAt = 0;
 let followBottom = true,
   autoScrolling = false;
 const scrollPositions = new Map();
@@ -440,7 +438,7 @@ function busConnect() {
   busSource = null;
   busOpen = busTried = false;
   busBase = apiBase;
-  if (apiBase === null || typeof EventSource !== "function") return;
+  if (typeof EventSource !== "function") return;
   busSource = new EventSource(`${apiBase}/api/bus?page=${encodeURIComponent(PAGE_ID)}`);
   const settle = open => {
     busOpen = open;
@@ -448,7 +446,7 @@ function busConnect() {
     for (const resolve of busWaiters.splice(0)) resolve(open);
   };
   busSource.onopen = () => settle(true);
-  // 流断了（桥接重启、关了）：在途的一律按连不上结束，与直连时掐线一样；EventSource 自己会重连
+  // 流断了（桥接重启、关了）：在途的一律按连不上结束，与直接 fetch 时掐线一样；EventSource 自己会重连
   busSource.onerror = () => {
     for (const job of [...busJobs.values()]) job.fail(new TypeError("Failed to fetch"));
     settle(false);
@@ -499,7 +497,7 @@ async function bridgeFetch(path, body, signal) {
         finish();
         stream.close();
       },
-      // 桥接那头没写完就断了：与直连时连接被掐一样，报网络错误
+      // 桥接那头没写完就断了：与直接 fetch 时连接被掐一样，报网络错误
       drop: () => job.fail(new TypeError("network error")),
       fail: error => {
         finish();
@@ -517,7 +515,7 @@ async function bridgeFetch(path, body, signal) {
       async response => {
         if (response.ok || !busJobs.has(id)) return;
         finish();
-        // 桥接那头这一页的流恰好断了：这一次改走直连
+        // 桥接那头这一页的流恰好断了：这一次改为直接 fetch
         if (response.status === 409) return direct().then(resolve, reject);
         reject(Error((await response.json().catch(() => ({}))).error || `请求失败（${response.status}）`));
       },
@@ -532,7 +530,6 @@ function bridgeTimedOut(error) {
 }
 // 调本机桥接：存储、卷宗、工具都走这一个口子；桥接回的错误是一句话，原样抛出（状态码与回来的内容挂在 status / data 上）
 async function bridge(path, payload, signal) {
-  if (apiBase === null) throw Error("本机工具需要本机桥接");
   const response = await bridgeFetch(path, JSON.stringify(payload), signal);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
@@ -727,10 +724,10 @@ function normalizeMemory(memory) {
 // 言 · 本地存储 · 暂存：记录怎么存、IndexedDB 的状态表、配置的本机缓存
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
 // ---------- 记录怎么存 ----------
-// 记录分两半。「配置」（设置、模型含 API Key、浏览器内卷宗、记忆、草稿）小而常改：正本在存储根的 配置.json（默认 ~/.yan，
-// 几个浏览器共用这一份，见 syncConfigWithDisk），localStorage 里那份是缓存，也是没桥接时的暂存。
-// 「对话」各自一份：桥接在线时落在存储根的 对话/（bootstrap.work.chats；一段一个 JSON 文件，复制即备份）；
-// 没桥接时存在 IndexedDB 的 conversations 表，桥接接上后推到目录里去、表里的清掉——目录是正本，表只是没桥接时的暂存。
+// 记录分两半。「配置」（设置、模型含 API Key、记忆、草稿）小而常改：正本在存储根的 配置.json（默认 ~/.yan，
+// 几个浏览器共用这一份，见 syncConfigWithDisk），localStorage 里那份是缓存，记着与磁盘对齐时的基准。
+// 「对话」各自一份：落在存储根的 对话/（bootstrap.work.chats；一段一个 JSON 文件，复制即备份）；
+// 落盘不成（桥接中途断了）与离页那一刻，暂存进 IndexedDB 的 conversations 表，接上后推到目录里去、表里的清掉——目录是正本。
 // 保存只写改过的那几段（当前这段、正在生成的、明确标过脏的，且内容的哈希与上次写的不同）；另有一趟低频的全量巡检兜底，
 // 谁改了哪段没标到也逃不过。旧版把整份记录（含所有对话）塞在 localStorage / IndexedDB 的一条记录里，启动时拆开迁走。
 function openStateDb() {
@@ -876,7 +873,6 @@ function restoreConfigBase() {
   } catch {}
 }
 function scheduleConfigSave() {
-  if (apiBase === null) return;
   clearTimeout(configSaveTimer);
   configSaveTimer = setTimeout(saveConfigNow, 1000);
 }
@@ -884,7 +880,6 @@ function scheduleConfigSave() {
 function saveConfigNow({ force = false } = {}) {
   clearTimeout(configSaveTimer);
   configSaveTimer = null;
-  if (apiBase === null) return;
   // 上一次还在路上：等它回来再写这一次，免得两次互相比时间戳
   if (configSaving && !unloading) {
     configSaveAgain = true;
@@ -1069,7 +1064,6 @@ const STORE_ROOT_KEY = "yan-store-root";
 // 存储根头一回立起来：先把旧的对话与卷宗拷进来（旧处留着）。然后看两边谁新：
 // 全新的浏览器取磁盘那份；灌进来的（没带版本标记的旧记录）以浏览器为准；这台浏览器头一回碰上这个根就合并；其余按时间戳，新的为准
 async function syncConfigWithDisk() {
-  if (apiBase === null) return;
   const info = bootstrap.store || {};
   let met = "";
   try {
@@ -1109,7 +1103,7 @@ async function syncConfigWithDisk() {
 }
 // 从后台切回来：另一个浏览器可能改过配置，与磁盘上的对一对（这边有没写下去的改动也不丢，见 reconcileConfig）
 async function refreshConfigFromDisk() {
-  if (apiBase === null || configSaving) return;
+  if (configSaving) return;
   try {
     const disk = await bridge("/api/store/config/load", {}, AbortSignal.timeout(8000));
     if (disk.config && !configSaving) reconcileConfig(disk.config, Number(disk.savedAt) || 0);
@@ -1119,12 +1113,11 @@ async function refreshConfigFromDisk() {
   // ---- 01-store/30-chats.js ----
 // 言 · 本地存储 · 对话：一段一个文件落进对话目录，脏标记、落盘、巡检与读回
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
-// 对话目录可用：桥接在线、桥接报了目录、上次读它没出错
+// 对话目录可用：桥接报了目录、上次读它没出错
 function chatsOnline() {
-  return apiBase !== null && !!chatsDir() && !chatsBroken;
+  return !!chatsDir() && !chatsBroken;
 }
 function chatsDir() {
-  if (apiBase === null) return "";
   return bootstrap.work?.chats || "";
 }
 // 标记这段对话有改动（改名、置顶、后台一答收尾这些不在「当前对话」上的改动要亲手标；当前这段与正在生成的自动算在内）
@@ -1506,7 +1499,7 @@ async function hydrateStore() {
 // 与对话目录合一次：开页接上桥接时、桥接中途断了又接上时都来一遍。
 // 目录里没有的推过去，目录里更新的换进来（正在生成的、改了还没存的不换），两边一样的把表里的暂存清掉；先前没删成的补删
 async function syncChatsWithDisk() {
-  if (apiBase === null || !chatsDir() || chatsSyncing) return;
+  if (!chatsDir() || chatsSyncing) return;
   chatsSyncing = true;
   try {
     const data = await bridge("/api/chats/load", { root: chatsDir() }, AbortSignal.timeout(120000));
@@ -1608,7 +1601,7 @@ async function syncChatsWithDisk() {
 // 别处松了手（写完，或页面关了、崩了，十五秒没来报到），再读一回：还停在「生成中」的，才按中断处理
 let leasing = null;
 function syncLeases() {
-  if (apiBase === null || !chatsOnline()) return Promise.resolve();
+  if (!chatsOnline()) return Promise.resolve();
   if (leasing) return leasing;
   // 正作答的都算上（旁注的作业按它所在的对话记）；作答完了、最后一次存盘也落了地的松手
   const running = new Set([...requestJobs].map(([key, job]) => job.conversationId || key));
@@ -1629,7 +1622,7 @@ function syncLeases() {
 }
 // 页面要关或刷新：先松手。不然刷新后的自己会把刷新前的自己当成「别处在作答」，停在半途的那一答就不收束了
 function releaseLeases() {
-  if (apiBase === null || !leaseHold.size) return;
+  if (!leaseHold.size) return;
   leaseHold.clear();
   fetch(`${apiBase}/api/chats/lease`, {
     method: "POST",
@@ -1688,8 +1681,8 @@ async function fileStoreRequest(mode, action) {
   });
 }
 // ---------- 附件原件 ----------
-// 桥接在线时落在存储根的 附件/（与对话、卷宗、配置同在一处，几个浏览器共用，复制即备份；见 server/files.js）；
-// 没桥接、或落盘不成时暂存进这台浏览器的 IndexedDB，接上后推到目录里去、表里的清掉（见 settleAttachmentStore）。
+// 落在存储根的 附件/（与对话、卷宗、配置同在一处，几个浏览器共用，复制即备份；见 server/files.js）；
+// 落盘不成（桥接中途断了）时暂存进这台浏览器的 IndexedDB，接上后推到目录里去、表里的清掉（见 settleAttachmentStore）。
 // 读的时候先问目录，目录里没有再翻表——迁过去之前的旧件也读得到
 const attachmentCache = new Map();
 let attachmentCacheSize = 0;
@@ -1714,21 +1707,19 @@ function uncacheAttachment(id) {
 }
 async function putAttachment(record) {
   uncacheAttachment(record?.id);
-  if (apiBase !== null)
-    try {
-      await bridge("/api/files/put", { record }, AbortSignal.timeout(120000));
-      return;
-    } catch {}
+  try {
+    await bridge("/api/files/put", { record }, AbortSignal.timeout(120000));
+    return;
+  } catch {}
   return fileStoreRequest("readwrite", db => db.put(record));
 }
 async function getAttachment(id) {
   if (!id) return null;
   if (attachmentCache.has(id)) return attachmentCache.get(id);
   let record = null;
-  if (apiBase !== null)
-    try {
-      record = (await bridge("/api/files/get", { id }, AbortSignal.timeout(60000))).record || null;
-    } catch {}
+  try {
+    record = (await bridge("/api/files/get", { id }, AbortSignal.timeout(60000))).record || null;
+  } catch {}
   if (!record) record = (await fileStoreRequest("readonly", db => db.get(id)).catch(() => null)) || null;
   cacheAttachment(record);
   return record;
@@ -1738,7 +1729,7 @@ function deleteAttachment(id) {
   uncacheAttachment(id);
   if (!id) return Promise.resolve();
   return Promise.all([
-    apiBase !== null ? bridge("/api/files/delete", { ids: [id] }, AbortSignal.timeout(20000)).catch(() => {}) : null,
+    bridge("/api/files/delete", { ids: [id] }, AbortSignal.timeout(20000)).catch(() => {}),
     fileStoreRequest("readwrite", db => db.delete(id)).catch(() => {})
   ]);
 }
@@ -1748,10 +1739,7 @@ function attachmentIds(messages = []) {
     .map(file => file.id)
     .filter(Boolean);
 }
-function inLibrary(id) {
-  return store.library.some(file => file.id === id);
-}
-// 仍在用的附件：各段对话（含换下的版本、旁注、行迹里补言带的）、草稿、案上待发的、浏览器内的卷宗
+// 仍在用的附件：各段对话（含换下的版本、旁注、行迹里补言带的）、草稿、案上待发的、还没落进卷宗目录的浏览器旧件
 function attachmentKeepIds() {
   const ids = new Set();
   const add = files => {
@@ -1794,7 +1782,7 @@ async function deleteAttachments(ids) {
 // 对话没读全时绝不清——那时内存里只有没落盘的几段，照它判「没人用」会把别的对话的附件一并删掉
 let attachmentsSettling = false;
 async function settleAttachmentStore() {
-  if (apiBase === null || !chatsLoaded || attachmentsSettling) return;
+  if (!chatsLoaded || attachmentsSettling) return;
   attachmentsSettling = true;
   try {
     let keys = [];
@@ -1805,7 +1793,6 @@ async function settleAttachmentStore() {
       const { has = [] } = await bridge("/api/files/has", { ids: keys.map(String) }, AbortSignal.timeout(20000));
       const onDisk = new Set(has);
       for (const id of keys) {
-        if (apiBase === null) return;
         if (!onDisk.has(String(id))) {
           const record = await fileStoreRequest("readonly", db => db.get(id)).catch(() => null);
           if (!record) continue;
@@ -1819,7 +1806,7 @@ async function settleAttachmentStore() {
         await fileStoreRequest("readwrite", db => db.delete(id)).catch(() => {});
       }
     }
-    if (apiBase !== null && chatsLoaded)
+    if (chatsLoaded)
       await bridge("/api/files/clean", { keep: [...attachmentKeepIds()] }, AbortSignal.timeout(60000)).catch(() => {});
   } catch {
   } finally {
@@ -2970,37 +2957,15 @@ async function connectBridge(candidates, timeout = 1400) {
   }
   return false;
 }
-// 桥接开的页面却没探到桥接：不急着下「未检测到」的结论，隔几秒再试几次，接上后各处自会刷新
-function retryBridgeLater(attempt = 0) {
-  if (apiBase !== null || attempt >= 6) return;
-  setTimeout(
-    async () => {
-      if (apiBase !== null) return;
-      bridgeRetryAt = 0;
-      if (!(await ensureLocalBridge())) retryBridgeLater(attempt + 1);
-    },
-    Math.min(2000 * 2 ** attempt, 20000)
-  );
-}
-async function ensureLocalBridge() {
-  if (apiBase !== null) return true;
-  if (Date.now() < bridgeRetryAt) return false;
-  bridgeRetryAt = Date.now() + 5000;
-  // 桥接开的页面先试同源（端口可能不是默认的 8787），再试默认地址
-  const connected = await connectBridge(servedByBridge() ? ["", LOCAL_BRIDGE] : [LOCAL_BRIDGE], 1200);
-  if (connected) {
-    if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
-    renderHeader();
-    void syncConfigWithDisk().then(() => {
-      void refreshArchive();
-      void syncChatsWithDisk();
-      void mcpReady();
-      void refreshEnv();
-    });
-    if (!$("#settingsModal").classList.contains("hidden")) renderSettings();
-    toast("本机桥接已接通，联网可用");
+// 言离不开本机桥接（模型转发、存储、工具都在它那头）：接上了才开张。接不上就只挂一句「请先运行 start.cmd」，每隔几秒再探
+async function awaitBridge() {
+  const candidates = servedByBridge() ? ["", LOCAL_BRIDGE] : [LOCAL_BRIDGE];
+  while (!(await connectBridge(candidates))) {
+    document.documentElement.dataset.bridge = "waiting";
+    $("#bridgeGateUrl").textContent = LOCAL_BRIDGE;
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
-  return connected;
+  delete document.documentElement.dataset.bridge;
 }
 // 停在「生成中」却没人在写的消息（页面刷新了、写的那一处关了）：按中断收束，已写的留着。改了返回 true
 /** @param {Conversation} conversation */
@@ -3034,27 +2999,17 @@ function recoverInterruptedMessages() {
   if (changed) saveStore();
 }
 async function boot() {
-  // 对话主体在 IndexedDB；先把旧 localStorage 数据迁入/把最新快照读回，再接桥接与绘制页面
+  await awaitBridge();
+  // 浏览器里暂存的（桥接中途断过时没落成盘的对话、上次离页兜住的最新状态）先读回，再与存储根（默认 ~/.yan）里的正本合一次
   await hydrateStore();
   setupMarkdown();
-  const candidates = ["", LOCAL_BRIDGE].filter((value, index, array) => array.indexOf(value) === index);
-  await connectBridge(candidates);
-  // 桥接在线：配置与对话的正本在存储根里（默认 ~/.yan），先与它合一次再画页面
-  if (apiBase !== null) {
-    await syncConfigWithDisk();
-    await syncChatsWithDisk();
-    // MCP 服务起得慢（起进程、握手）：先起着，头一问发出前会等它；环境备没备好也问一声，系统提示里要说
-    void mcpReady();
-    void refreshEnv();
-  }
-  if (apiBase === null) {
-    bootstrap.notice = servedByBridge()
-      ? "正在连接本机桥接…若始终连不上，请重新运行 start.cmd。"
-      : location.protocol === "file:"
-        ? `从文件直接打开的页面接不上本机桥接（分不清它与别处网页嵌进来的沙箱页），当前为浏览器直连。要用联网、执事与存储目录，请运行 start.cmd 后打开 ${LOCAL_BRIDGE}。`
-        : "未检测到本机桥接，当前为浏览器直连。若接口未开放 CORS，请运行 start.cmd 或 VS Code 任务「言：启动模型桥接」。";
-    if (servedByBridge()) retryBridgeLater();
-  }
+  await syncConfigWithDisk();
+  await syncChatsWithDisk();
+  // 早先直连时收在浏览器里的卷宗旧件：落进卷宗目录
+  void migrateLibraryToArchive();
+  // MCP 服务起得慢（起进程、握手）：先起着，头一问发出前会等它；环境备没备好也问一声，系统提示里要说
+  void mcpReady();
+  void refreshEnv();
   if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
   // 先问一声别处在作答什么，那几段不当成中断
   await syncLeases();
@@ -3271,7 +3226,6 @@ function workMode() {
 }
 // 卷宗目录：存储根里的 卷宗/（桥接报来的位置）；没绑目录的对话，工具都落在这里
 function archiveDir() {
-  if (apiBase === null) return "";
   return bootstrap.work?.archive || "";
 }
 // 言里的草稿：卷宗下的隐藏目录 .草稿/<对话id>/，脚本与中间文件放那里，成品放根目录；卷宗页不列它
@@ -3281,10 +3235,10 @@ function scratchRel(c) {
     .replace(/[^A-Za-z0-9_-]/g, "")
     .slice(0, 12)}`;
 }
-// 这段对话的工具落脚在哪：绑了目录是它，没绑是卷宗；直连没桥接时为空（也就没有文件工具）
+// 这段对话的工具落脚在哪：绑了目录是它，没绑是卷宗
 /** @param {Conversation} c */
 function workRoot(c) {
-  return c?.workdir || (apiBase !== null ? archiveDir() : "");
+  return c?.workdir || archiveDir();
 }
 // 侧栏的一枚印：只显示当前的态（言 / 行），改态的入口是目录签
 function renderModeSwitch() {
@@ -3322,11 +3276,10 @@ function renderWorkAuto() {
   button.classList.toggle("on", policy !== "ask");
 }
 function renderWelcome() {
-  const work = workMode(),
-    bridged = apiBase !== null;
+  const work = workMode();
   $("#welcome .seal").textContent = work ? "行" : "言";
   $("#welcomeSub").textContent = work ? "以目录为案，言起而事行" : "长问慢答，尽付纸墨";
-  renderChips(work, bridged);
+  renderChips(work);
   renderSuggestions(work);
   renderWelcomeNotice();
 }
@@ -3334,11 +3287,6 @@ function renderWelcome() {
 function renderWelcomeNotice() {
   const el = $("#welcomeNotice");
   if (!el) return;
-  if (location.protocol === "file:" && apiBase === null) {
-    el.classList.remove("hidden");
-    el.innerHTML = `<span class="seal" aria-hidden="true">地</span><span>这是直接打开的本地文件页，配置与桥接页面分开保存。要查看原来的模型、对话和环境，请运行 start.cmd 并打开 ${LOCAL_BRIDGE}。</span>`;
-    return;
-  }
   const none = !profiles().length;
   el.classList.toggle("hidden", !none);
   if (!none) return;
@@ -3352,21 +3300,17 @@ function pathTail(dir) {
     .filter(Boolean);
   return parts.at(-1) || dir;
 }
-function renderChips(work, bridged) {
+function renderChips(work) {
   const dirChip = $("#workdirChip"),
     pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
   dirChip.classList.remove("hidden");
-  dirChip.querySelector(".chip-text").textContent = pending ? pathTail(pending) : bridged ? "卷宗" : "未绑定";
-  dirChip.title = pending
-    ? `${pending}\n行：指令与改动落在此目录`
-    : bridged
-      ? `言：产出收入卷宗（${archiveDir()}）`
-      : "言：绑定目录与生成文件需本机桥接（start.cmd）";
+  dirChip.querySelector(".chip-text").textContent = pending ? pathTail(pending) : "卷宗";
+  dirChip.title = pending ? `${pending}\n行：指令与改动落在此目录` : `言：产出收入卷宗（${archiveDir()}）`;
   dirChip.classList.toggle("on", !!pending);
   const approve = $("#approveChip");
   const policy = normalizeCommandPolicy(store.settings.commandPolicyDefault),
     meta = COMMAND_POLICY_META[policy];
-  approve.classList.toggle("hidden", !bridged);
+  approve.classList.remove("hidden");
   approve.querySelector(".chip-text").textContent = meta[0];
   approve.classList.toggle("on", policy !== "ask");
   approve.title = `${meta[0]}：${meta[1]}（新对话默认）`;
@@ -3428,13 +3372,9 @@ function openAttachMenu(anchor) {
     renderArchivePicker(pop, anchor);
   };
 }
-// 卷宗选件：一栏可查找的清单，磁盘上的与浏览器内的都列，点一件即置于案上；子目录里的件注上它所在的夹，查找也认夹名
+// 卷宗选件：一栏可查找的清单，点一件即置于案上；子目录里的件注上它所在的夹，查找也认夹名
 function renderArchivePicker(pop, anchor) {
-  const disk = archiveOnline() ? archiveEntries || [] : [],
-    items = [
-      ...disk.map(file => ({ key: `disk:${file.path}`, name: file.name, dir: parentDir(file.path), size: file.size })),
-      ...store.library.map(file => ({ key: `item:${file.id}`, name: file.name, size: file.size }))
-    ];
+  const items = (archiveEntries || []).map(file => ({ key: file.path, name: file.name, dir: parentDir(file.path), size: file.size }));
   pop.classList.add("attach-picker");
   pop.innerHTML = `<input class="field" placeholder="按文件名查找" aria-label="查找卷宗"><div class="chip-pop-list"></div>`;
   const input = pop.querySelector("input"),
@@ -3462,10 +3402,8 @@ function renderArchivePicker(pop, anchor) {
   list.addEventListener("click", event => {
     const button = event.target.closest("[data-pick]");
     if (!button) return;
-    const [kind, ...rest] = button.dataset.pick.split(":"),
-      key = rest.join(":");
     closeChipPop();
-    void (kind === "disk" ? placeFromArchive(key) : placeFromLibrary(key));
+    void placeFromArchive(button.dataset.pick);
   });
   // 清单比菜单高，重新贴一次锚点
   const rect = anchor.getBoundingClientRect(),
@@ -3483,7 +3421,7 @@ function openHistoryMenu(id, anchor) {
   if (document.querySelector(`.chip-pop[data-kind=history][data-for="${CSS.escape(id)}"]`)) return closeChipPop();
   const pop = openFloatingPop(
     anchor,
-    `<button type="button" data-menu="pin">${c.pinned ? "取消置顶" : "置顶"}</button><button type="button" data-menu="rename">改名</button><button type="button" data-menu="bind">${isWork(c) ? "更换目录" : "绑定目录"}</button><button type="button" data-menu="group">${groupOf(c) ? "移至他组" : "移入分组"}</button><button type="button" data-menu="export"><span>导出</span><small>${archiveOnline() ? "存入卷宗" : "Markdown"}</small></button><button type="button" class="danger" data-menu="delete">删除</button>`,
+    `<button type="button" data-menu="pin">${c.pinned ? "取消置顶" : "置顶"}</button><button type="button" data-menu="rename">改名</button><button type="button" data-menu="bind">${isWork(c) ? "更换目录" : "绑定目录"}</button><button type="button" data-menu="group">${groupOf(c) ? "移至他组" : "移入分组"}</button><button type="button" data-menu="export"><span>导出</span><small>存入卷宗</small></button><button type="button" class="danger" data-menu="delete">删除</button>`,
     { align: "right" }
   );
   pop.dataset.kind = "history";
@@ -3516,10 +3454,6 @@ function openHistoryMenu(id, anchor) {
 // live 时每敲一字都落值（欢迎页记到待绑目录），否则回车、点选才落值（对话页要经桥接绑定）
 // floating：不挂在 host 里而是浮在锚点旁（侧栏历史条目的「绑定目录」用），其余一样
 function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating = false }) {
-  if (apiBase === null) {
-    void ensureLocalBridge();
-    return toast("绑定目录需要本机桥接，请先运行 start.cmd");
-  }
   if ((floating ? document : host).querySelector(".chip-pop[data-kind=workdir]")) return closeChipPop();
   const html = `<div class="chip-pop-row"><input id="workdirInput" class="field" spellcheck="false" autocomplete="off" placeholder="${live ? "留空则为言" : "输入或选择目录"}" value="${escapeHtml(value || "")}"><button id="workdirPick" class="outline-btn" type="button">选择…</button>${live ? "" : `<button id="workdirCommit" class="outline-btn" type="button">${bound ? "更换" : "绑定"}</button>`}</div>${bound ? `<button type="button" class="chip-pop-unbind" data-unbind>解开目录，回到言</button>` : live ? `<button type="button" class="chip-pop-unbind${value ? "" : " hidden"}" data-unbind>不绑目录，回到言</button>` : ""}`;
   const pop = floating ? openFloatingPop(anchor, html, { align: "right", menu: false }) : openChipPop(anchor, host, html);
@@ -3574,7 +3508,6 @@ async function bindWorkdir(c, dir) {
     return;
   }
   if (activeProfile()?.tools === false) return toast("当前模型已关闭本机工具，请在模型高级配置中开启");
-  if (apiBase === null && !(await ensureLocalBridge())) return toast("绑定目录需要本机桥接，请先运行 start.cmd");
   try {
     const prepared = await bridge("/api/work/prepare", { workdir: dir }, AbortSignal.timeout(8000));
     if (prepared.workdir === c.workdir) return;
@@ -3609,14 +3542,14 @@ function setupChips() {
   $("#welcomeGroup").onclick = () => {
     delete store.settings.pendingGroupId;
     saveStore();
-    renderChips(workMode(), apiBase !== null);
+    renderChips(workMode());
     renderHeader();
   };
   $("#chatGroup").onclick = () => openGroupsPage(groupOf(currentConversation())?.id || null);
   $("#approveChip").onclick = () => {
     store.settings.commandPolicyDefault = nextCommandPolicy(store.settings.commandPolicyDefault);
     saveStore();
-    renderChips(workMode(), apiBase !== null);
+    renderChips(workMode());
   };
   // 对话页标题下的目录签：绑上、更换或解开
   const meta = $("#chatMeta");
@@ -4158,7 +4091,7 @@ function restoreScrollPosition(snapshot) {
 /** @param {Conversation} c */
 function renderChatMeta(c) {
   $("#chatMeta").innerHTML =
-    `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user").length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? ` · <button type="button" class="chat-meta-path" data-workdir-bind title="工作目录">${escapeHtml(c.workdir || "")}</button>` : c.ended ? "" : ` · <button type="button" class="chat-meta-bind" data-workdir-bind title="绑定工作目录，此后指令与改动落于其中">绑定目录</button>`}${c.messages.some(m => m.role === "assistant" && m.status === "complete") ? ` · <button type="button" class="chat-meta-bind" data-export-md title="${archiveOnline() ? "以 Markdown 存入卷宗" : "以 Markdown 下载"}">${archiveOnline() ? "存入卷宗" : "存为 Markdown"}</button>` : ""}`;
+    `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user").length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? ` · <button type="button" class="chat-meta-path" data-workdir-bind title="工作目录">${escapeHtml(c.workdir || "")}</button>` : c.ended ? "" : ` · <button type="button" class="chat-meta-bind" data-workdir-bind title="绑定工作目录，此后指令与改动落于其中">绑定目录</button>`}${c.messages.some(m => m.role === "assistant" && m.status === "complete") ? ` · <button type="button" class="chat-meta-bind" data-export-md title="以 Markdown 存入卷宗">存入卷宗</button>` : ""}`;
   renderRunningHead();
   requestAnimationFrame(syncRunningHead);
 }
@@ -6551,7 +6484,7 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       })
     );
     // 旁注带只查不改的工具（检索、翻网页、翻文档、翻记忆）：模型说「我去查一下」就真能查，不会说完就断在那里；
-    // 没有工具可用时（模型关了本机工具、没桥接）在提示里说明，免得它许诺去查
+    // 没有工具可用时（模型关了本机工具）在提示里说明，免得它许诺去查
     if (profile.tools !== false) await mcpForTurn();
     const tools = profile.tools !== false ? toolDefinitions(conversation, { lookup: true }) : null;
     const overrides = {
@@ -7353,7 +7286,6 @@ async function addFiles(fileList) {
   if (!files.length) return;
   if (view === "library") return addLibraryFiles(files);
   let total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0),
-    attachmentUsage = usedAttachmentBytes(),
     added = 0;
   for (const file of files) {
     if (pendingAttachments.length >= 10) {
@@ -7368,15 +7300,9 @@ async function addFiles(fileList) {
       toast(`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`);
       break;
     }
-    // 合计上限只管浏览器里的暂存；桥接在线时原件落在存储目录，不受它限
-    if (apiBase === null && attachmentUsage + file.size > MAX_ATTACHMENTS_BYTES) {
-      toast(`卷宗与附件原件合计已达 ${limitLabel(MAX_ATTACHMENTS_BYTES)} 上限，请先清理`);
-      break;
-    }
     try {
       pendingAttachments.push(await ingestFile(file));
       total += file.size;
-      attachmentUsage += file.size;
       added += 1;
     } catch {
       toast(`${file.name} 读取失败`);
@@ -7414,8 +7340,8 @@ async function ingestFile(file) {
 }
 
 // ---------- 卷宗：跨对话保存的文件库 ----------
-// 桥接在线时卷宗是磁盘上的一个目录（bootstrap.work.archive）：拖进来的文件落盘，没绑目录的对话里模型写出的文件也在这里，页面即目录的视图；
-// 直连没桥接时退回浏览器内的版本：原件存在 IndexedDB，元数据记录在 store.library。两边都有时，浏览器内的旧件另列一组，可一键落盘
+// 卷宗是存储根里的一个目录（bootstrap.work.archive）：拖进来的文件落盘，没绑目录的对话里模型写出的文件也在这里，页面即目录的视图。
+// 早先直连时收在浏览器里的旧件（store.library）开页时逐件落进目录（见 migrateLibraryToArchive）
 let archiveEntries = null,
   archiveDirs = [],
   archiveScratch = null,
@@ -7429,14 +7355,10 @@ function parentDir(path) {
   const at = String(path).lastIndexOf("/");
   return at < 0 ? "" : path.slice(0, at);
 }
-function archiveOnline() {
-  return apiBase !== null && !!archiveDir();
-}
 function archiveFileUrl(path, download = false) {
   return `${apiBase}/api/archive/file?root=${encodeURIComponent(archiveDir())}&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
 }
 async function refreshArchive() {
-  if (!archiveOnline()) return;
   if (archiveLoading) return archiveLoading;
   archiveLoading = bridge("/api/archive/list", { root: archiveDir() }, AbortSignal.timeout(8000))
     .then(data => {
@@ -7468,7 +7390,7 @@ function archiveKind(name) {
   if (PREVIEW_VIDEO.has(extension)) return "video";
   return isTextFile({ name, type: "" }) ? "text" : "file";
 }
-// 附件与浏览器内卷宗记的 kind 只分 画 / 文 / 卷（送给模型时的读法）；画在卡片上、按类筛选时，卷里再分出音与影
+// 附件记的 kind 只分 画 / 文 / 卷（送给模型时的读法）；画在卡片上、按类筛选时，卷里再分出音与影
 function displayKind(file) {
   return file.kind === "file" ? archiveKind(file.name) : file.kind;
 }
@@ -7487,37 +7409,17 @@ function closeLibrary() {
   render();
 }
 function libraryTotal() {
-  return (archiveOnline() ? (archiveEntries || []).length : 0) + store.library.length;
+  return (archiveEntries || []).length;
 }
 function renderLibraryCount() {
   const total = libraryTotal();
   $("#libraryCount").textContent = total ? String(total) : "";
 }
-function libraryEntry(file) {
-  return {
-    id: file.id,
-    kind: file.kind,
-    name: file.name,
-    mime: file.mime,
-    size: file.size,
-    modifiedAt: file.modifiedAt,
-    extracted: !!file.extracted,
-    savedAt: now()
-  };
-}
-function libraryCardHtml(file, disk, showDir = true) {
-  const kind = disk ? archiveKind(file.name) : displayKind(file),
-    key = disk ? `data-library-disk="${escapeHtml(file.path)}" draggable="true"` : `data-library-item="${escapeHtml(file.id)}"`,
-    thumb =
-      kind !== "image"
-        ? ""
-        : disk
-          ? `<img class="library-thumb" src="${escapeHtml(archiveFileUrl(file.path))}" alt="">`
-          : `<img class="library-thumb" data-thumb="${escapeHtml(file.id)}" alt="">`,
-    note = disk
-      ? `${formatFileSize(file.size)} · ${escapeHtml(formatDay(file.modifiedAt))}${showDir && file.path.includes("/") ? ` · ${escapeHtml(parentDir(file.path))}` : ""}`
-      : `${formatFileSize(file.size)} · 收于 ${escapeHtml(formatDay(file.savedAt))}${file.kind === "file" && !file.extracted ? " · 未能提取正文" : ""}`;
-  return `<div class="library-card${disk && kind === "image" ? " has-thumb" : ""}" ${key}><div class="library-preview"${kind === "image" ? ` role="button" tabindex="0" ${disk ? `data-open-disk-image="${escapeHtml(file.path)}"` : `data-open-image="${escapeHtml(file.id)}"`} title="查看 ${escapeHtml(file.name)}"` : ""}>${thumb}<span class="library-glyph" aria-hidden="true">${kindGlyph(kind)}</span><span class="attachment-type">${escapeHtml(fileTypeLabel(file))}</span></div><div class="library-body"><strong title="${escapeHtml(disk ? file.path : file.name)}">${escapeHtml(file.name)}</strong><small>${note}</small></div><div class="library-actions">${disk || previewKind(file.name) !== "none" ? `<button data-library-action="view" title="在此预览，不必下载">预览</button>` : ""}<button data-library-action="download">下载</button><button data-library-action="remove">${disk ? "删除" : "移出"}</button></div></div>`;
+function libraryCardHtml(file, showDir = true) {
+  const kind = archiveKind(file.name),
+    thumb = kind === "image" ? `<img class="library-thumb" src="${escapeHtml(archiveFileUrl(file.path))}" alt="">` : "",
+    note = `${formatFileSize(file.size)} · ${escapeHtml(formatDay(file.modifiedAt))}${showDir && file.path.includes("/") ? ` · ${escapeHtml(parentDir(file.path))}` : ""}`;
+  return `<div class="library-card${kind === "image" ? " has-thumb" : ""}" data-library-disk="${escapeHtml(file.path)}" draggable="true"><div class="library-preview"${kind === "image" ? ` role="button" tabindex="0" data-open-disk-image="${escapeHtml(file.path)}" title="查看 ${escapeHtml(file.name)}"` : ""}>${thumb}<span class="library-glyph" aria-hidden="true">${kindGlyph(kind)}</span><span class="attachment-type">${escapeHtml(fileTypeLabel(file))}</span></div><div class="library-body"><strong title="${escapeHtml(file.path)}">${escapeHtml(file.name)}</strong><small>${note}</small></div><div class="library-actions"><button data-library-action="view" title="在此预览，不必下载">预览</button><button data-library-action="download">下载</button><button data-library-action="remove">删除</button></div></div>`;
 }
 // 一个夹：一叠纸，下注里头共几件（连同更深的层）、有几个子夹、最近一件的日子
 function libraryFolderHtml(dir) {
@@ -7548,54 +7450,42 @@ function enterLibraryDir(dir) {
 }
 function renderLibrary() {
   const query = libraryQuery.trim().toLowerCase(),
-    disk = archiveOnline(),
     matches = (name, kind) => (libraryKind === "all" || kind === libraryKind) && (!query || String(name).toLowerCase().includes(query)),
     // 逐层看；一旦查找或按类筛选，就跨各层平铺，卡片下注它所在的路径
-    browsing = disk && !query && libraryKind === "all";
-  const diskItems = !disk
-      ? []
-      : browsing
-        ? (archiveEntries || []).filter(file => parentDir(file.path) === libraryDir)
-        : (archiveEntries || []).filter(file => matches(file.name, archiveKind(file.name))),
+    browsing = !query && libraryKind === "all";
+  const diskItems = browsing
+      ? (archiveEntries || []).filter(file => parentDir(file.path) === libraryDir)
+      : (archiveEntries || []).filter(file => matches(file.name, archiveKind(file.name))),
     folders = browsing
       ? archiveDirs.filter(dir => parentDir(dir.path) === libraryDir).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
-      : [],
-    items = browsing && libraryDir ? [] : store.library.filter(file => matches(file.name, displayKind(file)));
+      : [];
   renderLibraryCrumbs(browsing && !!libraryDir);
   const total = libraryTotal(),
-    bytes = [...(disk ? archiveEntries || [] : []), ...store.library].reduce((sum, file) => sum + Number(file.size || 0), 0);
+    bytes = (archiveEntries || []).reduce((sum, file) => sum + Number(file.size || 0), 0);
   $("#libraryCountText").textContent = total ? `现存 ${total} 件 · ${formatFileSize(bytes)}` : "";
   const lead = $("#libraryLead");
   if (lead)
-    lead.innerHTML = disk
-      ? `<code title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</code>${
-          archiveScratch?.count
-            ? `<span class="library-scratch">草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}<button type="button" id="libraryCleanScratch" title="清理模型留下的脚本与中间文件（${escapeHtml(bootstrap.work?.scratch || ".草稿")}）">清理</button></span>`
-            : ""
-        }`
-      : "原件只存于此浏览器";
+    lead.innerHTML = `<code title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</code>${
+      archiveScratch?.count
+        ? `<span class="library-scratch">草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}<button type="button" id="libraryCleanScratch" title="清理模型留下的脚本与中间文件（${escapeHtml(bootstrap.work?.scratch || ".草稿")}）">清理</button></span>`
+        : ""
+    }`;
   $("#libraryCleanScratch")?.addEventListener("click", () => void cleanScratch(null));
   document
     .querySelectorAll("[data-library-kind]")
     .forEach(button => button.classList.toggle("active", button.dataset.libraryKind === libraryKind));
-  const legacy =
-    disk && items.length
-      ? `<div class="library-section"><span>浏览器内的旧件 · ${store.library.length}</span><button type="button" id="libraryMigrate" class="outline-btn">全部落盘</button></div>`
-      : "";
   $("#libraryGrid").innerHTML =
-    folders.length || diskItems.length || items.length
-      ? `${folders.map(libraryFolderHtml).join("")}${diskItems.map(file => libraryCardHtml(file, true, !browsing)).join("")}${legacy}${items.map(file => libraryCardHtml(file, false)).join("")}`
+    folders.length || diskItems.length
+      ? `${folders.map(libraryFolderHtml).join("")}${diskItems.map(file => libraryCardHtml(file, !browsing)).join("")}`
       : `<div class="library-empty">${
           browsing && libraryDir
             ? "此夹尚空<br>拖入文件即收于此夹"
             : total
               ? "没有匹配的卷宗"
-              : disk && archiveEntries === null
+              : archiveEntries === null
                 ? "正在翻开卷宗…"
                 : "卷宗尚空<br>拖入文件即收入"
         }</div>`;
-  $("#libraryMigrate")?.addEventListener("click", () => void migrateLibraryToArchive());
-  void loadThumbnails($("#libraryGrid"));
 }
 // 文本以 UTF-8 编成 data: URL；二进制附件本就是 data: URL
 function dataUrlFromText(text, mime = "text/plain") {
@@ -7633,7 +7523,7 @@ async function moveArchiveFile(path, dir) {
 // 清草稿：给对话则只清它那一处（删对话时顺手），不给则整个 .草稿 目录（卷宗页上的「清理」）
 /** @param {Conversation} conversation */
 async function cleanScratch(conversation) {
-  if (!archiveOnline() || (conversation && isWork(conversation))) return;
+  if (conversation && isWork(conversation)) return;
   if (
     !conversation &&
     !(await askConfirm({ title: "清理全部草稿？", body: "模型在卷宗里留下的脚本与中间文件将被删除，成品不受影响。", ok: "清理" }))
@@ -7656,45 +7546,22 @@ async function cleanScratch(conversation) {
 async function addLibraryFiles(fileList, dir = libraryDir) {
   const files = Array.from(fileList || []);
   let added = 0;
-  if (archiveOnline()) {
-    for (const file of files) {
-      if (file.size > MAX_ARCHIVE_FILE_BYTES) {
-        toast(`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
-        continue;
-      }
-      try {
-        await putArchiveFile(file.name, await readFile(file, "data"), dir);
-        added += 1;
-      } catch (error) {
-        toast(`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
-      }
-    }
-    await refreshArchive();
-    if (added) toast(`已收入 ${added} 件`);
-    return;
-  }
   for (const file of files) {
-    if (file.size > MAX_FILE_BYTES) {
-      toast(`${file.name} 超过 ${limitLabel(MAX_FILE_BYTES)}，未收入`);
-      continue;
-    }
-    if (usedAttachmentBytes() + file.size > MAX_ATTACHMENTS_BYTES) {
-      toast(`卷宗与附件原件合计已达 ${limitLabel(MAX_ATTACHMENTS_BYTES)} 上限，请先清理`);
+    if (file.size > MAX_ARCHIVE_FILE_BYTES) {
+      toast(`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
       continue;
     }
     try {
-      store.library.unshift(libraryEntry(await ingestFile(file)));
+      await putArchiveFile(file.name, await readFile(file, "data"), dir);
       added += 1;
-    } catch {
-      toast(`${file.name} 读取失败`);
+    } catch (error) {
+      toast(`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
     }
   }
-  saveStore();
-  if (view === "library") renderLibrary();
-  renderLibraryCount();
+  await refreshArchive();
   if (added) toast(`已收入 ${added} 件`);
 }
-// 附件上的「藏」：桥接在线时原件落盘到卷宗目录，否则记进浏览器内的卷宗
+// 附件上的「藏」：原件落进卷宗目录
 async function saveToLibrary(id) {
   const metadata =
     pendingAttachments.find(file => file.id === id) ||
@@ -7704,25 +7571,17 @@ async function saveToLibrary(id) {
       .find(file => file.id === id);
   const file = metadata && (await getAttachment(id));
   if (!file) return toast("附件原件已找不到");
-  if (archiveOnline()) {
-    try {
-      const saved = await putArchiveFile(metadata.name, file.kind === "text" ? dataUrlFromText(file.data, file.mime) : file.data);
-      void refreshArchive();
-      toast(`${saved.name} 已收入卷宗`);
-    } catch (error) {
-      toast(`收入失败：${String(error.message || error).slice(0, 80)}`);
-    }
-    return;
+  try {
+    const saved = await putArchiveFile(metadata.name, file.kind === "text" ? dataUrlFromText(file.data, file.mime) : file.data);
+    void refreshArchive();
+    toast(`${saved.name} 已收入卷宗`);
+  } catch (error) {
+    toast(`收入失败：${String(error.message || error).slice(0, 80)}`);
   }
-  if (inLibrary(id)) return toast("已在卷宗中");
-  store.library.unshift(libraryEntry(metadata));
-  saveStore();
-  renderLibraryCount();
-  toast(`${metadata.name} 已收入卷宗`);
 }
-// 浏览器内的旧件逐件落盘；落盘成功的从浏览器内移出（原件若没被对话引用则一并删去）
+// 早先直连时收在浏览器里的旧件（开页时、导入旧备份后）：逐件落进卷宗目录，落成了的从浏览器里移出（原件若没被对话引用则一并删去）
 async function migrateLibraryToArchive() {
-  if (!archiveOnline()) return;
+  if (!store.library.length) return;
   let moved = 0;
   for (const item of [...store.library]) {
     const file = await getAttachment(item.id);
@@ -7739,14 +7598,7 @@ async function migrateLibraryToArchive() {
   }
   saveStore();
   await refreshArchive();
-  toast(moved ? `已落盘 ${moved} 件` : "没有可落盘的文件");
-}
-async function removeFromLibrary(id) {
-  store.library = store.library.filter(file => file.id !== id);
-  saveStore();
-  if (!isReferenced(id)) void deleteAttachment(id);
-  renderLibrary();
-  renderLibraryCount();
+  if (moved) toast(`浏览器里的 ${moved} 件旧卷宗已落进卷宗目录`);
 }
 async function removeArchiveFile(path) {
   if (!(await askConfirm({ title: "删除这件卷宗？", body: `将从本机目录删除「${path}」，无法撤销。`, ok: "删除" }))) return;
@@ -7765,18 +7617,6 @@ function canPlaceAttachment(size) {
   const total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0);
   if (total + Number(size || 0) > MAX_PENDING_BYTES) return toast(`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`), false;
   return true;
-}
-function placeFromLibrary(id) {
-  const item = store.library.find(file => file.id === id);
-  if (!item) return;
-  if (pendingAttachments.some(file => file.id === id)) return toast("此件已在案上");
-  if (!canPlaceAttachment(item.size)) return;
-  const { savedAt, ...metadata } = item;
-  pendingAttachments.push(metadata);
-  persistDraft();
-  closeLibrary();
-  toast(`${item.name} 已置于案上`);
-  setTimeout(() => (currentConversation() ? $("#chatInput") : $("#welcomeInput")).focus(), 0);
 }
 // 磁盘上的卷宗置于案上：取回原件，按普通附件收进浏览器（图片、可提取的文档照常处理）
 async function placeFromArchive(path) {
@@ -7844,7 +7684,7 @@ function revokeViewerUrls() {
 }
 /** 取一件东西的三种读法：直链（图、PDF、音视频交给浏览器）、正文、字节。
  * 卷宗与落了盘的附件都走桥接的同源地址——页面的 CSP 只许同源的框架与媒体，blob: 的 PDF 会被挡；
- * 只有没桥接（file:// 打开，没有 CSP）或原件只在浏览器里时，才就地造 blob 地址 */
+ * 原件只暂存在浏览器里（桥接中途断过、还没推进目录）时，才就地造 blob 地址 */
 function urlReader(url) {
   const fetched = async () => {
     const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
@@ -7855,11 +7695,9 @@ function urlReader(url) {
 }
 async function viewerReader(source) {
   if (source.path) return urlReader(archiveFileUrl(source.path));
-  if (apiBase !== null) {
-    const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
-      head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
-    if (head?.ok) return urlReader(url);
-  }
+  const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
+    head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (head?.ok) return urlReader(url);
   const file = await getAttachment(source.attachmentId);
   if (!file) throw Error("附件原件已找不到");
   const blob = file.kind === "text" ? new Blob([file.data], { type: file.mime || "text/plain" }) : await (await fetch(file.data)).blob();
@@ -7876,7 +7714,6 @@ async function openFileViewer(target, name = "", trigger = null) {
   const source = typeof target === "string" ? { path: target } : target;
   const viewer = $("#fileViewer");
   if (!viewer) return;
-  if (source.path && !archiveOnline()) return toast("预览需要本机桥接");
   const title =
       name ||
       String(source.path || "")
@@ -8286,20 +8123,12 @@ function bindLibraryEvents() {
     const button = e.target.closest("[data-library-action]");
     if (!button) return;
     const path = button.closest("[data-library-disk]")?.dataset.libraryDisk,
-      id = button.closest("[data-library-item]")?.dataset.libraryItem,
       action = button.dataset.libraryAction;
-    if (path) {
-      if (action === "view") void openFileViewer(path, "", button);
-      else if (action === "place") void placeFromArchive(path);
-      else if (action === "download") downloadArchiveFile(path);
-      else if (action === "remove") void removeArchiveFile(path);
-      return;
-    }
-    if (action === "place") placeFromLibrary(id);
-    else if (action === "view")
-      void openFileViewer({ attachmentId: id }, button.closest(".library-card")?.querySelector("strong")?.textContent || "", button);
-    else if (action === "download") void downloadAttachment(id);
-    else if (action === "remove") void removeFromLibrary(id);
+    if (!path) return;
+    if (action === "view") void openFileViewer(path, "", button);
+    else if (action === "place") void placeFromArchive(path);
+    else if (action === "download") downloadArchiveFile(path);
+    else if (action === "remove") void removeArchiveFile(path);
   });
   $("#libraryGrid").addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
@@ -8358,11 +8187,9 @@ function bindLibraryEvents() {
     const toLibrary = view === "library";
     $("#dropTitle").textContent = toLibrary ? "松手，收入卷宗" : "松手，置于案上";
     $("#dropHint").textContent = toLibrary
-      ? archiveOnline()
-        ? libraryDir
-          ? `任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
-          : "任何文件 · 落到本机的卷宗目录"
-        : `图片、文档与代码文件 · 单件不超过 ${limitLabel(MAX_FILE_BYTES)}`
+      ? libraryDir
+        ? `任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
+        : "任何文件 · 落到本机的卷宗目录"
       : `图片、文档与代码文件 · 单次共 ${limitLabel(MAX_PENDING_BYTES)}`;
     $("#dropVeil").classList.remove("hidden");
   };
@@ -8397,7 +8224,6 @@ function bindLibraryEvents() {
     if (!link) return;
     event.preventDefault();
     const name = link.dataset.file;
-    if (!archiveOnline()) return toast(`链接无处可去：「${name}」不在卷宗里`);
     if (archiveEntries === null) await refreshArchive();
     const entry = (archiveEntries || []).find(file => file.name === name || file.path === name);
     if (!entry) return toast(`卷宗里没有「${name}」`);
@@ -8582,14 +8408,10 @@ async function sendOrStop() {
   sendPreparing = true;
   renderSendButtons();
   try {
-    let profile = activeProfile();
+    const profile = activeProfile();
     if (!profile) {
       toast("请先接入模型");
       return openSettings("models");
-    }
-    if (profile.tools !== false && apiBase === null) {
-      await ensureLocalBridge();
-      profile = activeProfile() || profile;
     }
     if (quotaBlocked(profile)) {
       if (currentConversation()) renderConversation();
@@ -8601,16 +8423,10 @@ async function sendOrStop() {
     if (c && !(await ensureWorkReady(c))) return;
     if (!c) {
       const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
-      if (pending) {
-        // 行：先把工作目录立起来，立不起来就不发
-        if (profile.tools === false) {
-          toast("当前模型已关闭本机工具，请在模型高级配置中开启");
-          return;
-        }
-        if (apiBase === null && !(await ensureLocalBridge())) {
-          toast("执事需要本机桥接，请先运行 start.cmd");
-          return;
-        }
+      // 行：先把工作目录立起来，立不起来就不发
+      if (pending && profile.tools === false) {
+        toast("当前模型已关闭本机工具，请在模型高级配置中开启");
+        return;
       }
       c = {
         id: uid(),
@@ -8911,7 +8727,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   let leadTrim = 0;
   const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
-  const archiveBefore = !isWork(conversation) && archiveOnline() ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
+  const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
   // 用量在 finally 里结算：停止、断网、工具链中途出错，前面几轮已经花掉的墨也得记上，不能只在整答顺利收尾时记账
   const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     stepsBefore = (assistant.steps || []).length;
@@ -9247,7 +9063,7 @@ async function requestPatiently(profile, history, signal, overrides) {
   }
 }
 // opened：接口至少接下过一次请求（没接下的——400、连不上——不花墨）；partialRound：最后一轮开了头却没等到它的 usage（停止、断网），
-// 那一轮按估算补上——提示全文加上这一轮写出的字；一次 usage 都没拿到的（直连不回 usage）整答按估算
+// 那一轮按估算补上——提示全文加上这一轮写出的字；一次 usage 都没拿到的（接口不回 usage）整答按估算
 /**
  * @param {Profile} profile
  * @param {Message} assistant
@@ -9423,7 +9239,6 @@ function workVars(conversation) {
  * @typedef {Object} OfferContext 此处给不给某件工具，看这几样
  * @property {Conversation} conversation
  * @property {boolean} work 执事（绑了工作目录，且不是旁注）
- * @property {boolean} bridge 本机桥接在线
  * @property {boolean} files 有可落脚的目录（工作目录或卷宗）
  * @property {Array<Record<string, any>>} docs 可读的文档
  * @property {string[]} offered 登记在前、此处已经给出的工具
@@ -9484,7 +9299,6 @@ function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
   const ctx = {
     conversation,
     work: isWork(conversation) && !lookup,
-    bridge: apiBase !== null,
     files: !!workRoot(conversation),
     docs: availableDocuments(conversation),
     offered: [],
@@ -9971,7 +9785,6 @@ defineTool({
   name: "search_web",
   group: "web",
   label: "检索",
-  offer: ctx => ctx.bridge,
   lookup: true,
   parallel: true,
   cache: args => ({ ...args, query: args.query.trim().replace(/\s+/g, " ").toLowerCase() }),
@@ -10001,7 +9814,6 @@ defineTool({
   name: "fetch_page",
   group: "web",
   label: "翻阅网页",
-  offer: ctx => ctx.bridge,
   lookup: true,
   parallel: true,
   // 同一页的不同锚点是同一页
@@ -10022,7 +9834,6 @@ defineTool({
   name: "http_request",
   group: "web",
   label: "调接口",
-  offer: ctx => ctx.bridge,
   sideEffect: true,
   cache: args => (/^\s*(GET|HEAD)?\s*$/i.test(args.method || "") ? args : null),
   async run(step, args, { signal }) {
@@ -10045,7 +9856,7 @@ defineTool({
 });
 
   // ---- 15-tools/11-compute.js ----
-// 言 · 计算：run_js 在浏览器里的隔离沙箱跑一段 JS，不经桥接，直连也有。
+// 言 · 计算：run_js 在浏览器里的隔离沙箱跑一段 JS，不经桥接。
 // 沙箱是一个 sandbox iframe（origin null、CSP 不许联网）里的 Worker，由 preview-runtime.js 承担；每次现起一个 iframe、算完就撤，超时由那头把 Worker 杀掉
 defineTool({
   name: "run_js",
@@ -10482,10 +10293,6 @@ async function ensureWorkReady(conversation) {
     toast("当前模型已关闭本机工具，请在模型高级配置中开启");
     return false;
   }
-  if (apiBase === null && !(await ensureLocalBridge())) {
-    toast("执事需要本机桥接，请先运行 start.cmd");
-    return false;
-  }
   try {
     const prepared = await bridge("/api/work/prepare", { workdir: conversation.workdir }, AbortSignal.timeout(8000));
     if (prepared.created) toast("工作目录不存在，已新建");
@@ -10560,7 +10367,7 @@ function changeSummaryInner(message, open) {
 // 成品：言里这一答在卷宗根目录新出或改过的文件。一件一行：类型、文件名、大小，右侧「看」（悬浮预览）与「下载」
 // 卷宗里已经删掉的成品：条目留着（这一答确实出过这件），但标成「已移出卷宗」，不再给看与下载的按钮
 function deliverableMissing(path) {
-  return archiveOnline() && archiveEntries !== null && !archiveEntries.some(entry => entry.path === path);
+  return archiveEntries !== null && !archiveEntries.some(entry => entry.path === path);
 }
 function deliverableFileHtml(f) {
   const missing = deliverableMissing(f.path);
@@ -11007,9 +10814,9 @@ const ARCHIVE_DOC_EXTENSIONS = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "o
 /** @param {Conversation} conversation */
 function availableDocuments(conversation) {
   const seen = new Map();
-  for (const file of [...(conversation?.messages || []).flatMap(m => m.attachments || []), ...store.library])
+  for (const file of (conversation?.messages || []).flatMap(m => m.attachments || []))
     if (file.id && !seen.has(file.name) && (file.kind === "text" || (file.kind === "file" && file.extracted))) seen.set(file.name, file);
-  if (store.settings.archiveRead !== false && archiveOnline())
+  if (store.settings.archiveRead !== false)
     for (const entry of archiveEntries || []) {
       const extension = String(entry.name).split(".").pop().toLowerCase();
       if (seen.has(entry.name) || !(ARCHIVE_DOC_EXTENSIONS.has(extension) || isTextFile({ name: entry.name, type: "" }))) continue;
@@ -11081,7 +10888,6 @@ function mcpActiveConfigs() {
 }
 // 配置变了（或还没拉过）就去桥接那头拉一遍；发请求前先等它，头一问就带得上。restart 里的服务断开重连
 function mcpReady(restart = []) {
-  if (apiBase === null) return Promise.resolve();
   const servers = mcpActiveConfigs(),
     key = JSON.stringify(servers);
   if (key === mcp.key && !restart.length && (mcp.loading || !mcp.retryAt || Date.now() < mcp.retryAt))
@@ -11159,7 +10965,6 @@ function mcpInlineTool(server, spec) {
     mcp: true,
     server,
     schema: { description: spec.description || spec.title || spec.name, parameters: spec.inputSchema },
-    offer: ctx => ctx.bridge,
     lookup: readOnly,
     parallel: readOnly,
     sideEffect: !readOnly,
@@ -11180,7 +10985,7 @@ const MCP_LAZY_TOOLS = [
     name: "mcp_describe",
     label: "MCP",
     mcp: true,
-    offer: ctx => ctx.bridge && mcpLazyServers(ctx.preset).length > 0,
+    offer: ctx => mcpLazyServers(ctx.preset).length > 0,
     vars: ctx => ({ directory: mcpDirectory(ctx.preset) }),
     parallel: true,
     cache: true,
@@ -11204,7 +11009,7 @@ const MCP_LAZY_TOOLS = [
     name: "mcp_call",
     label: "MCP",
     mcp: true,
-    offer: ctx => ctx.bridge && mcpLazyServers(ctx.preset).length > 0,
+    offer: ctx => mcpLazyServers(ctx.preset).length > 0,
     sideEffect: true,
     approval: mcpApprovalHtml,
     digest: true,
@@ -11332,7 +11137,7 @@ defineTool({
   name: "delegate",
   group: "delegate",
   label: "差遣",
-  offer: ctx => ctx.bridge && ctx.offered.some(name => name !== "ask_user"),
+  offer: ctx => ctx.offered.some(name => name !== "ask_user"),
   mainOnly: true,
   sideEffect: true,
   parallel: true,
@@ -11834,61 +11639,7 @@ async function requestChat(profile, messages, signal, overrides = {}) {
     // probe 是探档位时故意送的、不存在的一档，原样送出去让接口报错（见 probeReasoningLevels）
     ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
-  if (apiBase !== null)
-    return bridgeFetch("/api/chat", JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }), signal);
-  const payload = {
-    model: profile.model,
-    messages: parameters.systemPrompt ? [{ role: "system", content: parameters.systemPrompt }, ...messages] : messages,
-    stream: true,
-    stream_options: { include_usage: true },
-    temperature: parameters.temperature,
-    ...(parameters.maxTokens ? { max_tokens: parameters.maxTokens } : {}),
-    ...extras
-  };
-  // 直连 Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格，后面的读法不变
-  if (anthropicLike(profile)) {
-    const upstream = await fetch(anthropicEndpoint(profile.baseUrl), {
-      method: "POST",
-      headers: anthropicHeaders(profile.apiKey, true),
-      body: JSON.stringify(anthropicRequest(payload)),
-      signal
-    });
-    if (!upstream.ok || !upstream.body) return upstream;
-    return new Response(upstream.body.pipeThrough(anthropicToOpenAiStream(profile.model)), {
-      status: 200,
-      headers: { "Content-Type": "text/event-stream; charset=utf-8" }
-    });
-  }
-  payload.messages = payload.messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
-  return fetch(completionEndpoint(profile.baseUrl), {
-    method: "POST",
-    headers: directHeaders(profile),
-    body: JSON.stringify(payload),
-    signal
-  });
-}
-// 直连时列模型的地址与请求头：Anthropic 与 OpenAI 兼容的各一套
-/** @param {Profile} profile */
-function directModelsRequest(profile) {
-  return anthropicLike(profile)
-    ? { url: anthropicEndpoint(profile.baseUrl, "/v1/models"), headers: anthropicHeaders(profile.apiKey, true) }
-    : { url: modelsEndpoint(profile.baseUrl), headers: directHeaders(profile) };
-}
-function completionEndpoint(baseUrl) {
-  const url = String(baseUrl || "")
-    .trim()
-    .replace(/\/$/, "");
-  if (!/^https?:\/\//i.test(url)) throw Error("Base URL 只支持 http 或 https");
-  return /\/chat\/completions$/i.test(url) ? url : `${url}/chat/completions`;
-}
-function modelsEndpoint(baseUrl) {
-  const url = new URL(String(baseUrl || "").trim());
-  url.pathname = `${url.pathname.replace(/\/chat\/completions\/?$/i, "").replace(/\/$/, "")}/models`;
-  return url.href;
-}
-/** @param {Profile} profile */
-function directHeaders(profile) {
-  return { "Content-Type": "application/json; charset=utf-8", ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {}) };
+  return bridgeFetch("/api/chat", JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }), signal);
 }
 /** @param {Profile} profile */
 function profileForRequest(profile) {
@@ -12055,7 +11806,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     think.held = "";
     think.mode = "body";
   };
-  // 直连时流静默太久没人管（桥接那头 Node 自带五分钟的读超时）：五分钟一个字节都没有就当断了，按中断处理、可续写
+  // 流静默太久（桥接那头 Node 自带五分钟的读超时）：五分钟一个字节都没有就当断了，按中断处理、可续写
   const readChunk = () =>
     new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -12187,9 +11938,7 @@ function extractContent(data) {
 }
 function friendlyError(message) {
   if (/Failed to fetch|NetworkError|Load failed/i.test(message))
-    return apiBase === null
-      ? "浏览器无法直连该接口，通常是接口未开放 CORS。请运行 start.cmd 或 VS Code 任务「言：启动模型桥接」后重试。"
-      : "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
+    return "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
   return String(message).slice(0, 500);
 }
 function scrollBottom() {
@@ -12248,12 +11997,8 @@ async function handleMessageAction(event) {
     return saveEditedMessage(c, index, button.closest("[data-message]").querySelector(".message-edit-input").value);
   if (button.dataset.action === "resume") {
     if (conversationDry(c)) return toast("余墨已尽，请调高上限或更换模型");
-    let profile = activeProfile();
+    const profile = activeProfile();
     if (!profile) return openSettings("models");
-    if (profile.tools !== false && apiBase === null) {
-      await ensureLocalBridge();
-      profile = activeProfile() || profile;
-    }
     if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
     if (!(await ensureWorkReady(c))) return;
     message.status = "streaming";
@@ -12383,13 +12128,12 @@ function renderSettings() {
 }
 // 存储位置：对话、卷宗、配置（含模型配置）都在这一个 .yan 目录里，几个浏览器共用；换位置时整份拷过去，旧处留着
 function storageSettingsHtml() {
-  if (apiBase === null) return "";
   const info = bootstrap.store || {},
     parent = info.parent || "";
   return `<div class="setting-row"><div class="setting-copy"><strong>存储位置</strong><small><code title="${escapeHtml(info.root || "")}">${escapeHtml(info.root || "")}</code></small></div><div class="setting-actions setting-directory"><input id="settingStore" class="field" spellcheck="false" autocomplete="off" placeholder="${escapeHtml(parent)}" value="${escapeHtml(parent)}"><button id="settingStorePick" class="outline-btn" type="button">选择…</button></div></div>`;
 }
 function generalSettingsHtml() {
-  return `<h2>通用</h2><div class="setting-row"><div class="setting-copy"><strong>显示名称</strong><small>侧栏中显示的称呼</small></div><input id="settingName" class="field" value="${escapeHtml(store.settings.name)}"></div><div class="setting-row"><div class="setting-copy"><strong>自动拟题</strong><small>由模型拟题，略耗额度</small></div><div class="segmented"><button data-setting="autoTitle" data-value="true" class="${store.settings.autoTitle ? "active" : ""}">开</button><button data-setting="autoTitle" data-value="false" class="${store.settings.autoTitle ? "" : "active"}">关</button></div></div>${storageSettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>本机数据</strong><small>${store.conversations.length} 段对话 · ${store.library.length} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">含附件原件</label><button id="exportData" class="outline-btn">导出备份</button><button id="importData" class="outline-btn">导入备份</button></div></div><div class="setting-row"><div class="setting-copy"><strong>清空所有对话</strong><small>模型配置、个性化与卷宗将保留</small></div><button id="clearAll" class="danger-btn">清空对话</button></div>`;
+  return `<h2>通用</h2><div class="setting-row"><div class="setting-copy"><strong>显示名称</strong><small>侧栏中显示的称呼</small></div><input id="settingName" class="field" value="${escapeHtml(store.settings.name)}"></div><div class="setting-row"><div class="setting-copy"><strong>自动拟题</strong><small>由模型拟题，略耗额度</small></div><div class="segmented"><button data-setting="autoTitle" data-value="true" class="${store.settings.autoTitle ? "active" : ""}">开</button><button data-setting="autoTitle" data-value="false" class="${store.settings.autoTitle ? "" : "active"}">关</button></div></div>${storageSettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>本机数据</strong><small>${store.conversations.length} 段对话 · ${libraryTotal()} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">含附件原件</label><button id="exportData" class="outline-btn">导出备份</button><button id="importData" class="outline-btn">导入备份</button></div></div><div class="setting-row"><div class="setting-copy"><strong>清空所有对话</strong><small>模型配置、个性化与卷宗将保留</small></div><button id="clearAll" class="danger-btn">清空对话</button></div>`;
 }
 // 工具：沙箱、三档指令权限、可及范围、卷宗可读、轮次上限——模型能动手的边界都在这一栏
 function toolsSettingsHtml() {
@@ -12446,15 +12190,14 @@ const kbd = keys =>
     .map(key => `<span class="kbd">${escapeHtml(key)}</span>`)
     .join(" + ");
 function aboutSettingsHtml() {
-  const version = bootstrap.version || APP_VERSION,
-    bridged = apiBase !== null;
+  const version = bootstrap.version || APP_VERSION;
   const rows = list => `<dl class="about-list">${list.map(([term, detail]) => `<dt>${term}</dt><dd>${detail}</dd>`).join("")}</dl>`;
   return (
-    `<div class="about-head"><h2>言</h2><span class="about-version">v${escapeHtml(version)} · ${bridged ? "本机桥接" : "浏览器直连"}</span></div><p class="about-ethos">清简为骨，纸墨为意。<br>长问慢答，尽付纸墨；言毕，即行。</p>` +
+    `<div class="about-head"><h2>言</h2><span class="about-version">v${escapeHtml(version)}</span></div><p class="about-ethos">清简为骨，纸墨为意。<br>长问慢答，尽付纸墨；言毕，即行。</p>` +
     `<div class="about-section"><h3>数据与边界</h3>${rows([
       [
         "存放",
-        "桥接在线时一切落在本机的存储位置（默认 ~/.yan，可在通用设置更换）：对话/ 一段一个文件，卷宗/ 是成品与收进来的文件，附件/ 是附件原件，配置.json 是设置、模型配置（含 API Key）、记忆与草稿；复制整个目录即备份。没桥接时暂存于此浏览器，接上后推过去。不经任何云端"
+        "一切落在本机的存储位置（默认 ~/.yan，可在通用设置更换）：对话/ 一段一个文件，卷宗/ 是成品与收进来的文件，附件/ 是附件原件，配置.json 是设置、模型配置（含 API Key）、记忆与草稿；复制整个目录即备份。不经任何云端"
       ],
       ["桥接", "本机进程仅监听 127.0.0.1，负责转发模型请求、联网检索与读取网页；拒绝访问本机与内网地址"],
       [
@@ -12494,11 +12237,7 @@ function segmentRow(title, desc, key, items, active) {
   return `<div class="setting-row"><div class="setting-copy"><strong>${title}</strong><small>${desc}</small></div><div class="segmented">${items.map(([v, label]) => `<button data-setting="${key}" data-value="${v}" class="${String(active) === String(v) ? "active" : ""}">${label}</button>`).join("")}</div></div>`;
 }
 function modelsSettingsHtml() {
-  const transport =
-    apiBase !== null
-      ? `本机桥接已接通${apiBase ? "（VS Code 预览）" : ""}，联网与转发均可用。`
-      : "当前由浏览器直连模型，联网检索不可用；本机桥接启动后将自动接通。";
-  return `<h2>模型</h2><p class="settings-lead">${transport}</p>${bootstrap.notice ? `<div class="server-notice">${escapeHtml(bootstrap.notice)}</div>` : ""}<div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">＋ 接入模型</button>`;
+  return `<h2>模型</h2><div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">＋ 接入模型</button>`;
 }
 function quotaParts(value) {
   const match = String(value ?? "")
@@ -12847,8 +12586,6 @@ async function handleProfileAction(profile, action, card) {
     let status = card.querySelector(".profile-status");
     status.textContent = "检索中…";
     try {
-      if (apiBase === null && !(await ensureLocalBridge()))
-        throw Error("未连接本机桥接；请先运行 start.cmd 或 VS Code 任务「言：启动模型桥接」");
       card = document.querySelector(`[data-profile-card="${profile.id}"]`) || card;
       status = card.querySelector(".profile-status");
       status.textContent = "检索中…";
@@ -12863,19 +12600,15 @@ async function handleProfileAction(profile, action, card) {
     let status = card.querySelector(".profile-status");
     status.textContent = "连接中…";
     try {
-      if (apiBase === null) await ensureLocalBridge();
       card = document.querySelector(`[data-profile-card="${profile.id}"]`) || card;
       status = card.querySelector(".profile-status");
       status.textContent = "连接中…";
       const started = performance.now();
-      const response =
-        apiBase !== null
-          ? await fetch(`${apiBase}/api/test`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ profile: profileForRequest(profile) })
-            })
-          : await fetch(directModelsRequest(profile).url, { headers: directModelsRequest(profile).headers });
+      const response = await fetch(`${apiBase}/api/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: profileForRequest(profile) })
+      });
       if (!response.ok) throw Error(await describeResponseError(response));
       status.textContent = `可用 · ${Math.round(performance.now() - started)} ms`;
       // 测试连接是亲手要的一次核对：档位也重探一遍
@@ -12888,24 +12621,14 @@ async function handleProfileAction(profile, action, card) {
 /** @param {Profile} profile */
 async function fetchModelList(profile) {
   if (!String(profile.baseUrl || "").trim()) throw Error("请先填写 Base URL");
-  if (apiBase === null) await ensureLocalBridge();
-  let response, data;
-  if (apiBase !== null) {
-    response = await fetch(`${apiBase}/api/models`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: profileForRequest(profile) })
-    });
-    data = await response.json().catch(() => ({}));
-    if (!response.ok) throw Error(data.error || `请求失败（${response.status}）`);
-    return [...new Set(data.models || [])].sort();
-  }
-  response = await fetch(directModelsRequest(profile).url, { headers: directModelsRequest(profile).headers });
-  if (!response.ok) throw Error(await describeResponseError(response));
-  data = await response.json().catch(() => ({}));
-  return [
-    ...new Set((Array.isArray(data.data) ? data.data : []).map(item => (typeof item === "string" ? item : item?.id)).filter(Boolean))
-  ].sort();
+  const response = await fetch(`${apiBase}/api/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile: profileForRequest(profile) })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Error(data.error || `请求失败（${response.status}）`);
+  return [...new Set(data.models || [])].sort();
 }
 async function exportData(includeFiles) {
   // 备份不带密钥：模型的 API Key，MCP 配置里的环境变量与请求头（令牌多在这两处）；可选带上附件原件
@@ -13043,6 +12766,8 @@ async function importData(file) {
       }
     if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
     saveStore();
+    // 旧备份里浏览器内卷宗的件：原件已随附件恢复，落进卷宗目录
+    if (library) await migrateLibraryToArchive();
     render();
     renderSettings();
     toast(
@@ -13497,7 +13222,7 @@ function jumpToOutline(id) {
   article.classList.add("flash");
 }
 
-// ---------- 对话存成 Markdown：桥接在线时落到卷宗，否则下载 ----------
+// ---------- 对话存成 Markdown：落到卷宗 ----------
 // 元信息不是 Markdown 正文：路径、命令与文件名里的符号不能变成标题、链接或 HTML。
 function exportMarkdownLabel(value) {
   return String(value || "")
@@ -13574,20 +13299,12 @@ async function exportConversationMarkdown(c) {
     if (sources.length) toast("正在打包交互可视化…");
     for (const [index, source] of sources.entries())
       files.push({ name: `${name.slice(0, -3)}-可视化-${index + 1}.html`, text: await standaloneHtmlApp(source) });
-    if (archiveOnline()) {
-      const savedFiles = [];
-      for (const file of files) savedFiles.push(await putArchiveFile(file.name, dataUrlFromText(file.text, "text/html;charset=utf-8")));
-      const text = original + markdownAssetLinks(savedFiles);
-      const saved = await putArchiveFile(name, dataUrlFromText(text, "text/markdown"));
-      void refreshArchive();
-      toast(`已存入卷宗：${saved.name}${files.length ? `（附 ${files.length} 个交互作品）` : ""}`);
-      return;
-    }
-    const text = original + markdownAssetLinks(files);
-    if (files.length) {
-      downloadHref(URL.createObjectURL(exportZip([{ name, text }, ...files])), `${name.slice(0, -3)}.zip`, true);
-      toast("已导出 Markdown 与交互作品，请解压后打开");
-    } else downloadText(text, "text/markdown;charset=utf-8", name);
+    const savedFiles = [];
+    for (const file of files) savedFiles.push(await putArchiveFile(file.name, dataUrlFromText(file.text, "text/html;charset=utf-8")));
+    const text = original + markdownAssetLinks(savedFiles);
+    const saved = await putArchiveFile(name, dataUrlFromText(text, "text/markdown"));
+    void refreshArchive();
+    toast(`已存入卷宗：${saved.name}${files.length ? `（附 ${files.length} 个交互作品）` : ""}`);
   } catch (error) {
     toast(`导出失败：${String(error.message || error).slice(0, 160)}`);
   }
@@ -13617,7 +13334,7 @@ function bindOutlineEvents() {
 }
 
   // ---- 18-export-assets.js ----
-// Markdown 保留可编辑源码，交互作品另附离线 HTML；没有卷宗目录时把 Markdown 与作品打成一个包。
+// Markdown 保留可编辑源码，交互作品另附离线 HTML，一并存进卷宗。
 function markdownVisuals(text) {
   if (!window.marked) return [];
   const sources = [];
@@ -13641,58 +13358,11 @@ function markdownAssetLinks(files) {
     .map((file, index) => `- [可视化 ${index + 1}](<${encodeURIComponent(file.name)}>)`)
     .join("\n")}\n`;
 }
-// ZIP 的 store 模式：UTF-8 文件名、CRC32 与标准目录记录，不引入压缩库，离线双击即可解包。
-function exportZip(files) {
-  const encoder = new TextEncoder(),
-    parts = [],
-    directory = [],
-    table = Array.from({ length: 256 }, (_, value) => {
-      for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
-      return value >>> 0;
-    });
-  let offset = 0,
-    directorySize = 0;
-  for (const file of files) {
-    const name = encoder.encode(file.name),
-      data = encoder.encode(file.text),
-      local = new Uint8Array(30),
-      central = new Uint8Array(46),
-      l = new DataView(local.buffer),
-      c = new DataView(central.buffer);
-    let crc = 0xffffffff;
-    for (const byte of data) crc = (crc >>> 8) ^ table[(crc ^ byte) & 255];
-    crc = (crc ^ 0xffffffff) >>> 0;
-    l.setUint32(0, 0x04034b50, true);
-    l.setUint16(4, 20, true);
-    l.setUint16(6, 0x800, true);
-    l.setUint16(12, 33, true); // 1980-01-01
-    l.setUint32(14, crc, true);
-    l.setUint32(18, data.length, true);
-    l.setUint32(22, data.length, true);
-    l.setUint16(26, name.length, true);
-    c.setUint32(0, 0x02014b50, true);
-    c.setUint16(4, 20, true);
-    central.set(local.subarray(4, 28), 6);
-    c.setUint32(42, offset, true);
-    parts.push(local, name, data);
-    directory.push(central, name);
-    offset += local.length + name.length + data.length;
-    directorySize += central.length + name.length;
-  }
-  const end = new Uint8Array(22),
-    view = new DataView(end.buffer);
-  view.setUint32(0, 0x06054b50, true);
-  view.setUint16(8, files.length, true);
-  view.setUint16(10, files.length, true);
-  view.setUint32(12, directorySize, true);
-  view.setUint32(16, offset, true);
-  return new Blob([...parts, ...directory, end], { type: "application/zip" });
-}
 
   // ---- 19-anthropic.js ----
 // 言 · Anthropic 适配：页面与桥接内部一律用 OpenAI 的格式（消息、工具、流式分块）；接 Anthropic 时在这里换一层——
 // 把 OpenAI 格式的请求换成 Messages API 的，再把它的事件流换回 OpenAI 风格的 SSE 分块，其余代码一字不动。
-// 这一段两处跑：浏览器里随 support.js 拼进闭包（直连时用），桥接里由 server.js require（经桥接时用）；不能碰 DOM
+// 这一段两处跑：浏览器里随 support.js 拼进闭包（页面只用 anthropicLike 判断接口种类），桥接里由 server.js require（经桥接时用）；不能碰 DOM
 const ANTHROPIC_VERSION = "2023-06-01";
 // 老模型（4.5 及以前、Haiku、认不出型号的）：思考档位换成思考预算（token）；预算得小于 max_tokens，不够就把 max_tokens 抬上去
 const ANTHROPIC_BUDGETS = { minimal: 1024, low: 2048, medium: 8192, high: 16384, xhigh: 32768, max: 65536 };
@@ -13933,8 +13603,7 @@ let mcpEditing = null,
   mcpJsonOpen = false;
 
 function mcpSettingsHtml() {
-  const bridged = apiBase !== null;
-  return `<div id="mcpPage"><h2>MCP</h2>${bridged ? "" : `<p class="settings-lead">桥接接通后才可用</p>`}<div id="mcpList" class="card-list">${mcpCardsHtml()}</div><div class="card-foot"><button id="mcpAdd" class="outline-btn" type="button">＋ 新增服务</button><button id="mcpJson" class="outline-btn" type="button">${mcpJsonOpen ? "收起 JSON" : "以 JSON 编辑"}</button></div><div id="mcpJsonBox" class="json-box${mcpJsonOpen ? "" : " hidden"}">${mcpJsonHtml()}</div></div>`;
+  return `<div id="mcpPage"><h2>MCP</h2><div id="mcpList" class="card-list">${mcpCardsHtml()}</div><div class="card-foot"><button id="mcpAdd" class="outline-btn" type="button">＋ 新增服务</button><button id="mcpJson" class="outline-btn" type="button">${mcpJsonOpen ? "收起 JSON" : "以 JSON 编辑"}</button></div><div id="mcpJsonBox" class="json-box${mcpJsonOpen ? "" : " hidden"}">${mcpJsonHtml()}</div></div>`;
 }
 function mcpCardsHtml() {
   const names = Object.keys(mcpConfigs());
@@ -13948,7 +13617,7 @@ function mcpCardHtml(name) {
   const [kind, text] = config.disabled
     ? ["", "已停用"]
     : !state
-      ? ["", apiBase === null ? "等桥接接通" : "连接中…"]
+      ? ["", "连接中…"]
       : state.ok
         ? [
             "ok",
@@ -14190,7 +13859,6 @@ function envSettings() {
 }
 // 问桥接要一次环境的状态；正在准备就隔一会儿再问，直到装完
 async function refreshEnv() {
-  if (apiBase === null) return;
   const root = bootstrap.store?.root;
   const status = await bridge("/api/env/status", {}, AbortSignal.timeout(8000)).catch(() => null);
   // 换存储位置期间，旧根的慢响应不能再画到新根的环境页上。
@@ -14212,8 +13880,6 @@ function envSettingsHtml() {
     .join("")}</div></div></div>`;
 }
 function envStatusHtml() {
-  if (apiBase === null)
-    return `<div class="card"><div class="card-head"><span class="card-name">需要本机桥接</span><span class="card-state">环境由桥接装、由桥接起的进程用；桥接接通后再来</span></div></div>`;
   if (!envStatus) return `<div class="card"><div class="card-head"><span class="card-name">查看中…</span></div></div>`;
   const { state, job, home } = envStatus,
     running = !!job?.running;

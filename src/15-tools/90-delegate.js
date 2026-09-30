@@ -5,7 +5,7 @@ defineTool({
   name: "delegate",
   group: "delegate",
   label: "差遣",
-  offer: ctx => ctx.bridge && ctx.offered.some(name => name !== "ask_user"),
+  offer: ctx => ctx.offered.some(name => name !== "ask_user"),
   mainOnly: true,
   sideEffect: true,
   parallel: true,

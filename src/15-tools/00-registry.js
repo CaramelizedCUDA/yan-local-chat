@@ -11,7 +11,6 @@
  * @typedef {Object} OfferContext 此处给不给某件工具，看这几样
  * @property {Conversation} conversation
  * @property {boolean} work 执事（绑了工作目录，且不是旁注）
- * @property {boolean} bridge 本机桥接在线
  * @property {boolean} files 有可落脚的目录（工作目录或卷宗）
  * @property {Array<Record<string, any>>} docs 可读的文档
  * @property {string[]} offered 登记在前、此处已经给出的工具
@@ -72,7 +71,6 @@ function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
   const ctx = {
     conversation,
     work: isWork(conversation) && !lookup,
-    bridge: apiBase !== null,
     files: !!workRoot(conversation),
     docs: availableDocuments(conversation),
     offered: [],

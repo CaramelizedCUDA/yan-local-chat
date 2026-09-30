@@ -56,7 +56,7 @@ function changeSummaryInner(message, open) {
 // 成品：言里这一答在卷宗根目录新出或改过的文件。一件一行：类型、文件名、大小，右侧「看」（悬浮预览）与「下载」
 // 卷宗里已经删掉的成品：条目留着（这一答确实出过这件），但标成「已移出卷宗」，不再给看与下载的按钮
 function deliverableMissing(path) {
-  return archiveOnline() && archiveEntries !== null && !archiveEntries.some(entry => entry.path === path);
+  return archiveEntries !== null && !archiveEntries.some(entry => entry.path === path);
 }
 function deliverableFileHtml(f) {
   const missing = deliverableMissing(f.path);

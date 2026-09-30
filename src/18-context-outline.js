@@ -431,7 +431,7 @@ function jumpToOutline(id) {
   article.classList.add("flash");
 }
 
-// ---------- 对话存成 Markdown：桥接在线时落到卷宗，否则下载 ----------
+// ---------- 对话存成 Markdown：落到卷宗 ----------
 // 元信息不是 Markdown 正文：路径、命令与文件名里的符号不能变成标题、链接或 HTML。
 function exportMarkdownLabel(value) {
   return String(value || "")
@@ -508,20 +508,12 @@ async function exportConversationMarkdown(c) {
     if (sources.length) toast("正在打包交互可视化…");
     for (const [index, source] of sources.entries())
       files.push({ name: `${name.slice(0, -3)}-可视化-${index + 1}.html`, text: await standaloneHtmlApp(source) });
-    if (archiveOnline()) {
-      const savedFiles = [];
-      for (const file of files) savedFiles.push(await putArchiveFile(file.name, dataUrlFromText(file.text, "text/html;charset=utf-8")));
-      const text = original + markdownAssetLinks(savedFiles);
-      const saved = await putArchiveFile(name, dataUrlFromText(text, "text/markdown"));
-      void refreshArchive();
-      toast(`已存入卷宗：${saved.name}${files.length ? `（附 ${files.length} 个交互作品）` : ""}`);
-      return;
-    }
-    const text = original + markdownAssetLinks(files);
-    if (files.length) {
-      downloadHref(URL.createObjectURL(exportZip([{ name, text }, ...files])), `${name.slice(0, -3)}.zip`, true);
-      toast("已导出 Markdown 与交互作品，请解压后打开");
-    } else downloadText(text, "text/markdown;charset=utf-8", name);
+    const savedFiles = [];
+    for (const file of files) savedFiles.push(await putArchiveFile(file.name, dataUrlFromText(file.text, "text/html;charset=utf-8")));
+    const text = original + markdownAssetLinks(savedFiles);
+    const saved = await putArchiveFile(name, dataUrlFromText(text, "text/markdown"));
+    void refreshArchive();
+    toast(`已存入卷宗：${saved.name}${files.length ? `（附 ${files.length} 个交互作品）` : ""}`);
   } catch (error) {
     toast(`导出失败：${String(error.message || error).slice(0, 160)}`);
   }

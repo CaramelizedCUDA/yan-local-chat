@@ -3,7 +3,7 @@
 // ---------- 数据模型（JSDoc，供 tsc --checkJs 与编辑器；见 src/types.d.ts 的说明）----------
 // 存下来的东西只有这几种：Store 里挂着设置、模型、对话、卷宗（浏览器内的旧件）、记忆与草稿；对话里是消息，消息上挂步骤，步骤上可挂帮手
 /**
- * @typedef {Object} Attachment 附件的元数据；原件（data）另存存储根的 附件/（没桥接时暂存 IndexedDB），只在读出时才带
+ * @typedef {Object} Attachment 附件的元数据；原件（data）另存存储根的 附件/（落盘不成时暂存 IndexedDB），只在读出时才带
  * @property {string} id
  * @property {"image"|"text"|"file"} kind
  * @property {string} name
@@ -196,7 +196,7 @@
  * @property {Settings} settings
  * @property {Profile[]} profiles
  * @property {Conversation[]} conversations
- * @property {Attachment[]} library 浏览器内的卷宗（没桥接时）
+ * @property {Attachment[]} library 早先直连时收在浏览器里的卷宗旧件：开页时落进卷宗目录（见 migrateLibraryToArchive）
  * @property {{ enabled: boolean, items: MemoryItem[] }} memory
  * @property {Record<string, Draft>} drafts
  */
@@ -205,7 +205,7 @@ const STORAGE_META_KEY = "__yanStorage";
 const STATE_DB_NAME = "yan-chat-state-v1";
 const STATE_STORE_NAME = "state"; // 旧版整份记录的表（main 一条），迁走后就空着
 const STATE_RECORD_KEY = "main";
-const CHATS_STORE_NAME = "conversations"; // 没桥接时对话存这里，一段一条
+const CHATS_STORE_NAME = "conversations"; // 落盘不成与离页时对话暂存这里，一段一条
 const CHAT_DISK_INTERVAL = 1200, // 静止时同一段对话连续落盘的最短间隔（毫秒）
   CHAT_STREAM_DISK_INTERVAL = 3000; // 流式生成时少改几遍整份 JSON；收尾会恢复上面的短间隔
 // 内置提示词都在 prompts/ 目录里，这里只做取值与填空；{{名字}} 由 vars 填入，缺文件时报错并给空串，不让请求整个失败
@@ -222,7 +222,7 @@ function prompt(path, vars = {}) {
 function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
-const APP_VERSION = "0.3.0"; // 与 package.json 同步；桥接在线时以桥接返回的为准
+const APP_VERSION = "0.3.0"; // 与 package.json 同步；以桥接返回的为准
 const LOCAL_BRIDGE = "http://127.0.0.1:8787";
 const FILE_DB_NAME = "yan-chat-files-v1";
 const FILE_STORE_NAME = "attachments";
@@ -230,7 +230,6 @@ const FILE_STORE_NAME = "attachments";
 const MB = 1024 * 1024;
 const MAX_FILE_BYTES = 32 * MB;
 const MAX_PENDING_BYTES = 64 * MB;
-const MAX_ATTACHMENTS_BYTES = 2048 * MB;
 const MAX_ARCHIVE_FILE_BYTES = 256 * MB;
 const limitLabel = bytes => (bytes >= 1024 * MB ? `${bytes / (1024 * MB)} GB` : `${Math.round(bytes / MB)} MB`);
 const MAX_EXTRACTED_CHARS = 300000;
@@ -403,7 +402,6 @@ const advancedOpen = new Set();
 let suppressViz = false;
 let saveTimer = null,
   historySearchTimer = null;
-let bridgeRetryAt = 0;
 let followBottom = true,
   autoScrolling = false;
 const scrollPositions = new Map();

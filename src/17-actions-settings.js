@@ -39,12 +39,8 @@ async function handleMessageAction(event) {
     return saveEditedMessage(c, index, button.closest("[data-message]").querySelector(".message-edit-input").value);
   if (button.dataset.action === "resume") {
     if (conversationDry(c)) return toast("余墨已尽，请调高上限或更换模型");
-    let profile = activeProfile();
+    const profile = activeProfile();
     if (!profile) return openSettings("models");
-    if (profile.tools !== false && apiBase === null) {
-      await ensureLocalBridge();
-      profile = activeProfile() || profile;
-    }
     if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
     if (!(await ensureWorkReady(c))) return;
     message.status = "streaming";
@@ -174,13 +170,12 @@ function renderSettings() {
 }
 // 存储位置：对话、卷宗、配置（含模型配置）都在这一个 .yan 目录里，几个浏览器共用；换位置时整份拷过去，旧处留着
 function storageSettingsHtml() {
-  if (apiBase === null) return "";
   const info = bootstrap.store || {},
     parent = info.parent || "";
   return `<div class="setting-row"><div class="setting-copy"><strong>存储位置</strong><small><code title="${escapeHtml(info.root || "")}">${escapeHtml(info.root || "")}</code></small></div><div class="setting-actions setting-directory"><input id="settingStore" class="field" spellcheck="false" autocomplete="off" placeholder="${escapeHtml(parent)}" value="${escapeHtml(parent)}"><button id="settingStorePick" class="outline-btn" type="button">选择…</button></div></div>`;
 }
 function generalSettingsHtml() {
-  return `<h2>通用</h2><div class="setting-row"><div class="setting-copy"><strong>显示名称</strong><small>侧栏中显示的称呼</small></div><input id="settingName" class="field" value="${escapeHtml(store.settings.name)}"></div><div class="setting-row"><div class="setting-copy"><strong>自动拟题</strong><small>由模型拟题，略耗额度</small></div><div class="segmented"><button data-setting="autoTitle" data-value="true" class="${store.settings.autoTitle ? "active" : ""}">开</button><button data-setting="autoTitle" data-value="false" class="${store.settings.autoTitle ? "" : "active"}">关</button></div></div>${storageSettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>本机数据</strong><small>${store.conversations.length} 段对话 · ${store.library.length} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">含附件原件</label><button id="exportData" class="outline-btn">导出备份</button><button id="importData" class="outline-btn">导入备份</button></div></div><div class="setting-row"><div class="setting-copy"><strong>清空所有对话</strong><small>模型配置、个性化与卷宗将保留</small></div><button id="clearAll" class="danger-btn">清空对话</button></div>`;
+  return `<h2>通用</h2><div class="setting-row"><div class="setting-copy"><strong>显示名称</strong><small>侧栏中显示的称呼</small></div><input id="settingName" class="field" value="${escapeHtml(store.settings.name)}"></div><div class="setting-row"><div class="setting-copy"><strong>自动拟题</strong><small>由模型拟题，略耗额度</small></div><div class="segmented"><button data-setting="autoTitle" data-value="true" class="${store.settings.autoTitle ? "active" : ""}">开</button><button data-setting="autoTitle" data-value="false" class="${store.settings.autoTitle ? "" : "active"}">关</button></div></div>${storageSettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>本机数据</strong><small>${store.conversations.length} 段对话 · ${libraryTotal()} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">含附件原件</label><button id="exportData" class="outline-btn">导出备份</button><button id="importData" class="outline-btn">导入备份</button></div></div><div class="setting-row"><div class="setting-copy"><strong>清空所有对话</strong><small>模型配置、个性化与卷宗将保留</small></div><button id="clearAll" class="danger-btn">清空对话</button></div>`;
 }
 // 工具：沙箱、三档指令权限、可及范围、卷宗可读、轮次上限——模型能动手的边界都在这一栏
 function toolsSettingsHtml() {
@@ -237,15 +232,14 @@ const kbd = keys =>
     .map(key => `<span class="kbd">${escapeHtml(key)}</span>`)
     .join(" + ");
 function aboutSettingsHtml() {
-  const version = bootstrap.version || APP_VERSION,
-    bridged = apiBase !== null;
+  const version = bootstrap.version || APP_VERSION;
   const rows = list => `<dl class="about-list">${list.map(([term, detail]) => `<dt>${term}</dt><dd>${detail}</dd>`).join("")}</dl>`;
   return (
-    `<div class="about-head"><h2>言</h2><span class="about-version">v${escapeHtml(version)} · ${bridged ? "本机桥接" : "浏览器直连"}</span></div><p class="about-ethos">清简为骨，纸墨为意。<br>长问慢答，尽付纸墨；言毕，即行。</p>` +
+    `<div class="about-head"><h2>言</h2><span class="about-version">v${escapeHtml(version)}</span></div><p class="about-ethos">清简为骨，纸墨为意。<br>长问慢答，尽付纸墨；言毕，即行。</p>` +
     `<div class="about-section"><h3>数据与边界</h3>${rows([
       [
         "存放",
-        "桥接在线时一切落在本机的存储位置（默认 ~/.yan，可在通用设置更换）：对话/ 一段一个文件，卷宗/ 是成品与收进来的文件，附件/ 是附件原件，配置.json 是设置、模型配置（含 API Key）、记忆与草稿；复制整个目录即备份。没桥接时暂存于此浏览器，接上后推过去。不经任何云端"
+        "一切落在本机的存储位置（默认 ~/.yan，可在通用设置更换）：对话/ 一段一个文件，卷宗/ 是成品与收进来的文件，附件/ 是附件原件，配置.json 是设置、模型配置（含 API Key）、记忆与草稿；复制整个目录即备份。不经任何云端"
       ],
       ["桥接", "本机进程仅监听 127.0.0.1，负责转发模型请求、联网检索与读取网页；拒绝访问本机与内网地址"],
       [
@@ -285,11 +279,7 @@ function segmentRow(title, desc, key, items, active) {
   return `<div class="setting-row"><div class="setting-copy"><strong>${title}</strong><small>${desc}</small></div><div class="segmented">${items.map(([v, label]) => `<button data-setting="${key}" data-value="${v}" class="${String(active) === String(v) ? "active" : ""}">${label}</button>`).join("")}</div></div>`;
 }
 function modelsSettingsHtml() {
-  const transport =
-    apiBase !== null
-      ? `本机桥接已接通${apiBase ? "（VS Code 预览）" : ""}，联网与转发均可用。`
-      : "当前由浏览器直连模型，联网检索不可用；本机桥接启动后将自动接通。";
-  return `<h2>模型</h2><p class="settings-lead">${transport}</p>${bootstrap.notice ? `<div class="server-notice">${escapeHtml(bootstrap.notice)}</div>` : ""}<div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">＋ 接入模型</button>`;
+  return `<h2>模型</h2><div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">＋ 接入模型</button>`;
 }
 function quotaParts(value) {
   const match = String(value ?? "")
@@ -638,8 +628,6 @@ async function handleProfileAction(profile, action, card) {
     let status = card.querySelector(".profile-status");
     status.textContent = "检索中…";
     try {
-      if (apiBase === null && !(await ensureLocalBridge()))
-        throw Error("未连接本机桥接；请先运行 start.cmd 或 VS Code 任务「言：启动模型桥接」");
       card = document.querySelector(`[data-profile-card="${profile.id}"]`) || card;
       status = card.querySelector(".profile-status");
       status.textContent = "检索中…";
@@ -654,19 +642,15 @@ async function handleProfileAction(profile, action, card) {
     let status = card.querySelector(".profile-status");
     status.textContent = "连接中…";
     try {
-      if (apiBase === null) await ensureLocalBridge();
       card = document.querySelector(`[data-profile-card="${profile.id}"]`) || card;
       status = card.querySelector(".profile-status");
       status.textContent = "连接中…";
       const started = performance.now();
-      const response =
-        apiBase !== null
-          ? await fetch(`${apiBase}/api/test`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ profile: profileForRequest(profile) })
-            })
-          : await fetch(directModelsRequest(profile).url, { headers: directModelsRequest(profile).headers });
+      const response = await fetch(`${apiBase}/api/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: profileForRequest(profile) })
+      });
       if (!response.ok) throw Error(await describeResponseError(response));
       status.textContent = `可用 · ${Math.round(performance.now() - started)} ms`;
       // 测试连接是亲手要的一次核对：档位也重探一遍
@@ -679,24 +663,14 @@ async function handleProfileAction(profile, action, card) {
 /** @param {Profile} profile */
 async function fetchModelList(profile) {
   if (!String(profile.baseUrl || "").trim()) throw Error("请先填写 Base URL");
-  if (apiBase === null) await ensureLocalBridge();
-  let response, data;
-  if (apiBase !== null) {
-    response = await fetch(`${apiBase}/api/models`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: profileForRequest(profile) })
-    });
-    data = await response.json().catch(() => ({}));
-    if (!response.ok) throw Error(data.error || `请求失败（${response.status}）`);
-    return [...new Set(data.models || [])].sort();
-  }
-  response = await fetch(directModelsRequest(profile).url, { headers: directModelsRequest(profile).headers });
-  if (!response.ok) throw Error(await describeResponseError(response));
-  data = await response.json().catch(() => ({}));
-  return [
-    ...new Set((Array.isArray(data.data) ? data.data : []).map(item => (typeof item === "string" ? item : item?.id)).filter(Boolean))
-  ].sort();
+  const response = await fetch(`${apiBase}/api/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile: profileForRequest(profile) })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Error(data.error || `请求失败（${response.status}）`);
+  return [...new Set(data.models || [])].sort();
 }
 async function exportData(includeFiles) {
   // 备份不带密钥：模型的 API Key，MCP 配置里的环境变量与请求头（令牌多在这两处）；可选带上附件原件
@@ -834,6 +808,8 @@ async function importData(file) {
       }
     if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
     saveStore();
+    // 旧备份里浏览器内卷宗的件：原件已随附件恢复，落进卷宗目录
+    if (library) await migrateLibraryToArchive();
     render();
     renderSettings();
     toast(

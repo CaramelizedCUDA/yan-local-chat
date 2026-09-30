@@ -60,7 +60,7 @@ function securityHeaders(req, res) {
 }
 // 能调桥接的页面：本机的与 VS Code Webview。别的网站连模型转发、列模型也不许借道——那等于让任意网页经桥接往局域网里发请求。
 // 来源为 "null" 的一概不认：file:// 打开的页面是它，可任何网站嵌一个开了沙箱的 iframe 也是它，分不出来；
-// file:// 打开的页面因此接不上桥接，只能直连，要用桥接就从 http://127.0.0.1:端口 打开
+// file:// 打开的页面因此接不上桥接，页面只提示去 http://127.0.0.1:端口 打开
 function allowedOrigin(origin) {
   return (
     /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin || "") ||
@@ -322,7 +322,7 @@ const ROUTES = new Map(Object.entries({ ...OPEN_ROUTES, ...TRUSTED_ROUTES }));
 const TRUSTED_PATHS = new Set(Object.keys(TRUSTED_ROUTES).map(key => key.split(" ")[1]));
 
 const NOT_FOUND_PAGE = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>此页不存在 · 言</title><style>html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#fbfaf6;color:#292724;font-family:"Noto Serif SC","Songti SC","STSong",serif}@media(prefers-color-scheme:dark){body{background:#1e1c19;color:#e6e1d6}}main{text-align:center;letter-spacing:.06em}.seal{display:inline-grid;place-items:center;width:34px;height:34px;border:1px solid #9b5540;color:#9b5540;font-size:18px;transform:rotate(-3deg)}h1{margin:18px 0 8px;font-weight:500;font-size:24px}p{margin:0 0 22px;opacity:.6;font-size:13px}a{color:#9b5540;text-decoration:none;font-size:13px;border-bottom:1px solid currentColor}</style></head><body><main><span class="seal">空</span><h1>此页不存在</h1><p>所寻之处并无一字</p><a href="/">回到案前</a></main></body></html>`;
-// 页面脚本与样式由多段源文件拼成：桥接在线时按请求即时拼接（ETag 取各段的大小与修改时间），src/ 改一段、刷新即生效；
+// 页面脚本与样式由多段源文件拼成：按请求即时拼接（ETag 取各段的大小与修改时间），src/ 改一段、刷新即生效；
 // 仓库里的 support.js / app.css 是 build.js 的产物，供 file:// 直接打开时使用，桥接启动时也会顺手刷新它们
 const BUNDLES = {
   "/support.js": { build: () => currentBundler().bundleScript(), type: "application/javascript; charset=utf-8" },
@@ -407,7 +407,7 @@ function serveStatic(req, res) {
 // YAN_DEBUG=1：把每个请求与异常断开都打到控制台，排查「页面说桥接没起」这类问题时用
 const DEBUG = /^(1|true|yes)$/i.test(String(process.env.YAN_DEBUG || ""));
 const stamp = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
-// 一次请求的分发：直连来的与总线转进来的（server/bus.js）走同一套门禁与接口表
+// 一次请求的分发：直接发来的与总线转进来的（server/bus.js）走同一套门禁与接口表
 async function dispatch(req, res) {
   if (DEBUG) {
     console.log(`${stamp()} ${req.method} ${req.url} origin=${req.headers.origin || "-"}`);

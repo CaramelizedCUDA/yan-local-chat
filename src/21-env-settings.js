@@ -8,7 +8,6 @@ function envSettings() {
 }
 // 问桥接要一次环境的状态；正在准备就隔一会儿再问，直到装完
 async function refreshEnv() {
-  if (apiBase === null) return;
   const root = bootstrap.store?.root;
   const status = await bridge("/api/env/status", {}, AbortSignal.timeout(8000)).catch(() => null);
   // 换存储位置期间，旧根的慢响应不能再画到新根的环境页上。
@@ -30,8 +29,6 @@ function envSettingsHtml() {
     .join("")}</div></div></div>`;
 }
 function envStatusHtml() {
-  if (apiBase === null)
-    return `<div class="card"><div class="card-head"><span class="card-name">需要本机桥接</span><span class="card-state">环境由桥接装、由桥接起的进程用；桥接接通后再来</span></div></div>`;
   if (!envStatus) return `<div class="card"><div class="card-head"><span class="card-name">查看中…</span></div></div>`;
   const { state, job, home } = envStatus,
     running = !!job?.running;

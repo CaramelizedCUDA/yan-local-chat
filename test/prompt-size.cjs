@@ -79,8 +79,7 @@ const modes = {
     ],
     work: true,
     sub: true
-  },
-  "言（直连，无桥接、无记忆）": { tools: ["run_js", "ask_user"] }
+  }
 };
 let out = "";
 for (const [label, m] of Object.entries(modes)) {

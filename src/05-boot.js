@@ -23,37 +23,15 @@ async function connectBridge(candidates, timeout = 1400) {
   }
   return false;
 }
-// 桥接开的页面却没探到桥接：不急着下「未检测到」的结论，隔几秒再试几次，接上后各处自会刷新
-function retryBridgeLater(attempt = 0) {
-  if (apiBase !== null || attempt >= 6) return;
-  setTimeout(
-    async () => {
-      if (apiBase !== null) return;
-      bridgeRetryAt = 0;
-      if (!(await ensureLocalBridge())) retryBridgeLater(attempt + 1);
-    },
-    Math.min(2000 * 2 ** attempt, 20000)
-  );
-}
-async function ensureLocalBridge() {
-  if (apiBase !== null) return true;
-  if (Date.now() < bridgeRetryAt) return false;
-  bridgeRetryAt = Date.now() + 5000;
-  // 桥接开的页面先试同源（端口可能不是默认的 8787），再试默认地址
-  const connected = await connectBridge(servedByBridge() ? ["", LOCAL_BRIDGE] : [LOCAL_BRIDGE], 1200);
-  if (connected) {
-    if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
-    renderHeader();
-    void syncConfigWithDisk().then(() => {
-      void refreshArchive();
-      void syncChatsWithDisk();
-      void mcpReady();
-      void refreshEnv();
-    });
-    if (!$("#settingsModal").classList.contains("hidden")) renderSettings();
-    toast("本机桥接已接通，联网可用");
+// 言离不开本机桥接（模型转发、存储、工具都在它那头）：接上了才开张。接不上就只挂一句「请先运行 start.cmd」，每隔几秒再探
+async function awaitBridge() {
+  const candidates = servedByBridge() ? ["", LOCAL_BRIDGE] : [LOCAL_BRIDGE];
+  while (!(await connectBridge(candidates))) {
+    document.documentElement.dataset.bridge = "waiting";
+    $("#bridgeGateUrl").textContent = LOCAL_BRIDGE;
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
-  return connected;
+  delete document.documentElement.dataset.bridge;
 }
 // 停在「生成中」却没人在写的消息（页面刷新了、写的那一处关了）：按中断收束，已写的留着。改了返回 true
 /** @param {Conversation} conversation */
@@ -87,27 +65,17 @@ function recoverInterruptedMessages() {
   if (changed) saveStore();
 }
 async function boot() {
-  // 对话主体在 IndexedDB；先把旧 localStorage 数据迁入/把最新快照读回，再接桥接与绘制页面
+  await awaitBridge();
+  // 浏览器里暂存的（桥接中途断过时没落成盘的对话、上次离页兜住的最新状态）先读回，再与存储根（默认 ~/.yan）里的正本合一次
   await hydrateStore();
   setupMarkdown();
-  const candidates = ["", LOCAL_BRIDGE].filter((value, index, array) => array.indexOf(value) === index);
-  await connectBridge(candidates);
-  // 桥接在线：配置与对话的正本在存储根里（默认 ~/.yan），先与它合一次再画页面
-  if (apiBase !== null) {
-    await syncConfigWithDisk();
-    await syncChatsWithDisk();
-    // MCP 服务起得慢（起进程、握手）：先起着，头一问发出前会等它；环境备没备好也问一声，系统提示里要说
-    void mcpReady();
-    void refreshEnv();
-  }
-  if (apiBase === null) {
-    bootstrap.notice = servedByBridge()
-      ? "正在连接本机桥接…若始终连不上，请重新运行 start.cmd。"
-      : location.protocol === "file:"
-        ? `从文件直接打开的页面接不上本机桥接（分不清它与别处网页嵌进来的沙箱页），当前为浏览器直连。要用联网、执事与存储目录，请运行 start.cmd 后打开 ${LOCAL_BRIDGE}。`
-        : "未检测到本机桥接，当前为浏览器直连。若接口未开放 CORS，请运行 start.cmd 或 VS Code 任务「言：启动模型桥接」。";
-    if (servedByBridge()) retryBridgeLater();
-  }
+  await syncConfigWithDisk();
+  await syncChatsWithDisk();
+  // 早先直连时收在浏览器里的卷宗旧件：落进卷宗目录
+  void migrateLibraryToArchive();
+  // MCP 服务起得慢（起进程、握手）：先起着，头一问发出前会等它；环境备没备好也问一声，系统提示里要说
+  void mcpReady();
+  void refreshEnv();
   if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
   // 先问一声别处在作答什么，那几段不当成中断
   await syncLeases();

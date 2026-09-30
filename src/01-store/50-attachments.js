@@ -21,8 +21,8 @@ async function fileStoreRequest(mode, action) {
   });
 }
 // ---------- 附件原件 ----------
-// 桥接在线时落在存储根的 附件/（与对话、卷宗、配置同在一处，几个浏览器共用，复制即备份；见 server/files.js）；
-// 没桥接、或落盘不成时暂存进这台浏览器的 IndexedDB，接上后推到目录里去、表里的清掉（见 settleAttachmentStore）。
+// 落在存储根的 附件/（与对话、卷宗、配置同在一处，几个浏览器共用，复制即备份；见 server/files.js）；
+// 落盘不成（桥接中途断了）时暂存进这台浏览器的 IndexedDB，接上后推到目录里去、表里的清掉（见 settleAttachmentStore）。
 // 读的时候先问目录，目录里没有再翻表——迁过去之前的旧件也读得到
 const attachmentCache = new Map();
 let attachmentCacheSize = 0;
@@ -47,21 +47,19 @@ function uncacheAttachment(id) {
 }
 async function putAttachment(record) {
   uncacheAttachment(record?.id);
-  if (apiBase !== null)
-    try {
-      await bridge("/api/files/put", { record }, AbortSignal.timeout(120000));
-      return;
-    } catch {}
+  try {
+    await bridge("/api/files/put", { record }, AbortSignal.timeout(120000));
+    return;
+  } catch {}
   return fileStoreRequest("readwrite", db => db.put(record));
 }
 async function getAttachment(id) {
   if (!id) return null;
   if (attachmentCache.has(id)) return attachmentCache.get(id);
   let record = null;
-  if (apiBase !== null)
-    try {
-      record = (await bridge("/api/files/get", { id }, AbortSignal.timeout(60000))).record || null;
-    } catch {}
+  try {
+    record = (await bridge("/api/files/get", { id }, AbortSignal.timeout(60000))).record || null;
+  } catch {}
   if (!record) record = (await fileStoreRequest("readonly", db => db.get(id)).catch(() => null)) || null;
   cacheAttachment(record);
   return record;
@@ -71,7 +69,7 @@ function deleteAttachment(id) {
   uncacheAttachment(id);
   if (!id) return Promise.resolve();
   return Promise.all([
-    apiBase !== null ? bridge("/api/files/delete", { ids: [id] }, AbortSignal.timeout(20000)).catch(() => {}) : null,
+    bridge("/api/files/delete", { ids: [id] }, AbortSignal.timeout(20000)).catch(() => {}),
     fileStoreRequest("readwrite", db => db.delete(id)).catch(() => {})
   ]);
 }
@@ -81,10 +79,7 @@ function attachmentIds(messages = []) {
     .map(file => file.id)
     .filter(Boolean);
 }
-function inLibrary(id) {
-  return store.library.some(file => file.id === id);
-}
-// 仍在用的附件：各段对话（含换下的版本、旁注、行迹里补言带的）、草稿、案上待发的、浏览器内的卷宗
+// 仍在用的附件：各段对话（含换下的版本、旁注、行迹里补言带的）、草稿、案上待发的、还没落进卷宗目录的浏览器旧件
 function attachmentKeepIds() {
   const ids = new Set();
   const add = files => {
@@ -127,7 +122,7 @@ async function deleteAttachments(ids) {
 // 对话没读全时绝不清——那时内存里只有没落盘的几段，照它判「没人用」会把别的对话的附件一并删掉
 let attachmentsSettling = false;
 async function settleAttachmentStore() {
-  if (apiBase === null || !chatsLoaded || attachmentsSettling) return;
+  if (!chatsLoaded || attachmentsSettling) return;
   attachmentsSettling = true;
   try {
     let keys = [];
@@ -138,7 +133,6 @@ async function settleAttachmentStore() {
       const { has = [] } = await bridge("/api/files/has", { ids: keys.map(String) }, AbortSignal.timeout(20000));
       const onDisk = new Set(has);
       for (const id of keys) {
-        if (apiBase === null) return;
         if (!onDisk.has(String(id))) {
           const record = await fileStoreRequest("readonly", db => db.get(id)).catch(() => null);
           if (!record) continue;
@@ -152,7 +146,7 @@ async function settleAttachmentStore() {
         await fileStoreRequest("readwrite", db => db.delete(id)).catch(() => {});
       }
     }
-    if (apiBase !== null && chatsLoaded)
+    if (chatsLoaded)
       await bridge("/api/files/clean", { keep: [...attachmentKeepIds()] }, AbortSignal.timeout(60000)).catch(() => {});
   } catch {
   } finally {

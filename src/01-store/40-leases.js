@@ -8,7 +8,7 @@
 // 别处松了手（写完，或页面关了、崩了，十五秒没来报到），再读一回：还停在「生成中」的，才按中断处理
 let leasing = null;
 function syncLeases() {
-  if (apiBase === null || !chatsOnline()) return Promise.resolve();
+  if (!chatsOnline()) return Promise.resolve();
   if (leasing) return leasing;
   // 正作答的都算上（旁注的作业按它所在的对话记）；作答完了、最后一次存盘也落了地的松手
   const running = new Set([...requestJobs].map(([key, job]) => job.conversationId || key));
@@ -29,7 +29,7 @@ function syncLeases() {
 }
 // 页面要关或刷新：先松手。不然刷新后的自己会把刷新前的自己当成「别处在作答」，停在半途的那一答就不收束了
 function releaseLeases() {
-  if (apiBase === null || !leaseHold.size) return;
+  if (!leaseHold.size) return;
   leaseHold.clear();
   fetch(`${apiBase}/api/chats/lease`, {
     method: "POST",

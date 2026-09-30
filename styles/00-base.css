@@ -233,3 +233,31 @@ body {
 ::selection {
   background: var(--accent-soft);
 }
+/* 接不上本机桥接时的一页：盖住整个界面，接上即撤 */
+.bridge-gate {
+  display: none;
+}
+:root[data-bridge="waiting"] .bridge-gate {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--title);
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+.bridge-gate h1 {
+  margin: 8px 0 0;
+  font-weight: 500;
+  font-size: 22px;
+}
+.bridge-gate p {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}

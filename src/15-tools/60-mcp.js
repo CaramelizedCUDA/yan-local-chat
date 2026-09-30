@@ -20,7 +20,6 @@ function mcpActiveConfigs() {
 }
 // 配置变了（或还没拉过）就去桥接那头拉一遍；发请求前先等它，头一问就带得上。restart 里的服务断开重连
 function mcpReady(restart = []) {
-  if (apiBase === null) return Promise.resolve();
   const servers = mcpActiveConfigs(),
     key = JSON.stringify(servers);
   if (key === mcp.key && !restart.length && (mcp.loading || !mcp.retryAt || Date.now() < mcp.retryAt))
@@ -98,7 +97,6 @@ function mcpInlineTool(server, spec) {
     mcp: true,
     server,
     schema: { description: spec.description || spec.title || spec.name, parameters: spec.inputSchema },
-    offer: ctx => ctx.bridge,
     lookup: readOnly,
     parallel: readOnly,
     sideEffect: !readOnly,
@@ -119,7 +117,7 @@ const MCP_LAZY_TOOLS = [
     name: "mcp_describe",
     label: "MCP",
     mcp: true,
-    offer: ctx => ctx.bridge && mcpLazyServers(ctx.preset).length > 0,
+    offer: ctx => mcpLazyServers(ctx.preset).length > 0,
     vars: ctx => ({ directory: mcpDirectory(ctx.preset) }),
     parallel: true,
     cache: true,
@@ -143,7 +141,7 @@ const MCP_LAZY_TOOLS = [
     name: "mcp_call",
     label: "MCP",
     mcp: true,
-    offer: ctx => ctx.bridge && mcpLazyServers(ctx.preset).length > 0,
+    offer: ctx => mcpLazyServers(ctx.preset).length > 0,
     sideEffect: true,
     approval: mcpApprovalHtml,
     digest: true,

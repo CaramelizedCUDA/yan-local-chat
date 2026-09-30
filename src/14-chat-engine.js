@@ -165,14 +165,10 @@ async function sendOrStop() {
   sendPreparing = true;
   renderSendButtons();
   try {
-    let profile = activeProfile();
+    const profile = activeProfile();
     if (!profile) {
       toast("请先接入模型");
       return openSettings("models");
-    }
-    if (profile.tools !== false && apiBase === null) {
-      await ensureLocalBridge();
-      profile = activeProfile() || profile;
     }
     if (quotaBlocked(profile)) {
       if (currentConversation()) renderConversation();
@@ -184,16 +180,10 @@ async function sendOrStop() {
     if (c && !(await ensureWorkReady(c))) return;
     if (!c) {
       const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
-      if (pending) {
-        // 行：先把工作目录立起来，立不起来就不发
-        if (profile.tools === false) {
-          toast("当前模型已关闭本机工具，请在模型高级配置中开启");
-          return;
-        }
-        if (apiBase === null && !(await ensureLocalBridge())) {
-          toast("执事需要本机桥接，请先运行 start.cmd");
-          return;
-        }
+      // 行：先把工作目录立起来，立不起来就不发
+      if (pending && profile.tools === false) {
+        toast("当前模型已关闭本机工具，请在模型高级配置中开启");
+        return;
       }
       c = {
         id: uid(),
@@ -494,7 +484,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   let leadTrim = 0;
   const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
-  const archiveBefore = !isWork(conversation) && archiveOnline() ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
+  const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
   // 用量在 finally 里结算：停止、断网、工具链中途出错，前面几轮已经花掉的墨也得记上，不能只在整答顺利收尾时记账
   const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     stepsBefore = (assistant.steps || []).length;
@@ -830,7 +820,7 @@ async function requestPatiently(profile, history, signal, overrides) {
   }
 }
 // opened：接口至少接下过一次请求（没接下的——400、连不上——不花墨）；partialRound：最后一轮开了头却没等到它的 usage（停止、断网），
-// 那一轮按估算补上——提示全文加上这一轮写出的字；一次 usage 都没拿到的（直连不回 usage）整答按估算
+// 那一轮按估算补上——提示全文加上这一轮写出的字；一次 usage 都没拿到的（接口不回 usage）整答按估算
 /**
  * @param {Profile} profile
  * @param {Message} assistant

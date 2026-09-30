@@ -9,8 +9,7 @@ let mcpEditing = null,
   mcpJsonOpen = false;
 
 function mcpSettingsHtml() {
-  const bridged = apiBase !== null;
-  return `<div id="mcpPage"><h2>MCP</h2>${bridged ? "" : `<p class="settings-lead">桥接接通后才可用</p>`}<div id="mcpList" class="card-list">${mcpCardsHtml()}</div><div class="card-foot"><button id="mcpAdd" class="outline-btn" type="button">＋ 新增服务</button><button id="mcpJson" class="outline-btn" type="button">${mcpJsonOpen ? "收起 JSON" : "以 JSON 编辑"}</button></div><div id="mcpJsonBox" class="json-box${mcpJsonOpen ? "" : " hidden"}">${mcpJsonHtml()}</div></div>`;
+  return `<div id="mcpPage"><h2>MCP</h2><div id="mcpList" class="card-list">${mcpCardsHtml()}</div><div class="card-foot"><button id="mcpAdd" class="outline-btn" type="button">＋ 新增服务</button><button id="mcpJson" class="outline-btn" type="button">${mcpJsonOpen ? "收起 JSON" : "以 JSON 编辑"}</button></div><div id="mcpJsonBox" class="json-box${mcpJsonOpen ? "" : " hidden"}">${mcpJsonHtml()}</div></div>`;
 }
 function mcpCardsHtml() {
   const names = Object.keys(mcpConfigs());
@@ -24,7 +23,7 @@ function mcpCardHtml(name) {
   const [kind, text] = config.disabled
     ? ["", "已停用"]
     : !state
-      ? ["", apiBase === null ? "等桥接接通" : "连接中…"]
+      ? ["", "连接中…"]
       : state.ok
         ? [
             "ok",
