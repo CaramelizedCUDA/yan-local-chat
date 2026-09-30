@@ -659,6 +659,19 @@ async function openFileViewer(target, name = "", trigger = null) {
       `<div class="file-viewer-empty">未能预览：${escapeHtml(String(error.message || error).slice(0, 120))}<br><button type="button" class="outline-btn" data-viewer-download>下载查看</button></div>`;
   }
 }
+// 认不得、或只抽得出结构的文件：交给 Windows 的默认程序打开原件（卷宗与落了盘的附件都走桥接），不逐类去补预览
+const VIEWER_OPEN_BUTTON = `<button type="button" class="outline-btn" data-viewer-open>以本机程序打开</button>`;
+async function openViewerWithSystem() {
+  const source = viewerSource;
+  try {
+    if (source?.path) await bridge("/api/archive/open", { root: archiveDir(), path: source.path }, AbortSignal.timeout(8000));
+    else if (source?.attachmentId) await bridge("/api/files/open", { id: source.attachmentId }, AbortSignal.timeout(8000));
+    else return;
+    toast("已交给本机程序打开");
+  } catch (error) {
+    toast(`打开失败：${String(error.message || error).slice(0, 80)}`);
+  }
+}
 // 预览器头上的「下载」：看的是卷宗就走桥接，是附件就从浏览器里取
 function downloadViewerFile() {
   if (viewerSource?.attachmentId) void downloadAttachment(viewerSource.attachmentId);
@@ -675,7 +688,7 @@ async function fileViewerBody(reader, name, kind) {
   if (kind === "video")
     return `<div class="file-viewer-media"><video controls preload="metadata" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></video></div>`;
   if (kind === "none")
-    return `<div class="file-viewer-empty">此类文件无法在此预览，请下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
+    return `<div class="file-viewer-empty">此类文件无法在此预览<br>${VIEWER_OPEN_BUTTON}<button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
   // 网页放进与页内 ```html 同一个隔离沙箱：不能读本站的存储，也不能联网
   if (kind === "html") {
     let source = await reader.text();
@@ -718,16 +731,34 @@ async function fileViewerBody(reader, name, kind) {
       )}</tbody></table>${text.split(/\r?\n/).filter(Boolean).length > 400 ? `<p class="file-viewer-note">仅显示前 400 行</p>` : ""}</div>`;
   }
   if (kind === "doc") {
-    // 附件上传时若已在本机抽过正文，直接用；否则从字节里抽
-    const text = trimExtractedText(
-      reader.extracted || (await extractDocumentText(name, reader.dataUrl || (await readFile(await reader.blob(), "data"))))
-    );
-    return text
-      ? `<div class="file-viewer-text file-viewer-extracted"><p class="file-viewer-note">本机提取的正文，不含排版</p>${text
-          .split(/\n{2,}/)
-          .map(block => `<p>${escapeHtml(block).replace(/\n/g, "<br>")}</p>`)
-          .join("")}</div>`
-      : `<div class="file-viewer-empty">未能提取正文，请下载查看<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
+    // 每回从原件现抽（按结构抽成 Markdown）；原件取不到时才用附件上传时抽下的那份
+    let text = "";
+    try {
+      text = trimExtractedText(await extractDocumentText(name, reader.dataUrl || (await readFile(await reader.blob(), "data"))));
+    } catch {
+      text = trimExtractedText(reader.extracted);
+    }
+    if (!text)
+      return `<div class="file-viewer-empty">未能抽出正文<br>${VIEWER_OPEN_BUTTON}<button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
+    const note = `<p class="file-viewer-note">本机按结构抽出，不含原排版 · <button type="button" class="viewer-open-link" data-viewer-open>以本机程序打开</button></p>`,
+      extension = fileExtension(name),
+      // 按「## 」分节：表格一张表一节，演示一页一节
+      sections = text.split(/^(?=## )/m).filter(part => part.trim());
+    if (["xlsx", "ods"].includes(extension) && sections.length)
+      return `<div class="file-viewer-text file-viewer-wide">${note}<div class="viewer-tabs">${sections
+        .map(
+          (part, i) =>
+            `<button type="button" class="${i ? "" : "active"}" data-viewer-tab="${i}">${escapeHtml(part.match(/^## (.*)/)?.[1] || `工作表 ${i + 1}`)}</button>`
+        )
+        .join("")}</div>${sections
+        .map(
+          (part, i) =>
+            `<div class="viewer-sheet markdown${i ? " hidden" : ""}" data-viewer-panel="${i}">${renderMarkdown(part.replace(/^## .*\n+/, ""))}</div>`
+        )
+        .join("")}</div>`;
+    if (["pptx", "odp"].includes(extension) && sections.length)
+      return `<div class="file-viewer-slides">${note}${sections.map(part => `<div class="viewer-slide markdown">${renderMarkdown(part)}</div>`).join("")}</div>`;
+    return `<div class="file-viewer-text markdown">${note}${renderMarkdown(text)}</div>`;
   }
   const text = await reader.text();
   if (kind === "markdown") return `<div class="file-viewer-text markdown">${renderMarkdown(text.slice(0, 200000))}</div>`;
@@ -921,57 +952,290 @@ function parseXml(value) {
   if (document.querySelector("parsererror")) throw Error("文档 XML 无效");
   return document;
 }
-function paragraphsFromXml(value) {
-  const document = parseXml(value),
-    paragraphs = [...document.getElementsByTagNameNS("*", "p")];
-  if (!paragraphs.length) return document.documentElement.textContent || "";
-  return paragraphs
-    .map(node => [...node.getElementsByTagNameNS("*", "t")].map(text => text.textContent).join("") || node.textContent)
+// ---------- 文档抽成 Markdown：标题、加粗、列表、表格照原样，预览交给现成的 Markdown 渲染，送给模型的也是这一份 ----------
+// 早先只抽一串字（段落换行、表格用 Tab 连），结构全丢，预览挤成一片、模型也读不出行列。
+// 只还原结构，不还原版式（字体、配色、图片、合并单元格）；要看原样，预览里「以本机程序打开」
+const MD_TABLE_ROWS = 500,
+  MD_TABLE_COLS = 40;
+const xmlKids = (node, name) => [...node.children].filter(child => child.localName === name);
+const xmlDeep = (node, name) => [...node.getElementsByTagNameNS("*", name)];
+const mdCell = text =>
+  String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/\|/g, "\\|")
+    .trim();
+// 段首会被当成 Markdown 记号的字垫一个反斜杠：# > - * + 垫在前面，「1.」垫在点前
+const mdLine = text =>
+  String(text || "")
+    .replace(/^(\s*)([#>*+-])/, "$1\\$2")
+    .replace(/^(\s*\d+)\./, "$1\\.");
+// 一张表：首行作表头；参差的行补齐，尾上全空的列与行去掉，过大的截住并注一句
+function mdTable(rows) {
+  let body = rows.map(row => row.map(mdCell));
+  while (body.length && body.at(-1).every(cell => !cell)) body.pop();
+  let width = Math.min(MD_TABLE_COLS, Math.max(0, ...body.map(row => row.length)));
+  while (width && body.every(row => !row[width - 1])) width -= 1;
+  if (!body.length || !width) return "";
+  const more = body.length - MD_TABLE_ROWS;
+  body = body.slice(0, MD_TABLE_ROWS);
+  const line = row => `| ${Array.from({ length: width }, (_, i) => row[i] || " ").join(" | ")} |`;
+  return (
+    [line(body[0]), `| ${Array(width).fill("---").join(" | ")} |`, ...body.slice(1).map(line)].join("\n") +
+    (more > 0 ? `\n\n（其后 ${more} 行未列出）` : "")
+  );
+}
+// 一段里的字：相邻同样式的并成一截再包 ** / *，免得出现「****」
+function mdRuns(segments) {
+  const merged = [];
+  for (const seg of segments) {
+    const last = merged.at(-1);
+    if (last && last.bold === seg.bold && last.italic === seg.italic) last.text += seg.text;
+    else merged.push({ ...seg });
+  }
+  return merged
+    .map(({ text, bold, italic }) => {
+      const mark = bold && italic ? "***" : bold ? "**" : italic ? "*" : "";
+      if (!mark) return text;
+      const [, lead, core, trail] = text.match(/^(\s*)([\s\S]*?)(\s*)$/);
+      return core ? `${lead}${mark}${core}${mark}${trail}` : text;
+    })
+    .join("");
+}
+
+// docx：正文按块走（段落、表格，内容控件等容器往里钻）；标题认样式名（styles.xml 里的 heading n / Title，中文版 Word 的样式 id 是数字）
+function docxMarkdown(documentXml, stylesXml) {
+  const styleNames = new Map();
+  if (stylesXml)
+    for (const style of xmlDeep(parseXml(stylesXml), "style"))
+      styleNames.set(style.getAttribute("w:styleId"), String(xmlKids(style, "name")[0]?.getAttribute("w:val") || "").toLowerCase());
+  const flag = node => !!node && !["0", "false"].includes(String(node.getAttribute("w:val")));
+  const paragraph = p => {
+    const props = xmlKids(p, "pPr")[0],
+      styleId = props && xmlKids(props, "pStyle")[0]?.getAttribute("w:val"),
+      name = styleNames.get(styleId) || String(styleId || "").toLowerCase(),
+      level = name === "title" ? 1 : Number(name.match(/heading ?(\d)/)?.[1]) || 0,
+      numbering = props && xmlKids(props, "numPr")[0],
+      depth = Number(numbering && xmlKids(numbering, "ilvl")[0]?.getAttribute("w:val")) || 0;
+    const segments = xmlDeep(p, "r").map(run => {
+      const rp = xmlKids(run, "rPr")[0];
+      let text = "";
+      for (const part of run.children)
+        if (part.localName === "t") text += part.textContent;
+        else if (part.localName === "tab") text += " ";
+        else if (part.localName === "br" || part.localName === "cr") text += "\n";
+      return { text, bold: !level && flag(rp && xmlKids(rp, "b")[0]), italic: flag(rp && xmlKids(rp, "i")[0]) };
+    });
+    // 段首的记号转义施在原字上（施在拼好的「**…**」上会把加粗本身转掉）
+    const first = segments.find(seg => seg.text.trim());
+    if (first && !level && !numbering) first.text = mdLine(first.text.trimStart());
+    const text = mdRuns(segments).trim();
+    if (!text) return "";
+    if (level) return `${"#".repeat(Math.min(level, 6))} ${text.replace(/\n/g, " ")}`;
+    if (numbering) return `${"  ".repeat(depth)}- ${text.replace(/\n/g, " ")}`;
+    // 段内换行用反斜杠硬换行（行尾两个空格的写法会被 trimExtractedText 收掉）
+    return text.replace(/\n/g, "\\\n");
+  };
+  const cellText = cell =>
+    xmlDeep(cell, "p")
+      .map(p =>
+        xmlDeep(p, "t")
+          .map(t => t.textContent)
+          .join("")
+      )
+      .join(" ");
+  const out = [];
+  const walk = node => {
+    for (const child of node.children) {
+      if (child.localName === "p") out.push(paragraph(child));
+      else if (child.localName === "tbl") out.push(mdTable(xmlKids(child, "tr").map(tr => xmlKids(tr, "tc").map(cellText))));
+      else if (child.localName !== "sectPr") walk(child);
+    }
+  };
+  const body = xmlDeep(parseXml(documentXml), "body")[0];
+  if (body) walk(body);
+  // 列表项之间不空行，别的块之间空一行
+  return out
     .filter(Boolean)
-    .join("\n");
+    .reduce((text, block, i, all) => text + (i ? (/^\s*- /.test(block) && /^\s*- /.test(all[i - 1]) ? "\n" : "\n\n") : "") + block, "");
+}
+// pptx：一页一节「## 第 n 页 · 标题」，其余文字按层级列成要点，页上的表格照表格
+function pptxMarkdown(slides) {
+  return slides
+    .map((xml, index) => {
+      const doc = parseXml(xml);
+      let title = "";
+      const points = [],
+        tables = [];
+      for (const shape of xmlDeep(doc, "sp")) {
+        const kind = xmlDeep(shape, "ph")[0]?.getAttribute("type") || "",
+          paragraphs = xmlDeep(shape, "p");
+        const lines = paragraphs
+          .map(p => ({
+            text: xmlDeep(p, "t")
+              .map(t => t.textContent)
+              .join("")
+              .trim(),
+            depth: Number(xmlKids(p, "pPr")[0]?.getAttribute("lvl")) || 0
+          }))
+          .filter(line => line.text);
+        if (/title/i.test(kind) && !title) title = lines.map(line => line.text).join(" ");
+        else for (const line of lines) points.push(`${"  ".repeat(line.depth)}- ${line.text}`);
+      }
+      for (const table of xmlDeep(doc, "tbl"))
+        tables.push(
+          mdTable(
+            xmlKids(table, "tr").map(tr =>
+              xmlKids(tr, "tc").map(tc =>
+                xmlDeep(tc, "t")
+                  .map(t => t.textContent)
+                  .join("")
+              )
+            )
+          )
+        );
+      return [`## 第 ${index + 1} 页${title ? ` · ${title}` : ""}`, points.join("\n"), ...tables].filter(Boolean).join("\n\n");
+    })
+    .join("\n\n");
+}
+// xlsx：一张表一节「## 表名」；单元格按引用（C5）落到它自己的列上，空格子不挤掉后面的列
+function xlsxColumn(ref) {
+  let n = 0;
+  for (const ch of String(ref || "").replace(/\d+/g, "")) n = n * 26 + ch.charCodeAt(0) - 64;
+  return n - 1;
+}
+function xlsxMarkdown(entries) {
+  const sharedXml = entries.get("xl/sharedStrings.xml"),
+    shared = sharedXml
+      ? xmlDeep(parseXml(sharedXml), "si").map(si =>
+          xmlDeep(si, "t")
+            .filter(t => t.parentElement?.localName !== "rPh")
+            .map(t => t.textContent)
+            .join("")
+        )
+      : [];
+  // 表名与表文件的对应：workbook.xml 里的 sheet（名字、r:id）经 rels 找到 worksheets/sheetN.xml；对不上就按文件名顺序、以「工作表 n」为名
+  const targets = new Map();
+  const rels = entries.get("xl/_rels/workbook.xml.rels");
+  if (rels)
+    for (const rel of xmlDeep(parseXml(rels), "Relationship"))
+      targets.set(rel.getAttribute("Id"), `xl/${String(rel.getAttribute("Target")).replace(/^\/?xl\//, "")}`);
+  const workbook = entries.get("xl/workbook.xml");
+  let sheets = workbook
+    ? xmlDeep(parseXml(workbook), "sheet")
+        .map(sheet => ({ name: sheet.getAttribute("name"), file: targets.get(sheet.getAttribute("r:id")) }))
+        .filter(sheet => entries.has(sheet.file))
+    : [];
+  if (!sheets.length)
+    sheets = [...entries.keys()]
+      .filter(name => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .map((file, i) => ({ name: `工作表 ${i + 1}`, file }));
+  return sheets
+    .map(({ name, file }) => {
+      const rows = xmlDeep(parseXml(entries.get(file)), "row").map(row => {
+        const cells = [];
+        let next = 0;
+        for (const cell of xmlKids(row, "c")) {
+          const at = cell.getAttribute("r") ? xlsxColumn(cell.getAttribute("r")) : next,
+            type = cell.getAttribute("t"),
+            value = xmlKids(cell, "v")[0]?.textContent ?? "";
+          next = at + 1;
+          if (at >= MD_TABLE_COLS) continue;
+          cells[at] =
+            type === "s"
+              ? (shared[Number(value)] ?? "")
+              : type === "inlineStr"
+                ? xmlDeep(cell, "t")
+                    .map(t => t.textContent)
+                    .join("")
+                : type === "b"
+                  ? value === "1"
+                    ? "TRUE"
+                    : "FALSE"
+                  : value;
+        }
+        return Array.from(cells, cell => cell ?? "");
+      });
+      return `## ${name}\n\n${mdTable(rows) || "（空表）"}`;
+    })
+    .join("\n\n");
+}
+// ODF（odt / ods / odp）：content.xml 里标题、段落、列表、表格、演示页各归其位
+function odfMarkdown(contentXml) {
+  const out = [];
+  let pages = 0;
+  const text = node => node.textContent.replace(/\s+/g, " ").trim();
+  const repeat = (node, name) => Math.min(50, Number(node.getAttribute(name)) || 1);
+  const walk = (node, depth = 0) => {
+    for (const child of node.children) {
+      const name = child.localName;
+      if (name === "h") out.push(`${"#".repeat(Math.min(6, Number(child.getAttribute("text:outline-level")) || 1))} ${text(child)}`);
+      else if (name === "p") text(child) && out.push(mdLine(text(child)));
+      else if (name === "list")
+        for (const item of xmlKids(child, "list-item")) {
+          const line = xmlKids(item, "p").map(text).join(" ");
+          if (line) out.push(`${"  ".repeat(depth)}- ${line}`);
+          for (const nested of xmlKids(item, "list")) walk({ children: [nested] }, depth + 1);
+        }
+      else if (name === "table") {
+        const rows = [];
+        for (const row of xmlDeep(child, "table-row")) {
+          const cells = xmlKids(row, "table-cell").flatMap(cell =>
+            Array(repeat(cell, "table:number-columns-repeated")).fill(xmlKids(cell, "p").map(text).join(" "))
+          );
+          if (cells.some(Boolean)) for (let i = 0; i < repeat(row, "table:number-rows-repeated"); i++) rows.push(cells);
+        }
+        const table = mdTable(rows);
+        if (table)
+          out.push(
+            child.getAttribute("table:name") && !node.localName?.match(/^(text|table-cell)$/)
+              ? `## ${child.getAttribute("table:name")}\n\n${table}`
+              : table
+          );
+      } else if (name === "page") {
+        pages += 1;
+        out.push(
+          `## 第 ${pages} 页${child.getAttribute("draw:name") && !/^page\d+$/i.test(child.getAttribute("draw:name")) ? ` · ${child.getAttribute("draw:name")}` : ""}`
+        );
+        walk(child, depth);
+      } else walk(child, depth);
+    }
+  };
+  const body = xmlDeep(parseXml(contentXml), "body")[0];
+  if (body) walk(body);
+  return out.filter(Boolean).join("\n\n");
 }
 async function extractZipDocumentText(extension, bytes) {
   if (extension === "docx") {
-    const entries = await unzipSelected(bytes, name => /^word\/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$/.test(name));
-    return [...entries.entries()]
-      .sort()
-      .map(([, xml]) => paragraphsFromXml(xml))
-      .join("\n\n");
+    const entries = await unzipSelected(bytes, name => /^word\/(document|styles|footnotes|endnotes)\.xml$/.test(name)),
+      notes = ["word/footnotes.xml", "word/endnotes.xml"]
+        .filter(name => entries.has(name))
+        .map(name =>
+          xmlDeep(parseXml(entries.get(name)), "p").map(p =>
+            xmlDeep(p, "t")
+              .map(t => t.textContent)
+              .join("")
+              .trim()
+          )
+        )
+        .flat()
+        .filter(Boolean);
+    return `${entries.has("word/document.xml") ? docxMarkdown(entries.get("word/document.xml"), entries.get("word/styles.xml")) : ""}${notes.length ? `\n\n---\n\n${notes.join("\n\n")}` : ""}`;
   }
   if (extension === "pptx") {
     const entries = await unzipSelected(bytes, name => /^ppt\/slides\/slide\d+\.xml$/.test(name));
-    return [...entries.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
-      .map(([name, xml], index) => `第 ${index + 1} 页\n${paragraphsFromXml(xml)}`)
-      .join("\n\n");
+    return pptxMarkdown(
+      [...entries.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).map(([, xml]) => xml)
+    );
   }
-  if (extension === "xlsx") {
-    const entries = await unzipSelected(bytes, name => name === "xl/sharedStrings.xml" || /^xl\/worksheets\/sheet\d+\.xml$/.test(name)),
-      sharedXml = entries.get("xl/sharedStrings.xml"),
-      shared = sharedXml
-        ? [...parseXml(sharedXml).getElementsByTagNameNS("*", "si")].map(node =>
-            [...node.getElementsByTagNameNS("*", "t")].map(t => t.textContent).join("")
-          )
-        : [];
-    return [...entries.entries()]
-      .filter(([name]) => /\/worksheets\//.test(name))
-      .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
-      .map(([name, xml], index) => {
-        const document = parseXml(xml),
-          rows = [...document.getElementsByTagNameNS("*", "row")].map(row =>
-            [...row.getElementsByTagNameNS("*", "c")]
-              .map(cell => {
-                const value = cell.getElementsByTagNameNS("*", "v")[0]?.textContent || cell.textContent || "";
-                return cell.getAttribute("t") === "s" ? (shared[Number(value)] ?? value) : value;
-              })
-              .join("\t")
-          );
-        return `工作表 ${index + 1}\n${rows.join("\n")}`;
-      })
-      .join("\n\n");
-  }
+  if (extension === "xlsx")
+    return xlsxMarkdown(
+      await unzipSelected(bytes, name =>
+        /^xl\/(sharedStrings|workbook)\.xml$|^xl\/_rels\/workbook\.xml\.rels$|^xl\/worksheets\/sheet\d+\.xml$/.test(name)
+      )
+    );
   const entries = await unzipSelected(bytes, name => name === "content.xml");
-  return entries.get("content.xml") ? paragraphsFromXml(entries.get("content.xml")) : "";
+  return entries.get("content.xml") ? odfMarkdown(entries.get("content.xml")) : "";
 }
 
 async function downloadAttachment(id) {
@@ -999,6 +1263,17 @@ function bindViewerEvents() {
   $("#fileViewerDownload").onclick = downloadViewerFile;
   $("#fileViewer").addEventListener("click", e => {
     if (e.target.closest("[data-viewer-download]")) return downloadViewerFile();
+    if (e.target.closest("[data-viewer-open]")) return void openViewerWithSystem();
+    // 表格的页签：一张表一页
+    const tab = e.target.closest("[data-viewer-tab]");
+    if (tab) {
+      const stage = $("#fileViewerStage");
+      stage.querySelectorAll("[data-viewer-tab]").forEach(button => button.classList.toggle("active", button === tab));
+      stage
+        .querySelectorAll("[data-viewer-panel]")
+        .forEach(panel => panel.classList.toggle("hidden", panel.dataset.viewerPanel !== tab.dataset.viewerTab));
+      return;
+    }
     if (e.target === $("#fileViewer") || e.target === $("#fileViewerStage")) closeFileViewer();
   });
   // 媒体的 error 不冒泡，在捕获阶段接：浏览器放不了这种编码，就别留一个转不动的播放器
