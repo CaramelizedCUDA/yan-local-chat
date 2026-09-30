@@ -4260,12 +4260,9 @@ sup.note-ref.active {
   width: min(100%, var(--read));
   margin: 0 auto;
 }
-.hint {
-  margin-top: 6px;
-  text-align: center;
-  color: var(--ink-3);
-  opacity: 0.7;
-  font-size: 10px;
+/* 底栏只剩右下角的计数（绝对定位），给它留出一行 */
+.composer-foot:has(.context-gauge:not(.hidden)) {
+  height: 20px;
 }
 /* 右下角的上下文计数：下一问约送出多少，随输入与生成实时翻动；重了转印色；点开有压缩 / 另起一纸 */
 .context-gauge {
@@ -7601,14 +7598,6 @@ button:focus:not(:focus-visible) {
 @media (max-width: 760px) {
   .chat-scroll-grabber {
     display: none;
-  }
-  /* 窄窗里居中的快捷键提示会与右下角的上下文计数撞在一起；窄了就只留计数 */
-  .hint {
-    display: none;
-  }
-  /* 提示藏了，底栏就没了高度，靠它定位的计数会掉到窗口外半截；给它留出一行 */
-  .composer-foot:has(.context-gauge:not(.hidden)) {
-    height: 20px;
   }
   .outline {
     display: none;
