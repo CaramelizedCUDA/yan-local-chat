@@ -311,7 +311,8 @@ button:focus:not(:focus-visible) {
 .model-manage:hover {
   color: var(--ink);
 }
-/* 右侧的问题导航条：一问一道短横，当前一问加长转印色；悬停整条时露出各问的首句，点一下回到那一问 */
+/* 右侧的问题导航条：一问一道短横，当前一问加长转印色；悬停整条时露出各问的首句，点一下回到那一问。
+   首句浮在短横左边、不占位：早先它透明着仍占 150px，整条的感应区往左撑出一大截，读正文时手一过就触发 */
 .outline {
   position: absolute;
   right: 20px;
@@ -328,10 +329,16 @@ button:focus:not(:focus-visible) {
 .outline.dense {
   gap: 3px;
 }
+/* 翻到卷宗、分组页时对话那一栏收起，属于它的导航条与滚动把手一并不露（与书眉同一条规矩），不靠切页时记得去藏 */
+.main:has(#chat.hidden) :is(.outline, .chat-scroll-grabber) {
+  display: none;
+}
 .outline-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  width: 26px;
   padding: 1px 0;
   color: var(--ink-3);
 }
@@ -353,6 +360,8 @@ button:focus:not(:focus-visible) {
   background: var(--accent);
 }
 .outline-label {
+  position: absolute;
+  right: calc(100% + 8px);
   max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;

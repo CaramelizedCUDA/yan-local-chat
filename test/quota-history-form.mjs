@@ -148,17 +148,17 @@ check(
     `(g => !g.classList.contains("collapsed") && g.querySelectorAll(".history-open").length === 2)(document.querySelector("#history .history-repo-group"))`
   )
 );
-// 打开组内的对话再收起：收起的组里仍露出当前这条
+// 打开组内的对话再收起：整组收起（连同当前这条），组首标出当前所在
 await evalJs(`document.querySelector('#history [data-conversation="w2"] .history-open').click(); true`);
 await sleep(300);
 await evalJs(`document.querySelector("#history .history-repo").click(); true`);
 await sleep(200);
 await shot("history.png");
 check(
-  "a collapsed group still shows the open conversation",
-  (await evalJs(
-    `[...document.querySelector("#history .history-repo-group.collapsed").querySelectorAll(".history-open")].map(b => b.textContent).join(",")`
-  )) === "言 乙"
+  "a collapsed group hides every conversation, the open one too, and marks that it holds it",
+  await evalJs(
+    `(g => !g.querySelector(".history-open") && g.classList.contains("holds-current"))(document.querySelector("#history .history-repo-group.collapsed"))`
+  )
 );
 await evalJs(`document.querySelector("#history .history-repo").click(); true`);
 await sleep(200);

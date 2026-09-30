@@ -328,6 +328,10 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .history-repo-group.collapsed .history-repo-items {
   padding-top: 0;
 }
+/* 收起的组里有正开着的那段：组首衬上与当前条同一层底色，收起了也看得出自己在这组里 */
+.history-repo-group.holds-current > .history-repo-head .history-repo {
+  background: var(--paper-3);
+}
 .history-item {
   position: relative;
   display: flex;
@@ -549,12 +553,17 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font: 10px var(--title);
   letter-spacing: 0.14em;
 }
-/* 翻在一段摊开的行迹中间时，顶栏右侧浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
-   贴着对话那一列的右缘，窗窄时让开右边的状态。落选的：书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
+/* 翻在一段摊开的行迹中间时，顶栏正中浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
+   对着对话那一列的中线；它浮出时，左边的书眉让到中线以左，长题名不压到它底下。
+   落选的：贴对话列的右缘（离正在读的地方远，眼睛要横跨过去找）；书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
+.topbar:has(.trail-fold-head.shown) .running-head {
+  right: calc(50% + 64px);
+}
 .trail-fold-head {
   position: absolute;
   top: 50%;
-  right: max(calc((100% - var(--read)) / 2), 300px);
+  left: 50%;
+  translate: -50% 0;
   display: inline-flex;
   align-items: center;
   gap: 7px;

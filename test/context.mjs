@@ -53,6 +53,16 @@ check(
     "PLAIN 第一问|PLAIN 第二问|PLAIN 第三问"
   )
 );
+check(
+  "the outline only reacts over its ticks: the hidden labels take no room",
+  (await evalJs(`document.querySelector("#outline").getBoundingClientRect().width`)) <= 30
+);
+// 从对话翻到卷宗：导航条跟着对话那一栏收起
+await evalJs(`document.querySelector("#openLibrary").click(); true`);
+await sleep(200);
+check("the outline does not follow into the archive page", await evalJs(`getComputedStyle(document.querySelector("#outline")).display === "none"`));
+await evalJs(`document.querySelector("#openLibrary").click(); true`);
+await sleep(300);
 await sleep(300);
 check(
   "last question active when scrolled to bottom",
