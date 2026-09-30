@@ -78,8 +78,9 @@ function writeAtomic(file, data) {
   }
 }
 
-// 交给页面看的文件（卷宗、附件原件）：类型按扩展名定。网页、SVG、脚本一律当纯文本——文件是模型写的或随手拖进来的，
-// 若以本站源头当网页打开，脚本便能读到页面的 localStorage；再加 CSP: sandbox 兜底
+// 交给页面看的文件（卷宗、附件原件）：类型按扩展名定。网页、脚本一律当纯文本——文件是模型写的或随手拖进来的，
+// 若以本站源头当网页打开，脚本便能读到页面的 localStorage；再加 CSP: sandbox 兜底。
+// SVG 按图送（卷宗的缩略图、预览要画得出来）：放进 <img> 里脚本本就不跑，直接打开时 CSP: sandbox 也不许它跑
 const FILE_MIME = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -110,6 +111,7 @@ const FILE_MIME = {
   aac: "audio/aac",
   flac: "audio/flac",
   weba: "audio/webm",
+  svg: "image/svg+xml",
   mp4: "video/mp4",
   m4v: "video/mp4",
   webm: "video/webm",
@@ -122,7 +124,7 @@ function fileMime(name) {
     .split(".")
     .pop()
     .toLowerCase();
-  if (["html", "htm", "svg", "xml", "js", "mjs", "cjs"].includes(extension)) return "text/plain; charset=utf-8";
+  if (["html", "htm", "xml", "js", "mjs", "cjs"].includes(extension)) return "text/plain; charset=utf-8";
   return FILE_MIME[extension] || "application/octet-stream";
 }
 // 送出一件文件：带 Range（音视频拖进度条只取那一段），?download 时让浏览器另存

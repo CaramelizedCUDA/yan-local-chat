@@ -59,10 +59,18 @@ const openBus = (page, origin) =>
   const other = "http://localhost:5173",
     bus = await openBus("other-port-page", other);
   check("another local port may open the bus", bus.status === 200, String(bus.status));
-  const sent = await post("/api/bus/send", { page: "other-port-page", id: "w1", path: "/api/work/prepare", body: JSON.stringify({ workdir: WORK }) }, { Origin: other });
+  const sent = await post(
+    "/api/bus/send",
+    { page: "other-port-page", id: "w1", path: "/api/work/prepare", body: JSON.stringify({ workdir: WORK }) },
+    { Origin: other }
+  );
   await new Promise(r => setTimeout(r, 300));
   const head = bus.events.find(event => event.id === "w1" && event.t === "head");
-  check("bus keeps the work gate of the original origin", sent.status === 202 && head?.status === 403, JSON.stringify({ sent: sent.status, head }));
+  check(
+    "bus keeps the work gate of the original origin",
+    sent.status === 202 && head?.status === 403,
+    JSON.stringify({ sent: sent.status, head })
+  );
   const nested = await post("/api/bus/send", { page: "other-port-page", id: "w2", path: "/api/bus/send", body: "{}" }, { Origin: other });
   check("bus cannot be sent into itself", nested.status === 400, String(nested.status));
   const unknown = await post("/api/bus/send", { page: "no-such-page-1", id: "w3", path: "/api/bootstrap", body: "{}" });
@@ -218,6 +226,16 @@ check(
   f.status === 200 && /^text\/plain/.test(f.headers.get("content-type") || "") && f.headers.get("content-security-policy") === "sandbox",
   `${f.status} ${f.headers.get("content-type")}`
 );
+await post("/api/archive/put", {
+  name: "图.svg",
+  data: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4="
+});
+f = await fetch(`${BASE}/api/archive/file?path=${encodeURIComponent("图.svg")}`);
+check(
+  "archive svg is served as an image, still in a sandbox",
+  f.status === 200 && f.headers.get("content-type") === "image/svg+xml" && f.headers.get("content-security-policy") === "sandbox",
+  `${f.status} ${f.headers.get("content-type")}`
+);
 f = await fetch(`${BASE}/api/archive/file?path=../link-outside/secret.txt`);
 check("archive file refuses ..", f.status === 404);
 f = await fetch(`${BASE}/api/archive/file?path=escaped.txt`, { headers: { Origin: "https://evil.example" } });
@@ -232,6 +250,22 @@ r = await post("/api/archive/remove", { path: "../link-outside/secret.txt" });
 check("archive remove refuses ..", r.status === 400 && existsSync(`${OUTSIDE}/secret.txt`), `${r.status} ${r.data?.error}`);
 r = await post("/api/archive/remove", { path: "escaped.txt" });
 check("archive remove deletes inside", r.status === 200 && !existsSync(`${ARCHIVE}/escaped.txt`), `${r.status} ${r.data?.error}`);
+// 夹与件一样挪、改名、删；但根本身不能动，夹不能挪进自己，名字不能带出一段路径
+r = await post("/api/archive/remove", { path: "." });
+check("archive remove refuses the root itself", r.status === 400 && existsSync(ARCHIVE), `${r.status} ${r.data?.error}`);
+r = await post("/api/archive/mkdir", { name: "../跑出去" });
+check("archive mkdir keeps the name to one segment", r.status === 200 && r.data.path === "跑出去" && r.data.dir, JSON.stringify(r.data));
+r = await post("/api/archive/mkdir", { dir: "跑出去", name: "里层" });
+r = await post("/api/archive/move", { path: "跑出去", dir: "跑出去/里层" });
+check("archive move refuses a folder into itself", r.status === 400, `${r.status} ${r.data?.error}`);
+r = await post("/api/archive/move", { path: "跑出去", name: "外层" });
+check("archive rename renames a folder", r.status === 200 && existsSync(`${ARCHIVE}/外层/里层`), `${r.status} ${r.data?.error}`);
+r = await post("/api/archive/remove", { path: "外层" });
+check(
+  "archive remove deletes a folder with its contents",
+  r.status === 200 && !existsSync(`${ARCHIVE}/外层`),
+  `${r.status} ${r.data?.error}`
+);
 r = await post("/api/archive/list", { root: win ? "C:\\" : "/" });
 check("archive root refuses a whole disk", r.status === 400, `${r.status} ${r.data?.error}`);
 r = await post("/api/archive/list", { root: "relative/dir" });
