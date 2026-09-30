@@ -186,6 +186,8 @@ try {
       "--no-sandbox",
       "--no-first-run",
       "--no-default-browser-check",
+      // Edge 起来后会为兼容层自己重启一回：重启出的进程不再是这里的子进程，收尾的 taskkill /T 够不着，占着调试口留到下一回（playwright 也带这一项）
+      "--edge-skip-compat-layer-relaunch",
       `--remote-debugging-port=${DEBUG_PORT}`,
       // 看台（test/stage.mjs）从言的页面直连这个调试口，得放行言的来源
       `--remote-allow-origins=http://127.0.0.1:${BRIDGE_PORT}`,
