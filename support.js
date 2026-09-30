@@ -6764,11 +6764,11 @@ function renderSendButtons() {
       ? "正在准备发送"
       : elsewhere
         ? "另一个页面正在这段对话里作答，这里跟着看"
-      : stop
-        ? "停止生成"
-        : running
-          ? "插言引路：模型说到落点便读这句，可就此改道"
-          : "发送";
+        : stop
+          ? "停止生成"
+          : running
+            ? "插言引路：模型说到落点便读这句，可就此改道"
+            : "发送";
     b.classList.toggle("stop-btn", stop);
     b.classList.toggle("empty", !running && !has);
     b.disabled = sendPreparing || (!running && ended);
@@ -6791,7 +6791,7 @@ async function loadThumbnails(root) {
         if (thumbCache.size > 40) thumbCache.delete(thumbCache.keys().next().value);
       }
       img.src = url;
-      img.closest(".attachment-card, .library-card")?.classList.add("has-thumb");
+      img.closest(".attachment-card")?.classList.add("has-thumb");
     } catch {}
   }
 }
@@ -7381,9 +7381,9 @@ let archiveEntries = null,
   archiveScratch = null,
   archiveLoading = null,
   // 卷宗页此刻站在哪一层（相对卷宗根，"" 即根）：只列这一层的夹与件，拖进来的文件也落在这一层
-  libraryDir = "";
-// 夹上的字：卷宗的单件称「卷」，装几卷的夹子借古书的称谓
-const FOLDER_GLYPH = "函";
+  libraryDir = "",
+  // 正在就地改名的那一项（文件或夹的路径）；空即没有
+  libraryRenaming = "";
 const ARCHIVE_DRAG = "application/x-yan-archive";
 function parentDir(path) {
   const at = String(path).lastIndexOf("/");
@@ -7428,6 +7428,49 @@ function archiveKind(name) {
 function displayKind(file) {
   return file.kind === "file" ? archiveKind(file.name) : file.kind;
 }
+
+// ---------- 件图：每一件画成一张右上折角的小纸，纸面上的记号分出是什么；夹与分组是一只布面小函 ----------
+// 记号借项目里现成的专色（码 花青、表 石绿、文书 朱、演示 泥金、网页 青绿、音 黛、影 胭脂），纸面淡染一层：
+// 先按颜色分大类，再看形状。见 设计稿/17-卷宗包边与件图（落选：一律墨色——列表里十来像素，文、码、文书分不开）
+const FIGURE_EXT = {
+  text: ["txt", "md", "markdown", "log", "rst"],
+  table: ["csv", "tsv", "xls", "xlsx", "ods"],
+  doc: ["pdf", "doc", "docx", "odt", "rtf", "epub"],
+  slides: ["ppt", "pptx", "odp", "key"],
+  html: ["html", "htm"],
+  zip: ["zip", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz"]
+};
+// 纸面 16×20，记号画在 3.5–13 × 7–17 之间
+const FIGURE_MARKS = {
+  text: `<path class="m" d="M3.8 8.3H12.5M3.8 10.8H12.5M3.8 13.3H12.5M3.8 15.8H9"/>`,
+  code: `<path class="m" d="M3.8 8.3H8.5M5.8 10.8H12.3M5.8 13.3H10.5M3.8 15.8H6.8"/>`,
+  table: `<path class="m" d="M3.5 7.5H12.8V16.5H3.5ZM3.5 10.5H12.8M3.5 13.5H12.8M7.2 7.5V16.5"/>`,
+  doc: `<path class="m bold" d="M3.8 8.2H9.5"/><path class="m" d="M3.8 11H12.5M3.8 13.4H12.5M3.8 15.8H10.5"/>`,
+  slides: `<path class="m" d="M3.3 8.2H12.8V14.2H3.3Z"/><path class="m" d="M6 16.4H10.2"/>`,
+  html: `<path class="m" d="M3.3 7.5H12.8V16.8H3.3ZM3.3 9.6H12.8"/><path class="m" d="M5 12H11M5 14.4H9"/>`,
+  audio: `<path class="m" d="M4 11.2V13.2M6 9.2V15.2M8.1 10.4V14M10.2 8.4V16M12.2 10.8V13.6"/>`,
+  video: `<path class="f" d="M6.4 9.4L10.4 12.2L6.4 15ZM3 8h1.2v1.2H3zM3 10.9h1.2v1.2H3zM3 13.8h1.2v1.2H3zM12.1 8h1.2v1.2h-1.2zM12.1 10.9h1.2v1.2h-1.2zM12.1 13.8h1.2v1.2h-1.2z"/>`,
+  zip: `<path class="m" d="M8.2 1.2V3M8.2 4.4V6.2M8.2 7.6V9.4M7 10.6H9.4V14.4H7Z"/>`
+};
+function figureKind(name) {
+  const kind = archiveKind(name);
+  if (kind === "image" || kind === "audio" || kind === "video") return kind;
+  const extension = fileExtension(name);
+  for (const [figure, list] of Object.entries(FIGURE_EXT)) if (list.includes(extension)) return figure;
+  // 余下认得出是文本的，多是代码与配置（json、yaml、js……）
+  return kind === "text" ? "code" : "other";
+}
+/** 一件的小图：图片就是它自己的缩略，别的按类画记号 */
+function fileFigure(name, path = "") {
+  const figure = figureKind(name);
+  if (figure === "image" && path)
+    return `<span class="fi fi-thumb" aria-hidden="true"><img src="${escapeHtml(archiveFileUrl(path))}" alt="" loading="lazy"></span>`;
+  return `<svg class="fi" data-figure="${figure}" viewBox="0 0 16 20" aria-hidden="true"><path class="body" d="M1 .5H11L15.5 5V19.5H1Z"/><path class="fold" d="M11 .5V5H15.5Z"/>${FIGURE_MARKS[figure] || ""}</svg>`;
+}
+function caseFigure() {
+  return `<svg class="fi" viewBox="0 0 16 20" aria-hidden="true"><rect class="case" x="1" y=".5" width="14.5" height="19"/><rect class="slip" x="4" y="3" width="4" height="11.5"/></svg>`;
+}
+
 function openLibrary() {
   closeSidePanel();
   persistDraft();
@@ -7449,25 +7492,36 @@ function renderLibraryCount() {
   const total = libraryTotal();
   $("#libraryCount").textContent = total ? String(total) : "";
 }
-function libraryCardHtml(file, showDir = true) {
-  const kind = archiveKind(file.name),
-    thumb = kind === "image" ? `<img class="library-thumb" src="${escapeHtml(archiveFileUrl(file.path))}" alt="">` : "",
-    note = `${formatFileSize(file.size)} · ${escapeHtml(formatDay(file.modifiedAt))}${showDir && file.path.includes("/") ? ` · ${escapeHtml(parentDir(file.path))}` : ""}`;
-  return `<div class="library-card${kind === "image" ? " has-thumb" : ""}" data-library-disk="${escapeHtml(file.path)}" draggable="true"><div class="library-preview"${kind === "image" ? ` role="button" tabindex="0" data-open-disk-image="${escapeHtml(file.path)}" title="查看 ${escapeHtml(file.name)}"` : ""}>${thumb}<span class="library-glyph" aria-hidden="true">${kindGlyph(kind)}</span><span class="attachment-type">${escapeHtml(fileTypeLabel(file))}</span></div><div class="library-body"><strong title="${escapeHtml(file.path)}">${escapeHtml(file.name)}</strong><small>${note}</small></div><div class="library-actions"><button data-library-action="view" title="在此预览，不必下载">预览</button><button data-library-action="download">下载</button><button data-library-action="remove">删除</button></div></div>`;
+// 名目一格：平时是名字（平铺查找时下注所在的那一层），改名时换成一个输入框
+function libraryNameCell(item, where = "") {
+  if (libraryRenaming === item.path)
+    return `<span class="strip-name"><input class="strip-rename" value="${escapeHtml(item.name)}" maxlength="200" spellcheck="false" autocomplete="off" aria-label="新名字"></span>`;
+  return `<span class="strip-name"><strong title="${escapeHtml(item.path)}">${escapeHtml(item.name)}</strong>${where ? `<small>${escapeHtml(where)}</small>` : ""}</span>`;
 }
-// 一个夹：一叠纸，下注里头共几件（连同更深的层）、有几个子夹、最近一件的日子
+function libraryRowHtml(file, showDir = true) {
+  const path = escapeHtml(file.path),
+    renaming = libraryRenaming === file.path;
+  return `<div class="strip file" data-library-disk="${path}" data-library-item="${path}" draggable="${!renaming}" tabindex="0"><span>${fileFigure(file.name, file.path)}</span>${libraryNameCell(
+    file,
+    showDir ? parentDir(file.path) : ""
+  )}<span>${formatFileSize(file.size)}</span><span class="strip-date"><span class="strip-when">${escapeHtml(formatDay(file.modifiedAt))}</span><span class="strip-acts"><button type="button" data-library-action="view">预览</button><button type="button" data-library-action="download">下载</button><button type="button" data-library-action="rename">改名</button><button type="button" class="danger" data-library-action="remove">删除</button></span></span></div>`;
+}
+// 一个夹：里头共几件（连同更深的层）、有几个子夹、最近一件的日子
 function libraryFolderHtml(dir) {
   const inside = (archiveEntries || []).filter(file => file.path.startsWith(`${dir.path}/`)),
     subs = archiveDirs.filter(other => parentDir(other.path) === dir.path).length,
     latest = inside.reduce((last, file) => (file.modifiedAt > last ? file.modifiedAt : last), ""),
-    note = [`${inside.length} 件`, subs ? `${subs} 夹` : "", latest ? escapeHtml(formatDay(latest)) : ""].filter(Boolean).join(" · ");
-  return `<div class="library-card library-folder" role="button" tabindex="0" data-library-dir="${escapeHtml(dir.path)}" title="打开 ${escapeHtml(dir.name)}"><div class="library-preview"><span class="library-sheets" aria-hidden="true"><span>${FOLDER_GLYPH}</span></span></div><div class="library-body"><strong>${escapeHtml(dir.name)}</strong><small>${note}</small></div></div>`;
+    note = inside.length || subs ? [`${inside.length} 件`, subs ? `${subs} 夹` : ""].filter(Boolean).join(" · ") : "空",
+    path = escapeHtml(dir.path),
+    renaming = libraryRenaming === dir.path;
+  return `<div class="strip dir" role="button" tabindex="0" data-library-dir="${path}" data-library-item="${path}" draggable="${!renaming}" title="打开 ${escapeHtml(dir.name)}"><span>${caseFigure()}</span>${libraryNameCell(dir)}<span class="strip-note">${note}</span><span class="strip-date"><span class="strip-when">${latest ? escapeHtml(formatDay(latest)) : ""}</span><span class="strip-acts"><button type="button" data-library-action="rename">改名</button><button type="button" class="danger" data-library-action="remove">删除</button></span></span></div>`;
 }
-// 路径：卷宗 › 课程 › 深度学习。点哪一级回哪一级；各级也接得住拖来的卡片（挪回上一层）
+// 路径：卷宗 › 课程 › 深度学习。点哪一级回哪一级；各级也接得住拖来的条子（挪回上一层）
 function renderLibraryCrumbs(show) {
   const crumbs = $("#libraryCrumbs");
   crumbs.classList.toggle("hidden", !show);
   if (!show) return (crumbs.innerHTML = "");
+  if (!libraryDir) return (crumbs.innerHTML = `<span class="here">卷宗</span>`);
   const parts = libraryDir.split("/");
   crumbs.innerHTML = `<button type="button" data-library-dir="">卷宗</button>${parts
     .map((part, index) =>
@@ -7479,13 +7533,16 @@ function renderLibraryCrumbs(show) {
 }
 function enterLibraryDir(dir) {
   libraryDir = dir;
+  libraryRenaming = "";
   renderLibrary();
   $("#library").scrollTop = 0;
 }
+// 重画卷宗时改名框还在写：把写到一半的字与选区带过去（后台刷新卷宗不该冲掉它）
+let libraryRepainting = false;
 function renderLibrary() {
   const query = libraryQuery.trim().toLowerCase(),
     matches = (name, kind) => (libraryKind === "all" || kind === libraryKind) && (!query || String(name).toLowerCase().includes(query)),
-    // 逐层看；一旦查找或按类筛选，就跨各层平铺，卡片下注它所在的路径
+    // 逐层看；一旦查找或按类筛选，就跨各层平铺，名字下注它所在的那一层
     browsing = !query && libraryKind === "all";
   const diskItems = browsing
       ? (archiveEntries || []).filter(file => parentDir(file.path) === libraryDir)
@@ -7493,25 +7550,33 @@ function renderLibrary() {
     folders = browsing
       ? archiveDirs.filter(dir => parentDir(dir.path) === libraryDir).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
       : [];
-  renderLibraryCrumbs(browsing && !!libraryDir);
+  renderLibraryCrumbs(browsing);
   const total = libraryTotal(),
     bytes = (archiveEntries || []).reduce((sum, file) => sum + Number(file.size || 0), 0);
   $("#libraryCountText").textContent = total ? `现存 ${total} 件 · ${formatFileSize(bytes)}` : "";
-  const lead = $("#libraryLead");
-  if (lead)
-    lead.innerHTML = `<code title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</code>${
-      archiveScratch?.count
-        ? `<span class="library-scratch">草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}<button type="button" id="libraryCleanScratch" title="清理模型留下的脚本与中间文件（${escapeHtml(bootstrap.work?.scratch || ".草稿")}）">清理</button></span>`
-        : ""
-    }`;
+  $("#libraryLead").innerHTML = `<span title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</span>${
+    archiveScratch?.count
+      ? `<span class="library-scratch">草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}<button type="button" id="libraryCleanScratch" title="清理模型留下的脚本与中间文件（${escapeHtml(bootstrap.work?.scratch || ".草稿")}）">清理</button></span>`
+      : ""
+  }`;
   $("#libraryCleanScratch")?.addEventListener("click", () => void cleanScratch(null));
   document
     .querySelectorAll("[data-library-kind]")
     .forEach(button => button.classList.toggle("active", button.dataset.libraryKind === libraryKind));
+  const draft = /** @type {HTMLInputElement|null} */ ($("#libraryGrid .strip-rename")),
+    kept = draft && { value: draft.value, start: draft.selectionStart, end: draft.selectionEnd, focused: document.activeElement === draft };
+  // 簿头「名目」左边一枚 ‹ 回上一层（在根上不显）；它也接得住拖来的条子
+  const back =
+    browsing && libraryDir
+      ? `<button type="button" class="strip-back" data-library-dir="${escapeHtml(parentDir(libraryDir))}" title="回上一层" aria-label="回上一层">‹</button>`
+      : "";
+  libraryRepainting = true;
   $("#libraryGrid").innerHTML =
     folders.length || diskItems.length
-      ? `${folders.map(libraryFolderHtml).join("")}${diskItems.map(file => libraryCardHtml(file, !browsing)).join("")}`
-      : `<div class="library-empty">${
+      ? `<div class="strip-cols"><span>${back}</span><span>名目</span><span>大小</span><span>日期</span></div>${folders.map(libraryFolderHtml).join("")}${diskItems
+          .map(file => libraryRowHtml(file, !browsing))
+          .join("")}`
+      : `${back ? `<div class="strip-cols"><span>${back}</span></div>` : ""}<div class="library-empty">${
           browsing && libraryDir
             ? "此夹尚空<br>拖入文件即收于此夹"
             : total
@@ -7520,6 +7585,56 @@ function renderLibrary() {
                 ? "正在翻开卷宗…"
                 : "卷宗尚空<br>拖入文件即收入"
         }</div>`;
+  libraryRepainting = false;
+  const field = /** @type {HTMLInputElement|null} */ ($("#libraryGrid .strip-rename"));
+  if (!field) return;
+  if (kept) {
+    field.value = kept.value;
+    if (kept.focused) {
+      field.focus();
+      field.setSelectionRange(kept.start, kept.end);
+    }
+  } else {
+    // 刚起的改名：选中名字里扩展名之前的那段
+    field.focus();
+    const dot = field.value.lastIndexOf(".");
+    field.setSelectionRange(0, dot > 0 && !archiveDirs.some(dir => dir.path === libraryRenaming) ? dot : field.value.length);
+  }
+}
+function startLibraryRename(path) {
+  libraryRenaming = path;
+  renderLibrary();
+}
+// 改名落定：名字没变就只收起输入框；变了交给桥接（同一层已有同名则报错，不悄悄换名）
+async function commitLibraryRename(value) {
+  const path = libraryRenaming;
+  libraryRenaming = "";
+  const name = String(value || "").trim();
+  if (!path || !name || name === path.split("/").pop()) return renderLibrary();
+  try {
+    const moved = await bridge("/api/archive/move", { root: archiveDir(), path, name }, AbortSignal.timeout(20000));
+    rebaseDeliverables(path, moved.path);
+  } catch (error) {
+    toast(`改名失败：${String(error.message || error).slice(0, 80)}`);
+  }
+  await refreshArchive();
+}
+function cancelLibraryRename() {
+  libraryRenaming = "";
+  renderLibrary();
+}
+// 新建夹：落在此刻这一层，建好即就地起名。正在查找或筛选时先收起，不然新夹不在眼前
+async function newArchiveFolder() {
+  try {
+    const made = await bridge("/api/archive/mkdir", { root: archiveDir(), dir: libraryDir, name: "新建夹" }, AbortSignal.timeout(8000));
+    libraryQuery = "";
+    libraryKind = "all";
+    /** @type {HTMLInputElement} */ ($("#librarySearch")).value = "";
+    libraryRenaming = made.path;
+    await refreshArchive();
+  } catch (error) {
+    toast(`新建失败：${String(error.message || error).slice(0, 80)}`);
+  }
 }
 // 文本以 UTF-8 编成 data: URL；二进制附件本就是 data: URL
 function dataUrlFromText(text, mime = "text/plain") {
@@ -7532,22 +7647,27 @@ function dataUrlFromText(text, mime = "text/plain") {
 async function putArchiveFile(name, data, dir = "") {
   return bridge("/api/archive/put", { root: archiveDir(), name, data, dir }, AbortSignal.timeout(120000));
 }
-// 卡片拖到夹上、或拖回路径里的上一级：挪进那一层；那一层有同名的就另取名
-async function moveArchiveFile(path, dir) {
-  if (parentDir(path) === dir) return;
+// 答末成品条记的是路径：件挪了、改了名，或它所在的夹挪了、改了名，条子跟着改，不然就成了「已移出卷宗」
+function rebaseDeliverables(from, to) {
+  if (from === to) return;
+  for (const c of store.conversations)
+    for (const message of allMessages(c))
+      for (const file of message.deliverables || [])
+        if (file.path === from || file.path.startsWith(`${from}/`)) {
+          file.path = to + file.path.slice(from.length);
+          file.name = file.path.split("/").pop();
+          markDirty(c.id);
+        }
+  saveStoreSoon();
+}
+// 条子拖到夹上、或拖回路径里的上一级：挪进那一层（件与夹一样）；那一层有同名的就另取名
+async function moveArchiveItem(path, dir) {
+  if (parentDir(path) === dir || dir === path) return;
+  if (dir.startsWith(`${path}/`)) return toast("夹不能挪进它自己里头");
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
       renamed = moved.name !== path.split("/").pop();
-    // 答末成品条记的是路径：件挪了，条子跟着改，不然就成了「已移出卷宗」
-    for (const c of store.conversations)
-      for (const message of allMessages(c))
-        for (const file of message.deliverables || [])
-          if (file.path === path) {
-            file.path = moved.path;
-            file.name = moved.name;
-            markDirty(c.id);
-          }
-    saveStoreSoon();
+    rebaseDeliverables(path, moved.path);
     toast(`已移入「${dir ? dir.split("/").pop() : "卷宗"}」${renamed ? `，同名已有，改作 ${moved.name}` : ""}`);
   } catch (error) {
     toast(`移动失败：${String(error.message || error).slice(0, 80)}`);
@@ -7634,10 +7754,23 @@ async function migrateLibraryToArchive() {
   await refreshArchive();
   if (moved) toast(`浏览器里的 ${moved} 件旧卷宗已落进卷宗目录`);
 }
-async function removeArchiveFile(path) {
-  if (!(await askConfirm({ title: "删除这件卷宗？", body: `将从本机目录删除「${path}」，无法撤销。`, ok: "删除" }))) return;
+// 删一项：夹连同里头的一并删，确认时说清有多少
+async function removeArchiveItem(path) {
+  const dir = archiveDirs.find(item => item.path === path);
+  let ask = { title: "删除这件卷宗？", body: `将从本机目录删除「${path}」，无法撤销。`, ok: "删除" };
+  if (dir) {
+    const files = (archiveEntries || []).filter(file => file.path.startsWith(`${path}/`)).length,
+      subs = archiveDirs.filter(item => item.path.startsWith(`${path}/`)).length;
+    ask = {
+      title: `删除夹「${dir.name}」？`,
+      body:
+        files || subs ? `连同其中 ${files} 件${subs ? `、${subs} 夹` : ""}，将从本机目录删除，无法撤销。` : "将从本机目录删除这个空夹。",
+      ok: "删除"
+    };
+  }
+  if (!(await askConfirm(ask))) return;
   try {
-    await bridge("/api/archive/remove", { root: archiveDir(), path }, AbortSignal.timeout(8000));
+    await bridge("/api/archive/remove", { root: archiveDir(), path }, AbortSignal.timeout(20000));
     toast("已删除");
   } catch (error) {
     toast(`删除失败：${String(error.message || error).slice(0, 80)}`);
@@ -8126,10 +8259,11 @@ function bindViewerEvents() {
   });
 }
 
-// 卷宗：收入、检索、分类、卡片上的动作；整页拖入文件；正文里指向卷宗文件的链接与答末的成品卡
+// 卷宗：收入、新建夹、检索、分类、条上的动作与就地改名；整页拖入文件；正文里指向卷宗文件的链接与答末的成品卡
 function bindLibraryEvents() {
   $("#fileInput").onchange = handleFiles;
   $("#libraryAdd").onclick = () => $("#libraryFileInput").click();
+  $("#libraryNewDir").onclick = () => void newArchiveFolder();
   $("#libraryFileInput").onchange = async e => {
     await addLibraryFiles(e.target.files);
     e.target.value = "";
@@ -8149,42 +8283,72 @@ function bindLibraryEvents() {
     const crumb = e.target.closest("[data-library-dir]");
     if (crumb) enterLibraryDir(crumb.dataset.libraryDir);
   });
+  // 一件：点条子即预览（图进看图，余者进预览器）；一夹：点条子即入。条尾悬停露出的几样动作另算
+  const openItem = (row, trigger = row) => {
+    if (row.dataset.libraryDisk === undefined) return enterLibraryDir(row.dataset.libraryDir);
+    const path = row.dataset.libraryDisk;
+    archiveKind(path) === "image" ? openArchiveImage(path, trigger) : void openFileViewer(path, "", trigger);
+  };
   $("#libraryGrid").addEventListener("click", e => {
-    const folder = e.target.closest("[data-library-dir]");
-    if (folder) return enterLibraryDir(folder.dataset.libraryDir);
-    const disk = e.target.closest("[data-open-disk-image]");
-    if (disk) return openArchiveImage(disk.dataset.openDiskImage, disk);
-    const button = e.target.closest("[data-library-action]");
-    if (!button) return;
-    const path = button.closest("[data-library-disk]")?.dataset.libraryDisk,
-      action = button.dataset.libraryAction;
-    if (!path) return;
-    if (action === "view") void openFileViewer(path, "", button);
-    else if (action === "place") void placeFromArchive(path);
-    else if (action === "download") downloadArchiveFile(path);
-    else if (action === "remove") void removeArchiveFile(path);
-  });
-  $("#libraryGrid").addEventListener("keydown", e => {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    if (e.target.matches?.("[data-library-dir]")) {
-      e.preventDefault();
-      enterLibraryDir(e.target.dataset.libraryDir);
-      $("#libraryGrid .library-card, #libraryCrumbs button")?.focus();
+    if (e.target.closest(".strip-rename")) return;
+    const button = e.target.closest("[data-library-action]"),
+      row = e.target.closest("[data-library-item]");
+    if (button && row) {
+      const path = row.dataset.libraryItem,
+        action = button.dataset.libraryAction;
+      if (action === "view") void openFileViewer(path, "", button);
+      else if (action === "download") downloadArchiveFile(path);
+      else if (action === "rename") startLibraryRename(path);
+      else if (action === "remove") void removeArchiveItem(path);
       return;
     }
-    if (!e.target.matches?.("[data-open-disk-image]")) return;
-    e.preventDefault();
-    openArchiveImage(e.target.dataset.openDiskImage, e.target);
+    const back = e.target.closest(".strip-back");
+    if (back) return enterLibraryDir(back.dataset.libraryDir);
+    if (row) openItem(row);
   });
-  // 卷宗里的卡片拖到夹上（或路径里的上一级）即挪进去：落点提亮，松手就挪
+  $("#libraryGrid").addEventListener("keydown", e => {
+    const field = e.target.closest?.(".strip-rename");
+    if (field) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void commitLibraryRename(field.value);
+      } else if (e.key === "Escape") {
+        e.stopPropagation();
+        cancelLibraryRename();
+      }
+      return;
+    }
+    const row = e.target.matches?.("[data-library-item]") ? e.target : null;
+    if (!row) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openItem(row);
+      if (row.dataset.libraryDisk === undefined) $("#libraryGrid .strip")?.focus();
+    } else if (e.key === "F2") {
+      e.preventDefault();
+      startLibraryRename(row.dataset.libraryItem);
+    } else if (e.key === "Delete") {
+      e.preventDefault();
+      void removeArchiveItem(row.dataset.libraryItem);
+    }
+  });
+  // 改名框失了焦即落定；重画时换掉的旧框不算
+  $("#libraryGrid").addEventListener(
+    "blur",
+    e => {
+      if (e.target.matches?.(".strip-rename") && libraryRenaming && !libraryRepainting) void commitLibraryRename(e.target.value);
+    },
+    true
+  );
+  // 卷宗里的条子（件或夹）拖到夹上、路径里的上一级或簿头的 ‹ 上即挪进去：落点提亮，松手就挪
   const library = $("#library"),
     dropTarget = event =>
       Array.from(event.dataTransfer?.types || []).includes(ARCHIVE_DRAG) ? event.target.closest?.("#library [data-library-dir]") : null,
     clearDropMark = () => library.querySelectorAll(".drop-over").forEach(node => node.classList.remove("drop-over"));
   library.addEventListener("dragstart", event => {
-    const card = event.target.closest?.("[data-library-disk]");
-    if (!card) return;
-    event.dataTransfer.setData(ARCHIVE_DRAG, card.dataset.libraryDisk);
+    const row = event.target.closest?.("[data-library-item]");
+    if (!row) return;
+    event.dataTransfer.setData(ARCHIVE_DRAG, row.dataset.libraryItem);
     event.dataTransfer.effectAllowed = "move";
   });
   library.addEventListener("dragover", event => {
@@ -8207,7 +8371,7 @@ function bindLibraryEvents() {
     clearDropMark();
     if (!target) return;
     event.preventDefault();
-    void moveArchiveFile(event.dataTransfer.getData(ARCHIVE_DRAG), target.dataset.libraryDir);
+    void moveArchiveItem(event.dataTransfer.getData(ARCHIVE_DRAG), target.dataset.libraryDir);
   });
   let dragHideTimer = null,
     dragFromPage = false;
@@ -14221,7 +14385,7 @@ const GUIDE = [
       },
       {
         h: "卷宗",
-        body: "侧栏的「卷宗」即存储位置里的 `卷宗/` 目录。拖入，或在附件上按「藏」收存；需随消息送出时，从「＋」中选「卷宗」。",
+        body: "侧栏的「卷宗」即存储位置里的 `卷宗/` 目录。拖入，或在附件上按「藏」收存；需随消息送出时，从「＋」中选「卷宗」。页上可新建夹、就地改名（亦可按 F2），条子拖到夹上即移入；删夹则连同其中一并删去。",
         note: "卷宗里的文档对每段对话皆可读，模型用到时方才取回；设置 → 工具中可关闭。"
       },
       {
@@ -14436,7 +14600,7 @@ function bindGuideEvents() {
   // ---- 24-groups.js ----
 // 言 · 分组：自立的几组，像 Claude 的 project——相关的对话聚在一处，不至散落。
 // 侧栏有两处：历史里与「工」组一样按时间排（印文是「集」，组首「＋」在此组另起一段、「⋯」改名 / 设置 / 解散；对话拖到组上即移入、拖到组外即移出），
-// 以及「翻页」「卷宗」之下的「分组」入口——进去是分组页：列出各组，点开一组可改名、择预设、定默认目录、看组里的对话（可移出）、解散。
+// 以及「翻页」「卷宗」之下的「分组」入口——进去是分组页（与卷宗同一本簿，一组一条）：点开一组可改名、择预设、定默认目录、看组里的对话（可移出）、解散。
 // 组能带的两样都只管新起的对话：预设（提示词、工具、模型、权限一并换上）与默认目录（绑上即为行）。
 // 组里的对话置顶，只在组内排到最前，不跳出组去
 /** @type {string|null} 侧栏里正在改名的那一组 */
@@ -14618,52 +14782,43 @@ function renderGroupsPage() {
   $("#groups").innerHTML = `<div class="library-inner">${group ? groupDetailHtml(group) : groupListHtml()}</div>`;
 }
 const lastTouched = members => members.reduce((latest, c) => (c.updatedAt > latest ? c.updatedAt : latest), "");
+// 列表与卷宗同一本簿：一组一条，行首一只小函；列是 组名 · 段 · 预设 · 目录 · 日期（最近一段对话动笔的日子）
 function groupListHtml() {
   const groups = [...groupsList()].sort((a, b) =>
-    (lastTouched(groupMembers(b.id)) || b.createdAt).localeCompare(lastTouched(groupMembers(a.id)) || a.createdAt)
-  );
-  return `<div class="eyebrow"><span class="seal">集</span><span>GROUPS</span></div><h1>分组</h1><div class="library-tools"><button id="groupsAdd" class="outline-btn" type="button">＋ 新建分组</button></div>${
+      (lastTouched(groupMembers(b.id)) || b.createdAt).localeCompare(lastTouched(groupMembers(a.id)) || a.createdAt)
+    ),
+    chats = store.conversations.filter(c => groups.some(group => group.id === c.groupId)).length;
+  return `<div class="page-head">${brushIcon("groups")}<h1>分组</h1><span class="page-facts">${groups.length ? `${groups.length} 组 · ${chats} 段对话` : ""}</span><div class="page-acts"><button id="groupsAdd" type="button">新建分组</button></div></div><div class="page-sub"></div>${
     groups.length
-      ? `<div class="group-toc">${groups
+      ? `<div class="strips group-strips"><div class="strip-cols"><span></span><span>组名</span><span>段</span><span>预设</span><span>目录</span><span>日期</span></div>${groups
           .map(group => {
             const members = groupMembers(group.id),
               preset = store.settings.presets.find(item => item.id === group.presetId),
-              touched = lastTouched(members),
-              gist = [
-                `${members.length} 段`,
-                touched ? `${formatDay(touched)}动笔` : "",
-                preset ? `预设 ${preset.name}` : "",
-                group.workdir ? `目录 ${pathTail(group.workdir)}` : ""
-              ]
-                .filter(Boolean)
-                .join(" · ");
-            return `<button type="button" class="group-row" data-group-page="${escapeHtml(group.id)}"><span class="repo-seal" aria-hidden="true">集</span><span class="group-row-name">${escapeHtml(group.name)}</span><span class="guide-lead-line" aria-hidden="true"></span><span class="group-row-gist">${escapeHtml(gist)}</span></button>`;
+              touched = lastTouched(members) || group.createdAt;
+            return `<button type="button" class="strip dir" data-group-page="${escapeHtml(group.id)}"><span>${caseFigure()}</span><span class="strip-name"><strong>${escapeHtml(group.name)}</strong></span><span>${members.length}</span><span><span class="ell">${escapeHtml(preset?.name || "—")}</span></span><span title="${escapeHtml(group.workdir)}"><span class="ell">${escapeHtml(group.workdir || "—")}</span></span><span>${escapeHtml(formatDay(touched))}</span></button>`;
           })
           .join("")}</div>`
-      : `<p class="card-note">尚无分组。</p>`
+      : `<div class="library-empty">尚无分组</div>`
   }`;
 }
+// 一组：页头即组名（就地可改），右边「在此组新建 · 解散」；下是两行设置与组里的对话，簿头的 ‹ 回列表
 /** @param {ReturnType<typeof groupsList>[number]} group */
 function groupDetailHtml(group) {
   const members = groupMembers(group.id),
     presets = store.settings.presets;
-  return `<div class="guide-top"><button type="button" class="guide-back" data-group-page="">‹ 分组</button></div><div class="group-title"><span class="repo-seal" aria-hidden="true">集</span><input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="组名"></div><p class="library-lead">${members.length ? `${members.length} 段对话` : "此组尚无对话"}</p><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>预设</strong><small>${presets.length ? "" : "尚无预设"}</small></div><select id="groupPreset" class="field select"><option value="">本色（不带预设）</option>${presets
+  return `<div class="page-head">${brushIcon("groups")}<input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="组名"><span class="page-facts">${members.length ? `${members.length} 段对话` : "尚无对话"}</span><div class="page-acts"><button id="groupNewChat" type="button">在此组新建</button><button id="groupDissolve" class="danger" type="button">解散</button></div></div><div class="page-sub"><div class="library-crumbs"><button type="button" data-group-page="">分组</button><span class="sep" aria-hidden="true">›</span><span class="here">${escapeHtml(group.name)}</span></div></div><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>预设</strong><small>${presets.length ? "" : "尚无预设"}</small></div><select id="groupPreset" class="field select"><option value="">本色（不带预设）</option>${presets
     .map(
       preset =>
         `<option value="${escapeHtml(preset.id)}"${preset.id === group.presetId ? " selected" : ""}>${escapeHtml(preset.name)}</option>`
     )
     .join(
       ""
-    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>默认目录</strong></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="不绑目录" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">选择…</button></div></div></div><div class="group-actions"><button id="groupNewChat" class="outline-btn" type="button">在此组新建</button><button id="groupDissolve" class="danger-btn" type="button">解散</button></div><h3 class="settings-sub">组里的对话</h3>${
-    members.length
-      ? `<div class="group-toc">${members
-          .map(
-            c =>
-              `<div class="group-member"><button type="button" class="group-row" data-group-chat="${escapeHtml(c.id)}">${c.pinned ? `<span class="group-pin" title="组内置顶" aria-label="组内置顶"></span>` : ""}<span class="group-row-name">${escapeHtml(c.title)}</span><span class="guide-lead-line" aria-hidden="true"></span><span class="group-row-gist">${escapeHtml(formatDay(c.updatedAt))}</span></button><button type="button" class="group-member-out" data-group-out="${escapeHtml(c.id)}" title="移出此组，退回散列">移出</button></div>`
-          )
-          .join("")}</div>`
-      : ""
-  }`;
+    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>默认目录</strong></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="不绑目录" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">选择…</button></div></div></div><div class="strips group-members"><div class="strip-cols"><span><button type="button" class="strip-back" data-group-page="" title="回分组" aria-label="回分组">‹</button></span><span>组里的对话</span><span>日期</span></div>${members
+    .map(
+      c =>
+        `<div class="strip" role="button" tabindex="0" data-group-chat="${escapeHtml(c.id)}"><span>${fileFigure("对话.md")}</span><span class="strip-name"><strong>${escapeHtml(c.title)}</strong></span><span class="strip-date"><span class="strip-when">${escapeHtml(formatDay(c.updatedAt))}</span><span class="strip-acts"><button type="button" data-group-out="${escapeHtml(c.id)}" title="移出此组，退回散列">移出</button></span></span>${c.pinned ? `<i class="group-pin" title="组内置顶" aria-label="组内置顶"></i>` : ""}</div>`
+    )
+    .join("")}</div>`;
 }
 // 分组页上的点击与改动：一个委托，页面每画一回都还在
 $("#groups").addEventListener("click", async event => {
@@ -14723,8 +14878,13 @@ $("#groups").addEventListener("change", event => {
   renderGroupsPage();
 });
 $("#groups").addEventListener("keydown", event => {
-  if (/** @type {HTMLElement} */ (event.target).id === "groupName" && event.key === "Enter")
-    /** @type {HTMLInputElement} */ (event.target).blur();
+  const target = /** @type {HTMLElement} */ (event.target);
+  if (target.id === "groupName" && event.key === "Enter") return /** @type {HTMLInputElement} */ (target).blur();
+  // 组里的对话一条是 div（条尾还放着「移出」按钮）：回车与空格照按钮打开
+  if (target.dataset.groupChat && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    openConversation(target.dataset.groupChat);
+  }
 });
 
 // ---------- 侧栏历史里的分组：收起 / 展开、组首「＋」、双击改名 ----------

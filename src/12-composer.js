@@ -24,11 +24,11 @@ function renderSendButtons() {
       ? "正在准备发送"
       : elsewhere
         ? "另一个页面正在这段对话里作答，这里跟着看"
-      : stop
-        ? "停止生成"
-        : running
-          ? "插言引路：模型说到落点便读这句，可就此改道"
-          : "发送";
+        : stop
+          ? "停止生成"
+          : running
+            ? "插言引路：模型说到落点便读这句，可就此改道"
+            : "发送";
     b.classList.toggle("stop-btn", stop);
     b.classList.toggle("empty", !running && !has);
     b.disabled = sendPreparing || (!running && ended);
@@ -51,7 +51,7 @@ async function loadThumbnails(root) {
         if (thumbCache.size > 40) thumbCache.delete(thumbCache.keys().next().value);
       }
       img.src = url;
-      img.closest(".attachment-card, .library-card")?.classList.add("has-thumb");
+      img.closest(".attachment-card")?.classList.add("has-thumb");
     } catch {}
   }
 }

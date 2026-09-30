@@ -80,7 +80,7 @@ check("duplicate export links to its own renamed assets", second.includes(encode
 await evalJs(`document.querySelector('#openLibrary').click(); true`);
 await waitFor(`!!document.querySelector('[data-path="${files[0]}"]')`, 5000).catch(() => {});
 const opened = await evalJs(
-  `(() => { const card = [...document.querySelectorAll('.library-card')].find(c=>c.textContent.includes(${JSON.stringify(files[0])})); const b=card?.querySelector('[data-library-action="view"]'); b?.click(); return !!b; })()`
+  `(() => { const card = [...document.querySelectorAll('#libraryGrid .strip')].find(c=>c.textContent.includes(${JSON.stringify(files[0])})); const b=card?.querySelector('[data-library-action="view"]'); b?.click(); return !!b; })()`
 );
 check("exported HTML has an archive preview action", opened);
 await sleep(800);

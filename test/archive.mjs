@@ -211,12 +211,12 @@ await waitFor(`!document.querySelector("#confirmModal").classList.contains("hidd
 await evalJs(`document.querySelector("#confirmOk").click(); true`);
 await waitFor(`!document.querySelector("#libraryCleanScratch")`);
 check("clean removes the scratch directories", !existsSync(`${ARCHIVE}/.草稿`) || readdirSync(`${ARCHIVE}/.草稿`).length === 0);
-// 卷宗卡片只留 预览 / 下载 / 删除；置于案上走输入框的「＋」→ 卷宗 选件
+// 卷宗的一条留 预览 / 下载 / 改名 / 删除；置于案上走输入框的「＋」→ 卷宗 选件
 check(
-  "library card offers preview / download / delete only",
+  "library row offers preview / download / rename / delete",
   (await evalJs(
     `[...document.querySelectorAll('#libraryGrid [data-library-disk="报表.csv"] [data-library-action]')].map(b => b.textContent).join()`
-  )) === "预览,下载,删除"
+  )) === "预览,下载,改名,删除"
 );
 await evalJs(`document.querySelector("#newChat").click(); true`);
 await waitFor(`!document.querySelector("#welcome").classList.contains("hidden")`);
@@ -298,12 +298,12 @@ await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程"
 check(
   "the root lists the folder and its own files only",
   await evalJs(
-    `!!document.querySelector('#libraryGrid [data-library-disk="一声.mp3"]') && !document.querySelector('#libraryGrid [data-library-disk="课程/讲义.txt"]') && document.querySelector("#libraryCrumbs").classList.contains("hidden")`
+    `!!document.querySelector('#libraryGrid [data-library-disk="一声.mp3"]') && !document.querySelector('#libraryGrid [data-library-disk="课程/讲义.txt"]') && document.querySelector("#libraryCrumbs").textContent === "卷宗" && !document.querySelector("#libraryGrid .strip-back")`
   )
 );
 check(
-  "a folder card counts what is inside, deeper layers included",
-  (await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程"] small').textContent`)).startsWith("2 件 · 2 夹")
+  "a folder row counts what is inside, deeper layers included",
+  (await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程"] .strip-note').textContent`)) === "2 件 · 2 夹"
 );
 await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程"]').click(); true`);
 await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="课程/讲义.txt"]')`);
@@ -311,7 +311,7 @@ await shot("archive-folders.png");
 check(
   "inside a folder: its subfolders first, then its files, with a path to climb back",
   (await evalJs(
-    `[...document.querySelectorAll("#libraryGrid .library-card strong")].map(n => n.textContent).join() + "|" + document.querySelector("#libraryCrumbs").textContent`
+    `[...document.querySelectorAll("#libraryGrid .strip strong")].map(n => n.textContent).join() + "|" + document.querySelector("#libraryCrumbs").textContent`
   )) === "空夹,深度学习,讲义.txt|卷宗›课程"
 );
 await evalJs(
@@ -322,7 +322,7 @@ check("files dropped in land in the folder being viewed", existsSync(`${ARCHIVE}
 const dragCard = (path, dir) =>
   evalJs(
     `(() => { const dt = new DataTransfer(), fire = (type, node) => node.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt })),
-      card = document.querySelector(${JSON.stringify(`#libraryGrid [data-library-disk="${path}"]`)}), target = document.querySelector(${JSON.stringify(`#library [data-library-dir="${dir}"]`)});
+      card = document.querySelector(${JSON.stringify(`#libraryGrid [data-library-item="${path}"]`)}), target = document.querySelector(${JSON.stringify(`#library [data-library-dir="${dir}"]`)});
       fire("dragstart", card); fire("dragover", target); const lit = target.classList.contains("drop-over"); fire("drop", target); fire("dragend", card); return lit; })()`
   );
 check("dragging a card over a folder lights it up", await dragCard("课程/讲义.txt", "课程/空夹"));
@@ -349,10 +349,10 @@ await evalJs(
   `(() => { const s = document.querySelector("#librarySearch"); s.value = ""; s.dispatchEvent(new Event("input")); document.querySelector('[data-library-kind="audio"]').click(); })(); true`
 );
 check(
-  "the 音 filter picks out audio, marked with 音",
+  "the 音 filter picks out audio, drawn as audio",
   (await evalJs(
-    `[...document.querySelectorAll("#libraryGrid .library-card")].map(c => c.querySelector("strong").textContent + c.querySelector(".library-glyph").textContent).join()`
-  )) === "一声.mp3音"
+    `[...document.querySelectorAll("#libraryGrid .strip")].map(c => c.querySelector("strong").textContent + c.querySelector(".fi").dataset.figure).join()`
+  )) === "一声.mp3audio"
 );
 await evalJs(`document.querySelector('[data-library-kind="all"]').click(); true`);
 await evalJs(`document.querySelector('#libraryCrumbs [data-library-dir=""]').click(); true`);
@@ -366,4 +366,45 @@ check(
       `(f => f.path + "|" + f.name)(__yanState().conversations.find(c => c.id === "deliver-follow").messages[1].deliverables[0])`
     )) === "课程/成品.txt|成品.txt"
 );
+
+// ---- 簿录上的管理：新建夹即就地起名，件就地改名，夹拖进夹，簿头 ‹ 回上一层，删夹连同里头
+const typeName = name =>
+  evalJs(
+    `(i => { i.value = ${JSON.stringify(name)}; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); return true })(document.activeElement)`
+  );
+await evalJs(`document.querySelector("#libraryNewDir").click(); true`);
+await waitFor(`document.activeElement?.classList.contains("strip-rename")`, 8000);
+check(
+  "新建夹 makes a folder on disk and opens its name for editing",
+  existsSync(`${ARCHIVE}/新建夹`) && (await evalJs(`document.activeElement.value === "新建夹"`))
+);
+await typeName("讲座");
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="讲座"]')`, 8000);
+check("naming it renames the folder on disk", existsSync(`${ARCHIVE}/讲座`) && !existsSync(`${ARCHIVE}/新建夹`));
+await evalJs(`document.querySelector('#libraryGrid [data-library-disk="讲义.txt"] [data-library-action="rename"]').click(); true`);
+await waitFor(`document.activeElement?.classList.contains("strip-rename")`);
+check(
+  "renaming a file selects the name before its extension",
+  (await evalJs(`(i => i.value.slice(i.selectionStart, i.selectionEnd))(document.activeElement)`)) === "讲义"
+);
+await typeName("讲义一.txt");
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="讲义一.txt"]')`, 8000);
+check("the file is renamed on disk", existsSync(`${ARCHIVE}/讲义一.txt`) && !existsSync(`${ARCHIVE}/讲义.txt`));
+check("a folder can be dragged too", await dragCard("讲座", "课程"));
+await waitFor(`!document.querySelector('#libraryGrid [data-library-dir="讲座"]')`, 8000);
+check("and dropping it moves the folder in", existsSync(`${ARCHIVE}/课程/讲座`));
+await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程"]').click(); true`);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程/讲座"]')`);
+await shot("archive-strips.png");
+await evalJs(`document.querySelector("#libraryGrid .strip-back").click(); true`);
+check(
+  "the ‹ at the head of the list climbs back up",
+  await evalJs(`!document.querySelector("#libraryGrid .strip-back") && !!document.querySelector('#libraryGrid [data-library-dir="课程"]')`)
+);
+await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程"] [data-library-action="remove"]').click(); true`);
+await waitFor(`!document.querySelector("#confirmModal").classList.contains("hidden")`);
+check("deleting a folder says what goes with it", /连同其中/.test(await evalJs(`document.querySelector("#confirmModal").textContent`)));
+await evalJs(`document.querySelector("#confirmOk").click(); true`);
+await waitFor(`!document.querySelector('#libraryGrid [data-library-dir="课程"]')`, 8000);
+check("the folder and everything in it is gone from disk", !existsSync(`${ARCHIVE}/课程`));
 close();

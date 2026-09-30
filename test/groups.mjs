@@ -74,7 +74,7 @@ await sleep(200);
 check(
   "the 分组 entry opens a page listing the groups",
   await evalJs(
-    `!document.querySelector("#groups").classList.contains("hidden") && document.querySelectorAll("#groups .group-row").length === 1 && document.querySelector("#openGroups").classList.contains("active")`
+    `!document.querySelector("#groups").classList.contains("hidden") && document.querySelectorAll("#groups .strip[data-group-page]").length === 1 && document.querySelector("#openGroups").classList.contains("active")`
   )
 );
 await shot("groups-list.png");
@@ -190,7 +190,7 @@ await sleep(200);
 await evalJs(`document.querySelector("#confirmOk").click(); true`);
 await sleep(200);
 const after = await evalJs(
-  `(s => ({ groups: s.settings.groups.length, count: s.conversations.length, grouped: s.conversations.filter(c => c.groupId).length, sets: document.querySelectorAll("#history .is-set").length, back: document.querySelectorAll("#groups .group-row").length }))(__yanState())`
+  `(s => ({ groups: s.settings.groups.length, count: s.conversations.length, grouped: s.conversations.filter(c => c.groupId).length, sets: document.querySelectorAll("#history .is-set").length, back: document.querySelectorAll("#groups .strip[data-group-page]").length }))(__yanState())`
 );
 check(
   "dissolving a group keeps its conversations",

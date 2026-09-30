@@ -1,6 +1,6 @@
 // 言 · 分组：自立的几组，像 Claude 的 project——相关的对话聚在一处，不至散落。
 // 侧栏有两处：历史里与「工」组一样按时间排（印文是「集」，组首「＋」在此组另起一段、「⋯」改名 / 设置 / 解散；对话拖到组上即移入、拖到组外即移出），
-// 以及「翻页」「卷宗」之下的「分组」入口——进去是分组页：列出各组，点开一组可改名、择预设、定默认目录、看组里的对话（可移出）、解散。
+// 以及「翻页」「卷宗」之下的「分组」入口——进去是分组页（与卷宗同一本簿，一组一条）：点开一组可改名、择预设、定默认目录、看组里的对话（可移出）、解散。
 // 组能带的两样都只管新起的对话：预设（提示词、工具、模型、权限一并换上）与默认目录（绑上即为行）。
 // 组里的对话置顶，只在组内排到最前，不跳出组去
 /** @type {string|null} 侧栏里正在改名的那一组 */
@@ -182,52 +182,43 @@ function renderGroupsPage() {
   $("#groups").innerHTML = `<div class="library-inner">${group ? groupDetailHtml(group) : groupListHtml()}</div>`;
 }
 const lastTouched = members => members.reduce((latest, c) => (c.updatedAt > latest ? c.updatedAt : latest), "");
+// 列表与卷宗同一本簿：一组一条，行首一只小函；列是 组名 · 段 · 预设 · 目录 · 日期（最近一段对话动笔的日子）
 function groupListHtml() {
   const groups = [...groupsList()].sort((a, b) =>
-    (lastTouched(groupMembers(b.id)) || b.createdAt).localeCompare(lastTouched(groupMembers(a.id)) || a.createdAt)
-  );
-  return `<div class="eyebrow"><span class="seal">集</span><span>GROUPS</span></div><h1>分组</h1><div class="library-tools"><button id="groupsAdd" class="outline-btn" type="button">＋ 新建分组</button></div>${
+      (lastTouched(groupMembers(b.id)) || b.createdAt).localeCompare(lastTouched(groupMembers(a.id)) || a.createdAt)
+    ),
+    chats = store.conversations.filter(c => groups.some(group => group.id === c.groupId)).length;
+  return `<div class="page-head">${brushIcon("groups")}<h1>分组</h1><span class="page-facts">${groups.length ? `${groups.length} 组 · ${chats} 段对话` : ""}</span><div class="page-acts"><button id="groupsAdd" type="button">新建分组</button></div></div><div class="page-sub"></div>${
     groups.length
-      ? `<div class="group-toc">${groups
+      ? `<div class="strips group-strips"><div class="strip-cols"><span></span><span>组名</span><span>段</span><span>预设</span><span>目录</span><span>日期</span></div>${groups
           .map(group => {
             const members = groupMembers(group.id),
               preset = store.settings.presets.find(item => item.id === group.presetId),
-              touched = lastTouched(members),
-              gist = [
-                `${members.length} 段`,
-                touched ? `${formatDay(touched)}动笔` : "",
-                preset ? `预设 ${preset.name}` : "",
-                group.workdir ? `目录 ${pathTail(group.workdir)}` : ""
-              ]
-                .filter(Boolean)
-                .join(" · ");
-            return `<button type="button" class="group-row" data-group-page="${escapeHtml(group.id)}"><span class="repo-seal" aria-hidden="true">集</span><span class="group-row-name">${escapeHtml(group.name)}</span><span class="guide-lead-line" aria-hidden="true"></span><span class="group-row-gist">${escapeHtml(gist)}</span></button>`;
+              touched = lastTouched(members) || group.createdAt;
+            return `<button type="button" class="strip dir" data-group-page="${escapeHtml(group.id)}"><span>${caseFigure()}</span><span class="strip-name"><strong>${escapeHtml(group.name)}</strong></span><span>${members.length}</span><span><span class="ell">${escapeHtml(preset?.name || "—")}</span></span><span title="${escapeHtml(group.workdir)}"><span class="ell">${escapeHtml(group.workdir || "—")}</span></span><span>${escapeHtml(formatDay(touched))}</span></button>`;
           })
           .join("")}</div>`
-      : `<p class="card-note">尚无分组。</p>`
+      : `<div class="library-empty">尚无分组</div>`
   }`;
 }
+// 一组：页头即组名（就地可改），右边「在此组新建 · 解散」；下是两行设置与组里的对话，簿头的 ‹ 回列表
 /** @param {ReturnType<typeof groupsList>[number]} group */
 function groupDetailHtml(group) {
   const members = groupMembers(group.id),
     presets = store.settings.presets;
-  return `<div class="guide-top"><button type="button" class="guide-back" data-group-page="">‹ 分组</button></div><div class="group-title"><span class="repo-seal" aria-hidden="true">集</span><input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="组名"></div><p class="library-lead">${members.length ? `${members.length} 段对话` : "此组尚无对话"}</p><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>预设</strong><small>${presets.length ? "" : "尚无预设"}</small></div><select id="groupPreset" class="field select"><option value="">本色（不带预设）</option>${presets
+  return `<div class="page-head">${brushIcon("groups")}<input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="组名"><span class="page-facts">${members.length ? `${members.length} 段对话` : "尚无对话"}</span><div class="page-acts"><button id="groupNewChat" type="button">在此组新建</button><button id="groupDissolve" class="danger" type="button">解散</button></div></div><div class="page-sub"><div class="library-crumbs"><button type="button" data-group-page="">分组</button><span class="sep" aria-hidden="true">›</span><span class="here">${escapeHtml(group.name)}</span></div></div><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>预设</strong><small>${presets.length ? "" : "尚无预设"}</small></div><select id="groupPreset" class="field select"><option value="">本色（不带预设）</option>${presets
     .map(
       preset =>
         `<option value="${escapeHtml(preset.id)}"${preset.id === group.presetId ? " selected" : ""}>${escapeHtml(preset.name)}</option>`
     )
     .join(
       ""
-    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>默认目录</strong></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="不绑目录" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">选择…</button></div></div></div><div class="group-actions"><button id="groupNewChat" class="outline-btn" type="button">在此组新建</button><button id="groupDissolve" class="danger-btn" type="button">解散</button></div><h3 class="settings-sub">组里的对话</h3>${
-    members.length
-      ? `<div class="group-toc">${members
-          .map(
-            c =>
-              `<div class="group-member"><button type="button" class="group-row" data-group-chat="${escapeHtml(c.id)}">${c.pinned ? `<span class="group-pin" title="组内置顶" aria-label="组内置顶"></span>` : ""}<span class="group-row-name">${escapeHtml(c.title)}</span><span class="guide-lead-line" aria-hidden="true"></span><span class="group-row-gist">${escapeHtml(formatDay(c.updatedAt))}</span></button><button type="button" class="group-member-out" data-group-out="${escapeHtml(c.id)}" title="移出此组，退回散列">移出</button></div>`
-          )
-          .join("")}</div>`
-      : ""
-  }`;
+    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>默认目录</strong></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="不绑目录" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">选择…</button></div></div></div><div class="strips group-members"><div class="strip-cols"><span><button type="button" class="strip-back" data-group-page="" title="回分组" aria-label="回分组">‹</button></span><span>组里的对话</span><span>日期</span></div>${members
+    .map(
+      c =>
+        `<div class="strip" role="button" tabindex="0" data-group-chat="${escapeHtml(c.id)}"><span>${fileFigure("对话.md")}</span><span class="strip-name"><strong>${escapeHtml(c.title)}</strong></span><span class="strip-date"><span class="strip-when">${escapeHtml(formatDay(c.updatedAt))}</span><span class="strip-acts"><button type="button" data-group-out="${escapeHtml(c.id)}" title="移出此组，退回散列">移出</button></span></span>${c.pinned ? `<i class="group-pin" title="组内置顶" aria-label="组内置顶"></i>` : ""}</div>`
+    )
+    .join("")}</div>`;
 }
 // 分组页上的点击与改动：一个委托，页面每画一回都还在
 $("#groups").addEventListener("click", async event => {
@@ -287,8 +278,13 @@ $("#groups").addEventListener("change", event => {
   renderGroupsPage();
 });
 $("#groups").addEventListener("keydown", event => {
-  if (/** @type {HTMLElement} */ (event.target).id === "groupName" && event.key === "Enter")
-    /** @type {HTMLInputElement} */ (event.target).blur();
+  const target = /** @type {HTMLElement} */ (event.target);
+  if (target.id === "groupName" && event.key === "Enter") return /** @type {HTMLInputElement} */ (target).blur();
+  // 组里的对话一条是 div（条尾还放着「移出」按钮）：回车与空格照按钮打开
+  if (target.dataset.groupChat && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    openConversation(target.dataset.groupChat);
+  }
 });
 
 // ---------- 侧栏历史里的分组：收起 / 展开、组首「＋」、双击改名 ----------
