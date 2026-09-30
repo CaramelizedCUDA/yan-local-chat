@@ -439,34 +439,115 @@
     Consolas,
     monospace;
   color: var(--ink-2);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink-3) 32%, transparent) transparent;
 }
-/* 一件一行，点开看这件在这一答里的改动（摊在预览浮层里，见 changeDiffHtml） */
+/* 一件一行，点开看这件在这一答里的改动（摊在预览浮层里，见 changeDiffHtml）。
+   靠近时不铺整块灰：左缘抽出一道胭脂细线（与「改」印同色），路径往右让半步，墨色转浓；数字各占定宽、右对齐，上下成列 */
 .change-files > button {
-  display: flex;
-  gap: 10px;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: 12px;
   width: 100%;
-  padding: 0 6px;
+  padding: 0 8px 0 11px;
   border-radius: 5px;
   color: inherit;
   font: inherit;
   text-align: left;
+  transition:
+    color 0.18s,
+    background-color 0.18s;
 }
-.change-files > button:hover {
-  background: var(--paper-2);
+.change-files > button:before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--rouge);
+  transform: scaleY(0);
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.change-files > button:hover,
+.change-files > button:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--paper-2) 55%, transparent);
   color: var(--ink);
 }
+.change-files > button:hover:before,
+.change-files > button:focus-visible:before {
+  transform: scaleY(1);
+}
+.change-files > button:active .path {
+  transform: translateX(2px);
+  transition-duration: 0.06s;
+}
 .change-files .path {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.change-files > button:hover .path,
+.change-files > button:focus-visible .path {
+  transform: translateX(3px);
+}
+/* 目录淡、文件名浓：一眼先落在改的是哪一件 */
+.change-files .dir {
+  color: var(--ink-3);
+  transition: color 0.18s;
+}
+.change-files > button:hover .dir {
+  color: var(--ink-2);
 }
 .change-files em {
-  margin-left: 6px;
+  margin-left: 8px;
   color: var(--ink-3);
+  font: 10.5px var(--title);
   font-style: normal;
-  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.change-files .ins,
+.change-files .del {
+  min-width: 4ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* 为零的不着色：只有真增真删才见红绿 */
+.change-files .ins.zero,
+.change-files .del.zero {
+  color: var(--ink-3);
+  opacity: 0.5;
+}
+/* 点开时清单轻轻浮起、各行依次落定；生成中清单整段重画不重放（只有点开那一下带 .opening） */
+.change-files.opening {
+  animation: changeFilesRise 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.change-files.opening > button {
+  animation: changeFileIn 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+@keyframes changeFilesRise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes changeFileIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .change-files.opening,
+  .change-files.opening > button {
+    animation: none;
+  }
 }
 .helper-bar .change-files {
   border: 1px solid var(--line);

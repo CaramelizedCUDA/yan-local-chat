@@ -18,13 +18,28 @@ function changeStats(message) {
   const files = new Map();
   for (const step of allSteps(message)) {
     if (!step.change || step.status !== "done") continue;
-    const entry = files.get(step.change.path) || { path: step.change.path, added: 0, removed: 0, created: false, helper: false };
+    const entry = files.get(step.change.path) || {
+      path: step.change.path,
+      added: 0,
+      removed: 0,
+      created: false,
+      helper: false,
+      lines: undefined
+    };
     entry.added += step.change.added;
     entry.removed += step.change.removed;
     entry.created ||= !!step.change.created;
     entry.helper ||= !!step.scope;
+    // 早先记下的步骤没有 lines；整份写入那一步的增即是写后的行数
+    entry.lines = step.change.lines ?? (step.written !== undefined ? step.change.added : undefined);
     files.set(step.change.path, entry);
   }
+  // 这一答里新建的件，净改动就是「增了它现在这么多行」：中途重写几遍删去的，是删自己刚写的，不算删
+  for (const entry of files.values())
+    if (entry.created && entry.lines !== undefined) {
+      entry.added = entry.lines;
+      entry.removed = 0;
+    }
   const list = [...files.values()];
   return { files: list, added: list.reduce((sum, f) => sum + f.added, 0), removed: list.reduce((sum, f) => sum + f.removed, 0) };
 }
@@ -38,26 +53,70 @@ function changeSpark(added, removed) {
 function changeCountHtml(stats) {
   return `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
 }
-// 清单一件一行：路径、新建 / 帮手所改的小注、增删行数；点一行看这件的改动
+// 清单一件一行：目录淡、文件名浓，新建 / 帮手所改的小注，增删行数（为零的不着色）；点一行看这件的改动
 function changeFilesHtml(stats, open, extra = "") {
   return `<div class="change-files${extra}${open ? "" : " hidden"}">${stats.files
-    .map(f => {
-      const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · ");
-      return `<button type="button" data-change-path="${escapeHtml(f.path)}" title="看 ${escapeHtml(f.path)} 的改动"><span class="path">${escapeHtml(f.path)}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></button>`;
+    .map((f, i) => {
+      const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · "),
+        cut = f.path.lastIndexOf("/") + 1;
+      return `<button type="button" data-change-path="${escapeHtml(f.path)}" title="看 ${escapeHtml(f.path)} 的改动" style="--i:${Math.min(i, 12)}"><span class="path">${cut ? `<span class="dir">${escapeHtml(f.path.slice(0, cut))}</span>` : ""}${escapeHtml(f.path.slice(cut))}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins${f.added ? "" : " zero"}">+${f.added}</span><span class="del${f.removed ? "" : " zero"}">−${f.removed}</span></button>`;
     })
     .join("")}</div>`;
 }
+// 覆盖写的前后两版逐行对齐：删的红、增的绿，成片相同的只留上下两行、中间折成一行「⋯」
+function lineDiffHtml(oldText, newText) {
+  const a = String(oldText)
+      .replace(/\r?\n$/, "")
+      .split(/\r?\n/),
+    b = String(newText)
+      .replace(/\r?\n$/, "")
+      .split(/\r?\n/);
+  if (a.length * b.length > 250000)
+    return `<pre class="tool-output diff-del">${escapeHtml(oldText)}</pre><pre class="tool-output diff-ins">${escapeHtml(newText)}</pre>`;
+  const dp = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--)
+    for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const rows = [];
+  let i = 0,
+    j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      rows.push(["s", a[i]]);
+      i++;
+      j++;
+      // 两样都行时先删后增：删去的旧行排在补上的新行之前
+    } else if (i < a.length && (j >= b.length || dp[i + 1][j] >= dp[i][j + 1])) rows.push(["d", a[i++]]);
+    else rows.push(["i", b[j++]]);
+  }
+  const near = rows.map((_, k) => rows.slice(Math.max(0, k - 2), k + 3).some(row => row[0] !== "s"));
+  let html = "",
+    skipped = 0;
+  rows.forEach(([kind, text], k) => {
+    if (kind === "s" && !near[k]) return void skipped++;
+    if (skipped) html += `<span class="gap">⋯ ${skipped} 行未动</span>`;
+    skipped = 0;
+    html += `<span class="${kind}">${escapeHtml(text) || " "}</span>`;
+  });
+  if (skipped) html += `<span class="gap">⋯ ${skipped} 行未动</span>`;
+  return `<pre class="tool-output diff-lines">${html}</pre>`;
+}
 // 一件文件在这一答里的改动：不另起接口、不另存一份，用的就是各步本来记着的——改文件那步的前后两段（行迹里同一副红绿），
-// 写文件那步写下的内容（整份写入，全算增）；按先后排，摊在预览浮层里。帮手改的也在内
+// 写文件那步写下的内容与它覆盖掉的原文（逐行比出红绿）；按先后排，摊在预览浮层里。帮手改的也在内。
+// 这一答里新建的件，从它最后一回整份写入看起：之前几版是草稿，与清单上「只增不删」对得上
 /** @param {Message} message @param {string} path */
 function changeDiffHtml(message, path) {
-  const steps = allSteps(message).filter(step => step.change?.path === path && step.status === "done");
+  let steps = allSteps(message).filter(step => step.change?.path === path && step.status === "done");
+  const created = steps.some(step => step.change.created),
+    lastWrite = steps.findLastIndex(step => step.written !== undefined);
+  if (created && lastWrite > 0) steps = steps.slice(lastWrite);
   return `<div class="file-viewer-text change-diff">${steps
     .map(step => {
       const note = [toolLabel(step.name), step.scope ? "帮手" : "", step.result || step.note || ""].filter(Boolean).join(" · "),
         head = `<p class="file-viewer-note">${escapeHtml(note)}</p>`;
       if (step.diff)
         return `${head}<div class="tool-diff"><pre class="tool-output diff-del">${escapeHtml(step.diff.old)}</pre><pre class="tool-output diff-ins">${escapeHtml(step.diff.new)}</pre></div>`;
+      if (step.written !== undefined && step.previous !== undefined && !created)
+        return `${head}<div class="tool-diff">${lineDiffHtml(step.previous, step.written)}</div>`;
       if (step.written !== undefined)
         return `${head}<div class="tool-diff"><pre class="tool-output diff-ins">${escapeHtml(step.written)}</pre></div>`;
       return head;

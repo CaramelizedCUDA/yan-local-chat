@@ -698,6 +698,35 @@ html.work-mode .chat-scroll-grabber {
   background: color-mix(in srgb, var(--code-green) 10%, transparent) !important;
   color: color-mix(in srgb, var(--code-green) 70%, var(--ink)) !important;
 }
+/* 覆盖写的前后两版逐行对齐（见 lineDiffHtml）：一行一色，未动的淡墨，成片未动的折成一行 */
+.diff-lines {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+.diff-lines > span {
+  display: block;
+  padding: 0 10px 0 8px;
+  border-left: 2px solid transparent;
+}
+.diff-lines > .s {
+  color: var(--ink-3);
+}
+.diff-lines > .d {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  color: color-mix(in srgb, var(--danger) 65%, var(--ink));
+}
+.diff-lines > .i {
+  border-left-color: var(--code-green);
+  background: color-mix(in srgb, var(--code-green) 10%, transparent);
+  color: color-mix(in srgb, var(--code-green) 70%, var(--ink));
+}
+.diff-lines > .gap {
+  color: var(--ink-3);
+  opacity: 0.7;
+  text-align: center;
+  font-size: 0.92em;
+}
 .message-actions.has-branch {
   opacity: 0.72;
 }

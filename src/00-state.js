@@ -58,7 +58,8 @@
  * @property {boolean} [background] 后台指令
  * @property {{ old: string, new: string }} [diff]
  * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
- * @property {{ path: string, added: number, removed: number, created?: boolean }} [change]
+ * @property {string} [previous] write_file 覆盖掉的原文（过长只留开头），与 written 比出红绿
+ * @property {{ path: string, added: number, removed: number, created?: boolean, lines?: number }} [change] lines：这一步之后这件的行数
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
  * @property {number} [rat] 调用发起时思绪的长度
  * @property {string} [scope] 帮手的步骤记它所属的帮手 id

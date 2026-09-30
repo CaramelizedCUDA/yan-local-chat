@@ -788,6 +788,18 @@ http
           ],
           60
         );
+      if (typeof lastUser === "string" && lastUser.includes("覆写")) {
+        // 覆盖写：先整份重写一件原有的文件（只改一行、添一行），再新建一件又重写一遍
+        const n = toolResults.length,
+          call = (name, args) => [
+            delta({ tool_calls: [{ index: 0, id: `call_w${n}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ];
+        if (n === 0) return sse(res, call("write_file", { path: "src/a.js", content: "function f() {\n  return 3;\n}\nf();\n" }));
+        if (n === 1) return sse(res, call("write_file", { path: "src/c.js", content: "草稿\n草稿\n" }));
+        if (n === 2) return sse(res, call("write_file", { path: "src/c.js", content: "定稿一\n定稿二\n定稿三\n" }));
+        return sse(res, [delta({ content: "写好了。" }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
       if (typeof lastUser === "string" && lastUser.includes("EDIT")) {
         const n = toolResults.length,
           call = (name, args) => [

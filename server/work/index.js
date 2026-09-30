@@ -9,7 +9,7 @@ const sandbox = require("../sandbox.js");
 const { fetchPublicResponse, readLimitedBytes } = require("../web.js");
 const paths = require("./paths.js");
 const { SCRATCH_DIR, WORK_SKIP, describeFsError, clampNumber, pathIsInside, resolveTarget, assertReachable, relPath } = paths;
-const { decodeText, encodeText, countLines } = require("./text.js");
+const { decodeText, encodeText, countLines, lineDiffCounts } = require("./text.js");
 const { pickFolder } = require("./folder-picker.js");
 const createShell = require("./shell.js");
 const createLocks = require("./locks.js");
@@ -27,7 +27,9 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
   // 各接口出错时回给页面的那句话：截到 300 字
   const failed = error => errorText(error, 300);
   const WORK_FILE_LIMIT = 200000,
-    WORK_LIST_LIMIT = 300;
+    WORK_LIST_LIMIT = 300,
+    // 覆盖写时捎回原文的长度，与页面留存写入内容的长度（src/15-tools/21-files.js 的 WRITTEN_KEEP_CHARS）一致
+    PREVIOUS_KEEP_CHARS = 4000;
   const resolveWorkdir = raw => paths.resolveWorkdir(raw, workHome);
   const { WORK_SHELL, runShell, startBackground, backgroundReport, checkBackground } = createShell({ toolEnv }),
     { lockFile, lockWorkdir } = createLocks();
@@ -144,12 +146,19 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
       await writeTextAtomic(file, content).catch(error => {
         throw Error(describeFsError(error, String(body.path)));
       });
+      // 覆盖时按行比出真增删，并捎回原文开头一段：页面上点开这件的改动，删去的那些才有红可看
+      const counts = existed ? lineDiffCounts(previousText, content) : { added: countLines(content), removed: 0 };
       return {
         path: shownPath(workdir, file),
         bytes: Buffer.byteLength(content),
         lines: countLines(content),
         existed,
-        previousLines
+        previousLines,
+        ...counts,
+        previous:
+          previousText.length > PREVIOUS_KEEP_CHARS
+            ? `${previousText.slice(0, PREVIOUS_KEEP_CHARS)}\n…（其后 ${previousText.length - PREVIOUS_KEEP_CHARS} 字未留存）`
+            : previousText || ""
       };
     } finally {
       release();

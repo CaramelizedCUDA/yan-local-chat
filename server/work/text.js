@@ -53,4 +53,33 @@ function countLines(text) {
   return value.split(/\r?\n/).length - (/\r?\n$/.test(value) ? 1 : 0);
 }
 
-module.exports = { tail, encodePowerShell, decodeClixml, decodeText, encodeText, countLines };
+// 覆盖写一份文件时，前后两版按行比出各增删几行：先去掉首尾相同的行，中段求最长公共子序列（只留两行表，省内存）；
+// 中段太大（两边行数之积过千六百万）就不细比，中段整算一删一增
+function lineDiffCounts(oldText, newText) {
+  const lines = text =>
+      text
+        ? String(text)
+            .replace(/\r?\n$/, "")
+            .split(/\r?\n/)
+        : [],
+    a = lines(oldText),
+    b = lines(newText);
+  let start = 0,
+    endA = a.length,
+    endB = b.length;
+  while (start < endA && start < endB && a[start] === b[start]) start++;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) endA--, endB--;
+  const m = endA - start,
+    n = endB - start;
+  if (!m || !n || m * n > 16e6) return { added: n, removed: m };
+  let prev = new Uint32Array(n + 1),
+    row = new Uint32Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    const line = a[start + i - 1];
+    for (let j = 1; j <= n; j++) row[j] = line === b[start + j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], row[j - 1]);
+    [prev, row] = [row, prev];
+  }
+  return { added: n - prev[n], removed: m - prev[n] };
+}
+
+module.exports = { tail, encodePowerShell, decodeClixml, decodeText, encodeText, countLines, lineDiffCounts };

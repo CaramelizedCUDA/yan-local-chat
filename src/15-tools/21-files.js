@@ -15,13 +15,21 @@ defineTool({
     step.title = data.path;
     markSeen(conversation, data.path, step);
     step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
-    step.change = { path: data.path, added: data.lines, removed: data.existed ? data.previousLines : 0, created: !data.existed };
-    // 写下的内容留一份给改动清单点开看（见 changeDiffHtml）；太长只留开头，免得对话记录跟着胖
-    const content = String(args.content);
-    step.written =
-      content.length > WRITTEN_KEEP_CHARS
-        ? `${content.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${content.length - WRITTEN_KEEP_CHARS} 字未留存）`
-        : content;
+    // 覆盖时的增删由桥接按前后两版逐行比出（旧桥接只给原有行数，退回整删整增）；lines 是写后这件的行数，新建的件按它算净增
+    step.change = {
+      path: data.path,
+      added: data.added ?? data.lines,
+      removed: data.removed ?? (data.existed ? data.previousLines : 0),
+      created: !data.existed,
+      lines: data.lines
+    };
+    // 写下的内容与覆盖掉的原文各留一份给改动清单点开看（见 changeDiffHtml）；太长只留开头，免得对话记录跟着胖
+    const keep = text =>
+      text.length > WRITTEN_KEEP_CHARS
+        ? `${text.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${text.length - WRITTEN_KEEP_CHARS} 字未留存）`
+        : text;
+    step.written = keep(String(args.content));
+    if (data.previous) step.previous = String(data.previous);
     return {
       ok: true,
       content: `已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? "，覆盖了原文件" : ""}）`,
@@ -51,7 +59,7 @@ defineTool({
     step.title = data.path;
     step.diff = { old: args.old.slice(0, 1500), new: args.new.slice(0, 1500) };
     const counts = diffCounts(args.old, args.new);
-    step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced };
+    step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced, lines: data.lines };
     return {
       ok: true,
       content: `已修改 ${data.path}：第 ${data.line} 行起替换 ${data.replaced} 处，文件现为 ${data.lines} 行`,
