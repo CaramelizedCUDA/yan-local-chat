@@ -45,15 +45,59 @@ function attachmentTokens(file, latest, budget) {
 function tooLongToInline(text, budget) {
   return estimateText(text) > budget;
 }
+// 一答途中递到的补言，按它到达的位置把这一答拆开：答的前半 → 补言 → 接着答。往后每一问装历史、压缩时转写都照这个次序，
+// 模型看到的与当时一样。若把补言折成一行冠在下一问头上，它读不出先后，会把上一答里的一句「不用了，我来」当成这一问的吩咐
+/** @typedef {{ role: "assistant", content: string } | { role: "user", note: Step }} ReplyPart */
+/** @param {Message} message @returns {ReplyPart[]} */
+function replyParts(message) {
+  const content = String(message.content || "");
+  /** @type {ReplyPart[]} */
+  const parts = [];
+  let from = 0;
+  for (const note of deliveredNotes(message)) {
+    const at = Math.min(Math.max(from, Number(note.at) || 0), content.length);
+    if (content.slice(from, at).trim()) parts.push({ role: "assistant", content: content.slice(from, at).trimEnd() });
+    parts.push({ role: "user", note });
+    from = at;
+  }
+  if (!parts.length) return [{ role: "assistant", content: message.content }];
+  if (content.slice(from).trim()) parts.push({ role: "assistant", content: content.slice(from).trimStart() });
+  return parts;
+}
+/** @param {Message} message */
+function deliveredNotes(message) {
+  return (message.steps || []).filter(step => step.name === "user_note" && step.status === "done");
+}
+// 补言进历史：与作答途中递给模型时同一个样子（前缀注明是途中补的）。latest：正递着的这一句，附件整份带上；往后重装历史时只带摘要
+/** @param {Message} user */
+async function supplementForApi(user, budget, { latest = false, steer = false } = {}) {
+  const entry = await messageForApi(user, latest, budget),
+    prefix = prompt(steer ? "assistant.steer" : "assistant.supplement");
+  if (typeof entry.content === "string") entry.content = `${prefix}${entry.content}`;
+  else entry.content[0].text = `${prefix}${entry.content[0].text}`;
+  return entry;
+}
 // 上次压缩以来的往来装成送给接口的历史。每一答的行迹摘要不接在助手自己的话后面——那样模型会把「［行迹］…」学成自己回复的
 // 格式，答末照样写一行出来；而是冠在下一问的开头，当作系统附上的记录。末尾的一答后面没有下一问时（旁注锚在一答上）才退回接在它话后
 async function historyForApi(source, lastUserId, budget = inlineTextBudget()) {
   const history = [];
   let trail = "";
   for (const m of source) {
+    if (m.role === "assistant") {
+      for (const part of replyParts(m))
+        history.push(
+          part.role === "assistant"
+            ? part
+            : await supplementForApi(
+                { id: part.note.id, role: "user", content: part.note.note || "", timestamp: "", attachments: part.note.attachments },
+                budget
+              )
+        );
+      trail = stepsDigest(m, "上一答的行迹");
+      continue;
+    }
     const entry = await messageForApi(m, m.id === lastUserId, budget);
-    if (m.role === "assistant") trail = stepsDigest(m, "上一答的行迹");
-    else if (trail && m.role === "user") {
+    if (trail && m.role === "user") {
       if (typeof entry.content === "string") entry.content = `${trail}\n\n${entry.content}`;
       else entry.content[0].text = `${trail}\n\n${entry.content[0].text}`;
       trail = "";
@@ -61,7 +105,7 @@ async function historyForApi(source, lastUserId, budget = inlineTextBudget()) {
     history.push(entry);
   }
   const last = history.at(-1);
-  if (trail && last) last.content = `${last.content || ""}\n\n${trail}`.trim();
+  if (trail && typeof last?.content === "string") last.content = `${last.content}\n\n${trail}`.trim();
   return history;
 }
 /** @param {Message} message */
@@ -288,11 +332,7 @@ async function deliverSupplements(job, history, budget, assistant, { steer = fal
   const queue = job.queue || [];
   job.queue = [];
   for (const { user, step } of queue) {
-    const entry = await messageForApi(user, true, budget),
-      prefix = prompt(steer ? "assistant.steer" : "assistant.supplement");
-    if (typeof entry.content === "string") entry.content = `${prefix}${entry.content}`;
-    else entry.content[0].text = `${prefix}${entry.content[0].text}`;
-    history.push(entry);
+    history.push(await supplementForApi(user, budget, { latest: true, steer }));
     step.status = "done";
     step.result = steer ? "已递 · 引路" : "已递";
   }

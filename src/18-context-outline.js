@@ -37,7 +37,10 @@ function contextEstimate(c, draft = "", pending = null) {
   };
   for (const m of source) {
     n += 4 + estimateText(String(m.content || "")) + (m.quote?.text ? estimateText(m.quote.text) : 0);
-    if (m.role === "assistant") n += estimateText(stepsDigest(m));
+    if (m.role === "assistant") {
+      n += estimateText(stepsDigest(m));
+      for (const note of deliveredNotes(m)) n += 4 + estimateText(String(note.note || ""));
+    }
     n += filesOf(m.attachments, m === lastUser);
   }
   if (pending)
@@ -104,12 +107,18 @@ async function compactContext(c, { auto = false, before = null, profile = active
     if (!auto) toast("正在压缩");
     return false;
   }
-  const transcript = source
-    .map(
-      m =>
-        `${m.role === "user" ? "用户" : "助手"}：${String(m.content || "").slice(0, 6000)}${m.role === "assistant" ? `\n${stepsDigest(m)}`.trimEnd() : ""}`
-    )
-    .join("\n\n");
+  // 补言按到达的位置排进这一答（见 replyParts），摘要才分得清先后
+  const clip = text => String(text || "").slice(0, 6000),
+    transcript = source
+      .flatMap(m =>
+        m.role === "user"
+          ? [`用户：${clip(m.content)}`]
+          : [
+              ...replyParts(m).map(part => (part.role === "user" ? `用户（途中补言）：${clip(part.note.note)}` : `助手：${clip(part.content)}`)),
+              stepsDigest(m)
+            ].filter(Boolean)
+      )
+      .join("\n\n");
   // 摘要先在外面生成，成了再一次性插进分隔（生成期间只有页面上一行「正在压缩」，不进消息、不落盘）：
   // 中途关页面不会留下半成品分隔把历史截掉；期间用户接着发的消息也不受影响——分隔插在被压缩的最后一条之后，之后的消息照旧在分隔之后
   const lastCompacted = source.at(-1);

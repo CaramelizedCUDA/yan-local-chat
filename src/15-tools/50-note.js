@@ -1,10 +1,10 @@
-// 言 · 补言：不是工具，是作答途中用户寄来的话，也记作行迹里的一步（见 14-chat-engine.js 的 sendSupplement）；在这张表里只登记画法与摘要，从不交给模型
+// 言 · 补言：不是工具，是作答途中用户寄来的话，也记作行迹里的一步（见 14-chat-engine.js 的 sendSupplement）；在这张表里只登记画法，从不交给模型。
+// 往后的历史里它按到达的位置还原成一句用户的话（见 replyParts），不进行迹摘要
 defineTool({
   name: "user_note",
   label: "补言",
   offer: false,
-  html: noteStepHtml,
-  digest: step => `用户补言「${String(step.note || "").slice(0, 200)}」`
+  html: noteStepHtml
 });
 // 补言：作答途中用户寄来的话，落在行迹里它到达的那一刻；待寄时转着圈，递给模型后打勾。话不止一行、或带着附件时摊开在下面
 /** @param {Step} step */
