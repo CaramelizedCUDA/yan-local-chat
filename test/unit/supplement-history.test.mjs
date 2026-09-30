@@ -36,7 +36,7 @@ test("上一答里的「不用了我来」留在上一答里，不冠到下一�
     ["user", "assistant", "user", "assistant", "user"]
   );
   assert.equal(history[1].content, before);
-  assert.match(text(history[2].content), /作答途中补充.*不需要了我来吧/s);
+  assert.match(text(history[2].content), /作答途中用户补充.*不需要了我来吧/s);
   assert.equal(history[3].content, "好的，剩下的交给你。");
   // 下一问只冠上一答的行迹，补言不在里面
   assert.ok(text(history[4].content).endsWith("那你去继续推进下一个"));
