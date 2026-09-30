@@ -2,6 +2,8 @@
 // 纯工具，不持状态；server.js 与 server/ 下各模块直接 require
 "use strict";
 const fs = require("node:fs");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
 
 function sendJson(res, status, data) {
   const body = JSON.stringify(data);
@@ -160,4 +162,32 @@ async function sendFile(req, res, file, { name, download = false }) {
   fs.createReadStream(file, { start, end }).pipe(res);
 }
 
-module.exports = { sendJson, readJson, jsonRoute, errorText, writeAtomic, fileMime, sendFile };
+// 交给 Windows 的默认程序打开一件文件（预览认不得、或只抽得出结构时，看原样）。
+// 可执行的一类不开：对它们「打开」就是运行，而文件常是模型写的或随手拖进来的
+const RUNNABLE = new Set([
+  "exe",
+  "com",
+  "bat",
+  "cmd",
+  "msi",
+  "ps1",
+  "vbs",
+  "vbe",
+  "js",
+  "jse",
+  "wsf",
+  "wsh",
+  "hta",
+  "scr",
+  "pif",
+  "lnk",
+  "cpl",
+  "reg",
+  "jar"
+]);
+function openWithSystem(file) {
+  if (RUNNABLE.has(path.extname(file).slice(1).toLowerCase())) throw Error("可执行的文件不在此打开，请到资源管理器里自行处理");
+  if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) throw Error("文件不存在");
+  spawn("explorer.exe", [file], { detached: true, stdio: "ignore" }).unref();
+}
+module.exports = { sendJson, readJson, jsonRoute, errorText, writeAtomic, fileMime, sendFile, openWithSystem };

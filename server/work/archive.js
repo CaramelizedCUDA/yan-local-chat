@@ -1,9 +1,9 @@
-// 言 · 桥接 · 卷宗目录的接口：列、收、取、挪（兼改名）、删、新建夹，清草稿
+// 言 · 桥接 · 卷宗目录的接口：列、收、取、挪（兼改名）、删、新建夹、以本机程序打开，清草稿
 // 由 server/work/index.js 装配；接口随执事一并登记
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
-const { sendJson, readJson, jsonRoute, errorText, sendFile } = require("../http.js");
+const { sendJson, readJson, jsonRoute, errorText, sendFile, openWithSystem } = require("../http.js");
 const {
   SCRATCH_DIR,
   WORK_SKIP,
@@ -218,8 +218,16 @@ module.exports = function createArchive({ archiveHome }) {
     });
     return describeItem(root, target);
   }, failed);
+  // 以本机程序打开：预览认不得的、或只看得到结构的，交给系统的默认程序看原样
+  const handleArchiveOpen = jsonRoute(async body => {
+    const root = await archiveRoot(body.root),
+      { target } = await archiveItem(root, body.path);
+    openWithSystem(target);
+    return { opened: relPath(root, target) };
+  }, failed);
   return {
     "POST /api/archive/list": handleArchiveList,
+    "POST /api/archive/open": handleArchiveOpen,
     "POST /api/archive/put": handleArchivePut,
     "POST /api/archive/move": handleArchiveMove,
     "POST /api/archive/remove": handleArchiveRemove,

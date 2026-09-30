@@ -260,6 +260,16 @@ r = await post("/api/archive/move", { path: "跑出去", dir: "跑出去/里层"
 check("archive move refuses a folder into itself", r.status === 400, `${r.status} ${r.data?.error}`);
 r = await post("/api/archive/move", { path: "跑出去", name: "外层" });
 check("archive rename renames a folder", r.status === 200 && existsSync(`${ARCHIVE}/外层/里层`), `${r.status} ${r.data?.error}`);
+// 以本机程序打开：可执行的一类不开（对它们「打开」就是运行）；不存在的也不开
+await post("/api/archive/put", { name: "run.bat", data: "data:text/plain;base64,ZWNobyBoaQ==" });
+r = await post("/api/archive/open", { path: "run.bat" });
+check(
+  "opening with the local program refuses executables",
+  r.status === 400 && /可执行/.test(r.data?.error),
+  `${r.status} ${r.data?.error}`
+);
+r = await post("/api/archive/open", { path: "没有这件.docx" });
+check("opening with the local program needs the file to exist", r.status === 400, `${r.status} ${r.data?.error}`);
 r = await post("/api/archive/remove", { path: "外层" });
 check(
   "archive remove deletes a folder with its contents",

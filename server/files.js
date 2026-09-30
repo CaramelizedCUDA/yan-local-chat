@@ -3,7 +3,7 @@
 // 一件附件两份文件：原件本身「<id>.<扩展名>」（文本就是文本，图片就是图片，双击能开）与「<id>.json」（名字、类型、大小、抽出的正文）。
 // 页面按 id 存取，交出去的还是它原先在 IndexedDB 里的样子：{ id, kind, name, mime, size, data, extractedText… }，data 是文本或 data: URL
 "use strict";
-const { sendJson, jsonRoute, errorText, writeAtomic, sendFile } = require("./http.js");
+const { sendJson, jsonRoute, errorText, writeAtomic, sendFile, openWithSystem } = require("./http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -96,6 +96,18 @@ module.exports = function createFiles({ filesHome }) {
       if (!res.headersSent) sendJson(res, 404, { error: errorText(error, 200) });
     }
   }
+  // 以本机程序打开附件原件（原件落盘时带着原扩展名，系统认得该用什么开）
+  const handleOpen = jsonRoute(
+    async body => {
+      const id = checkId(body.id),
+        dir = home(),
+        raw = rawFileOf(dir, id, readMeta(dir, id));
+      if (!raw) throw Error("附件原件不在存储目录里");
+      openWithSystem(path.join(dir, raw));
+      return { opened: id };
+    },
+    error => errorText(error, 200)
+  );
   // 只问在不在：迁入时用，不必把原件整个读回来
   const handleHas = jsonRoute(
     async body => {
@@ -156,6 +168,7 @@ module.exports = function createFiles({ filesHome }) {
       "POST /api/files/get": handleGet,
       "GET /api/files/raw": handleRaw,
       "POST /api/files/has": handleHas,
+      "POST /api/files/open": handleOpen,
       "POST /api/files/delete": handleDelete,
       "POST /api/files/clean": handleClean
     }
