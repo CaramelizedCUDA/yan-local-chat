@@ -599,6 +599,10 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .history-repo-group.collapsed .history-repo-items {
   padding-top: 0;
 }
+/* 收起的组里有正开着的那段：组首衬上与当前条同一层底色，收起了也看得出自己在这组里 */
+.history-repo-group.holds-current > .history-repo-head .history-repo {
+  background: var(--paper-3);
+}
 .history-item {
   position: relative;
   display: flex;
@@ -820,12 +824,17 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font: 10px var(--title);
   letter-spacing: 0.14em;
 }
-/* 翻在一段摊开的行迹中间时，顶栏右侧浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
-   贴着对话那一列的右缘，窗窄时让开右边的状态。落选的：书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
+/* 翻在一段摊开的行迹中间时，顶栏正中浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
+   对着对话那一列的中线；它浮出时，左边的书眉让到中线以左，长题名不压到它底下。
+   落选的：贴对话列的右缘（离正在读的地方远，眼睛要横跨过去找）；书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
+.topbar:has(.trail-fold-head.shown) .running-head {
+  right: calc(50% + 64px);
+}
 .trail-fold-head {
   position: absolute;
   top: 50%;
-  right: max(calc((100% - var(--read)) / 2), 300px);
+  left: 50%;
+  translate: -50% 0;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -4019,9 +4028,20 @@ sup.note-ref.active {
     monospace;
   color: var(--ink-2);
 }
-.change-files div {
+/* 一件一行，点开看这件在这一答里的改动（摊在预览浮层里，见 changeDiffHtml） */
+.change-files > button {
   display: flex;
   gap: 10px;
+  width: 100%;
+  padding: 0 6px;
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.change-files > button:hover {
+  background: var(--paper-2);
+  color: var(--ink);
 }
 .change-files .path {
   flex: 1;
@@ -7337,6 +7357,16 @@ button.source-local {
   background: var(--paper-2);
   font-weight: 600;
 }
+/* 一件文件在这一答里的改动：各步一段红绿，前面一行小注说是哪一步 */
+.change-diff .file-viewer-note:first-child {
+  margin-top: 0;
+}
+.change-diff .tool-diff {
+  margin: 6px 0 4px;
+}
+.change-diff .tool-output {
+  max-height: none;
+}
 .file-viewer-note {
   margin: 12px 0 0;
   color: var(--ink-3);
@@ -7664,7 +7694,8 @@ button:focus:not(:focus-visible) {
 .model-manage:hover {
   color: var(--ink);
 }
-/* 右侧的问题导航条：一问一道短横，当前一问加长转印色；悬停整条时露出各问的首句，点一下回到那一问 */
+/* 右侧的问题导航条：一问一道短横，当前一问加长转印色；悬停整条时露出各问的首句，点一下回到那一问。
+   首句浮在短横左边、不占位：早先它透明着仍占 150px，整条的感应区往左撑出一大截，读正文时手一过就触发 */
 .outline {
   position: absolute;
   right: 20px;
@@ -7681,10 +7712,16 @@ button:focus:not(:focus-visible) {
 .outline.dense {
   gap: 3px;
 }
+/* 翻到卷宗、分组页时对话那一栏收起，属于它的导航条与滚动把手一并不露（与书眉同一条规矩），不靠切页时记得去藏 */
+.main:has(#chat.hidden) :is(.outline, .chat-scroll-grabber) {
+  display: none;
+}
 .outline-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  width: 26px;
   padding: 1px 0;
   color: var(--ink-3);
 }
@@ -7706,6 +7743,8 @@ button:focus:not(:focus-visible) {
   background: var(--accent);
 }
 .outline-label {
+  position: absolute;
+  right: calc(100% + 8px);
   max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;

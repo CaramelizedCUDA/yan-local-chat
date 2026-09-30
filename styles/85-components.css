@@ -509,6 +509,16 @@ button.source-local {
   background: var(--paper-2);
   font-weight: 600;
 }
+/* 一件文件在这一答里的改动：各步一段红绿，前面一行小注说是哪一步 */
+.change-diff .file-viewer-note:first-child {
+  margin-top: 0;
+}
+.change-diff .tool-diff {
+  margin: 6px 0 4px;
+}
+.change-diff .tool-output {
+  max-height: none;
+}
 .file-viewer-note {
   margin: 12px 0 0;
   color: var(--ink-3);

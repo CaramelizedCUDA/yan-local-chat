@@ -1,5 +1,6 @@
 // 言 · 文件：读、写、改、列、搜、下载。绑了目录落在工作目录（执事的六件），没绑落在卷宗（言只带产出所需的读、写、列与指令）。
 // 路径与沙箱在桥接那头管（server/work/）；这里只管呈现与「改之前先读过」这条规矩
+const WRITTEN_KEEP_CHARS = 4000;
 defineTool({
   name: "write_file",
   group: "work",
@@ -15,6 +16,12 @@ defineTool({
     markSeen(conversation, data.path, step);
     step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
     step.change = { path: data.path, added: data.lines, removed: data.existed ? data.previousLines : 0, created: !data.existed };
+    // 写下的内容留一份给改动清单点开看（见 changeDiffHtml）；太长只留开头，免得对话记录跟着胖
+    const content = String(args.content);
+    step.written =
+      content.length > WRITTEN_KEEP_CHARS
+        ? `${content.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${content.length - WRITTEN_KEEP_CHARS} 字未留存）`
+        : content;
     return {
       ok: true,
       content: `已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? "，覆盖了原文件" : ""}）`,
@@ -235,11 +242,7 @@ async function ensureWorkReady(conversation) {
     if (prepared.created) toast("工作目录不存在，已新建");
     conversation.workdir = prepared.workdir;
   } catch (error) {
-    toast(
-      bridgeTimedOut(error)
-        ? "本机桥接响应超时，消息未发送，文字仍在输入框"
-        : `工作目录不可用：${String(error.message || error)}`
-    );
+    toast(bridgeTimedOut(error) ? "本机桥接响应超时，消息未发送，文字仍在输入框" : `工作目录不可用：${String(error.message || error)}`);
     return false;
   }
   return true;

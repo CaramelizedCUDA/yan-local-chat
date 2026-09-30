@@ -60,6 +60,7 @@
  * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
  * @property {boolean} [background] 后台指令
  * @property {{ old: string, new: string }} [diff]
+ * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
  * @property {{ path: string, added: number, removed: number, created?: boolean }} [change]
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
  * @property {number} [rat] 调用发起时思绪的长度
@@ -4499,7 +4500,8 @@ function renderHistory() {
   // 一条时间线：绑了目录的对话归在各自的「工」组里，组按组内最近动过的那条排（一条有动静，整组靠前），组内按时间；
   // 自立的分组（「集」）同样按组内最近动过的那条排，空组按立组的时间，与「工」组同一排法；没绑目录的对话按自己的时间散在其间；置顶另列。
   // 落选的：分组在置顶之下自成一段（组一多，刚写的对话被压到下面，且与置顶之间没有界线，看着像置顶的一部分）。
-  // 组可收起，收起时只露出当前打开的那条；查找时不收，也不列没有命中的组
+  // 组可收起，收起即整组收起（连同正开着的那条）；正开着的那条在组里时，组首标出「在此」，收起了也知道自己在哪。
+  // 落选：收起时单留当前那条——看着像只收了别的几条，怪。查找时不收，也不列没有命中的组
   const collapsed = new Set(store.settings.collapsedRepos || []),
     pinned = sorted.filter(c => c.pinned && !groupOf(c)),
     repos = new Map(),
@@ -4561,9 +4563,10 @@ function renderHistory() {
   const repoHtml = node => {
     const name = node.dir.split(/[\\/]/).filter(Boolean).pop() || node.dir || "未定目录",
       fold = collapsed.has(node.dir) && !query,
-      shown = fold ? node.items.filter(c => c.id === currentId) : node.items,
-      running = node.items.filter(c => c.id !== currentId && requestJob(c.id)).length;
-    return `<div class="history-repo-group${fold ? " collapsed" : ""}" data-repo="${escapeHtml(node.dir)}"><div class="history-repo-head"><button type="button" class="history-repo" data-repo-toggle="${escapeHtml(node.dir)}" title="${escapeHtml(node.dir)}\n${fold ? "展开" : "收起"}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">工</span><span class="history-repo-name">${escapeHtml(name)}</span><small>${node.items.length}${fold && running ? ` · ${running} 生成中` : ""}</small><span class="repo-caret" aria-hidden="true">›</span></button><button type="button" class="history-tool repo-new" data-history-workdir="${escapeHtml(node.dir)}" title="在此目录新建">＋</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
+      shown = fold ? [] : node.items,
+      here = fold && node.items.some(c => c.id === currentId),
+      running = node.items.filter(c => requestJob(c.id)).length;
+    return `<div class="history-repo-group${fold ? " collapsed" : ""}${here ? " holds-current" : ""}" data-repo="${escapeHtml(node.dir)}"><div class="history-repo-head"><button type="button" class="history-repo" data-repo-toggle="${escapeHtml(node.dir)}" title="${escapeHtml(node.dir)}\n${fold ? "展开" : "收起"}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">工</span><span class="history-repo-name">${escapeHtml(name)}</span><small>${node.items.length}${fold && running ? ` · ${running} 生成中` : ""}</small><span class="repo-caret" aria-hidden="true">›</span></button><button type="button" class="history-tool repo-new" data-history-workdir="${escapeHtml(node.dir)}" title="在此目录新建">＋</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
   };
   // 分组：画法同「工」组，印文是「集」；组首右侧「＋」在此组另起一段、「⋯」改名、打开组的设置或解散；改名时组名换成输入框。
   // 对话可拖到组上移入、拖到组外移出（见 24-groups.js）
@@ -4572,12 +4575,13 @@ function renderHistory() {
       key = `group:${group.id}`,
       fold = collapsed.has(key) && !query,
       items = [...node.items].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned)),
-      shown = fold ? items.filter(c => c.id === currentId) : items,
+      shown = fold ? [] : items,
+      here = fold && items.some(c => c.id === currentId),
       renaming = renamingGroupId === group.id;
     const name = renaming
       ? `<input class="history-rename group-rename" value="${escapeHtml(group.name)}" maxlength="40" aria-label="分组改名">`
       : `<span class="history-repo-name">${escapeHtml(group.name)}</span>`;
-    return `<div class="history-repo-group is-set${fold ? " collapsed" : ""}" data-group="${escapeHtml(group.id)}"><div class="history-repo-head"><div role="button" tabindex="0" class="history-repo" data-group-toggle="${escapeHtml(group.id)}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">集</span>${name}<small>${node.items.length}</small><span class="repo-caret" aria-hidden="true">›</span></div><button type="button" class="history-tool repo-new" data-group-new="${escapeHtml(group.id)}" title="在此组新建">＋</button><button type="button" class="history-tool repo-new repo-more" data-group-menu="${escapeHtml(group.id)}" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
+    return `<div class="history-repo-group is-set${fold ? " collapsed" : ""}${here ? " holds-current" : ""}" data-group="${escapeHtml(group.id)}"><div class="history-repo-head"><div role="button" tabindex="0" class="history-repo" data-group-toggle="${escapeHtml(group.id)}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">集</span>${name}<small>${node.items.length}</small><span class="repo-caret" aria-hidden="true">›</span></div><button type="button" class="history-tool repo-new" data-group-new="${escapeHtml(group.id)}" title="在此组新建">＋</button><button type="button" class="history-tool repo-new repo-more" data-group-menu="${escapeHtml(group.id)}" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
   };
   renderingHistory = true;
   try {
@@ -5708,6 +5712,13 @@ function bindTrailEvents() {
     true
   );
   $("#messages").addEventListener("click", event => {
+    // 改动清单里点一件：看它在这一答里的改动
+    const file = event.target.closest("[data-change-path]");
+    if (file) {
+      const id = file.closest("[data-message]")?.dataset.message,
+        message = allMessages(currentConversation()).find(m => m.id === id);
+      return message && openChangeDiff(message, file.dataset.changePath, file);
+    }
     const summary = event.target.closest(".change-summary");
     if (!summary) return;
     const files = summary.parentElement.querySelector(".change-files"),
@@ -5758,6 +5769,10 @@ function bindHelperEvents() {
       workFilesOpen = !workFilesOpen;
       return renderHelperBar();
     }
+    const file = event.target.closest("[data-change-path]"),
+      message =
+        file && [...(currentConversation()?.messages || [])].reverse().find(m => m.role === "assistant" && m.status === "streaming");
+    if (message) return openChangeDiff(message, file.dataset.changePath, file);
     const id = event.target.closest(".work-helpers")?.dataset.helper;
     if (id) openHelperPanel(id);
   });
@@ -8019,6 +8034,7 @@ async function openFileViewer(target, name = "", trigger = null) {
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
   viewer.classList.remove("hidden");
+  $("#fileViewerDownload").classList.remove("hidden");
   $("#fileViewerName").textContent = title;
   $("#fileViewerStage").innerHTML = `<div class="file-viewer-empty">正在取出…</div>`;
   $("#fileViewerClose").focus();
@@ -8140,6 +8156,18 @@ function closeFileViewer() {
   $("#fileViewer")?.classList.add("hidden");
   $("#fileViewerStage").innerHTML = "";
   if (target?.isConnected) target.focus();
+}
+// 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起
+function showInFileViewer(title, html, trigger = null) {
+  viewerPath = "";
+  viewerSource = null;
+  viewerReturnFocus = trigger || document.activeElement;
+  revokeViewerUrls();
+  $("#fileViewer").classList.remove("hidden");
+  $("#fileViewerDownload").classList.add("hidden");
+  $("#fileViewerName").textContent = title;
+  $("#fileViewerStage").innerHTML = html;
+  $("#fileViewerClose").focus();
 }
 let imageViewerArchivePath = null;
 function openArchiveImage(path, trigger = null) {
@@ -10452,6 +10480,7 @@ function commandApprovalHtml(step) {
   // ---- 15-tools/21-files.js ----
 // 言 · 文件：读、写、改、列、搜、下载。绑了目录落在工作目录（执事的六件），没绑落在卷宗（言只带产出所需的读、写、列与指令）。
 // 路径与沙箱在桥接那头管（server/work/）；这里只管呈现与「改之前先读过」这条规矩
+const WRITTEN_KEEP_CHARS = 4000;
 defineTool({
   name: "write_file",
   group: "work",
@@ -10467,6 +10496,12 @@ defineTool({
     markSeen(conversation, data.path, step);
     step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
     step.change = { path: data.path, added: data.lines, removed: data.existed ? data.previousLines : 0, created: !data.existed };
+    // 写下的内容留一份给改动清单点开看（见 changeDiffHtml）；太长只留开头，免得对话记录跟着胖
+    const content = String(args.content);
+    step.written =
+      content.length > WRITTEN_KEEP_CHARS
+        ? `${content.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${content.length - WRITTEN_KEEP_CHARS} 字未留存）`
+        : content;
     return {
       ok: true,
       content: `已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? "，覆盖了原文件" : ""}）`,
@@ -10687,11 +10722,7 @@ async function ensureWorkReady(conversation) {
     if (prepared.created) toast("工作目录不存在，已新建");
     conversation.workdir = prepared.workdir;
   } catch (error) {
-    toast(
-      bridgeTimedOut(error)
-        ? "本机桥接响应超时，消息未发送，文字仍在输入框"
-        : `工作目录不可用：${String(error.message || error)}`
-    );
+    toast(bridgeTimedOut(error) ? "本机桥接响应超时，消息未发送，文字仍在输入框" : `工作目录不可用：${String(error.message || error)}`);
     return false;
   }
   return true;
@@ -10738,14 +10769,35 @@ function changeSpark(added, removed) {
 function changeCountHtml(stats) {
   return `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
 }
-// 清单一件一行：路径、新建 / 帮手所改的小注、增删行数
+// 清单一件一行：路径、新建 / 帮手所改的小注、增删行数；点一行看这件的改动
 function changeFilesHtml(stats, open, extra = "") {
   return `<div class="change-files${extra}${open ? "" : " hidden"}">${stats.files
     .map(f => {
       const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · ");
-      return `<div><span class="path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></div>`;
+      return `<button type="button" data-change-path="${escapeHtml(f.path)}" title="看 ${escapeHtml(f.path)} 的改动"><span class="path">${escapeHtml(f.path)}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></button>`;
     })
     .join("")}</div>`;
+}
+// 一件文件在这一答里的改动：不另起接口、不另存一份，用的就是各步本来记着的——改文件那步的前后两段（行迹里同一副红绿），
+// 写文件那步写下的内容（整份写入，全算增）；按先后排，摊在预览浮层里。帮手改的也在内
+/** @param {Message} message @param {string} path */
+function changeDiffHtml(message, path) {
+  const steps = allSteps(message).filter(step => step.change?.path === path && step.status === "done");
+  return `<div class="file-viewer-text change-diff">${steps
+    .map(step => {
+      const note = [toolLabel(step.name), step.scope ? "帮手" : "", step.result || step.note || ""].filter(Boolean).join(" · "),
+        head = `<p class="file-viewer-note">${escapeHtml(note)}</p>`;
+      if (step.diff)
+        return `${head}<div class="tool-diff"><pre class="tool-output diff-del">${escapeHtml(step.diff.old)}</pre><pre class="tool-output diff-ins">${escapeHtml(step.diff.new)}</pre></div>`;
+      if (step.written !== undefined)
+        return `${head}<div class="tool-diff"><pre class="tool-output diff-ins">${escapeHtml(step.written)}</pre></div>`;
+      return head;
+    })
+    .join("")}</div>`;
+}
+/** @param {Message} message @param {string} path @param {Element} trigger */
+function openChangeDiff(message, path, trigger) {
+  showInFileViewer(`${path} · 这一答的改动`, changeDiffHtml(message, path), trigger);
 }
 /** @param {Message} message */
 function changeSummaryInner(message, open) {

@@ -57,6 +57,7 @@
  * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
  * @property {boolean} [background] 后台指令
  * @property {{ old: string, new: string }} [diff]
+ * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
  * @property {{ path: string, added: number, removed: number, created?: boolean }} [change]
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
  * @property {number} [rat] 调用发起时思绪的长度

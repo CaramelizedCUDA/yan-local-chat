@@ -440,9 +440,20 @@
     monospace;
   color: var(--ink-2);
 }
-.change-files div {
+/* 一件一行，点开看这件在这一答里的改动（摊在预览浮层里，见 changeDiffHtml） */
+.change-files > button {
   display: flex;
   gap: 10px;
+  width: 100%;
+  padding: 0 6px;
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.change-files > button:hover {
+  background: var(--paper-2);
+  color: var(--ink);
 }
 .change-files .path {
   flex: 1;

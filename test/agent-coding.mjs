@@ -95,6 +95,17 @@ check(
     `!document.querySelector(".message.assistant .change-files").classList.contains("hidden") && document.querySelector(".message.assistant .change-files .path").textContent === "src/a.js"`
   )
 );
+// 点清单里的一件：预览浮层里摊开这件在这一答里的改动（改文件那步的红绿两段），没有下载键
+await evalJs(`document.querySelector('.message.assistant .change-files [data-change-path="src/a.js"]').click(); true`);
+await sleep(150);
+await shot("change-diff.png");
+check(
+  "clicking a changed file shows its diff in the viewer",
+  await evalJs(
+    `(v => !v.classList.contains("hidden") && v.querySelector("#fileViewerName").textContent.startsWith("src/a.js") && v.querySelector(".diff-del")?.textContent.includes("return 1") && v.querySelector(".diff-ins")?.textContent.includes("return 2") && document.querySelector("#fileViewerDownload").classList.contains("hidden"))(document.querySelector("#fileViewer"))`
+  )
+);
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
 check(
   "read-only command ran without approval",
   steps[3].label === "运行" && steps[3].status === "done" && steps[3].meta.includes("只读免确认") && steps[3].out.includes("return 2")

@@ -644,6 +644,7 @@ async function openFileViewer(target, name = "", trigger = null) {
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
   viewer.classList.remove("hidden");
+  $("#fileViewerDownload").classList.remove("hidden");
   $("#fileViewerName").textContent = title;
   $("#fileViewerStage").innerHTML = `<div class="file-viewer-empty">正在取出…</div>`;
   $("#fileViewerClose").focus();
@@ -765,6 +766,18 @@ function closeFileViewer() {
   $("#fileViewer")?.classList.add("hidden");
   $("#fileViewerStage").innerHTML = "";
   if (target?.isConnected) target.focus();
+}
+// 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起
+function showInFileViewer(title, html, trigger = null) {
+  viewerPath = "";
+  viewerSource = null;
+  viewerReturnFocus = trigger || document.activeElement;
+  revokeViewerUrls();
+  $("#fileViewer").classList.remove("hidden");
+  $("#fileViewerDownload").classList.add("hidden");
+  $("#fileViewerName").textContent = title;
+  $("#fileViewerStage").innerHTML = html;
+  $("#fileViewerClose").focus();
 }
 let imageViewerArchivePath = null;
 function openArchiveImage(path, trigger = null) {

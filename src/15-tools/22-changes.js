@@ -38,14 +38,35 @@ function changeSpark(added, removed) {
 function changeCountHtml(stats) {
   return `<span class="ins">+${stats.added}</span> <span class="del">−${stats.removed}</span>`;
 }
-// 清单一件一行：路径、新建 / 帮手所改的小注、增删行数
+// 清单一件一行：路径、新建 / 帮手所改的小注、增删行数；点一行看这件的改动
 function changeFilesHtml(stats, open, extra = "") {
   return `<div class="change-files${extra}${open ? "" : " hidden"}">${stats.files
     .map(f => {
       const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · ");
-      return `<div><span class="path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></div>`;
+      return `<button type="button" data-change-path="${escapeHtml(f.path)}" title="看 ${escapeHtml(f.path)} 的改动"><span class="path">${escapeHtml(f.path)}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins">+${f.added}</span><span class="del">−${f.removed}</span></button>`;
     })
     .join("")}</div>`;
+}
+// 一件文件在这一答里的改动：不另起接口、不另存一份，用的就是各步本来记着的——改文件那步的前后两段（行迹里同一副红绿），
+// 写文件那步写下的内容（整份写入，全算增）；按先后排，摊在预览浮层里。帮手改的也在内
+/** @param {Message} message @param {string} path */
+function changeDiffHtml(message, path) {
+  const steps = allSteps(message).filter(step => step.change?.path === path && step.status === "done");
+  return `<div class="file-viewer-text change-diff">${steps
+    .map(step => {
+      const note = [toolLabel(step.name), step.scope ? "帮手" : "", step.result || step.note || ""].filter(Boolean).join(" · "),
+        head = `<p class="file-viewer-note">${escapeHtml(note)}</p>`;
+      if (step.diff)
+        return `${head}<div class="tool-diff"><pre class="tool-output diff-del">${escapeHtml(step.diff.old)}</pre><pre class="tool-output diff-ins">${escapeHtml(step.diff.new)}</pre></div>`;
+      if (step.written !== undefined)
+        return `${head}<div class="tool-diff"><pre class="tool-output diff-ins">${escapeHtml(step.written)}</pre></div>`;
+      return head;
+    })
+    .join("")}</div>`;
+}
+/** @param {Message} message @param {string} path @param {Element} trigger */
+function openChangeDiff(message, path, trigger) {
+  showInFileViewer(`${path} · 这一答的改动`, changeDiffHtml(message, path), trigger);
 }
 /** @param {Message} message */
 function changeSummaryInner(message, open) {

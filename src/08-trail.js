@@ -628,6 +628,13 @@ function bindTrailEvents() {
     true
   );
   $("#messages").addEventListener("click", event => {
+    // 改动清单里点一件：看它在这一答里的改动
+    const file = event.target.closest("[data-change-path]");
+    if (file) {
+      const id = file.closest("[data-message]")?.dataset.message,
+        message = allMessages(currentConversation()).find(m => m.id === id);
+      return message && openChangeDiff(message, file.dataset.changePath, file);
+    }
     const summary = event.target.closest(".change-summary");
     if (!summary) return;
     const files = summary.parentElement.querySelector(".change-files"),
@@ -678,6 +685,10 @@ function bindHelperEvents() {
       workFilesOpen = !workFilesOpen;
       return renderHelperBar();
     }
+    const file = event.target.closest("[data-change-path]"),
+      message =
+        file && [...(currentConversation()?.messages || [])].reverse().find(m => m.role === "assistant" && m.status === "streaming");
+    if (message) return openChangeDiff(message, file.dataset.changePath, file);
     const id = event.target.closest(".work-helpers")?.dataset.helper;
     if (id) openHelperPanel(id);
   });
