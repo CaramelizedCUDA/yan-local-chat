@@ -14,5 +14,11 @@
 
   report: "帮手「{{title}}」已完成（{{steps}} 步{{changed}}）。以下是它的回报：\n\n{{report}}",
 
-  failed: "帮手「{{title}}」未能完成（{{reason}}）。它已做的：{{steps}} 步{{changed}}。{{partial}}"
+  failed: "帮手「{{title}}」未能完成（{{reason}}）。它已做的：{{steps}} 步{{changed}}。{{partial}}",
+
+  // 主模型经 helper 递话、叫停：note 送进帮手的收件口；其余是回给主模型的工具结果
+  note: "主对话递来的话（据此调整，仍照原任务回报）：{{text}}",
+  noted: "已递给帮手「{{title}}」，它说到落点时读到。",
+  stopping: "已叫停帮手「{{title}}」；它已做的随后作为一条消息送到。",
+  gone: "没有名为「{{title}}」的帮手在做（在做的：{{running}}）。已收工的回报已送到或在路上；要再做请另行差遣。"
 };

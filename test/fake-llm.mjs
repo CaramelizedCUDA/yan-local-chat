@@ -247,6 +247,51 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // SLOWSUB2：慢帮手（约 3 秒）；途中主对话经 helper 递来话（「主对话递来的话」起头），它就此改口回报
+      if (firstUser.includes("SLOWSUB2")) {
+        const note = msgs.find(m => m.role === "user" && String(m.content).startsWith("主对话递来的话"));
+        if (note)
+          return sse(res, [
+            delta({ content: `收到改向｜${String(note.content).includes("TALK-TEXT") ? "乙" : "?"}` }),
+            delta({}, { usage: { total_tokens: 3 } })
+          ]);
+        return sse(
+          res,
+          [
+            ...Array.from({ length: 12 }, (_, i) => delta({ content: `慢活第${i + 1}句。` })),
+            delta({ content: "慢活回报。" }),
+            delta({}, { usage: { total_tokens: 3 } })
+          ],
+          250
+        );
+      }
+      // HELPERTALK / HELPERSTOP：主模型差一名慢帮手，接着给它递话或叫停，再等回报
+      const helperKey = ["HELPERTALK", "HELPERSTOP"].find(k => firstUser.includes(k));
+      if (helperKey) {
+        const call = (id, name, args) =>
+          delta({ tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] });
+        if (!toolResults.length)
+          return sse(res, [
+            call("call_hp0", "delegate", { title: "慢活", task: "SLOWSUB2：慢慢做完回报。" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (toolResults.length === 1)
+          return sse(res, [
+            call(
+              "call_hp1",
+              "helper",
+              helperKey === "HELPERTALK" ? { helper: "慢活", message: "TALK-TEXT：改做乙" } : { helper: "慢活", stop: true }
+            ),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
+        return sse(res, [
+          delta({
+            content: `${helperKey} done｜${String(toolResults[1].content).slice(0, 60)}｜${String(helperReports.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // SLOWSUB：慢帮手，约 3 秒说完再回报
       if (typeof lastUser === "string" && lastUser.includes("SLOWSUB"))
         return sse(

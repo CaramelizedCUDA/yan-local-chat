@@ -123,13 +123,49 @@ await waitFor(`${lastAssistant}.textContent.includes("收到补言｜reports:0")
 const bg = await evalJs(
   `(a => ({ note: a.querySelector(".tool-step-note")?.dataset.status, helper: a.querySelector(".tool-step-delegate")?.dataset.status, heard: a.textContent.includes("收到补言｜reports:0"), text: a.textContent.slice(-160) }))(${lastAssistant})`
 );
-check("with the helper still in the background, the supplement reaches the main model at once", bg.note === "done" && bg.helper === "running" && bg.heard, JSON.stringify(bg));
+check(
+  "with the helper still in the background, the supplement reaches the main model at once",
+  bg.note === "done" && bg.helper === "running" && bg.heard,
+  JSON.stringify(bg)
+);
 await waitFor(`${lastAssistant}.dataset.status !== "streaming"`, 15000);
 const bgText = await evalJs(`${lastAssistant}.textContent`);
 check(
   "the answer waits for the report and closes on it",
   bgText.indexOf("收到补言｜reports:0") >= 0 && bgText.indexOf("收到补言｜reports:0") < bgText.indexOf("BGNOTE done｜reports:1"),
   bgText.slice(0, 200)
+);
+
+// ---- 主模型给后台的帮手递话：帮手说到落点时读到、改口回报；主答等回报收尾
+await ask("HELPERTALK");
+await waitFor(`${lastAssistant}?.dataset.status !== "streaming" && ${lastAssistant}.textContent.includes("HELPERTALK done")`, 15000).catch(
+  () => {}
+);
+const talk = await evalJs(
+  `(a => ({ text: a.textContent, sub: __yanState().conversations.flatMap(c => c.messages).find(m => m.id === a.dataset.message)?.steps.find(s => s.name === "delegate")?.sub }))(${lastAssistant})`
+);
+check(
+  "main model's message reaches the running helper at a natural break, and it changes course",
+  talk.text.includes("HELPERTALK done｜已递给帮手「慢活」") &&
+    talk.text.includes("收到改向｜乙") &&
+    talk.sub?.status === "complete" &&
+    talk.sub.content.includes("慢活第1句"),
+  talk.text.slice(-240)
+);
+check("the helper tool shows in the trail as 传话", await evalJs(`${lastAssistant}.textContent.includes("递给「慢活」")`));
+
+// ---- 主模型叫停帮手：只停它一个，已做的照未完成回报，主答照常收尾
+await ask("HELPERSTOP");
+await waitFor(`${lastAssistant}?.dataset.status !== "streaming" && ${lastAssistant}.textContent.includes("HELPERSTOP done")`, 15000).catch(
+  () => {}
+);
+const halt = await evalJs(
+  `(a => ({ status: a.dataset.status, text: a.textContent, sub: __yanState().conversations.flatMap(c => c.messages).find(m => m.id === a.dataset.message)?.steps.find(s => s.name === "delegate")?.sub?.status }))(${lastAssistant})`
+);
+check(
+  "main model stops a helper; the answer carries on and gets its partial report",
+  halt.status === "complete" && halt.text.includes("已叫停帮手「慢活」") && halt.text.includes("已按吩咐叫停") && halt.sub === "stopped",
+  JSON.stringify({ status: halt.status, sub: halt.sub, text: halt.text.slice(-240) })
 );
 
 // ---- 想得很久：补言默认等它开口；点那一步上的折箭头，不等落点当场递上
@@ -140,7 +176,9 @@ await enter();
 await sleep(400);
 check(
   "while it thinks, the supplement waits with a send-now arrow beside the spinner",
-  await evalJs(`(s => !!s && s.dataset.status === "running" && !!s.querySelector(".note-now + .tool-state.spinning"))(${lastAssistant}.querySelector(".tool-step-note"))`)
+  await evalJs(
+    `(s => !!s && s.dataset.status === "running" && !!s.querySelector(".note-now + .tool-state.spinning"))(${lastAssistant}.querySelector(".tool-step-note"))`
+  )
 );
 await evalJs(`${lastAssistant}.querySelector(".tool-step-note").scrollIntoView({ block: "center" }); true`);
 await shot("note-now.png");
@@ -152,5 +190,9 @@ const forced = await waitFor(`${lastAssistant}.querySelector(".tool-step-note")?
 check("the arrow delivers it right away", forced);
 await waitFor(`${lastAssistant}.dataset.status !== "streaming"`, 15000);
 const turned = await evalJs(`${lastAssistant}.textContent`);
-check("the model turned to the supplement instead of finishing the old thought", turned.includes("正文回答") && !turned.includes("SLOWTHINK done"), turned.slice(0, 200));
+check(
+  "the model turned to the supplement instead of finishing the old thought",
+  turned.includes("正文回答") && !turned.includes("SLOWTHINK done"),
+  turned.slice(0, 200)
+);
 close();

@@ -463,7 +463,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   // 这一答是不是执事的，记在消息自己身上：生成期间用户可能翻去欢迎页或卷宗，页面上一时没有「当前对话」，时间线不能因此改画法
   assistant.work = isWork(conversation);
   // queue 是这一答的收件口：用户的补言（user）与后台帮手的回报（report）；helpers 是还在后台做的帮手数，wake 叫醒正等收件口的循环
-  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user?: Message, step: Step, report?: string }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number, helpers: number, wake: (() => void)|null }} */
+  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user?: Message, step: Step, report?: string }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number, helpers: number, wake: (() => void)|null, subs?: any[] }} */
   const job = {
     controller: new AbortController(),
     assistantId: assistant.id,
@@ -698,7 +698,7 @@ async function runRounds(target, history, run) {
       // 补言停下的：这一轮写到落点为止，已写的话与补言一起进历史，没执行的工具调用一律作废，随即再开一轮
       const said = trimToBoundary(target.content.slice(roundStart)).replace(/\n+$/, "");
       target.content = target.content.slice(0, roundStart) + said;
-      for (const { step } of inbox.queue) if (typeof step.at === "number") step.at = Math.min(step.at, target.content.length);
+      for (const { step } of inbox.queue) if (typeof step?.at === "number") step.at = Math.min(step.at, target.content.length);
       chargePartial(said);
       target.toolCalls = null;
       if (said.trim()) history.push({ role: "assistant", content: said });

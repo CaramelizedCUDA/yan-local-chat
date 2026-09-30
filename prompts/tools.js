@@ -194,6 +194,19 @@
     }
   },
 
+  helper: {
+    description: "给后台正做着的帮手递话（补充、改向）或叫停。话在它说到落点时读到；叫停后它已做的随后送到。",
+    parameters: {
+      type: "object",
+      properties: {
+        helper: { type: "string", description: "差遣时起的任务名" },
+        message: { type: "string", description: "要递的话" },
+        stop: { type: "boolean", description: "true 即叫停" }
+      },
+      required: ["helper"]
+    }
+  },
+
   // 请示：下一步取决于用户的选择时弹一张小表单；对谈与执事都提供，在浏览器里完成
   ask_user: {
     description:

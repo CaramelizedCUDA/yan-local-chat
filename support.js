@@ -9392,7 +9392,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   // 这一答是不是执事的，记在消息自己身上：生成期间用户可能翻去欢迎页或卷宗，页面上一时没有「当前对话」，时间线不能因此改画法
   assistant.work = isWork(conversation);
   // queue 是这一答的收件口：用户的补言（user）与后台帮手的回报（report）；helpers 是还在后台做的帮手数，wake 叫醒正等收件口的循环
-  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user?: Message, step: Step, report?: string }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number, helpers: number, wake: (() => void)|null }} */
+  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user?: Message, step: Step, report?: string }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number, helpers: number, wake: (() => void)|null, subs?: any[] }} */
   const job = {
     controller: new AbortController(),
     assistantId: assistant.id,
@@ -9627,7 +9627,7 @@ async function runRounds(target, history, run) {
       // 补言停下的：这一轮写到落点为止，已写的话与补言一起进历史，没执行的工具调用一律作废，随即再开一轮
       const said = trimToBoundary(target.content.slice(roundStart)).replace(/\n+$/, "");
       target.content = target.content.slice(0, roundStart) + said;
-      for (const { step } of inbox.queue) if (typeof step.at === "number") step.at = Math.min(step.at, target.content.length);
+      for (const { step } of inbox.queue) if (typeof step?.at === "number") step.at = Math.min(step.at, target.content.length);
       chargePartial(said);
       target.toolCalls = null;
       if (said.trim()) history.push({ role: "assistant", content: said });
@@ -12002,6 +12002,45 @@ defineTool({
   digest: step =>
     `差遣「${String(step.title || "").slice(0, 40)}」→ ${step.result || step.status}${subChangedPaths(step).length ? `，改了 ${subChangedPaths(step).slice(0, 8).join("、")}` : ""}`
 });
+// 给后台正做着的帮手递话或叫停：话进帮手的收件口，它说到落点时读到（同补言，不掐断）；叫停只停它一个，已做的照未完成回报
+defineTool({
+  name: "helper",
+  group: "delegate",
+  label: "传话",
+  offer: ctx => ctx.offered.includes("delegate"),
+  mainOnly: true,
+  sideEffect: true,
+  run: tellHelper
+});
+/**
+ * @param {Step} step
+ * @param {Record<string, any>} args
+ * @param {ToolContext} ctx
+ */
+function tellHelper(step, args, ctx) {
+  const name = String(args.helper || "").trim(),
+    text = String(args.message || "").trim(),
+    stop = args.stop === true,
+    boxes = requestJob(ctx.conversation.id)?.subs || [],
+    box = boxes.find(item => item.title === name) || (boxes.length === 1 ? boxes[0] : null);
+  step.title = `${stop ? "叫停" : "递给"}「${box?.title || name}」${stop || !text ? "" : `：${text.slice(0, 60)}`}`;
+  if (!box)
+    return {
+      ok: false,
+      content: prompt("delegate.gone", { title: name, running: boxes.map(item => `「${item.title}」`).join("、") || "无" }),
+      display: "不在做"
+    };
+  if (stop) {
+    box.controller.abort();
+    return { ok: true, content: prompt("delegate.stopping", { title: box.title }), display: "已叫停" };
+  }
+  if (!text) return { ok: false, content: "message 不能为空", display: "无话" };
+  box.queue.push({ report: prompt("delegate.note", { text }) });
+  // 帮手正写着：等它说到落点停这一轮递上；正跑工具：结果交回时递；正等着：当即叫醒
+  if (box.reading) watchSteer(box, box.sub);
+  box.wake?.();
+  return { ok: true, content: prompt("delegate.noted", { title: box.title }), display: "已递" };
+}
 // 帮手在后台做：差遣当即回一句「已开工」，主模型这一轮随即结束、照常往下走；帮手做完，回报寄进这一答的收件口
 //（job.queue，与补言同一个口子），在下一个轮次边界递给主模型。帮手干活时主模型醒着：补言当场能递，它可据此调整。
 // 主模型没别的事可做时，这一答不收尾，等收件口——帮手回报或补言，谁先到先处理（见 streamReply）
@@ -12026,7 +12065,16 @@ function delegateInBackground(step, args, ctx) {
         if (error.name !== "AbortError") {
           step.status = "error";
           step.result = friendlyError(String(error.message || error));
-          (job.queue ||= []).push({ report: prompt("delegate.failed", { title: step.title, reason: step.result, steps: step.sub?.steps.length || 0, changed: "", partial: "" }), step });
+          (job.queue ||= []).push({
+            report: prompt("delegate.failed", {
+              title: step.title,
+              reason: step.result,
+              steps: step.sub?.steps.length || 0,
+              changed: "",
+              partial: ""
+            }),
+            step
+          });
         }
       }
     )
@@ -12071,6 +12119,24 @@ async function runDelegate(step, args, ctx) {
     head: history.length,
     onFold: busy => job && setJobLabel(conversation, job, busy ? "帮手整理上下文" : "")
   };
+  // 帮手自己的收件口与中止器，与主答的 job 同形，轮次循环照收：主模型经 helper 递来的话等它说到落点再递（同补言），
+  // 叫停只停它一个；整答停了它跟着停
+  const controller = new AbortController(),
+    stopWithMain = () => controller.abort();
+  signal.addEventListener("abort", stopWithMain, { once: true });
+  const inbox = {
+    controller,
+    queue: [],
+    round: null,
+    reading: false,
+    roundStart: 0,
+    steerTimer: 0,
+    helpers: 0,
+    wake: null,
+    sub,
+    title: step.title
+  };
+  if (job) (job.subs ||= []).push(inbox);
   const tally = newTally(),
     started = performance.now();
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
@@ -12089,7 +12155,8 @@ async function runDelegate(step, args, ctx) {
       profile,
       conversation,
       host: assistant,
-      signal,
+      signal: controller.signal,
+      inbox,
       overrides,
       tally,
       roundLimit: subRoundLimit(),
@@ -12100,12 +12167,18 @@ async function runDelegate(step, args, ctx) {
   } catch (error) {
     if (error.name === "AbortError") {
       sub.status = "stopped";
-      throw error;
+      if (signal.aborted) throw error;
+      // 主模型叫停的：照未完成回报，它已做的一并交回
+      failure = "已按吩咐叫停";
+    } else {
+      sub.status = "error";
+      failure = friendlyError(String(error.message || error));
     }
-    sub.status = "error";
-    failure = friendlyError(String(error.message || error));
   } finally {
     clearInterval(ticker);
+    clearInterval(inbox.steerTimer);
+    signal.removeEventListener("abort", stopWithMain);
+    if (job?.subs) job.subs = job.subs.filter(box => box !== inbox);
     sub.usage = tally.usageKnown ? tally.usage : null;
     sub.durationMs = Math.round(performance.now() - started);
     // 回报是最后一段话；裁掉开头的空行，偏移跟着前移
@@ -12133,12 +12206,23 @@ async function runDelegate(step, args, ctx) {
   if (!sub.report)
     return {
       ok: false,
-      content: prompt("delegate.failed", { title: step.title, reason: "帮手没有写回报", steps: sub.steps.length, changed: changedNote, partial: "" }),
+      content: prompt("delegate.failed", {
+        title: step.title,
+        reason: "帮手没有写回报",
+        steps: sub.steps.length,
+        changed: changedNote,
+        partial: ""
+      }),
       display: `${display} · 无回报`
     };
   return {
     ok: true,
-    content: prompt("delegate.report", { title: step.title, steps: sub.steps.length, changed: changedNote, report: sub.report.slice(0, 16000) }),
+    content: prompt("delegate.report", {
+      title: step.title,
+      steps: sub.steps.length,
+      changed: changedNote,
+      report: sub.report.slice(0, 16000)
+    }),
     display
   };
 }
