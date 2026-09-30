@@ -1,11 +1,26 @@
 // 看台：言的页面直连浏览器调试口（这里借测试用的这个 Edge 充当模型所用的浏览器）——
 // 找到浏览器挂出顶栏小屏、标签照抄、画面送到、点按与打字（含输入法那一路）递进网页、旁注开着时让位、收起后小屏回来、拖宽窄有界
-import { connect, check, sleep, PAGE, DEBUG } from "./lib.mjs";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { connect, check, sleep, PAGE, DEBUG, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
+// 浏览器的配置目录与收藏：配置里一个停用的「浏览器」服务只为带出 --user-data-dir（真的 playwright 这里不起）
+const PROFILE = `${TMP}/stage-profile`;
+const markPage = "data:text/html;charset=utf-8," + encodeURIComponent("<title>收藏页</title>");
+mkdirSync(`${PROFILE}/Default`, { recursive: true });
+writeFileSync(
+  `${PROFILE}/Default/Bookmarks`,
+  JSON.stringify({
+    roots: {
+      bookmark_bar: { children: [{ type: "folder", name: "学术", children: [{ type: "url", name: "测试收藏", url: markPage }] }] },
+      other: { children: [] }
+    }
+  })
+);
+const mcpServers = { 浏览器: { command: "node", args: ["cli.js", "--user-data-dir", PROFILE], disabled: true } };
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
 await evalJs(
-  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, quota: "", usedTokens: 0 }], conversations: [], library: [], drafts: {} })); true`
+  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false, mcpServers: ${JSON.stringify(mcpServers)} }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, quota: "", usedTokens: 0 }], conversations: [], library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
@@ -50,6 +65,20 @@ await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)} && __yan
 await waitFor(`document.querySelector("#stageFrame").naturalWidth > 0`, 8000);
 check("frame arrives for the chosen tab", true);
 check("chosen tab is marked", await evalJs(`document.querySelector(".stage-tab.on")?.textContent.includes("看台测试")`));
+// 浏览器的窗口跟上看台的大小（有下限）：网页按原大显示。等它调完再量，不然点按的位置对不上
+const want = await evalJs(
+  `(r => ({ w: Math.max(960, Math.round(r.width - 24)), h: Math.max(600, Math.round(r.height - 24)) }))(document.querySelector("#stageView").getBoundingClientRect())`
+);
+await waitFor(
+  `Math.abs(__yanStage.state.meta.width - ${want.w}) < 4 && Math.abs(__yanStage.state.meta.height - ${want.h}) < 4`,
+  8000
+).catch(() => {});
+check(
+  "the browser window follows the stage size",
+  await evalJs(`Math.abs(__yanStage.state.meta.width - ${want.w}) < 4`),
+  JSON.stringify({ want, meta: await evalJs(`__yanStage.state.meta`) })
+);
+await sleep(300);
 const geometry = await evalJs(
   `(r => ({ x: r.left, y: r.top, w: r.width, h: r.height, ratio: r.width / r.height }))(document.querySelector("#stageFrame").getBoundingClientRect())`
 );
@@ -86,8 +115,42 @@ check(
 check("keys typed into the stage stay out of 言's own inputs", await evalJs(`!document.querySelector("#welcomeInput").value`));
 await shot("stage.png");
 
+// 收藏：读浏览器配置目录里的那份，按夹列出；点一条在当前页打开
+await evalJs(`document.querySelector("#stageKeys").blur(); true`);
+check(
+  "收藏 shows when the browser's profile is known",
+  await evalJs(`!document.querySelector("#stageMarks").classList.contains("hidden")`)
+);
+await evalJs(`document.querySelector("#stageMarks").click(); true`);
+await waitFor(`!!document.querySelector(".chip-pop.stage-marks [data-stage-mark]")`, 5000).catch(() => {});
+check(
+  "bookmarks list folders and entries",
+  await evalJs(
+    `(p => !!p && p.querySelector(".stage-mark-dir")?.textContent === "学术" && p.querySelector("[data-stage-mark]")?.textContent === "测试收藏")(document.querySelector(".chip-pop.stage-marks"))`
+  )
+);
+await evalJs(`document.querySelector(".chip-pop.stage-marks [data-stage-mark]").click(); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "收藏页"`, 8000).catch(() => {});
+check("a bookmark opens in the current tab", await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "收藏页"`));
+
+// ＋：新开一页，看台跟过去，地址栏等着输网址
+const before = await evalJs(`__yanStage.state.tabs.size`);
+await evalJs(`document.querySelector("#stageNewTab").click(); true`);
+await waitFor(`__yanStage.state.tabs.size === ${before + 1}`, 5000).catch(() => {});
+const fresh = await evalJs(`__yanStage.state.current`);
+check(
+  "＋ opens a new tab and the stage follows it",
+  (await evalJs(`__yanStage.state.tabs.size === ${before + 1} && __yanStage.state.current !== ${JSON.stringify(targetId)}`)) &&
+    (await evalJs(`document.activeElement === document.querySelector("#stageUrl")`))
+);
+await browserSend("Target.closeTarget", { targetId: fresh });
+await evalJs(
+  `[...document.querySelectorAll("[data-stage-tab]")].find(t => t.dataset.stageTab === ${JSON.stringify(targetId)})?.click(); true`
+);
+await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
+
 // 阔：铺满；Esc（焦点不在看台里时）退回
-await evalJs(`document.querySelector("#stageKeys").blur(); document.querySelector("#stageWide").click(); true`);
+await evalJs(`document.activeElement?.blur(); document.querySelector("#stageWide").click(); true`);
 check("wide covers the page", await evalJs(`getComputedStyle(document.querySelector("#stagePanel")).position === "fixed"`));
 await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
 await sleep(150);

@@ -3,8 +3,10 @@
 // 页面直接连调试口（浏览器以 --remote-allow-origins 放行言的页面），画面不过桥接；桥接只替页面问出连接的地址（server/stage.js）。
 // 标签照抄浏览器自己的（Target.setDiscoverTargets），不另分「成品」与「网页」：模型做的网页由它自己在浏览器里开，也就上了台。
 // 何时去连：开页时，与每次浏览器类的 MCP 调用之后（浏览器多半是这时起的）；断了就等下一次，不轮询。
+// 浏览器没开、或被关掉了：看台里点「打开浏览器」，言替你调一次那个 MCP 的 browser_navigate，浏览器照它的配置起来——言自己不起浏览器。
 // 旁注与看台同在右侧：旁注开着时看台让位（纯 CSS，见 styles/56-stage.css），旁注收起它就回来。
-// 网页的尺寸由浏览器那头定（playwright 默认 1280×720），看台只按宽高里较紧的一边缩放，拖宽拖窄不改比例，点按按同一倍数换算回去
+// 网页的尺寸：playwright 有头时不设视口，网页多大即窗口多大——看台就把屏幕外那扇窗调成自己的大小（有下限，免得网站换成手机版），
+// 网页原大显示；窗口调不动的（设了视口的）照旧按宽高里较紧的一边缩放，点按按同一倍数换算回去
 
 const stage = {
   // 调试口：模型所用的浏览器以 --remote-debugging-port 起在这里（见 docs/stage.md）
@@ -26,8 +28,11 @@ const stage = {
   framed: false,
   meta: { width: 1280, height: 720 },
   busy: 0,
+  launching: false,
   width: 0,
   poll: 0,
+  fitTimer: 0,
+  empty: "",
   click: { at: 0, x: 0, y: 0, count: 0 },
   /** @type {PointerEvent | null} */
   moved: null
@@ -141,6 +146,29 @@ async function stageAttach() {
     if (stage.session === sessionId && !stage.framed)
       stageFrame(shot.data, metrics.cssVisualViewport.clientWidth, metrics.cssVisualViewport.clientHeight);
   } catch {}
+  void stageFit();
+}
+// 屏幕外那扇窗调成看台的大小：窗比网页多出的边（标签栏、地址栏、边框）照现量补上。窗口的尺寸与网页的 CSS 像素同一单位
+const STAGE_FLOOR = { width: 960, height: 600 };
+async function stageFit() {
+  const session = stage.session,
+    target = stage.attached;
+  if (!session || !stageShown()) return;
+  const view = $("#stageView").getBoundingClientRect(),
+    want = {
+      width: Math.max(STAGE_FLOOR.width, Math.round(view.width - 24)),
+      height: Math.max(STAGE_FLOOR.height, Math.round(view.height - 24))
+    };
+  try {
+    const [{ windowId, bounds }, { cssVisualViewport: port }] = await Promise.all([
+      stageSend("Browser.getWindowForTarget", { targetId: target }),
+      stageSend("Page.getLayoutMetrics", {}, session)
+    ]);
+    const width = Math.round(bounds.width - port.clientWidth + want.width),
+      height = Math.round(bounds.height - port.clientHeight + want.height);
+    if (bounds.windowState !== "normal" || (Math.abs(width - bounds.width) < 2 && Math.abs(height - bounds.height) < 2)) return;
+    await stageSend("Browser.setWindowBounds", { windowId, bounds: { width, height } });
+  } catch {}
 }
 async function stageDetach() {
   const session = stage.session;
@@ -210,13 +238,89 @@ function stageSetWidth(px) {
   stage.width = Math.round(Math.max(320, Math.min(px, innerWidth - 420)));
   $("#stagePanel").style.width = `${stage.width}px`;
 }
-// 顶栏那枚小屏：浏览器开着、看台收着时挂出来；模型正在操作浏览器时屏边一粒朱
+// 顶栏那枚小屏：接了浏览器类的 MCP（或浏览器已开着）、看台收着时挂着；模型正在操作浏览器时屏边一粒朱
 function stageSync() {
   const pin = $("#stagePin");
-  pin.classList.toggle("hidden", !stage.ws || stageShown());
+  pin.classList.toggle("hidden", (!stage.ws && !stageServer()) || stageShown());
   pin.classList.toggle("busy", stage.busy > 0);
   $("#stageBusy").classList.toggle("hidden", !stage.busy);
+  $("#stageMarks").classList.toggle("hidden", !stageProfileDir());
   stageRender();
+}
+// 接进来的浏览器类 MCP：工具里有 browser_navigate 的那个服务（playwright 即是）
+function stageServer() {
+  const configs = mcpConfigs();
+  return (
+    Object.keys(mcp.servers).find(
+      name => mcp.servers[name].ok && !configs[name]?.disabled && mcp.servers[name].tools?.some(tool => tool.name === "browser_navigate")
+    ) || ""
+  );
+}
+// 浏览器的配置目录：那个服务参数里的 --user-data-dir（收藏就存在这里）；服务还没连上时，从配置里找带这一项的
+function stageProfileDir() {
+  const configs = mcpConfigs(),
+    args =
+      configs[stageServer()]?.args ||
+      Object.values(configs).find(config => (config.args || []).some(arg => String(arg).startsWith("--user-data-dir")))?.args ||
+      [],
+    at = args.indexOf("--user-data-dir");
+  if (at >= 0) return String(args[at + 1] || "");
+  return String(args.find(arg => String(arg).startsWith("--user-data-dir=")) || "").slice("--user-data-dir=".length);
+}
+// 浏览器没开（或被关了）：替用户调一次那个服务的 browser_navigate，浏览器照它的配置起来，再去连
+async function stageLaunch() {
+  const server = stageServer();
+  if (!server || stage.launching) return;
+  stage.launching = true;
+  stageRender();
+  try {
+    await bridge("/api/mcp/call", {
+      server,
+      config: mcpConfigs()[server],
+      tool: "browser_navigate",
+      arguments: { url: "about:blank" },
+      timeout: 60
+    });
+    await stageLocate();
+    if (!stage.ws) toast(`浏览器已开，看台却连不上它的调试口 ${stage.port}`);
+  } catch (error) {
+    toast(`打不开浏览器：${String(error.message || error).slice(0, 80)}`);
+  } finally {
+    stage.launching = false;
+    stageSync();
+  }
+}
+function stageNewTab() {
+  if (!stage.ws) return void stageLaunch();
+  // 新开的一页由 targetCreated 报来，看台跟过去；地址栏等着输网址
+  void stageSend("Target.createTarget", { url: "about:blank" })
+    .then(() => $("#stageUrl").focus())
+    .catch(() => {});
+}
+// 收藏：看台只转网页，浏览器自己的收藏栏看不到——读它配置目录里的那份，按夹分层列出，点一条在当前页打开。每回现读
+/** @param {HTMLElement} anchor */
+async function stageOpenMarks(anchor) {
+  if (document.querySelector(".chip-pop.stage-marks")) return closeChipPop();
+  const data = await bridge("/api/stage/bookmarks", { dir: stageProfileDir() }).catch(() => ({ bar: [], other: [] })),
+    marks = [...data.bar, ...(data.other.length ? [{ name: "其他收藏", children: data.other }] : [])];
+  if (!marks.length) return toast("这个浏览器里还没有收藏");
+  /** @param {any[]} nodes @returns {string} */
+  const list = (nodes, depth = 0) =>
+    nodes
+      .map(node =>
+        node.children
+          ? `<div class="stage-mark-dir" style="--depth:${depth}">${escapeHtml(node.name)}</div>${list(node.children, depth + 1)}`
+          : `<button type="button" data-stage-mark="${escapeHtml(node.url)}" style="--depth:${depth}" title="${escapeHtml(node.url)}"><span>${escapeHtml(node.name || node.url)}</span></button>`
+      )
+      .join("");
+  const pop = openFloatingPop(anchor, list(marks), { align: "right" });
+  pop.classList.add("stage-marks");
+  pop.addEventListener("click", e => {
+    const mark = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest("[data-stage-mark]"));
+    if (!mark) return;
+    closeChipPop();
+    stageGo(mark.dataset.stageMark || "");
+  });
 }
 /** @param {{ title: string, url: string }} tab */
 function stageTitle(tab) {
@@ -248,8 +352,16 @@ function stageRender() {
   const tab = stage.tabs.get(stage.current),
     url = /** @type {HTMLInputElement} */ ($("#stageUrl"));
   if (document.activeElement !== url) url.value = stageReadable(tab?.url || "");
-  const empty = !stage.ws ? "浏览器未开" : !tab ? "没有开着的页" : "";
-  $("#stageEmpty").textContent = empty;
+  const [text, action] = stage.launching
+      ? ["正在打开浏览器…", ""]
+      : !stage.ws
+        ? ["浏览器未开", stageServer() ? `<button type="button" class="outline-btn" data-stage-launch>打开浏览器</button>` : ""]
+        : !tab
+          ? ["没有开着的页", `<button type="button" class="outline-btn" data-stage-new>新建标签页</button>`]
+          : ["", ""],
+    empty = text ? `<span>${text}</span>${action}` : "";
+  // 隔一会儿就重画一回：没变不动，免得按钮在指针下被换掉
+  if (empty !== stage.empty) $("#stageEmpty").innerHTML = stage.empty = empty;
   $("#stageEmpty").classList.toggle("hidden", !empty);
   $("#stageView").classList.toggle("empty", !!empty);
 }
@@ -317,7 +429,7 @@ function stageFocusKeys(e) {
 /** @param {string} raw */
 function stageGo(raw) {
   const text = raw.trim();
-  if (!text || !stage.session) return;
+  if (!text || !stage.ws) return;
   const url = /^[a-z]:[\\/]/i.test(text)
     ? `file:///${text.replace(/\\/g, "/")}`
     : /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(text)
@@ -325,13 +437,30 @@ function stageGo(raw) {
       : /^[a-z][\w+.-]*:/i.test(text)
         ? text
         : `https://${text}`;
-  void stageSend("Page.navigate", { url }, stage.session).catch(error => toast(`打不开：${String(error.message || error).slice(0, 80)}`));
+  // 一页都没开着：新开一页去
+  const go = stage.session ? stageSend("Page.navigate", { url }, stage.session) : stageSend("Target.createTarget", { url });
+  void go.catch(error => toast(`打不开：${String(error.message || error).slice(0, 80)}`));
 }
 
 function bindStage() {
   $("#stagePin").addEventListener("click", openStage);
   $("#stageClose").addEventListener("click", closeStage);
   $("#stageWide").addEventListener("click", () => stageSetWide(!$("#stagePanel").classList.contains("wide")));
+  $("#stageNewTab").addEventListener("click", stageNewTab);
+  $("#stageMarks").addEventListener("click", e => {
+    e.stopPropagation();
+    void stageOpenMarks(/** @type {HTMLElement} */ (e.currentTarget));
+  });
+  $("#stageEmpty").addEventListener("click", e => {
+    const target = /** @type {HTMLElement} */ (e.target);
+    if (target.closest("[data-stage-launch]")) void stageLaunch();
+    else if (target.closest("[data-stage-new]")) stageNewTab();
+  });
+  // 看台一变大小（拖宽窄、阔、窗口缩放），停手片刻后把浏览器的窗口跟上
+  new ResizeObserver(() => {
+    clearTimeout(stage.fitTimer);
+    stage.fitTimer = window.setTimeout(() => void stageFit(), 250);
+  }).observe($("#stageView"));
   $("#stageTabs").addEventListener("click", e => {
     const target = /** @type {HTMLElement} */ (e.target),
       close = /** @type {HTMLElement | null} */ (target.closest("[data-stage-close]"));

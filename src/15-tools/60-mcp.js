@@ -79,6 +79,8 @@ function registerMcpTools() {
     else for (const spec of state.tools) defineTool(mcpInlineTool(server, spec));
   }
   if (mcp.lazy.length) MCP_LAZY_TOOLS.forEach(defineTool);
+  // 接没接浏览器类的服务，定顶栏那枚看台小屏挂不挂
+  stageSync();
 }
 /** @param {McpToolSpec} spec */
 function mcpReadOnly(spec) {

@@ -4030,7 +4030,7 @@ sup.note-ref.active {
   border-bottom: 1px solid var(--line);
 }
 .stage-tabs {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   display: flex;
   gap: 2px;
@@ -4094,6 +4094,7 @@ sup.note-ref.active {
 }
 .stage-tools {
   flex: none;
+  margin-left: auto;
   display: flex;
   gap: 2px;
   padding-bottom: 6px;
@@ -4249,6 +4250,55 @@ sup.note-ref.active {
 }
 .stage-pin:hover .brush {
   transform: translateY(-1px);
+}
+
+/* 标签行末的＋：新开一页；没开浏览器时先把浏览器请起来 */
+.stage-new {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: 0 0 5px 2px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--ink-3);
+  font-size: 14px;
+}
+.stage-new:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+/* 地址栏右端的「收藏」与浮出的清单：夹名淡、缩进表层次 */
+.stage-nav .stage-marks-btn {
+  width: auto;
+  margin-left: 6px;
+  padding: 0 8px;
+  font: 12px var(--title);
+  letter-spacing: 0.08em;
+}
+.chip-pop.stage-marks {
+  max-height: min(60vh, 520px);
+  min-width: 220px;
+  overflow-y: auto;
+}
+.chip-pop.stage-marks button {
+  padding-left: calc(12px + var(--depth, 0) * 14px);
+}
+.chip-pop.stage-marks button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-mark-dir {
+  padding: 8px 12px 3px calc(12px + var(--depth, 0) * 14px);
+  color: var(--ink-3);
+  font: 11px var(--title);
+  letter-spacing: 0.12em;
+}
+/* 空台：一句状态，底下一枚按钮 */
+.stage-empty {
+  gap: 14px;
+  align-content: center;
 }
 
 /* ---- 60-composer.css ---- */
