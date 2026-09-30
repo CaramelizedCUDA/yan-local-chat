@@ -1,0 +1,331 @@
+/* 听音：预览里的整页（设计稿/18 · 二甲 · 声纹）与顶栏上的玉佩（设计稿/22、23 甲 · 冲牙）；逻辑见 src/25-listen.js */
+
+/* ---------- 整页 ---------- */
+.listen-page {
+  margin: auto;
+  width: min(100%, 620px);
+}
+.listen-title {
+  margin: 0;
+  color: var(--ink);
+  font: 500 24px var(--title);
+  letter-spacing: 0.1em;
+}
+.listen-where {
+  margin: 4px 0 22px;
+  color: var(--ink-3);
+  font: 11.5px var(--title);
+  letter-spacing: 0.06em;
+}
+/* 声纹：本机解开音频量出的峰，放过的墨、没放的淡墨，一道朱线是此刻；点哪跳哪 */
+.listen-wave {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 96px;
+  cursor: pointer;
+}
+.listen-wave i {
+  flex: 1;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--ink-3) 38%, transparent);
+  transition: height 0.4s ease;
+}
+.listen-wave i.on {
+  background: var(--ink);
+}
+.listen-head {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 1.5px;
+  background: var(--accent);
+}
+.listen-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--ink-3);
+  font: 11px var(--title);
+  font-variant-numeric: tabular-nums;
+}
+.listen-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin: 18px 0 20px;
+}
+.listen-controls {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+}
+.listen-controls svg {
+  fill: currentColor;
+}
+.listen-step {
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  color: var(--ink-2);
+  border-radius: 50%;
+}
+.listen-step:hover {
+  color: var(--ink);
+}
+.listen-play {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+.listen-play svg {
+  width: 20px;
+  height: 20px;
+}
+.listen-volume {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font: 11px var(--title);
+}
+.listen-volume input {
+  width: 84px;
+  height: 14px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.listen-volume input::-webkit-slider-runnable-track {
+  height: 1px;
+  background: var(--ink-3);
+}
+.listen-volume input::-webkit-slider-thumb {
+  appearance: none;
+  width: 9px;
+  height: 9px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--ink-2);
+}
+.listen-list {
+  border-top: 1px solid var(--line);
+}
+.listen-list button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  font: 12.5px var(--title);
+  text-align: left;
+}
+.listen-list button:before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.listen-list button.on {
+  color: var(--ink);
+}
+.listen-list button.on:before {
+  background: var(--accent);
+}
+.listen-list button:hover {
+  color: var(--ink);
+}
+
+/* ---------- 玉佩：挂在砚台左边，自窗顶垂下；不占顶栏的位置 ---------- */
+.listen-pendant {
+  --j0: color-mix(in srgb, var(--reach) 15%, var(--paper));
+  --j1: color-mix(in srgb, var(--reach) 31%, var(--paper));
+  --j2: color-mix(in srgb, var(--reach) 52%, var(--paper));
+  --jline: color-mix(in srgb, var(--reach) 75%, var(--ink));
+  --jlight: #fff;
+  --jshadow: rgba(52, 44, 30, 0.2);
+  --hi: 0.85;
+  position: relative;
+  align-self: flex-start;
+  width: 0;
+  height: 55px;
+}
+:root[data-theme="dark"] .listen-pendant {
+  --j0: color-mix(in srgb, var(--reach) 62%, var(--paper));
+  --j1: color-mix(in srgb, var(--reach) 44%, var(--paper));
+  --j2: color-mix(in srgb, var(--reach) 28%, var(--paper));
+  --jline: color-mix(in srgb, var(--reach) 30%, var(--paper));
+  --jlight: color-mix(in srgb, var(--reach) 40%, #fff);
+  --jshadow: rgba(0, 0, 0, 0.45);
+  --hi: 0.5;
+}
+.listen-svg {
+  position: absolute;
+  top: 0;
+  right: -26px;
+  width: 104px;
+  height: 124px;
+  overflow: hidden;
+  pointer-events: none;
+  transform-origin: 50% 0;
+  rotate: var(--listen-sway, 0deg);
+}
+.listen-part {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.listen-svg .s0 {
+  stop-color: var(--j0);
+}
+.listen-svg .s1 {
+  stop-color: var(--j1);
+}
+.listen-svg .s2 {
+  stop-color: var(--j2);
+}
+.listen-svg .fshadow {
+  flood-color: var(--jshadow);
+}
+.listen-svg .zhu {
+  fill: var(--accent);
+}
+.listen-svg .zhu-deep {
+  fill: color-mix(in srgb, var(--accent) 80%, var(--ink));
+}
+.listen-svg .hole {
+  fill: var(--paper);
+}
+.listen-svg .hit {
+  fill: transparent;
+}
+.listen-svg .rim {
+  fill: none;
+  stroke: var(--jline);
+  stroke-width: 0.45;
+  opacity: 0.45;
+}
+.listen-svg .hi {
+  fill: none;
+  stroke: var(--jlight);
+  stroke-width: 0.7;
+  stroke-linecap: round;
+  opacity: var(--hi);
+}
+.listen-svg .xian {
+  fill: none;
+  stroke: var(--jline);
+  stroke-width: 0.4;
+  opacity: 0.35;
+}
+.listen-svg .played {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ink) 62%, var(--paper));
+  stroke-width: 0.95;
+  stroke-linecap: round;
+}
+.listen-svg .glyph {
+  fill: color-mix(in srgb, var(--ink) 58%, var(--paper));
+}
+.listen-pendant.playing .glyph-play,
+.listen-pendant:not(.playing) .glyph-pause {
+  display: none;
+}
+/* 收着：佩提在檐上（窗顶之外），只垂一根绳、绳头一粒小结；点绳，佩顺绳落下，落过头一点再荡定 */
+.listen-pei {
+  transform: translateY(-112px);
+  transition: transform 0.28s cubic-bezier(0.5, 0, 0.8, 0.4);
+}
+.listen-pendant.open .listen-pei {
+  transform: none;
+  transition: transform 0.46s cubic-bezier(0.3, 1.35, 0.55, 1);
+}
+.listen-knot {
+  transition: opacity 0.2s;
+}
+.listen-pendant.open .listen-knot {
+  opacity: 0;
+}
+.listen-pendant.open [data-listen="rope"] {
+  height: 28px;
+}
+/* 冲牙：悬停时朝它所指的方向轻荡一下 */
+.listen-side {
+  transform-box: view-box;
+  transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.listen-side[data-listen="prev"]:hover {
+  transform: translateX(-1.2px) rotate(7deg);
+}
+.listen-side[data-listen="next"]:hover {
+  transform: translateX(1.2px) rotate(-7deg);
+}
+/* 题名浮在佩左，不衬卡片，垫一圈纸色晕开；点它回整页，× 是停 */
+.listen-label {
+  position: absolute;
+  top: 36px;
+  right: 72px;
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-items: end;
+  align-items: baseline;
+  column-gap: 5px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.2s,
+    visibility 0s 0.2s;
+  text-shadow:
+    0 0 3px var(--paper),
+    0 0 6px var(--paper),
+    0 0 10px var(--paper);
+}
+.listen-pendant.open .listen-label {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.3s 0.3s;
+}
+.listen-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+  font: 12.5px var(--title);
+  letter-spacing: 0.08em;
+}
+.listen-name:hover {
+  color: var(--accent);
+}
+.listen-stop {
+  color: var(--ink-3);
+  font: 13px/1 var(--title);
+}
+.listen-stop:hover {
+  color: var(--ink);
+}
+.listen-time {
+  grid-column: 1 / -1;
+  margin-top: 3px;
+  color: var(--ink-3);
+  font: 10.5px var(--title);
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .listen-pei,
+  .listen-pendant.open .listen-pei,
+  .listen-side,
+  .listen-label {
+    transition: none;
+  }
+}

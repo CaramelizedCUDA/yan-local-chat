@@ -682,9 +682,8 @@ async function fileViewerBody(reader, name, kind) {
     return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;
   // PDF 交给浏览器自带的阅读器；卷宗的响应带 CSP: sandbox，脚本不会以本站身份运行
   if (kind === "pdf") return `<iframe class="file-viewer-frame" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></iframe>`;
-  // 音视频交给浏览器自带的播放器；编码认不得（如某些 mkv）时换成下载提示，见 bindViewerEvents
-  if (kind === "audio")
-    return `<div class="file-viewer-media"><audio controls preload="metadata" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></audio></div>`;
+  // 音频摊成听音整页（放音不在这层浮层里，关了也不断，见 src/25-listen.js）；视频交给浏览器自带的播放器，编码认不得（如某些 mkv）时换成下载提示，见 bindViewerEvents
+  if (kind === "audio") return listenPageHtml(listenTrackFrom(viewerSource, name, reader));
   if (kind === "video")
     return `<div class="file-viewer-media"><video controls preload="metadata" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></video></div>`;
   if (kind === "none")
@@ -788,7 +787,9 @@ function splitDelimited(row, split) {
   out.push(cell);
   return out;
 }
-function closeFileViewer() {
+/** @param {boolean} [stop] 点的是 ×：摊着的若是正放的那一曲，一并停下；别的关法只收起，正放着的挂上顶栏接着放 */
+function closeFileViewer(stop = false) {
+  listenViewerClosed(stop);
   const target = viewerReturnFocus;
   viewerPath = "";
   viewerSource = null;
@@ -1259,7 +1260,7 @@ async function downloadAttachment(id) {
 
 // 文件查看器与图片查看器
 function bindViewerEvents() {
-  $("#fileViewerClose").onclick = closeFileViewer;
+  $("#fileViewerClose").onclick = () => closeFileViewer(true);
   $("#fileViewerDownload").onclick = downloadViewerFile;
   $("#fileViewer").addEventListener("click", e => {
     if (e.target.closest("[data-viewer-download]")) return downloadViewerFile();
