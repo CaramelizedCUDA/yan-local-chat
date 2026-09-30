@@ -50,12 +50,13 @@ function securityHeaders(req, res) {
   const isPreview = new URL(req.url, `http://${HOST}`).pathname === "/preview.html";
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
+  // 主页面另许连本机的 ws：看台直连模型所用浏览器的调试口（见 server/stage.js）。
   // preview.html 只允许被本站（主页面）嵌入，且只有它需要执行 blob: 脚本；否则任意网站都能把它 iframe 进去并注入脚本读取 localStorage
   res.setHeader(
     "Content-Security-Policy",
     isPreview
       ? "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
-      : `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`
+      : `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:*; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`
   );
 }
 // 能调桥接的页面：本机的与 VS Code Webview。别的网站连模型转发、列模型也不许借道——那等于让任意网页经桥接往局域网里发请求。
@@ -296,6 +297,8 @@ const CHATS = require("./server/chats.js")({ chatsHome: () => STORE.paths().chat
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files });
 // MCP：按设置里的配置起、连外部的 MCP 服务，把它们的工具交给页面
 const MCP = require("./server/mcp/index.js")({ version: APP_VERSION, toolEnv: ENV.apply });
+// 看台：替页面问出模型所用浏览器的调试地址，其余页面直连（见 server/stage.js）
+const STAGE = require("./server/stage.js")();
 // 总线：长请求的响应从页面的一条事件流回去，不再一个请求占一条浏览器连接（见 server/bus.js）
 const BUS = require("./server/bus.js")({ dispatch });
 
@@ -316,7 +319,8 @@ const OPEN_ROUTES = {
     ...STORE.routes,
     ...FILES.routes,
     ...MCP.routes,
-    ...ENV.routes
+    ...ENV.routes,
+    ...STAGE.routes
   };
 const ROUTES = new Map(Object.entries({ ...OPEN_ROUTES, ...TRUSTED_ROUTES }));
 const TRUSTED_PATHS = new Set(Object.keys(TRUSTED_ROUTES).map(key => key.split(" ")[1]));

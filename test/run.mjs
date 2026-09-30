@@ -187,6 +187,8 @@ try {
       "--no-first-run",
       "--no-default-browser-check",
       `--remote-debugging-port=${DEBUG_PORT}`,
+      // 看台（test/stage.mjs）从言的页面直连这个调试口，得放行言的来源
+      `--remote-allow-origins=http://127.0.0.1:${BRIDGE_PORT}`,
       `--user-data-dir=${profile}`,
       "about:blank"
     ]);

@@ -76,6 +76,8 @@ async function boot() {
   // MCP 服务起得慢（起进程、握手）：先起着，头一问发出前会等它；环境备没备好也问一声，系统提示里要说
   void mcpReady();
   void refreshEnv();
+  // 模型所用的浏览器若已开着（页面刷新过、桥接重启过），看台直接接上
+  void stageLocate();
   if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
   // 先问一声别处在作答什么，那几段不当成中断
   await syncLeases();
@@ -187,6 +189,7 @@ function bindEvents() {
     if (document.querySelector(".chip-pop")) return closeChipPop();
     const modelMenu = $("#modelMenu");
     if (!modelMenu.classList.contains("hidden") && !modelMenu.classList.contains("leaving")) return closeModelMenu();
+    if ($("#stagePanel").classList.contains("wide")) return stageSetWide(false);
     if (confirmResolve) settleConfirm(false);
     else if (!$("#settingsModal").classList.contains("hidden")) closeSettings();
     else if (editingMessageId) {

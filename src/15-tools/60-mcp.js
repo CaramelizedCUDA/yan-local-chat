@@ -217,7 +217,9 @@ async function runMcpTool(step, server, tool, args, ctx) {
     step.skipped = true;
     return { ok: false, content: prompt("mcp.skipped"), display: "已跳过" };
   }
-  const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal);
+  const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal).finally(
+    stageWatch(tool)
+  );
   // 服务说工具变了：下一问前重拉
   if (data.toolsChanged) mcp.key = "";
   const text = mcpResultText(data.result);
