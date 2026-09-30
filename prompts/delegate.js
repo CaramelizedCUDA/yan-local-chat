@@ -1,6 +1,7 @@
 // 言 · 内置提示词 · 差遣（子 Agent）
 // 何时该差遣写在 tools.js 里 delegate 的说明中。system 是帮手自己的系统提示，接在与主模型相同的通用段落之后；
-// limit 是帮手工具轮次到顶时回给它的话；report / failed 是把帮手的结果回给主模型时的格式，不是系统提示。
+// limit 是帮手工具轮次到顶时回给它的话；started 是差遣当即回给主模型的工具结果（帮手在后台做）；
+// report / failed 是帮手做完后送进主模型这一答的一条消息（与补言同一个口子），不是系统提示。
 (window.YAN_PROMPTS ||= {}).delegate = {
   system: [
     "你是受差遣完成一件子任务的帮手：只有这份任务说明，看不到主对话，亦不能向用户提问——拿不准便自行取舍，在回报里写明假设。",
@@ -9,7 +10,9 @@
 
   limit: "工具调用轮次已达上限，请勿再调用工具，就已有结果直接回报，并说明尚未完成的部分。",
 
-  report: "帮手已完成（{{steps}} 步{{changed}}）。以下是它的回报：\n\n{{report}}",
+  started: "帮手「{{title}}」已在后台开工，做完后回报会作为一条消息送到。",
 
-  failed: "帮手未能完成（{{reason}}）。它已做的：{{steps}} 步{{changed}}。{{partial}}"
+  report: "帮手「{{title}}」已完成（{{steps}} 步{{changed}}）。以下是它的回报：\n\n{{report}}",
+
+  failed: "帮手「{{title}}」未能完成（{{reason}}）。它已做的：{{steps}} 步{{changed}}。{{partial}}"
 };

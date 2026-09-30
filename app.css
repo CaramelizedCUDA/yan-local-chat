@@ -5806,6 +5806,25 @@ textarea::placeholder,
 .tool-state.done {
   color: var(--code-green);
 }
+/* 补言待寄时转圈左边的折箭头：点了不等落点，即刻递上 */
+.note-now {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  margin-right: 2px;
+  border-radius: 5px;
+  color: var(--ink-3);
+  font: 13px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.note-now:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--paper-3) 55%, transparent);
+}
 .tool-state.failed {
   color: var(--danger);
 }

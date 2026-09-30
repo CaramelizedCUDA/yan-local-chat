@@ -9,12 +9,48 @@ defineTool({
   mainOnly: true,
   sideEffect: true,
   parallel: true,
-  run: runDelegate,
+  run: delegateInBackground,
   html: delegateStepHtml,
   sync: syncDelegateCard,
   digest: step =>
     `差遣「${String(step.title || "").slice(0, 40)}」→ ${step.result || step.status}${subChangedPaths(step).length ? `，改了 ${subChangedPaths(step).slice(0, 8).join("、")}` : ""}`
 });
+// 帮手在后台做：差遣当即回一句「已开工」，主模型这一轮随即结束、照常往下走；帮手做完，回报寄进这一答的收件口
+//（job.queue，与补言同一个口子），在下一个轮次边界递给主模型。帮手干活时主模型醒着：补言当场能递，它可据此调整。
+// 主模型没别的事可做时，这一答不收尾，等收件口——帮手回报或补言，谁先到先处理（见 streamReply）
+/**
+ * @param {Step} step
+ * @param {Record<string, any>} args
+ * @param {ToolContext} ctx
+ */
+function delegateInBackground(step, args, ctx) {
+  const job = requestJob(ctx.conversation.id);
+  if (!job || !String(args.task || "").trim()) return runDelegate(step, args, ctx);
+  job.helpers = (job.helpers || 0) + 1;
+  void runDelegate(step, args, ctx)
+    .then(
+      outcome => {
+        step.status = outcome.ok ? "done" : "error";
+        step.result = outcome.display;
+        (job.queue ||= []).push({ report: outcome.content, step });
+      },
+      // 停了：streamReply 收尾时自会把还在转圈的步骤收束
+      error => {
+        if (error.name !== "AbortError") {
+          step.status = "error";
+          step.result = friendlyError(String(error.message || error));
+          (job.queue ||= []).push({ report: prompt("delegate.failed", { title: step.title, reason: step.result, steps: step.sub?.steps.length || 0, changed: "", partial: "" }), step });
+        }
+      }
+    )
+    .finally(() => {
+      job.helpers -= 1;
+      refreshSteps(ctx.assistant);
+      saveStore();
+      job.wake?.();
+    });
+  return { ok: true, background: true, content: prompt("delegate.started", { title: step.title }), display: "后台进行中" };
+}
 /** @param {Step} step */
 function subChangedPaths(step) {
   return [...new Set((step.sub?.steps || []).filter(s => s.change && s.status === "done").map(s => s.change.path))];
@@ -145,6 +181,7 @@ async function runDelegate(step, args, ctx) {
     return {
       ok: false,
       content: prompt("delegate.failed", {
+        title: step.title,
         reason: failure || "未收到回报",
         steps: sub.steps.length,
         changed: changedNote,
@@ -155,12 +192,12 @@ async function runDelegate(step, args, ctx) {
   if (!sub.report)
     return {
       ok: false,
-      content: prompt("delegate.failed", { reason: "帮手没有写回报", steps: sub.steps.length, changed: changedNote, partial: "" }),
+      content: prompt("delegate.failed", { title: step.title, reason: "帮手没有写回报", steps: sub.steps.length, changed: changedNote, partial: "" }),
       display: `${display} · 无回报`
     };
   return {
     ok: true,
-    content: prompt("delegate.report", { steps: sub.steps.length, changed: changedNote, report: sub.report.slice(0, 16000) }),
+    content: prompt("delegate.report", { title: step.title, steps: sub.steps.length, changed: changedNote, report: sub.report.slice(0, 16000) }),
     display
   };
 }

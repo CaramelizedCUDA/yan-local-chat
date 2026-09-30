@@ -185,15 +185,35 @@ http
         const summary = msgs.some(m => m.role === "user" && String(m.content || "").startsWith("［前文摘要］"));
         return sse(res, [delta({ content: `${headKey} ok|summary:${summary ? "yes" : "no"}|size:${size}` }), delta({}, { usage: { total_tokens: 5 } })]);
       }
-      if (typeof lastUser === "string" && lastUser.includes("LONGRUN-SUB")) {
+      // 帮手在后台做，回报作为一条用户消息送到（以「帮手「」起头）：这时最后一条用户消息是回报，场景按第一问认
+      const helperReports = msgs.filter(m => m.role === "user" && String(m.content).startsWith("帮手「"));
+      if (firstUser.includes("LONGRUN-SUB")) {
         if (!toolResults.length)
           return sse(res, [
             delta({ content: "派一名帮手。" }),
             delta({ tool_calls: [{ index: 0, id: "call_lr0", type: "function", function: { name: "delegate", arguments: JSON.stringify({ title: "读十二个大文件", task: "LONGSUB：依次读 big0.txt 到 big11.txt，然后回报。" }) } }] }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
-        return sse(res, [delta({ content: `LONGRUN-SUB done｜${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}` }), delta({}, { usage: { total_tokens: 5 } })]);
+        if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 0 } })]);
+        return sse(res, [delta({ content: `LONGRUN-SUB done｜${String(helperReports.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}` }), delta({}, { usage: { total_tokens: 5 } })]);
       }
+      // SLOWSUB：慢帮手，约 3 秒说完再回报
+      if (typeof lastUser === "string" && lastUser.includes("SLOWSUB"))
+        return sse(res, [...Array.from({ length: 12 }, (_, i) => delta({ content: `慢活第${i + 1}句。` })), delta({ content: "慢活回报。" }), delta({}, { usage: { total_tokens: 3 } })], 250);
+      // BGNOTE：主模型差一名慢帮手后说「等回报」；等的时候寄来的补言当场递到，回一句「收到补言」；回报到了才收尾
+      if (firstUser.includes("BGNOTE")) {
+        if (!toolResults.length)
+          return sse(res, [
+            delta({ tool_calls: [{ index: 0, id: "call_bg0", type: "function", function: { name: "delegate", arguments: JSON.stringify({ title: "慢活", task: "SLOWSUB：慢慢做完回报。" }) } }] }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (String(lastUser).includes("BG-NOTE-TEXT")) return sse(res, [delta({ content: `收到补言｜reports:${helperReports.length}` }), delta({}, { usage: { total_tokens: 5 } })]);
+        if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
+        return sse(res, [delta({ content: `BGNOTE done｜reports:${helperReports.length}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
+      // SLOWTHINK：想得很久（约 9 秒）才开口，给补言的折箭头试「不等落点」
+      if (typeof lastUser === "string" && lastUser.includes("SLOWTHINK"))
+        return sse(res, [...Array.from({ length: 60 }, (_, i) => delta({ reasoning_content: `第 ${i + 1} 行思绪。\n` })), delta({ content: "SLOWTHINK done" }), delta({}, { usage: { total_tokens: 5 } })], 150);
       // 带附件的一问是分段内容：正文在第一段
       const lastText = Array.isArray(lastUser) ? String(lastUser.find(part => part.type === "text")?.text || "") : lastUser;
       if (typeof lastUser === "string" && lastUser.includes("这件事用几个字称呼")) {
@@ -587,7 +607,7 @@ http
           delta({}, { usage: { total_tokens: 7 } })
         ]);
       }
-      if (typeof lastUser === "string" && lastUser.includes("DELEGATE")) {
+      if (firstUser.includes("DELEGATE") && (lastUser === firstUser || String(lastUser).startsWith("帮手「"))) {
         // 主模型：差遣 → 没读就想改（该被拒）→ 收尾把工具结果带回正文
         const n = toolResults.length,
           call = (name, args) => [
@@ -623,8 +643,12 @@ http
             delta({}, { usage: { total_tokens: 5 } })
           ]);
         if (n === 2) return sse(res, call("edit_file", { path: "src/a.js", old: "return 2;", new: "return 3;" }));
+        // 两名帮手在后台：没回齐就先说一句等着（不记用量，耗墨数不随先后浮动）
+        if (helperReports.length < 2) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 0 } })]);
         return sse(res, [
-          delta({ content: `DELEGATE done｜${toolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 120)).join(" ▸ ")}` }),
+          delta({
+            content: `DELEGATE done｜${[...toolResults, ...helperReports].map(t => String(t.content).replace(/\s+/g, " ").slice(0, 120)).join(" ▸ ")}`
+          }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }

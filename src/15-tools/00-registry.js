@@ -17,7 +17,7 @@
  * @property {string[]} offered 登记在前、此处已经给出的工具
  * @property {Preset|null} preset 这段对话用的预设：只给它挑中的几组与几个 MCP 服务
  *
- * @typedef {{ ok: boolean, content: string, display: string }} ToolOutcome content 回给模型，display 写在标题行右侧
+ * @typedef {{ ok: boolean, content: string, display: string, background?: boolean }} ToolOutcome content 回给模型，display 写在标题行右侧；background：活在后台接着做，步骤由它自己收尾
  * @typedef {{ url?: string, title?: string, read?: boolean, talk?: string, date?: string, memory?: string }} Source 答末「出处」的一条：网页、旧谈或记忆
  *
  * @typedef {Object} Tool
@@ -201,8 +201,11 @@ async function runSteps(steps, conversation, assistant, signal, toolCache) {
     }
     const remaining = MIN_TOOL_STATUS_MS - (performance.now() - started);
     if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
-    step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
-    step.result = outcome.display;
+    // 在后台接着做的（差遣）：这一步仍是进行中，做完由它自己收尾
+    if (!outcome.background) {
+      step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
+      step.result = outcome.display;
+    }
     outcomes.set(step.id, String(outcome.content).slice(0, 60000));
     refreshSteps(assistant);
     saveStore();

@@ -930,6 +930,11 @@ function bindTrailEvents() {
       event.stopPropagation();
       return approveFrom(button);
     }
+    if (event.target.closest("[data-note-now]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      return sendSupplementNow();
+    }
     // 差遣的签不在此列：点它是去右侧开面板，不是折叠（见下面的 openHelperPanel）
     const head = event.target.closest(".tool-step.foldable > .tool-step-head");
     if (!head || event.target.closest("a, button")) return;

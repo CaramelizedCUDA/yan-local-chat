@@ -190,9 +190,10 @@ check("second helper's file exists", readFileSync(WORK + "/src/b.js", "utf8").in
 const text = await evalJs(`document.querySelector(".message.assistant .assistant-block > .markdown").textContent`);
 check(
   "parent received both helper reports with change summaries",
-  text.includes("帮手已完成（2 步，改了 1 个文件：src/a.js（+1 −1））") &&
+  text.includes("帮手「改 a.js」已完成（2 步，改了 1 个文件：src/a.js（+1 −1））") &&
     text.includes("回报：已把 return 1 改为 return 2") &&
-    text.includes("帮手已完成（1 步，改了 1 个文件：src/b.js（+1 −0））"),
+    text.includes("帮手「建 b.js」已完成（1 步，改了 1 个文件：src/b.js（+1 −0））") &&
+    text.includes("帮手「改 a.js」已在后台开工"),
   text.slice(0, 400)
 );
 check(
