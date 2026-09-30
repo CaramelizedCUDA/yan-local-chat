@@ -226,14 +226,15 @@
   // 录（记忆）：五件都在浏览器里完成，不经桥接；记忆启用时提供
   remember: {
     description:
-      "记一句长期有效的信息进跨对话的记忆（偏好、身份、约定、日后还会用到的结论）：一句话、脱离本次对话也看得懂；临时细节不记；已有相近条目给 replaces 合并。",
+      "记一条长期有效的信息进跨对话的记忆（偏好、身份、约定、日后还会用到的结论）：一条一事、脱离本次对话也看得懂；临时细节不记；已有相近条目给 replaces 合并。",
     parameters: {
       type: "object",
       properties: {
-        text: { type: "string", description: "一句话，不超过 200 字" },
+        category: { type: "string", description: "所属分类，先沿用已有的类，都不合再起新类；名字简短，如「偏好」「言的开发」" },
+        text: { type: "string", description: "条目正文，写全，不超过 2000 字" },
         replaces: { type: "string", description: "要合并更新的已有条目 id（见 recall 的结果）" }
       },
-      required: ["text"]
+      required: ["category", "text"]
     }
   },
 
@@ -243,8 +244,15 @@
   },
 
   recall: {
-    description: "查看记忆：给 query 按关键词筛（空格分隔、须同时命中），不给则返回全部。用户提到此前谈过的事、或问题依赖过往偏好时用。",
-    parameters: { type: "object", properties: { query: { type: "string", description: "关键词，可省略" } } }
+    description:
+      "查看记忆：都不给则列出各类（几条、最近一条的开头）；给 category 列出那一类的全部条目；给 query 跨类按关键词筛（空格分隔、须同时命中）。用户提到此前谈过的事、或问题依赖过往偏好时用。",
+    parameters: {
+      type: "object",
+      properties: {
+        category: { type: "string", description: "分类名，可省略" },
+        query: { type: "string", description: "关键词，可省略" }
+      }
+    }
   },
 
   search_conversations: {

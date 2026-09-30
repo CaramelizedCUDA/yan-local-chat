@@ -991,7 +991,10 @@ const PROMPT_VARS = {
   "work.hint": ctx => workVars(ctx.conversation),
   "work.archive": ctx => workVars(ctx.conversation),
   "work.env": () => envVars(),
-  "memory.hint": () => ({ count: store.memory.items.length }),
+  "memory.hint": () => {
+    const names = memoryCategories().map(cat => cat.name);
+    return { count: store.memory.items.length, categories: names.length ? `，分作${names.map(name => `「${name}」`).join("")}` : "" };
+  },
   "mcp.hint": ctx => mcpHintVars(ctx.tools, ctx.preset),
   "side.passage": ctx => (ctx.anchor ? {} : null),
   "side.whole": ctx => (ctx.anchor ? null : {}),

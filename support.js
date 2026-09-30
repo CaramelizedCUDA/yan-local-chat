@@ -161,7 +161,7 @@
  * @property {string} profileId 选它时换到这个模型；空则不换
  * @property {CommandPolicy|""} policy 选它时的指令权限；空则照设置里的默认
  */
-/** @typedef {{ id: string, text: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
+/** @typedef {{ id: string, text: string, category?: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
 /** @typedef {{ text: string, attachments: Attachment[], quote?: Quote|null, updatedAt?: string }} Draft */
 /**
  * @typedef {Object} Settings
@@ -171,7 +171,7 @@
  * @property {"sans"|"serif"|"mixed"|"kai"|"fangsong"} font
  * @property {number} width
  * @property {string} accent
- * @property {string} activeProfileId
+ * @property {string} activeProfileId 默认模型：新对话起手用它；只在设置里「设为默认」时改，打开旧对话、在菜单里换模型都不动它
  * @property {Preset[]} presets
  * @property {string} presetId 新对话用的预设（上回选的）；空即本色
  * @property {{ id: string, name: string, createdAt: string, presetId: string, workdir: string }[]} groups 分组：自立的几组，对话各记 groupId；组里新起的对话用组的预设、绑组的默认目录
@@ -310,6 +310,8 @@ let renamingId = null,
 let historyQuery = "";
 /** @type {Attachment[]} 案上待发的附件 */
 let pendingAttachments = [];
+// 欢迎页上为这段还没发出的新对话挑的模型；空即照预设带的、再照默认。发出后记在对话上，另起新对话时清空
+let pendingProfileId = "";
 /** @type {Quote|null} */
 let pendingQuote = null;
 let chatSuggestionsHtml = "",
@@ -401,6 +403,8 @@ const dirtyChatIds = new Set(),
 let libraryQuery = "",
   libraryKind = "all";
 const advancedOpen = new Set();
+// 模型设置里摊开着的那几个（一个模型平时收成一行，点开才是整张表）
+const profileOpen = new Set();
 let suppressViz = false;
 let saveTimer = null,
   historySearchTimer = null;
@@ -709,6 +713,7 @@ function normalizeMemory(memory) {
       .map(item => ({
         id: String(item.id),
         text: item.text,
+        category: String(item.category || ""),
         createdAt: item.createdAt || now(),
         updatedAt: item.updatedAt || item.createdAt || now(),
         source:
@@ -1894,8 +1899,17 @@ function branchNavHtml(branch) {
 function profiles() {
   return store.profiles;
 }
+// 此刻在用的模型：打开的对话用它自己记的；还没发出的新对话用欢迎页上挑的，没挑就照预设带的，再照默认。
+// 默认模型（settings.activeProfileId）只是新对话的起手，不随打开哪段、换了什么而变
 function activeProfile() {
-  return profiles().find(p => p.id === store.settings.activeProfileId) || profiles()[0] || null;
+  const c = currentConversation(),
+    byId = id => (id && profiles().find(p => p.id === id)) || null;
+  return (
+    (c ? byId(c.profileId) : byId(pendingProfileId) || byId(presetOf(null)?.profileId)) ||
+    byId(store.settings.activeProfileId) ||
+    profiles()[0] ||
+    null
+  );
 }
 function currentConversation() {
   return store.conversations.find(c => c.id === currentId) || null;
@@ -3576,6 +3590,7 @@ function newChat() {
   persistDraft();
   rememberScrollPosition();
   pendingAttachments = [];
+  pendingProfileId = "";
   currentId = null;
   editingMessageId = null;
   view = "chat";
@@ -3596,9 +3611,8 @@ function openConversation(id) {
   const c = currentConversation();
   if (c) {
     c.unread = false;
-    // 新对话照最近看的这段用的预设，与模型一样
+    // 新对话照最近看的这段用的预设（预设带了模型的，新对话也就用那个模型）
     store.settings.presetId = presetOf(c)?.id || "";
-    c.profileId && selectProfile(c.profileId, false);
     // 别处可能在这段里写过而这边没察觉（报到有间隔）：读一下目录里那份，新就跟上
     void catchUpFromDisk([c.id]);
   }
@@ -3676,18 +3690,16 @@ function selectProfile(id, shouldRender = true) {
   if (!profile) return;
   const c = currentConversation(),
     wasDry = conversationDry(c);
-  // 旧对话里已有的档位首次打开时归给它自己的模型；切到另一模型时只取新模型记住的档位。
-  const initialized = c?.profileId === id && profile.reasoning === undefined;
-  if (initialized) profile.reasoning = normalizeReasoning(c.reasoning);
+  // 换模型只换眼前这段（还没发出的新对话记在 pendingProfileId），默认模型不动；档位取新模型记住的那档
   const reasoning = normalizeReasoning(profile.reasoning);
-  // 开旧对话时也走这里，多半什么都没变：没变就不整份存一遍
-  const changed = initialized || store.settings.activeProfileId !== id || (!!c && (c.profileId !== id || c.reasoning !== reasoning));
-  store.settings.activeProfileId = id;
   if (c) {
-    c.profileId = id;
-    c.reasoning = reasoning;
-  }
-  if (changed) saveStore();
+    if (c.profileId !== id || c.reasoning !== reasoning) {
+      c.profileId = id;
+      c.reasoning = reasoning;
+      markDirty(c.id);
+      saveStore();
+    }
+  } else pendingProfileId = id;
   closeModelMenu();
   if (shouldRender) {
     renderHeader();
@@ -4453,7 +4465,7 @@ function renderModelMenu() {
   $("#modelMenu").innerHTML = all.length
     ? all
         .map(p => {
-          const active = p.id === store.settings.activeProfileId;
+          const active = p.id === activeProfile()?.id;
           // 只列显示名：模型原名与接口地址长短不一，行高参差；要看去模型设置
           return `<button class="model-option${active ? " active" : ""}" data-profile="${escapeHtml(p.id)}"${active ? ' aria-current="true"' : ""} title="${escapeHtml(p.model)}"><strong><span class="model-dot"></span><span class="model-option-name">${escapeHtml(p.name)}</span></strong></button>`;
         })
@@ -4723,7 +4735,6 @@ function restorePlace() {
     currentId = lastConversationId;
     const c = currentConversation();
     c.unread = false;
-    if (c.profileId) selectProfile(c.profileId, false);
   }
 }
 // 压缩过的前文在页面上折起（记录都在，只是不占地方）；最近一次压缩的分隔上有「展开前文 / 收起前文」
@@ -6607,9 +6618,14 @@ async function streamSideReply(conversation, thread, assistant, profile) {
 // 言 · 录（记忆）：条目的增删与设置页；模型用的五件工具在 15-tools/40-memory.js
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
 // ── 录（记忆）──
-// 一条条由模型在对谈中记下的话，跨对话可翻。内容不进系统提示，模型要看得自己 recall；旧对话也只在它去查时才给。
+// 一条条由模型在对谈中记下的话，跨对话可翻。每条归在一个分类下（言的开发、偏好……），分类不另存，就是各条上的名字：
+// 同名即同类，没有条目的分类自然消失。内容不进系统提示（只报有哪几类），模型要看得自己 recall：先看分类一览，再打开某一类。
+// 单条不截断——早先限 200 字、超出悄悄截掉，记下来的话常常没说完；现在过长就退回让模型拆开或精简
 const MAX_MEMORY_ITEMS = 200,
-  MEMORY_TEXT_CHARS = 200;
+  MEMORY_TEXT_CHARS = 2000,
+  MEMORY_UNSORTED = "未分类";
+/** 设置页「记忆」里打开着的那一类；null 即分类一览 */
+let memoryCategoryOpen = null;
 function memoryEnabled() {
   return store.memory.enabled !== false;
 }
@@ -6620,8 +6636,40 @@ function memoryId() {
   } while (store.memory.items.some(item => item.id === id));
   return id;
 }
-function memoryLine(item) {
-  return `[${item.id}] ${String(item.updatedAt || item.createdAt).slice(0, 10)}｜${item.text}`;
+function memoryCategoryOf(item) {
+  return item.category || MEMORY_UNSORTED;
+}
+function cleanMemoryCategory(value) {
+  return (
+    String(value || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 24) || MEMORY_UNSORTED
+  );
+}
+// 行内空白收拢，换行留着（长一点的条目可以分几行写）
+function cleanMemoryText(value) {
+  return String(value || "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+/** 各类一览：名字、条目（新的在前）、最近一条的日子；最近动过的类排前 */
+function memoryCategories() {
+  const map = new Map();
+  for (const item of store.memory.items) {
+    const name = memoryCategoryOf(item),
+      at = String(item.updatedAt || item.createdAt),
+      entry = map.get(name) || { name, items: [], updatedAt: "" };
+    entry.items.push(item);
+    if (at > entry.updatedAt) entry.updatedAt = at;
+    map.set(name, entry);
+  }
+  for (const entry of map.values()) entry.items.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  return [...map.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+function memoryLine(item, withCategory = false) {
+  return `[${item.id}] ${String(item.updatedAt || item.createdAt).slice(0, 10)}｜${withCategory ? `${memoryCategoryOf(item)}｜` : ""}${item.text}`;
 }
 function keywordTerms(query) {
   return String(query || "")
@@ -6633,13 +6681,10 @@ function hitsAll(text, terms) {
   const lower = String(text || "").toLowerCase();
   return terms.every(term => lower.includes(term));
 }
-function addMemory(text, source = null) {
-  const clean = String(text || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, MEMORY_TEXT_CHARS);
+function addMemory(text, source = null, category = "") {
+  const clean = cleanMemoryText(text);
   if (!clean) return null;
-  const item = { id: memoryId(), text: clean, createdAt: now(), updatedAt: now(), source };
+  const item = { id: memoryId(), text: clean, category: cleanMemoryCategory(category), createdAt: now(), updatedAt: now(), source };
   store.memory.items.push(item);
   saveStore();
   return item;
@@ -6648,9 +6693,23 @@ function addMemory(text, source = null) {
 function refreshMemorySettings() {
   if (settingsTab === "memory" && !$("#settingsModal").classList.contains("hidden")) renderSettings();
 }
-function memorySettingsHtml() {
-  const items = [...store.memory.items].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
-    enabled = memoryEnabled();
+function memoryGist(text) {
+  const line = String(text || "").replace(/\s+/g, " ");
+  return line.length > 60 ? `${line.slice(0, 60)}…` : line;
+}
+// 分类一览：一类一行（名 · 最近一条的开头 · 几条 · 日子），点开看这一类的全部条目
+function memoryIndexHtml(categories) {
+  return categories.length
+    ? `<div class="memory-cats">${categories
+        .map(
+          cat =>
+            `<button type="button" class="memory-cat" data-memory-cat="${escapeHtml(cat.name)}"><strong>${escapeHtml(cat.name)}</strong><span class="memory-cat-gist">${escapeHtml(memoryGist(cat.items[0].text))}</span><span class="memory-cat-count">${cat.items.length} 条</span><span class="memory-cat-date">${escapeHtml(formatDay(cat.updatedAt))}</span></button>`
+        )
+        .join("")}</div>`
+    : `<p class="memory-empty">尚无一条。</p>`;
+}
+// 一类里的条目：正文可改，太长的先收起几行，点进去即全文；条下注日子、来源、所属分类（可改归别类）
+function memoryCategoryHtml(cat, names) {
   const row = item => {
     const source =
       item.source?.conversationId && store.conversations.some(c => c.id === item.source.conversationId)
@@ -6658,10 +6717,21 @@ function memorySettingsHtml() {
         : item.source?.title
           ? `<span>${escapeHtml(item.source.title)}</span>`
           : `<span>手记</span>`;
-    return `<div class="memory-item" data-memory="${escapeHtml(item.id)}"><textarea class="memory-text" rows="1" spellcheck="false" aria-label="记忆内容">${escapeHtml(item.text)}</textarea><div class="memory-meta"><span>${escapeHtml(formatDay(item.updatedAt || item.createdAt))}</span>${source}<span class="memory-spacer"></span><button type="button" data-memory-delete title="删去这条">删去</button></div></div>`;
+    return `<div class="memory-item" data-memory="${escapeHtml(item.id)}"><textarea class="memory-text" rows="1" spellcheck="false" aria-label="记忆内容">${escapeHtml(item.text)}</textarea><div class="memory-meta"><span>${escapeHtml(formatDay(item.updatedAt || item.createdAt))}</span>${source}<span class="memory-spacer"></span><input class="memory-move" list="memoryCatNames" value="${escapeHtml(memoryCategoryOf(item))}" spellcheck="false" aria-label="所属分类" title="所属分类"><button type="button" data-memory-delete title="删去这条">删去</button></div></div>`;
   };
   return (
-    `<div class="about-head memory-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="about-version">${items.length} / ${MAX_MEMORY_ITEMS} 条</span></div>` +
+    `<div class="memory-crumbs"><button type="button" class="memory-back" data-memory-cat="">‹ 记忆</button><input id="memoryCatName" class="memory-cat-name" value="${escapeHtml(cat.name)}" maxlength="24" spellcheck="false" aria-label="分类名"><span class="memory-cat-count">${cat.items.length} 条</span></div>` +
+    `<datalist id="memoryCatNames">${names.map(name => `<option value="${escapeHtml(name)}"></option>`).join("")}</datalist>` +
+    `<div class="memory-list">${cat.items.map(row).join("")}</div>`
+  );
+}
+function memorySettingsHtml() {
+  const categories = memoryCategories(),
+    enabled = memoryEnabled(),
+    open = memoryCategoryOpen !== null ? categories.find(cat => cat.name === memoryCategoryOpen) : null;
+  if (!open) memoryCategoryOpen = null;
+  return (
+    `<div class="about-head memory-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="about-version">${store.memory.items.length} / ${MAX_MEMORY_ITEMS} 条${categories.length ? ` · ${categories.length} 类` : ""}</span></div>` +
     segmentRow(
       "启用记忆",
       "关闭后条目仍保留",
@@ -6672,17 +6742,48 @@ function memorySettingsHtml() {
       ],
       String(enabled)
     ) +
-    `<div class="memory-list">${items.length ? items.map(row).join("") : `<p class="memory-empty">尚无一条。</p>`}</div>` +
-    `<div class="memory-foot"><button id="addMemory" class="outline-btn" type="button">手记一条</button>${items.length ? `<button id="clearMemory" class="outline-btn" type="button">清空记忆</button>` : ""}</div>`
+    (open
+      ? memoryCategoryHtml(
+          open,
+          categories.map(cat => cat.name)
+        )
+      : memoryIndexHtml(categories)) +
+    `<div class="memory-foot"><button id="addMemory" class="outline-btn" type="button">手记一条</button>${
+      open
+        ? `<button id="dropMemoryCat" class="outline-btn" type="button">删去此类</button>`
+        : store.memory.items.length
+          ? `<button id="clearMemory" class="outline-btn" type="button">清空记忆</button>`
+          : ""
+    }</div>`
   );
+}
+function openMemoryCategory(name) {
+  memoryCategoryOpen = name;
+  renderSettings();
+  $("#settingsContent").scrollTop = 0;
 }
 function bindMemoryEvents() {
   const host = $("#settingsContent");
   if (settingsTab !== "memory" || !host) return;
+  // 文本框随字长高；长过几行的平时收起（见 .memory-text.long），点进去即全文
   const grow = area => {
     area.style.height = "auto";
     area.style.height = `${area.scrollHeight}px`;
+    area.classList.toggle("long", area.scrollHeight > 110);
   };
+  host
+    .querySelectorAll("[data-memory-cat]")
+    .forEach(button => button.addEventListener("click", () => openMemoryCategory(button.dataset.memoryCat || null)));
+  // 改分类名：改成已有的名字即并入那一类
+  $("#memoryCatName")?.addEventListener("change", e => {
+    const from = memoryCategoryOpen,
+      to = cleanMemoryCategory(e.target.value);
+    if (from === null || to === from) return;
+    for (const item of store.memory.items) if (memoryCategoryOf(item) === from) item.category = to;
+    saveStore();
+    openMemoryCategory(to);
+  });
+  $("#memoryCatName")?.addEventListener("keydown", e => e.key === "Enter" && e.target.blur());
   host.querySelectorAll(".memory-item").forEach(row => {
     const item = store.memory.items.find(entry => entry.id === row.dataset.memory);
     if (!item) return;
@@ -6690,19 +6791,31 @@ function bindMemoryEvents() {
     grow(area);
     area.addEventListener("input", () => {
       grow(area);
-      const text = area.value.replace(/\s+/g, " ").trim().slice(0, MEMORY_TEXT_CHARS);
+      const text = cleanMemoryText(area.value).slice(0, MEMORY_TEXT_CHARS);
       if (text) {
         item.text = text;
         item.updatedAt = now();
         saveStoreSoon();
       }
     });
+    // 收起的长条目：点进去即摊开全文
+    area.addEventListener("focus", () => grow(area));
     area.addEventListener("blur", () => {
       if (!area.value.trim()) {
         store.memory.items = store.memory.items.filter(entry => entry !== item);
         saveStore();
         renderSettings();
       }
+    });
+    // 改归别类：这条从眼前这一类里移走
+    row.querySelector(".memory-move").addEventListener("change", e => {
+      const to = cleanMemoryCategory(e.target.value);
+      if (to === memoryCategoryOf(item)) return;
+      item.category = to;
+      item.updatedAt = now();
+      saveStore();
+      toast(`已归入「${to}」`);
+      renderSettings();
     });
     row.querySelector("[data-memory-delete]").addEventListener("click", () => {
       store.memory.items = store.memory.items.filter(entry => entry !== item);
@@ -6714,12 +6827,25 @@ function bindMemoryEvents() {
       openConversation(e.currentTarget.dataset.memoryOpen);
     });
   });
+  // 手记一条：在打开着的那一类里记；在一览上记的归「未分类」，记完打开那一类
   $("#addMemory")?.addEventListener("click", () => {
     if (store.memory.items.length >= MAX_MEMORY_ITEMS) return toast(`记忆已有 ${MAX_MEMORY_ITEMS} 条，请先删去一些`);
-    const item = { id: memoryId(), text: "", createdAt: now(), updatedAt: now(), source: null };
+    const category = memoryCategoryOpen ?? MEMORY_UNSORTED,
+      item = { id: memoryId(), text: "", category, createdAt: now(), updatedAt: now(), source: null };
     store.memory.items.push(item);
-    renderSettings();
+    openMemoryCategory(category);
     setTimeout(() => host.querySelector(`[data-memory="${item.id}"] textarea`)?.focus(), 0);
+  });
+  $("#dropMemoryCat")?.addEventListener("click", async () => {
+    const name = memoryCategoryOpen,
+      count = store.memory.items.filter(item => memoryCategoryOf(item) === name).length;
+    if (
+      !(await askConfirm({ title: `删去「${name}」这一类？`, body: `其中 ${count} 条记忆将被移除，无法撤销；对话不受影响。`, ok: "删去" }))
+    )
+      return;
+    store.memory.items = store.memory.items.filter(item => memoryCategoryOf(item) !== name);
+    saveStore();
+    openMemoryCategory(null);
   });
   $("#clearMemory")?.addEventListener("click", async () => {
     if (
@@ -9432,7 +9558,10 @@ const PROMPT_VARS = {
   "work.hint": ctx => workVars(ctx.conversation),
   "work.archive": ctx => workVars(ctx.conversation),
   "work.env": () => envVars(),
-  "memory.hint": () => ({ count: store.memory.items.length }),
+  "memory.hint": () => {
+    const names = memoryCategories().map(cat => cat.name);
+    return { count: store.memory.items.length, categories: names.length ? `，分作${names.map(name => `「${name}」`).join("")}` : "" };
+  },
   "mcp.hint": ctx => mcpHintVars(ctx.tools, ctx.preset),
   "side.passage": ctx => (ctx.anchor ? {} : null),
   "side.whole": ctx => (ctx.anchor ? null : {}),
@@ -10840,16 +10969,20 @@ defineTool({
   sideEffect: true,
   run(step, args, { conversation }) {
     const items = store.memory.items,
-      text = args.text.replace(/\s+/g, " ").trim().slice(0, MEMORY_TEXT_CHARS);
-    step.title = text;
+      text = cleanMemoryText(args.text),
+      category = cleanMemoryCategory(args.category);
+    step.title = `${category}｜${text.length > 120 ? `${text.slice(0, 120)}…` : text}`;
     if (!text) return { ok: false, content: "text 不能为空", display: "内容为空" };
+    // 过长不截：退回去让模型拆成几条或精简，免得记下半句
+    if (text.length > MEMORY_TEXT_CHARS)
+      return { ok: false, content: `这条有 ${text.length} 字，超过 ${MEMORY_TEXT_CHARS} 字；请拆成几条或精简后再记`, display: "过长" };
     const source = { conversationId: conversation.id, title: conversation.title };
     const existing = (args.replaces && items.find(item => item.id === args.replaces)) || items.find(item => item.text === text);
     if (existing) {
-      Object.assign(existing, { text, updatedAt: now(), source });
+      Object.assign(existing, { text, category, updatedAt: now(), source });
       saveStore();
       refreshMemorySettings();
-      return { ok: true, content: `已更新 ${memoryLine(existing)}`, display: "已更新" };
+      return { ok: true, content: `已更新 ${memoryLine(existing, true)}`, display: "已更新" };
     }
     if (items.length >= MAX_MEMORY_ITEMS)
       return {
@@ -10857,9 +10990,9 @@ defineTool({
         content: `记忆已有 ${MAX_MEMORY_ITEMS} 条，已满。请先用 recall 查看，用 forget 删去过时的，或用 replaces 把相近的合并成一条`,
         display: "记忆已满"
       };
-    const item = addMemory(text, source);
+    const item = addMemory(text, source, category);
     refreshMemorySettings();
-    return { ok: true, content: `已记入 ${memoryLine(item)}`, display: "已记入" };
+    return { ok: true, content: `已记入 ${memoryLine(item, true)}`, display: "已记入" };
   }
 });
 
@@ -10882,6 +11015,7 @@ defineTool({
   }
 });
 
+// 翻记忆分两步，如翻目录再翻页：不给参数只列各类（名、几条、最近一条的开头），给 category 才全文列出那一类；给 query 跨类按关键词找
 defineTool({
   name: "recall",
   group: "memory",
@@ -10891,12 +11025,34 @@ defineTool({
   parallel: true,
   sources: step => (step.results || []).map(hit => ({ memory: hit.memoryId, title: hit.title })),
   run(step, args) {
-    const items = store.memory.items,
-      terms = keywordTerms(args.query);
-    step.title = terms.length ? args.query.trim() : "全部";
-    const hits = terms.length ? items.filter(item => hitsAll(item.text, terms)) : items;
+    const terms = keywordTerms(args.query),
+      category = String(args.category || "").trim();
+    if (!terms.length && !category) {
+      const categories = memoryCategories();
+      step.title = "分类一览";
+      return {
+        ok: true,
+        content: categories.length
+          ? categories
+              .map(cat => `${cat.name}（${cat.items.length} 条，最近 ${cat.updatedAt.slice(0, 10)}）：${memoryGist(cat.items[0].text)}`)
+              .join("\n")
+          : "记忆里还没有条目",
+        display: `${categories.length} 类`
+      };
+    }
+    let hits = category ? store.memory.items.filter(item => memoryCategoryOf(item) === cleanMemoryCategory(category)) : store.memory.items;
+    if (terms.length) hits = hits.filter(item => hitsAll(`${memoryCategoryOf(item)} ${item.text}`, terms));
+    step.title = [category, args.query?.trim()].filter(Boolean).join("｜");
     step.results = hits.slice(0, 8).map(item => ({ title: item.text, memoryId: item.id }));
-    return { ok: true, content: hits.length ? hits.map(memoryLine).join("\n") : "记忆里没有相关条目", display: `${hits.length} 条` };
+    return {
+      ok: true,
+      content: hits.length
+        ? hits.map(item => memoryLine(item, !category)).join("\n")
+        : category && !terms.length
+          ? `没有「${category}」这一类`
+          : "记忆里没有相关条目",
+      display: `${hits.length} 条`
+    };
   }
 });
 
@@ -12393,7 +12549,12 @@ function profileCardHtml(p) {
   ]
     .map(([v, label]) => `<option value="${v}"${quota.unit === v ? " selected" : ""}>${label}</option>`)
     .join("")}</select></div>`;
-  return `<div class="profile-card" data-profile-card="${escapeHtml(p.id)}"><div class="profile-head"><strong>${escapeHtml(p.name)}</strong>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</div><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>用量上限${quotaField}<small>留空不限</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}">OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button></div><small>${anthropicLike(p) ? "Messages API" : "chat/completions"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">模型${modelField}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${p.tools === false ? "本机工具关" : ""}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>需接口支持 function calling</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number(p.temperature ?? 0.7)}"><small>0–2，默认 0.7</small></label>${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>留空按 ${DEFAULT_MAX_TOKENS}</small></label>` : ""}<label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>过七成半自动压缩前文</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>逗号分隔；选定模型时自动探测</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}<button class="danger-btn" data-profile-action="delete">删除</button><span class="profile-status">${invalidQuota ? "请填写大于 0 的数值，或留空不限" : ""}</span></div></div>`;
+  // 平时收成一行：名字、模型 ID 与接口、是否默认；点开才是整张表。模型一多，一行一个翻得过来
+  return `<details class="profile-card" data-profile-card="${escapeHtml(p.id)}"${profileOpen.has(p.id) ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${escapeHtml(p.name)}</strong><span class="profile-gist">${escapeHtml(profileGist(p))}</span>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</summary><div class="profile-body"><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>用量上限${quotaField}<small>留空不限</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}">OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button></div><small>${anthropicLike(p) ? "Messages API" : "chat/completions"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">模型${modelField}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${p.tools === false ? "本机工具关" : ""}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>需接口支持 function calling</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number(p.temperature ?? 0.7)}"><small>0–2，默认 0.7</small></label>${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>留空按 ${DEFAULT_MAX_TOKENS}</small></label>` : ""}<label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>过七成半自动压缩前文</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>逗号分隔；选定模型时自动探测</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}<button class="danger-btn" data-profile-action="delete">删除</button><span class="profile-status">${invalidQuota ? "请填写大于 0 的数值，或留空不限" : ""}</span></div></div></details>`;
+}
+/** @param {Profile} p */
+function profileGist(p) {
+  return [p.model || "未填模型", anthropicLike(p) ? "Anthropic" : "OpenAI 兼容"].join(" · ");
 }
 function storageSize() {
   const bytes = new Blob([JSON.stringify(store)]).size;
@@ -12556,6 +12717,7 @@ function bindSettingsEvents() {
     };
     store.profiles.push(p);
     store.settings.activeProfileId ||= p.id;
+    profileOpen.add(p.id);
     saveStore();
     renderSettings();
     setTimeout(() => document.querySelector(`[data-profile-card="${p.id}"] [data-field="name"]`)?.focus(), 0);
@@ -12573,6 +12735,9 @@ function bindSettingsEvents() {
         if (field === "contextWindow") updateContextGauge();
         // 亲手填的档位就是定论，不再探；清空了下次选模型再探
         if (field === "reasoningLevels") p.reasoningProbed = e.target.value.trim() ? `manual|${reasoningProbeKey(p)}` : "";
+        // 收起时那一行跟着改
+        if (field === "name") card.querySelector(".profile-name").textContent = p.name;
+        if (field === "model") card.querySelector(".profile-gist").textContent = profileGist(p);
         saveStoreSoon();
       })
     );
@@ -12591,7 +12756,7 @@ function bindSettingsEvents() {
         p.quota = value;
         p.usedTokens = 0;
         saveStoreSoon();
-        if (p.id === store.settings.activeProfileId) renderQuota();
+        if (p.id === activeProfile()?.id) renderQuota();
       }
     };
     amount.addEventListener("input", applyQuota);
@@ -12606,6 +12771,7 @@ function bindSettingsEvents() {
       input.classList.add("hidden");
       input.value = e.target.value;
       p.model = e.target.value;
+      card.querySelector(".profile-gist").textContent = profileGist(p);
       saveStoreSoon();
       renderHeader();
       void reportReasoningProbe(p, card);
@@ -12627,6 +12793,12 @@ function bindSettingsEvents() {
           renderSettings();
         })
     );
+    // toggle 不冒泡：卡片自己的开合与里头「高级配置」的开合各听各的
+    card.addEventListener("toggle", e => {
+      if (e.target !== card) return;
+      if (card.open) profileOpen.add(p.id);
+      else profileOpen.delete(p.id);
+    });
     card.querySelector(".profile-advanced")?.addEventListener("toggle", e => {
       if (e.target.open) advancedOpen.add(p.id);
       else advancedOpen.delete(p.id);
@@ -12675,7 +12847,8 @@ async function reportReasoningProbe(profile, card, force = false) {
 /** @param {Profile} profile */
 async function handleProfileAction(profile, action, card) {
   if (action === "default") {
-    selectProfile(profile.id, false);
+    store.settings.activeProfileId = profile.id;
+    saveStore();
     renderSettings();
     renderHeader();
     return;
@@ -14527,13 +14700,13 @@ const GUIDE = [
     steps: [
       {
         h: "记与翻",
-        body: "模型认为值得留存的，以一句记入；新话题中用得着时再行翻检。行迹里「记入」「翻记忆」以一抹冷色标示。"
+        body: "模型认为值得留存的，一事一条记入，并归入一类（如「偏好」「言的开发」）；同类者日后记入同一类。新话题中用得着时，先看分类一览，再翻开所需的那一类。行迹里「记入」「翻记忆」以一抹冷色标示。"
       },
       {
         h: "改与忘",
-        body: "设置 → 记忆中每条皆可修改、删除，亦可手记一条；整份记忆可以关闭，关闭后条目仍在。",
+        body: "设置 → 记忆先列各类，点开一类方见其中条目：每条皆可修改、删除、改归别类，长条目平时收起、点开即全文；分类名亦可改，改作已有之名即并为一类。整份记忆可以关闭，关闭后条目仍在。旧日未分类的条目，可请模型代为归类。",
         noteLabel: "留意",
-        note: "记忆的内容不入系统提示，只告知模型现有几条；用到时方才翻阅。"
+        note: "记忆的内容不入系统提示，只告知模型现有几条、分作哪几类；用到时方才翻阅。"
       }
     ]
   },
@@ -14639,11 +14812,9 @@ function moveToGroup(c, groupId) {
   renderGroupTags();
   if (view === "groups") renderGroupsPage();
 }
-// 在此组另起一段：新对话归进这一组；组带了预设的，模型菜单先换上（预设带模型的连模型一起）
+// 在此组另起一段：新对话归进这一组；组带了预设的就用组的预设（预设带模型的连模型一起，见 activeProfile）
 function newChatInGroup(id) {
   store.settings.pendingGroupId = id;
-  const preset = presetOf(null);
-  if (preset?.profileId && profiles().some(p => p.id === preset.profileId)) selectProfile(preset.profileId, false);
   saveStore();
   newChat();
 }

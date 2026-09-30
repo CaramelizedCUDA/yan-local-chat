@@ -147,7 +147,10 @@ http
         const key = ["LONGSUB", "LONGMAIN"].find(k => lastUser.includes(k)) || "?";
         long.folds[key] = (long.folds[key] || 0) + 1;
         const read = [...new Set(lastUser.match(/big\d+\.txt/g) || [])];
-        return sse(res, [delta({ content: `- 已读 ${read.join("、")}，各有 8000 字\n- 下一步：接着读` }), delta({}, { usage: { total_tokens: 9 } })]);
+        return sse(res, [
+          delta({ content: `- 已读 ${read.join("、")}，各有 8000 字\n- 下一步：接着读` }),
+          delta({}, { usage: { total_tokens: 9 } })
+        ]);
       }
       if (longKey) {
         const size = JSON.stringify(msgs).length;
@@ -155,35 +158,67 @@ http
           long.overflows[longKey] = (long.overflows[longKey] || 0) + 1;
           res.writeHead(400, { "Content-Type": "application/json" });
           return res.end(
-            JSON.stringify({ error: { message: `This model's maximum context length is 16000 tokens. However, your messages resulted in ${Math.ceil(size / 4)} tokens.`, code: "context_length_exceeded" } })
+            JSON.stringify({
+              error: {
+                message: `This model's maximum context length is 16000 tokens. However, your messages resulted in ${Math.ceil(size / 4)} tokens.`,
+                code: "context_length_exceeded"
+              }
+            })
           );
         }
         const n = (long.rounds[longKey] = (long.rounds[longKey] || 0) + 1) - 1,
-          usage = { prompt_tokens: Math.ceil((size + JSON.stringify(payload.tools || []).length) / 4), completion_tokens: 20, total_tokens: 0 };
+          usage = {
+            prompt_tokens: Math.ceil((size + JSON.stringify(payload.tools || []).length) / 4),
+            completion_tokens: 20,
+            total_tokens: 0
+          };
         usage.total_tokens = usage.prompt_tokens + 20;
         if (n < 12)
           return sse(res, [
             delta({ content: `读第 ${n + 1} 个。` }),
-            delta({ tool_calls: [{ index: 0, id: `call_long${n}`, type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: `big${n}.txt` }) } }] }),
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: `call_long${n}`,
+                  type: "function",
+                  function: { name: "read_file", arguments: JSON.stringify({ path: `big${n}.txt` }) }
+                }
+              ]
+            }),
             delta({}, { usage })
           ]);
         const note = msgs.find(m => m.role === "assistant" && String(m.content || "").startsWith("［工作笔记］"));
         return sse(res, [
-          delta({ content: `${longKey} done|note:${note ? "yes" : "no"}|folded:${msgs.some(m => m.role === "user" && String(m.content).includes("原文不再保留")) ? "yes" : "no"}|task:${firstUser.includes(longKey) ? "yes" : "no"}|n:${msgs.length}` }),
+          delta({
+            content: `${longKey} done|note:${note ? "yes" : "no"}|folded:${msgs.some(m => m.role === "user" && String(m.content).includes("原文不再保留")) ? "yes" : "no"}|task:${firstUser.includes(longKey) ? "yes" : "no"}|n:${msgs.length}`
+          }),
           delta({}, { usage })
         ]);
       }
       // 前文放不下（LONGHEAD 没填窗口、LHWIN 填了窗口）：请求超过 30000 字回「放不下」；答里写明见没见到前文摘要
-      const headKey = typeof lastUser === "string" && !lastUser.startsWith("把下面这段对话") && ["LONGHEAD", "LHWIN", "LH-SEED"].find(k => lastUser.includes(k));
+      const headKey =
+        typeof lastUser === "string" &&
+        !lastUser.startsWith("把下面这段对话") &&
+        ["LONGHEAD", "LHWIN", "LH-SEED"].find(k => lastUser.includes(k));
       if (headKey) {
         const size = JSON.stringify(msgs).length;
         if (size > 30000) {
           long.overflows[headKey] = (long.overflows[headKey] || 0) + 1;
           res.writeHead(400, { "Content-Type": "application/json" });
-          return res.end(JSON.stringify({ error: { message: `This model's maximum context length is 8000 tokens. However, your messages resulted in ${Math.ceil(size / 4)} tokens.` } }));
+          return res.end(
+            JSON.stringify({
+              error: {
+                message: `This model's maximum context length is 8000 tokens. However, your messages resulted in ${Math.ceil(size / 4)} tokens.`
+              }
+            })
+          );
         }
         const summary = msgs.some(m => m.role === "user" && String(m.content || "").startsWith("［前文摘要］"));
-        return sse(res, [delta({ content: `${headKey} ok|summary:${summary ? "yes" : "no"}|size:${size}` }), delta({}, { usage: { total_tokens: 5 } })]);
+        return sse(res, [
+          delta({ content: `${headKey} ok|summary:${summary ? "yes" : "no"}|size:${size}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
       }
       // 帮手在后台做，回报作为一条用户消息送到（以「帮手「」起头）：这时最后一条用户消息是回报，场景按第一问认
       const helperReports = msgs.filter(m => m.role === "user" && String(m.content).startsWith("帮手「"));
@@ -191,29 +226,70 @@ http
         if (!toolResults.length)
           return sse(res, [
             delta({ content: "派一名帮手。" }),
-            delta({ tool_calls: [{ index: 0, id: "call_lr0", type: "function", function: { name: "delegate", arguments: JSON.stringify({ title: "读十二个大文件", task: "LONGSUB：依次读 big0.txt 到 big11.txt，然后回报。" }) } }] }),
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_lr0",
+                  type: "function",
+                  function: {
+                    name: "delegate",
+                    arguments: JSON.stringify({ title: "读十二个大文件", task: "LONGSUB：依次读 big0.txt 到 big11.txt，然后回报。" })
+                  }
+                }
+              ]
+            }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
         if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 0 } })]);
-        return sse(res, [delta({ content: `LONGRUN-SUB done｜${String(helperReports.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}` }), delta({}, { usage: { total_tokens: 5 } })]);
+        return sse(res, [
+          delta({ content: `LONGRUN-SUB done｜${String(helperReports.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
       }
       // SLOWSUB：慢帮手，约 3 秒说完再回报
       if (typeof lastUser === "string" && lastUser.includes("SLOWSUB"))
-        return sse(res, [...Array.from({ length: 12 }, (_, i) => delta({ content: `慢活第${i + 1}句。` })), delta({ content: "慢活回报。" }), delta({}, { usage: { total_tokens: 3 } })], 250);
+        return sse(
+          res,
+          [
+            ...Array.from({ length: 12 }, (_, i) => delta({ content: `慢活第${i + 1}句。` })),
+            delta({ content: "慢活回报。" }),
+            delta({}, { usage: { total_tokens: 3 } })
+          ],
+          250
+        );
       // BGNOTE：主模型差一名慢帮手后说「等回报」；等的时候寄来的补言当场递到，回一句「收到补言」；回报到了才收尾
       if (firstUser.includes("BGNOTE")) {
         if (!toolResults.length)
           return sse(res, [
-            delta({ tool_calls: [{ index: 0, id: "call_bg0", type: "function", function: { name: "delegate", arguments: JSON.stringify({ title: "慢活", task: "SLOWSUB：慢慢做完回报。" }) } }] }),
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_bg0",
+                  type: "function",
+                  function: { name: "delegate", arguments: JSON.stringify({ title: "慢活", task: "SLOWSUB：慢慢做完回报。" }) }
+                }
+              ]
+            }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
-        if (String(lastUser).includes("BG-NOTE-TEXT")) return sse(res, [delta({ content: `收到补言｜reports:${helperReports.length}` }), delta({}, { usage: { total_tokens: 5 } })]);
+        if (String(lastUser).includes("BG-NOTE-TEXT"))
+          return sse(res, [delta({ content: `收到补言｜reports:${helperReports.length}` }), delta({}, { usage: { total_tokens: 5 } })]);
         if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
         return sse(res, [delta({ content: `BGNOTE done｜reports:${helperReports.length}` }), delta({}, { usage: { total_tokens: 5 } })]);
       }
       // SLOWTHINK：想得很久（约 9 秒）才开口，给补言的折箭头试「不等落点」
       if (typeof lastUser === "string" && lastUser.includes("SLOWTHINK"))
-        return sse(res, [...Array.from({ length: 60 }, (_, i) => delta({ reasoning_content: `第 ${i + 1} 行思绪。\n` })), delta({ content: "SLOWTHINK done" }), delta({}, { usage: { total_tokens: 5 } })], 150);
+        return sse(
+          res,
+          [
+            ...Array.from({ length: 60 }, (_, i) => delta({ reasoning_content: `第 ${i + 1} 行思绪。\n` })),
+            delta({ content: "SLOWTHINK done" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ],
+          150
+        );
       // 带附件的一问是分段内容：正文在第一段
       const lastText = Array.isArray(lastUser) ? String(lastUser.find(part => part.type === "text")?.text || "") : lastUser;
       if (typeof lastUser === "string" && lastUser.includes("这件事用几个字称呼")) {
@@ -657,11 +733,22 @@ http
         if (!toolResults.length)
           return sse(res, [
             delta({
-              tool_calls: [{ index: 0, id: "call_t0", type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: "src/a.js" }) } }]
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_t0",
+                  type: "function",
+                  function: { name: "read_file", arguments: JSON.stringify({ path: "src/a.js" }) }
+                }
+              ]
             }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
-        return sse(res, [...Array.from({ length: 12 }, (_, i) => delta({ content: `尾段第${i + 1}句。` })), delta({}, { usage: { total_tokens: 5 } })], 250);
+        return sse(
+          res,
+          [...Array.from({ length: 12 }, (_, i) => delta({ content: `尾段第${i + 1}句。` })), delta({}, { usage: { total_tokens: 5 } })],
+          250
+        );
       }
       if (typeof lastUser === "string" && lastUser.includes("DUP")) {
         // 时间线复现：第一轮多段正文（段落间带空行）后调用 read_file，第二轮慢慢流一段思绪再说话；用于确认第一轮的话只在分组里出现一次
@@ -735,10 +822,12 @@ http
         if (lastUser.includes("MEMORY-TWICE")) {
           // 同一轮里：翻记忆 → 记入 → 再翻同样的关键词；第二次必须拿到新结果而不是复用
           if (n === 0) return sse(res, call("recall", { query: "twice" }));
-          if (n === 1) return sse(res, call("remember", { text: "twice 关键词的记忆" }));
+          if (n === 1) return sse(res, call("remember", { category: "杂记", text: "twice 关键词的记忆" }));
           if (n === 2) return sse(res, call("recall", { query: "twice" }));
           return sse(res, [
-            delta({ content: `TWICE|${toolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 40)).join(" ▸ ")}` }),
+            delta({
+              content: `TWICE|cats:${sys.includes("「工作」") ? "yes" : "no"}|${toolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 40)).join(" ▸ ")}`
+            }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
         }
@@ -749,10 +838,10 @@ http
             }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
-        if (n === 0) return sse(res, call("remember", { text: "用户偏好 PowerShell 而非 bash" }));
+        if (n === 0) return sse(res, call("remember", { category: "偏好", text: "用户偏好 PowerShell 而非 bash" }));
         if (n === 1) {
           const id = String(toolResults[0].content).match(/\[(m[a-z0-9]+)\]/)?.[1];
-          return sse(res, call("remember", { text: "用户偏好 PowerShell 而非 bash，且要求中文交流", replaces: id }));
+          return sse(res, call("remember", { category: "偏好", text: "用户偏好 PowerShell 而非 bash，且要求中文交流", replaces: id }));
         }
         if (n === 2) return sse(res, call("recall", { query: "powershell" }));
         if (n === 3) return sse(res, call("search_conversations", { query: "术语" }));
@@ -760,6 +849,9 @@ http
           const id = String(toolResults[3].content).match(/\[([0-9a-f-]{20,})\]/)?.[1];
           return sse(res, call("read_conversation", { id: id || "none" }));
         }
+        // 过长的一条不截断，退回去；不给参数的 recall 只列分类
+        if (n === 5) return sse(res, call("remember", { category: "偏好", text: "长".repeat(2100) }));
+        if (n === 6) return sse(res, call("recall", {}));
         return sse(res, [
           delta({
             content: `MEM|hint:${sys.includes("跨对话的记忆") ? "yes" : "no"}|${toolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 70)).join(" ▸ ")}`

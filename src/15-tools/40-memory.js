@@ -10,16 +10,20 @@ defineTool({
   sideEffect: true,
   run(step, args, { conversation }) {
     const items = store.memory.items,
-      text = args.text.replace(/\s+/g, " ").trim().slice(0, MEMORY_TEXT_CHARS);
-    step.title = text;
+      text = cleanMemoryText(args.text),
+      category = cleanMemoryCategory(args.category);
+    step.title = `${category}｜${text.length > 120 ? `${text.slice(0, 120)}…` : text}`;
     if (!text) return { ok: false, content: "text 不能为空", display: "内容为空" };
+    // 过长不截：退回去让模型拆成几条或精简，免得记下半句
+    if (text.length > MEMORY_TEXT_CHARS)
+      return { ok: false, content: `这条有 ${text.length} 字，超过 ${MEMORY_TEXT_CHARS} 字；请拆成几条或精简后再记`, display: "过长" };
     const source = { conversationId: conversation.id, title: conversation.title };
     const existing = (args.replaces && items.find(item => item.id === args.replaces)) || items.find(item => item.text === text);
     if (existing) {
-      Object.assign(existing, { text, updatedAt: now(), source });
+      Object.assign(existing, { text, category, updatedAt: now(), source });
       saveStore();
       refreshMemorySettings();
-      return { ok: true, content: `已更新 ${memoryLine(existing)}`, display: "已更新" };
+      return { ok: true, content: `已更新 ${memoryLine(existing, true)}`, display: "已更新" };
     }
     if (items.length >= MAX_MEMORY_ITEMS)
       return {
@@ -27,9 +31,9 @@ defineTool({
         content: `记忆已有 ${MAX_MEMORY_ITEMS} 条，已满。请先用 recall 查看，用 forget 删去过时的，或用 replaces 把相近的合并成一条`,
         display: "记忆已满"
       };
-    const item = addMemory(text, source);
+    const item = addMemory(text, source, category);
     refreshMemorySettings();
-    return { ok: true, content: `已记入 ${memoryLine(item)}`, display: "已记入" };
+    return { ok: true, content: `已记入 ${memoryLine(item, true)}`, display: "已记入" };
   }
 });
 
@@ -52,6 +56,7 @@ defineTool({
   }
 });
 
+// 翻记忆分两步，如翻目录再翻页：不给参数只列各类（名、几条、最近一条的开头），给 category 才全文列出那一类；给 query 跨类按关键词找
 defineTool({
   name: "recall",
   group: "memory",
@@ -61,12 +66,34 @@ defineTool({
   parallel: true,
   sources: step => (step.results || []).map(hit => ({ memory: hit.memoryId, title: hit.title })),
   run(step, args) {
-    const items = store.memory.items,
-      terms = keywordTerms(args.query);
-    step.title = terms.length ? args.query.trim() : "全部";
-    const hits = terms.length ? items.filter(item => hitsAll(item.text, terms)) : items;
+    const terms = keywordTerms(args.query),
+      category = String(args.category || "").trim();
+    if (!terms.length && !category) {
+      const categories = memoryCategories();
+      step.title = "分类一览";
+      return {
+        ok: true,
+        content: categories.length
+          ? categories
+              .map(cat => `${cat.name}（${cat.items.length} 条，最近 ${cat.updatedAt.slice(0, 10)}）：${memoryGist(cat.items[0].text)}`)
+              .join("\n")
+          : "记忆里还没有条目",
+        display: `${categories.length} 类`
+      };
+    }
+    let hits = category ? store.memory.items.filter(item => memoryCategoryOf(item) === cleanMemoryCategory(category)) : store.memory.items;
+    if (terms.length) hits = hits.filter(item => hitsAll(`${memoryCategoryOf(item)} ${item.text}`, terms));
+    step.title = [category, args.query?.trim()].filter(Boolean).join("｜");
     step.results = hits.slice(0, 8).map(item => ({ title: item.text, memoryId: item.id }));
-    return { ok: true, content: hits.length ? hits.map(memoryLine).join("\n") : "记忆里没有相关条目", display: `${hits.length} 条` };
+    return {
+      ok: true,
+      content: hits.length
+        ? hits.map(item => memoryLine(item, !category)).join("\n")
+        : category && !terms.length
+          ? `没有「${category}」这一类`
+          : "记忆里没有相关条目",
+      display: `${hits.length} 条`
+    };
   }
 });
 

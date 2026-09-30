@@ -289,6 +289,7 @@ function normalizeMemory(memory) {
       .map(item => ({
         id: String(item.id),
         text: item.text,
+        category: String(item.category || ""),
         createdAt: item.createdAt || now(),
         updatedAt: item.updatedAt || item.createdAt || now(),
         source:
