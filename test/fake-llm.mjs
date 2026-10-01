@@ -324,6 +324,57 @@ http
           ],
           250
         );
+      // BGWAKE / BGRELOAD：挂一条先睡一会儿的后台指令就收尾；它结束时另起一答（前面冠着上一答的行迹），据结果收尾。
+      // BGBUSY：挂上后自己接着干四轮（每轮约一秒），后台指令在这期间结束，回报就递进这一答里
+      const bgKey = ["BGWAKE", "BGRELOAD", "BGBUSY"].find(k => firstUser.includes(k));
+      if (bgKey) {
+        const sleepFor = bgKey === "BGRELOAD" ? 6 : 3,
+          heard = msgs.find(m => m.role === "user" && String(m.content).includes("后台指令 bg") && String(m.content).includes("已结束"));
+        if (firstTurn && !toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_bgw0",
+                  type: "function",
+                  function: {
+                    name: "run_command",
+                    arguments: JSON.stringify({ command: `Start-Sleep -Seconds ${sleepFor}; Write-Output wake-ok`, background: true })
+                  }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (heard)
+          return sse(res, [
+            delta({
+              content: `${bgKey} done｜${toolResults.length ? "inline" : "woke"}｜${String(heard.content).replace(/\s+/g, " ").slice(0, 240)}`
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (bgKey === "BGBUSY" && toolResults.length < 6)
+          return sse(
+            res,
+            [
+              delta({ content: `自看第${toolResults.length}轮。` }),
+              delta({
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: `call_bgw${toolResults.length}`,
+                    type: "function",
+                    function: { name: "list_files", arguments: JSON.stringify({ path: "." }) }
+                  }
+                ]
+              }),
+              delta({}, { usage: { total_tokens: 5 } })
+            ],
+            400
+          );
+        return sse(res, [delta({ content: "挂上了，等它。" }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
       // HELPERAGAIN：主模型差一名慢帮手，等它回报后续派它再做一回（它该记得上一回），两份回报都到了收尾
       if (firstUser.includes("HELPERAGAIN")) {
         const call = (id, name, args) =>
