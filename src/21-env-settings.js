@@ -46,7 +46,7 @@ function envPacksHtml() {
   const packs = envStatus?.packs || [],
     chosen = new Set(envSettings().packs),
     installed = new Set(envStatus?.state?.packs || []);
-  if (!packs.length) return `<p class="card-note">桥接接通后列出可装的工具包。</p>`;
+  if (!packs.length) return `<p class="card-note">桥接接通后列出可装的工具包</p>`;
   return packs
     .map(pack => {
       const on = pack.base || chosen.has(pack.id),

@@ -182,7 +182,7 @@ function generalSettingsHtml() {
 // 工具：沙箱、三档指令权限、可及范围、卷宗可读、轮次上限——模型能动手的边界都在这一栏
 function toolsSettingsHtml() {
   const policy = normalizeCommandPolicy(store.settings.commandPolicyDefault);
-  return `<h2>工具</h2><div class="setting-row"><div class="setting-copy"><strong>沙箱</strong><small>改动不出目录，不碰机密，不动系统</small></div><div class="segmented"><button data-setting="sandbox" data-value="true" class="${store.settings.sandbox !== false ? "active" : ""}">开</button><button data-setting="sandbox" data-value="false" class="${store.settings.sandbox === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>指令权限</strong><small>新对话的默认档位</small></div><div class="segmented"><button data-setting="commandPolicyDefault" data-value="ask" class="${policy === "ask" ? "active" : ""}">问而后行</button><button data-setting="commandPolicyDefault" data-value="review" class="${policy === "review" ? "active" : ""}">审而后行</button><button data-setting="commandPolicyDefault" data-value="auto" class="${policy === "auto" ? "active" : ""}">径行</button></div></div><div class="setting-row"><div class="setting-copy"><strong>文件工具可及范围</strong><small>未开沙箱时，文件工具能否越出目录</small></div><div class="segmented"><button data-setting="toolReach" data-value="anywhere" class="${store.settings.toolReach !== "inside" ? "active" : ""}">全盘</button><button data-setting="toolReach" data-value="inside" class="${store.settings.toolReach === "inside" ? "active" : ""}">目录内</button></div></div><div class="setting-row"><div class="setting-copy"><strong>卷宗对模型可读</strong><small>模型可翻阅卷宗里的文档</small></div><div class="segmented"><button data-setting="archiveRead" data-value="true" class="${store.settings.archiveRead !== false ? "active" : ""}">开</button><button data-setting="archiveRead" data-value="false" class="${store.settings.archiveRead === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>工具轮次上限</strong><small>留空不限</small></div><div class="setting-actions"><label class="setting-inline">一答<input id="settingToolRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(toolRoundLimit())}"></label><label class="setting-inline">帮手<input id="settingSubRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(subRoundLimit())}"></label></div></div>`;
+  return `<h2>工具</h2><div class="setting-row"><div class="setting-copy"><strong>沙箱</strong><small>改动不出目录，不碰机密，不动系统</small></div><div class="segmented"><button data-setting="sandbox" data-value="true" class="${store.settings.sandbox !== false ? "active" : ""}">开</button><button data-setting="sandbox" data-value="false" class="${store.settings.sandbox === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>指令权限</strong><small>新对话的默认档位</small></div><div class="segmented"><button data-setting="commandPolicyDefault" data-value="ask" class="${policy === "ask" ? "active" : ""}">问而后行</button><button data-setting="commandPolicyDefault" data-value="review" class="${policy === "review" ? "active" : ""}">审而后行</button><button data-setting="commandPolicyDefault" data-value="auto" class="${policy === "auto" ? "active" : ""}">径行</button></div></div><div class="setting-row"><div class="setting-copy"><strong>文件工具可及范围</strong><small>问而后行开着沙箱时一律目录内</small></div><div class="segmented"><button data-setting="toolReach" data-value="anywhere" class="${store.settings.toolReach !== "inside" ? "active" : ""}">全盘</button><button data-setting="toolReach" data-value="inside" class="${store.settings.toolReach === "inside" ? "active" : ""}">目录内</button></div></div><div class="setting-row"><div class="setting-copy"><strong>卷宗对模型可读</strong><small>模型可翻阅卷宗里的文档</small></div><div class="segmented"><button data-setting="archiveRead" data-value="true" class="${store.settings.archiveRead !== false ? "active" : ""}">开</button><button data-setting="archiveRead" data-value="false" class="${store.settings.archiveRead === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>工具轮次上限</strong><small>留空不限</small></div><div class="setting-actions"><label class="setting-inline">一答<input id="settingToolRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(toolRoundLimit())}"></label><label class="setting-inline">帮手<input id="settingSubRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(subRoundLimit())}"></label></div></div><div class="setting-row"><div class="setting-copy"><strong>联网检索</strong><small id="searchStatus">经本机桥接</small></div><button id="testSearch" class="outline-btn" type="button">测试联网</button></div>`;
 }
 function appearanceSettingsHtml() {
   const s = store.settings;
@@ -400,6 +400,17 @@ function bindSettingsEvents() {
       button.disabled = false;
     }
   });
+  // 测试联网：检索走的是桥接，与哪个模型无关，放在工具一栏
+  $("#testSearch")?.addEventListener("click", async () => {
+    const status = $("#searchStatus");
+    status.textContent = "检索中…";
+    try {
+      const data = await bridge("/api/search", { query: "OpenAI", count: 1 }, AbortSignal.timeout(20000));
+      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已连上，但这回没有结果";
+    } catch (error) {
+      status.textContent = friendlyError(error.message).slice(0, 60);
+    }
+  });
   $("#exportData")?.addEventListener("click", () => exportData($("#exportFiles")?.checked));
   $("#importData")?.addEventListener("click", () => $("#importInput").click());
   $("#importInput").onchange = async e => {
@@ -478,9 +489,6 @@ function bindSettingsEvents() {
   document.querySelectorAll("[data-profile-card]").forEach(card => {
     const p = profiles().find(item => item.id === card.dataset.profileCard);
     if (!p) return;
-    card
-      .querySelector('[data-profile-action="test"]')
-      ?.insertAdjacentHTML("afterend", '<button class="outline-btn" data-profile-action="search">测试联网</button>');
     card.querySelectorAll("[data-field]").forEach(input =>
       input.addEventListener("input", e => {
         const field = e.target.dataset.field;
@@ -639,20 +647,6 @@ async function handleProfileAction(profile, action, card) {
       card = document.querySelector(`[data-profile-card="${profile.id}"]`);
       if (card) card.querySelector(".profile-status").textContent = `已获取 ${models.length} 个模型`;
       void reportReasoningProbe(profile, card);
-    } catch (error) {
-      status.textContent = friendlyError(error.message);
-    }
-    return;
-  }
-  if (action === "search") {
-    let status = card.querySelector(".profile-status");
-    status.textContent = "检索中…";
-    try {
-      card = document.querySelector(`[data-profile-card="${profile.id}"]`) || card;
-      status = card.querySelector(".profile-status");
-      status.textContent = "检索中…";
-      const data = await bridge("/api/search", { query: "OpenAI", count: 1 }, AbortSignal.timeout(20000));
-      status.textContent = data.results?.length ? `本机联网可用 · ${data.results.length} 条结果` : "搜索服务已连接，但本次未返回结果";
     } catch (error) {
       status.textContent = friendlyError(error.message);
     }

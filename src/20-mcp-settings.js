@@ -15,7 +15,7 @@ function mcpCardsHtml() {
   const names = Object.keys(mcpConfigs());
   const cards = names.map(name => (name === mcpEditing ? mcpFormHtml(name) : mcpCardHtml(name)));
   if (mcpEditing === "") cards.unshift(mcpFormHtml(""));
-  return cards.join("") || `<p class="card-note">尚未接入任何服务。</p>`;
+  return cards.join("") || `<p class="card-note">尚未接入任何服务</p>`;
 }
 function mcpCardHtml(name) {
   const config = mcpConfigs()[name],

@@ -167,7 +167,7 @@ function codeBlockHtml(text, lang) {
   }
   if (!suppressViz && htmlApp) {
     const source = legacy ? legacyVizHtml(language, text) : text;
-    return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">html · 正在载入</span><span><button type="button" class="code-copy" data-app-toggle>源码</button><button type="button" class="code-copy" data-app-restart>重启</button><button type="button" class="code-copy" data-app-download>下载</button><button type="button" class="code-copy" data-work-expand>全屏</button><button type="button" class="code-copy" data-copy-code>复制</button></span></div><div class="html-app-stage"><span>正在载入交互内容</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
+    return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">html · 正在载入</span><span>${vizTool("data-app-restart", "重来", "reload")}${vizTool("data-app-download", "下载", "download")}${vizTool("data-work-expand", "全屏", "wide")}${vizTool("data-copy-code", "复制源码", "copy")}</span></div><div class="html-app-stage"><span>正在载入交互内容</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
   }
   let html;
   try {
@@ -362,12 +362,21 @@ function downloadHref(href, name, revoke = false) {
 function downloadText(text, type, name) {
   downloadHref(URL.createObjectURL(new Blob([text], { type })), name, true);
 }
+// 交互内容工具条上的一枚：笔意小画，字收进 title 与 aria-label（与回复下的复制、重答同一套画法）。
+// 源码不另设一钮：复制、下载拿到的就是它，出错的说明在标签的 title 上
+function vizTool(attr, label, icon) {
+  return `<button type="button" class="code-copy code-icon" ${attr} title="${label}" aria-label="${label}">${brushIcon(icon)}</button>`;
+}
+function labelTool(button, label) {
+  button.title = label;
+  button.setAttribute("aria-label", label);
+}
 function closeExpandedWork(except = null) {
   for (const item of document.querySelectorAll(".work-expanded"))
     if (item !== except) {
       item.classList.remove("work-expanded");
       const trigger = item.querySelector("[data-work-expand]");
-      if (trigger) trigger.textContent = "全屏";
+      if (trigger) labelTool(trigger, "全屏");
     }
   if (!except) document.documentElement.classList.remove("work-mode");
 }
@@ -375,7 +384,7 @@ function toggleWorkExpanded(el, button) {
   const open = !el.classList.contains("work-expanded");
   closeExpandedWork(open ? el : null);
   el.classList.toggle("work-expanded", open);
-  button.textContent = open ? "收起" : "全屏";
+  labelTool(button, open ? "收起" : "全屏");
   document.documentElement.classList.toggle("work-mode", open);
 }
 function renderMarkdown(source = "") {
@@ -406,24 +415,16 @@ function stableCut(content) {
   return Math.max(0, cut);
 }
 
-// 正文里的代码块与交互作品：复制、源码 / 预览、重来、下载、放大；预览 iframe 报来的状态与高度
+// 正文里的代码块与交互作品：复制、重来、下载、放大；预览 iframe 报来的状态与高度
 function bindContentEvents() {
   document.addEventListener("click", e => {
     const copy = e.target.closest("[data-copy-code]");
     if (copy) {
       void copyText(copy.closest(".code-block, .html-app")?.querySelector("code")?.textContent || "");
+      // 小画钮不换字（换了画就没了），说一声；代码块上的字钮照旧换成「已复制」
+      if (copy.classList.contains("code-icon")) return toast("已复制");
       copy.textContent = "已复制";
       setTimeout(() => (copy.textContent = "复制"), 1200);
-      return;
-    }
-    const appToggle = e.target.closest("[data-app-toggle]");
-    if (appToggle) {
-      const app = appToggle.closest(".html-app"),
-        source = app.querySelector(".html-app-source"),
-        showSource = source.classList.contains("hidden");
-      source.classList.toggle("hidden", !showSource);
-      app.querySelector(".html-app-stage").classList.toggle("hidden", showSource);
-      appToggle.textContent = showSource ? "预览" : "源码";
       return;
     }
     const appRestart = e.target.closest("[data-app-restart]");

@@ -91,9 +91,29 @@
   display: flex;
   gap: 2px;
 }
-/* 出错、看源码、全屏时工具条与标签常显，回到有框的样子 */
+/* 工具条上是笔意小画：只用墨、随按钮字色，与回复下的复制、重答同一套 */
+.html-app .code-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+}
+.html-app .code-icon .brush {
+  width: 15px;
+  height: 15px;
+}
+.html-app .code-icon .brush .ink {
+  fill: currentColor;
+}
+.html-app .code-icon .brush .ink2 {
+  fill: color-mix(in srgb, currentColor 75%, transparent);
+}
+.html-app .code-icon .brush .wash {
+  fill: color-mix(in srgb, currentColor 14%, transparent);
+}
+/* 出错、全屏时工具条与标签常显，回到有框的样子 */
 .html-app-error .code-head,
-.html-app:has(.html-app-source:not(.hidden)) .code-head,
 .work-expanded.html-app .code-head {
   position: static;
   opacity: 1;
@@ -102,7 +122,6 @@
   background: var(--paper-2);
 }
 .html-app-error .code-head .code-lang,
-.html-app:has(.html-app-source:not(.hidden)) .code-head .code-lang,
 .work-expanded.html-app .code-head .code-lang {
   display: inline;
 }
@@ -132,17 +151,9 @@
 :root[data-theme="dark"] .html-app-stage iframe {
   color-scheme: dark;
 }
+/* 源码只是存着，供复制、下载与重来时读，不显示 */
 .html-app-source {
-  max-height: 520px;
-  margin: 0;
-  padding: 14px 16px;
-  overflow: auto;
-  background: var(--paper-2);
-  font:
-    85%/1.65 ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    monospace;
+  display: none;
 }
 .html-app-error {
   border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--line));
@@ -164,10 +175,6 @@
   flex: 1;
   height: auto !important;
   min-height: 0;
-}
-.work-expanded .html-app-source {
-  flex: 1;
-  max-height: none;
 }
 .resume-note {
   margin-top: 12px;

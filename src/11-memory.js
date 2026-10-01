@@ -89,7 +89,7 @@ function memoryIndexHtml(categories) {
             `<button type="button" class="memory-cat" data-memory-cat="${escapeHtml(cat.name)}"><strong>${escapeHtml(cat.name)}</strong><span class="memory-cat-gist">${escapeHtml(memoryGist(cat.items[0].text))}</span><span class="memory-cat-count">${cat.items.length} 条</span><span class="memory-cat-date">${escapeHtml(formatDay(cat.updatedAt))}</span></button>`
         )
         .join("")}</div>`
-    : `<p class="memory-empty">尚无一条。</p>`;
+    : `<p class="memory-empty">尚无一条</p>`;
 }
 // 一类里的条目：正文可改，太长的先收起几行，点进去即全文；条下注日子、来源、所属分类（点开可改归别类）
 function memoryCategoryHtml(cat) {
