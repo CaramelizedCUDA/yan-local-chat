@@ -1,140 +1,161 @@
-/* 听音：预览里的整页（设计稿/18 · 二甲 · 声纹）与顶栏上的玉佩（设计稿/22、23 甲 · 冲牙）；逻辑见 src/25-listen.js */
+/* 听音：预览里的整页（设计稿/27 一 · 乙 · 圆相）与顶栏上的玉佩（设计稿/22、23 甲 · 冲牙）；逻辑见 src/25-listen.js */
 
-/* ---------- 整页 ---------- */
+/* ---------- 整页：圆相（设计稿/27 一 · 乙）——放过的一段浓墨、未到的一圈淡痕，笔尖是此刻；奏 / 止是整页唯一一方朱 ---------- */
 .listen-page {
   margin: auto;
-  width: min(100%, 620px);
+  width: min(100%, 680px);
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 34px;
+  align-items: center;
+}
+.listen-ring {
+  position: relative;
+  width: 300px;
+  height: 300px;
+}
+.listen-ring > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+.listen-rest {
+  fill: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+.listen-past {
+  fill: color-mix(in srgb, var(--ink) 82%, transparent);
+}
+/* 圆心一块只托着题名与钮，空处的点按穿下去落到笔上 */
+.listen-mid {
+  position: absolute;
+  inset: 70px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+  pointer-events: none;
+}
+.listen-mid > * {
+  pointer-events: auto;
 }
 .listen-title {
   margin: 0;
+  max-width: 150px;
+  overflow: hidden;
   color: var(--ink);
-  font: 500 24px var(--title);
-  letter-spacing: 0.1em;
+  font: 500 24px/1.3 var(--title);
+  letter-spacing: 0.16em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.listen-where {
-  margin: 4px 0 22px;
-  color: var(--ink-3);
-  font: 11.5px var(--title);
-  letter-spacing: 0.06em;
-}
-/* 声纹：本机解开音频量出的峰，放过的墨、没放的淡墨，一道朱线是此刻；点哪跳哪 */
-.listen-wave {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 96px;
-  cursor: pointer;
-}
-.listen-wave i {
-  flex: 1;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--ink-3) 38%, transparent);
-  transition: height 0.4s ease;
-}
-.listen-wave i.on {
-  background: var(--ink);
-}
-.listen-head {
-  position: absolute;
-  top: -6px;
-  bottom: -6px;
-  width: 1.5px;
-  background: var(--accent);
-}
-.listen-times {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
+.listen-clock {
   color: var(--ink-3);
   font: 11px var(--title);
+  letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
-}
-.listen-row {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  margin: 18px 0 20px;
 }
 .listen-controls {
   display: flex;
   align-items: center;
-  gap: 30px;
-}
-.listen-controls svg {
-  fill: currentColor;
+  gap: 12px;
+  margin-top: 8px;
 }
 .listen-step {
-  width: 30px;
-  height: 30px;
-  padding: 2px;
-  color: var(--ink-2);
-  border-radius: 50%;
-}
-.listen-step:hover {
-  color: var(--ink);
-}
-.listen-play {
-  width: 58px;
-  height: 58px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  background: var(--ink);
-  color: var(--paper);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
 }
-.listen-play svg {
+.listen-step .brush {
   width: 20px;
   height: 20px;
 }
+.listen-step:hover .brush {
+  transform: translateY(-1px);
+}
+/* 朱印：外一圈朱、内一道细纸线 */
+.listen-play {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--paper);
+  font: 600 17px var(--title);
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    inset 0 0 0 3px color-mix(in srgb, var(--paper) 55%, transparent);
+  transition: transform 0.16s;
+}
+.listen-play:hover {
+  transform: rotate(-3deg);
+}
+.listen-where {
+  margin: 0 0 12px;
+  color: var(--ink-3);
+  font: 11.5px/1.6 var(--title);
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+}
+/* 音量：七粒墨点，点哪一粒就到哪一档 */
 .listen-volume {
-  justify-self: end;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 1px;
+  margin-bottom: 16px;
   color: var(--ink-3);
   font: 11px var(--title);
 }
-.listen-volume input {
-  width: 84px;
+.listen-volume button {
+  width: 11px;
   height: 14px;
-  margin: 0;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
+  display: grid;
+  place-items: center;
 }
-.listen-volume input::-webkit-slider-runnable-track {
-  height: 1px;
-  background: var(--ink-3);
+.listen-volume button:first-of-type {
+  margin-left: 5px;
 }
-.listen-volume input::-webkit-slider-thumb {
-  appearance: none;
-  width: 9px;
-  height: 9px;
-  margin-top: -4px;
+.listen-volume button:before {
+  content: "";
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: var(--ink-2);
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
 }
+.listen-volume button.on:before {
+  background: color-mix(in srgb, var(--ink) 70%, transparent);
+}
+.listen-volume button:hover:before {
+  background: var(--accent);
+}
+/* 同夹的曲：三线表，行间淡朱丝栏，此刻一粒朱 */
 .listen-list {
-  border-top: 1px solid var(--line);
+  border-top: 1.4px solid color-mix(in srgb, var(--ink) 62%, transparent);
+  border-bottom: 1.4px solid color-mix(in srgb, var(--ink) 62%, transparent);
 }
 .listen-list button {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 2px;
-  border-bottom: 1px solid var(--line);
+  padding: 7px 2px;
   color: var(--ink-2);
   font: 12.5px var(--title);
   text-align: left;
 }
+.listen-list button + button {
+  border-top: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+}
 .listen-list button:before {
   content: "";
   flex: none;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
 }
 .listen-list button.on {
@@ -145,6 +166,16 @@
 }
 .listen-list button:hover {
   color: var(--ink);
+}
+@media (max-width: 760px) {
+  .listen-page {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 18px;
+  }
+  .listen-aside {
+    width: min(100%, 320px);
+  }
 }
 
 /* ---------- 玉佩：挂在砚台左边，自窗顶垂下；不占顶栏的位置 ---------- */
