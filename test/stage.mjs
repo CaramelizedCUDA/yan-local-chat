@@ -179,19 +179,19 @@ check(
 await evalJs(`document.querySelector("#stageClose").click(); true`);
 await waitFor(`!document.querySelector("#stagePin").classList.contains("hidden")`);
 check("closing the stage brings the pin back", true);
-// 书口签平时伏着（只露一道朱线），指针到右缘才抽出
-const slipX = () => evalJs(`new DOMMatrix(getComputedStyle(document.querySelector(".stage-pin-text")).transform).m41`);
-check("the slip lies tucked at the edge", (await slipX()) > 20);
+// 入口平时只是一笔朱竖，指针靠近才浮出「游目」两字
+const nameShown = () => evalJs(`Number(getComputedStyle(document.querySelector(".stage-pin-text")).opacity)`);
+check("only the stroke shows at rest", (await nameShown()) === 0);
 const pin = await evalJs(
   `(r => ({ x: r.right - 6, y: r.top + r.height / 2 }))(document.querySelector("#stagePin").getBoundingClientRect())`
 );
 await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pin.x, y: pin.y });
 await sleep(400);
-check("the slip slides out when the pointer comes near", (await slipX()) === 0);
+check("the name shows when the pointer comes near", (await nameShown()) === 1);
 await shot("stage-pin.png");
-// 长对话里右缘铺着滚动条的命中层：签的最右一列仍点得到签，而不是被它吃掉
+// 长对话里右缘铺着滚动条的命中层：入口的最右一列仍点得到，而不是被它吃掉
 check(
-  "the slip's right edge is not swallowed by the scrollbar's hit strip",
+  "the entry's right edge is not swallowed by the scrollbar's hit strip",
   await evalJs(
     `(() => { const g = document.querySelector("#chatScrollGrabber"), was = g.className; g.className = "chat-scroll-grabber active"; g.style.display = "block"; const r = document.querySelector("#stagePin").getBoundingClientRect(), hit = document.elementFromPoint(r.right - 2, r.top + r.height / 2); g.className = was; g.style.display = ""; return !!hit?.closest("#stagePin"); })()`
   )

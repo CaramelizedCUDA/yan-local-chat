@@ -238,7 +238,7 @@ function stageSetWidth(px) {
   stage.width = Math.round(Math.max(320, Math.min(px, innerWidth - 420)));
   $("#stagePanel").style.width = `${stage.width}px`;
 }
-// 书口签：接了浏览器类的 MCP（或浏览器已开着）、游目收着时夹在正文右缘（平时伏着只露一道朱线）；模型正操作浏览器时那道线一明一暗
+// 入口那一笔：接了浏览器类的 MCP（或浏览器已开着）、游目收着时自页顶垂下；模型正操作浏览器时笔尖下一粒朱一明一暗
 function stageSync() {
   const pin = $("#stagePin");
   pin.classList.toggle("hidden", (!stage.ws && !stageServer()) || stageShown());
@@ -443,6 +443,8 @@ function stageGo(raw) {
 }
 
 function bindStage() {
+  // 入口那一笔朱竖：12 × 64 的画幅，自页顶垂下、收笔出锋
+  $("#stagePin svg").innerHTML = brushStroke([6, 0, 5.4, 32, 6.3, 62], 4.2, { tone: "zhu", tail: 0, head: 1 });
   $("#stagePin").addEventListener("click", openStage);
   $("#stageClose").addEventListener("click", closeStage);
   $("#stageWide").addEventListener("click", () => stageSetWide(!$("#stagePanel").classList.contains("wide")));
