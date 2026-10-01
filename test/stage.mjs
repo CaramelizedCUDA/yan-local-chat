@@ -189,6 +189,13 @@ await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pin.x, y: pin.y 
 await sleep(400);
 check("the slip slides out when the pointer comes near", (await slipX()) === 0);
 await shot("stage-pin.png");
+// 长对话里右缘铺着滚动条的命中层：签的最右一列仍点得到签，而不是被它吃掉
+check(
+  "the slip's right edge is not swallowed by the scrollbar's hit strip",
+  await evalJs(
+    `(() => { const g = document.querySelector("#chatScrollGrabber"), was = g.className; g.className = "chat-scroll-grabber active"; g.style.display = "block"; const r = document.querySelector("#stagePin").getBoundingClientRect(), hit = document.elementFromPoint(r.right - 2, r.top + r.height / 2); g.className = was; g.style.display = ""; return !!hit?.closest("#stagePin"); })()`
+  )
+);
 await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 600, y: 400 });
 check("screencast stops when closed", await evalJs(`__yanStage.state.session === ""`));
 await browserSend("Target.closeTarget", { targetId });
