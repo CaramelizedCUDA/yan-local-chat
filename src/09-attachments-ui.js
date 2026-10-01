@@ -12,16 +12,6 @@ const icons = {
 function actionIcon(action, title, icon) {
   return `<button class="message-action" data-action="${action}" title="${title}" aria-label="${title}">${icon}</button>`;
 }
-function fileTypeLabel(file) {
-  const match = String(file.name || "").match(/\.([^.]+)$/),
-    extension = match?.[1]?.replace(/[^a-z0-9]/gi, "").toUpperCase();
-  if (extension) return extension.slice(0, 7);
-  const subtype = String(file.mime || "")
-    .split("/")[1]
-    ?.split(/[;+]/)[0]
-    ?.toUpperCase();
-  return (subtype || "FILE").slice(0, 7);
-}
 function formatFileSize(value) {
   const bytes = Number(value || 0);
   return bytes < 1024
@@ -30,14 +20,14 @@ function formatFileSize(value) {
       ? `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`
       : `${(bytes / 1048576).toFixed(1)} MB`;
 }
-function kindGlyph(kind) {
-  return { image: "画", text: "文", audio: "音", video: "影" }[kind] || "卷";
-}
+// 一件附件是一条「件条」：与卷宗同一张件图（图片换成它自己的缩略），名字，大小。见 设计稿/27 三·甲
 function attachmentCard(file, index, sent = false) {
-  const type = fileTypeLabel(file),
-    title = `${file.name} · ${formatFileSize(file.size)}`;
-  const thumb = file.kind === "image" && file.id ? `<img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt="">` : "";
-  const body = `${thumb}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-mark" aria-hidden="true">${kindGlyph(displayKind(file))}</span><span class="attachment-type">${escapeHtml(type)}</span>`;
+  const title = `${file.name} · ${formatFileSize(file.size)}`;
+  const figure =
+    file.kind === "image" && file.id
+      ? `<span class="fi fi-thumb" aria-hidden="true"><img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt=""></span>`
+      : fileFigure(file.name);
+  const body = `${figure}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-size">${formatFileSize(file.size)}</span>`;
   const save = file.id
     ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="收入卷宗" aria-label="收入卷宗">藏</button>`
     : "";

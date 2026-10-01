@@ -56,7 +56,7 @@ check(
 check(
   "deliverable row shows type, size and the two actions with 下载 last",
   await evalJs(
-    `(f => f.querySelector(".deliver-type").textContent === "CSV" && /B$/.test(f.querySelector("small").textContent) && [...f.querySelectorAll(".deliver-btn")].map(b => b.textContent).join(",") === "预览,下载")(document.querySelector(".message.assistant .deliver-file"))`
+    `(f => f.querySelector(".fi").dataset.figure === "table" && /B$/.test(f.querySelector("small").textContent) && [...f.querySelectorAll(".deliver-btn")].map(b => b.textContent).join(",") === "预览,下载")(document.querySelector(".message.assistant .deliver-file"))`
   )
 );
 // 「预览」：不必下载，就地预览

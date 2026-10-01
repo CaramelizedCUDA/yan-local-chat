@@ -1,15 +1,17 @@
+/* 附件：一件一条「件条」——件图（与卷宗同画法，图片是它自己的缩略）、名字、大小，方角发丝边。
+   落选的：112px 方卡垫一个淡大字（音 / 影 / 卷）配等宽类型小标——单个解释性的字与等宽字都不合纸墨（见 设计稿/27 三） */
 .attachment-list,
 .sent-attachments {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
   max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: thin;
 }
 .composer .attachment-list {
+  max-height: 96px;
   margin: 0 0 10px;
-  padding: 1px 2px 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .sent-attachments {
   justify-content: flex-end;
@@ -17,134 +19,70 @@
   margin: 0 0 10px;
 }
 .attachment-card {
-  position: relative;
-  flex: 0 0 112px;
-  width: 112px;
-  height: 112px;
-  overflow: hidden;
-  padding: 0;
-  border: 1px solid color-mix(in srgb, var(--line) 86%, var(--ink-3));
-  border-radius: 13px;
-  background: linear-gradient(145deg, var(--paper), color-mix(in srgb, var(--paper-2) 74%, var(--paper)));
-  box-shadow: 0 2px 7px rgba(55, 45, 31, 0.05);
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 260px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 12.5px var(--title);
   text-align: left;
-  transition:
-    border-color 0.16s,
-    transform 0.16s,
-    box-shadow 0.16s;
-}
-.attachment-card:before {
-  content: "";
-  position: absolute;
-  left: 10px;
-  top: 12px;
-  width: 1px;
-  height: 16px;
-  background: var(--accent);
-  opacity: 0.5;
+  transition: border-color 0.16s;
 }
 .attachment-card[role="button"] {
   cursor: pointer;
 }
-.attachment-card[role="button"]:hover {
-  border-color: var(--ink-3);
-  box-shadow: 0 5px 15px rgba(55, 45, 31, 0.08);
-  transform: translateY(-1px);
+.attachment-card[role="button"]:hover,
+.attachment-card:focus-within {
+  border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
+}
+.attachment-card .fi-thumb {
+  width: 26px;
+  height: 28px;
 }
 .attachment-name {
-  position: absolute;
-  z-index: 2;
-  left: 12px;
-  right: 10px;
-  top: 13px;
-  display: -webkit-box;
+  min-width: 0;
   overflow: hidden;
-  padding-left: 8px;
-  color: var(--ink);
-  font: 12px/1.45 var(--body);
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.attachment-mark {
-  position: absolute;
-  left: 11px;
-  bottom: 8px;
-  color: var(--accent);
-  font: 26px/1 var(--title);
-  opacity: 0.1;
-  transform: rotate(-5deg);
-}
-.attachment-type {
-  position: absolute;
-  right: 9px;
-  bottom: 8px;
-  padding: 3px 6px;
-  border-radius: 5px;
-  background: var(--paper-3);
-  color: var(--ink-2);
-  font:
-    9px ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    monospace;
-  letter-spacing: 0.04em;
-}
-.attachment-thumb {
-  display: none;
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.attachment-card.has-thumb .attachment-thumb {
-  display: block;
-}
-.attachment-card.has-thumb:before,
-.attachment-card.has-thumb .attachment-mark,
-.attachment-card.has-thumb .attachment-type {
-  display: none;
-}
-.attachment-card.has-thumb .attachment-name {
-  top: auto;
-  left: 7px;
-  right: 7px;
-  bottom: 7px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--paper) 84%, transparent);
-  font-size: 10.5px;
-  -webkit-line-clamp: 2;
-  backdrop-filter: blur(3px);
-}
-.attachment-tool {
-  position: absolute;
-  z-index: 3;
-  right: 6px;
-  top: 6px;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--paper) 90%, transparent);
+.attachment-size {
+  flex: none;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font-size: 10.5px;
+}
+/* 藏、移除：位置常留着，免得条子忽长忽短 */
+.attachment-tool {
+  flex: none;
+  width: 18px;
+  height: 22px;
+  margin-left: -3px;
+  color: var(--ink-3);
+  font: 11.5px var(--title);
   opacity: 0;
+  transition: opacity 0.16s;
+}
+.attachment-tool + .attachment-tool {
+  margin-left: -6px;
 }
 .attachment-card:hover .attachment-tool,
 .attachment-card:focus-within .attachment-tool {
   opacity: 1;
 }
-.attachment-tool:hover {
-  background: var(--paper-3);
-  color: var(--ink);
+.attachment-save:hover {
+  color: var(--accent);
 }
-.attachment-remove:hover {
+/* 案上的移除常显（淡），只有「藏」靠近才出来 */
+.attachment-card .attachment-remove {
+  opacity: 0.55;
+}
+.attachment-card .attachment-remove:hover {
+  opacity: 1;
   color: var(--danger);
-}
-.attachment-card.pending .attachment-save {
-  right: 30px;
 }
 .drop-veil {
   position: fixed;

@@ -39,7 +39,6 @@ const f = load([
   "titleFrom",
   "quotedText",
   "limitLabel",
-  "fileTypeLabel",
   "trailGroups",
   "anthropicRequest",
   "anthropicToOpenAiStream",
@@ -231,12 +230,9 @@ test("titleFrom / quotedText：标题截 28 字，引文按 > 逐行前缀", () 
   assert.equal(f.quotedText({ content: "为何", quote: { text: "甲\n乙" } }), "> 甲\n> 乙\n\n为何");
   assert.equal(f.quotedText({ content: "x" }), "x");
 });
-test("limitLabel / fileTypeLabel：上限的标签与文件类型角标", () => {
+test("limitLabel：上限的标签", () => {
   assert.equal(f.limitLabel(32 * 1048576), "32 MB");
   assert.equal(f.limitLabel(2048 * 1048576), "2 GB");
-  assert.equal(f.fileTypeLabel({ name: "a.tar.gz" }), "GZ");
-  assert.equal(f.fileTypeLabel({ name: "noext", mime: "image/png" }), "PNG");
-  assert.equal(f.fileTypeLabel({ name: "x.markdownfile" }), "MARKDOW");
 });
 test("trailGroups：同一轮的步骤归一组，记下这轮的话与思绪的起止", () => {
   const groups = f.trailGroups({
