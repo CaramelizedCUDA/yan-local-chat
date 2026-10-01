@@ -68,6 +68,7 @@
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
  * @property {number} [rat] 调用发起时思绪的长度
  * @property {string} [scope] 帮手的步骤记它所属的帮手 id
+ * @property {string} [root] 读、写、改文件时落在哪个目录（换了目录，先前读过的不算数）
  * @property {Attachment[]} [attachments] 补言（user_note）随带的附件
  * @property {boolean} [cached] 结果是复用的
  * @property {boolean} [skipped]
@@ -149,7 +150,7 @@
  * @property {string} [baseUrl]
  * @property {string} [apiKey]
  * @property {"openai"|"anthropic"} [api] 接口类型；没写按地址认（anthropic.com）
- * @property {number} temperature
+ * @property {number} [temperature] 留空即不传，由接口定
  * @property {number} [maxTokens] 只对 Anthropic 有意义（Messages API 必填）；OpenAI 兼容接口不传，由服务端定
  * @property {string} quota 用量上限，如 "100k"；空则不限
  * @property {number} usedTokens
@@ -706,9 +707,15 @@ function normalizeDraft(value) {
   return {
     text: String(value.text || ""),
     attachments: Array.isArray(value.attachments) ? value.attachments : [],
+    // 游目圈点的引文另带给模型的一份（model）与网址（url）：漏了，模型便不知道圈在哪、引文也回不到那一页
     quote:
       value.quote && typeof value.quote === "object" && value.quote.text
-        ? { text: String(value.quote.text), messageId: String(value.quote.messageId || "") }
+        ? {
+            text: String(value.quote.text),
+            messageId: String(value.quote.messageId || ""),
+            ...(value.quote.model ? { model: String(value.quote.model) } : {}),
+            ...(value.quote.url ? { url: String(value.quote.url) } : {})
+          }
         : null,
     ...(value.updatedAt ? { updatedAt: value.updatedAt } : {})
   };
@@ -9598,7 +9605,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       );
     assistant.status = "complete";
     conversation.updatedAt = now();
-    setTimeout(() => maybeAutoCompact(conversation, profile), 0);
     // 言里动过文件的，卷宗目录多半有了新东西：重新翻一遍，新出的、改过的成品挂在答末，侧栏的件数跟着更新
     if (archiveBefore && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) {
       await refreshArchive();
@@ -9649,7 +9655,11 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       updateContextGauge();
     }
     renderSendButtons();
-    if (assistant.status === "complete") void maybeAutoTitle(conversation, profile);
+    // 压前文排在这一答撤下作业之后：之前排的话，言里收尾还在等卷宗重翻，这段仍算在作答，压缩会悄悄作罢
+    if (assistant.status === "complete") {
+      setTimeout(() => maybeAutoCompact(conversation, profile), 0);
+      void maybeAutoTitle(conversation, profile);
+    }
   }
 }
 // ---------- 一答的轮次循环：主答、旁注、帮手共用 ----------
@@ -9989,7 +9999,6 @@ async function maybeAutoTitle(conversation, profile) {
     // 超时给到两分钟；输出上限不能只按题目本身算——会思考的模型把思考也计在 max_tokens 里；开了思考档位的降到最低一档，拟题用不着深想
     const response = await requestChat(profile, [{ role: "user", content: ask }], AbortSignal.timeout(120000), {
       maxTokens: 4000,
-      temperature: 0.3,
       systemPrompt: "",
       reasoning: conversation.reasoning ? "low" : ""
     });
@@ -10653,8 +10662,9 @@ function bindApprovalEvents() {
     c.commandPolicy = nextCommandPolicy(commandPolicyOf(c));
     saveStore();
     renderWorkAuto();
+    // 只放行指令与外部服务的请示；等着作答的表单不是「批不批」，不能拿 true 打发掉
     if (c.commandPolicy !== "ask")
-      for (const [stepId, entry] of pendingApprovals) if (entry.conversationId === c.id) settleApproval(stepId, true);
+      for (const [stepId, entry] of pendingApprovals) if (entry.conversationId === c.id && !entry.step.form) settleApproval(stepId, true);
   };
 }
 
@@ -10882,12 +10892,12 @@ defineTool({
   }
 });
 
-// 后台指令：取上次之后的新输出，可顺带等一会儿，或结束它；只给行，跟着 run_command 的 background 走
+// 后台指令：取上次之后的新输出，可顺带等一会儿，或结束它；跟着 run_command 走——言里也能开后台指令，开了就得看得了
 defineTool({
   name: "check_command",
   group: "work",
   label: "后台",
-  offer: ctx => ctx.files && ctx.work,
+  offer: ctx => ctx.files,
   html: workStepHtml,
   async run(step, args, { conversation, assistant, signal }) {
     const id = args.id.trim(),
@@ -11053,7 +11063,7 @@ defineTool({
   async run(step, args, { conversation, signal }) {
     const data = await bridge("/api/work/write", { ...workScope(conversation), path: args.path, content: args.content }, signal);
     step.title = data.path;
-    markSeen(conversation, data.path, step);
+    step.root = workRoot(conversation);
     step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
     // 覆盖时的增删由桥接按前后两版逐行比出（旧桥接只给原有行数，退回整删整增）；lines 是写后这件的行数，新建的件按它算净增
     step.change = {
@@ -11089,7 +11099,7 @@ defineTool({
   digest: true,
   async run(step, args, { conversation, signal }) {
     step.title = args.path;
-    if (!workSeen.get(seenKey(conversation, step))?.has(seenPath(conversation, args.path)))
+    if (!seenBefore(conversation, step, args.path))
       return { ok: false, content: prompt("work.unread", { path: args.path }), display: "需先读取" };
     const data = await bridge(
       "/api/work/edit",
@@ -11097,6 +11107,7 @@ defineTool({
       signal
     );
     step.title = data.path;
+    step.root = workRoot(conversation);
     step.diff = { old: args.old.slice(0, 1500), new: args.new.slice(0, 1500) };
     const counts = diffCounts(args.old, args.new);
     step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced, lines: data.lines };
@@ -11124,7 +11135,7 @@ defineTool({
       signal
     );
     step.title = data.path;
-    markSeen(conversation, data.path, step);
+    step.root = workRoot(conversation);
     const encoding =
       data.encoding === "utf-8"
         ? ""
@@ -11226,25 +11237,28 @@ defineTool({
 });
 
 // 本段对话里读过或写过的文件才允许 edit_file：模型必须对着真实内容改，而不是凭记忆猜。
-// 帮手另记一份（按步骤上的 scope 分开）：主模型没亲眼读过帮手改过的文件，要改就得再读一遍，帮手亦然
-const workSeen = new Map();
-// 键里带上目录：对话中途换了目录，之前读过的文件不算数
+// 「读过」不另记一张表，就看这段对话里做完的读、写、改：刷新页面也不丢，与模型自己的历史一致。
+// 帮手各算各的（按步骤上的 scope 分开）：主模型没亲眼读过帮手改过的文件，要改就得再读一遍，帮手亦然；
+// 对话中途换了目录，之前那个目录里读过的不算数（步骤记着它落在哪个目录，早先没记的照算）
+const SEEING_TOOLS = new Set(["read_file", "write_file", "edit_file"]);
 /**
  * @param {Conversation} conversation
- * @param {Step} step
+ * @param {Step} step 正要改的这一步
  */
-function seenKey(conversation, step) {
-  const base = `${conversation.id}@${workRoot(conversation)}`;
-  return step?.scope ? `${base}/${step.scope}` : base;
-}
-/**
- * @param {Conversation} conversation
- * @param {Step} step
- */
-function markSeen(conversation, file, step = null) {
-  const key = seenKey(conversation, step);
-  if (!workSeen.has(key)) workSeen.set(key, new Set());
-  workSeen.get(key).add(seenPath(conversation, file));
+function seenBefore(conversation, step, file) {
+  const root = workRoot(conversation),
+    wanted = seenPath(conversation, file);
+  return conversation.messages.some(message =>
+    allSteps(message).some(
+      seen =>
+        seen !== step &&
+        SEEING_TOOLS.has(seen.name) &&
+        seen.status === "done" &&
+        (seen.scope || "") === (step.scope || "") &&
+        (!seen.root || seen.root === root) &&
+        seenPath(conversation, seen.title) === wanted
+    )
+  );
 }
 // 「读过没有」按同一个文件认：读时写相对路径、改时写完整路径，或 Windows 上大小写不同，都是同一个文件
 /** @param {Conversation} conversation */
@@ -12985,10 +12999,11 @@ async function describeResponseError(response) {
 }
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
+  // 温度与输出上限同一条规矩：模型设置里留空就不传，由接口定——有的接口（OpenAI 的推理模型）只认默认值，传了反倒 400
   const parameters = {
     messages,
     systemPrompt: overrides.systemPrompt ?? "",
-    temperature: Number(overrides.temperature ?? profile.temperature ?? 0.7),
+    temperature: Number.isFinite(profile.temperature) ? profile.temperature : undefined,
     // 输出上限：拟题、压缩、探档位这几处自己给；平时 OpenAI 兼容接口不传（服务端的默认就是模型的上限，
     // 手写一个反而常常把长回答截断），Anthropic 必填、按模型设置或默认值
     maxTokens:
@@ -13562,7 +13577,7 @@ function profileCardHtml(p) {
     .map(([v, label]) => `<option value="${v}"${quota.unit === v ? " selected" : ""}>${label}</option>`)
     .join("")}</select></div>`;
   // 平时收成一行：名字、模型 ID 与接口、是否默认；点开才是整张表。模型一多，一行一个翻得过来
-  return `<details class="profile-card" data-profile-card="${escapeHtml(p.id)}"${profileOpen.has(p.id) ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${escapeHtml(p.name)}</strong><span class="profile-gist">${escapeHtml(profileGist(p))}</span>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</summary><div class="profile-body"><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>用量上限${quotaField}<small>留空不限</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}">OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button></div><small>${anthropicLike(p) ? "Messages API" : "chat/completions"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">模型${modelField}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${p.tools === false ? "本机工具关" : ""}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>需接口支持 function calling</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number(p.temperature ?? 0.7)}"><small>0–2，默认 0.7</small></label>${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>留空按 ${DEFAULT_MAX_TOKENS}</small></label>` : ""}<label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>过七成半自动压缩前文</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>逗号分隔；选定模型时自动探测</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}<button class="danger-btn" data-profile-action="delete">删除</button><span class="profile-status">${invalidQuota ? "请填写大于 0 的数值，或留空不限" : ""}</span></div></div></details>`;
+  return `<details class="profile-card" data-profile-card="${escapeHtml(p.id)}"${profileOpen.has(p.id) ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${escapeHtml(p.name)}</strong><span class="profile-gist">${escapeHtml(profileGist(p))}</span>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</summary><div class="profile-body"><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>用量上限${quotaField}<small>留空不限</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) ? "" : "active"}">OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button></div><small>${anthropicLike(p) ? "Messages API" : "chat/completions"}</small></label><label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">模型${modelField}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${p.tools === false ? "本机工具关" : ""}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>需接口支持 function calling</small></label><label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number.isFinite(p.temperature) ? p.temperature : ""}" placeholder="接口默认"><small>0–2，留空由接口定</small></label>${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>留空按 ${DEFAULT_MAX_TOKENS}</small></label>` : ""}<label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>过七成半自动压缩前文</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>逗号分隔；选定模型时自动探测</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}<button class="danger-btn" data-profile-action="delete">删除</button><span class="profile-status">${invalidQuota ? "请填写大于 0 的数值，或留空不限" : ""}</span></div></div></details>`;
 }
 /** @param {Profile} p */
 function profileGist(p) {
@@ -13723,7 +13738,6 @@ function bindSettingsEvents() {
       model: "",
       baseUrl: "",
       apiKey: "",
-      temperature: 0.7,
       quota: "",
       usedTokens: 0
     };
@@ -13743,7 +13757,10 @@ function bindSettingsEvents() {
     card.querySelectorAll("[data-field]").forEach(input =>
       input.addEventListener("input", e => {
         const field = e.target.dataset.field;
-        p[field] = ["temperature", "maxTokens", "usedTokens", "contextWindow"].includes(field) ? Number(e.target.value) : e.target.value;
+        // 温度清空即不传（Number("") 是 0，不能照转）
+        if (field === "temperature" && !e.target.value.trim()) delete p.temperature;
+        else
+          p[field] = ["temperature", "maxTokens", "usedTokens", "contextWindow"].includes(field) ? Number(e.target.value) : e.target.value;
         if (field === "contextWindow") updateContextGauge();
         // 亲手填的档位就是定论，不再探；清空了下次选模型再探
         if (field === "reasoningLevels") p.reasoningProbed = e.target.value.trim() ? `manual|${reasoningProbeKey(p)}` : "";
@@ -14296,7 +14313,6 @@ async function compactContext(c, { auto = false, before = null, profile = active
 /** @param {Profile} profile */
 async function summarize(profile, ask, signal, reasoning = "") {
   const response = await requestPatiently(profile, [{ role: "user", content: ask }], signal, {
-    temperature: 0.2,
     systemPrompt: "",
     reasoning: reasoning ? "low" : ""
   });
@@ -16222,7 +16238,6 @@ const listenClock = seconds => {
   const s = Math.max(0, Math.floor(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
-const listenReduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // ---------- 一曲：卷宗里的一件、或对话里的一件附件 ----------
 function listenArchiveTrack(entry) {
@@ -16621,7 +16636,7 @@ function listenFrame() {
   listenSwing.t += 1 / 60;
   if (shown) {
     listenRenderPendant();
-    const angle = listenReduced() ? 0 : listenSwing.amp * (box.classList.contains("open") ? 3.2 : 7) * Math.sin(listenSwing.t * 2.4);
+    const angle = inkMotionOff() ? 0 : listenSwing.amp * (box.classList.contains("open") ? 3.2 : 7) * Math.sin(listenSwing.t * 2.4);
     box.style.setProperty("--listen-sway", `${angle.toFixed(2)}deg`);
   }
   if (!el.paused || listenSwing.amp > 0.01) listenFrameId = requestAnimationFrame(listenFrame);
