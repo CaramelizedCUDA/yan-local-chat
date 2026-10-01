@@ -1,5 +1,5 @@
 // 言 · 上下文：右下角的实时计数、压缩前文为摘要；右侧的问题导航条
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 
 // ---------- 上下文计数：下一问会送出多少（估算），随输入、流式生成实时变 ----------
 // 与真正发送时的拼法同源（系统提示 + 工具定义 + 上次压缩以来的历史 + 行迹摘要 + 草稿 + 案上待发的附件与引文），附件按入库时记下的字数估
@@ -85,7 +85,7 @@ const compactingIds = new Set();
 // before：作答途中压前文（见 keepInWindow）——只取这一问之前的，这一问与正在写的答原样留在分隔之后
 /** @param {Conversation} c */
 function compactable(c, before = null) {
-  if (!c || c.ended || (!before && (conversationRunning(c.id) || runningElsewhere(c.id)))) return [];
+  if (!c || (!before && (conversationRunning(c.id) || runningElsewhere(c.id)))) return [];
   const contextIndex = c.messages.map(m => m.role).lastIndexOf("context"),
     until = before ? c.messages.indexOf(before) : c.messages.length;
   return c.messages
@@ -205,7 +205,7 @@ function summaryMessages(marker) {
  */
 function maybeAutoCompact(c, profile) {
   const window = Number(profile?.contextWindow) || 0;
-  if (!window || !c || c.ended || contextEstimate(c) < window * 0.75) return;
+  if (!window || !c || contextEstimate(c) < window * 0.75) return;
   void compactContext(c, { auto: true, profile });
 }
 // ---------- 轮内压缩：一答之内工具轮次叠得太长时，把较早的往来压成一份工作笔记，只留最近几轮原样 ----------

@@ -1,5 +1,5 @@
 // 言 · 桥接连接、启动与全局事件绑定、侧栏
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 页面是不是桥接自己开的（http://127.0.0.1:端口）：是的话桥接一定在，探测失败多半只是首次加载时被大文件挤慢了，该多等、多试
 function servedByBridge() {
   return /^https?:$/.test(location.protocol) && /^(127\.0\.0\.1|localhost)$/i.test(location.hostname);
@@ -75,8 +75,6 @@ async function boot() {
   setupMarkdown();
   await syncConfigWithDisk();
   await syncChatsWithDisk();
-  // 早先直连时收在浏览器里的卷宗旧件：落进卷宗目录
-  void migrateLibraryToArchive();
   // MCP 服务起得慢（起进程、握手）：先起着，头一问发出前会等它；环境备没备好也问一声，系统提示里要说
   void mcpReady();
   void refreshEnv();

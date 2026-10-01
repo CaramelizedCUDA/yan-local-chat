@@ -35,7 +35,7 @@ const f = load([
   "reasoningLive",
   "estimateText",
   "splitDelimited",
-  "parseVizJson",
+  "legacyVizHtml",
   "titleFrom",
   "quotedText",
   "limitLabel",
@@ -217,11 +217,22 @@ test("splitDelimited：引号里的分隔符与转义引号", () => {
   assert.deepEqual(f.splitDelimited('a,"b,c","d""e"', ","), ["a", "b,c", 'd"e']);
   assert.deepEqual(f.splitDelimited("a\tb", "\t"), ["a", "b"]);
 });
-test("parseVizJson：旧对话里 echarts 围栏的 JSON——注释、尾逗号、单引号、裸键名逐层修补", () => {
-  assert.deepEqual(f.parseVizJson('{"a":1}'), { a: 1 });
-  assert.deepEqual(f.parseVizJson('{ /* c */ "a": 1, // x\n "b": [1,2,], }'), { a: 1, b: [1, 2] });
-  assert.deepEqual(f.parseVizJson("{ title: { text: 'T' } }"), { title: { text: "T" } });
-  assert.throws(() => f.parseVizJson("{ nope"));
+test("legacyVizHtml：旧 echarts 围栏的 option 原样当 JS 跑——注释、尾逗号、单引号、裸键名都认，</script> 不截断", () => {
+  const run = text => {
+    const html = f.legacyVizHtml("echarts", text),
+      code = html.match(/<script>([\s\S]*)<\/script>$/)[1],
+      chart = { style: {} };
+    let set = null;
+    new Function("document", "echarts", code)({ getElementById: () => chart }, { init: () => ({ setOption: o => (set = o) }) });
+    return { html, set, height: chart.style.height };
+  };
+  assert.deepEqual(run('{"a":1}').set, { a: 1 });
+  assert.deepEqual(run('{ /* c */ "a": 1, // x\n "b": [1,2,], }').set, { a: 1, b: [1, 2] });
+  const titled = run("{ title: { text: 'T' }, height: 400 }");
+  assert.deepEqual(titled.set, { title: { text: "T" } });
+  assert.equal(titled.height, "400px");
+  assert.ok(!run('{ "t": "</script><b>" }').html.slice(0, -"</script>".length).includes("</script><b>"));
+  assert.equal(f.legacyVizHtml("mermaid", "graph LR\nA-->B"), '<pre class="mermaid">graph LR\nA--&gt;B</pre>');
 });
 test("titleFrom / quotedText：标题截 28 字，引文按 > 逐行前缀", () => {
   assert.equal(f.titleFrom("  a   b  ", []), "a b");
@@ -455,7 +466,6 @@ test("mergeConfig3：自己改过的取自己的，没改的取对方的；按 i
       { id: "b", name: "B", quota: "", usedTokens: 0 },
       { id: "c", name: "C", quota: "", usedTokens: 0 }
     ],
-    library: [],
     memory: { enabled: true, items: [{ id: "m1", text: "旧" }] },
     drafts: { x: { text: "草" } }
   };
@@ -520,7 +530,6 @@ test("mergeConfig3：两处各添预设、分组、MCP 与环境工具时都留�
       env: { packs: ["data", "office", "web"], pip: "", npm: "", mirror: "china" }
     },
     profiles: [],
-    library: [],
     memory: { enabled: true, items: [] },
     drafts: {}
   };

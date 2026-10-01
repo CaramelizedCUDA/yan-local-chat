@@ -1,5 +1,5 @@
 // 言 · 言 / 行两态、欢迎页与目录签、开合对话
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 言与行不是两个入口，而是一段对话有没有绑工作目录：绑了就是行（执事，改动落在那个目录，提示词也是执事的做法）；
 // 没绑就是言（对谈，文件工具落在卷宗）。目录可以在对话中途绑上或解开，上下文不断
 /** @param {Conversation} c */
@@ -227,7 +227,6 @@ function openHistoryMenu(id, anchor) {
     else if (action === "export") void exportConversationMarkdown(c);
     else if (action === "group") openMoveMenu(c, anchor.closest(".history-item") || anchor);
     else if (action === "bind") {
-      if (c.ended) return toast("此对话已收尾，请翻页后再绑定目录");
       openWorkdirPop({
         anchor: anchor.closest(".history-item") || anchor,
         host: null,
@@ -351,7 +350,6 @@ function setupChips() {
     event.stopPropagation();
     const c = currentConversation();
     if (!c) return;
-    if (c.ended) return toast("此对话已收尾，请翻页后再绑定目录");
     openWorkdirPop({
       anchor: button,
       host: meta,

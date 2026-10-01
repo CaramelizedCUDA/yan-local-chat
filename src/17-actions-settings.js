@@ -1,5 +1,5 @@
 // 言 · 消息动作、设置页、导入导出
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 生成中只拦会改动对话的动作（编辑、重答、续写、重试、切版本）；复制与就整条回复开旁注不碍事，下面还在写时上面照样可以注
 const ACTIONS_WHILE_RUNNING = new Set(["copy", "note"]);
 async function handleMessageAction(event) {
@@ -461,7 +461,6 @@ function bindSettingsEvents() {
     /** @type {Profile} */
     const p = {
       id: uid(),
-      source: "custom",
       name: "新模型",
       model: "",
       baseUrl: "",
@@ -774,7 +773,7 @@ async function readBackup(file) {
   data.attachments = true;
   return { data, attachments: attachments() };
 }
-// 导入采用合并策略：按 id 跳过已存在的对话 / 模型 / 卷宗 / 分组 / 预设，MCP 服务按名字跳过，附件原件只在本机缺失时写入。
+// 导入采用合并策略：按 id 跳过已存在的对话 / 模型 / 分组 / 预设，MCP 服务按名字跳过，附件原件只在本机缺失时写入。
 // 分组与预设要随对话一起回来：对话里记着 groupId、presetId，定义不在，组织方式与提示词就丢了
 async function importData(file) {
   try {
@@ -786,7 +785,6 @@ async function importData(file) {
     const known = new Set(store.conversations.map(c => c.id));
     let conversations = 0,
       added = 0,
-      library = 0,
       drafts = 0,
       files = 0;
     for (const c of incoming.conversations)
@@ -797,15 +795,9 @@ async function importData(file) {
       }
     const profileIds = new Set(profiles().map(p => p.id));
     for (const p of incoming.profiles)
-      if (p?.id && p.source !== "server" && !profileIds.has(p.id)) {
+      if (p?.id && !profileIds.has(p.id)) {
         store.profiles.push({ ...p, apiKey: p.apiKey || "" });
         added += 1;
-      }
-    const libraryIds = new Set(store.library.map(f => f.id));
-    for (const f of incoming.library)
-      if (f?.id && !libraryIds.has(f.id)) {
-        store.library.push(f);
-        library += 1;
       }
     const groupIds = new Set(store.settings.groups.map(g => g.id)),
       presetIds = new Set(store.settings.presets.map(p => p.id));
@@ -851,12 +843,10 @@ async function importData(file) {
       }
     if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
     saveStore();
-    // 旧备份里浏览器内卷宗的件：原件已随附件恢复，落进卷宗目录
-    if (library) await migrateLibraryToArchive();
     render();
     renderSettings();
     toast(
-      `已导入 ${conversations} 段对话、${added} 个模型、${library} 件卷宗${groups ? `、${groups} 个分组` : ""}${presets ? `、${presets} 个预设` : ""}${servers ? `、${servers} 个 MCP 服务（密钥需重填）` : ""}${drafts ? `、${drafts} 份草稿` : ""}${memories ? `、${memories} 条记忆` : ""}${files ? `，恢复 ${files} 件附件原件` : ""}${data.attachments ? "" : "；备份不含附件原件，旧附件将显示为不可用"}`
+      `已导入 ${conversations} 段对话、${added} 个模型${groups ? `、${groups} 个分组` : ""}${presets ? `、${presets} 个预设` : ""}${servers ? `、${servers} 个 MCP 服务（密钥需重填）` : ""}${drafts ? `、${drafts} 份草稿` : ""}${memories ? `、${memories} 条记忆` : ""}${files ? `，恢复 ${files} 件附件原件` : ""}${data.attachments ? "" : "；备份不含附件原件，旧附件将显示为不可用"}`
     );
   } catch (error) {
     toast(`导入失败：${String(error.message || error).slice(0, 80)}`);

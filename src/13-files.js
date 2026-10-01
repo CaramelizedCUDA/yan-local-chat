@@ -1,5 +1,5 @@
-// 言 · 文件接入、卷宗（磁盘目录 / 浏览器内）、文档抽取、下载
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 言 · 文件接入、卷宗、文档抽取、下载
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 async function handleFiles(event) {
   await addFiles(event.target.files);
   event.target.value = "";
@@ -126,7 +126,6 @@ async function ingestFile(file) {
 
 // ---------- 卷宗：跨对话保存的文件库 ----------
 // 卷宗是存储根里的一个目录（bootstrap.work.archive）：拖进来的文件落盘，没绑目录的对话里模型写出的文件也在这里，页面即目录的视图。
-// 早先直连时收在浏览器里的旧件（store.library）开页时逐件落进目录（见 migrateLibraryToArchive）
 let archiveEntries = null,
   archiveDirs = [],
   archiveScratch = null,
@@ -484,27 +483,6 @@ async function saveToLibrary(id) {
     toast(`收入失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
-// 早先直连时收在浏览器里的旧件（开页时、导入旧备份后）：逐件落进卷宗目录，落成了的从浏览器里移出（原件若没被对话引用则一并删去）
-async function migrateLibraryToArchive() {
-  if (!store.library.length) return;
-  let moved = 0;
-  for (const item of [...store.library]) {
-    const file = await getAttachment(item.id);
-    if (!file) continue;
-    try {
-      await putArchiveFile(item.name, file.kind === "text" ? dataUrlFromText(file.data, file.mime) : file.data);
-      store.library = store.library.filter(entry => entry.id !== item.id);
-      if (!isReferenced(item.id)) void deleteAttachment(item.id);
-      moved += 1;
-    } catch (error) {
-      toast(`${item.name} 落盘失败：${String(error.message || error).slice(0, 60)}`);
-      break;
-    }
-  }
-  saveStore();
-  await refreshArchive();
-  if (moved) toast(`浏览器里的 ${moved} 件旧卷宗已落进卷宗目录`);
-}
 // 删一项：夹连同里头的一并删，确认时说清有多少
 async function removeArchiveItem(path) {
   const dir = archiveDirs.find(item => item.path === path);
@@ -529,7 +507,6 @@ async function removeArchiveItem(path) {
   await refreshArchive();
 }
 function canPlaceAttachment(size) {
-  if (currentConversation()?.ended) return toast("此对话已收尾，请翻页后再置入"), false;
   if (pendingAttachments.length >= 10) return toast("一次最多置入 10 件附件"), false;
   if (size > MAX_FILE_BYTES) return toast(`单个附件不超过 ${limitLabel(MAX_FILE_BYTES)}`), false;
   const total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0);

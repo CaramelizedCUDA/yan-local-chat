@@ -1,5 +1,5 @@
 // 言 · 本地存储 · 记录：调桥接的口子、结构迁移、各类数据的规整
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 总线：长请求（模型流、工具、指令）不再各占一条浏览器连接，响应都从这一页的一条事件流回来（桥接那头见 server/bus.js）。
 // 浏览器对同一个 host:port 只开 6 条连接，几段对话连同帮手一起跑，长请求一多，存配置、建目录这类短请求就排队排到超时。
 // bridgeFetch 与 fetch 一样交回 Response：接的人照旧读 ok、status、headers、body，不知道底下走的是总线。
@@ -115,28 +115,12 @@ async function bridge(path, payload, signal) {
   return data;
 }
 
-// 结构迁移按版本递增：老数据按字段补默认值，不清空；将来调整结构时在 migrateStoreVx 里写迁移
-function migrateStoreV1(data) {
-  data.version = 2; /* v1 → v2 无结构变化，为后续迁移留位 */
-}
-function migrateStoreV2(data) {
-  data.drafts = {};
-  data.version = 3;
-}
-function migrateStoreV3(data) {
-  for (const c of data.conversations || []) c.forks ||= [];
-  data.version = 4;
-}
-function migrateStoreV4(data) {
-  const fallback = data.settings?.workAutoDefault ? "auto" : "ask";
-  data.settings ||= {};
-  data.settings.commandPolicyDefault = normalizeCommandPolicy(data.settings.commandPolicyDefault, fallback);
-  delete data.settings.workAutoDefault;
-  for (const c of data.conversations || []) {
-    c.commandPolicy = normalizeCommandPolicy(c.commandPolicy, c.workAuto ? "auto" : "ask");
-    delete c.workAuto;
-  }
-  data.version = 5;
+// 结构迁移：缺的字段由下面的规整补上，这里只管「同一个字段换了意思」的那几回。
+// 2026-10-01 断旧：v5 之前的几步（草稿、分叉、权限三档、全局思考档位、模型上的 system prompt）都已迁完多时，不再随带。
+// v6：温度改为留空即不传、由接口定——此前新接入的模型都写着默认的 0.7，这一回清掉；亲手填了别的数的照留
+function migrateStore(data) {
+  if (data.version < 6) for (const p of Array.isArray(data.profiles) ? data.profiles : []) if (p?.temperature === 0.7) delete p.temperature;
+  data.version = STORE_VERSION;
 }
 function normalizeCommandPolicy(value, fallback = "ask") {
   return ["ask", "review", "auto"].includes(value) ? value : fallback;
@@ -148,12 +132,14 @@ function normalizeStoreData(value) {
     const { [STORAGE_META_KEY]: _storageMeta, ...plain } = value;
     let data = plain;
     if (!Number.isInteger(data.version)) data.version = 1;
-    if (data.version === 1) migrateStoreV1(data);
-    if (data.version === 2) migrateStoreV2(data);
-    if (data.version === 3) migrateStoreV3(data);
-    if (data.version === 4) migrateStoreV4(data);
-    if (data.version > STORE_VERSION) data.version = STORE_VERSION;
+    migrateStore(data);
+    // 不再有的东西：浏览器内的旧卷宗、旧版的对话 / 卷宗目录（都已迁进存储根）
+    delete data.library;
     const settings = { ...defaultStore.settings, ...(data.settings || {}) };
+    delete settings.chatsDir;
+    delete settings.archiveDir;
+    delete settings.reasoning;
+    delete settings.workAutoDefault;
     const env = settings.env && typeof settings.env === "object" ? settings.env : {};
     settings.env = {
       ...defaultStore.settings.env,
@@ -163,27 +149,13 @@ function normalizeStoreData(value) {
       npm: String(env.npm || ""),
       mirror: env.mirror === "official" ? "official" : "china"
     };
-    const legacyReasoning = normalizeReasoning(settings.reasoning),
-      rawProfiles = Array.isArray(data.profiles) ? data.profiles.filter(p => p && typeof p === "object") : [],
-      legacyProfileId = data.settings?.activeProfileId || rawProfiles[0]?.id;
-    delete settings.reasoning;
-    // 旧版把新对话档位存在全局设置里；仅归给当时选中的模型，不能让它跟着切到别的模型。
-    const profiles = rawProfiles.map(p => ({
-      ...p,
-      ...(p.reasoning !== undefined
-        ? { reasoning: normalizeReasoning(p.reasoning) }
-        : data.settings?.reasoning !== undefined && p.id === legacyProfileId
-          ? { reasoning: legacyReasoning }
-          : {})
-    }));
-    // 旧版的 system prompt 写在模型配置上：挪成一个同名预设、带着这个模型，模型配置里不再有它
+    const profiles = (Array.isArray(data.profiles) ? data.profiles : [])
+      .filter(p => p && typeof p === "object")
+      .map(({ source, systemPrompt, ...p }) => ({
+        ...p,
+        ...(p.reasoning !== undefined ? { reasoning: normalizeReasoning(p.reasoning) } : {})
+      }));
     settings.presets = normalizePresets(settings.presets);
-    for (const p of profiles) {
-      const text = String(p.systemPrompt || "").trim();
-      delete p.systemPrompt;
-      if (text && !settings.presets.some(preset => preset.id === `from-${p.id}`))
-        settings.presets.push(normalizePreset({ id: `from-${p.id}`, name: p.name || "预设", prompt: text, profileId: p.id }));
-    }
     if (!settings.presets.some(preset => preset.id === settings.presetId)) settings.presetId = "";
     settings.groups = (Array.isArray(settings.groups) ? settings.groups : [])
       .filter(group => group && typeof group === "object" && group.id)
@@ -200,7 +172,6 @@ function normalizeStoreData(value) {
       settings,
       profiles,
       conversations: (Array.isArray(data.conversations) ? data.conversations : []).map(normalizeConversation),
-      library: Array.isArray(data.library) ? data.library : [],
       drafts: normalizeDrafts(data.drafts),
       memory: normalizeMemory(data.memory)
     };
@@ -226,10 +197,11 @@ function normalizePreset(value) {
   };
 }
 /** @param {any} value @returns {Conversation} */
+// 旧版留下的两个字段（ended 整段锁死、workAuto 径行开关）读到即去掉
 function normalizeConversation({ ended, workAuto, ...c }) {
   return /** @type {Conversation} */ ({
     ...c,
-    commandPolicy: normalizeCommandPolicy(c.commandPolicy, workAuto ? "auto" : "ask"),
+    commandPolicy: normalizeCommandPolicy(c.commandPolicy),
     reasoning: normalizeReasoning(c.reasoning),
     // 旧版在压缩开始时就先落一个 compacting 分隔：页面若在摘要生成前关掉，它会留下来把历史长期截断；启动时清掉
     messages: (Array.isArray(c.messages) ? c.messages : []).filter(m => !(m?.role === "context" && m.compacting)),

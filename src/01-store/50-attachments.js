@@ -1,5 +1,5 @@
 // 言 · 本地存储 · 附件原件：存储根的 附件/ 与本机 IndexedDB 暂存
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function openFileDb() {
   if (fileDbPromise) return fileDbPromise;
   fileDbPromise = new Promise((resolve, reject) => {
@@ -79,7 +79,7 @@ function attachmentIds(messages = []) {
     .map(file => file.id)
     .filter(Boolean);
 }
-// 仍在用的附件：各段对话（含换下的版本、旁注、行迹里补言带的）、草稿、案上待发的、还没落进卷宗目录的浏览器旧件
+// 仍在用的附件：各段对话（含换下的版本、旁注、行迹里补言带的）、草稿、案上待发的
 function attachmentKeepIds() {
   const ids = new Set();
   const add = files => {
@@ -94,22 +94,17 @@ function attachmentKeepIds() {
   }
   for (const value of Object.values(store.drafts || {})) add(value?.attachments);
   add(pendingAttachments);
-  add(store.library);
   return ids;
 }
-// 卷宗与对话附件原件合计占用（按 id 去重，同一原件记住两处只算一次）
+// 对话附件原件合计占用（按 id 去重，同一原件记住两处只算一次）
 function usedAttachmentBytes() {
   const seen = new Map();
   const count = files => {
     for (const file of files || []) if (file?.id && !seen.has(file.id)) seen.set(file.id, Number(file.size || 0));
   };
-  count(store.library);
   for (const value of Object.values(store.drafts || {})) count(value?.attachments);
   for (const c of store.conversations) for (const m of allMessages(c)) count(m.attachments);
   return [...seen.values()].reduce((a, b) => a + b, 0);
-}
-function isReferenced(id) {
-  return attachmentKeepIds().has(id);
 }
 // 已收入卷宗的原件由卷宗管理，删除对话或移除待发附件时不会删掉它
 async function deleteAttachments(ids) {
@@ -146,8 +141,7 @@ async function settleAttachmentStore() {
         await fileStoreRequest("readwrite", db => db.delete(id)).catch(() => {});
       }
     }
-    if (chatsLoaded)
-      await bridge("/api/files/clean", { keep: [...attachmentKeepIds()] }, AbortSignal.timeout(60000)).catch(() => {});
+    if (chatsLoaded) await bridge("/api/files/clean", { keep: [...attachmentKeepIds()] }, AbortSignal.timeout(60000)).catch(() => {});
   } catch {
   } finally {
     attachmentsSettling = false;

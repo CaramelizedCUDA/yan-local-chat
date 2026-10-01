@@ -1,7 +1,7 @@
 // 言 · 常量、内置提示词取值、运行期状态
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // ---------- 数据模型（JSDoc，供 tsc --checkJs 与编辑器；见 src/types.d.ts 的说明）----------
-// 存下来的东西只有这几种：Store 里挂着设置、模型、对话、卷宗（浏览器内的旧件）、记忆与草稿；对话里是消息，消息上挂步骤，步骤上可挂帮手
+// 存下来的东西只有这几种：Store 里挂着设置、模型、对话、记忆与草稿；对话里是消息，消息上挂步骤，步骤上可挂帮手
 /**
  * @typedef {Object} Attachment 附件的元数据；原件（data）另存存储根的 附件/（落盘不成时暂存 IndexedDB），只在读出时才带
  * @property {string} id
@@ -132,16 +132,14 @@
  * @property {string} [groupId] 归在哪个分组；空即散列
  * @property {boolean} [pinned]
  * @property {boolean} [unread]
- * @property {boolean} [ended] 旧版：额度尽了整段锁死；现已不再写入，读到照旧尊重
  * @property {boolean} [titleAuto]
  * @property {boolean} [titled]
  * @property {number} [titleTries]
  * @property {boolean} [showCompacted]
  */
 /**
- * @typedef {Object} Profile 一份模型配置；source 为 server 的是桥接预设的，字段大多锁定
+ * @typedef {Object} Profile 一份模型配置
  * @property {string} id
- * @property {"server"|"custom"} source
  * @property {string} name
  * @property {string} model
  * @property {string} [baseUrl]
@@ -192,8 +190,6 @@
  * @property {boolean} archiveRead
  * @property {number} toolRounds
  * @property {number} subRounds
- * @property {string} [archiveDir] 旧版的卷宗目录；只在头一回迁入存储根时读一次，此后删去
- * @property {string} [chatsDir] 旧版的对话目录；同上
  * @property {"chat"|"library"|"groups"} [lastView] 上次停在哪一页，刷新后回到原处
  * @property {string} [lastConversationId]
  * @property {{ packs: string[], pip: string, npm: string, mirror: "china"|"official" }} env 沙箱环境：选了哪几组工具、另装的包、下载源
@@ -205,7 +201,6 @@
  * @property {Settings} settings
  * @property {Profile[]} profiles
  * @property {Conversation[]} conversations
- * @property {Attachment[]} library 早先直连时收在浏览器里的卷宗旧件：开页时落进卷宗目录（见 migrateLibraryToArchive）
  * @property {{ enabled: boolean, items: MemoryItem[] }} memory
  * @property {Record<string, Draft>} drafts
  */
@@ -265,7 +260,7 @@ const REVEAL_RATE = 0.16,
 const $ = selector => document.querySelector(selector);
 const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const now = () => new Date().toISOString();
-const STORE_VERSION = 5;
+const STORE_VERSION = 6;
 const NEW_DRAFT_ID = "__new__";
 /** @type {Store} */
 const defaultStore = {
@@ -295,7 +290,6 @@ const defaultStore = {
   },
   profiles: [],
   conversations: [],
-  library: [],
   memory: { enabled: true, items: [] },
   drafts: {}
 };

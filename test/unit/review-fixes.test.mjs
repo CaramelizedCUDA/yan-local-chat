@@ -92,3 +92,27 @@ test("温度：模型设置里留空就不传，填了才传", async () => {
   assert.equal(bodies[1].temperature, 0.4);
   assert.equal(bodies[2].temperature, 0);
 });
+
+test("迁移 v6：旧默认的 0.7 清掉、亲手填的留下；断旧的几样读到即去", () => {
+  const f = load(["normalizeStoreData", "STORE_VERSION"]);
+  const old = f.normalizeStoreData({
+    version: 5,
+    settings: { chatsDir: "C:\\旧", archiveDir: "C:\\旧卷宗", reasoning: "high", workAutoDefault: true },
+    profiles: [
+      { id: "a", name: "A", temperature: 0.7, source: "custom", systemPrompt: "" },
+      { id: "b", name: "B", temperature: 0.3 }
+    ],
+    conversations: [{ id: "c", messages: [], ended: true, workAuto: true, commandPolicy: "review" }],
+    library: [{ id: "x" }]
+  });
+  assert.equal(old.version, f.STORE_VERSION);
+  assert.equal("temperature" in old.profiles[0], false);
+  assert.equal(old.profiles[1].temperature, 0.3);
+  assert.ok(!("source" in old.profiles[0]) && !("systemPrompt" in old.profiles[0]));
+  assert.ok(!("library" in old));
+  for (const key of ["chatsDir", "archiveDir", "reasoning", "workAutoDefault"]) assert.ok(!(key in old.settings), key);
+  assert.ok(!("ended" in old.conversations[0]) && !("workAuto" in old.conversations[0]));
+  assert.equal(old.conversations[0].commandPolicy, "review");
+  // 迁过之后亲手再填 0.7：不再被当成旧默认清掉
+  assert.equal(f.normalizeStoreData({ version: 6, profiles: [{ id: "a", temperature: 0.7 }] }).profiles[0].temperature, 0.7);
+});

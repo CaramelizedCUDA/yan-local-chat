@@ -1,5 +1,5 @@
 // 言 · Markdown、代码高亮、公式、图表与网页沙箱
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // ---------- Markdown：marked 解析、DOMPurify 净化、highlight.js 代码高亮、KaTeX 公式 ----------
 const PURIFY_OPTIONS = { ADD_ATTR: ["target"], FORBID_TAGS: ["style", "form", "iframe", "object", "embed"] };
 function setupMarkdown() {
@@ -167,8 +167,7 @@ function codeBlockHtml(text, lang) {
   }
   if (!suppressViz && htmlApp) {
     const source = legacy ? legacyVizHtml(language, text) : text;
-    if (source !== null)
-      return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">html · 正在载入</span><span><button type="button" class="code-copy" data-app-toggle>源码</button><button type="button" class="code-copy" data-app-restart>重启</button><button type="button" class="code-copy" data-app-download>下载</button><button type="button" class="code-copy" data-work-expand>全屏</button><button type="button" class="code-copy" data-copy-code>复制</button></span></div><div class="html-app-stage"><span>正在载入交互内容</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
+    return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">html · 正在载入</span><span><button type="button" class="code-copy" data-app-toggle>源码</button><button type="button" class="code-copy" data-app-restart>重启</button><button type="button" class="code-copy" data-app-download>下载</button><button type="button" class="code-copy" data-work-expand>全屏</button><button type="button" class="code-copy" data-copy-code>复制</button></span></div><div class="html-app-stage"><span>正在载入交互内容</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
   }
   let html;
   try {
@@ -216,101 +215,16 @@ function liftBareMermaid(text) {
     })
     .join("\n");
 }
-/** 旧对话里的 mermaid / echarts 围栏 → 等价的一页 HTML；echarts 的 option 解不开时回 null（按代码块显示） */
+/** 旧对话里的 mermaid / echarts 围栏 → 等价的一页 HTML。
+ * echarts 的 option 原样当一段 JS 写进去：模型给的「JSON」常带注释、尾逗号、单引号、裸键名，这些 JS 本就认，不必另修；
+ * 真写坏了，那一块报「运行有误」、源码照看。它跑在隔离的沙箱页里，与别的交互内容一样 */
 function legacyVizHtml(language, text) {
   if (language !== "echarts") return `<pre class="mermaid">${escapeHtml(text)}</pre>`;
-  try {
-    const option = parseVizJson(text),
-      height = Math.min(560, Math.max(220, Number(option.height) || 320));
-    delete option.height;
-    const json = JSON.stringify(option).replace(/</g, "\\u003c");
-    return `<div id="chart" style="height:${height}px"></div>\n<script src="yan:echarts"></script>\n<script>echarts.init(document.getElementById("chart")).setOption(${json});</script>`;
-  } catch {
-    return null;
-  }
+  const option = text.replace(/<\/(script)/gi, "<\\/$1");
+  return `<div id="chart"></div>\n<script src="yan:echarts"></script>\n<script>const option = (${option}\n), chart = document.getElementById("chart");\nchart.style.height = Math.min(560, Math.max(220, Number(option.height) || 320)) + "px";\ndelete option.height;\necharts.init(chart).setOption(option);</script>`;
 }
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-// 旧对话里 echarts 围栏的 option：模型给的 JSON 常有小滑头（尾逗号、注释、单引号、裸键名）；逐层尝试修补，实在补不上再抛原始错误
-const skipTrivia = (text, i) => {
-  while (i < text.length) {
-    const ch = text[i],
-      next = text[i + 1];
-    if (/\s/.test(ch)) i += 1;
-    else if (ch === "/" && next === "/") {
-      while (i < text.length && text[i] !== "\n") i += 1;
-    } else if (ch === "/" && next === "*") {
-      i += 1;
-      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i += 1;
-      i += 1;
-    } else break;
-  }
-  return i;
-};
-function parseVizJson(source) {
-  let error;
-  try {
-    return JSON.parse(source);
-  } catch (err) {
-    error = err;
-  }
-  // 单遍状态机：剥注释与尾逗号，字符串内部原样保留
-  const strip = text => {
-    let out = "",
-      str = "";
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i],
-        next = text[i + 1];
-      if (str) {
-        if (ch === "\\") {
-          out += ch + (next ?? "");
-          i += 1;
-        } else if (ch === str) str = "";
-        out += ch;
-        continue;
-      }
-      if (ch === '"' || ch === "'") {
-        str = ch;
-        out += ch;
-        continue;
-      }
-      if (ch === "/" && next === "/") {
-        while (i < text.length && text[i] !== "\n") i += 1;
-        out += "\n";
-        continue;
-      }
-      if (ch === "/" && next === "*") {
-        i += 1;
-        while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i += 1;
-        i += 1;
-        continue;
-      }
-      if (ch === ",") {
-        const j = skipTrivia(text, i + 1);
-        if (text[j] === "}" || text[j] === "]") continue; // 尾逗号（后面即使隔着注释也算）
-      }
-      out += ch;
-    }
-    return out;
-  };
-  let attempt = strip(source);
-  try {
-    return JSON.parse(attempt);
-  } catch {}
-  const single = (source.match(/'/g) || []).length,
-    double = (source.match(/"/g) || []).length;
-  if (single > double) {
-    attempt = attempt.replace(/'([^'\n]*)'/g, (_, body) => '"' + body.replace(/\\'/g, "'").replace(/"/g, '\\"') + '"');
-    try {
-      return JSON.parse(attempt);
-    } catch {}
-  }
-  attempt = attempt.replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":');
-  try {
-    return JSON.parse(attempt);
-  } catch {}
-  throw error;
 }
 function htmlAppSource(el) {
   return el.querySelector(".html-app-source code")?.textContent || "";

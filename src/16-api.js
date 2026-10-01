@@ -1,5 +1,5 @@
 // 言 · 接口：用量估算、请求、SSE 读取、错误说明
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function estimateText(text) {
   const chinese = (text.match(/[㐀-鿿]/g) || []).length;
   return chinese + Math.ceil((text.length - chinese) / 4);
@@ -284,7 +284,7 @@ async function requestChat(profile, messages, signal, overrides = {}) {
 }
 /** @param {Profile} profile */
 function profileForRequest(profile) {
-  return { source: "custom", baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profile.api || "" };
+  return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profile.api || "" };
 }
 /** @param {Message} assistant 主消息、帮手，或拟题 / 压缩用的临时消息 */
 async function readSse(response, assistant, { onFrame = null } = {}) {

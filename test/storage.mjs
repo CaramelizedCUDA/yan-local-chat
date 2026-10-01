@@ -437,8 +437,8 @@ const imported = await evalJs(
   `(() => { const s = __yanState(), c = s.conversations.find(c => c.id === "imported-old"); return { policy: c.commandPolicy, workAuto: "workAuto" in c, reasoning: c.reasoning, messages: c.messages.length, forks: Array.isArray(c.forks), draft: s.drafts["imported-old"] }; })()`
 );
 check(
-  "an old backup is migrated on import: workAuto → commandPolicy, dangling compacting marker dropped, string draft wrapped",
-  imported.policy === "auto" &&
+  "an old backup is tidied on import: stale workAuto dropped, dangling compacting marker dropped, string draft wrapped",
+  imported.policy === "ask" &&
     !imported.workAuto &&
     imported.reasoning === "" &&
     imported.messages === 1 &&

@@ -1,5 +1,5 @@
 // 言 · 本地存储 · 暂存：记录怎么存、IndexedDB 的状态表、配置的本机缓存
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // ---------- 记录怎么存 ----------
 // 记录分两半。「配置」（设置、模型含 API Key、记忆、草稿）小而常改：正本在存储根的 配置.json（默认 ~/.yan，
 // 几个浏览器共用这一份，见 syncConfigWithDisk），localStorage 里那份是缓存，记着与磁盘对齐时的基准。
@@ -73,7 +73,6 @@ function metaOf(data = store) {
     version: data.version,
     settings: data.settings,
     profiles: data.profiles,
-    library: data.library,
     memory: data.memory,
     drafts: data.drafts
   };
