@@ -36,13 +36,13 @@ test("调试口与配置目录：参数里直写的、--config 文件里的，�
   assert.deepEqual(browserOf(undefined), { port: 9288, dir: "" });
 });
 
-test("执事的一步写成人话：照 playwright 的参数，认不得的只写工具名", () => {
+test("执事的一步写成一句两字动词：照 playwright 的参数，认不得的只写工具名", () => {
   const { stageActionText } = load(["stageActionText"]);
-  assert.equal(stageActionText("browser_navigate", { url: "https://github.com/pulls" }), "打开 github.com");
-  assert.equal(stageActionText("browser_click", { element: "Pull requests link", ref: "e12" }), "点了「Pull requests link」");
+  assert.equal(stageActionText("browser_navigate", { url: "https://github.com/pulls" }), "前往 github.com");
+  assert.equal(stageActionText("browser_click", { element: "Pull requests link", ref: "e12" }), "点击「Pull requests link」");
   assert.equal(stageActionText("browser_click", { element: "行", doubleClick: true }), "双击「行」");
-  assert.equal(stageActionText("browser_type", { element: "搜索框", text: "is:open\nis:pr" }), "输入「is:open is:pr」");
-  assert.equal(stageActionText("browser_tabs", { action: "new" }), "开新页");
-  assert.equal(stageActionText("browser_wait_for", { time: 2 }), "等 2 秒");
+  assert.equal(stageActionText("browser_type", { element: "搜索框", text: "is:open\nis:pr" }), "键入「is:open is:pr」");
+  assert.equal(stageActionText("browser_tabs", { action: "new" }), "新开一页");
+  assert.equal(stageActionText("browser_wait_for", { time: 2 }), "等候 2 秒");
   assert.equal(stageActionText("browser_mouse_move_xy", { x: 1, y: 2 }), "mouse_move_xy");
 });

@@ -195,6 +195,77 @@ await send("Input.dispatchKeyEvent", { type: "keyUp", key: "l", code: "KeyL", wi
 check("Ctrl+L goes to the address bar", await evalJs(`document.activeElement === document.querySelector("#stageUrl")`));
 await evalJs(`document.querySelector("#stageUrl").blur(); true`);
 
+// 圈点：开「圈」在画面上拖一圈，引文与带朱笔的图随即落进输入框；移除引文，画面上的圈随之清去
+await evalJs(`document.querySelector("#stagePen").click(); true`);
+check("the pen is on", await evalJs(`document.querySelector("#stagePen").getAttribute("aria-pressed") === "true"`));
+// 链接的字在那一块的左上角：圈从左上缘起
+const ring = [
+  [0.004, 0.2],
+  [0.2, 0.004],
+  [0.37, 0.2],
+  [0.2, 0.37],
+  [0.005, 0.22]
+];
+await mouse("mousePressed", ...at(...ring[0]));
+for (const p of ring.slice(1)) {
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at(...p)[0], y: at(...p)[1], button: "left", buttons: 1 });
+  await sleep(30);
+}
+await mouse("mouseReleased", ...at(...ring.at(-1)));
+await waitFor(`!document.querySelector("#welcomeQuote").classList.contains("hidden")`, 5000).catch(() => {});
+check(
+  "a circle on the stage drops a quote into the input box",
+  await evalJs(`document.querySelector("#welcomeQuote .composer-quote-text").textContent.includes("圈「链接」")`),
+  await evalJs(`document.querySelector("#welcomeQuote .composer-quote-text").textContent`)
+);
+await waitFor(`!!document.querySelector("#welcomeAttachments .attachment-card")`, 8000).catch(() => {});
+check(
+  "the picture with the circle comes along as an attachment",
+  await evalJs(`document.querySelector("#welcomeAttachments .attachment-name")?.textContent.startsWith("游目")`)
+);
+check(
+  "the page did not take the circling as a click",
+  await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "传:测.txt"`)
+);
+check("the circle stays on the stage", await evalJs(`document.querySelectorAll("#stageInk > path").length === 1`));
+await shot("stage-ink.png");
+await evalJs(`document.querySelector("#welcomeQuote [data-quote-close]").click(); true`);
+check("removing the quote clears the circle", await evalJs(`document.querySelectorAll("#stageInk > path").length === 0`));
+await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+check("Esc puts the pen down", await evalJs(`document.querySelector("#stagePen").getAttribute("aria-pressed") === "false"`));
+await evalJs(`document.querySelector("#welcomeAttachments [data-remove-attachment]")?.click(); true`);
+
+// 执事落笔：执事在调浏览器时网页里有了真按下，那一处一圈朱、贴「点击」
+const { sessionId: modelSession } = await browserSend("Target.attachToTarget", { targetId, flatten: true });
+const modelClick = (x, y) =>
+  Promise.all(
+    ["mousePressed", "mouseReleased"].map((type, i) =>
+      browser.send(
+        JSON.stringify({
+          id: 9000 + i,
+          sessionId: modelSession,
+          method: "Input.dispatchMouseEvent",
+          params: { type, x, y, button: "left", clickCount: 1 }
+        })
+      )
+    )
+  );
+await evalJs(`__yanStage.state.busy = 1; true`);
+await modelClick(40, 40);
+await waitFor(`document.querySelector("#stageLabels").textContent.includes("点击")`, 5000).catch(() => {});
+check(
+  "where the model clicks gets a red ring and a slip",
+  await evalJs(
+    `document.querySelector("#stageLabels").textContent.includes("点击") && !!document.querySelector("#stageInk .stage-acts path")`
+  )
+);
+await evalJs(`__yanStage.state.busy = 0; true`);
+await sleep(300);
+await evalJs(`__yanStage.state.userAt = Date.now(); true`);
+await modelClick(40, 40);
+await sleep(2200);
+check("clicks while the model is idle leave no mark", await evalJs(`!document.querySelector("#stageLabels").textContent`));
+
 // 收藏：读浏览器配置目录里的那份，按夹列出；点一条在当前页打开
 check(
   "收藏 shows when the browser's profile is known",
