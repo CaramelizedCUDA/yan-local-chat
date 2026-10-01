@@ -12150,7 +12150,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
     return { ok: false, content: prompt("mcp.skipped"), display: "已跳过" };
   }
   const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal).finally(
-    stageWatch(tool)
+    stageWatch(tool, args)
   );
   // 服务说工具变了：下一问前重拉
   if (data.toolsChanged) mcp.key = "";
@@ -15701,7 +15701,7 @@ const GUIDE = [
       },
       {
         h: "游目",
-        body: "模型所用的浏览器可收进言的右侧，不再另开一扇窗：令浏览器开调试口、放行言的页面（playwright 的写法见仓库 docs/stage.md），调试口言从那个服务的配置里自己读。接上之后正文右上自页顶垂下一笔朱竖，点它即见浏览器的画面，可点、可滚、可打字，标签与浏览器同步，模型换到哪一页便跟到哪一页；网页弹的提示框也画在画面上，可直接作答。浏览器未开时点「打开浏览器」，言经那个服务把它请起来。「＋」新开一页，书签带列出浏览器里的收藏，地址栏输网址或要搜的话皆可。拖左缘调宽窄，浏览器的窗口随之变大小；「阔」铺满整页。",
+        body: "模型所用的浏览器可收进言的右侧，不再另开一扇窗：令浏览器开调试口、放行言的页面（playwright 的写法见仓库 docs/stage.md），调试口言从那个服务的配置里自己读。接上之后正文右上自页顶垂下一笔朱竖，点它即见浏览器的画面，可点、可滚、可打字，标签与浏览器同步，模型换到哪一页便跟到哪一页；网页弹的提示框、要选文件的窗也画在画面上，可直接作答；执事在动时，地址栏旁写着它这一步在做什么。浏览器未开时点「打开浏览器」，言经那个服务把它请起来。「＋」新开一页，书签带列出浏览器里的收藏，地址栏输网址或要搜的话皆可。拖左缘调宽窄，浏览器的窗口随之变大小；「阔」铺满整页。",
         note: "模型正操作浏览器时，那一笔笔尖下一粒朱一明一暗，地址栏旁亦一粒朱。旁注开着时游目暂让，收起旁注即回。"
       }
     ]
@@ -16653,10 +16653,15 @@ const stage = {
   loading: false,
   back: false,
   forward: false,
-  /** @type {{ type: string, message: string, defaultPrompt?: string } | null} */
+  /** @type {{ type: string, message: string, defaultPrompt?: string, multiple?: boolean, node?: number } | null} */
   dialog: null,
   // 浏览器配置目录里有收藏（桥接答的），才挂「收藏」
   marks: false,
+  /** @type {string[]} 执事在浏览器里新近的几步，写成人话 */
+  trail: [],
+  // 指针形状跟着网页：上一回问的时刻、是否还在问
+  cursorAt: 0,
+  cursorAsking: false,
   // 浏览器的调试口（桥接从配置里读出来的，只用来报错）
   port: 0,
   seen: false,
@@ -16775,6 +16780,9 @@ function stagePageEvent(method, params) {
   } else if (method === "Page.javascriptDialogClosed") {
     stage.dialog = null;
     stageRenderDialog();
+  } else if (method === "Page.fileChooserOpened" && params.backendNodeId) {
+    stage.dialog = { type: "file", message: "", multiple: params.mode === "selectMultiple", node: params.backendNodeId };
+    stageRenderDialog();
   }
 }
 function stageResetPage() {
@@ -16803,7 +16811,7 @@ function stageRenderNav() {
   /** @type {HTMLButtonElement} */ ($("[data-stage-nav=back]")).disabled = !stage.back;
   /** @type {HTMLButtonElement} */ ($("[data-stage-nav=forward]")).disabled = !stage.forward;
 }
-// 网页弹的提示框（alert / confirm / prompt / 离页挽留）：浏览器画在屏幕外的窗上，网页就此停住——看台在画面上另画一张，答了递回去。
+// 网页弹的提示框（alert / confirm / prompt / 离页挽留）与选文件的窗：浏览器画在屏幕外的窗上，网页就此停住——看台在画面上另画一张，答了递回去。
 // 模型那头 playwright 也收得到，谁先答都行
 function stageRenderDialog() {
   const box = $("#stageDialog"),
@@ -16811,16 +16819,61 @@ function stageRenderDialog() {
   box.classList.toggle("hidden", !dialog);
   if (!dialog) return void (box.innerHTML = "");
   const leave = dialog.type === "beforeunload",
-    ask = dialog.type !== "alert";
-  box.innerHTML = `<div class="stage-dialog-card" role="alertdialog" aria-label="网页的提示"><div class="stage-dialog-head">${leave ? "离开此页？" : "网页的提示"}</div><div class="stage-dialog-text">${escapeHtml(dialog.message || (leave ? "此页有尚未存下的改动。" : ""))}</div>${dialog.type === "prompt" ? `<input class="stage-dialog-input" spellcheck="false" value="${escapeHtml(dialog.defaultPrompt || "")}">` : ""}<div class="stage-dialog-actions">${ask ? `<button type="button" class="outline-btn" data-stage-answer="no">${leave ? "留下" : "取消"}</button>` : ""}<button type="button" class="outline-btn primary" data-stage-answer="yes">${leave ? "离开" : "确定"}</button></div></div>`;
+    file = dialog.type === "file",
+    ask = dialog.type !== "alert",
+    host = stageHost(stage.tabs.get(stage.current)?.url || "");
+  const [head, text, yes, no] = file
+    ? ["网页要你选文件", `${host || "此页"}请你上传文件${dialog.multiple ? "，可多选" : ""}`, "选文件", "取消"]
+    : leave
+      ? ["离开此页？", dialog.message || "此页有尚未存下的改动。", "离开", "留下"]
+      : ["网页的提示", dialog.message, "确定", "取消"];
+  box.innerHTML = `<div class="stage-dialog-card" role="alertdialog" aria-label="${head}"><div class="stage-dialog-head">${head}</div><div class="stage-dialog-text">${escapeHtml(text)}</div>${dialog.type === "prompt" ? `<input class="stage-dialog-input" spellcheck="false" value="${escapeHtml(dialog.defaultPrompt || "")}">` : ""}<div class="stage-dialog-actions">${ask ? `<button type="button" class="outline-btn" data-stage-answer="no">${no}</button>` : ""}<button type="button" class="outline-btn primary" data-stage-answer="yes">${yes}</button></div></div>`;
   /** @type {HTMLElement} */ (box.querySelector(".stage-dialog-input, [data-stage-answer=yes]")).focus({ preventScroll: true });
 }
 /** @param {boolean} accept */
 function stageAnswer(accept) {
+  const dialog = stage.dialog;
+  // 答完键盘仍交还网页：人是在网页里做事时被问的
+  $("#stageKeys").focus({ preventScroll: true });
+  if (dialog?.type === "file") {
+    stage.dialog = null;
+    stageRenderDialog();
+    if (accept) stagePickFiles(dialog);
+    return;
+  }
   const input = /** @type {HTMLInputElement | null} */ ($("#stageDialog .stage-dialog-input"));
   void stageSend("Page.handleJavaScriptDialog", { accept, ...(input ? { promptText: input.value } : {}) }, stage.session).catch(() => {});
   stage.dialog = null;
   stageRenderDialog();
+}
+// 选文件用言这边的窗（点「选文件」那一下即是人手的动作，浏览器才许开窗）；选好的落到桥接的临时目录，路径交给网页里那个 <input type=file>
+/** @param {{ multiple?: boolean, node?: number }} dialog */
+function stagePickFiles(dialog) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.multiple = !!dialog.multiple;
+  input.addEventListener("change", () => void stageSendFiles([...(input.files || [])], dialog.node));
+  input.click();
+}
+/** @param {File[]} files @param {number} [node] */
+async function stageSendFiles(files, node) {
+  const session = stage.session;
+  if (!files.length || !session) return;
+  try {
+    const paths = [];
+    for (const file of files) paths.push((await bridge("/api/stage/upload", { name: file.name, data: await readFile(file, "data") })).path);
+    await stageSend("DOM.setFileInputFiles", { files: paths, backendNodeId: node }, session);
+  } catch (error) {
+    toast(`文件没能递进网页：${String(error.message || error).slice(0, 80)}`);
+  }
+}
+/** @param {string} url */
+function stageHost(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
 }
 
 // ---------- 看哪一页：连上它、收它的画面 ----------
@@ -16843,6 +16896,8 @@ async function stageAttach() {
     void stageSend("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId).catch(() => {});
     // 收 Page 域的事件：载入、跳转、提示框（开着的提示框，enable 时会补报一回）
     await stageSend("Page.enable", {}, sessionId);
+    // 网页要人选文件：不让浏览器在屏幕外开窗，报给看台
+    void stageSend("Page.setInterceptFileChooserDialog", { enabled: true }, sessionId).catch(() => {});
     void stageReadHistory();
     await stageSend("Page.startScreencast", { format: "jpeg", quality: 80 }, sessionId);
     // 静着的页不重绘就不出帧：先截一张垫底（后台的页截不出来，等不到就算了）
@@ -16967,6 +17022,7 @@ function stageSync() {
   pin.classList.toggle("hidden", (!stage.ws && !stageServer()) || stageVisible());
   pin.classList.toggle("busy", stage.busy > 0);
   $("#stageBusy").classList.toggle("hidden", !stage.busy);
+  $("#stageBusy").textContent = stage.trail.at(-1) || "正在操作";
   $("#stageMarks").classList.toggle("hidden", !stage.marks);
   stageRender();
 }
@@ -17088,18 +17144,55 @@ function stageRender() {
   $("#stageView").classList.toggle("empty", !!empty);
 }
 /**
- * 浏览器类的 MCP 调用（playwright 的 browser_*）进行时点一粒朱；调完去找一回浏览器——它多半是这一下起的
+ * 浏览器类的 MCP 调用（playwright 的 browser_*）进行时点一粒朱、记一笔它在做什么；调完去找一回浏览器——它多半是这一下起的
  * @param {string} tool
+ * @param {Record<string, any>} [args]
  */
-function stageWatch(tool) {
+function stageWatch(tool, args = {}) {
   if (!/^browser_/.test(tool)) return () => {};
   stage.busy += 1;
+  stage.trail = [...stage.trail, stageActionText(tool, args)].slice(-6);
   stageSync();
   return () => {
     stage.busy -= 1;
     stageSync();
     void stageLocate();
   };
+}
+
+// 执事在浏览器里的一步，写成人话：打开 某站、点了「某处」、输入「某字」……参数照 playwright MCP 的写法，认不得的只写工具名
+/** @param {string} tool @param {Record<string, any>} args */
+function stageActionText(tool, args) {
+  const quote = (/** @type {any} */ value) =>
+      `「${String(value ?? "")
+        .replace(/\s+/g, " ")
+        .slice(0, 24)}」`,
+    name = tool.replace(/^browser_/, "");
+  /** @type {Record<string, () => string>} */
+  const say = {
+    navigate: () => `打开 ${stageHost(args.url) || args.url || ""}`,
+    navigate_back: () => "后退一页",
+    navigate_forward: () => "前进一页",
+    click: () => `${args.doubleClick ? "双击" : "点了"}${quote(args.element)}`,
+    hover: () => `指着${quote(args.element)}`,
+    type: () => `输入${quote(args.text)}`,
+    fill_form: () => "填表",
+    select_option: () => `选了${quote([].concat(args.values || []).join("、"))}`,
+    press_key: () => `按 ${args.key || ""}`,
+    drag: () => `拖${quote(args.startElement)}`,
+    snapshot: () => "读此页",
+    take_screenshot: () => "截图",
+    wait_for: () => (args.text ? `等${quote(args.text)}` : args.textGone ? `等${quote(args.textGone)}消失` : `等 ${args.time || ""} 秒`),
+    tabs: () => ({ new: "开新页", close: "关一页", select: "换页", list: "看各页" })[String(args.action)] || "看各页",
+    evaluate: () => "运行脚本",
+    file_upload: () => "传文件",
+    handle_dialog: () => (args.accept ? "应了提示框" : "拒了提示框"),
+    close: () => "关浏览器",
+    resize: () => "调窗口",
+    console_messages: () => "看控制台",
+    network_requests: () => "看网络请求"
+  };
+  return say[name]?.() || name;
 }
 
 // ---------- 递点按：看台上的坐标按缩放倍数换回网页里的 ----------
@@ -17138,6 +17231,44 @@ function stageKey(type, e, text = "") {
     },
     stage.session
   ).catch(() => {});
+}
+// 浏览器自己接的几个键（递进网页没人管）：Ctrl+L / Alt+D / F6 到地址栏，F5 / Ctrl+R 重载（加 Shift 不用缓存），Alt+← / → 前后。
+// Ctrl+T、Ctrl+W 外头的浏览器拦不住，不接
+/** @param {KeyboardEvent} e */
+function stageShortcut(e) {
+  const key = e.key.toLowerCase(),
+    ctrl = e.ctrlKey || e.metaKey;
+  if ((ctrl && key === "l") || (e.altKey && key === "d") || key === "f6") {
+    const url = /** @type {HTMLInputElement} */ ($("#stageUrl"));
+    url.focus();
+    url.select();
+  } else if (key === "f5" || (ctrl && key === "r")) {
+    if (stage.session) void stageSend("Page.reload", { ignoreCache: e.shiftKey }, stage.session).catch(() => {});
+  } else if (e.altKey && (key === "arrowleft" || key === "arrowright")) void stageTravel(key === "arrowleft" ? -1 : 1);
+  else return false;
+  return true;
+}
+// 指针形状跟着网页：停在链接上是手、输入框里是竖线。问网页那一处的 cursor，一秒至多问十回、上一问没回来不再问
+/** @param {MouseEvent} e */
+function stageCursor(e) {
+  if (!stage.session || stage.cursorAsking || e.timeStamp - stage.cursorAt < 100) return;
+  stage.cursorAt = e.timeStamp;
+  stage.cursorAsking = true;
+  const { x, y } = stagePoint(e);
+  void stageSend(
+    "Runtime.evaluate",
+    {
+      expression: `(() => { const el = document.elementFromPoint(${x}, ${y}); if (!el) return ""; const c = getComputedStyle(el).cursor; if (c !== "auto") return c; return el.closest("input:not([type=button],[type=submit],[type=reset],[type=checkbox],[type=radio],[type=range],[type=color],[type=file]),textarea,[contenteditable]:not([contenteditable=false])") ? "text" : ""; })()`,
+      returnByValue: true
+    },
+    stage.session
+  )
+    .then(({ result }) => {
+      const cursor = String(result?.value || "");
+      $("#stageFrame").style.cursor = /^[a-z-]+$/.test(cursor) ? cursor : "";
+    })
+    .catch(() => {})
+    .finally(() => (stage.cursorAsking = false));
 }
 // 打字经一个看不见的输入框：挪到点下的地方，输入法的候选框便浮在那一处；中文等输入法打完一整段再一次递进去
 /** @param {MouseEvent} e */
@@ -17242,6 +17373,8 @@ function bindStage() {
     keys = /** @type {HTMLTextAreaElement} */ ($("#stageKeys"));
   frame.addEventListener("pointerdown", e => {
     e.preventDefault();
+    // 鼠标侧键：后退、前进（浏览器自己接的键，递进网页没人管）
+    if (e.button === 3 || e.button === 4) return void stageTravel(e.button === 3 ? -1 : 1);
     frame.setPointerCapture(e.pointerId);
     stageFocusKeys(e);
     // 连点计数自己数：pointerdown 不带 detail
@@ -17250,9 +17383,12 @@ function bindStage() {
     Object.assign(click, { at: e.timeStamp, x: e.clientX, y: e.clientY, count: again ? click.count + 1 : 1 });
     stageMouse("mousePressed", e, { button: STAGE_BUTTONS[e.button] || "left", clickCount: click.count });
   });
-  frame.addEventListener("pointerup", e =>
-    stageMouse("mouseReleased", e, { button: STAGE_BUTTONS[e.button] || "left", clickCount: stage.click.count })
-  );
+  frame.addEventListener("pointerup", e => {
+    // 侧键在按下时已办了；松开时外头的浏览器会拿它把言这一页后退，拦下
+    if (e.button === 3 || e.button === 4) return void e.preventDefault();
+    stageMouse("mouseReleased", e, { button: STAGE_BUTTONS[e.button] || "left", clickCount: stage.click.count });
+  });
+  frame.addEventListener("mouseup", e => (e.button === 3 || e.button === 4) && e.preventDefault());
   // 移动一帧只递一次
   frame.addEventListener("pointermove", e => {
     if (!stage.moved)
@@ -17260,6 +17396,7 @@ function bindStage() {
         const last = stage.moved;
         stage.moved = null;
         if (last) stageMouse("mouseMoved", last, { button: last.buttons & 1 ? "left" : last.buttons & 2 ? "right" : "none" });
+        if (last && !last.buttons) stageCursor(last);
       });
     stage.moved = e;
   });
@@ -17278,6 +17415,7 @@ function bindStage() {
     e.stopPropagation();
     if (e.isComposing || e.keyCode === 229) return;
     e.preventDefault();
+    if (stageShortcut(e)) return;
     const text = e.key === "Enter" ? "\r" : e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey ? e.key : "";
     stageKey(text ? "keyDown" : "rawKeyDown", e, text);
   });
@@ -17321,7 +17459,7 @@ function bindStage() {
 }
 bindStage();
 // 给端到端测试：读状态、立即去连（见 test/stage.mjs）
-window.__yanStage = { state: stage, locate: stageLocate, go: stageGo };
+window.__yanStage = { state: stage, locate: stageLocate, go: stageGo, sendFiles: stageSendFiles };
 
   // ---- 99-start.js ----
 // 言 · 启动

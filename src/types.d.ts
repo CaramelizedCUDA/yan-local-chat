@@ -18,7 +18,12 @@ interface Window {
   __yanState: () => any; // 端到端测试读内存里的记录
   __yanSave: () => void;
   __yanBridgeFetch: (path: string, body: string, signal?: AbortSignal | null) => Promise<Response>; // 端到端测试压总线
-  __yanStage: { state: any; locate: () => Promise<void>; go: (raw: string) => void }; // 端到端测试读看台的状态、立即去连、在当前页打开
+  __yanStage: {
+    state: any;
+    locate: () => Promise<void>;
+    go: (raw: string) => void;
+    sendFiles: (files: File[], node?: number) => Promise<void>;
+  }; // 端到端测试读看台的状态、立即去连、在当前页打开、递文件
 }
 
 // ---- 宽松的 DOM：代码里 querySelector / closest / e.target 拿到的节点直接当表单控件、details、文本节点用，
