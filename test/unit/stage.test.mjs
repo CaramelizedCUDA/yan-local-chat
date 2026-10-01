@@ -1,4 +1,4 @@
-// 游目：地址栏的话怎么换成网址；桥接怎么从 MCP 服务的参数里读出调试口与配置目录
+// 游目：地址栏的话怎么换成网址、执事的一步怎么写成人话；桥接怎么从 MCP 服务的参数里读出调试口与配置目录
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -34,4 +34,15 @@ test("调试口与配置目录：参数里直写的、--config 文件里的，�
   assert.deepEqual(browserOf(["--cdp-endpoint", "http://localhost:9411"]), { port: 9411, dir: "" });
   assert.deepEqual(browserOf(["--config", path.join(dir, "无此文件.json")]), { port: 9288, dir: "" });
   assert.deepEqual(browserOf(undefined), { port: 9288, dir: "" });
+});
+
+test("执事的一步写成人话：照 playwright 的参数，认不得的只写工具名", () => {
+  const { stageActionText } = load(["stageActionText"]);
+  assert.equal(stageActionText("browser_navigate", { url: "https://github.com/pulls" }), "打开 github.com");
+  assert.equal(stageActionText("browser_click", { element: "Pull requests link", ref: "e12" }), "点了「Pull requests link」");
+  assert.equal(stageActionText("browser_click", { element: "行", doubleClick: true }), "双击「行」");
+  assert.equal(stageActionText("browser_type", { element: "搜索框", text: "is:open\nis:pr" }), "输入「is:open is:pr」");
+  assert.equal(stageActionText("browser_tabs", { action: "new" }), "开新页");
+  assert.equal(stageActionText("browser_wait_for", { time: 2 }), "等 2 秒");
+  assert.equal(stageActionText("browser_mouse_move_xy", { x: 1, y: 2 }), "mouse_move_xy");
 });

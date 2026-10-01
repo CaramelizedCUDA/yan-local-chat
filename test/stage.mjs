@@ -160,6 +160,41 @@ check(
   )
 );
 
+// 指针跟着网页、网页要选文件、浏览器自己的快捷键
+const upload =
+  "data:text/html;charset=utf-8," +
+  encodeURIComponent(
+    `<title>传</title><body style="margin:0"><a href="#a" style="position:fixed;left:0;top:0;width:40vw;height:40vh;display:block">链接</a><input type="file" style="position:fixed;left:50vw;top:50vh;width:40vw;height:40vh" onchange="document.title='传:'+this.files[0].name"></body>`
+  );
+await evalJs(`__yanStage.go(${JSON.stringify(upload)}); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "传"`, 8000).catch(() => {});
+await sleep(400);
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at(0.2, 0.2)[0], y: at(0.2, 0.2)[1] });
+await waitFor(`document.querySelector("#stageFrame").style.cursor === "pointer"`, 3000).catch(() => {});
+check("the pointer turns into a hand over a link", await evalJs(`document.querySelector("#stageFrame").style.cursor === "pointer"`));
+await mouse("mousePressed", ...at(0.7, 0.7));
+await mouse("mouseReleased", ...at(0.7, 0.7));
+await waitFor(`__yanStage.state.dialog?.type === "file"`, 5000).catch(() => {});
+check(
+  "a file chooser shows as a card on the stage",
+  await evalJs(`__yanStage.state.dialog?.type === "file" && document.querySelector("#stageDialog").textContent.includes("选文件")`)
+);
+await shot("stage-file.png");
+await evalJs(
+  `(node => { document.querySelector("[data-stage-answer=no]").click(); return __yanStage.sendFiles([new File(["hi"], "测.txt")], node).then(() => true); })(__yanStage.state.dialog.node)`
+);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "传:测.txt"`, 8000).catch(() => {});
+check(
+  "files picked in 言 reach the page's file input",
+  await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "传:测.txt"`),
+  await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title`)
+);
+check("typing focus is on the page", await evalJs(`document.activeElement === document.querySelector("#stageKeys")`));
+await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "l", code: "KeyL", windowsVirtualKeyCode: 76, modifiers: 2 });
+await send("Input.dispatchKeyEvent", { type: "keyUp", key: "l", code: "KeyL", windowsVirtualKeyCode: 76, modifiers: 2 });
+check("Ctrl+L goes to the address bar", await evalJs(`document.activeElement === document.querySelector("#stageUrl")`));
+await evalJs(`document.querySelector("#stageUrl").blur(); true`);
+
 // 收藏：读浏览器配置目录里的那份，按夹列出；点一条在当前页打开
 check(
   "收藏 shows when the browser's profile is known",
