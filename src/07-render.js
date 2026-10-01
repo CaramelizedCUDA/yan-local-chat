@@ -52,7 +52,25 @@ function renderHeader() {
   renderModelMenu();
   renderLibraryCount();
 }
-// 余墨：设了上限时显示还剩多少、墨池随之见底；没设（不限）时墨池常满，改报已耗多少
+// 余墨：顶栏上只一笔墨色短横，随用量从笔尾往回收（笔尾三缕飞白），底下一道淡痕是全长；数目靠近才浮出（见 设计稿/30 甲）。
+// 设了上限时报还剩多少，没设（不限）时墨常满、改报已耗多少。落选的：「余墨」二字 + 一笔朱色渐变 + 等宽数目常显（功能最少，占位最多）
+function quotaInk(ratio) {
+  const length = 22 * ratio,
+    ghost = brushStroke([2, 8, 12, 6.6, 22, 7.8], 3.4, { tone: "ghost", tail: 0.3 });
+  if (length < 1.5) return ghost;
+  const body = brushStroke([2, 8, length * 0.5, 6.8, length * 0.78, 7.6], 3.6, { tail: 0.7 }),
+    hairs = [-1.1, 0, 1.15]
+      .map((d, i) =>
+        brushStroke([length * 0.7, 7.6 + d, length * 0.86, 7.4 + d * 1.2, length + [2, 0, 3][i], 7.5 + d * 1.5], 0.8, { tail: 0, head: 1 })
+      )
+      .join("");
+  return ghost + body + hairs;
+}
+// 浮签是一句话，数目用亿、万；别处（上下文、每答耗墨）仍是 k / m / e，与设置里填上限的写法一致
+function quotaAmount(n) {
+  const compact = (amount, unit) => `${Number(amount.toFixed(amount >= 10 ? 0 : 1))} ${unit}`;
+  return n >= 100000000 ? compact(n / 100000000, "亿") : n >= 10000 ? compact(n / 10000, "万") : String(Math.round(n));
+}
 function renderQuota() {
   const p = activeProfile(),
     cap = p ? parseTokenLimit(p.quota) : null,
@@ -60,19 +78,16 @@ function renderQuota() {
   const remaining = cap ? Math.max(0, cap - used) : 0,
     ratio = !p ? 0 : cap ? remaining / cap : 1,
     status = $("#quotaStatus");
-  const percent = Math.min(100, Math.round(ratio * 100));
-  $("#quotaFill").style.width = `${percent}%`;
-  status.style.setProperty("--ink-level", `${percent}%`);
+  $("#quotaInk").innerHTML = quotaInk(ratio);
   status.querySelector(".quota-label").textContent = p && cap === null ? "耗墨" : "余墨";
-  status.title = !p
-    ? "尚未接入模型"
-    : cap === null
-      ? `不限用量，已耗 ${formatTokens(used)}`
-      : `余墨 ${formatTokens(remaining)} / ${formatTokens(cap)}`;
-  $("#quotaText").textContent = !p ? "—" : cap === null ? formatTokens(used) : formatTokens(remaining);
+  $("#quotaText").textContent = !p ? "" : quotaAmount(cap === null ? used : remaining);
+  $("#quotaNote").textContent = !p ? "尚未接入模型" : cap === null ? "不设上限" : `上限 ${quotaAmount(cap)}`;
   status.classList.toggle("dry", !!cap && remaining === 0);
   status.classList.toggle("empty", !p);
-  status.setAttribute("aria-label", status.title);
+  status.setAttribute(
+    "aria-label",
+    !p ? "尚未接入模型" : cap === null ? `不限用量，已耗 ${formatTokens(used)}` : `余墨 ${formatTokens(remaining)} / ${formatTokens(cap)}`
+  );
 }
 function renderModelTriggers() {
   const p = activeProfile(),

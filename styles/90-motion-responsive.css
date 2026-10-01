@@ -609,16 +609,6 @@ button:focus:not(:focus-visible) {
   .profile-full {
     grid-column: auto;
   }
-  .quota {
-    gap: 5px;
-    padding: 4px;
-  }
-  .quota-label {
-    display: none;
-  }
-  .ink-gauge {
-    width: 48px;
-  }
   .user-bubble,
   .message-editor {
     max-width: 90%;

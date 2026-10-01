@@ -115,6 +115,10 @@ input[type="number"]::-webkit-outer-spin-button {
 .brush .zhu {
   fill: var(--accent);
 }
+/* 全长的淡痕（余墨的底、圆相未走到的那一圈） */
+.brush .ghost {
+  fill: color-mix(in srgb, var(--ink) 10%, transparent);
+}
 .library-open:hover .archive-icon,
 .new-chat:hover .brush {
   transform: translateY(-1px);
@@ -1005,11 +1009,19 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   color: var(--ink-3);
   font-size: 11px;
 }
-/* 顶栏右侧三件同一套笔墨：宋体小字、疏排、墨色三分；件与件之间一道细竖 */
+/* 顶栏右侧两件（明暗、余墨）同一套笔墨，件与件之间一道细竖 */
 .top-actions {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+/* 右缘内侧自页顶垂下的游目一笔、听音一缕：顶栏右的两件给它们让出位置 */
+.main:has(#stagePin:not(.hidden)) .top-actions,
+.main:has(#listenPendant:not(.hidden)) .top-actions {
+  margin-right: 30px;
+}
+.main:has(#stagePin:not(.hidden)):has(#listenPendant:not(.hidden)) .top-actions {
+  margin-right: 60px;
 }
 .top-sep {
   width: 1px;
@@ -1048,99 +1060,78 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .theme-toggle[data-theme="dark"]:hover .theme-wash {
   transform: rotate(204deg);
 }
+/* 余墨：一笔墨色短横（画法见 src/07-render.js 的 quotaInk），数目与上限在靠近时浮出的纸签上（方角顶朱，同浮签一式）。
+   用尽时那一笔转朱。落选的：「余墨」二字 + 朱色渐变一笔 + 等宽数目常显（设计稿/30） */
 .quota {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 8px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 30px;
   border-radius: 9px;
-  color: var(--ink-3);
-  font: 10px var(--title);
-  letter-spacing: 0.08em;
-  transition: 0.18s;
+  transition: background 0.16s;
 }
 .quota:hover {
   background: var(--paper-2);
-  color: var(--ink-2);
 }
-.quota-label {
-  white-space: nowrap;
-}
-.quota-text {
-  min-width: 22px;
-  text-align: right;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  letter-spacing: 0;
-}
-.quota.dry {
-  color: var(--danger);
-}
-/* 余墨：一笔细细的墨痕，随用量从笔尾往回收；底下是一道极淡的虚痕当刻度。与左边的印泥点、砚台同一分量，不抢正文的戏 */
-.quota {
-  gap: 8px;
-  padding: 5px 7px 6px;
-}
-.quota-label {
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-}
-.quota-text {
-  min-width: 26px;
-  color: var(--ink-2);
-  font: 10px var(--title);
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
-}
-.ink-gauge {
-  position: relative;
-  display: block;
-  width: 54px;
-  height: 20px;
-  margin: 0 1px;
-}
-.ink-gauge svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  padding-top: 4px;
+.quota-ink {
+  width: 26px;
+  height: 14px;
   overflow: visible;
 }
-.ink-ghost {
-  fill: color-mix(in srgb, var(--ink-3) 13%, transparent);
+.quota.dry .quota-ink .ghost {
+  fill: color-mix(in srgb, var(--danger) 45%, transparent);
 }
-.ink-fill {
-  fill: url(#inkGrad);
-  transition: width 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+.quota-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  gap: 3px;
+  padding: 7px 12px 8px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: 2px;
+  background: var(--paper);
+  box-shadow: 0 6px 18px rgba(61, 49, 32, 0.12);
+  color: var(--ink);
+  font: 12.5px var(--title);
+  text-align: left;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition:
+    opacity 0.16s,
+    transform 0.16s,
+    visibility 0s 0.16s;
+  pointer-events: none;
 }
-.ink-grad-a {
-  stop-color: color-mix(in srgb, var(--accent) 80%, var(--ink));
-  stop-opacity: 0.92;
+.quota:hover .quota-tip,
+.quota:focus-visible .quota-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 0.16s 0.12s,
+    transform 0.16s 0.12s;
 }
-.ink-grad-b {
-  stop-color: var(--accent);
-  stop-opacity: 0.8;
+.quota-label {
+  margin-right: 6px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
 }
-.ink-grad-c {
-  stop-color: var(--accent);
-  stop-opacity: 0.22;
+.quota-tip b {
+  font-weight: 500;
 }
-.ink-streak {
-  display: none;
+.quota-tip small {
+  color: var(--ink-3);
+  font-size: 11px;
 }
-.quota.dry .ink-ghost {
-  fill: color-mix(in srgb, var(--danger) 28%, transparent);
-}
-.quota.empty .ink-ghost {
-  fill: none;
-  stroke: var(--ink-3);
-  stroke-width: 0.5;
-  stroke-dasharray: 2 1.6;
-  opacity: 0.75;
-}
-.quota.empty .quota-text {
+.quota.dry .quota-tip b {
   color: var(--danger);
 }
-/* 分组（「集」）组首里改名时的输入框：紧凑些，与组名同一行 */
 .history-repo .group-rename {
   flex: 1;
   min-width: 0;
@@ -3555,7 +3546,7 @@ sup.note-ref.active {
 }
 
 /* ---- 55-listen.css ---- */
-/* 听音：预览里的整页（设计稿/27 一 · 乙 · 圆相）与顶栏上的玉佩（设计稿/22、23 甲 · 冲牙）；逻辑见 src/25-listen.js */
+/* 听音：预览里的整页（设计稿/27 一 · 乙 · 圆相）与右上角垂下的一缕（设计稿/30 甲）；逻辑见 src/25-listen.js */
 
 /* ---------- 整页：圆相（设计稿/27 一 · 乙）——放过的一段浓墨、未到的一圈淡痕，笔尖是此刻；奏 / 止是整页唯一一方朱 ---------- */
 .listen-page {
@@ -3735,188 +3726,103 @@ sup.note-ref.active {
   }
 }
 
-/* ---------- 玉佩：挂在砚台左边，自窗顶垂下；不占顶栏的位置 ---------- */
+/* ---------- 右上角垂下的一缕：墨线坠一个小圆相（画法见 src/25-listen.js 的 listenPendantHtml）；有游目那一笔时挂在它左边 ---------- */
 .listen-pendant {
-  --j0: color-mix(in srgb, var(--reach) 15%, var(--paper));
-  --j1: color-mix(in srgb, var(--reach) 31%, var(--paper));
-  --j2: color-mix(in srgb, var(--reach) 52%, var(--paper));
-  --jline: color-mix(in srgb, var(--reach) 75%, var(--ink));
-  --jlight: #fff;
-  --jshadow: rgba(52, 44, 30, 0.2);
-  --hi: 0.85;
-  position: relative;
-  align-self: flex-start;
-  width: 0;
-  height: 55px;
-  /* 佩上全是按键与状态：点快了不选字，免得弹出引用条 */
+  position: absolute;
+  right: 24px;
+  top: 0;
+  z-index: 8;
+  width: 28px;
+  height: 64px;
+  /* 上面全是按键与状态：点快了不选字，免得弹出引用条 */
   user-select: none;
 }
-:root[data-theme="dark"] .listen-pendant {
-  --j0: color-mix(in srgb, var(--reach) 62%, var(--paper));
-  --j1: color-mix(in srgb, var(--reach) 44%, var(--paper));
-  --j2: color-mix(in srgb, var(--reach) 28%, var(--paper));
-  --jline: color-mix(in srgb, var(--reach) 30%, var(--paper));
-  --jlight: color-mix(in srgb, var(--reach) 40%, #fff);
-  --jshadow: rgba(0, 0, 0, 0.45);
-  --hi: 0.5;
+.main:has(#stagePin:not(.hidden)) .listen-pendant {
+  right: 52px;
 }
 .listen-svg {
   position: absolute;
-  top: 0;
-  right: -26px;
-  width: 104px;
-  height: 124px;
-  overflow: hidden;
+  inset: 0;
+  width: 28px;
+  height: 64px;
+  overflow: visible;
   pointer-events: none;
   transform-origin: 50% 0;
   rotate: var(--listen-sway, 0deg);
 }
-.listen-part {
-  pointer-events: auto;
+.listen-hit {
+  position: absolute;
+  inset: 0;
   cursor: pointer;
 }
-.listen-svg .s0 {
-  stop-color: var(--j0);
-}
-.listen-svg .s1 {
-  stop-color: var(--j1);
-}
-.listen-svg .s2 {
-  stop-color: var(--j2);
-}
-.listen-svg .fshadow {
-  flood-color: var(--jshadow);
-}
-.listen-svg .zhu {
-  fill: var(--accent);
-}
-.listen-svg .zhu-deep {
-  fill: color-mix(in srgb, var(--accent) 80%, var(--ink));
-}
-.listen-svg .hole {
-  fill: var(--paper);
-}
-.listen-svg .hit {
-  fill: transparent;
-}
-.listen-svg .rim {
-  fill: none;
-  stroke: var(--jline);
-  stroke-width: 0.45;
-  opacity: 0.45;
-}
-.listen-svg .hi {
-  fill: none;
-  stroke: var(--jlight);
-  stroke-width: 0.7;
-  stroke-linecap: round;
-  opacity: var(--hi);
-}
-.listen-svg .xian {
-  fill: none;
-  stroke: var(--jline);
-  stroke-width: 0.4;
-  opacity: 0.35;
-}
-.listen-svg .played {
-  fill: none;
-  stroke: color-mix(in srgb, var(--ink) 62%, var(--paper));
-  stroke-width: 0.95;
-  stroke-linecap: round;
-}
-.listen-svg .glyph {
-  fill: color-mix(in srgb, var(--ink) 58%, var(--paper));
-}
-.listen-pendant.playing .glyph-play,
-.listen-pendant:not(.playing) .glyph-pause {
-  display: none;
-}
-/* 收着：佩提在檐上（窗顶之外），只垂一根绳、绳头一粒小结；点绳，佩顺绳落下，落过头一点再荡定 */
-.listen-pei {
-  transform: translateY(-112px);
-  transition: transform 0.28s cubic-bezier(0.5, 0, 0.8, 0.4);
-}
-.listen-pendant.open .listen-pei {
-  transform: none;
-  transition: transform 0.46s cubic-bezier(0.3, 1.35, 0.55, 1);
-}
-.listen-knot {
-  transition: opacity 0.2s;
-}
-.listen-pendant.open .listen-knot {
-  opacity: 0;
-}
-.listen-pendant.open [data-listen="rope"] {
-  height: 28px;
-}
-/* 冲牙：悬停时朝它所指的方向轻荡一下 */
-.listen-side {
-  transform-box: view-box;
-  transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1);
-}
-.listen-side[data-listen="prev"]:hover {
-  transform: translateX(-1.2px) rotate(7deg);
-}
-.listen-side[data-listen="next"]:hover {
-  transform: translateX(1.2px) rotate(-7deg);
-}
-/* 题名浮在佩左，不衬卡片，垫一圈纸色晕开；点它回整页，× 是停。
-   与上一首那枚冲牙的尖（约在 69px 处）隔开十来像素：挨着时点冲牙常落在时间上 */
-.listen-label {
+/* 纸签：方角顶朱，同浮签一式 */
+.listen-card {
   position: absolute;
-  top: 36px;
-  right: 84px;
+  top: 62px;
+  right: 0;
   display: grid;
-  grid-template-columns: auto auto;
-  justify-items: end;
-  align-items: baseline;
-  column-gap: 5px;
+  justify-items: start;
+  gap: 2px;
+  padding: 10px 14px 9px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: 2px;
+  background: var(--paper);
+  box-shadow: 0 6px 18px rgba(61, 49, 32, 0.12);
   white-space: nowrap;
   opacity: 0;
   visibility: hidden;
+  transform: translateY(-4px);
   transition:
-    opacity 0.2s,
-    visibility 0s 0.2s;
-  text-shadow:
-    0 0 3px var(--paper),
-    0 0 6px var(--paper),
-    0 0 10px var(--paper);
+    opacity 0.18s,
+    transform 0.18s,
+    visibility 0s 0.18s;
 }
-.listen-pendant.open .listen-label {
+.listen-pendant.open .listen-card {
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.3s 0.3s;
+  transform: none;
+  transition:
+    opacity 0.18s,
+    transform 0.18s;
 }
 .listen-name {
-  max-width: 180px;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--ink);
   font: 12.5px var(--title);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 .listen-name:hover {
   color: var(--accent);
 }
-.listen-stop {
-  color: var(--ink-3);
-  font: 13px/1 var(--title);
-}
-.listen-stop:hover {
-  color: var(--ink);
-}
 .listen-time {
-  grid-column: 1 / -1;
-  margin-top: 3px;
   color: var(--ink-3);
-  font: 10.5px var(--title);
+  font: 11px var(--title);
   font-variant-numeric: tabular-nums;
 }
+.listen-acts {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 190px;
+  margin-top: 6px;
+  color: var(--ink-2);
+  font: 12px var(--title);
+}
+.listen-acts button:hover {
+  color: var(--ink);
+}
+.listen-acts .listen-toggle {
+  color: var(--accent);
+}
+.listen-acts .listen-stop {
+  margin-left: auto;
+  color: var(--ink-3);
+}
 @media (prefers-reduced-motion: reduce) {
-  .listen-pei,
-  .listen-pendant.open .listen-pei,
-  .listen-side,
-  .listen-label {
+  .listen-card {
     transition: none;
   }
 }
@@ -4271,57 +4177,63 @@ sup.note-ref.active {
   letter-spacing: 0.14em;
 }
 
-/* 书口签：夹在正文纸页右缘上方的一张竖写的签。平时伏着，只露一道朱线；指针到了右缘这一小块才抽出，走开再伏下。
-   让开顶栏（玉佩的绳垂在那里）与中段按问题跳转的短横。模型正操作浏览器时，那道朱线一明一暗。
-   压在滚动条命中层（.chat-scroll-grabber，z 7、贴右缘 14px）之上：否则签的右半被它吃掉，只有靠左才点得到 */
+/* 游目的入口：自页顶垂下的一笔朱竖，起笔顿、收笔出锋（与余墨、听音同一套笔墨，见 设计稿/30 甲）。靠近时笔往下舒一点，笔尖下浮出「游目」两字；
+   模型正操作浏览器时笔尖下一粒朱一明一暗。挂在右缘内侧，离滚动条的命中层（.chat-scroll-grabber，贴右缘 14px、自顶栏下起）远远的。
+   落选的：圆角带影、左缘一道朱条的书口签（网页侧边抽屉的通用画法）；绸带（与余墨、听音不是一种画法） */
 .stage-pin {
   position: absolute;
-  right: 0;
-  top: 66px;
+  right: 24px;
+  top: 0;
   z-index: 8;
-  width: 34px;
-  height: 76px;
+  width: 22px;
+  height: 74px;
   padding: 0;
 }
-.stage-pin-text {
+.stage-pin-ink {
   position: absolute;
-  right: 0;
+  left: 5px;
   top: 0;
-  bottom: 0;
-  width: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--line);
-  border-right: 0;
-  border-radius: 5px 0 0 5px;
-  background: color-mix(in srgb, var(--paper-2) 70%, var(--paper));
-  box-shadow: -2px 2px 8px rgba(40, 30, 20, 0.06);
-  color: var(--ink-2);
-  font: 12.5px var(--title);
-  letter-spacing: 0.3em;
-  writing-mode: vertical-rl;
-  transform: translateX(24px);
+  width: 12px;
+  height: 64px;
+  overflow: visible;
+  transform-origin: top center;
   transition: transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.stage-pin-text::before {
-  content: "";
+.stage-pin:hover .stage-pin-ink,
+.stage-pin:focus-visible .stage-pin-ink {
+  transform: scaleY(1.16);
+}
+/* 两字浮在笔尖之下（不往左浮：左边挂着听音那一缕） */
+.stage-pin-text {
   position: absolute;
-  left: -1px;
-  top: 10px;
-  bottom: 10px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--accent);
+  left: 50%;
+  top: 80px;
+  color: var(--ink-2);
+  font: 12px var(--title);
+  letter-spacing: 0.3em;
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition:
+    opacity 0.2s,
+    transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .stage-pin:hover .stage-pin-text,
 .stage-pin:focus-visible .stage-pin-text {
-  transform: none;
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
-.stage-pin:hover .stage-pin-text {
-  color: var(--ink);
-}
-.stage-pin.busy .stage-pin-text::before {
+.stage-pin.busy::after {
+  content: "";
+  position: absolute;
+  left: 8.5px;
+  top: 70px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
   animation: stageLine 1.6s ease-in-out infinite;
 }
 @keyframes stageLine {
@@ -4330,6 +4242,7 @@ sup.note-ref.active {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .stage-pin-ink,
   .stage-pin-text {
     transition: none;
   }
@@ -8902,16 +8815,6 @@ button:focus:not(:focus-visible) {
   }
   .profile-full {
     grid-column: auto;
-  }
-  .quota {
-    gap: 5px;
-    padding: 4px;
-  }
-  .quota-label {
-    display: none;
-  }
-  .ink-gauge {
-    width: 48px;
   }
   .user-bubble,
   .message-editor {

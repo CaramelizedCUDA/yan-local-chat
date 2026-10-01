@@ -734,11 +734,19 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   color: var(--ink-3);
   font-size: 11px;
 }
-/* 顶栏右侧三件同一套笔墨：宋体小字、疏排、墨色三分；件与件之间一道细竖 */
+/* 顶栏右侧两件（明暗、余墨）同一套笔墨，件与件之间一道细竖 */
 .top-actions {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+/* 右缘内侧自页顶垂下的游目一笔、听音一缕：顶栏右的两件给它们让出位置 */
+.main:has(#stagePin:not(.hidden)) .top-actions,
+.main:has(#listenPendant:not(.hidden)) .top-actions {
+  margin-right: 30px;
+}
+.main:has(#stagePin:not(.hidden)):has(#listenPendant:not(.hidden)) .top-actions {
+  margin-right: 60px;
 }
 .top-sep {
   width: 1px;
@@ -777,99 +785,78 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .theme-toggle[data-theme="dark"]:hover .theme-wash {
   transform: rotate(204deg);
 }
+/* 余墨：一笔墨色短横（画法见 src/07-render.js 的 quotaInk），数目与上限在靠近时浮出的纸签上（方角顶朱，同浮签一式）。
+   用尽时那一笔转朱。落选的：「余墨」二字 + 朱色渐变一笔 + 等宽数目常显（设计稿/30） */
 .quota {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 8px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 30px;
   border-radius: 9px;
-  color: var(--ink-3);
-  font: 10px var(--title);
-  letter-spacing: 0.08em;
-  transition: 0.18s;
+  transition: background 0.16s;
 }
 .quota:hover {
   background: var(--paper-2);
-  color: var(--ink-2);
 }
-.quota-label {
-  white-space: nowrap;
-}
-.quota-text {
-  min-width: 22px;
-  text-align: right;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  letter-spacing: 0;
-}
-.quota.dry {
-  color: var(--danger);
-}
-/* 余墨：一笔细细的墨痕，随用量从笔尾往回收；底下是一道极淡的虚痕当刻度。与左边的印泥点、砚台同一分量，不抢正文的戏 */
-.quota {
-  gap: 8px;
-  padding: 5px 7px 6px;
-}
-.quota-label {
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-}
-.quota-text {
-  min-width: 26px;
-  color: var(--ink-2);
-  font: 10px var(--title);
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
-}
-.ink-gauge {
-  position: relative;
-  display: block;
-  width: 54px;
-  height: 20px;
-  margin: 0 1px;
-}
-.ink-gauge svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  padding-top: 4px;
+.quota-ink {
+  width: 26px;
+  height: 14px;
   overflow: visible;
 }
-.ink-ghost {
-  fill: color-mix(in srgb, var(--ink-3) 13%, transparent);
+.quota.dry .quota-ink .ghost {
+  fill: color-mix(in srgb, var(--danger) 45%, transparent);
 }
-.ink-fill {
-  fill: url(#inkGrad);
-  transition: width 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+.quota-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  gap: 3px;
+  padding: 7px 12px 8px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: 2px;
+  background: var(--paper);
+  box-shadow: 0 6px 18px rgba(61, 49, 32, 0.12);
+  color: var(--ink);
+  font: 12.5px var(--title);
+  text-align: left;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition:
+    opacity 0.16s,
+    transform 0.16s,
+    visibility 0s 0.16s;
+  pointer-events: none;
 }
-.ink-grad-a {
-  stop-color: color-mix(in srgb, var(--accent) 80%, var(--ink));
-  stop-opacity: 0.92;
+.quota:hover .quota-tip,
+.quota:focus-visible .quota-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 0.16s 0.12s,
+    transform 0.16s 0.12s;
 }
-.ink-grad-b {
-  stop-color: var(--accent);
-  stop-opacity: 0.8;
+.quota-label {
+  margin-right: 6px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
 }
-.ink-grad-c {
-  stop-color: var(--accent);
-  stop-opacity: 0.22;
+.quota-tip b {
+  font-weight: 500;
 }
-.ink-streak {
-  display: none;
+.quota-tip small {
+  color: var(--ink-3);
+  font-size: 11px;
 }
-.quota.dry .ink-ghost {
-  fill: color-mix(in srgb, var(--danger) 28%, transparent);
-}
-.quota.empty .ink-ghost {
-  fill: none;
-  stroke: var(--ink-3);
-  stroke-width: 0.5;
-  stroke-dasharray: 2 1.6;
-  opacity: 0.75;
-}
-.quota.empty .quota-text {
+.quota.dry .quota-tip b {
   color: var(--danger);
 }
-/* 分组（「集」）组首里改名时的输入框：紧凑些，与组名同一行 */
 .history-repo .group-rename {
   flex: 1;
   min-width: 0;

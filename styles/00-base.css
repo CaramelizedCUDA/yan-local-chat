@@ -114,6 +114,10 @@ input[type="number"]::-webkit-outer-spin-button {
 .brush .zhu {
   fill: var(--accent);
 }
+/* 全长的淡痕（余墨的底、圆相未走到的那一圈） */
+.brush .ghost {
+  fill: color-mix(in srgb, var(--ink) 10%, transparent);
+}
 .library-open:hover .archive-icon,
 .new-chat:hover .brush {
   transform: translateY(-1px);

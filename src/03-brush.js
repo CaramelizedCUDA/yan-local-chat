@@ -7,7 +7,7 @@
  * 一笔。points 是 x0 y0 cx cy x1 y1 [cx cy x2 y2 …]；width 最粗处；tail 收笔处的粗细比（0 出锋，0.6 以上是顿笔收住）
  * @param {number[]} points
  * @param {number} width
- * @param {{ tail?: number, head?: number, tone?: "ink"|"ink2"|"zhu" }} [options]
+ * @param {{ tail?: number, head?: number, tone?: "ink"|"ink2"|"zhu"|"ghost" }} [options]
  */
 function brushStroke(points, width, { tail = 0, head = 0.78, tone = "ink" } = {}) {
   const samples = [];
