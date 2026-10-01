@@ -1,7 +1,7 @@
-// 言 · 听音：放音只有一处——页里常驻的 #listenAudio；预览里的整页与顶栏上的玉佩，都只是它的两面。
+// 言 · 听音：放音只有一处——页里常驻的 #listenAudio；预览里的整页与右上角垂下的那一缕，都只是它的两面。
 // 所以「离开整页仍在放」不是另做的功能：音频本就不归预览器管，关预览不碰它就接着响。要定的只剩一条：
-// 预览上的 × 是「停」，别的关法（点空白、Esc）是「收」——收时正放着就挂成玉佩，停着便一并收掉。
-// 玉佩在不在不另记：有曲在放、而预览里没摊着这一曲，就挂着（见 listenSync）。
+// 预览上的 × 是「停」，别的关法（点空白、Esc）是「收」——收时正放着就垂下那一缕，停着便一并收掉。
+// 那一缕在不在不另记：有曲在放、而预览里没摊着这一曲，就挂着（见 listenSync）。
 // 放音、声纹、上下首、随声而摆都在这一件里；往后别处要放一段音（卷宗之外的来源），交一条 track 给 listenLoad 即可。
 // 落选的：缩小后另起一个播放器接着放（两份音频要交接进度）；右下角浮一张纸签、顶栏一行、侧栏底一条（见 设计稿/18–23）
 
@@ -322,122 +322,38 @@ function listenRenderPage() {
   page.querySelectorAll("[data-listen-volume]").forEach(dot => dot.classList.toggle("on", Number(dot.dataset.listenVolume) <= level));
 }
 
-// ---------- 另一面：顶栏上的玉佩（画法见 设计稿/22、23：玉用染不用勾，笔只留给绳） ----------
-const LISTEN_P = (cx, cy, r, deg) => [cx + r * Math.cos((deg * Math.PI) / 180), cy + r * Math.sin((deg * Math.PI) / 180)];
+// ---------- 另一面：右上角垂下的一缕（设计稿/30 甲）：墨线自页顶垂下，坠一个小圆相——放过的那段浓墨、笔尖一粒朱，与整页的圆相同一个意思 ----------
+// 点它垂下一张纸签（方角顶朱）：题名（点回整页）、时刻、上一首 · 奏 / 止 · 下一首、×。随声而摆仍在，摆的是这一缕。
+// 落选的：顶栏上一整件玉佩（衡、冲牙、璧、穗——染玉的立体小器物，与平的顶栏、笔意小画不是一套；见 设计稿/19–23）
 const listenN = n => +n.toFixed(2);
-// 发丝弧：自 a0 度顺时针到 a1 度
-function listenArcD(cx, cy, r, a0, a1) {
-  const [x0, y0] = LISTEN_P(cx, cy, r, a0),
-    [x1, y1] = LISTEN_P(cx, cy, r, a1);
-  return `M${listenN(x0)} ${listenN(y0)}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${listenN(x1)} ${listenN(y1)}`;
-}
-const listenArc = (cx, cy, r, a0, a1, cls) => `<path class="${cls}" d="${listenArcD(cx, cy, r, a0, a1)}"/>`;
-const listenRope = (x0, y0, x1, y1, w = 0.95) =>
-  brushStroke([x0, y0, (x0 + x1) / 2 + 0.3, (y0 + y1) / 2, x1, y1], w, { tone: "zhu", tail: 0.75, head: 0.9 });
-// 冲牙：上沿外鼓、下沿内收，厚端系绳，尖端弯向外——左一枚是上一首，右一枚是下一首，形即是意，不刻箭头
-function listenFang(cx, cy, dir) {
-  const z = 1.2,
-    pt = (x, y) => `${listenN(cx + x * dir * z)} ${listenN(cy + (y + 0.7) * z)}`,
-    d = `M${pt(-4.5, -1.8)}Q${pt(4.5, -4.2)} ${pt(14.5, 3.2)}Q${pt(6, 0.6)} ${pt(-4, 3.6)}Q${pt(-6.8, 1)} ${pt(-4.5, -1.8)}Z`;
-  return (
-    `<path fill="url(#listenJadeL)" d="${d}" filter="url(#listenDrop)"/><path class="rim" d="${d}"/>` +
-    `<path class="hi" d="M${pt(-3.4, -1.3)}Q${pt(3.4, -3.1)} ${pt(9.6, -0.2)}"/><path class="xian" d="M${pt(-2.6, -2.2)}Q${pt(-2, 0.6)} ${pt(-2.4, 3.3)}"/>` +
-    `<circle class="hole" cx="${cx}" cy="${cy}" r=".7"/>` +
-    `<rect class="hit" x="${listenN(dir > 0 ? cx - 8 : cx - 19)}" y="${cy - 5}" width="27" height="13"/>`
-  );
-}
-function listenBi(cx, cy, R = 16, r = 5.4) {
-  const ring = `M${cx - R} ${cy}a${R} ${R} 0 1 0 ${2 * R} 0a${R} ${R} 0 1 0 ${-2 * R} 0M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
-  return (
-    `<path fill="url(#listenJadeR)" fill-rule="evenodd" d="${ring}" filter="url(#listenDrop)"/>` +
-    `<circle class="rim" cx="${cx}" cy="${cy}" r="${R - 0.2}"/><circle class="rim" cx="${cx}" cy="${cy}" r="${r + 0.2}"/>` +
-    listenArc(cx, cy, R - 1.3, 196, 262, "hi") +
-    listenArc(cx, cy, r + 0.9, 200, 320, "rim") +
-    listenArc(cx, cy, r + 0.7, 35, 95, "hi") +
-    `<circle class="xian" cx="${cx}" cy="${cy}" r="11"/><path class="played" d=""/><circle class="now zhu" r="1.25" cx="${cx}" cy="${cy - 11}"/>` +
-    `<g class="glyph-pause"><rect class="glyph" x="${cx - 1.55}" y="${cy - 1.8}" width=".95" height="3.6" rx=".3"/><rect class="glyph" x="${cx + 0.6}" y="${cy - 1.8}" width=".95" height="3.6" rx=".3"/></g>` +
-    `<path class="glyph glyph-play" d="M${cx - 1.1} ${cy - 2}L${cx + 1.9} ${cy}L${cx - 1.1} ${cy + 2}Z"/>` +
-    `<circle class="hit" cx="${cx}" cy="${cy}" r="${R}"/>`
-  );
-}
-function listenHeng(cx, y) {
-  const w = 27,
-    d = `M${cx - w} ${y + 7}Q${cx} ${y - 5} ${cx + w} ${y + 7}Q${cx + w + 1.6} ${y + 10.4} ${cx + w - 2.4} ${y + 11}Q${cx} ${y + 1.8} ${cx - w + 2.4} ${y + 11}Q${cx - w - 1.6} ${y + 10.4} ${cx - w} ${y + 7}Z`;
-  return (
-    `<path fill="url(#listenJadeL)" d="${d}" filter="url(#listenDrop)"/><path class="rim" d="${d}"/>` +
-    `<path class="hi" d="M${cx - w + 3} ${y + 6.6}Q${cx - 6} ${y - 1.4} ${cx + 6} ${y + 0.1}"/>` +
-    [
-      [cx, y + 1.9],
-      [cx - w + 2.4, y + 8.5],
-      [cx + w - 2.4, y + 8.5]
-    ]
-      .map(([x, yy]) => `<circle class="hole" cx="${x}" cy="${yy}" r=".75"/>`)
-      .join("")
-  );
-}
-function listenTassel(x, y) {
-  const lens = [15, 17.5, 16, 19, 17, 20, 17.5, 19, 16.5, 18, 15.5],
-    silk = lens
-      .map((len, i) => {
-        const k = i - 5;
-        return brushStroke([x + k * 0.22, y + 3.2, x + k * 0.42 + (k % 2) * 0.15, y + 3.2 + len * 0.5, x + k * 0.62, y + 3.2 + len], 0.42, {
-          tone: "zhu",
-          head: 1
-        });
-      })
-      .join("");
-  return (
-    brushDot(x, y - 1.3, 1.15, "zhu") +
-    `<g mask="url(#listenFade)">${silk}</g>` +
-    `<rect class="zhu" x="${x - 1.6}" y="${y}" width="3.2" height="3.6" rx="1.1"/><rect class="zhu-deep" x="${x - 1.6}" y="${y + 2.4}" width="3.2" height=".45"/>`
-  );
-}
-const LISTEN_BI = [45, 64];
+// 28 × 64 的画幅：线长 cord，圆相半径 r
+const LISTEN_HANG = { x: 14, cord: 34, r: 10 };
+let listenDrawn = -1;
 function listenPendantHtml() {
-  const wrap = `<rect class="zhu-deep" x="43.9" y="28.9" width="2.2" height=".45" rx=".2"/><rect class="zhu-deep" x="43.9" y="29.7" width="2.2" height=".45" rx=".2"/>`;
-  return `<svg class="listen-svg" viewBox="0 0 90 108" aria-hidden="true"><defs>
-    <radialGradient id="listenJadeR" cx=".36" cy=".3" r=".78"><stop offset="0" class="s0"/><stop offset=".55" class="s1"/><stop offset="1" class="s2"/></radialGradient>
-    <linearGradient id="listenJadeL" x1="0" y1="0" x2=".25" y2="1"><stop offset="0" class="s0"/><stop offset=".5" class="s1"/><stop offset="1" class="s2"/></linearGradient>
-    <linearGradient id="listenFadeG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".55" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity=".25"/></linearGradient>
-    <mask id="listenFade" maskContentUnits="objectBoundingBox"><rect width="1" height="1" fill="url(#listenFadeG)"/></mask>
-    <filter id="listenDrop" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow class="fshadow" dx="0" dy=".7" stdDeviation=".6"/></filter></defs>
-    ${listenRope(45, 0, 45, 31)}
-    <g class="listen-knot">${brushDot(45, 32.2, 1.9, "zhu")}${brushStroke([44.7, 33.5, 44.2, 36, 43.7, 38.5], 0.7, { tone: "zhu" })}${brushStroke([45.3, 33.5, 45.8, 36, 46.2, 38.5], 0.7, { tone: "zhu" })}</g>
-    <g class="listen-pei">
-      ${listenRope(20.2, 38.6, 20.2, 46, 0.7)}${listenRope(69.8, 38.6, 69.8, 46, 0.7)}${listenRope(45, 36, 45, 48.6, 0.8)}
-      ${listenHeng(45, 30)}${wrap}
-      <g class="listen-part listen-side" data-listen="prev" style="transform-origin:20.2px 46px"><title>上一首</title>${listenFang(20.2, 46, -1)}</g>
-      <g class="listen-part listen-side" data-listen="next" style="transform-origin:69.8px 46px"><title>下一首</title>${listenFang(69.8, 46, 1)}</g>
-      <g class="listen-part" data-listen="bi">${listenBi(...LISTEN_BI)}</g>
-      ${listenTassel(45, 81.4)}
-    </g>
-    <rect class="hit listen-part" data-listen="rope" x="38" y="0" width="14" height="${40}"/>
-  </svg>
-  <div class="listen-label"><button type="button" class="listen-name" data-listen="page" title="回整页"></button><button type="button" class="listen-stop" data-listen="stop" title="停止" aria-label="停止">×</button><small class="listen-time"></small></div>`;
+  const { x, cord, r } = LISTEN_HANG;
+  return `<svg class="brush listen-svg" viewBox="0 0 28 64" aria-hidden="true">${brushStroke([x, 0, x + 0.4, cord / 2, x, cord], 1.1, { tail: 0.8, head: 1 })}${brushArc(x, cord + r + 1, r, -90, 270, 1.4, { tone: "ghost", tail: 1, head: 1 })}<g class="listen-played"></g><circle class="zhu listen-now" r="1.5" cx="${x}" cy="${cord + 1}"/></svg>
+  <button type="button" class="listen-hit" data-listen="rope" aria-label="听音"></button>
+  <div class="listen-card">
+    <button type="button" class="listen-name" data-listen="page" title="回整页"></button>
+    <small class="listen-time"></small>
+    <div class="listen-acts"><button type="button" data-listen="prev">上一首</button><button type="button" class="listen-toggle" data-listen="toggle">止</button><button type="button" data-listen="next">下一首</button><button type="button" class="listen-stop" data-listen="stop" title="停止" aria-label="停止">✕</button></div>
+  </div>`;
 }
 function listenPendant() {
   const box = $("#listenPendant");
   if (box.childElementCount) return box;
   box.innerHTML = listenPendantHtml();
+  listenDrawn = -1;
   box.addEventListener("click", e => {
     const part = e.target.closest("[data-listen]")?.dataset.listen;
     if (!part) return;
-    const open = box.classList.contains("open");
-    if (part === "rope") return box.classList.toggle("open", !open);
+    if (part === "rope") return box.classList.toggle("open");
     if (part === "page") return void openFileViewer(listenTrack.source, listenTrack.name);
     if (part === "stop") return listenRelease();
+    if (part === "toggle") return void listenToggle();
     if (part === "prev" || part === "next") return listenStep(part === "next" ? 1 : -1);
-    if (part === "bi") {
-      // 璧心放停，璧环点哪跳哪（自正上方顺时针）
-      const svg = box.querySelector("svg"),
-        point = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse()),
-        dx = point.x - LISTEN_BI[0],
-        dy = point.y - LISTEN_BI[1];
-      if (Math.hypot(dx, dy) < 7.5) return void listenToggle();
-      void listenSeek((((Math.atan2(dy, dx) * 180) / Math.PI + 450) % 360) / 360);
-    }
   });
-  // 点佩外、按 Esc：佩收回檐上，只留那根绳
+  // 点签外、按 Esc：纸签收回，只留那一缕
   document.addEventListener("pointerdown", e => {
     if (box.classList.contains("open") && !box.contains(e.target)) box.classList.remove("open");
   });
@@ -450,14 +366,21 @@ function listenRenderPendant() {
   const box = $("#listenPendant");
   if (!box?.childElementCount || !listenTrack) return;
   const el = listenEl(),
-    ratio = el.duration ? el.currentTime / el.duration : 0,
-    [cx, cy] = LISTEN_BI,
-    end = -90 + 360 * Math.min(0.9995, ratio),
-    [hx, hy] = LISTEN_P(cx, cy, 11, end);
-  box.querySelector(".played").setAttribute("d", ratio > 0.002 ? listenArcD(cx, cy, 11, -90, end) : "");
-  box.querySelector(".now").setAttribute("cx", listenN(hx));
-  box.querySelector(".now").setAttribute("cy", listenN(hy));
+    ratio = el.duration ? Math.min(0.9995, el.currentTime / el.duration) : 0,
+    { x, cord, r } = LISTEN_HANG,
+    cy = cord + r + 1,
+    end = -90 + 360 * ratio,
+    // 圆相每走一度才重画一笔
+    step = Math.round(ratio * 360);
+  if (step !== listenDrawn) {
+    listenDrawn = step;
+    box.querySelector(".listen-played").innerHTML = step > 2 ? brushArc(x, cy, r, -90, end, 2.8, { tail: 0.2, head: 0.9 }) : "";
+    const now = box.querySelector(".listen-now");
+    now.setAttribute("cx", String(listenN(x + r * Math.cos((end * Math.PI) / 180))));
+    now.setAttribute("cy", String(listenN(cy + r * Math.sin((end * Math.PI) / 180))));
+  }
   box.querySelector(".listen-time").textContent = `${listenClock(el.currentTime)} / ${listenClock(el.duration)}`;
+  box.querySelector(".listen-toggle").textContent = el.paused ? "奏" : "止";
 }
 
 // ---------- 两面何时各现：都由喇叭此刻的样子推出来 ----------
@@ -471,7 +394,7 @@ function listenSync() {
   if (hang) {
     listenPendant();
     box.querySelector(".listen-name").textContent = listenTrack.name.replace(/\.[^.]+$/, "");
-    box.querySelector('[data-listen="rope"]').innerHTML = `<title>${escapeHtml(listenTrack.name)}</title>`;
+    box.querySelector('[data-listen="rope"]').title = listenTrack.name;
     listenRenderPendant();
   } else box?.classList.remove("open");
   box?.classList.toggle("hidden", !hang);
@@ -479,7 +402,7 @@ function listenSync() {
   listenRenderPage();
   if (listenTrack && !el.paused && !listenFrameId) listenFrameId = requestAnimationFrame(listenFrame);
 }
-// 放着时每帧走一次：整页的声纹、玉佩的璧环，与随声而摆——摆幅跟着此刻的响度，停了就慢慢静下来
+// 放着时每帧走一次：整页与那一缕的圆相，与随声而摆——摆幅跟着此刻的响度，停了就慢慢静下来
 function listenFrame() {
   listenFrameId = 0;
   const el = listenEl();
