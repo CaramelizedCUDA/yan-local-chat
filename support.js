@@ -16795,10 +16795,12 @@ function stagePageEvent(method, params) {
     const { scrollOffsetX: x = 0, scrollOffsetY: y = 0 } = params.metadata,
       moved = x !== stage.scroll.x || y !== stage.scroll.y;
     stage.scroll = { x, y };
-    stageFrame(params.data, params.metadata.deviceWidth, params.metadata.deviceHeight);
+    const session = stage.session,
+      ack = () => void stageSend("Page.screencastFrameAck", { sessionId: params.sessionId }, session).catch(() => {});
+    // 这一帧解出来了再要下一帧：言这边忙（流式渲染、拖分隔线）时，浏览器跟着放慢，不至于帧帧排队、越积越卡
+    stageFrame(params.data, params.metadata.deviceWidth, params.metadata.deviceHeight).then(ack);
     // 网页滚了：圈点与执事落笔跟着走
     if (moved) stageInkRender();
-    void stageSend("Page.screencastFrameAck", { sessionId: params.sessionId }, stage.session).catch(() => {});
   } else if (method === "Page.frameStartedLoading" || method === "Page.frameStoppedLoading") {
     if (params.frameId !== stage.attached) return;
     stage.loading = method === "Page.frameStartedLoading";
@@ -16948,7 +16950,7 @@ async function stageAttach() {
       new Promise((_, reject) => setTimeout(() => reject(Error("timeout")), 2000))
     ]);
     if (stage.session === sessionId && !stage.framed)
-      stageFrame(shot.data, metrics.cssVisualViewport.clientWidth, metrics.cssVisualViewport.clientHeight);
+      void stageFrame(shot.data, metrics.cssVisualViewport.clientWidth, metrics.cssVisualViewport.clientHeight);
   } catch {}
   void stageFit();
 }
@@ -16968,8 +16970,12 @@ async function stageFit() {
       stageSend("Browser.getWindowForTarget", { targetId: target }),
       stageSend("Page.getLayoutMetrics", {}, session)
     ]);
-    const width = Math.round(bounds.width - port.clientWidth + want.width),
-      height = Math.round(bounds.height - port.clientHeight + want.height);
+    const edgeX = bounds.width - port.clientWidth,
+      edgeY = bounds.height - port.clientHeight;
+    // 网页的视口被定死了（模型调过 browser_resize）：窗口管不着它，多出的边不是边，再照着调只会一回小一圈
+
+    const width = Math.round(edgeX + want.width),
+      height = Math.round(edgeY + want.height);
     if (bounds.windowState !== "normal" || (Math.abs(width - bounds.width) < 2 && Math.abs(height - bounds.height) < 2)) return;
     await stageSend("Browser.setWindowBounds", { windowId, bounds: { width, height } });
   } catch {}
@@ -16983,7 +16989,7 @@ async function stageDetach() {
   await stageSend("Page.stopScreencast", {}, session).catch(() => {});
   void stageSend("Target.detachFromTarget", { sessionId: session }).catch(() => {});
 }
-/** @param {string} data @param {number} width @param {number} height */
+/** @param {string} data @param {number} width @param {number} height @returns {Promise<void>} */
 function stageFrame(data, width, height) {
   if (width !== stage.meta.width || height !== stage.meta.height || !stage.framed) {
     stage.meta = { width, height };
@@ -16992,7 +16998,10 @@ function stageFrame(data, width, height) {
     view.style.setProperty("--fw", String(width));
   }
   stage.framed = true;
-  $("#stageFrame").src = `data:image/jpeg;base64,${data}`;
+  const img = /** @type {HTMLImageElement} */ ($("#stageFrame"));
+  img.src = `data:image/jpeg;base64,${data}`;
+  // 解码中途换了下一帧会报错，不碍事
+  return img.decode().catch(() => {});
 }
 
 // 网页改了标题，浏览器不发通知（开页、关页、跳转才发）：看台开着时隔一会儿问一次，变了才重画
