@@ -497,16 +497,19 @@ function noteMarkHtml(message) {
 }
 // 用户消息与上下文分隔的整条 HTML；回复另有画法（见 07-paint.js）
 /** @param {Message} message */
-// 帮手的回报另起的一问：不是用户的话，画成一道细线——谁回报了，点名字开它的那一趟
+// 帮手的回报（或后台指令结束）另起的一问：不是用户的话，画成一道细线——谁回来了，点名字开它的那一趟（后台指令则回到挂它的那一步）
 /** @param {Message} message */
 function relayHtml(message, branch = null) {
-  const names = (message.relay || [])
-    .map(
-      item =>
-        `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="看这一趟的经过">帮手「${escapeHtml(item.title)}」${item.ok ? "回报" : "未完成"}</button>`
-    )
-    .join(`<span class="relay-sep" aria-hidden="true">·</span>`);
-  return `<article class="message relay" data-message="${escapeHtml(message.id)}"><div class="relay-line"><span class="seal sub-seal" aria-hidden="true">遣</span>${names}</div>${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
+  const items = message.relay || [],
+    names = items
+      .map(item =>
+        item.kind === "bg"
+          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="回到挂它的那一步">后台 ${escapeHtml(item.title)} 已结束${item.ok ? "" : ` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
+          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="看这一趟的经过">帮手「${escapeHtml(item.title)}」${item.ok ? "回报" : "未完成"}</button>`
+      )
+      .join(`<span class="relay-sep" aria-hidden="true">·</span>`),
+    seal = items.every(item => item.kind === "bg") ? "候" : "遣";
+  return `<article class="message relay" data-message="${escapeHtml(message.id)}"><div class="relay-line"><span class="seal sub-seal" aria-hidden="true">${seal}</span>${names}</div>${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
 }
 function renderMessage(message, branch = null, side = false) {
   if (message.role === "context")

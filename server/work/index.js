@@ -31,7 +31,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     // 覆盖写时捎回原文的长度，与页面留存写入内容的长度（src/15-tools/21-files.js 的 WRITTEN_KEEP_CHARS）一致
     PREVIOUS_KEEP_CHARS = 4000;
   const resolveWorkdir = raw => paths.resolveWorkdir(raw, workHome);
-  const { WORK_SHELL, runShell, startBackground, backgroundReport, checkBackground } = createShell({ toolEnv }),
+  const { WORK_SHELL, runShell, startBackground, backgroundReport, checkBackground, watchBackground } = createShell({ toolEnv }),
     { lockFile, lockWorkdir } = createLocks();
   // 沙箱分两档：问而后行（或没说档位的请求）用严的；审而后行、径行用宽的——文件工具在宽档里不设防，指令只守系统本身（见 server/sandbox.js）
   const looseTier = body => body.permission === "review" || body.permission === "auto";
@@ -119,6 +119,16 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     async body => await checkBackground(body.id, body.stop === true, clampNumber(Number(body.wait) * 1000, 0, 0, 120000)),
     failed
   );
+  // 等一条后台指令结束：请求一直挂着（走总线不占连接），结束了才回；页面停了、关了，请求随之作罢
+  async function handleWorkWatch(req, res) {
+    try {
+      const body = await readJson(req),
+        result = await watchBackground(body.id, body.key, requestSignal(res));
+      if (!res.writableEnded && !res.destroyed) sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 400, { error: failed(error) });
+    }
+  }
   // 问而后行：发指令前先问一声严的沙箱会不会拦——会拦的照样请示，请示条上写明原因，用户批了这一条就出沙箱跑
   const handleWorkScreen = jsonRoute(async body => {
     const workdir = resolveWorkdir(body.workdir);
@@ -455,6 +465,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
       "POST /api/work/run": handleWorkRun,
       "POST /api/work/screen": handleWorkScreen,
       "POST /api/work/check": handleWorkCheck,
+      "POST /api/work/watch": handleWorkWatch,
       "POST /api/work/write": handleWorkWrite,
       "POST /api/work/read": handleWorkRead,
       "POST /api/work/list": handleWorkList,

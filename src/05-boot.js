@@ -58,7 +58,7 @@ function recoverConversation(conversation) {
       }
   return changed;
 }
-// 开页时收束一遍；别处正作答的不算（见 syncLeases）
+// 开页时收束一遍；别处正作答的不算（见 syncLeases）。还在等的后台指令重新等上
 function recoverInterruptedMessages() {
   let changed = false;
   for (const conversation of store.conversations)
@@ -86,6 +86,7 @@ async function boot() {
   // 先问一声别处在作答什么，那几段不当成中断
   await syncLeases();
   recoverInterruptedMessages();
+  rewatchBackground();
   applyAppearance();
   bindEvents();
   (window.requestIdleCallback || (fn => setTimeout(fn, 800)))(() => void themeSheets());

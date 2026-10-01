@@ -92,7 +92,8 @@
         timeout: { type: "number", description: "超时秒数，默认 120，不设上限；耗时长的指令记得给足" },
         background: {
           type: "boolean",
-          description: "开发服务器、监听构建这类不会自己结束的放后台：先回几秒输出与编号，之后用 check_command"
+          description:
+            "开发服务器、长任务这类要跑一阵的放后台：先回几秒输出与编号，结束时结果作为一条消息送到，届时再接着做即可。要过一阵再做的，也可挂一条先等待的后台指令"
         }
       },
       required: ["command"]

@@ -513,7 +513,7 @@ function refreshSteps(assistant) {
 function reasoningLive(message) {
   if (message.status !== "streaming") return false;
   // 补言不是一轮：它落下时模型可能正想到一半，块上的勾不能因它先打上
-  const last = (message.steps || []).filter(step => step.name !== "user_note").at(-1),
+  const last = (message.steps || []).filter(step => step.name !== "user_note" && step.name !== "relay_note").at(-1),
     at = Number(last?.at) || 0,
     rat = Number(last?.rat) || 0;
   return (
@@ -704,6 +704,15 @@ function bindHelperEvents() {
   $("#messages").addEventListener("click", event => {
     const relay = event.target.closest("[data-relay-step]");
     if (relay) return openHelperPanel(relay.dataset.relayStep || "");
+    // 后台指令结束的那一项：回到行迹里挂它的那一步（行迹折着就摊开）
+    const reveal = event.target.closest("[data-relay-reveal]");
+    if (reveal) {
+      const card = document.querySelector(`#messages .tool-step[data-step-id="${CSS.escape(reveal.dataset.relayReveal || "")}"]`),
+        stack = card?.closest(".tool-stack");
+      if (stack && !stack.open) setProcessDetails(stack, true);
+      if (card) scrollChatTo(card, "center");
+      return;
+    }
     const head = event.target.closest(".tool-step-delegate > .tool-step-head");
     if (head) openFromCard(head.parentElement);
   });

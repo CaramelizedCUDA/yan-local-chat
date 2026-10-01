@@ -60,6 +60,7 @@
  * @property {boolean} [readOnly] 只读指令，免确认
  * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
  * @property {boolean} [background] 后台指令
+ * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost" }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它）
  * @property {{ old: string, new: string }} [diff]
  * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
  * @property {string} [previous] write_file 覆盖掉的原文（过长只留开头），与 written 比出红绿
@@ -77,6 +78,7 @@
  * @property {"tell"|"resume"|"stop"} [mode] 传话一步做的是哪样：递话、续派、叫停
  * @property {string} [ref] 传话、叫停说到的那一趟（步骤 id）
  * @property {string} [noteId] 传话递去的那句话在帮手时间线里的步骤 id
+ * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }} [relay] 作答途中回来的回报（relay_note）是谁
  * @property {{ questions: AskQuestion[] }} [form]
  * @property {string[]} [answers]
  * @property {string} [conversationId] 翻旧谈
@@ -86,7 +88,7 @@
  * @typedef {Object} Message
  * @property {string} id
  * @property {"user"|"assistant"|"context"} role context 是上下文分隔：带 summary 的是压缩，不带的是旧版硬切
- * @property {{ step: string, title: string, ok: boolean }[]} [relay] 帮手的回报另起的一问：谁回报了（内容是回报原文，只送给模型）
+ * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }[]} [relay] 帮手的回报（或后台指令结束）另起的一问：谁回来了（内容是回报原文，只送给模型）
  * @property {string} content
  * @property {string} timestamp
  * @property {"streaming"|"complete"|"stopped"|"error"|"interrupted"} [status]
@@ -360,6 +362,9 @@ const requestJobs = new JobMap();
 // 各段对话在后台做着的帮手（对话 id → 一名一个收件口，见 90-delegate.js）。帮手不随派它的那一答收尾：主答只剩等待就收尾，
 // 回报到了另起一答。所以它与作答一样要攥锁防冻、要报到（别处不该把这段当成没人管）
 const crews = new JobMap();
+// 正等着结束的后台指令（步骤 id → 那个挂着的请求，见 20-command.js 的 watchBackground）：结束了要叫醒模型，页面不能被冻住
+/** @type {Map<string, AbortController>} */
+const bgWatches = new Map();
 // 几个页面同开同一个存储时，谁在作答（见 01-store/40-leases.js 的 syncLeases）：PAGE_ID 是这个页面的名号；
 // remoteBusy 是别处正在作答的对话；leaseHold 是这边作答过、最后一次存盘还没落地的对话——落了地才松手，别处读到的才是写完的
 const PAGE_ID = uid();
@@ -368,7 +373,7 @@ const remoteBusy = new Set(),
 /** @type {{ release: () => void }|null} */
 let awakeHold = null;
 function holdAwake() {
-  const busy = requestJobs.size || crews.size;
+  const busy = requestJobs.size || crews.size || bgWatches.size;
   if (busy && !awakeHold && globalThis.navigator?.locks) {
     const hold = { release: () => {} },
       done = new Promise(resolve => (hold.release = () => resolve(null)));
@@ -3070,7 +3075,7 @@ function recoverConversation(conversation) {
       }
   return changed;
 }
-// 开页时收束一遍；别处正作答的不算（见 syncLeases）
+// 开页时收束一遍；别处正作答的不算（见 syncLeases）。还在等的后台指令重新等上
 function recoverInterruptedMessages() {
   let changed = false;
   for (const conversation of store.conversations)
@@ -3098,6 +3103,7 @@ async function boot() {
   // 先问一声别处在作答什么，那几段不当成中断
   await syncLeases();
   recoverInterruptedMessages();
+  rewatchBackground();
   applyAppearance();
   bindEvents();
   (window.requestIdleCallback || (fn => setTimeout(fn, 800)))(() => void themeSheets());
@@ -4921,16 +4927,19 @@ function noteMarkHtml(message) {
 }
 // 用户消息与上下文分隔的整条 HTML；回复另有画法（见 07-paint.js）
 /** @param {Message} message */
-// 帮手的回报另起的一问：不是用户的话，画成一道细线——谁回报了，点名字开它的那一趟
+// 帮手的回报（或后台指令结束）另起的一问：不是用户的话，画成一道细线——谁回来了，点名字开它的那一趟（后台指令则回到挂它的那一步）
 /** @param {Message} message */
 function relayHtml(message, branch = null) {
-  const names = (message.relay || [])
-    .map(
-      item =>
-        `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="看这一趟的经过">帮手「${escapeHtml(item.title)}」${item.ok ? "回报" : "未完成"}</button>`
-    )
-    .join(`<span class="relay-sep" aria-hidden="true">·</span>`);
-  return `<article class="message relay" data-message="${escapeHtml(message.id)}"><div class="relay-line"><span class="seal sub-seal" aria-hidden="true">遣</span>${names}</div>${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
+  const items = message.relay || [],
+    names = items
+      .map(item =>
+        item.kind === "bg"
+          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="回到挂它的那一步">后台 ${escapeHtml(item.title)} 已结束${item.ok ? "" : ` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
+          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="看这一趟的经过">帮手「${escapeHtml(item.title)}」${item.ok ? "回报" : "未完成"}</button>`
+      )
+      .join(`<span class="relay-sep" aria-hidden="true">·</span>`),
+    seal = items.every(item => item.kind === "bg") ? "候" : "遣";
+  return `<article class="message relay" data-message="${escapeHtml(message.id)}"><div class="relay-line"><span class="seal sub-seal" aria-hidden="true">${seal}</span>${names}</div>${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
 }
 function renderMessage(message, branch = null, side = false) {
   if (message.role === "context")
@@ -5703,7 +5712,7 @@ function refreshSteps(assistant) {
 function reasoningLive(message) {
   if (message.status !== "streaming") return false;
   // 补言不是一轮：它落下时模型可能正想到一半，块上的勾不能因它先打上
-  const last = (message.steps || []).filter(step => step.name !== "user_note").at(-1),
+  const last = (message.steps || []).filter(step => step.name !== "user_note" && step.name !== "relay_note").at(-1),
     at = Number(last?.at) || 0,
     rat = Number(last?.rat) || 0;
   return (
@@ -5894,6 +5903,15 @@ function bindHelperEvents() {
   $("#messages").addEventListener("click", event => {
     const relay = event.target.closest("[data-relay-step]");
     if (relay) return openHelperPanel(relay.dataset.relayStep || "");
+    // 后台指令结束的那一项：回到行迹里挂它的那一步（行迹折着就摊开）
+    const reveal = event.target.closest("[data-relay-reveal]");
+    if (reveal) {
+      const card = document.querySelector(`#messages .tool-step[data-step-id="${CSS.escape(reveal.dataset.relayReveal || "")}"]`),
+        stack = card?.closest(".tool-stack");
+      if (stack && !stack.open) setProcessDetails(stack, true);
+      if (card) scrollChatTo(card, "center");
+      return;
+    }
     const head = event.target.closest(".tool-step-delegate > .tool-step-head");
     if (head) openFromCard(head.parentElement);
   });
@@ -9396,6 +9414,10 @@ function settleSupplements(conversation, assistant, job, profile) {
   const queue = (job.queue || []).filter(item => item.user),
     reports = (job.queue || []).filter(item => item.report !== undefined);
   job.queue = [];
+  // 回报在行迹里落的那一步还没递到：撤下，回报另起一答（那里有它自己的细线）
+  const unsent = new Set(reports.map(item => item.note?.id).filter(Boolean));
+  if (unsent.size) assistant.steps = (assistant.steps || []).filter(step => !unsent.has(step.id));
+  for (const item of reports) delete item.note;
   // 收尾前才到、没来得及递的帮手回报：照没在作答时寄（见 mailReport）。补言若另起一问，回报就并进那一答——
   // 所以先排补言的那一问、后寄回报。用户按了停的，帮手一并停了，已到的回报也不再另起一答
   const mail = () => assistant.status !== "stopped" && reports.forEach(item => mailReport(conversation, item));
@@ -9716,8 +9738,9 @@ async function runRounds(target, history, run) {
       // 补言停下的：这一轮写到落点为止，已写的话与补言一起进历史，没执行的工具调用一律作废，随即再开一轮
       const said = trimToBoundary(target.content.slice(roundStart)).replace(/\n+$/, "");
       target.content = target.content.slice(0, roundStart) + said;
-      for (const { step, note } of inbox.queue)
-        for (const item of [step, note]) if (typeof item?.at === "number") item.at = Math.min(item.at, target.content.length);
+      // 退回去的是这一轮的话：落在这一轮里的补言（与递给帮手的话）跟着前移；回报的那一步在别处，不动
+      for (const { user, step, note } of inbox.queue)
+        for (const item of [user && step, note]) if (typeof item?.at === "number") item.at = Math.min(item.at, target.content.length);
       chargePartial(said);
       target.toolCalls = null;
       if (said.trim()) history.push({ role: "assistant", content: said });
@@ -10830,10 +10853,15 @@ defineTool({
     step.output = commandOutput(data);
     if (background) {
       step.exitCode = data.exitCode ?? undefined;
+      // 还在跑的：等它结束再叫醒模型（帮手的步骤不等——帮手早收工了，叫醒谁都不对，它要看就自己 check）
+      if (data.running && !step.scope) {
+        step.bg = { id: data.id, key: data.key, state: "running" };
+        watchBackground(conversation, ctx.assistant, step);
+      }
       return {
         ok: data.running || data.exitCode === 0,
-        content: `${data.running ? `后台指令 ${data.id} 仍在跑（已 ${seconds} 秒），用 check_command 取新输出或结束它` : `后台指令 ${data.id} 已结束，退出码：${data.exitCode}`}\n--- stdout ---\n${data.stdout || "(空)"}\n--- stderr ---\n${data.stderr || "(空)"}`,
-        display: `${data.running ? `后台 ${data.id} · 在跑` : `后台 ${data.id} · 退出码 ${data.exitCode}`}${marks}`
+        content: `${data.running ? prompt(step.bg ? "work.bgStarted" : "work.bgStartedQuiet", { id: data.id, seconds }) : `后台指令 ${data.id} 已结束，退出码：${data.exitCode}`}\n--- stdout ---\n${data.stdout || "(空)"}\n--- stderr ---\n${data.stderr || "(空)"}`,
+        display: `后台 ${data.id} · ${data.running ? "进行中" : `已结束 · 退出码 ${data.exitCode}`}${marks}`
       };
     }
     step.exitCode = data.exitCode;
@@ -10852,21 +10880,114 @@ defineTool({
   label: "后台",
   offer: ctx => ctx.files && ctx.work,
   html: workStepHtml,
-  async run(step, args, { signal }) {
+  async run(step, args, { conversation, assistant, signal }) {
     const id = args.id.trim(),
-      stop = args.stop === true;
+      stop = args.stop === true,
+      started = bgStepOf(conversation, id);
     step.title = `${id}${stop ? " · 结束" : ""}`;
+    // 模型亲手结束它：不必再叫醒一回
+    if (stop && started) bgWatches.get(started.id)?.abort();
     const data = await bridge("/api/work/check", { id, stop, wait: Number(args.wait) || 0 }, signal);
     step.output = commandOutput(data);
-    if (!data.running) step.exitCode = data.exitCode;
+    if (!data.running) {
+      step.exitCode = data.exitCode;
+      if (started) settleBackground(started, stop ? "stopped" : "done", data.exitCode, assistant);
+    }
     return {
       ok: true,
-      content: `${data.running ? `${data.id} 仍在跑` : `${data.id} 已结束，退出码：${data.exitCode}`}\n--- 新的 stdout ---\n${data.stdout || "(空)"}\n--- 新的 stderr ---\n${data.stderr || "(空)"}`,
-      display: data.running ? "在跑" : stop ? "已结束" : `退出码 ${data.exitCode}`
+      content: `${data.running ? `${data.id} 还在进行` : `${data.id} 已结束，退出码：${data.exitCode}`}\n--- 新的 stdout ---\n${data.stdout || "(空)"}\n--- 新的 stderr ---\n${data.stderr || "(空)"}`,
+      display: data.running ? "进行中" : stop ? "已结束" : `已结束 · 退出码 ${data.exitCode}`
     };
   }
 });
 
+// ---------- 后台指令结束即叫醒 ----------
+// 桥接那头等它结束再回话（/api/work/watch，走总线不占连接），结果照帮手回报的路子寄给这段对话（mailReport）：
+// 正作答就在回合边界递上，没在作答就另起一答。模型挂上就能收尾去睡，不必轮询；要过一阵再做的，挂一条先等待的后台指令即是定时。
+// 页面刷新后重新等上（rewatchBackground）；桥接那头只报一回，几处页面同等着也不会叫醒两次
+/** @param {Conversation} conversation @param {Message} assistant @param {Step} step */
+function watchBackground(conversation, assistant, step) {
+  if (bgWatches.has(step.id) || !step.bg) return;
+  const controller = new AbortController(),
+    profile = requestJob(conversation.id)?.profile || activeProfile();
+  bgWatches.set(step.id, controller);
+  holdAwake();
+  bridge("/api/work/watch", { id: step.bg.id, key: step.bg.key }, controller.signal)
+    .then(
+      data => {
+        if (data.superseded) return;
+        if (data.lost) return settleBackground(step, "lost", undefined, assistant);
+        // 模型自己看过它结束了（check_command），只把签改成已结束，不再叫醒
+        const fresh = !data.reported;
+        if (fresh) step.output = trimOutput([step.output, commandOutput(data)].filter(Boolean).join("\n"));
+        settleBackground(step, "done", data.exitCode, assistant);
+        if (!fresh) return;
+        mailReport(conversation, {
+          report: prompt("work.bgDone", {
+            id: data.id,
+            command: String(data.command || step.title).slice(0, 200),
+            exitCode: data.exitCode,
+            duration: spokenDuration(data.durationMs),
+            stdout: data.stdout || "(空)",
+            stderr: data.stderr || "(空)"
+          }),
+          step,
+          profile,
+          relay: { step: step.id, title: data.id, ok: data.exitCode === 0, kind: "bg", exitCode: data.exitCode }
+        });
+      },
+      error => {
+        if (error.name === "AbortError") return;
+        // 桥接断了一下（重启、睡眠醒来）：稍候再等；重启过的，那时会回 lost
+        setTimeout(() => {
+          if (store.conversations.includes(conversation) && step.bg?.state === "running") watchBackground(conversation, assistant, step);
+        }, 10000);
+      }
+    )
+    .finally(() => {
+      if (bgWatches.get(step.id) === controller) bgWatches.delete(step.id);
+      holdAwake();
+    });
+}
+// 签上写它此刻的样子：结束了（退出码）、亲手结束、随桥接重启而没了
+/** @param {Step} step @param {"done"|"stopped"|"lost"} state @param {Message} assistant */
+function settleBackground(step, state, exitCode, assistant) {
+  if (!step.bg || step.bg.state !== "running") return;
+  bgWatches.get(step.id)?.abort();
+  step.bg.state = state;
+  if (exitCode !== undefined) step.exitCode = exitCode;
+  step.result =
+    state === "lost"
+      ? `后台 ${step.bg.id} · 随桥接重启而止`
+      : `后台 ${step.bg.id} · 已结束${exitCode !== undefined && exitCode !== null ? ` · 退出码 ${exitCode}` : ""}`;
+  const conversation = store.conversations.find(c => c.messages.includes(assistant));
+  if (conversation) markDirty(conversation.id);
+  saveStoreSoon();
+  refreshSteps(assistant);
+}
+// 这段对话里编号为 id 的那条后台指令（编号在桥接重启后会重数：取最近的一条）
+/** @param {Conversation} conversation */
+function bgStepOf(conversation, id) {
+  return (
+    conversation.messages
+      .flatMap(message => message.steps || [])
+      .filter(step => step.bg?.id === id)
+      .at(-1) || null
+  );
+}
+// 开页时：还记着「在等」的后台指令重新等上（桥接没重启过，它们多半还在跑，或已结束等着报）；别处正作答的那几段留给别处
+function rewatchBackground() {
+  for (const conversation of store.conversations) {
+    if (remoteBusy.has(conversation.id)) continue;
+    for (const message of conversation.messages)
+      for (const step of message.steps || []) if (step.bg?.state === "running") watchBackground(conversation, message, step);
+  }
+}
+/** @param {number} ms */
+function spokenDuration(ms) {
+  const seconds = Math.round((Number(ms) || 0) / 1000);
+  return seconds < 60 ? `${seconds} 秒` : seconds < 3600 ? `${Math.round(seconds / 60)} 分` : `${(seconds / 3600).toFixed(1)} 小时`;
+}
 function commandOutput(data) {
   return trimOutput([data.stdout, data.stderr].filter(Boolean).join(data.stdout && data.stderr ? "\n--- stderr ---\n" : ""));
 }
@@ -12124,6 +12245,13 @@ defineTool({
   html: helperStepHtml,
   sync: syncHelperCard
 });
+// 作答途中回来的回报（帮手、后台指令）：落在行迹里它到达的那一刻，一小步，点开即那名帮手或挂它的那一步
+defineTool({
+  name: "relay_note",
+  label: "回报",
+  offer: false,
+  html: relayStepHtml
+});
 // 递给帮手的话：落在帮手自己的时间线里它到达的那一刻，待递转圈、递到打勾（与补言同一种画法）
 defineTool({
   name: "helper_note",
@@ -12271,14 +12399,16 @@ function launchHelper(step, args, ctx, past = null) {
     });
   renderHistory();
 }
-// 帮手的回报：这段对话正在作答，就进那一答的收件口，在回合边界递上；没在作答（主答只剩等待时已收尾），
-// 同一刻到的几份攒成一问另起一答——回报作这一问，页面上是一道细线（见 relayHtml），不是用户的话
-/** @type {Map<string, Array<{ report: string, step: Step, profile: Profile|null }>>} */
+// 帮手的回报（后台指令结束也走这里，见 20-command.js）：这段对话正在作答（模型布置完还在干别的），就进那一答的收件口，
+// 在回合边界递上，行迹里它到达的那一刻落一小步「回报」（与补言同样大小，递到打勾）；
+// 没在作答（主答只剩等待时已收尾），同一刻到的几份攒成一问另起一答——回报作这一问，两答之间是一道细线（见 relayHtml），不是用户的话。
+// relay 是那一项的画法（谁回来了），不给就按帮手画
+/** @type {Map<string, Array<{ report: string, step: Step, profile: Profile|null, relay?: any }>>} */
 const mailbags = new Map();
 /** @param {Conversation} conversation */
 function mailReport(conversation, item) {
   const job = requestJob(conversation.id);
-  if (job) return void job.queue.push(item);
+  if (job) return void deliverInline(conversation, job, item);
   const bag = mailbags.get(conversation.id);
   if (bag) return void bag.push(item);
   mailbags.set(conversation.id, [item]);
@@ -12288,19 +12418,47 @@ function mailReport(conversation, item) {
     wakeWithReports(conversation, items);
   }, 0);
 }
+/** @returns {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }} */
+function relayOf({ step, relay }) {
+  return relay || { step: step.id, title: String(step.title || ""), ok: step.status === "done" };
+}
+// 作答途中到的：行迹里落一步「回报」，递上后打勾（deliverSupplements 按 note 打勾）；这一答没来得及递就收尾了，
+// settleSupplements 把这一步撤下、回报另起一答
+/** @param {Conversation} conversation */
+function deliverInline(conversation, job, item) {
+  const host = conversation.messages.find(message => message.id === job.assistantId);
+  if (host) {
+    const relay = relayOf(item);
+    /** @type {Step} */
+    const note = {
+      id: `relay_${uid().slice(0, 8)}`,
+      name: "relay_note",
+      arguments: "{}",
+      status: "running",
+      title: relay.title,
+      relay,
+      at: host.content.length,
+      rat: String(host.reasoning || "").length
+    };
+    (host.steps ||= []).push(note);
+    item = { ...item, note };
+    refreshSteps(host);
+  }
+  job.queue.push(item);
+}
 /** @param {Conversation} conversation */
 function wakeWithReports(conversation, items) {
   if (!items.length || !store.conversations.includes(conversation)) return;
   // 攒着的这一会儿里有人开了一答（用户发了话、上一答收尾时补言另起了一问）：交给它
   const job = requestJob(conversation.id);
-  if (job) return void job.queue.push(...items);
+  if (job) return void items.forEach(item => deliverInline(conversation, job, item));
   /** @type {Message} */
   const user = {
     id: uid(),
     role: "user",
     content: items.map(item => item.report).join("\n\n"),
     timestamp: now(),
-    relay: items.map(({ step }) => ({ step: step.id, title: String(step.title || ""), ok: step.status === "done" }))
+    relay: items.map(relayOf)
   };
   const profile = profiles().find(p => p.id === items[0].profile?.id) || activeProfile();
   if (profile && !quotaBlocked(profile)) return void startTurn(conversation, user, profile);
@@ -12535,6 +12693,17 @@ function helperStepHtml(step) {
     said = text.split("\n").find(Boolean) || "",
     fresh = kind === "传话" && status !== "error";
   return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"${step.ref ? ` data-ref="${escapeHtml(step.ref)}"` : ""}${step.noteId ? ` data-note="${escapeHtml(step.noteId)}"` : ""}><div class="tool-step-head" role="button" tabindex="0" title="${step.ref ? "看这名帮手" : ""}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">遣</span>${kind}</span><span class="tool-title" title="${escapeHtml(text)}">${escapeHtml(name)}${said ? `<span class="helper-said">${escapeHtml(said.slice(0, 80))}</span>` : ""}</span>${fresh ? `<span class="helper-fresh">已更新</span>` : ""}<span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "") : ""}">${status === "running" ? "" : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div></div>`;
+}
+/** @param {Step} step */
+function relayStepHtml(step) {
+  const relay = step.relay || { step: "", title: "", ok: true },
+    status = step.status || "done",
+    bg = relay.kind === "bg",
+    what = bg
+      ? `后台 ${relay.title} 已结束${relay.ok ? "" : ` · 退出码 ${relay.exitCode ?? "?"}`}`
+      : `帮手「${relay.title}」${relay.ok ? "回报" : "未完成"}`,
+    target = bg ? `data-relay-reveal="${escapeHtml(relay.step)}"` : `data-relay-step="${escapeHtml(relay.step)}"`;
+  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? "回到挂它的那一步" : "看这一趟的经过"}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? "候" : "遣"}</span>回报</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? "待递" : escapeHtml(step.result || "已递")}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 签的种类变了（参数拟完才知道是续派还是传话）就整张换；续派的签与差遣一样就地更新
 /** @param {Step} step */
@@ -14428,7 +14597,10 @@ function conversationMarkdown(c) {
       continue;
     }
     if (m.role === "user" && m.relay) {
-      lines.push(`*${m.relay.map(item => `帮手「${exportMarkdownLabel(item.title)}」${item.ok ? "回报" : "未完成"}`).join(" · ")}*`, "");
+      lines.push(
+        `*${m.relay.map(item => (item.kind === "bg" ? `后台 ${item.title} 已结束 · 退出码 ${item.exitCode ?? "?"}` : `帮手「${exportMarkdownLabel(item.title)}」${item.ok ? "回报" : "未完成"}`)).join(" · ")}*`,
+        ""
+      );
       continue;
     }
     if (m.role === "user") {

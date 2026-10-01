@@ -378,6 +378,10 @@ function settleSupplements(conversation, assistant, job, profile) {
   const queue = (job.queue || []).filter(item => item.user),
     reports = (job.queue || []).filter(item => item.report !== undefined);
   job.queue = [];
+  // 回报在行迹里落的那一步还没递到：撤下，回报另起一答（那里有它自己的细线）
+  const unsent = new Set(reports.map(item => item.note?.id).filter(Boolean));
+  if (unsent.size) assistant.steps = (assistant.steps || []).filter(step => !unsent.has(step.id));
+  for (const item of reports) delete item.note;
   // 收尾前才到、没来得及递的帮手回报：照没在作答时寄（见 mailReport）。补言若另起一问，回报就并进那一答——
   // 所以先排补言的那一问、后寄回报。用户按了停的，帮手一并停了，已到的回报也不再另起一答
   const mail = () => assistant.status !== "stopped" && reports.forEach(item => mailReport(conversation, item));
@@ -698,8 +702,9 @@ async function runRounds(target, history, run) {
       // 补言停下的：这一轮写到落点为止，已写的话与补言一起进历史，没执行的工具调用一律作废，随即再开一轮
       const said = trimToBoundary(target.content.slice(roundStart)).replace(/\n+$/, "");
       target.content = target.content.slice(0, roundStart) + said;
-      for (const { step, note } of inbox.queue)
-        for (const item of [step, note]) if (typeof item?.at === "number") item.at = Math.min(item.at, target.content.length);
+      // 退回去的是这一轮的话：落在这一轮里的补言（与递给帮手的话）跟着前移；回报的那一步在别处，不动
+      for (const { user, step, note } of inbox.queue)
+        for (const item of [user && step, note]) if (typeof item?.at === "number") item.at = Math.min(item.at, target.content.length);
       chargePartial(said);
       target.toolCalls = null;
       if (said.trim()) history.push({ role: "assistant", content: said });

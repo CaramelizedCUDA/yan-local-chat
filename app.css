@@ -7014,6 +7014,14 @@ textarea::placeholder,
 .tool-step-note > .tool-step-head .tool-title {
   color: var(--ink-2);
 }
+/* 印与标签排成一行（与差遣的签同一个写法）：默认的标签宽只够两个字，一印两字会折成上下两行 */
+.tool-step-note > .tool-step-head .tool-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 52px;
+  white-space: nowrap;
+}
 .tool-note-files {
   margin-top: 4px;
   color: var(--ink-3);
@@ -7228,7 +7236,16 @@ textarea::placeholder,
   color: var(--ink-3);
   font-family: inherit;
 }
-/* 主模型递给帮手的话落在帮手的时间线里：与补言同形，印用金（朱留给人自己说话） */
+/* 主模型递给帮手的话落在帮手的时间线里、作答途中回来的回报落在主行迹里：与补言同形，印用金（朱留给人自己说话）。
+   回报那一步可点，点开即那名帮手或挂那条后台指令的那一步 */
+.tool-step-relay > .tool-step-head {
+  cursor: pointer;
+}
+.tool-step-relay > .tool-step-head .tool-label,
+.tool-step-relay > .tool-step-head .tool-title {
+  color: var(--gold);
+}
+.tool-step-note[data-tool="relay_note"] .note-seal,
 .tool-step-note[data-tool="helper_note"] .note-seal {
   border-color: var(--gold);
   color: var(--gold);

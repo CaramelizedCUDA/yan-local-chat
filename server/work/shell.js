@@ -108,10 +108,13 @@ module.exports = function createShell({ toolEnv }) {
   const BACKGROUND_KEEP = 24,
     backgroundJobs = new Map();
   let backgroundSeq = 0;
+  // 编号在桥接重启后从 bg1 重数：另记一个带这次启动标记的 key，页面刷新后重新等上时按它认，不会等到别的指令上
+  const BOOT = Date.now().toString(36);
   function startBackground(command, workdir, boxed) {
     const child = spawnShell(command, workdir, { boxed }),
       job = {
         id: `bg${++backgroundSeq}`,
+        key: `${BOOT}-${backgroundSeq}`,
         command,
         child,
         exitCode: null,
@@ -140,6 +143,11 @@ module.exports = function createShell({ toolEnv }) {
     child.on("close", code => {
       job.exitCode = code ?? 1;
     });
+    // 结束了（或压根没起来）：等着它的页面据此叫醒模型（见 watchBackground）
+    job.ended = new Promise(resolve => {
+      child.once("close", resolve);
+      child.once("error", resolve);
+    });
     for (const [id, old] of backgroundJobs) if (backgroundJobs.size >= BACKGROUND_KEEP && old.exitCode !== null) backgroundJobs.delete(id);
     backgroundJobs.set(job.id, job);
     return job;
@@ -159,6 +167,7 @@ module.exports = function createShell({ toolEnv }) {
       err = fresh("err");
     return {
       id: job.id,
+      key: job.key,
       running: job.exitCode === null,
       exitCode: job.exitCode,
       stdout: tail(out, WORK_OUTPUT_LIMIT),
@@ -190,7 +199,25 @@ module.exports = function createShell({ toolEnv }) {
         });
       });
     }
-    return await backgroundReport(job, waitMs);
+    const report = await backgroundReport(job, waitMs);
+    // 模型自己看到它结束了：不必再叫醒一回
+    if (!report.running) job.reported = true;
+    return report;
   }
-  return { WORK_SHELL, killTree, runShell, startBackground, backgroundReport, checkBackground };
+  // 等后台指令结束再回话：页面据此叫醒模型，模型挂上就能收尾去睡，不必轮询。结束只报一回——
+  // 几处页面都在等、或刷新后重新等上的，后来的接手，先前的作罢（superseded）；报过的不再报（reported）；
+  // 桥接重启过，旧编号已不在（lost）
+  // 模型自己用 check_command 看到它结束了的，也算报过（reported，带上退出码，页面只把签改成已结束）
+  async function watchBackground(id, key, signal) {
+    const job = backgroundJobs.get(String(id || ""));
+    if (!job || (key && job.key !== key)) return { id, lost: true };
+    if (job.reported) return { id, reported: true, exitCode: job.exitCode };
+    const ticket = (job.watchTicket = (job.watchTicket || 0) + 1);
+    await Promise.race([job.ended, new Promise(resolve => signal?.addEventListener("abort", resolve, { once: true }))]);
+    if (ticket !== job.watchTicket || signal?.aborted) return { id, superseded: true };
+    if (job.reported) return { id, reported: true, exitCode: job.exitCode };
+    job.reported = true;
+    return { ...(await backgroundReport(job, 0)), command: job.command };
+  }
+  return { WORK_SHELL, killTree, runShell, startBackground, backgroundReport, checkBackground, watchBackground };
 };

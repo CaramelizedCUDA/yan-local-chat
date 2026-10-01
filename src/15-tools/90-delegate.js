@@ -29,6 +29,13 @@ defineTool({
   html: helperStepHtml,
   sync: syncHelperCard
 });
+// 作答途中回来的回报（帮手、后台指令）：落在行迹里它到达的那一刻，一小步，点开即那名帮手或挂它的那一步
+defineTool({
+  name: "relay_note",
+  label: "回报",
+  offer: false,
+  html: relayStepHtml
+});
 // 递给帮手的话：落在帮手自己的时间线里它到达的那一刻，待递转圈、递到打勾（与补言同一种画法）
 defineTool({
   name: "helper_note",
@@ -176,14 +183,16 @@ function launchHelper(step, args, ctx, past = null) {
     });
   renderHistory();
 }
-// 帮手的回报：这段对话正在作答，就进那一答的收件口，在回合边界递上；没在作答（主答只剩等待时已收尾），
-// 同一刻到的几份攒成一问另起一答——回报作这一问，页面上是一道细线（见 relayHtml），不是用户的话
-/** @type {Map<string, Array<{ report: string, step: Step, profile: Profile|null }>>} */
+// 帮手的回报（后台指令结束也走这里，见 20-command.js）：这段对话正在作答（模型布置完还在干别的），就进那一答的收件口，
+// 在回合边界递上，行迹里它到达的那一刻落一小步「回报」（与补言同样大小，递到打勾）；
+// 没在作答（主答只剩等待时已收尾），同一刻到的几份攒成一问另起一答——回报作这一问，两答之间是一道细线（见 relayHtml），不是用户的话。
+// relay 是那一项的画法（谁回来了），不给就按帮手画
+/** @type {Map<string, Array<{ report: string, step: Step, profile: Profile|null, relay?: any }>>} */
 const mailbags = new Map();
 /** @param {Conversation} conversation */
 function mailReport(conversation, item) {
   const job = requestJob(conversation.id);
-  if (job) return void job.queue.push(item);
+  if (job) return void deliverInline(conversation, job, item);
   const bag = mailbags.get(conversation.id);
   if (bag) return void bag.push(item);
   mailbags.set(conversation.id, [item]);
@@ -193,19 +202,47 @@ function mailReport(conversation, item) {
     wakeWithReports(conversation, items);
   }, 0);
 }
+/** @returns {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }} */
+function relayOf({ step, relay }) {
+  return relay || { step: step.id, title: String(step.title || ""), ok: step.status === "done" };
+}
+// 作答途中到的：行迹里落一步「回报」，递上后打勾（deliverSupplements 按 note 打勾）；这一答没来得及递就收尾了，
+// settleSupplements 把这一步撤下、回报另起一答
+/** @param {Conversation} conversation */
+function deliverInline(conversation, job, item) {
+  const host = conversation.messages.find(message => message.id === job.assistantId);
+  if (host) {
+    const relay = relayOf(item);
+    /** @type {Step} */
+    const note = {
+      id: `relay_${uid().slice(0, 8)}`,
+      name: "relay_note",
+      arguments: "{}",
+      status: "running",
+      title: relay.title,
+      relay,
+      at: host.content.length,
+      rat: String(host.reasoning || "").length
+    };
+    (host.steps ||= []).push(note);
+    item = { ...item, note };
+    refreshSteps(host);
+  }
+  job.queue.push(item);
+}
 /** @param {Conversation} conversation */
 function wakeWithReports(conversation, items) {
   if (!items.length || !store.conversations.includes(conversation)) return;
   // 攒着的这一会儿里有人开了一答（用户发了话、上一答收尾时补言另起了一问）：交给它
   const job = requestJob(conversation.id);
-  if (job) return void job.queue.push(...items);
+  if (job) return void items.forEach(item => deliverInline(conversation, job, item));
   /** @type {Message} */
   const user = {
     id: uid(),
     role: "user",
     content: items.map(item => item.report).join("\n\n"),
     timestamp: now(),
-    relay: items.map(({ step }) => ({ step: step.id, title: String(step.title || ""), ok: step.status === "done" }))
+    relay: items.map(relayOf)
   };
   const profile = profiles().find(p => p.id === items[0].profile?.id) || activeProfile();
   if (profile && !quotaBlocked(profile)) return void startTurn(conversation, user, profile);
@@ -440,6 +477,17 @@ function helperStepHtml(step) {
     said = text.split("\n").find(Boolean) || "",
     fresh = kind === "传话" && status !== "error";
   return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"${step.ref ? ` data-ref="${escapeHtml(step.ref)}"` : ""}${step.noteId ? ` data-note="${escapeHtml(step.noteId)}"` : ""}><div class="tool-step-head" role="button" tabindex="0" title="${step.ref ? "看这名帮手" : ""}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">遣</span>${kind}</span><span class="tool-title" title="${escapeHtml(text)}">${escapeHtml(name)}${said ? `<span class="helper-said">${escapeHtml(said.slice(0, 80))}</span>` : ""}</span>${fresh ? `<span class="helper-fresh">已更新</span>` : ""}<span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "") : ""}">${status === "running" ? "" : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div></div>`;
+}
+/** @param {Step} step */
+function relayStepHtml(step) {
+  const relay = step.relay || { step: "", title: "", ok: true },
+    status = step.status || "done",
+    bg = relay.kind === "bg",
+    what = bg
+      ? `后台 ${relay.title} 已结束${relay.ok ? "" : ` · 退出码 ${relay.exitCode ?? "?"}`}`
+      : `帮手「${relay.title}」${relay.ok ? "回报" : "未完成"}`,
+    target = bg ? `data-relay-reveal="${escapeHtml(relay.step)}"` : `data-relay-step="${escapeHtml(relay.step)}"`;
+  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? "回到挂它的那一步" : "看这一趟的经过"}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? "候" : "遣"}</span>回报</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? "待递" : escapeHtml(step.result || "已递")}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 签的种类变了（参数拟完才知道是续派还是传话）就整张换；续派的签与差遣一样就地更新
 /** @param {Step} step */

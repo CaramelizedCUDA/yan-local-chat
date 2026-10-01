@@ -26,6 +26,14 @@
   // 沙箱环境备好时接在后面（{{kits}} 是装了什么）：python、pip、npm 已指向它，缺的装进它，不必动系统
   env: "此机另备一套开发环境：{{kits}}。python、pip、uv、npm 与所列工具链都指向它，缺的库直接 pip / npm i -g / go get / cargo 装进来，不动系统。",
 
+  // 后台指令：bgStarted 是挂上时回给模型的话（结束会叫醒它）；bgStartedQuiet 给帮手（它收工后没人可叫醒）；
+  // bgDone 是结束时送给模型的一条消息（正作答就进这一答，没在作答就另起一答），不是系统提示
+  bgStarted:
+    "后台指令 {{id}} 已开始（头 {{seconds}} 秒的输出如下）。它结束时结果会作为一条消息送到，不必轮询；要看中途输出或提前结束，用 check_command。",
+  bgStartedQuiet: "后台指令 {{id}} 已开始（头 {{seconds}} 秒的输出如下），用 check_command 取新输出或结束它。",
+  bgDone:
+    "后台指令 {{id}}（{{command}}）已结束，退出码 {{exitCode}}，共 {{duration}}。新的输出：\n--- stdout ---\n{{stdout}}\n--- stderr ---\n{{stderr}}",
+
   windowsShell: "指令用 PowerShell 语法（多条以 ; 相连，用 cmdlet），不要 && 与 bash 写法。",
 
   skipped: "用户跳过了这条指令。请改用其他做法，或先向用户说明为何需要它。",

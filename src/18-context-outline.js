@@ -475,7 +475,10 @@ function conversationMarkdown(c) {
       continue;
     }
     if (m.role === "user" && m.relay) {
-      lines.push(`*${m.relay.map(item => `帮手「${exportMarkdownLabel(item.title)}」${item.ok ? "回报" : "未完成"}`).join(" · ")}*`, "");
+      lines.push(
+        `*${m.relay.map(item => (item.kind === "bg" ? `后台 ${item.title} 已结束 · 退出码 ${item.exitCode ?? "?"}` : `帮手「${exportMarkdownLabel(item.title)}」${item.ok ? "回报" : "未完成"}`)).join(" · ")}*`,
+        ""
+      );
       continue;
     }
     if (m.role === "user") {
