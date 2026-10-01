@@ -135,7 +135,8 @@ function bindApprovalEvents() {
     c.commandPolicy = nextCommandPolicy(commandPolicyOf(c));
     saveStore();
     renderWorkAuto();
+    // 只放行指令与外部服务的请示；等着作答的表单不是「批不批」，不能拿 true 打发掉
     if (c.commandPolicy !== "ask")
-      for (const [stepId, entry] of pendingApprovals) if (entry.conversationId === c.id) settleApproval(stepId, true);
+      for (const [stepId, entry] of pendingApprovals) if (entry.conversationId === c.id && !entry.step.form) settleApproval(stepId, true);
   };
 }

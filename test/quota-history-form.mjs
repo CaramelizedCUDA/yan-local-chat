@@ -232,6 +232,15 @@ await evalJs(
 await waitFor(
   `!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelectorAll("#approvalBar .ask-q").length === 2`
 );
+// 表单等着作答时切权限档位（问 → 审 → 径 → 问）：放行的是指令的请示，表单不能被当成「未作答」打发掉
+await evalJs(`for (let i = 0; i < 3; i++) document.querySelector("#workAuto").click(); true`);
+await sleep(300);
+check(
+  "switching the command policy leaves a pending form waiting",
+  await evalJs(
+    `!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelectorAll("#approvalBar .ask-q").length === 2 && document.querySelector("#workAuto").textContent === "问而后行"`
+  )
+);
 check(
   "form pops above the composer, one question per page",
   await evalJs(

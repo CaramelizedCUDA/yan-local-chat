@@ -266,9 +266,15 @@ function normalizeDraft(value) {
   return {
     text: String(value.text || ""),
     attachments: Array.isArray(value.attachments) ? value.attachments : [],
+    // 游目圈点的引文另带给模型的一份（model）与网址（url）：漏了，模型便不知道圈在哪、引文也回不到那一页
     quote:
       value.quote && typeof value.quote === "object" && value.quote.text
-        ? { text: String(value.quote.text), messageId: String(value.quote.messageId || "") }
+        ? {
+            text: String(value.quote.text),
+            messageId: String(value.quote.messageId || ""),
+            ...(value.quote.model ? { model: String(value.quote.model) } : {}),
+            ...(value.quote.url ? { url: String(value.quote.url) } : {})
+          }
         : null,
     ...(value.updatedAt ? { updatedAt: value.updatedAt } : {})
   };
