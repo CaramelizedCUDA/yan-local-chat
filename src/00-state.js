@@ -228,7 +228,7 @@ function prompt(path, vars = {}) {
 function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
-const APP_VERSION = "0.3.0"; // 与 package.json 同步；以桥接返回的为准
+const APP_VERSION = "0.4.0"; // 与 package.json 同步；以桥接返回的为准
 const LOCAL_BRIDGE = "http://127.0.0.1:8787";
 const FILE_DB_NAME = "yan-chat-files-v1";
 const FILE_STORE_NAME = "attachments";

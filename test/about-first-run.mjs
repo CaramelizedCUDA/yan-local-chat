@@ -1,5 +1,7 @@
 // 作品感检查：首次使用引导、关于页、类替代内联样式
+import { readFileSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK, TMP } from "./lib.mjs";
+const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 const { send, evalJs, waitFor, shot, close } = await connect();
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
@@ -30,7 +32,10 @@ const about = await evalJs(
 );
 check(
   "about tab renders",
-  about.version?.startsWith("v0.3.0") && about.sections.join() === "数据与边界,键与操作,开源致谢" && about.credits === 7 && about.kbd >= 3,
+  about.version?.startsWith(`v${VERSION}`) &&
+    about.sections.join() === "数据与边界,键与操作,开源致谢" &&
+    about.credits === 7 &&
+    about.kbd >= 3,
   JSON.stringify(about)
 );
 check(
