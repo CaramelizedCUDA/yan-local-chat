@@ -37,7 +37,7 @@ const version = await (await fetch(DEBUG + "/json/version")).json();
 const browser = new WebSocket(version.webSocketDebuggerUrl);
 await new Promise(r => (browser.onopen = r));
 let seq = 0;
-const browserSend = (method, params = {}) =>
+const browserSend = (method, params = {}, sessionId) =>
   new Promise(resolve => {
     const id = ++seq;
     const listener = e => {
@@ -48,7 +48,7 @@ const browserSend = (method, params = {}) =>
       }
     };
     browser.addEventListener("message", listener);
-    browser.send(JSON.stringify({ id, method, params }));
+    browser.send(JSON.stringify({ id, method, params, sessionId }));
   });
 const { targetId } = await browserSend("Target.createTarget", {
   url: "data:text/html;charset=utf-8," + encodeURIComponent(html),
@@ -320,6 +320,10 @@ await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Es
 await sleep(150);
 check("Esc leaves wide", await evalJs(`!document.querySelector("#stagePanel").classList.contains("wide")`));
 
+// 模型定死了视口（browser_resize）：窗口管不着网页，看台变宽窄时别去调窗口——不然一回小一圈
+const { sessionId: pinned } = await browserSend("Target.attachToTarget", { targetId, flatten: true });
+await browserSend("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1200, deviceScaleFactor: 0, mobile: false }, pinned);
+const framed = (await browserSend("Browser.getWindowForTarget", { targetId })).bounds;
 // 拖左缘：宽度有下限，也给对话留出地方
 const grip = await evalJs(
   `(r => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 }))(document.querySelector("#stageGrip").getBoundingClientRect())`
@@ -329,6 +333,11 @@ await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1370, y: grip.y,
 await mouse("mouseReleased", 1370, grip.y);
 check("drag narrows to the floor", (await evalJs(`document.querySelector("#stagePanel").getBoundingClientRect().width`)) === 320);
 check("width is remembered", (await evalJs(`localStorage.getItem("yan-stage-width")`)) === "320");
+await sleep(800);
+const later = (await browserSend("Browser.getWindowForTarget", { targetId })).bounds;
+check("a pinned viewport keeps the window as it is", later.width === framed.width && later.height === framed.height, JSON.stringify({ framed, later }));
+await browserSend("Emulation.clearDeviceMetricsOverride", {}, pinned);
+await browserSend("Target.detachFromTarget", { sessionId: pinned });
 
 // 旁注开着时看台让位（旁注是在右侧同一处）：让位时不收画面、入口回来；旁注收起，画面接上
 await evalJs(`document.querySelector("#sidePanel").classList.remove("hidden"); true`);
