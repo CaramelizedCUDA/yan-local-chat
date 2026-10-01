@@ -102,13 +102,38 @@ async function openImageViewer(id, trigger = null) {
   }
 }
 
+// 自拟的与前人成句相杂，各按时辰；成句只取一联中的一句或一联，不改字
 const GREETINGS = {
-  night: ["夜深墨浓", "夜深人静，正宜长谈", "夜色未央，笔墨相候", "长夜无声，一纸独明"],
-  morning: ["晨光入砚", "新墨初研", "清晨落笔，心思澄明", "晨露未晞，素纸已展"],
-  day: ["落笔，便有回声", "案上清宁，纸有余白", "一纸铺展，静候墨来", "日色平和，纸墨相候"],
-  evening: ["灯下长谈，不觉夜深", "一灯如豆，纸墨相亲", "暮色入窗，墨色渐深", "日暮灯明，余墨尚多"]
+  night: ["夜深墨浓", "长夜无声，一纸独明", "何当共剪西窗烛", "更深月色半人家", "夜阑卧听风吹雨", "星垂平野阔", "万籁此都寂"],
+  morning: ["晨光入砚", "新墨初研", "晨露未晞，素纸已展", "鸡声茅店月", "初日照高林", "山光悦鸟性", "晴窗细乳戏分茶"],
+  day: [
+    "落笔，便有回声",
+    "案上清宁，纸有余白",
+    "此中有真意，欲辨已忘言",
+    "问渠那得清如许",
+    "行到水穷处，坐看云起时",
+    "闲坐小窗读周易",
+    "言有尽而意无穷"
+  ],
+  evening: [
+    "灯下长谈，不觉夜深",
+    "一灯如豆，纸墨相亲",
+    "暮色入窗，墨色渐深",
+    "日暮灯明，余墨尚多",
+    "山气日夕佳",
+    "落霞与孤鹜齐飞",
+    "却话巴山夜雨时"
+  ]
 };
-const WORK_GREETINGS = ["言毕，即行", "墨未干，事已行", "纸上落言，案前成事", "言之所至，行必随之"];
+const WORK_GREETINGS = [
+  "言毕，即行",
+  "墨未干，事已行",
+  "纸上落言，案前成事",
+  "绝知此事要躬行",
+  "敏于事而慎于言",
+  "道虽迩，不行不至",
+  "工欲善其事，必先利其器"
+];
 const greetingPick = Math.random();
 function greeting() {
   if (workMode()) return WORK_GREETINGS[Math.floor(greetingPick * WORK_GREETINGS.length)];
@@ -492,7 +517,7 @@ function bindComposerEvents() {
     }).observe($("#composerArea"));
   // 对话里与欢迎页各一个引文框，✕ 同一个办法
   /** @type {HTMLElement} */ for (const close of document.querySelectorAll("[data-quote-close]"))
-    (close).onclick = () => {
+    close.onclick = () => {
       pendingQuote = null;
       renderQuote();
       persistDraft();
