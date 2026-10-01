@@ -121,7 +121,13 @@ async function listenLoad(track, play = false) {
   if (follow && listenShown?.key !== track.key) listenShowPage(track);
   // 预览器关页时会收回自己造的 blob 地址，喇叭另要一份自己管
   let url = track.url;
-  if (url.startsWith("blob:")) url = listenOwnUrl = URL.createObjectURL(new Blob([await track.bytes()]));
+  if (url.startsWith("blob:")) {
+    const bytes = await track.bytes();
+    // 读着字节的工夫已换了曲（快点上下首）或收了喇叭：这一份作废，别盖掉后来那一首
+    if (listenTrack !== track) return;
+    if (listenOwnUrl) URL.revokeObjectURL(listenOwnUrl);
+    url = listenOwnUrl = URL.createObjectURL(new Blob([bytes]));
+  }
   el.src = url;
   if (play) await listenPlay();
   listenSync();
