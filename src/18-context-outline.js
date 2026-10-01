@@ -188,13 +188,13 @@ async function summarize(profile, ask, signal, reasoning = "") {
   if (!summary) throw Error(temp.reasoning ? "模型只写了思考、没写出摘要（输出被上限截断）" : "模型没有写出摘要");
   return summary;
 }
-// 分隔上的摘要进历史：一问一答的样子，各家接口都认
+// 分隔上的摘要进历史：一问一答的样子，各家接口都认（说法见 prompts/assistant.js 的 summary）
 /** @returns {Array<Record<string, any>>} */
 function summaryMessages(marker) {
   if (!marker?.summary) return [];
   return [
-    { role: "user", content: `［前文摘要］此前的对话已压缩为以下摘要，请以此为准接着谈：\n\n${marker.summary}` },
-    { role: "assistant", content: "已了解前文，请继续。" }
+    { role: "user", content: prompt("assistant.summary", { summary: marker.summary }) },
+    { role: "assistant", content: prompt("assistant.summaryAck") }
   ];
 }
 // 一答收尾后：下一问估算已过这个模型窗口的七成半，就趁用户读、写的工夫把前文压成摘要。

@@ -21,15 +21,20 @@
 
   // 轮内压缩：一答（或一名帮手）之内工具往来快撑满窗口时，把较早的往来压成工作笔记，单独发起的一次请求；
   // 笔记作为一条 assistant 消息代替原文，folded 紧随其后请它接着做
-  fold:
-    "你在做下面这件事，途中的工具往来快占满上下文了。把这些往来压成一份工作笔记，代替原文供你接着做：已查明的事实与结论（留关键的路径、行号、命令、数字）、改过的文件与现状、验证过与没验证的、走不通的路、下一步。分点，不复述过程，不超过 1500 字。直接输出笔记本身。\n\n任务：\n{{task}}\n\n往来：\n{{transcript}}",
+  fold: "你在做下面这件事，途中的工具往来快占满上下文了。把这些往来压成一份工作笔记，代替原文供你接着做：已查明的事实与结论（留关键的路径、行号、命令、数字）、改过的文件与现状、验证过与没验证的、走不通的路、下一步。分点，不复述过程，不超过 1500 字。直接输出笔记本身。\n\n任务：\n{{task}}\n\n往来：\n{{transcript}}",
   folded: "［上下文将满，此前的工具往来已压成上面的笔记，原文不再保留。据此接着做，细节需要时重新查看。］",
 
+  // 前文压成摘要后，摘要以一问一答的样子排在历史最前（各家接口都认这种交替）；之后的往来照旧接在后面
+  summary: "［前文摘要］此前的对话压缩如下：\n\n{{summary}}",
+  summaryAck: "已了解前文。",
+
   // 以下几句是作答途中系统插进对话的话，不是系统提示：
-  // resume 断线后请模型从断处接着写（手点「继续生成」与自动续写共用）；roundLimit 工具轮次到顶；
+  // resume 断线后请模型从断处接着写（手点「继续生成」与自动续写共用）；roundLimit 工具轮次到顶（主答、旁注、帮手共用，「收尾」对帮手即回报）；
+  // declined 是用户没批这一步（指令、外部服务的调用）时回给模型的工具结果；
   // supplement / steer 是用户补言的前缀——前者接在工具结果之后递上，后者是把正在写的一轮停在句尾、插进这句话再请它接着写
   resume: "上一条回复在此处因连接中断。请仅从中断处继续，不要重复已生成的内容。",
-  roundLimit: "工具调用轮次已达上限，请不要再调用工具，直接根据已有结果作答，并说明尚未完成的部分。",
+  roundLimit: "工具调用轮次已达上限：不再调用工具，就已有结果收尾，并说明尚未完成的部分。",
+  declined: "用户没有同意这一步。可换个做法，或先向用户说明为何需要它。",
   // 「仍是这一答」：补言在历史里是一条新的用户消息，不点明，模型会把它当新一问，收尾只交代补言之后的那一截
   supplement: "［作答途中用户补充的话，仍是这一答］",
   steer: "［作答途中用户插了一句，你写到此处暂停。读后接着这一答写，可据此改变方向，已写的不必重复］",
@@ -44,11 +49,15 @@
 //   mode  work 只给行（绑了目录），chat 只给言
 //   roles 只给这几种请求：main 主答、side 旁注、sub 帮手；不写即三种都带
 // 要填值、或视情形不带的（环境没备好、没有 MCP 服务附用法……），由 src/14-chat-engine.js 的 PROMPT_VARS 给出，给 null 即这回不带。
-// test/prompt-size.cjs 也照这张表拼，量出来的数与页面一致
+// test/prompt-size.mjs 用页面同一份代码拼，量出来的数与页面一致
 window.YAN_PROMPTS.order = [
   { key: "assistant.today" },
+  { key: "work.role", tool: "run_command", mode: "work", roles: ["main"] },
+  // 帮手的身份与主答的执事身份同一个位置：先知道自己是谁，再读环境
+  { key: "delegate.system", roles: ["sub"] },
   { key: "work.hint", tool: "run_command", mode: "work" },
   { key: "work.archive", tool: "run_command", mode: "chat" },
+  { key: "work.deliver", tool: "run_command", mode: "chat", roles: ["main"] },
   { key: "work.env", tool: "run_command" },
   { key: "assistant.search", tool: "search_web" },
   { key: "memory.hint", tool: "remember" },
@@ -57,6 +66,5 @@ window.YAN_PROMPTS.order = [
   { key: "assistant.manner", mode: "chat", roles: ["main", "side"] },
   { key: "side.passage", roles: ["side"] },
   { key: "side.whole", roles: ["side"] },
-  { key: "side.noTools", roles: ["side"] },
-  { key: "delegate.system", roles: ["sub"] }
+  { key: "side.noTools", roles: ["side"] }
 ];

@@ -357,7 +357,6 @@ async function runDelegate(step, args, ctx, profile, past) {
       overrides,
       tally,
       roundLimit: subRoundLimit(),
-      limitPrompt: "delegate.limit",
       scope: sub.id
     });
     sub.status = "complete";

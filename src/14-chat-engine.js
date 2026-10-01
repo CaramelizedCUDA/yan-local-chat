@@ -542,7 +542,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       overrides,
       tally,
       roundLimit: toolRoundLimit(),
-      limitPrompt: "assistant.roundLimit",
       inbox: job,
       budget,
       onStatus: label => setJobLabel(conversation, job, label)
@@ -550,7 +549,11 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     trimReply(assistant);
     if (!assistant.content)
       throw Error(
-        assistant.steps?.length ? "模型执行工具后未返回正文，可点「继续生成」请它收尾" : "模型未返回正文，请适当提高最大输出长度后重试"
+        assistant.steps?.length
+          ? "模型执行工具后未返回正文，可点「继续生成」请它收尾"
+          : anthropicLike(profile)
+            ? "模型未返回正文，可在模型的高级配置里调高 max_tokens 后重试"
+            : "模型未返回正文，可重试"
       );
     assistant.status = "complete";
     conversation.updatedAt = now();
@@ -632,7 +635,7 @@ function newTally() {
  * @param {Message|SubAgent} target 写进哪里：主答、旁注的消息，或帮手
  * @param {Array<Record<string, any>>} history 送给接口的消息，就地追加
  * @param {{ profile: Profile, conversation: Conversation, host: Message, signal: AbortSignal, overrides: Record<string, any>,
- *   tally: ReturnType<typeof newTally>, roundLimit: number, limitPrompt: string, scope?: string, inbox?: any, budget?: number,
+ *   tally: ReturnType<typeof newTally>, roundLimit: number, scope?: string, inbox?: any, budget?: number,
  *   onFrame?: (() => void)|null, onStatus?: (label?: string) => void }} run
  *   host：步骤画在哪条消息上（帮手的步骤画在主答的差遣卡里）；scope：步骤记上属于哪名帮手；onStatus：网络重试这类状态
  */
@@ -745,7 +748,7 @@ async function runRounds(target, history, run) {
     if (++rounds > run.roundLimit) {
       const said = target.content.slice(roundStart).trim();
       if (said) history.push({ role: "assistant", content: said });
-      history.push({ role: "user", content: prompt(run.limitPrompt) });
+      history.push({ role: "user", content: prompt("assistant.roundLimit") });
       overrides.tools = null;
       target.content = paragraphBreak(target.content);
       continue;

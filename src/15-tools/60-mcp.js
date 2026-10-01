@@ -217,7 +217,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
   const ask = !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
   if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
-    return { ok: false, content: prompt("mcp.skipped"), display: "已跳过" };
+    return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
   }
   const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal).finally(
     stageWatch(tool, args)

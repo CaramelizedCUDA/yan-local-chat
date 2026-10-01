@@ -255,9 +255,7 @@ function renderSideIndex(c) {
   // 「＋」另起一条：正文里划着一段就注在那一段上；没划就是就整条回复而谈（从哪条回复进来的就是哪条，否则是最末一答）
   $("#sideMessages").innerHTML =
     `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? `${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="划选正文中的一段即注在那一段上；未划选则就整条回复而谈"><span>＋</span>另起一条</button></div></div>${
-      items
-        ? items
-        : `<div class="side-empty">还没有旁注</div>`
+      items ? items : `<div class="side-empty">还没有旁注</div>`
     }</div>`;
   renderSideSend();
 }
@@ -570,7 +568,6 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       overrides,
       tally,
       roundLimit: toolRoundLimit(),
-      limitPrompt: "assistant.roundLimit",
       onFrame
     });
     trimReply(assistant);

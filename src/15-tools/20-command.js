@@ -28,7 +28,7 @@ defineTool({
     if (policy === "ask" && (!step.readOnly || step.sandboxWhy)) {
       if (!(await askApproval(step, ctx))) {
         step.skipped = true;
-        return { ok: false, content: prompt("work.skipped"), display: "已跳过" };
+        return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
       }
       escalated = !!step.sandboxWhy;
     }

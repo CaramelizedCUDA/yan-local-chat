@@ -4,8 +4,6 @@
 (window.YAN_PROMPTS ||= {}).mcp = {
   hint: "已接入的 MCP 服务附有用法，照办：\n{{servers}}",
 
-  skipped: "用户没有同意这次调用。请换做法，或先向用户说明为何需要它。",
-
   unknown: "没有这件工具：{{server}} / {{tool}}。{{known}}",
 
   badArgs: "调用 {{server}} / {{tool}} 的参数不合要求：{{problems}}。它收的参数：{{hint}}"
