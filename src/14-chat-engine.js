@@ -488,6 +488,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   renderHistory();
   const started = performance.now();
   const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
+  // 行迹题头的用时边做边走：长指令跑着时没有新字进来、不会重画，另起一只每秒一跳的钟
+  assistant.startedAt = Date.now();
+  const clock = isWork(conversation) ? setInterval(() => tickTrailClock(assistant), 1000) : null;
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
   const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
   // 用量在 finally 里结算：停止、断网、工具链中途出错，前面几轮已经花掉的墨也得记上，不能只在整答顺利收尾时记账
@@ -578,7 +581,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     }
   } finally {
     if (gaugeTicker) clearInterval(gaugeTicker);
+    if (clock) clearInterval(clock);
     assistant.durationMs = Math.round(performance.now() - started);
+    delete assistant.startedAt;
     // 帮手（差遣）自己跑的几轮也是这一答花的墨：这一次新起的步骤里已做完的帮手用量一并计入（续写时此前的已经记过）；
     // 还在后台做的，做完再记回这一答（见 chargeHelper）
     for (const step of (assistant.steps || []).slice(stepsBefore))

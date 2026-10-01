@@ -25,6 +25,8 @@ let panelLiveSeen = false,
   thoughtLive = false,
   nestedInTrail = 0,
   metaHelpers = "",
+  cardClock = "",
+  labelClock = "",
   panelOpened = false,
   breathing = false;
 const seen = [];
@@ -38,7 +40,7 @@ for (let i = 0; i < 200; i++) {
     }
   }
   const s = await evalJs(
-    `(d => d ? { status: d.dataset.status, trailNested: d.querySelectorAll(".tool-step").length, panelNested: document.querySelectorAll("#helperModal .tool-step").length, panelLive: document.querySelector("#helperModal .sub-trail")?.dataset.live, panelOpen: !document.querySelector("#helperModal").classList.contains("hidden"), running: document.querySelectorAll('.message.assistant .tool-step-delegate[data-status="running"]').length, bar: document.querySelector("#helperBar:not(.hidden)")?.textContent || "", endBar: !!document.querySelector(".message.assistant .change-bar"), streaming: document.querySelector(".message.assistant")?.dataset.status === "streaming", thought: !!document.querySelector('#helperModal .sub-timeline .reasoning[data-state="live"]'), meta: document.querySelector(".message.assistant .tool-stack-meta")?.textContent || "" } : null)(document.querySelector(".message.assistant .tool-step-delegate"))`
+    `(d => d ? { status: d.dataset.status, trailNested: d.querySelectorAll(".tool-step").length, panelNested: document.querySelectorAll("#helperModal .tool-step").length, panelLive: document.querySelector("#helperModal .sub-trail")?.dataset.live, panelOpen: !document.querySelector("#helperModal").classList.contains("hidden"), running: document.querySelectorAll('.message.assistant .tool-step-delegate[data-status="running"]').length, bar: document.querySelector("#helperBar:not(.hidden)")?.textContent || "", endBar: !!document.querySelector(".message.assistant .change-bar"), streaming: document.querySelector(".message.assistant")?.dataset.status === "streaming", thought: !!document.querySelector('#helperModal .sub-timeline .reasoning[data-state="live"]'), meta: document.querySelector(".message.assistant .tool-stack-meta")?.textContent || "", card: d.querySelector(".tool-meta")?.textContent || "", label: document.querySelector(".message.assistant .tool-stack-label")?.textContent || "" } : null)(document.querySelector(".message.assistant .tool-step-delegate"))`
   );
   if (s) seen.push(JSON.stringify(s));
   if (s?.status === "running" && s.panelOpen && s.panelNested >= 1 && s.panelLive === "true") panelLiveSeen = true;
@@ -50,6 +52,8 @@ for (let i = 0; i < 200; i++) {
   if (s?.thought) thoughtLive = true;
   if (s?.status === "running") breathing = true;
   if (/名帮手|帮手「/.test(s?.meta || "")) metaHelpers = s.meta;
+  if (s?.status === "running" && /^\d+ 步 · \d+ 秒$/.test(s.card)) cardClock = s.card;
+  if (/^工作中 · \d+ 秒$/.test(s?.label || "")) labelClock = s.label;
   // 面板里就地更新：给第一个做完的嵌套步骤做个记号，之后每次刷新都该还是同一个节点（整段换新会让输出闪、思绪合不上）
   if (s?.status === "running" && s.panelNested >= 1)
     await evalJs(
@@ -80,6 +84,8 @@ check(
   await evalJs(`(window.__markLost || 0) === 0 && !!document.querySelector('#helperModal .tool-step[data-mark]')`),
   await evalJs(`String(window.__markLost)`)
 );
+check("the helper marker shows elapsed time while it runs", !!cardClock, [...new Set(seen)].slice(-3).join(" | "));
+check("the trail head counts the time while the answer is written", !!labelClock, labelClock);
 check("trail summary names the helpers", /2 名帮手 · \d+ 步 · 进行中|帮手「.+」· \d+ 步 · 进行中/.test(metaHelpers), metaHelpers);
 check(
   "helper bar gone after completion",

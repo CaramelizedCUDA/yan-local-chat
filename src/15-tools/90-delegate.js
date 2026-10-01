@@ -336,10 +336,11 @@ async function runDelegate(step, args, ctx, profile, past) {
   crews.set(conversation.id, [...(crews.get(conversation.id) || []), box]);
   const tally = newTally(),
     started = performance.now();
+  sub.startedAt = Date.now();
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
   let painted = "";
   const paint = () => {
-    const sig = `${sub.content.length}|${sub.reasoning.length}|${sub.status}|${sub.steps.map(s => s.status).join("")}`;
+    const sig = `${sub.content.length}|${sub.reasoning.length}|${sub.status}|${sub.steps.map(s => s.status).join("")}|${Math.floor((Date.now() - sub.startedAt) / 1000)}`;
     if (sig === painted) return;
     painted = sig;
     refreshSteps(assistant);
@@ -385,6 +386,7 @@ async function runDelegate(step, args, ctx, profile, past) {
       }
     sub.usage = tally.usageKnown ? tally.usage : null;
     sub.durationMs = Math.round(performance.now() - started);
+    delete sub.startedAt;
     // 派它的那一答还在作答：墨由那一答收尾时一并算；已收尾了（只剩等待就收尾）就在这里记回去
     if (requestJob(conversation.id)?.assistantId !== assistant.id) chargeHelper(assistant, sub.usage, profile);
     // 回报是最后一段话；裁掉开头的空行，偏移跟着前移

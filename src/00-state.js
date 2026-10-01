@@ -37,6 +37,7 @@
  * @property {{ thinking: string, signature: string }[]|null} [thinkingBlocks]
  * @property {string} [report] 最后一轮说的话，即交回主模型的回报
  * @property {number} [durationMs]
+ * @property {number} [startedAt] 正在做时的起始时刻（毫秒），题头据此走用时；收工即删
  * @property {ToolCall[]|null} [toolCalls]
  */
 /**
@@ -103,6 +104,7 @@
  * @property {string} [error]
  * @property {string} [interruptedAt]
  * @property {number} [durationMs]
+ * @property {number} [startedAt] 正在作答时的起始时刻（毫秒），行迹题头据此走用时；收尾即删
  * @property {{ path: string, name: string, size: number }[]} [deliverables] 言里这一答做出的成品
  * @property {boolean} [work] 这一答是执事的（时间线画法）
  * @property {boolean} [toolsOpen]

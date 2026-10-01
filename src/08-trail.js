@@ -108,18 +108,26 @@ function syncSubSteps(details, sub, steps) {
   if (running) settleDetails(details, true);
   else settleDetails(details, false, null, true);
 }
+// 用时：不足一秒不写，一分以上带分
+function spentText(ms) {
+  const seconds = Math.round((Number(ms) || 0) / 1000);
+  return !seconds ? "" : seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分${seconds % 60 ? ` ${seconds % 60} 秒` : ""}`;
+}
 /** @param {Message} message */
 function trailLabel(message) {
   if (!trailWork(message)) return toolStackLabel();
-  if (message.status === "streaming") return "工作中";
-  const ms = Number(message.durationMs) || 0,
-    seconds = Math.round(ms / 1000);
-  const spent = !seconds
-    ? ""
-    : seconds < 60
-      ? `${seconds} 秒`
-      : `${Math.floor(seconds / 60)} 分${seconds % 60 ? ` ${seconds % 60} 秒` : ""}`;
+  if (message.status === "streaming") {
+    const live = message.startedAt ? spentText(Date.now() - message.startedAt) : "";
+    return live ? `工作中 · ${live}` : "工作中";
+  }
+  const spent = spentText(message.durationMs);
   return message.status === "complete" ? (spent ? `工作了 ${spent}` : "工作记录") : message.status === "stopped" ? "已搁笔" : "已中断";
+}
+// 作答途中每秒一跳：只换行迹题头那一行字，不重画整答
+/** @param {Message} message */
+function tickTrailClock(message) {
+  const label = document.querySelector(`[data-message="${CSS.escape(message.id)}"] .tool-stack.is-work > summary > .tool-stack-label`);
+  if (label) label.textContent = trailLabel(message);
 }
 /** @param {Message} message */
 function trailMeta(message) {
@@ -200,7 +208,14 @@ function delegateSubState(step) {
     steps,
     live,
     report: live ? "" : String(sub?.report || "").trim(),
-    meta: live ? (steps.length ? `${steps.length} 步 · 进行中` : "领命中") : String(step.result || "")
+    meta: live
+      ? [
+          steps.length ? `${steps.length} 步` : "领命中",
+          (sub?.startedAt && spentText(Date.now() - sub.startedAt)) || (steps.length ? "进行中" : "")
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : String(step.result || "")
   };
 }
 // 步骤按 id 就地更新：没变的节点一律不动（转圈不重启、已展开的结果不跳）；新步骤淡入上移，结果首次出现或状态翻转时只让那一条轻浮。
