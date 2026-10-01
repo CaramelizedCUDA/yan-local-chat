@@ -16973,7 +16973,7 @@ async function stageFit() {
     const edgeX = bounds.width - port.clientWidth,
       edgeY = bounds.height - port.clientHeight;
     // 网页的视口被定死了（模型调过 browser_resize）：窗口管不着它，多出的边不是边，再照着调只会一回小一圈
-
+    if (edgeX < 0 || edgeY < 0 || edgeX > 120 || edgeY > 320) return;
     const width = Math.round(edgeX + want.width),
       height = Math.round(edgeY + want.height);
     if (bounds.windowState !== "normal" || (Math.abs(width - bounds.width) < 2 && Math.abs(height - bounds.height) < 2)) return;
