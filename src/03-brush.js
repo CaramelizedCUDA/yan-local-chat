@@ -189,6 +189,8 @@ const BRUSH_ICONS = {
     brushStroke([8.4, 16.8, 12.6, 16.2, 17, 16.6], 1.2, { tone: "ink2" }),
   // 查找：一笔圆相作镜，一笔顿下作柄
   search: () => brushArc(8.4, 8.4, 5, 120, 450, 1.6, { tail: 0.3 }) + brushStroke([12.2, 12.2, 14.2, 14.4, 16.8, 16.8], 2.3, { tail: 0.6 }),
+  // 明暗：一笔圆相，里头半边染墨——昼夜各半；换明暗时这一染转过半圈（见 styles/10-layout.css）
+  theme: () => `<path class="wash theme-wash" d="M10 3.6A6.4 6.4 0 0 1 10 16.4Z"/>` + brushArc(10, 10, 6.4, 200, 520, 1.7, { tail: 0.15 }),
   // 关于：一笔圆相，旁落一方小印
   about: () => brushArc(9.6, 9.8, 6.4, 200, 505, 2.2, { tail: 0.15 }) + brushSeal(14.8, 14.8, 2.2)
 };

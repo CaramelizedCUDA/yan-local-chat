@@ -746,67 +746,36 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   margin: 0 6px;
   background: color-mix(in srgb, var(--line) 85%, transparent);
 }
-/* 砚：亮色时是一方空砚上悬着一滴墨（点它落墨）；暗色时砚里蓄满了墨，只余一点纸光（点它天光） */
+/* 明暗：一笔圆相，半边染墨（昼夜各半）；换明暗时这一染转过半圈，悬停先转一点示意。
+   落选的：空砚悬一滴墨、暗时蓄满（几何圆线稿，与笔意小画不是一套）；通用的 ◐（见 设计稿/27 三） */
 .theme-toggle {
   width: 30px;
   height: 30px;
   display: grid;
   place-items: center;
   border-radius: 9px;
-  color: var(--ink-3);
-  transition:
-    background 0.16s,
-    color 0.16s;
+  transition: background 0.16s;
 }
 .theme-toggle:hover {
   background: var(--paper-2);
-  color: var(--ink-2);
 }
-.theme-toggle svg {
-  width: 18px;
-  height: 18px;
-  overflow: visible;
+.theme-toggle .brush {
+  width: 20px;
+  height: 20px;
 }
-.yan-rim {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1;
-}
-.yan-pool {
-  fill: var(--ink);
+.theme-toggle .brush .theme-wash {
+  fill: color-mix(in srgb, var(--ink) 32%, transparent);
   transform-origin: 10px 10px;
-  transform: scale(0);
-  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.yan-drop {
-  fill: var(--ink);
-  transform-origin: 12.4px 7.4px;
-  transition:
-    fill 0.3s,
-    transform 0.3s;
+.theme-toggle[data-theme="dark"] .theme-wash {
+  transform: rotate(180deg);
 }
-.theme-toggle[data-theme="dark"] .yan-pool {
-  transform: scale(1);
+.theme-toggle:hover .theme-wash {
+  transform: rotate(24deg);
 }
-.theme-toggle[data-theme="dark"] .yan-drop {
-  fill: var(--paper);
-  transform: scale(0.75);
-}
-.theme-toggle:hover .yan-drop {
-  animation: dropWobble 1.1s ease-in-out infinite;
-}
-@keyframes dropWobble {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(1.2px) scale(1.06, 0.94);
-  }
-}
-.theme-toggle[data-theme="dark"]:hover .yan-drop {
-  animation: none;
-  transform: scale(0.95);
+.theme-toggle[data-theme="dark"]:hover .theme-wash {
+  transform: rotate(204deg);
 }
 .quota {
   display: flex;

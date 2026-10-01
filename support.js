@@ -2147,6 +2147,8 @@ const BRUSH_ICONS = {
     brushStroke([8.4, 16.8, 12.6, 16.2, 17, 16.6], 1.2, { tone: "ink2" }),
   // 查找：一笔圆相作镜，一笔顿下作柄
   search: () => brushArc(8.4, 8.4, 5, 120, 450, 1.6, { tail: 0.3 }) + brushStroke([12.2, 12.2, 14.2, 14.4, 16.8, 16.8], 2.3, { tail: 0.6 }),
+  // 明暗：一笔圆相，里头半边染墨——昼夜各半；换明暗时这一染转过半圈（见 styles/10-layout.css）
+  theme: () => `<path class="wash theme-wash" d="M10 3.6A6.4 6.4 0 0 1 10 16.4Z"/>` + brushArc(10, 10, 6.4, 200, 520, 1.7, { tail: 0.15 }),
   // 关于：一笔圆相，旁落一方小印
   about: () => brushArc(9.6, 9.8, 6.4, 200, 505, 2.2, { tail: 0.15 }) + brushSeal(14.8, 14.8, 2.2)
 };
@@ -5901,16 +5903,6 @@ const icons = {
 function actionIcon(action, title, icon) {
   return `<button class="message-action" data-action="${action}" title="${title}" aria-label="${title}">${icon}</button>`;
 }
-function fileTypeLabel(file) {
-  const match = String(file.name || "").match(/\.([^.]+)$/),
-    extension = match?.[1]?.replace(/[^a-z0-9]/gi, "").toUpperCase();
-  if (extension) return extension.slice(0, 7);
-  const subtype = String(file.mime || "")
-    .split("/")[1]
-    ?.split(/[;+]/)[0]
-    ?.toUpperCase();
-  return (subtype || "FILE").slice(0, 7);
-}
 function formatFileSize(value) {
   const bytes = Number(value || 0);
   return bytes < 1024
@@ -5919,14 +5911,14 @@ function formatFileSize(value) {
       ? `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`
       : `${(bytes / 1048576).toFixed(1)} MB`;
 }
-function kindGlyph(kind) {
-  return { image: "画", text: "文", audio: "音", video: "影" }[kind] || "卷";
-}
+// 一件附件是一条「件条」：与卷宗同一张件图（图片换成它自己的缩略），名字，大小。见 设计稿/27 三·甲
 function attachmentCard(file, index, sent = false) {
-  const type = fileTypeLabel(file),
-    title = `${file.name} · ${formatFileSize(file.size)}`;
-  const thumb = file.kind === "image" && file.id ? `<img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt="">` : "";
-  const body = `${thumb}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-mark" aria-hidden="true">${kindGlyph(displayKind(file))}</span><span class="attachment-type">${escapeHtml(type)}</span>`;
+  const title = `${file.name} · ${formatFileSize(file.size)}`;
+  const figure =
+    file.kind === "image" && file.id
+      ? `<span class="fi fi-thumb" aria-hidden="true"><img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt=""></span>`
+      : fileFigure(file.name);
+  const body = `${figure}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-size">${formatFileSize(file.size)}</span>`;
   const save = file.id
     ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="收入卷宗" aria-label="收入卷宗">藏</button>`
     : "";
@@ -11260,14 +11252,14 @@ function changeSummaryInner(message, open) {
   if (!stats.files.length) return "";
   return `<button type="button" class="change-summary" aria-expanded="${open}"><span class="seal change-seal" aria-hidden="true">改</span><span class="change-title">改动 ${stats.files.length} 个文件</span><span class="change-count">${changeCountHtml(stats)}${changeSpark(stats.added, stats.removed)}</span></button>${changeFilesHtml(stats, open)}`;
 }
-// 成品：言里这一答在卷宗根目录新出或改过的文件。一件一行：类型、文件名、大小，右侧「看」（悬浮预览）与「下载」
+// 成品：言里这一答在卷宗根目录新出或改过的文件。一件一行：件图、文件名、大小，右侧「看」（悬浮预览）与「下载」
 // 卷宗里已经删掉的成品：条目留着（这一答确实出过这件），但标成「已移出卷宗」，不再给看与下载的按钮
 function deliverableMissing(path) {
   return archiveEntries !== null && !archiveEntries.some(entry => entry.path === path);
 }
 function deliverableFileHtml(f) {
   const missing = deliverableMissing(f.path);
-  return `<div class="deliver-file${missing ? " missing" : ""}" data-deliver="${escapeHtml(f.path)}"><span class="deliver-type">${escapeHtml(fileTypeLabel(f))}</span><span class="deliver-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</span><small>${formatFileSize(f.size)}</small>${
+  return `<div class="deliver-file${missing ? " missing" : ""}" data-deliver="${escapeHtml(f.path)}">${fileFigure(f.name, f.path)}<span class="deliver-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</span><small>${formatFileSize(f.size)}</small>${
     missing
       ? `<span class="deliver-gone">已移出卷宗</span>`
       : `<button type="button" class="deliver-btn" data-deliver-action="view" title="在此预览，不必下载">预览</button><button type="button" class="deliver-btn" data-deliver-action="download" title="另存到本机">下载</button>`
@@ -15872,10 +15864,42 @@ async function listenPeaks(track) {
   listenPeakCache.set(track.key, peaks);
   return peaks;
 }
-const listenBarsHtml = peaks =>
-  Array.from({ length: LISTEN_BARS }, (_, i) => `<i style="height:${Math.max(6, Math.round((peaks ? peaks[i] : 0.18) * 100))}%"></i>`).join(
-    ""
-  );
+// 圆相：一曲是一笔圆，自正上方偏左起笔、顺时针走 336 度，缺口留在左上；声音的强弱就是笔的粗细。
+// 每一段记下角度与笔宽：起笔处渐粗、收笔处出锋；正在放的那一点是笔尖（见 listenRingD）
+const LISTEN_RING = { c: 150, r: 118, from: -78, span: 336 };
+const listenRings = new Map();
+function listenRing(track) {
+  const peaks = listenPeakCache.get(track.key);
+  if (peaks && listenRings.has(track.key)) return listenRings.get(track.key);
+  const n = LISTEN_BARS,
+    soft = Array.from({ length: n }, (_, i) => {
+      let sum = 0,
+        count = 0;
+      for (let j = Math.max(0, i - 2); j <= Math.min(n - 1, i + 2); j++) (sum += peaks ? peaks[j] : 0.18), count++;
+      return sum / count;
+    }),
+    ring = soft.map((peak, i) => {
+      let width = 2.4 + peak * 15;
+      if (i < 8) width *= 0.55 + (0.45 * i) / 8;
+      if (i > n - 10) width *= (n - 1 - i) / 9 + 0.15;
+      return { angle: ((LISTEN_RING.from + (LISTEN_RING.span * i) / (n - 1)) * Math.PI) / 180, width };
+    });
+  if (peaks) listenRings.set(track.key, ring);
+  return ring;
+}
+function listenRingD(ring, from, to, tip = false) {
+  const { c, r } = LISTEN_RING,
+    outer = [],
+    inner = [];
+  for (let i = from; i <= to; i++) {
+    const half = (ring[i].width * (tip && i === to ? 0.3 : 1)) / 2,
+      cos = Math.cos(ring[i].angle),
+      sin = Math.sin(ring[i].angle);
+    outer.push(`${listenN(c + (r + half) * cos)} ${listenN(c + (r + half) * sin)}`);
+    inner.unshift(`${listenN(c + (r - half) * cos)} ${listenN(c + (r - half) * sin)}`);
+  }
+  return `M${[...outer, ...inner].join("L")}Z`;
+}
 
 // ---------- 放音 ----------
 function listenInit() {
@@ -15977,14 +16001,9 @@ async function listenSeek(ratio, track = listenTrack) {
   else el.addEventListener("loadedmetadata", go, { once: true });
 }
 
-// ---------- 一面：预览里的整页 ----------
-const LISTEN_ICONS = {
-  play: `<path d="M6 3.5L16.5 10L6 16.5Z"/>`,
-  pause: `<rect x="5" y="3.5" width="3.4" height="13" rx="1"/><rect x="11.6" y="3.5" width="3.4" height="13" rx="1"/>`,
-  prev: `<path d="M15 4.5L7 10L15 15.5Z"/><rect x="4" y="4.5" width="2" height="11"/>`,
-  next: `<path d="M5 4.5L13 10L5 15.5Z"/><rect x="14" y="4.5" width="2" height="11"/>`
-};
-const listenIcon = name => `<svg viewBox="0 0 20 20" aria-hidden="true">${LISTEN_ICONS[name]}</svg>`;
+// ---------- 一面：预览里的整页（设计稿/27 一 · 乙 · 圆相）：圆里是题名、时刻与钮，旁边是出处、音量与同夹的曲 ----------
+// 落选的：一行灰柱声纹 + 黑圆钮 + 滑杆音量（通用播放器的骨架，见 设计稿/18 二甲）；远山声纹、簿录一行一曲（设计稿/27 一）
+const LISTEN_VOLUME_STEPS = 7;
 function listenPageHtml(track) {
   listenShown = track;
   const stage = $("#fileViewerStage");
@@ -15996,10 +16015,10 @@ function listenPageHtml(track) {
   if (!listenTrack || listenEl().paused)
     setTimeout(() => void (listenShown === track && listenTrack?.key !== track.key && listenLoad(track)), 0);
   setTimeout(async () => {
-    const peaks = await listenPeaks(track),
-      wave = $("#fileViewerStage .listen-wave");
-    if (wave && listenShown === track) {
-      wave.querySelectorAll("i").forEach((bar, i) => (bar.style.height = `${Math.max(6, Math.round((peaks ? peaks[i] : 0.18) * 100))}%`));
+    await listenPeaks(track);
+    const rest = $("#fileViewerStage .listen-rest");
+    if (rest && listenShown === track) {
+      rest.setAttribute("d", listenRingD(listenRing(track), 0, LISTEN_BARS - 1));
       listenRenderPage();
     }
   }, 0);
@@ -16008,16 +16027,20 @@ function listenPageHtml(track) {
     track.list.length > 1
       ? `<div class="listen-list">${track.list.map(item => `<button type="button" data-listen-pick="${escapeHtml(item.key)}"${item.key === track.key ? ' class="on"' : ""}>${escapeHtml(item.name.replace(/\.[^.]+$/, ""))}</button>`).join("")}</div>`
       : "";
-  return `<div class="listen-page"><div class="listen-card">
-    <p class="listen-title">${escapeHtml(track.name.replace(/\.[^.]+$/, ""))}</p><p class="listen-where">${escapeHtml(track.where)}</p>
-    <div class="listen-wave" data-listen-wave>${listenBarsHtml(listenPeakCache.get(track.key))}<span class="listen-head"></span></div>
-    <div class="listen-times"><span data-listen-now>0:00</span><span data-listen-total>—</span></div>
-    <div class="listen-row"><span></span><div class="listen-controls">
-      <button type="button" class="listen-step" data-listen-do="prev" title="上一首">${listenIcon("prev")}</button>
-      <button type="button" class="listen-play" data-listen-do="toggle" title="播放">${listenIcon("play")}</button>
-      <button type="button" class="listen-step" data-listen-do="next" title="下一首">${listenIcon("next")}</button>
-    </div><label class="listen-volume">音量<input type="range" min="0" max="1" step="0.01" value="${listenEl().volume}" data-listen-volume></label></div>
-    ${list}</div></div>`;
+  const dots = Array.from(
+    { length: LISTEN_VOLUME_STEPS },
+    (_, i) => `<button type="button" data-listen-volume="${i + 1}" aria-label="音量 ${i + 1}/${LISTEN_VOLUME_STEPS}"></button>`
+  ).join("");
+  return `<div class="listen-page">
+    <div class="listen-ring"><svg viewBox="0 0 300 300" data-listen-ring aria-hidden="true"><defs><filter id="listenRough" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="5"/><feDisplacementMap in="SourceGraphic" scale="2.4"/></filter></defs>
+      <g filter="url(#listenRough)"><path class="listen-rest" d="${listenRingD(listenRing(track), 0, LISTEN_BARS - 1)}"/><path class="listen-past" d=""/></g></svg>
+      <div class="listen-mid"><p class="listen-title">${escapeHtml(track.name.replace(/\.[^.]+$/, ""))}</p><span class="listen-clock" data-listen-clock>0:00 / —</span>
+        <div class="listen-controls">
+          <button type="button" class="listen-step" data-listen-do="prev" title="上一首" aria-label="上一首">${brushIcon("back")}</button>
+          <button type="button" class="listen-play" data-listen-do="toggle" title="播放">奏</button>
+          <button type="button" class="listen-step" data-listen-do="next" title="下一首" aria-label="下一首">${brushIcon("forward")}</button>
+        </div></div></div>
+    <div class="listen-aside"><p class="listen-where">${escapeHtml(track.where)}</p><div class="listen-volume" title="音量">音${dots}</div>${list}</div></div>`;
 }
 // 在预览里换摆另一曲：题名、下载都跟着这一曲
 function listenShowPage(track) {
@@ -16042,14 +16065,22 @@ function bindListenPage(stage) {
       }
       return;
     }
-    const wave = e.target.closest("[data-listen-wave]");
-    if (wave) {
-      const box = wave.getBoundingClientRect();
-      void listenSeek((e.clientX - box.left) / box.width, listenShown);
+    const volume = e.target.closest("[data-listen-volume]");
+    if (volume) {
+      listenEl().volume = Number(volume.dataset.listenVolume) / LISTEN_VOLUME_STEPS;
+      return listenRenderPage();
     }
-  });
-  stage.addEventListener("input", e => {
-    if (e.target.matches?.("[data-listen-volume]")) listenEl().volume = Number(e.target.value);
+    // 点在笔上（圆心一带是钮，不算）：按角度跳；点进缺口，就近归到头或尾
+    const ring = e.target.closest("[data-listen-ring]");
+    if (ring) {
+      const { c, r, from, span } = LISTEN_RING,
+        point = new DOMPoint(e.clientX, e.clientY).matrixTransform(ring.getScreenCTM().inverse()),
+        dx = point.x - c,
+        dy = point.y - c;
+      if (Math.abs(Math.hypot(dx, dy) - r) > 30) return;
+      const turn = ((((Math.atan2(dy, dx) * 180) / Math.PI - from) % 360) + 360) % 360;
+      void listenSeek(turn <= span ? turn / span : turn < span + (360 - span) / 2 ? 1 : 0, listenShown);
+    }
   });
 }
 function listenRenderPage() {
@@ -16058,15 +16089,16 @@ function listenRenderPage() {
   const el = listenEl(),
     live = listenTrack?.key === listenShown.key,
     ratio = live && el.duration ? el.currentTime / el.duration : 0,
-    lit = Math.round(ratio * LISTEN_BARS);
-  page.querySelectorAll(".listen-wave i").forEach((bar, i) => bar.classList.toggle("on", i < lit));
-  page.querySelector(".listen-head").style.left = `${ratio * 100}%`;
-  page.querySelector("[data-listen-now]").textContent = listenClock(live ? el.currentTime : 0);
-  page.querySelector("[data-listen-total]").textContent = live ? listenClock(el.duration) : "—";
+    at = Math.round(ratio * (LISTEN_BARS - 1));
+  page.querySelector(".listen-past").setAttribute("d", at > 0 ? listenRingD(listenRing(listenShown), 0, at, true) : "");
+  page.querySelector("[data-listen-clock]").textContent =
+    `${listenClock(live ? el.currentTime : 0)} / ${live ? listenClock(el.duration) : "—"}`;
   const playing = live && !el.paused,
     button = page.querySelector(".listen-play");
-  button.innerHTML = listenIcon(playing ? "pause" : "play");
+  button.textContent = playing ? "止" : "奏";
   button.title = playing ? "暂停" : "播放";
+  const level = Math.round(el.volume * LISTEN_VOLUME_STEPS);
+  page.querySelectorAll("[data-listen-volume]").forEach(dot => dot.classList.toggle("on", Number(dot.dataset.listenVolume) <= level));
 }
 
 // ---------- 另一面：顶栏上的玉佩（画法见 设计稿/22、23：玉用染不用勾，笔只留给绳） ----------

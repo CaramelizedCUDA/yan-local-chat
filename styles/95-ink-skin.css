@@ -122,22 +122,6 @@
   font-family: var(--title);
   letter-spacing: 0.06em;
 }
-.chip {
-  border-color: color-mix(in srgb, var(--accent) 14%, var(--line));
-  border-radius: 6px 10px 10px 10px;
-  background: color-mix(in srgb, var(--paper-2) 48%, transparent);
-  font-family: var(--title);
-  letter-spacing: 0.025em;
-}
-.chip .chip-glyph {
-  color: var(--accent);
-}
-.suggestion {
-  border-color: color-mix(in srgb, var(--accent) 13%, var(--line));
-  border-radius: 5px 10px 10px 10px;
-  font-family: var(--title);
-  letter-spacing: 0.025em;
-}
 .work-setup {
   border-color: color-mix(in srgb, var(--accent) 13%, var(--line));
   border-radius: 7px 12px 12px 12px;
