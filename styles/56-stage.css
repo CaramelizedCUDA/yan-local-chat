@@ -217,6 +217,7 @@
 
 /* 后退、前进、重载、地址、收藏：一行在纸上，与当前那张签连成一片；按钮是笔意小画 */
 .stage-nav {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;
@@ -239,11 +240,34 @@
   width: 17px;
   height: 17px;
 }
-.stage-nav button:hover {
+.stage-nav button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
-.stage-nav button:hover .brush {
+.stage-nav button:hover:not(:disabled) .brush {
   transform: translateY(-1px);
+}
+.stage-nav button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+/* 载入中：底边一道朱线自左往右走（不另做进度条，与分组靠线同一个意思） */
+.stage-nav.loading::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 30%;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent, var(--accent) 60%, transparent);
+  animation: stageLoad 1.1s ease-in-out infinite;
+}
+@keyframes stageLoad {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
 }
 .stage-url {
   flex: 1;
@@ -347,6 +371,65 @@
   letter-spacing: 0.14em;
 }
 
+/* 网页弹的提示框：画面上蒙一层薄纸，当中一张方角浮签、顶一道朱（与浮签同一个写法）；画在屏幕外的窗上看不到，这里另画 */
+.stage-dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--paper) 55%, transparent);
+}
+.stage-dialog-card {
+  width: min(380px, 100%);
+  padding: 16px 18px 14px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  background: var(--paper);
+  box-shadow: 0 12px 32px rgba(40, 30, 20, 0.12);
+}
+.stage-dialog-head {
+  color: var(--ink-3);
+  font: 12px var(--title);
+  letter-spacing: 0.14em;
+}
+.stage-dialog-text {
+  max-height: 40vh;
+  margin: 8px 0 14px;
+  overflow-y: auto;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.stage-dialog-input {
+  width: 100%;
+  margin: -4px 0 14px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: 13px;
+  outline: none;
+}
+.stage-dialog-input:focus {
+  border-color: var(--ink-3);
+}
+.stage-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.stage-dialog-actions .primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.stage-dialog-actions .primary:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
 /* 游目的入口：自页顶垂下的一笔朱竖，起笔顿、收笔出锋（与余墨、听音同一套笔墨，见 设计稿/30 甲）。靠近时笔往下舒一点，笔尖下浮出「游目」两字；
    模型正操作浏览器时笔尖下一粒朱一明一暗。挂在右缘内侧，离滚动条的命中层（.chat-scroll-grabber，贴右缘 14px、自顶栏下起）远远的。
    落选的：圆角带影、左缘一道朱条的书口签（网页侧边抽屉的通用画法）；绸带（与余墨、听音不是一种画法） */
@@ -415,6 +498,11 @@
   .stage-pin-ink,
   .stage-pin-text {
     transition: none;
+  }
+  .stage-nav.loading::after {
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
   }
 }
 

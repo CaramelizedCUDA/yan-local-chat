@@ -2113,15 +2113,6 @@ const BRUSH_ICONS = {
     brushStroke([8, 9, 11, 8.7, 14, 8.8], 1.1, { tone: "ink2" }) +
     brushStroke([8, 11.3, 10.2, 11.1, 12.4, 11.2], 1.1, { tone: "ink2" }) +
     brushSeal(15, 9.3, 1.9),
-  // 看台：一架小屏——屏面一片淡墨，上沿一笔横、两侧各一笔竖，一根立柱落在一笔座上，屏角一方小朱印
-  stage: () =>
-    `<rect class="wash" x="4.4" y="4.6" width="11.2" height="8.4" rx=".4"/>` +
-    brushStroke([3, 4.1, 10, 3.6, 17, 4.2], 1.8, { tail: 0.5 }) +
-    brushStroke([4, 4.4, 4.2, 9, 4, 13.4], 1.4, { tail: 0.4 }) +
-    brushStroke([16, 4.4, 15.8, 9, 16, 13.4], 1.4, { tail: 0.4 }) +
-    brushStroke([10, 13.2, 10.1, 14.8, 10, 16.2], 1.2, { tail: 0.6 }) +
-    brushStroke([6, 16.6, 10, 16.1, 14, 16.6], 1.6, { tail: 0.3 }) +
-    brushSeal(12.2, 9.6, 2),
   // 看台的几件小工具，只用墨、不落朱（朱留给「正在操作」）。后退：一笔自右向左的横，左端一撇一捺作头；前进反之
   back: () =>
     brushStroke([16, 10.2, 10, 9.6, 4.2, 10], 1.7, { tail: 0.2 }) +
@@ -15710,8 +15701,8 @@ const GUIDE = [
       },
       {
         h: "游目",
-        body: "模型所用的浏览器可收进言的右侧，不再另开一扇窗：令浏览器以调试口 `9288` 起、放行言的页面（playwright 的写法见仓库 docs/stage.md）。接上之后正文右缘上方夹着一张书口签（平时伏着只露一道朱线，指针靠近才抽出），点开即见其画面，可点、可滚、可打字，标签与浏览器同步；浏览器未开时点「打开浏览器」，言经那个服务把它请起来。「＋」新开一页，「收藏」列出浏览器里的收藏。拖左缘调宽窄，浏览器的窗口随之变大小；「阔」铺满整页。",
-        note: "模型正操作浏览器时，书口签那道朱线一明一暗，地址栏旁一粒朱。旁注开着时游目暂让，收起旁注即回。"
+        body: "模型所用的浏览器可收进言的右侧，不再另开一扇窗：令浏览器开调试口、放行言的页面（playwright 的写法见仓库 docs/stage.md），调试口言从那个服务的配置里自己读。接上之后正文右上自页顶垂下一笔朱竖，点它即见浏览器的画面，可点、可滚、可打字，标签与浏览器同步，模型换到哪一页便跟到哪一页；网页弹的提示框也画在画面上，可直接作答。浏览器未开时点「打开浏览器」，言经那个服务把它请起来。「＋」新开一页，书签带列出浏览器里的收藏，地址栏输网址或要搜的话皆可。拖左缘调宽窄，浏览器的窗口随之变大小；「阔」铺满整页。",
+        note: "模型正操作浏览器时，那一笔笔尖下一粒朱一明一暗，地址栏旁亦一粒朱。旁注开着时游目暂让，收起旁注即回。"
       }
     ]
   },
@@ -16631,15 +16622,15 @@ function listenViewerClosed(stop) {
 // 巧处：浏览器仍归 MCP（如 playwright）起、关与操作；看台只是另一个连上它调试口的看客——Page.startScreencast 收画面，Input.* 递点按。
 // 页面直接连调试口（浏览器以 --remote-allow-origins 放行言的页面），画面不过桥接；桥接只替页面问出连接的地址（server/stage.js）。
 // 标签照抄浏览器自己的（Target.setDiscoverTargets），不另分「成品」与「网页」：模型做的网页由它自己在浏览器里开，也就上了台。
-// 何时去连：开页时，与每次浏览器类的 MCP 调用之后（浏览器多半是这时起的）；断了就等下一次，不轮询。
+// 何时去连：开页时、打开看台时，与每次浏览器类的 MCP 调用之后（浏览器多半是这时起的）；断了就等下一次，不轮询。
+// 调试口与配置目录不另设，桥接从那个 MCP 服务的参数（及它 --config 的那份文件）里读出来。
 // 浏览器没开、或被关掉了：看台里点「打开浏览器」，言替你调一次那个 MCP 的 browser_navigate，浏览器照它的配置起来——言自己不起浏览器。
-// 旁注与看台同在右侧：旁注开着时看台让位（纯 CSS，见 styles/56-stage.css），旁注收起它就回来。
+// 旁注与看台同在右侧：旁注开着时看台让位（纯 CSS，见 styles/56-stage.css），让位时、言的页面在后台时都不收画面。
 // 网页的尺寸：playwright 有头时不设视口，网页多大即窗口多大——看台就把屏幕外那扇窗调成自己的大小（有下限，免得网站换成手机版），
-// 网页原大显示；窗口调不动的（设了视口的）照旧按宽高里较紧的一边缩放，点按按同一倍数换算回去
+// 网页原大显示；窗口调不动的（设了视口的）照旧按宽高里较紧的一边缩放，点按按同一倍数换算回去。
+// 浏览器自己画的那几样（网页弹的提示框、载入中、能否后退）在屏幕外的窗上看不到：看台照 Page 域的事件自己画
 
 const stage = {
-  // 调试口：模型所用的浏览器以 --remote-debugging-port 起在这里（见 docs/stage.md）
-  port: 9288,
   /** @type {WebSocket | null} */
   ws: null,
   /** @type {Promise<void> | null} */
@@ -16652,10 +16643,23 @@ const stage = {
   // setDiscoverTargets 会把已开着的页逐个报来：那些不算「新开」，别跟过去
   listing: false,
   current: "",
+  // 上回问到的浏览器前台那一页：模型换页（选签会把那页请到前台）时它变，看台跟过去；用户自己点签换的也记成前台，不算模型换页
+  front: "",
   attached: "",
   session: "",
   framed: false,
   meta: { width: 1280, height: 720 },
+  // 正看的那一页：载入中、能否后退前进、网页弹出的提示框
+  loading: false,
+  back: false,
+  forward: false,
+  /** @type {{ type: string, message: string, defaultPrompt?: string } | null} */
+  dialog: null,
+  // 浏览器配置目录里有收藏（桥接答的），才挂「收藏」
+  marks: false,
+  // 浏览器的调试口（桥接从配置里读出来的，只用来报错）
+  port: 0,
+  seen: false,
   busy: 0,
   launching: false,
   width: 0,
@@ -16668,10 +16672,18 @@ const stage = {
 };
 
 // ---------- 连上浏览器 ----------
+// 已连着时也问一回：模型若把别的页请到了前台（选签、新开），看台跟过去
 function stageLocate() {
-  if (stage.ws || stage.locating) return stage.locating || Promise.resolve();
-  stage.locating = bridge("/api/stage", { port: stage.port })
-    .then(({ ws, front }) => (ws ? stageConnect(ws, front) : undefined))
+  if (stage.locating) return stage.locating;
+  stage.locating = bridge("/api/stage", { args: stageConfig()?.args || [] })
+    .then(({ ws, front, marks, port }) => {
+      stage.marks = !!marks;
+      stage.port = port;
+      if (!stage.ws) return ws ? stageConnect(ws, front) : stageSync();
+      if (front && front !== stage.front && stage.tabs.has(front)) stageShow(front);
+      stage.front = front || stage.front;
+      stageSync();
+    })
     .catch(() => {})
     .finally(() => (stage.locating = null));
   return stage.locating;
@@ -16687,8 +16699,9 @@ function stageConnect(url, front) {
       if (stage.ws !== ws) return;
       stage.ws = null;
       stage.tabs.clear();
-      stage.current = stage.attached = stage.session = "";
+      stage.current = stage.front = stage.attached = stage.session = "";
       stage.framed = false;
+      stageResetPage();
       for (const waiter of stage.pending.values()) waiter.reject(Error("游目已断开"));
       stage.pending.clear();
       $("#stageFrame").removeAttribute("src");
@@ -16700,6 +16713,7 @@ function stageConnect(url, front) {
         stage.listing = true;
         await stageSend("Target.setDiscoverTargets", { discover: true });
         stage.listing = false;
+        stage.front = front;
         stageShow(stage.tabs.has(front) ? front : [...stage.tabs.keys()].at(-1) || "");
         stageSync();
       } catch {
@@ -16739,10 +16753,74 @@ function stageMessage(message) {
     else stageRender();
   } else if (message.method === "Target.detachedFromTarget") {
     if (params.sessionId === stage.session) stage.session = stage.attached = "";
-  } else if (message.method === "Page.screencastFrame" && message.sessionId === stage.session) {
+  } else if (message.sessionId && message.sessionId === stage.session) stagePageEvent(message.method, params);
+}
+// 正看的那一页上的事。主框架的 id 与页的 targetId 相同，子框架（iframe）的载入不算
+/** @param {string} method @param {any} params */
+function stagePageEvent(method, params) {
+  if (method === "Page.screencastFrame") {
     stageFrame(params.data, params.metadata.deviceWidth, params.metadata.deviceHeight);
-    void stageSend("Page.screencastFrameAck", { sessionId: params.sessionId }, message.sessionId).catch(() => {});
+    void stageSend("Page.screencastFrameAck", { sessionId: params.sessionId }, stage.session).catch(() => {});
+  } else if (method === "Page.frameStartedLoading" || method === "Page.frameStoppedLoading") {
+    if (params.frameId !== stage.attached) return;
+    stage.loading = method === "Page.frameStartedLoading";
+    stageRenderNav();
+    // frameNavigated 由网页那头报来，常赶在浏览器记下这一步历史之前：载完再问一回
+    if (!stage.loading) void stageReadHistory();
+  } else if ((method === "Page.frameNavigated" && !params.frame.parentId) || method === "Page.navigatedWithinDocument") {
+    void stageReadHistory();
+  } else if (method === "Page.javascriptDialogOpening") {
+    stage.dialog = { type: params.type, message: params.message, defaultPrompt: params.defaultPrompt };
+    stageRenderDialog();
+  } else if (method === "Page.javascriptDialogClosed") {
+    stage.dialog = null;
+    stageRenderDialog();
   }
+}
+function stageResetPage() {
+  stage.loading = stage.back = stage.forward = false;
+  stage.dialog = null;
+  stageRenderNav();
+  stageRenderDialog();
+}
+async function stageReadHistory() {
+  const session = stage.session;
+  const history = await stageSend("Page.getNavigationHistory", {}, session).catch(() => null);
+  if (!history || session !== stage.session) return;
+  stage.back = history.currentIndex > 0;
+  stage.forward = history.currentIndex < history.entries.length - 1;
+  stageRenderNav();
+}
+/** @param {number} step -1 后退，1 前进 */
+async function stageTravel(step) {
+  const session = stage.session;
+  const history = await stageSend("Page.getNavigationHistory", {}, session).catch(() => null),
+    entry = history?.entries[history.currentIndex + step];
+  if (entry) void stageSend("Page.navigateToHistoryEntry", { entryId: entry.id }, session).catch(() => {});
+}
+function stageRenderNav() {
+  $("#stageNav").classList.toggle("loading", stage.loading);
+  /** @type {HTMLButtonElement} */ ($("[data-stage-nav=back]")).disabled = !stage.back;
+  /** @type {HTMLButtonElement} */ ($("[data-stage-nav=forward]")).disabled = !stage.forward;
+}
+// 网页弹的提示框（alert / confirm / prompt / 离页挽留）：浏览器画在屏幕外的窗上，网页就此停住——看台在画面上另画一张，答了递回去。
+// 模型那头 playwright 也收得到，谁先答都行
+function stageRenderDialog() {
+  const box = $("#stageDialog"),
+    dialog = stage.dialog;
+  box.classList.toggle("hidden", !dialog);
+  if (!dialog) return void (box.innerHTML = "");
+  const leave = dialog.type === "beforeunload",
+    ask = dialog.type !== "alert";
+  box.innerHTML = `<div class="stage-dialog-card" role="alertdialog" aria-label="网页的提示"><div class="stage-dialog-head">${leave ? "离开此页？" : "网页的提示"}</div><div class="stage-dialog-text">${escapeHtml(dialog.message || (leave ? "此页有尚未存下的改动。" : ""))}</div>${dialog.type === "prompt" ? `<input class="stage-dialog-input" spellcheck="false" value="${escapeHtml(dialog.defaultPrompt || "")}">` : ""}<div class="stage-dialog-actions">${ask ? `<button type="button" class="outline-btn" data-stage-answer="no">${leave ? "留下" : "取消"}</button>` : ""}<button type="button" class="outline-btn primary" data-stage-answer="yes">${leave ? "离开" : "确定"}</button></div></div>`;
+  /** @type {HTMLElement} */ (box.querySelector(".stage-dialog-input, [data-stage-answer=yes]")).focus({ preventScroll: true });
+}
+/** @param {boolean} accept */
+function stageAnswer(accept) {
+  const input = /** @type {HTMLInputElement | null} */ ($("#stageDialog .stage-dialog-input"));
+  void stageSend("Page.handleJavaScriptDialog", { accept, ...(input ? { promptText: input.value } : {}) }, stage.session).catch(() => {});
+  stage.dialog = null;
+  stageRenderDialog();
 }
 
 // ---------- 看哪一页：连上它、收它的画面 ----------
@@ -16750,7 +16828,7 @@ function stageMessage(message) {
 function stageShow(targetId) {
   stage.current = targetId;
   stageRender();
-  if (stageShown()) void stageAttach();
+  if (stageVisible()) void stageAttach();
 }
 async function stageAttach() {
   const target = stage.current;
@@ -16763,6 +16841,9 @@ async function stageAttach() {
     stage.session = sessionId;
     // 浏览器的窗口在屏幕外、不在焦点上：不模拟焦点，递进去的按键没人接（playwright 自己也这么做）
     void stageSend("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId).catch(() => {});
+    // 收 Page 域的事件：载入、跳转、提示框（开着的提示框，enable 时会补报一回）
+    await stageSend("Page.enable", {}, sessionId);
+    void stageReadHistory();
     await stageSend("Page.startScreencast", { format: "jpeg", quality: 80 }, sessionId);
     // 静着的页不重绘就不出帧：先截一张垫底（后台的页截不出来，等不到就算了）
     const [shot, metrics] = await Promise.race([
@@ -16782,7 +16863,7 @@ const STAGE_FLOOR = { width: 960, height: 600 };
 async function stageFit() {
   const session = stage.session,
     target = stage.attached;
-  if (!session || !stageShown()) return;
+  if (!session || !stageVisible()) return;
   const view = $("#stageView").getBoundingClientRect(),
     want = {
       width: Math.max(STAGE_FLOOR.width, Math.round(view.width - 24)),
@@ -16803,6 +16884,7 @@ async function stageDetach() {
   const session = stage.session;
   stage.session = stage.attached = "";
   stage.framed = false;
+  stageResetPage();
   if (!session) return;
   await stageSend("Page.stopScreencast", {}, session).catch(() => {});
   void stageSend("Target.detachFromTarget", { sessionId: session }).catch(() => {});
@@ -16833,9 +16915,21 @@ async function stageRefreshTabs() {
 }
 
 // ---------- 开合与画面之外的几样 ----------
+// 开着（用户没收起它）
 function stageShown() {
   const panel = $("#stagePanel");
   return !panel.classList.contains("hidden") && !panel.classList.contains("leaving");
+}
+// 开着且看得见：没被旁注挤开、言的页面不在后台
+function stageVisible() {
+  return stageShown() && $("#stageView").clientWidth > 0 && !document.hidden;
+}
+// 看得见才收画面，看不见即停收、入口那一笔回来；回来再接上
+function stageWake() {
+  stage.seen = stageVisible();
+  if (stage.seen) void stageAttach();
+  else if (stage.session) void stageDetach();
+  stageSync();
 }
 function openStage() {
   if (sidePanelOpen()) closeSidePanel();
@@ -16845,17 +16939,17 @@ function openStage() {
   } catch {}
   stageSetWidth(stage.width || saved || innerWidth * 0.46);
   showNow($("#stagePanel"));
-  stageSync();
-  void stageAttach();
+  stageWake();
+  // 浏览器早开着、看台却没连上的（桥接重启过、浏览器是别处起的）：开时再找一回
+  if (!stage.ws) void stageLocate();
   clearInterval(stage.poll);
-  stage.poll = window.setInterval(stageRefreshTabs, 1500);
+  stage.poll = window.setInterval(() => document.hidden || stageRefreshTabs(), 1500);
 }
 function closeStage() {
   stageSetWide(false);
   hideWithFade($("#stagePanel"));
   clearInterval(stage.poll);
-  void stageDetach();
-  stageSync();
+  stageWake();
 }
 /** @param {boolean} on */
 function stageSetWide(on) {
@@ -16867,13 +16961,13 @@ function stageSetWidth(px) {
   stage.width = Math.round(Math.max(320, Math.min(px, innerWidth - 420)));
   $("#stagePanel").style.width = `${stage.width}px`;
 }
-// 入口那一笔：接了浏览器类的 MCP（或浏览器已开着）、游目收着时自页顶垂下；模型正操作浏览器时笔尖下一粒朱一明一暗
+// 入口那一笔：接了浏览器类的 MCP（或浏览器已开着）、游目收着（或被旁注挤开）时自页顶垂下；模型正操作浏览器时笔尖下一粒朱一明一暗
 function stageSync() {
   const pin = $("#stagePin");
-  pin.classList.toggle("hidden", (!stage.ws && !stageServer()) || stageShown());
+  pin.classList.toggle("hidden", (!stage.ws && !stageServer()) || stageVisible());
   pin.classList.toggle("busy", stage.busy > 0);
   $("#stageBusy").classList.toggle("hidden", !stage.busy);
-  $("#stageMarks").classList.toggle("hidden", !stageProfileDir());
+  $("#stageMarks").classList.toggle("hidden", !stage.marks);
   stageRender();
 }
 // 接进来的浏览器类 MCP：工具里有 browser_navigate 的那个服务（playwright 即是）
@@ -16885,16 +16979,15 @@ function stageServer() {
     ) || ""
   );
 }
-// 浏览器的配置目录：那个服务参数里的 --user-data-dir（收藏就存在这里）；服务还没连上时，从配置里找带这一项的
-function stageProfileDir() {
-  const configs = mcpConfigs(),
-    args =
-      configs[stageServer()]?.args ||
-      Object.values(configs).find(config => (config.args || []).some(arg => String(arg).startsWith("--user-data-dir")))?.args ||
-      [],
-    at = args.indexOf("--user-data-dir");
-  if (at >= 0) return String(args[at + 1] || "");
-  return String(args.find(arg => String(arg).startsWith("--user-data-dir=")) || "").slice("--user-data-dir=".length);
+// 那个服务的配置：调试口、配置目录都由桥接从它的参数里读。服务还没连上（刚开页）时，从配置里找像浏览器的那个
+function stageConfig() {
+  const configs = mcpConfigs();
+  return (
+    configs[stageServer()] ||
+    Object.values(configs).find(config =>
+      (config.args || []).some(arg => /playwright|^--(config|user-data-dir|cdp-endpoint)\b/.test(String(arg)))
+    )
+  );
 }
 // 浏览器没开（或被关了）：替用户调一次那个服务的 browser_navigate，浏览器照它的配置起来，再去连
 async function stageLaunch() {
@@ -16911,7 +17004,7 @@ async function stageLaunch() {
       timeout: 60
     });
     await stageLocate();
-    if (!stage.ws) toast(`浏览器已开，游目却连不上它的调试口 ${stage.port}`);
+    if (!stage.ws) toast(`浏览器已开，游目却连不上它的调试口${stage.port ? ` ${stage.port}` : ""}（见 docs/stage.md 的接法）`);
   } catch (error) {
     toast(`打不开浏览器：${String(error.message || error).slice(0, 80)}`);
   } finally {
@@ -16930,7 +17023,7 @@ function stageNewTab() {
 /** @param {HTMLElement} anchor */
 async function stageOpenMarks(anchor) {
   if (document.querySelector(".chip-pop.stage-marks")) return closeChipPop();
-  const data = await bridge("/api/stage/bookmarks", { dir: stageProfileDir() }).catch(() => ({ bar: [], other: [] })),
+  const data = await bridge("/api/stage/bookmarks", { args: stageConfig()?.args || [] }).catch(() => ({ bar: [], other: [] })),
     marks = [...data.bar, ...(data.other.length ? [{ name: "其他收藏", children: data.other }] : [])];
   if (!marks.length) return toast("这个浏览器里还没有收藏");
   /** @param {any[]} nodes @returns {string} */
@@ -17057,18 +17150,26 @@ function stageFocusKeys(e) {
 }
 /** @param {string} raw */
 function stageGo(raw) {
-  const text = raw.trim();
-  if (!text || !stage.ws) return;
-  const url = /^[a-z]:[\\/]/i.test(text)
-    ? `file:///${text.replace(/\\/g, "/")}`
-    : /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(text)
-      ? `http://${text}`
-      : /^[a-z][\w+.-]*:/i.test(text)
-        ? text
-        : `https://${text}`;
+  const url = stageUrlOf(raw);
+  if (!url || !stage.ws) return;
   // 一页都没开着：新开一页去
   const go = stage.session ? stageSend("Page.navigate", { url }, stage.session) : stageSend("Target.createTarget", { url });
   void go.catch(error => toast(`打不开：${String(error.message || error).slice(0, 80)}`));
+}
+// 地址栏里输的话换成网址：本机路径、本机服务、带协议的照走；像网址的（有点、没空格）补 https；余下当成要搜的话
+/** @param {string} raw */
+function stageUrlOf(raw) {
+  const text = raw.trim();
+  if (!text) return "";
+  return /^[a-z]:[\\/]/i.test(text)
+    ? `file:///${text.replace(/\\/g, "/")}`
+    : /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(text)
+      ? `http://${text}`
+      : /^([a-z][\w+.-]*:\/\/|(about|data|file|javascript|mailto|view-source|edge|chrome):)/i.test(text)
+        ? text
+        : !/\s/.test(text) && /^[^/?#]+\.[^/?#.]+([/?#:]|$)/.test(text)
+          ? `https://${text}`
+          : `https://www.bing.com/search?q=${encodeURIComponent(text)}`;
 }
 
 function bindStage() {
@@ -17087,11 +17188,24 @@ function bindStage() {
     if (target.closest("[data-stage-launch]")) void stageLaunch();
     else if (target.closest("[data-stage-new]")) stageNewTab();
   });
-  // 看台一变大小（拖宽窄、阔、窗口缩放），停手片刻后把浏览器的窗口跟上
+  // 看台一变大小（拖宽窄、阔、窗口缩放），停手片刻后把浏览器的窗口跟上；被旁注挤开、又回来的，停收或接上画面
   new ResizeObserver(() => {
+    if (stageVisible() !== stage.seen) stageWake();
     clearTimeout(stage.fitTimer);
     stage.fitTimer = window.setTimeout(() => void stageFit(), 250);
   }).observe($("#stageView"));
+  document.addEventListener("visibilitychange", () => stageShown() && stageWake());
+  // 网页的提示框：Enter 即确定，Esc 即取消（不让 Esc 再去收别的）
+  const dialog = $("#stageDialog");
+  dialog.addEventListener("click", e => {
+    const answer = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest("[data-stage-answer]"));
+    if (answer) stageAnswer(answer.dataset.stageAnswer === "yes");
+  });
+  dialog.addEventListener("keydown", e => {
+    e.stopPropagation();
+    if (e.key === "Escape") stageAnswer(false);
+    else if (e.key === "Enter" && /** @type {HTMLElement} */ (e.target).matches("input")) stageAnswer(true);
+  });
   $("#stageTabs").addEventListener("click", e => {
     const target = /** @type {HTMLElement} */ (e.target),
       close = /** @type {HTMLElement | null} */ (target.closest("[data-stage-close]"));
@@ -17100,14 +17214,16 @@ function bindStage() {
     if (!tab || tab.dataset.stageTab === stage.current) return;
     // 换到后台的那一页：先请到前台，不然它不重绘、没有画面
     void stageSend("Target.activateTarget", { targetId: tab.dataset.stageTab }).catch(() => {});
-    stageShow(tab.dataset.stageTab || "");
+    stage.front = tab.dataset.stageTab || "";
+    stageShow(stage.front);
   });
   for (const button of document.querySelectorAll("[data-stage-nav]"))
     button.addEventListener("click", () => {
       const action = /** @type {HTMLElement} */ (button).dataset.stageNav;
       if (!stage.session) return;
+      // 前后按浏览器记的历史走，不经网页里的脚本（脚本卡住、出错页上也走得动）
       if (action === "reload") void stageSend("Page.reload", {}, stage.session).catch(() => {});
-      else void stageSend("Runtime.evaluate", { expression: `history.${action}()` }, stage.session).catch(() => {});
+      else void stageTravel(action === "back" ? -1 : 1);
     });
   const url = /** @type {HTMLInputElement} */ ($("#stageUrl"));
   url.addEventListener("keydown", e => {
@@ -17204,8 +17320,8 @@ function bindStage() {
   });
 }
 bindStage();
-// 给端到端测试：改调试口、立即去连（见 test/stage.mjs）
-window.__yanStage = { state: stage, locate: stageLocate };
+// 给端到端测试：读状态、立即去连（见 test/stage.mjs）
+window.__yanStage = { state: stage, locate: stageLocate, go: stageGo };
 
   // ---- 99-start.js ----
 // 言 · 启动
