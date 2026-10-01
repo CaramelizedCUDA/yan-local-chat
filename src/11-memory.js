@@ -113,7 +113,7 @@ function memorySettingsHtml() {
     open = memoryCategoryOpen !== null ? categories.find(cat => cat.name === memoryCategoryOpen) : null;
   if (!open) memoryCategoryOpen = null;
   return (
-    `<div class="about-head memory-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="about-version">${store.memory.items.length} / ${MAX_MEMORY_ITEMS} 条${categories.length ? ` · ${categories.length} 类` : ""}</span></div>` +
+    `<div class="about-head memory-head settings-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="about-version">${store.memory.items.length} / ${MAX_MEMORY_ITEMS} 条${categories.length ? ` · ${categories.length} 类` : ""}</span></div>` +
     segmentRow(
       "启用记忆",
       "关闭后条目仍保留",

@@ -147,14 +147,16 @@ function renderSettings() {
   if (settingsTab === "memory") host.innerHTML = memorySettingsHtml();
   if (settingsTab === "guide") host.innerHTML = guideSettingsHtml();
   if (settingsTab === "about") host.innerHTML = aboutSettingsHtml();
-  // 每栏标题左边一个这一栏的笔意图标（记忆页自带）；文档里翻开的一篇有自己的书口，关于页的题目是「言」本身，都不加
+  // 每栏题头：这一栏的笔意图标、标题（导语跟在题下），压一道墨线（记忆页自带）；文档里翻开的一篇有自己的书口，关于页的题目是「言」本身，都不加
   const title = host.querySelector("h2");
   if (BRUSH_ICONS[settingsTab] && title && !title.previousElementSibling && !title.parentElement.classList.contains("about-head")) {
-    const head = document.createElement("div");
-    head.className = "about-head memory-head";
+    const head = document.createElement("div"),
+      lead = title.nextElementSibling?.classList.contains("settings-lead") ? title.nextElementSibling : null;
+    head.className = "about-head memory-head settings-head";
     head.innerHTML = brushIcon(settingsTab, "settings-mark");
     title.before(head);
     head.append(title);
+    if (lead) head.append(lead);
   }
   bindSettingsEvents();
   bindMemoryEvents();

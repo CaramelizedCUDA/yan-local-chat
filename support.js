@@ -2127,6 +2127,26 @@ const BRUSH_ICONS = {
     brushStroke([13.8, 3.6, 13.6, 10, 13.8, 16.4], 1.3, { tail: 0.4 }) +
     brushStroke([6.4, 16.2, 8.2, 14.6, 10, 13.4], 1, { tail: 0.3 }) +
     brushStroke([10, 13.4, 11.8, 14.6, 13.6, 16.2], 1, { tail: 0.2 }),
+  // 行间小画（回复下的复制、旁注，问句上的改，侧栏的查找）：只用墨、不落朱，颜色随按钮走（见 styles/30-chat.css）。
+  // 重答、重试与「重载」同一笔圆相，续写与「前进」同一笔，不另画。见 设计稿/26 一
+  // 复制：两张纸叠着——后一张只露左上两笔淡墨，前一张一片淡染、左与上各一笔
+  copy: () =>
+    brushStroke([3.2, 12.4, 3.3, 7.6, 3.2, 3.2], 1.2, { tone: "ink2", tail: 0.5 }) +
+    brushStroke([3.2, 3.1, 7.6, 2.9, 12, 3.2], 1.2, { tone: "ink2", tail: 0.5 }) +
+    `<rect class="wash" x="7" y="6.6" width="10" height="10.6" rx=".4"/>` +
+    brushStroke([7, 6.6, 7.2, 12, 7, 17.2], 1.6, { tail: 0.5 }) +
+    brushStroke([7, 6.5, 12, 6.2, 17, 6.6], 1.6, { tail: 0.4 }),
+  // 旁注：左边三行字，右边一道夹批的竖笔
+  note: () =>
+    [5, 10, 15].map(y => brushStroke([2.8, y + 0.2, 6.4, y - 0.2, 10.2, y + 0.1], 1.3, { tone: "ink2", tail: 0.3 })).join("") +
+    brushStroke([14.6, 3.6, 14.9, 10, 14.5, 16.6], 2, { tail: 0.2 }),
+  // 改：一支笔落在纸上，笔下一道淡墨（个性化那支笔去了朱）
+  edit: () =>
+    brushStroke([16.4, 3, 12.4, 7.2, 8.4, 11.4], 1.3, { tail: 0.7 }) +
+    brushStroke([8.8, 11, 5.8, 13.4, 3.6, 16.4], 3.2) +
+    brushStroke([8.4, 16.8, 12.6, 16.2, 17, 16.6], 1.2, { tone: "ink2" }),
+  // 查找：一笔圆相作镜，一笔顿下作柄
+  search: () => brushArc(8.4, 8.4, 5, 120, 450, 1.6, { tail: 0.3 }) + brushStroke([12.2, 12.2, 14.2, 14.4, 16.8, 16.8], 2.3, { tail: 0.6 }),
   // 关于：一笔圆相，旁落一方小印
   about: () => brushArc(9.6, 9.8, 6.4, 200, 505, 2.2, { tail: 0.15 }) + brushSeal(14.8, 14.8, 2.2)
 };
@@ -5869,13 +5889,14 @@ function bindHelperEvents() {
   // ---- 09-attachments-ui.js ----
 // 言 · 附件卡片、引用与划选提示
 // 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 回复与问句下的几枚小画：笔意（src/03-brush.js），不再是等宽线稿
 const icons = {
-  copy: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><rect x="5.2" y="5.2" width="7.4" height="7.4" rx="1.5"/><path d="M10.5 3.4H4.9a1.5 1.5 0 0 0-1.5 1.5v5.6"/></svg>`,
-  edit: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M3.3 12.7l.6-3 6.8-6.8 2.4 2.4-6.8 6.8-3 .6z"/><path d="M9.8 3.8l2.4 2.4"/></svg>`,
-  regenerate: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13 3.2v2.6h-2.6"/></svg>`,
-  resume: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3.2v9.6L12 8 4 3.2z"/></svg>`,
-  retry: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"><path d="M8 3v5l3 1.8"/><circle cx="8" cy="8" r="5.2"/></svg>`,
-  note: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"><path d="M3.5 4h6M3.5 8h6M3.5 12h6"/><path d="M12.6 6.4v3.2"/><path d="M11 8h3.2"/></svg>`
+  copy: brushIcon("copy"),
+  edit: brushIcon("edit"),
+  regenerate: brushIcon("reload"),
+  resume: brushIcon("forward"),
+  retry: brushIcon("reload"),
+  note: brushIcon("note")
 };
 function actionIcon(action, title, icon) {
   return `<button class="message-action" data-action="${action}" title="${title}" aria-label="${title}">${icon}</button>`;
@@ -6786,7 +6807,7 @@ function memorySettingsHtml() {
     open = memoryCategoryOpen !== null ? categories.find(cat => cat.name === memoryCategoryOpen) : null;
   if (!open) memoryCategoryOpen = null;
   return (
-    `<div class="about-head memory-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="about-version">${store.memory.items.length} / ${MAX_MEMORY_ITEMS} 条${categories.length ? ` · ${categories.length} 类` : ""}</span></div>` +
+    `<div class="about-head memory-head settings-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="about-version">${store.memory.items.length} / ${MAX_MEMORY_ITEMS} 条${categories.length ? ` · ${categories.length} 类` : ""}</span></div>` +
     segmentRow(
       "启用记忆",
       "关闭后条目仍保留",
@@ -12963,14 +12984,16 @@ function renderSettings() {
   if (settingsTab === "memory") host.innerHTML = memorySettingsHtml();
   if (settingsTab === "guide") host.innerHTML = guideSettingsHtml();
   if (settingsTab === "about") host.innerHTML = aboutSettingsHtml();
-  // 每栏标题左边一个这一栏的笔意图标（记忆页自带）；文档里翻开的一篇有自己的书口，关于页的题目是「言」本身，都不加
+  // 每栏题头：这一栏的笔意图标、标题（导语跟在题下），压一道墨线（记忆页自带）；文档里翻开的一篇有自己的书口，关于页的题目是「言」本身，都不加
   const title = host.querySelector("h2");
   if (BRUSH_ICONS[settingsTab] && title && !title.previousElementSibling && !title.parentElement.classList.contains("about-head")) {
-    const head = document.createElement("div");
-    head.className = "about-head memory-head";
+    const head = document.createElement("div"),
+      lead = title.nextElementSibling?.classList.contains("settings-lead") ? title.nextElementSibling : null;
+    head.className = "about-head memory-head settings-head";
     head.innerHTML = brushIcon(settingsTab, "settings-mark");
     title.before(head);
     head.append(title);
+    if (lead) head.append(lead);
   }
   bindSettingsEvents();
   bindMemoryEvents();

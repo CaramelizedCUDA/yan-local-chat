@@ -468,24 +468,24 @@
   margin: 0 0 5px;
   font: 500 21px var(--title);
 }
-/* 设置是一张八行笺：题下一道「文武线」（一粗一细），行与行之间是朱丝栏，条目前一粒朱点；标题左边一方章印，每栏一字（与记忆页的「录」同一个样子）。
-   落选的：整块套朱色版框（框占宽度、内容挤）；一条设置一张纸条（歪斜的纸条一多就乱）；右下角垫一个极淡的大字（会被控件压住，单个的字也不好看） */
+/* 设置各栏的题头与卷宗、分组页同一个样子：笔意图标、标题（一行事实或导语跟在后面），下压一道墨线；条与条之间一道淡线。
+   落选的：「八行笺」——文武线挂在导语上，只有个性化、文档两栏有，别的栏借第一行的朱丝栏或干脆没有，一个弹窗里三种题头；
+   条目前一粒朱菱形，一页五六粒，朱用泛了（朱留给要人注意的）。见 设计稿/26 四。
+   更早落选的：整块套朱色版框（框占宽度、内容挤）；一条设置一张纸条（歪斜的纸条一多就乱）；右下角垫一个极淡的大字（会被控件压住，单个的字也不好看） */
+.settings-head {
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ink-3);
+}
 .settings-lead {
-  position: relative;
   margin: 0 0 10px;
-  padding-bottom: 16px;
   color: var(--ink-2);
   font-size: 12.5px;
 }
-.settings-lead:after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 4px;
-  border-top: 1.6px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  border-bottom: 0.8px solid color-mix(in srgb, var(--accent) 38%, transparent);
+.settings-head .settings-lead {
+  flex-basis: 100%;
+  margin: 2px 0 0 38px;
 }
 .setting-row {
   display: flex;
@@ -493,25 +493,18 @@
   justify-content: space-between;
   gap: 24px;
   padding: 15px 0;
-  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-top: 1px solid var(--line);
 }
-.settings-lead + .setting-row {
+/* 题下线即是第一道线：紧跟的一行、模型列表不再自画上边；环境的状态卡离线留一点空（卡片列表自带） */
+.settings-head + :is(.setting-row, #profileList) {
   border-top: 0;
+}
+.settings-head + #envStatus {
+  margin-top: 14px;
 }
 .setting-copy strong {
   display: block;
   font: 600 13.5px var(--title);
-}
-.setting-copy strong:before {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin: 0 8px 2px 0;
-  border-radius: 1px;
-  background: var(--accent);
-  opacity: 0.8;
-  transform: rotate(45deg);
 }
 .setting-copy small {
   display: block;
@@ -867,7 +860,7 @@
   box-sizing: border-box;
   padding: 11px 14px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 3px; /* 与卷宗的簿录长条同是方角；落选的 12px 圆角成块，见 设计稿/26 五 */
   transition: border-color 0.2s;
 }
 .card-head {
@@ -881,9 +874,9 @@
   color: var(--ink);
 }
 .card-tag {
-  padding: 1px 7px;
+  padding: 1px 6px;
   border: 1px solid var(--line);
-  border-radius: 99px;
+  border-radius: 2px;
   color: var(--ink-3);
   font-size: 10px;
   white-space: nowrap;
@@ -987,7 +980,8 @@
   gap: 8px;
   margin-bottom: 14px;
 }
-/* 可勾选的卡：整张可点；名称与说明在左，状态在右——空框、朱色实心（待装）、一笔勾（已装） */
+/* 可勾选的卡：整张可点；名称与说明在左，状态在右——空框、朱框里一粒朱（待装）、一笔勾（已装）。
+   落选的：待装是朱色实心块（比已装那一笔勾还重） */
 .card.pickable {
   display: flex;
   gap: 12px;
@@ -1017,8 +1011,13 @@
 }
 .card.pickable[aria-checked="true"] .card-tick {
   border-color: var(--accent);
+}
+.card.pickable[aria-checked="true"]:not([data-state="done"]) .card-tick:after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
   background: var(--accent);
-  box-shadow: inset 0 0 0 3px var(--paper);
 }
 .card.pickable[data-state="done"] {
   border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
