@@ -168,6 +168,8 @@ class HttpTransport {
   async send(message) {
     const abort = new AbortController();
     this.aborts.add(abort);
+    // 回复走事件流时 send 先返回、流还在读：这次请求的掐断开关要留到流读完，close() 才掐得到它
+    let streaming = false;
     try {
       const response = await fetch(this.url, {
         method: "POST",
@@ -185,14 +187,21 @@ class HttpTransport {
       if (!response.ok) throw Object.assign(await httpError(response), { status: response.status });
       if (response.status === 202 || !response.body) return;
       const type = response.headers.get("content-type") || "";
-      if (type.includes("text/event-stream"))
+      if (type.includes("text/event-stream")) {
         // 回复在事件流里，读完为止；不等它读完，send 先返回，别的请求照常发
+        streaming = true;
         void readEvents(response, (event, data) => {
           if (event === "message") this.deliver(data);
-        }).catch(() => {});
-      else this.deliver(await response.text());
+        })
+          .catch(error => {
+            // 自己 close() 掐的不算；流半路断了，告诉等这条回复的那一问，别让它干等到超时（已经回过的，上层认不出这个 id，自然不理）
+            if (!abort.signal.aborted && message.id !== undefined)
+              this.onmessage({ jsonrpc: "2.0", id: message.id, error: { message: `事件流中断：${error?.message || error}` } });
+          })
+          .finally(() => this.aborts.delete(abort));
+      } else this.deliver(await response.text());
     } finally {
-      this.aborts.delete(abort);
+      if (!streaming) this.aborts.delete(abort);
     }
   }
   deliver(text) {

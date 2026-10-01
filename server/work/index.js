@@ -1,7 +1,7 @@
 // 言 · 桥接的执事接口：工作目录、指令执行、文件读写与检索、目录选择对话框；卷宗目录的接口见 archive.js
 // 由 server.js 装配：require("./server/work/index.js")({ archiveHome, workHome, toolEnv })
 "use strict";
-const { sendJson, readJson, jsonRoute, errorText } = require("../http.js");
+const { sendJson, readJson, jsonRoute, requestSignal, errorText } = require("../http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
@@ -99,15 +99,13 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
       const timeoutMs = clampNumber(Number(body.timeout) * 1000, 120000, 1000, 2147483647);
       console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ ${command.slice(0, 120)}`);
       // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉
-      const abort = new AbortController();
-      res.on("close", () => {
-        if (!res.writableEnded) abort.abort();
-      });
+      // 排队等目录锁时停了也算：不再起这条指令
+      const signal = requestSignal(res);
       const started = Date.now(),
-        release = await lockWorkdir(workdir);
+        release = await lockWorkdir(workdir, signal);
       let result;
       try {
-        result = await runShell(command, workdir, timeoutMs, abort.signal, { boxed });
+        result = await runShell(command, workdir, timeoutMs, signal, { boxed });
       } finally {
         release();
       }
@@ -126,13 +124,15 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     const workdir = resolveWorkdir(body.workdir);
     return { why: sandbox.screenCommand(String(body.command || ""), workdir) };
   }, failed);
-  const handleWorkWrite = jsonRoute(async body => {
+  const handleWorkWrite = jsonRoute(async (body, req, res) => {
+    // 页面停了就别再动文件：排队等锁时停下，锁到手也不写（见 locks.js）
+    const signal = requestSignal(res);
     const workdir = resolveWorkdir(body.workdir),
       file = await targetOf(workdir, body, { write: true });
     if (file === workdir) throw Error("请给出文件名");
     const content = String(body.content ?? "");
     if (Buffer.byteLength(content) > 32 * 1024 * 1024) throw Error("单个文件不超过 32 MB");
-    const release = await lockFile(workdir, file);
+    const release = await lockFile(workdir, file, signal);
     try {
       const existing = await fs.promises.stat(file).catch(() => null);
       if (existing?.isDirectory()) throw Error(`${body.path} 是目录，不能作为文件写入`);
@@ -238,7 +238,9 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     return { path: shownPath(workdir, dir) || ".", entries: out, truncated: out.length >= WORK_LIST_LIMIT };
   }, failed);
   // ---- edit_file：精确文本替换。old 必须在文件里唯一出现（或显式 replace_all）；文件是 CRLF 时把片段的换行也换成 CRLF 再匹配
-  const handleWorkEdit = jsonRoute(async body => {
+  const handleWorkEdit = jsonRoute(async (body, req, res) => {
+    // 页面停了就别再动文件：排队等锁时停下，锁到手也不写（见 locks.js）
+    const signal = requestSignal(res);
     const workdir = resolveWorkdir(body.workdir),
       file = await targetOf(workdir, body, { write: true });
     const oldText = String(body.old ?? ""),
@@ -247,7 +249,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     if (file === workdir) throw Error("请给出文件名");
     if (!oldText) throw Error("old 不能为空；新建文件请用 write_file");
     if (oldText === newText) throw Error("old 与 new 相同，无需修改");
-    const release = await lockFile(workdir, file);
+    const release = await lockFile(workdir, file, signal);
     try {
       const stat = await fs.promises.stat(file).catch(() => null);
       if (!stat) throw Error(`文件不存在：${body.path}`);
@@ -375,7 +377,9 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
   // ---- download_file：把网上的文件存进工作目录。地址门禁与 fetch_page 同一套（不许本机与内网）；path 给目录或省略时按网址里的文件名存，
   // 已有同名文件就加 (2)；最多 64 MB
   const DOWNLOAD_LIMIT = 64 * 1024 * 1024;
-  const handleWorkDownload = jsonRoute(async body => {
+  const handleWorkDownload = jsonRoute(async (body, req, res) => {
+    // 页面停了就别再动文件：排队等锁时停下，锁到手也不写（见 locks.js）
+    const signal = requestSignal(res);
     const workdir = resolveWorkdir(body.workdir);
     let url;
     try {
@@ -419,7 +423,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     }
     const { buffer, truncated } = await readLimitedBytes(response, DOWNLOAD_LIMIT);
     if (truncated) throw Error(`文件超过 ${DOWNLOAD_LIMIT / 1048576} MB`);
-    const release = await lockFile(workdir, target);
+    const release = await lockFile(workdir, target, signal);
     try {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       const extension = path.extname(target),

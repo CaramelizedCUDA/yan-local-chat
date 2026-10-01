@@ -45,6 +45,16 @@ function errorText(error, limit = 500) {
 }
 // 接口的常见形状：读请求体，办完回 200 与结果；中途抛错就回 400，那句话由 describe 定（各模块的前缀、截断长度不同）。
 // handle(body, req, res) 返回的值即响应；自己写了响应（别的状态码、流）就返回 undefined
+// 对方在响应写出之前走了（页面点停止、断线；走总线时是 BusResponse 被 destroy）：接口据此放弃还没开始的事，如排队等锁
+function requestSignal(res) {
+  const abort = new AbortController();
+  if (res.destroyed && !res.writableEnded) abort.abort();
+  else
+    res.on("close", () => {
+      if (!res.writableEnded) abort.abort();
+    });
+  return abort.signal;
+}
 function jsonRoute(handle, describe = errorText) {
   return async (req, res) => {
     try {
@@ -190,4 +200,4 @@ function openWithSystem(file) {
   if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) throw Error("文件不存在");
   spawn("explorer.exe", [file], { detached: true, stdio: "ignore" }).unref();
 }
-module.exports = { sendJson, readJson, jsonRoute, errorText, writeAtomic, fileMime, sendFile, openWithSystem };
+module.exports = { sendJson, readJson, jsonRoute, requestSignal, errorText, writeAtomic, fileMime, sendFile, openWithSystem };

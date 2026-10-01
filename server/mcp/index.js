@@ -4,7 +4,7 @@
 // 配置照通行的 mcpServers 写法：本机进程给 command / args / cwd / env，远端给 url / headers（旧式 SSE 另写 type: "sse"）。
 // 连接按名字复用，连接相关的几项变了就重连；进程随桥接退出一并结束
 "use strict";
-const { sendJson, readJson, jsonRoute, errorText } = require("../http.js");
+const { sendJson, readJson, jsonRoute, requestSignal, errorText } = require("../http.js");
 const { McpClient } = require("./client.js");
 
 const CONNECTION_KEYS = ["command", "args", "cwd", "env", "url", "headers", "type", "transport"];
@@ -64,17 +64,14 @@ module.exports = function createMcp({ version, toolEnv }) {
   );
 
   async function handleCall(req, res) {
-    const abort = new AbortController();
-    // 页面那头停了（用户按了停止）：连接一断，就告诉服务端取消这次调用
-    res.on("close", () => {
-      if (!res.writableEnded) abort.abort();
-    });
+    // 页面那头停了（用户按了停止）：连接一断，就告诉服务端取消这次调用；还在等连接、等工具清单时停的，就不发了
+    const signal = requestSignal(res);
     try {
       const body = await readJson(req);
       const client = await ensure(body.server, body.config).ready;
       const result = await client.call(body.tool, body.arguments || {}, {
         timeout: Number(body.timeout) > 0 ? Number(body.timeout) * 1000 : undefined,
-        signal: abort.signal
+        signal
       });
       sendJson(res, 200, { result, toolsChanged: client.toolsChanged });
     } catch (error) {
