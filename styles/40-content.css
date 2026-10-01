@@ -2,7 +2,7 @@
   margin: 1em 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   background: var(--paper-2);
 }
 .code-head {
@@ -21,7 +21,7 @@
 }
 .code-copy {
   padding: 3px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 11px var(--body);
 }
@@ -40,7 +40,7 @@
   margin: 1em 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   background: var(--paper);
 }
 .viz .code-head {

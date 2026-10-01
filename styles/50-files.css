@@ -26,7 +26,7 @@
   height: 40px;
   padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   background: var(--paper);
   color: var(--ink);
   font: 12.5px var(--title);
@@ -91,7 +91,7 @@
   display: grid;
   place-items: center;
   border: 1px dashed color-mix(in srgb, var(--accent) 58%, var(--line));
-  border-radius: 18px;
+  border-radius: var(--radius-l);
   background: color-mix(in srgb, var(--paper) 88%, transparent);
   backdrop-filter: blur(5px);
   pointer-events: none;
@@ -103,7 +103,7 @@
   gap: 14px;
   padding: 17px 22px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: var(--shadow);
 }
@@ -240,7 +240,7 @@
 .library-crumbs button {
   padding: 2px 6px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   color: var(--ink-3);
 }
 .library-crumbs button:hover {
@@ -288,7 +288,7 @@
   width: 20px;
   height: 20px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   color: var(--ink-2);
   font: 16px/1 var(--title);
 }

@@ -24,7 +24,7 @@
   width: auto;
   margin: 18px var(--side-gutter) 0;
   padding: 11px 16px 11px 17px;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
   font-size: 13px;
   background: var(--paper-2);
 }
@@ -41,7 +41,7 @@
   background: none;
 }
 .side-panel.wide .side-composer .composer {
-  border-radius: 17px;
+  border-radius: var(--radius-l);
   padding: 11px 13px 9px;
   box-shadow: 0 8px 30px rgba(58, 45, 29, 0.08);
 }
@@ -151,7 +151,7 @@
   width: 24px;
   height: 24px;
   border: 1px solid color-mix(in srgb, var(--ink-3) 35%, var(--line));
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   color: var(--ink-2);
   font: 12px/1 var(--title);
   transition:
@@ -179,7 +179,7 @@
   position: relative;
   margin-left: 7px;
   border-color: transparent;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font-size: 16px;
 }
@@ -206,7 +206,7 @@
   gap: 3px;
   margin: 0 -2px 0 -4px;
   padding: 3px 7px 3px 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 10.5px var(--title);
   letter-spacing: 0.08em;
@@ -266,7 +266,7 @@
   gap: 4px;
   padding: 4px 9px 4px 7px;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--accent);
   font: 11px var(--title);
   letter-spacing: 0.08em;
@@ -289,7 +289,7 @@
   gap: 10px;
   width: 100%;
   padding: 9px 10px 9px 4px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   text-align: left;
   color: var(--ink-2);
   transition:
@@ -321,7 +321,7 @@
   height: 18px;
   margin-top: 2px;
   border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   color: var(--accent);
   font: 10px/1 var(--title);
   transform: rotate(-3deg);
@@ -412,7 +412,7 @@
 }
 .side-composer .composer {
   width: 100%;
-  border-radius: 14px;
+  border-radius: var(--radius-l);
   padding: 9px 11px 7px;
   box-shadow: 0 6px 22px rgba(58, 45, 29, 0.06);
 }
@@ -445,7 +445,7 @@ sup.note-ref {
   margin: 0 1px 0 2px;
   padding: 0 3px;
   border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line));
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   background: var(--paper);
   color: var(--accent);
   font: 9px/12px var(--title);
@@ -470,7 +470,7 @@ sup.note-ref.active {
   margin-left: 8px;
   padding: 0 6px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   background: var(--paper);
   color: var(--accent);
   font: 10px/15px var(--title);

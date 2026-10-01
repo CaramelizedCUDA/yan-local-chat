@@ -145,7 +145,7 @@
   height: 16px;
   display: grid;
   place-items: center;
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   color: var(--ink-3);
   font-size: 11px;
   opacity: 0;
@@ -165,7 +165,7 @@
   margin-left: 6px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font-size: 14px;
 }
@@ -187,7 +187,7 @@
   height: 26px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   transition: background 0.15s;
 }
 .stage-tool .brush {
@@ -209,7 +209,7 @@
   width: 24px;
   height: 24px;
   margin-left: 9px;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font-size: 16px;
 }
@@ -243,7 +243,7 @@
   height: 26px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   transition: background 0.15s;
 }
 .stage-nav > button .brush {
@@ -290,7 +290,7 @@
   height: 26px;
   margin-left: 6px;
   padding: 0 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 12.5px var(--title);
   letter-spacing: 0.02em;
@@ -318,7 +318,7 @@
   margin-left: 6px;
   padding: 5px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   background: var(--paper-2);
   color: var(--ink);
   font:
@@ -370,7 +370,7 @@
   background: var(--paper);
   border: 1px solid var(--line);
   border-top: 2px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-s);
   box-shadow: 0 6px 18px rgba(61, 49, 32, 0.12);
   letter-spacing: 0.02em;
 }

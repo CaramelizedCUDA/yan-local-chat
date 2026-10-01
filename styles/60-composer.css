@@ -22,7 +22,7 @@
   margin: 0 auto 8px;
   padding: 4px 6px;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--radius-l);
   background: color-mix(in srgb, var(--paper-2) 45%, var(--paper));
   color: var(--ink-3);
   font: 11px var(--title);
@@ -36,7 +36,7 @@
   gap: 8px;
   min-width: 0;
   padding: 3px 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   color: inherit;
   font: inherit;
   letter-spacing: inherit;
@@ -128,7 +128,7 @@
 .approval-bar {
   padding: 10px 12px 9px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 13px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: 0 8px 30px rgba(58, 45, 29, 0.08);
   animation: rise 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -158,7 +158,7 @@
   padding: 7px 10px;
   max-height: 120px;
   overflow: auto;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   background: color-mix(in srgb, var(--ink) 4%, transparent);
   color: var(--ink);
   font:
@@ -230,7 +230,7 @@
   margin-right: 7px;
   padding: 0 5px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   color: var(--accent);
   font: 10px/16px var(--title);
   letter-spacing: 0.06em;
@@ -241,7 +241,7 @@
   display: inline-block;
   margin-left: 8px;
   padding: 0 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
   font: 10px/16px var(--title);
@@ -261,7 +261,7 @@
   max-width: 100%;
   padding: 6px 11px 6px 9px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   background: var(--paper);
   color: var(--ink-2);
   text-align: left;
@@ -291,7 +291,7 @@
     box-shadow 0.16s;
 }
 .ask-q[data-multi="true"] .ask-tick {
-  border-radius: 3px;
+  border-radius: var(--radius-s);
 }
 .ask-opt:hover .ask-tick {
   border-color: var(--ink-3);
@@ -471,7 +471,7 @@
   column-gap: 12px;
   width: 100%;
   padding: 0 8px 0 11px;
-  border-radius: 5px;
+  border-radius: var(--radius-s);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -571,7 +571,7 @@
 }
 .helper-bar .change-files {
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   background: var(--paper);
 }
 .tool-stack.is-work .tool-stack-body {
@@ -712,7 +712,7 @@
 }
 .tool-step.foldable > .tool-step-head:hover {
   background: color-mix(in srgb, var(--ink) 3%, transparent);
-  border-radius: 6px;
+  border-radius: var(--radius-m);
 }
 .tool-step.folded > :not(.tool-step-head) {
   display: none;
@@ -732,7 +732,7 @@
   width: min(100%, var(--read));
   margin: 0 auto;
   border: 1px solid var(--line);
-  border-radius: 17px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: 0 8px 30px rgba(58, 45, 29, 0.08);
   padding: 11px 13px 9px;
@@ -767,7 +767,7 @@
   align-items: center;
   gap: 5px;
   padding: 5px 7px;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font-size: 11.5px;
 }
@@ -784,7 +784,7 @@
   width: min(400px, 100%);
   padding: 26px 26px 20px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: var(--shadow);
   animation: rise 0.2s ease-out;
@@ -926,7 +926,7 @@
   align-items: baseline;
   gap: 3px;
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 10px var(--title);
   letter-spacing: 0.1em;
@@ -984,7 +984,7 @@
   margin-top: 10px;
   padding: 4px 6px 6px;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   background: color-mix(in srgb, var(--accent-soft) 22%, var(--paper));
 }
 .deliver-head {
@@ -1007,7 +1007,7 @@
   gap: 10px;
   min-height: 38px;
   padding: 0 4px 0 7px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   transition: background 0.15s;
 }
 .deliver-file + .deliver-file {
@@ -1086,7 +1086,7 @@ textarea::placeholder,
   margin-left: 4px;
   padding: 3px 8px 3px 4px;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   color: var(--ink-2);
   font: 12px var(--title);
   transition:
@@ -1104,7 +1104,7 @@ textarea::placeholder,
   width: 15px;
   height: 15px;
   border: 1px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-s);
   color: var(--accent);
   font: 9px var(--title);
 }

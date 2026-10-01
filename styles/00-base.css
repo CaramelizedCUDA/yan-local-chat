@@ -37,7 +37,7 @@ input[type="checkbox"] {
   height: 14px;
   margin: 0;
   border: 1px solid var(--ink-3);
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   background: transparent;
   vertical-align: -2px;
   cursor: pointer;
@@ -93,6 +93,13 @@ input[type="number"]::-webkit-outer-spin-button {
   --read: 760px;
   --body: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
   --title: "Noto Serif SC", "Songti SC", "STSong", serif;
+  /* 圆角三档：小件（标签、行内代码、纸签、卡片）、块（条目、按钮、菜单项、工具输出）、输入框与面板（代码块、气泡、弹层）。
+     原先十几种数值按就近归档：2–5 → 小、6–9 → 块、10–18 → 面板；不对称的逐角归档，「一角收小」的形照留。
+     不归档的：50% 的圆钮圆点、墨滴的椭圆、0 与 1–1.5px 的细条、滚动条与墨痕的 99px。
+     落选的 2 · 4 · 6（见 设计稿/34）：输入框与弹层也成了方块，大面失了纸的软 */
+  --radius-s: 3px;
+  --radius-m: 6px;
+  --radius-l: 10px;
 }
 /* 笔意图标（画法见 src/03-brush.js）：墨分两色，一片淡墨作纸，一点朱。
    落选的：等宽圆头的线稿加实心色块（UI 图标的画法，怎么减细节都偏卡通）；卷宗一个「卷」字小印（与「工」印混在一处，认不出是入口） */

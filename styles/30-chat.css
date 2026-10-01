@@ -49,7 +49,7 @@ html.work-mode .chat-scroll-grabber {
 .chat-title h1 {
   margin: 0 -6px;
   padding: 0 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   outline: 0;
   cursor: text;
   font: 500 25px var(--title);
@@ -100,7 +100,7 @@ html.work-mode .chat-scroll-grabber {
 .user-bubble {
   max-width: 80%;
   padding: 12px 16px;
-  border-radius: 14px 14px 4px 14px;
+  border-radius: var(--radius-l) var(--radius-l) var(--radius-s) var(--radius-l);
   background: var(--paper-2);
   white-space: pre-wrap;
   line-height: 1.7;
@@ -132,7 +132,7 @@ html.work-mode .chat-scroll-grabber {
   padding: 1px 3px 2px;
   border: 1px solid var(--line);
   border-top: 2px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-s);
   background: var(--paper);
   color: var(--ink-2);
   font-size: 11.5px;
@@ -264,7 +264,7 @@ html.work-mode .chat-scroll-grabber {
   flex: none;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line));
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   color: var(--accent);
   font: 500 9px/1 var(--title);
   letter-spacing: 0;
@@ -285,7 +285,7 @@ html.work-mode .chat-scroll-grabber {
   margin-right: 6px;
   padding: 0 3px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   color: var(--accent);
   font: 9px/14px var(--title);
   vertical-align: 1px;
@@ -297,7 +297,7 @@ html.work-mode .chat-scroll-grabber {
   margin: 0 0 14px;
   padding: 9px 12px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-l);
   background: color-mix(in srgb, var(--paper-2) 70%, transparent);
   font-size: 12.5px;
   color: var(--ink-3);
@@ -339,7 +339,7 @@ html.work-mode .chat-scroll-grabber {
   padding: 7px 10px;
   max-height: 220px;
   overflow: auto;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   background: color-mix(in srgb, var(--ink) 4%, transparent);
   color: var(--ink-2);
   font:
@@ -369,7 +369,7 @@ html.work-mode .chat-scroll-grabber {
 }
 .tool-step[data-status="pending"] {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
-  border-radius: 7px;
+  border-radius: var(--radius-m);
 }
 .text-btn.on {
   color: var(--accent);
@@ -451,7 +451,7 @@ html.work-mode .chat-scroll-grabber {
   width: min(420px, calc(100vw - 48px));
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: var(--shadow);
   transform-origin: top left;
@@ -489,7 +489,7 @@ html.work-mode .chat-scroll-grabber {
   width: 100%;
   text-align: left;
   padding: 6px 8px;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   color: var(--ink-2);
   font-size: 11.5px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -517,7 +517,7 @@ html.work-mode .chat-scroll-grabber {
   justify-content: space-between;
   align-items: center;
   padding: 7px 9px;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   color: var(--ink-2);
   font-size: 12px;
 }
@@ -556,7 +556,7 @@ html.work-mode .chat-scroll-grabber {
 }
 .chip-pop.floating.chip-menu button {
   padding: 8px 10px;
-  border-radius: 6px 10px 10px 10px;
+  border-radius: var(--radius-m) var(--radius-l) var(--radius-l) var(--radius-l);
   color: var(--ink-2);
   font-family: var(--title);
   font-size: 12.5px;
@@ -574,7 +574,7 @@ html.work-mode .chat-scroll-grabber {
   margin-top: 4px;
   padding-top: 9px;
   border-top: 1px solid var(--line);
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 var(--radius-m) var(--radius-m);
   color: var(--ink-3);
 }
 .chip-menu button.danger:hover {
@@ -633,7 +633,7 @@ html.work-mode .chat-scroll-grabber {
   width: 100%;
   margin-top: 6px;
   padding: 6px 8px;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   text-align: left;
   color: var(--ink-2);
   font-size: 11.5px;
@@ -737,7 +737,7 @@ html.work-mode .chat-scroll-grabber {
   display: grid;
   place-items: center;
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
 }
 .message-action svg {
@@ -767,7 +767,7 @@ html.work-mode .chat-scroll-grabber {
   width: 80%;
   padding: 12px 13px;
   border: 1px solid var(--line);
-  border-radius: 14px 14px 4px 14px;
+  border-radius: var(--radius-l) var(--radius-l) var(--radius-s) var(--radius-l);
   background: var(--paper-2);
 }
 .message-editor textarea {
@@ -793,7 +793,7 @@ html.work-mode .chat-scroll-grabber {
 .edit-actions button {
   width: auto;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   font-size: 11px;
 }
 .edit-save {
@@ -925,7 +925,7 @@ html.work-mode .chat-scroll-grabber {
 }
 .markdown code {
   padding: 0.1em 0.35em;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   background: var(--paper-2);
   font:
     85% ui-monospace,
@@ -939,7 +939,7 @@ html.work-mode .chat-scroll-grabber {
   margin: 1em 0;
   padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   background: var(--paper-2);
   /* 字号与行高定在 pre 上：只定在里头的 code 上时，每行仍被 pre 按正文字号撑出的行高（约 1.85 × 正文）拉开，代码稀得像隔行 */
   font-size: 85%;
@@ -967,7 +967,7 @@ html.work-mode .chat-scroll-grabber {
 }
 .markdown img {
   max-width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
 }
 .markdown del {
   color: var(--ink-3);

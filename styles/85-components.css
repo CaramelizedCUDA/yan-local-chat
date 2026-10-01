@@ -75,7 +75,7 @@
   z-index: 1;
   padding: 2px 4px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: color-mix(in srgb, var(--paper) 90%, transparent);
   opacity: 0;
   transition: opacity 0.18s ease;
@@ -157,7 +157,7 @@
 }
 .html-app-error {
   border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--line));
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   overflow: hidden;
 }
 .work-expanded {
@@ -167,7 +167,7 @@
   display: flex !important;
   flex-direction: column !important;
   margin: 0 !important;
-  border-radius: 14px !important;
+  border-radius: var(--radius-l) !important;
   background: var(--paper) !important;
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.35) !important;
 }
@@ -238,7 +238,7 @@
   gap: 9px;
   padding: 9px 10px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   background: var(--paper-2);
   color: inherit !important;
   text-decoration: none !important;
@@ -333,7 +333,7 @@ button.source-local {
 }
 .image-viewer-actions button {
   padding: 6px 9px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font-size: 11px;
 }
@@ -361,7 +361,7 @@ button.source-local {
   max-width: 100%;
   max-height: calc(100dvh - 106px);
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   box-shadow: 0 16px 55px rgba(35, 30, 22, 0.18);
 }
 .image-viewer-stage.actual {
@@ -412,7 +412,7 @@ button.source-local {
 }
 .file-viewer-actions button {
   padding: 6px 11px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 11.5px var(--title);
   letter-spacing: 0.08em;
@@ -440,14 +440,14 @@ button.source-local {
   max-width: 100%;
   max-height: calc(100dvh - 110px);
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   box-shadow: 0 16px 55px rgba(35, 30, 22, 0.18);
 }
 .file-viewer-frame {
   width: min(100%, 1000px);
   height: calc(100dvh - 110px);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: var(--paper);
 }
 /* 音视频：视频与图同样居中托一层影；音频只是一条播放器，放在纸面正中 */
@@ -460,7 +460,7 @@ button.source-local {
 .file-viewer-media video {
   max-width: 100%;
   max-height: calc(100dvh - 110px);
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   background: #000;
   box-shadow: 0 16px 55px rgba(35, 30, 22, 0.18);
 }
@@ -473,7 +473,7 @@ button.source-local {
   height: fit-content;
   padding: 26px 30px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   color: var(--ink);
   font-size: 14px;
@@ -592,7 +592,7 @@ button.source-local {
   overflow: auto;
   padding: 16px 20px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: var(--paper);
   box-shadow: 0 6px 22px rgba(35, 30, 22, 0.06);
   font-size: 12.5px;
