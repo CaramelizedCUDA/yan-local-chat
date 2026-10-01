@@ -114,58 +114,143 @@ const ask = text =>
     `document.querySelector("#newChat").click(); setTimeout(() => { document.querySelector("#welcomeInput").value = ${JSON.stringify(text)}; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); }, 300); true`
   );
 
-// ---- 帮手在后台做，主模型醒着：它说「等回报」的当口寄来补言，当场递到、当场回应，不等帮手回来
+// ---- 帮手在后台做：主模型说完「等回报」这一答就收尾，没有谁醒着等。这时寄出的话是新的一问、当场作答；
+// 帮手做完，回报另起一答，页面上是一道细线（不是用户的气泡）
+const convOf = text => `__yanState().conversations.find(c => c.messages[0]?.content === ${JSON.stringify(text)})`;
 await ask("BGNOTE");
-await waitFor(`${lastAssistant}?.textContent.includes("等回报")`, 10000);
+await waitFor(`${lastAssistant}?.textContent.includes("等回报") && ${lastAssistant}.dataset.status === "complete"`, 10000);
+const idle = await evalJs(
+  `({ helper: ${lastAssistant}.querySelector(".tool-step-delegate")?.dataset.status, seal: document.querySelector("#chatSend").dataset.glyph, bar: document.querySelector("#helperBar:not(.hidden)")?.textContent || "", tip: document.querySelector("#history .history-item.active .history-state")?.title || "" })`
+);
+check(
+  "with only waiting left the answer closes; the helper keeps working, the bar and sidebar still show it, the seal stops it",
+  idle.helper === "running" && idle.seal === "止" && idle.bar.includes("慢活") && idle.tip === "帮手在后台做",
+  JSON.stringify(idle)
+);
 await type("BG-NOTE-TEXT 顺便改个名");
+check("with words on the desk the seal sends instead", (await evalJs(`document.querySelector("#chatSend").dataset.glyph`)) === "寄");
 await enter();
-await waitFor(`${lastAssistant}.textContent.includes("收到补言｜reports:0")`, 3000).catch(() => {});
-const bg = await evalJs(
-  `(a => ({ note: a.querySelector(".tool-step-note")?.dataset.status, helper: a.querySelector(".tool-step-delegate")?.dataset.status, heard: a.textContent.includes("收到补言｜reports:0"), text: a.textContent.slice(-160) }))(${lastAssistant})`
+await waitFor(`${lastAssistant}.textContent.includes("收到补言｜reports:0") && ${lastAssistant}.dataset.status === "complete"`, 3000).catch(
+  () => {}
 );
 check(
-  "with the helper still in the background, the supplement reaches the main model at once",
-  bg.note === "done" && bg.helper === "running" && bg.heard,
-  JSON.stringify(bg)
+  "the words become a new question, answered at once while the helper is still out",
+  await evalJs(
+    `${lastAssistant}.textContent.includes("收到补言｜reports:0") && ${convOf("BGNOTE")}.messages.filter(m => m.role === "user").length === 2`
+  )
 );
-await waitFor(`${lastAssistant}.dataset.status !== "streaming"`, 15000);
-const bgText = await evalJs(`${lastAssistant}.textContent`);
+await waitFor(
+  `${lastAssistant}.textContent.includes("BGNOTE done｜reports:1") && ${lastAssistant}.dataset.status === "complete"`,
+  15000
+).catch(() => {});
+const relay = await evalJs(
+  `(c => ({ roles: c.messages.map(m => m.role + (m.relay ? ":relay" : "")).join(","), line: document.querySelector("#messages .message.relay")?.textContent || "", bubble: !!document.querySelector("#messages .message.relay .user-bubble"), outline: document.querySelectorAll("#outline .outline-item").length, meta: document.querySelector("#chatMeta")?.textContent || "" }))(${convOf("BGNOTE")})`
+);
 check(
-  "the answer waits for the report and closes on it",
-  bgText.indexOf("收到补言｜reports:0") >= 0 && bgText.indexOf("收到补言｜reports:0") < bgText.indexOf("BGNOTE done｜reports:1"),
-  bgText.slice(0, 200)
+  "the report wakes a new answer behind a thin line naming the helper",
+  relay.roles === "user,assistant,user,assistant,user:relay,assistant" && relay.line.includes("帮手「慢活」回报") && !relay.bubble,
+  JSON.stringify(relay)
 );
+check("the relay line is not counted as a question", relay.outline === 2 && relay.meta.includes("两问"), JSON.stringify(relay));
+await evalJs(`document.querySelector("#messages .message.relay .relay-name").click(); true`);
+await sleep(200);
+check(
+  "clicking the name on the line opens that helper's run",
+  await evalJs(
+    `!document.querySelector("#helperModal").classList.contains("hidden") && document.querySelector("#helperTitle").textContent === "慢活"`
+  )
+);
+await evalJs(`document.querySelector("#helperClose").click(); true`);
 
-// ---- 主模型给后台的帮手递话：帮手说到落点时读到、改口回报；主答等回报收尾
+// ---- 主模型给后台的帮手递话：帮手说到落点时读到、改口回报。递话这一步在行迹里也是一枚签，标「已更新」，点开翻到递去的那句话
 await ask("HELPERTALK");
-await waitFor(`${lastAssistant}?.dataset.status !== "streaming" && ${lastAssistant}.textContent.includes("HELPERTALK done")`, 15000).catch(
+await waitFor(`${lastAssistant}?.dataset.status === "complete" && ${lastAssistant}.textContent.includes("HELPERTALK done")`, 15000).catch(
   () => {}
 );
 const talk = await evalJs(
-  `(a => ({ text: a.textContent, sub: __yanState().conversations.flatMap(c => c.messages).find(m => m.id === a.dataset.message)?.steps.find(s => s.name === "delegate")?.sub }))(${lastAssistant})`
+  `(c => ({ text: document.querySelector("#messages").textContent, sub: c.messages.flatMap(m => m.steps || []).find(s => s.name === "delegate")?.sub, card: (d => d && { kind: d.dataset.kind, fresh: !!d.querySelector(".helper-fresh"), ref: d.dataset.ref, note: d.dataset.note, text: d.textContent })(document.querySelector('#messages .tool-step-delegate[data-kind="传话"]')) }))(${convOf("HELPERTALK")})`
 );
 check(
   "main model's message reaches the running helper at a natural break, and it changes course",
-  talk.text.includes("HELPERTALK done｜已递给帮手「慢活」") &&
-    talk.text.includes("收到改向｜乙") &&
-    talk.sub?.status === "complete" &&
-    talk.sub.content.includes("慢活第1句"),
-  talk.text.slice(-240)
+  talk.text.includes("收到改向｜乙") && talk.sub?.status === "complete" && talk.sub.content.includes("慢活第1句"),
+  JSON.stringify({ text: talk.text.slice(-240), sub: talk.sub?.status })
 );
-check("the helper tool shows in the trail as 传话", await evalJs(`${lastAssistant}.textContent.includes("递给「慢活」")`));
+check(
+  "the passed word is a card in the trail marked 已更新, pointing at the helper and the note",
+  talk.card?.fresh && talk.card.ref === "call_hp0" && !!talk.card.note && talk.card.text.includes("TALK-TEXT"),
+  JSON.stringify(talk.card)
+);
+await evalJs(`document.querySelector('#messages .tool-step-delegate[data-kind="传话"] > .tool-step-head').click(); true`);
+await sleep(300);
+const panelNote = await evalJs(
+  `(n => n && { label: n.querySelector(".tool-label").textContent, status: n.dataset.status, text: n.textContent, open: n.closest("details")?.open })(document.querySelector('#helperModal .tool-step[data-tool="helper_note"]'))`
+);
+check(
+  "clicking it opens the helper with the passed words in its timeline, delivered",
+  !!panelNote &&
+    panelNote.label.endsWith("传话") &&
+    panelNote.status === "done" &&
+    panelNote.text.includes("TALK-TEXT") &&
+    panelNote.open !== false,
+  JSON.stringify(panelNote)
+);
+await evalJs(`document.querySelector("#helperClose").click(); true`);
 
-// ---- 主模型叫停帮手：只停它一个，已做的照未完成回报，主答照常收尾
+// ---- 主模型叫停帮手：只停它一个，已做的照未完成回报（叫停得快，回报常赶在这一答收尾前到，就在这一答里递上）
 await ask("HELPERSTOP");
-await waitFor(`${lastAssistant}?.dataset.status !== "streaming" && ${lastAssistant}.textContent.includes("HELPERSTOP done")`, 15000).catch(
+await waitFor(`${lastAssistant}?.dataset.status === "complete" && ${lastAssistant}.textContent.includes("HELPERSTOP done")`, 15000).catch(
   () => {}
 );
 const halt = await evalJs(
-  `(a => ({ status: a.dataset.status, text: a.textContent, sub: __yanState().conversations.flatMap(c => c.messages).find(m => m.id === a.dataset.message)?.steps.find(s => s.name === "delegate")?.sub?.status }))(${lastAssistant})`
+  `(c => ({ text: c.messages.at(-1).content, sub: c.messages.flatMap(m => m.steps || []).find(s => s.name === "delegate")?.sub?.status, card: document.querySelector('#messages .tool-step-delegate[data-kind="叫停"]')?.textContent || "", line: document.querySelector("#messages .message.relay")?.textContent || "" }))(${convOf("HELPERSTOP")})`
 );
 check(
-  "main model stops a helper; the answer carries on and gets its partial report",
-  halt.status === "complete" && halt.text.includes("已叫停帮手「慢活」") && halt.text.includes("已按吩咐叫停") && halt.sub === "stopped",
-  JSON.stringify({ status: halt.status, sub: halt.sub, text: halt.text.slice(-240) })
+  "main model stops a helper; its partial report still comes back",
+  halt.text.includes("已按吩咐叫停") && halt.sub === "stopped" && halt.card.includes("已叫停"),
+  JSON.stringify(halt)
+);
+
+// ---- 续派：帮手收了工，主模型再交给它一件。在当前行迹里另起一枚「续派」签（已更新），帮手记得上一趟，回报照样另起一答
+await ask("HELPERAGAIN");
+await waitFor(`${lastAssistant}?.dataset.status === "complete" && ${lastAssistant}.textContent.includes("HELPERAGAIN done")`, 20000).catch(
+  () => {}
+);
+const again = await evalJs(
+  `(c => ({ text: c.messages.at(-1).content, runs: c.messages.flatMap(m => m.steps || []).filter(s => s.sub).map(s => s.name + ":" + s.status + ":" + s.sub.task.slice(0, 10) + ":" + (s.sub.helper === c.messages.flatMap(m => m.steps || []).find(x => x.name === "delegate")?.sub.helper)), card: (d => d && { fresh: !!d.querySelector(".helper-fresh"), status: d.dataset.status })(document.querySelector('#messages .tool-step-delegate[data-kind="续派"]')) }))(${convOf("HELPERAGAIN")})`
+);
+check(
+  "a finished helper is sent again: a new run of the same helper, which remembers its last run",
+  again.runs.length === 2 &&
+    again.runs[1].startsWith("helper:done:AGAIN-TEXT") &&
+    again.runs[1].endsWith(":true") &&
+    again.text.includes("再做回报｜seen:yes|first:yes"),
+  JSON.stringify(again)
+);
+check("the re-dispatch is its own card marked 已更新", again.card?.fresh && again.card.status === "done", JSON.stringify(again.card));
+await evalJs(`document.querySelector('#messages .tool-step-delegate[data-kind="续派"] > .tool-step-head').click(); true`);
+await sleep(300);
+const againPanel = await evalJs(
+  `({ task: document.querySelector("#helperTaskText").textContent, nav: document.querySelector("#helperNav .helper-nav-count")?.textContent || "", report: document.querySelector("#helperModal .sub-report")?.textContent || "" })`
+);
+check(
+  "its panel shows the new task and report, and pages with the first run",
+  againPanel.task.startsWith("AGAIN-TEXT") && againPanel.nav === "2/2" && againPanel.report.startsWith("再做回报"),
+  JSON.stringify(againPanel)
+);
+await evalJs(`document.querySelector("#helperClose").click(); true`);
+
+// ---- 这一答收了尾、帮手还在做：案上空着按印即叫停帮手，不回报、也不另起一答
+await ask("BGLONG");
+await waitFor(`${lastAssistant}?.textContent.includes("等回报") && ${lastAssistant}.dataset.status === "complete"`, 10000);
+await evalJs(`document.querySelector("#chatSend").click(); true`);
+await sleep(600);
+const halted = await evalJs(
+  `(c => ({ step: c.messages.flatMap(m => m.steps || []).find(s => s.name === "delegate"), n: c.messages.length, seal: document.querySelector("#chatSend").dataset.glyph }))(${convOf("BGLONG")})`
+);
+check(
+  "with the answer closed, the seal stops the helper outright: no report, no new answer",
+  halted.step?.status === "error" && halted.step.result === "已停止" && halted.n === 2 && halted.seal !== "止",
+  JSON.stringify({ status: halted.step?.status, result: halted.step?.result, n: halted.n, seal: halted.seal })
 );
 
 // ---- 想得很久：补言默认等它开口；点那一步上的折箭头，不等落点当场递上

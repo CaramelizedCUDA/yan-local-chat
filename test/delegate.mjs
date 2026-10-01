@@ -53,14 +53,17 @@ for (let i = 0; i < 200; i++) {
     await evalJs(
       `(() => { window.__markLost ??= 0; const step = document.querySelector('#helperModal .tool-step[data-status="done"]'); if (step && !step.dataset.mark) { if (window.__stepMarked) window.__markLost++; step.dataset.mark = "1"; window.__stepMarked = true; } })(); true`
     );
-  if (await evalJs(`(document.querySelector('.message.assistant')?.dataset.status ?? "streaming") !== "streaming"`)) break;
+  // 主答派完活、只剩等待就收尾；帮手的回报另起一答。等到最后那一答写完（回报都收齐了）
+  if (
+    await evalJs(`(m => m?.status === "complete" && m.content.includes("DELEGATE done"))(__yanState().conversations[0]?.messages.at(-1))`)
+  )
+    break;
   await sleep(60);
 }
 check("helper timeline runs live in the side panel", panelLiveSeen, [...new Set(seen)].slice(0, 6).join(" | "));
 check("the trail keeps only a marker, no nested helper steps", nestedInTrail === 0, String(nestedInTrail));
 check("two helpers ran in parallel", bothRunning, [...new Set(seen)].slice(0, 6).join(" | "));
 check("the work bar above the composer names both running helpers", !!barBoth, [...new Set(seen)].slice(-3).join(" | "));
-check("the work bar tallies files changed while the reply is still being written", !!barChanges, barChanges);
 check("no change bar trails the reply while it is still being written", !endBarWhileStreaming);
 check("helper's live thought shown in the panel", thoughtLive);
 // 呼吸是纯 CSS：无头浏览器强制 prefers-reduced-motion: reduce，那一档本就该把动画压掉（用户要少动效就该不动），
@@ -80,9 +83,16 @@ check(
   "helper bar gone after completion",
   await evalJs(
     `document.querySelector("#helperBar").classList.contains("hidden") || document.querySelector("#helperBar").classList.contains("leaving")`
-  )
+  ),
+  await evalJs(`document.querySelector("#helperBar").className + " | " + document.querySelector("#helperBar").textContent`)
 );
 await waitFor(`document.querySelector('.message.assistant')?.dataset.status === "complete"`, 40000);
+const shape = await evalJs(`__yanState().conversations[0].messages.map(m => m.role + (m.relay ? ":relay" : "")).join(",")`);
+check(
+  "the first answer closed with only waiting left; the reports came back as their own question(s)",
+  /^user,assistant,(user:relay,assistant,){1,2}$/.test(shape + ","),
+  shape
+);
 await evalJs(`document.querySelector(".message.assistant .tool-stack").open = true; true`);
 await sleep(200);
 await shot("delegate.png");
@@ -97,7 +107,7 @@ check(
 check("marker meta counts helper steps and files", /2 步 · 改 1 个文件 · \d+ 秒/.test(card.meta), card.meta);
 // 一答收尾时步骤的 at 会前移，分组的键随之变。页面若不撤掉落单的旧分组，同一次差遣就画两遍
 const painted = await evalJs(
-  `JSON.stringify({ markers: document.querySelectorAll(".message.assistant .tool-step-delegate").length, groups: document.querySelectorAll(".message.assistant .tool-stack-body > .trail-group").length, steps: __yanState().conversations[0].messages.at(-1).steps.length })`
+  `JSON.stringify({ markers: document.querySelectorAll(".message.assistant .tool-step-delegate").length, groups: document.querySelectorAll(".message.assistant .tool-stack-body > .trail-group").length, steps: __yanState().conversations[0].messages[1].steps.length })`
 );
 check(
   "each step is painted once — stale groups are dropped when offsets shift",
@@ -187,13 +197,11 @@ check(
 // 合上那扇窗，后面几项看的是正文
 await evalJs(`document.querySelector("#helperClose").click(); true`);
 check("second helper's file exists", readFileSync(WORK + "/src/b.js", "utf8").includes("export const b = 2;"));
-const text = await evalJs(`document.querySelector(".message.assistant .assistant-block > .markdown").textContent`);
+const text = await evalJs(`__yanState().conversations[0].messages.at(-1).content`);
+// 先到的那份可能在第一答里就递上了（那一答还在说「等回报」），后到的另起一答；收尾那一答前冠着派活那一答的行迹
 check(
-  "parent received both helper reports with change summaries",
-  text.includes("帮手「改 a.js」已完成（2 步，改了 1 个文件：src/a.js（+1 −1））") &&
-    text.includes("回报：已把 return 1 改为 return 2") &&
-    text.includes("帮手「建 b.js」已完成（1 步，改了 1 个文件：src/b.js（+1 −0））") &&
-    text.includes("帮手「改 a.js」已在后台开工"),
+  "the last answer closes on the reports, behind the digest of the answer that sent the helpers",
+  text.startsWith("DELEGATE done｜trail:yes") && /帮手「(改 a\.js|建 b\.js)」已完成（\d 步，改了 1 个文件：src\/[ab]\.js/.test(text),
   text.slice(0, 400)
 );
 check(
@@ -203,24 +211,9 @@ check(
   await evalJs(`document.querySelector(".message.assistant .change-summary")?.textContent`)
 );
 check(
-  "context cost includes helper rounds",
-  (await evalJs(`document.querySelector(".message.assistant .message-cost")?.textContent`)) === "耗墨 50",
+  "the sending answer's cost includes the helpers, charged when they finished",
+  (await evalJs(`document.querySelector(".message.assistant .message-cost")?.textContent`)) === "耗墨 45",
   await evalJs(`document.querySelector(".message.assistant .message-cost")?.textContent`)
-);
-// 下一问的行迹摘要里应有差遣一条，连同帮手改过的文件
-await evalJs(
-  `document.querySelector("#chatInput").value = "DIGEST-ECHO"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
-);
-await waitFor(
-  `document.querySelectorAll('.message.assistant').length === 2 && [...document.querySelectorAll('.message.assistant')].at(-1)?.dataset.status === "complete"`
-);
-const digest = await evalJs(`[...document.querySelectorAll('.message.assistant')].at(-1).querySelector(".markdown").textContent`);
-check(
-  "digest carries both delegate steps and helpers' files",
-  /差遣「改 a\.js」→ 2 步 · 改 1 个文件 · \d+ 秒，改了 src\/a\.js；差遣「建 b\.js」→ 1 步 · 改 1 个文件 · \d+ 秒，改了 src\/b\.js/.test(
-    digest
-  ),
-  digest
 );
 // 刷新后从存储重画：差遣卡片与嵌套步骤仍在
 await send("Page.navigate", { url: PAGE });
