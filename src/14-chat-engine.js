@@ -175,8 +175,12 @@ async function sendOrStop() {
       toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候或调高上限");
       return;
     }
-    const sendingDraftKey = draftKey();
-    let c = currentConversation();
+    // 案上的东西在点发送这一刻就定下：下面要等工作目录立起来，这期间用户可能已换到别的对话，
+    // 输入框、待发的附件与引文都换成了那一段的草稿，不能等完了再去读
+    const sendingDraftKey = draftKey(),
+      snapshot = composerSnapshot(input);
+    let c = currentConversation(),
+      fresh = false;
     if (c && !(await ensureWorkReady(c))) return;
     if (!c) {
       const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
@@ -201,30 +205,40 @@ async function sendOrStop() {
         reasoning: normalizeReasoning(profile.reasoning)
       };
       if (!(await ensureWorkReady(c))) return;
+      fresh = true;
+    }
+    // 还在点发送的那个输入框前：照常收走案上的东西；已换走了：发的是当时那份，那份草稿撤掉，眼前这段的输入框不动，也不把人拉回来
+    const stayed = draftKey() === sendingDraftKey;
+    if (fresh) {
       delete store.settings.pendingGroupId;
       closeChipPop();
       store.conversations.unshift(c);
-      currentId = c.id;
+      if (stayed) currentId = c.id;
     }
-    const user = takeComposer(input, sendingDraftKey);
+    let user;
+    if (stayed) user = takeComposer(input, sendingDraftKey);
+    else {
+      user = composerMessage(snapshot);
+      if (store.drafts) delete store.drafts[sendingDraftKey];
+    }
     return startTurn(c, user, profile);
   } finally {
     sendPreparing = false;
     renderSendButtons();
   }
 }
+// 案上此刻的东西：话、附件、引文（换对话时 restoreDraft 会把附件、引文整个换成另一份，这里拿住的仍是这一份）
+function composerSnapshot(input) {
+  return { content: input.value.trim(), attachments: pendingAttachments, quote: pendingQuote };
+}
+/** @returns {Message} */
+function composerMessage({ content, attachments, quote }) {
+  return { id: uid(), role: "user", content, timestamp: now(), attachments, ...(quote ? { quote } : {}) };
+}
 // 把案上的东西（话、附件、引文）收成一条用户消息，输入框与草稿随之清空
 /** @returns {Message} */
 function takeComposer(input, key = draftKey()) {
-  /** @type {Message} */
-  const user = {
-    id: uid(),
-    role: "user",
-    content: input.value.trim(),
-    timestamp: now(),
-    attachments: pendingAttachments,
-    ...(pendingQuote ? { quote: pendingQuote } : {})
-  };
+  const user = composerMessage(composerSnapshot(input));
   input.value = "";
   input.style.height = "auto";
   delete store.drafts[key];

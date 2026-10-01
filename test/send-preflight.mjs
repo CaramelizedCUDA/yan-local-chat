@@ -32,7 +32,9 @@ await evalJs(`(() => {
 await waitFor(`window.__preflight.calls === 1`);
 check(
   "preflight blocks repeated Enter and keeps the draft visible",
-  await evalJs(`window.__preflight.calls === 1 && document.querySelector("#chatInput").value === "只发送一次" && document.querySelector("#chatSend").disabled && __yanState().conversations[0].messages.length === 0`)
+  await evalJs(
+    `window.__preflight.calls === 1 && document.querySelector("#chatInput").value === "只发送一次" && document.querySelector("#chatSend").disabled && __yanState().conversations[0].messages.length === 0`
+  )
 );
 await evalJs(`window.__preflight.release(); true`);
 await waitFor(`!document.querySelector("#chatSend").disabled`);
@@ -42,7 +44,54 @@ await evalJs(`document.querySelector("#chatInput").dispatchEvent(new KeyboardEve
 await waitFor(`__yanState().conversations[0].messages.length >= 2`);
 check(
   "retry creates exactly one user message and one reply",
-  await evalJs(`(() => { const messages = __yanState().conversations[0].messages; return messages.length === 2 && messages[0].role === "user" && messages[0].content === "只发送一次" && messages[1].role === "assistant"; })()`)
+  await evalJs(
+    `(() => { const messages = __yanState().conversations[0].messages; return messages.length === 2 && messages[0].role === "user" && messages[0].content === "只发送一次" && messages[1].role === "assistant"; })()`
+  )
+);
+await evalJs(`window.fetch = window.__preflight.original; true`);
+
+// 等工作目录的空当里换到另一段对话：发出去的仍是点发送那一刻的话，落进原来那段；另一段的草稿与引文原样留着
+await send("Page.navigate", { url: PAGE + "preview.html" });
+await sleep(500);
+await evalJs(
+  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", lastView: "chat", lastConversationId: "switch-a", autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", maxTokens: 8192, quota: "100k", usedTokens: 0 }], conversations: [{ id: "switch-a", title: "甲段", createdAt: "2026-01-02T00:00:00.000Z", updatedAt: "2026-01-02T00:00:00.000Z", profileId: "p1", workdir: ${JSON.stringify(WORK)}, messages: [], forks: [], threads: [] }, { id: "switch-b", title: "乙段", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", profileId: "p1", messages: [], forks: [], threads: [] }], library: [], drafts: { "switch-b": { text: "乙的草稿", attachments: [], quote: { text: "乙的引文", messageId: "" } } } })); true`
+);
+await send("Page.navigate", { url: PAGE });
+await waitFor(`!!document.querySelector('#history [data-conversation="switch-a"] .history-open')`);
+await evalJs(`document.querySelector('#history [data-conversation="switch-a"] .history-open').click(); true`);
+await waitFor(`__yanState().settings.lastConversationId === "switch-a" && !!document.querySelector("#chatInput")`);
+await evalJs(`(() => {
+  const original = window.fetch.bind(window);
+  let release;
+  const gate = new Promise(resolve => release = resolve);
+  window.__preflight = { calls: 0, release, original };
+  window.fetch = (...args) => {
+    const prepare = String(args[0]).includes("/api/work/prepare") || String(args[1]?.body || "").includes('"path":"/api/work/prepare"');
+    if (prepare && ++window.__preflight.calls === 1) return gate.then(() => original(...args));
+    return original(...args);
+  };
+  const input = document.querySelector("#chatInput");
+  input.value = "甲的话";
+  input.dispatchEvent(new Event("input"));
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  return true;
+})()`);
+await waitFor(`window.__preflight.calls === 1`);
+await evalJs(`document.querySelector('#history [data-conversation="switch-b"] .history-open').click(); true`);
+await waitFor(`__yanState().settings.lastConversationId === "switch-b" && document.querySelector("#chatInput").value === "乙的草稿"`);
+await evalJs(`window.__preflight.release(); true`);
+await waitFor(`__yanState().conversations.find(c => c.id === "switch-a").messages.length >= 2`);
+check(
+  "switching away while the send waits still sends the first conversation's words there",
+  await evalJs(
+    `(() => { const s = __yanState(), a = s.conversations.find(c => c.id === "switch-a"), b = s.conversations.find(c => c.id === "switch-b"); return a.messages[0].content === "甲的话" && !a.messages[0].quote && b.messages.length === 0; })()`
+  )
+);
+check(
+  "the conversation now in view keeps its draft and quote, and stays in view",
+  await evalJs(
+    `__yanState().settings.lastConversationId === "switch-b" && document.querySelector("#chatInput").value === "乙的草稿" && !!document.querySelector("#composerQuote:not(.hidden), .composer-quote:not(.hidden)")?.textContent.includes("乙的引文")`
+  )
 );
 await evalJs(`window.fetch = window.__preflight.original; true`);
 close();
