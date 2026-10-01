@@ -297,15 +297,15 @@
   },
 
   read_document: {
-    description: "读对话附件或卷宗里的文档，全文或片段。可读文档：{{docs}}。长文档按页码或关键词只取片段。",
+    description:
+      "读对话附件或卷宗里的文档（PDF、Office、文本），全文或片段；长文档按页码或关键词只取片段。{{docs}}卷宗里有什么不清楚时，name 留空即列出。",
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string", description: "文件名，可部分匹配" },
+        name: { type: "string", description: "文件名或卷宗里的路径，可部分匹配；留空即列出可读的文档" },
         page: { type: "integer", description: "只读取该页（PDF / PPTX）" },
         query: { type: "string", description: "只返回包含该关键词的段落" }
-      },
-      required: ["name"]
+      }
     }
   },
 

@@ -85,7 +85,7 @@ let out = "";
 for (const [label, m] of Object.entries(modes)) {
   const names = new Set(m.tools);
   const system = sys(names, m);
-  const tools = m.tools.map(n => toolDef(n, { docs: "a.pdf" }, !!m.work));
+  const tools = m.tools.map(n => toolDef(n, { docs: "本段附件：a.pdf。" }, !!m.work));
   const toolsText = tools.join("\n");
   out += `\n== ${label}\n系统提示 ${system.length} 字 ≈ ${est(system)} tok；工具定义 ${toolsText.length} 字 ≈ ${est(toolsText)} tok（${tools.length} 件）；合计 ≈ ${est(system) + est(toolsText)} tok\n`;
   if (process.argv.includes("--dump"))
@@ -93,12 +93,12 @@ for (const [label, m] of Object.entries(modes)) {
       "---- system ----\n" +
       system +
       "\n---- tools ----\n" +
-      m.tools.map(n => `${n}: ${desc(n, { docs: "a.pdf" }, !!m.work)}`).join("\n") +
+      m.tools.map(n => `${n}: ${desc(n, { docs: "本段附件：a.pdf。" }, !!m.work)}`).join("\n") +
       "\n";
 }
 if (process.argv.includes("--tools"))
   for (const n of Object.keys(P.tools)) {
-    const d = toolDef(n, { docs: "a.pdf" });
+    const d = toolDef(n, { docs: "本段附件：a.pdf。" });
     console.log(
       `${n.padEnd(22)} ${String(d.length).padStart(5)} 字 ≈ ${String(est(d)).padStart(4)} tok（说明 ${est(P.tools[n].description)} tok）`
     );

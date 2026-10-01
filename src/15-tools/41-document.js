@@ -1,23 +1,40 @@
-// 言 · 翻阅文档：对话附件、浏览器内的旧卷宗，以及（设置允许时）磁盘卷宗里的文本与 Office / PDF——后者用到时才取回并抽正文。
-// 长文档按页码或关键词只取片段；可读的文档名写进说明里（{{docs}}），对话里有可读文档时才给
+// 言 · 翻阅文档：对话附件，以及（设置允许时）磁盘卷宗里的文本与 Office / PDF——后者用到时才取回并抽正文。
+// 长文档按页码或关键词只取片段。说明里（{{docs}}）只列这段对话的附件：卷宗会越攒越多，整份目录写进说明，每一问都得背着；
+// 卷宗里的按文件名或路径找，不知道有什么就 name 留空，列给它看。对话里有附件、或卷宗里有可读的文档时才给
 defineTool({
   name: "read_document",
   group: "docs",
   label: "翻阅文档",
   offer: ctx => ctx.docs.length > 0,
-  vars: ctx => ({ docs: ctx.docs.map(d => d.name).join("、") }),
+  vars: ctx => {
+    const attached = ctx.docs.filter(d => !d.archive).map(d => d.name);
+    return { docs: attached.length ? `本段附件：${attached.join("、")}。` : "" };
+  },
   lookup: true,
   parallel: true,
-  cache: args => ({ ...args, name: args.name.trim().toLowerCase(), query: args.query?.trim().toLowerCase() }),
+  cache: args => ({
+    ...args,
+    name: String(args.name || "")
+      .trim()
+      .toLowerCase(),
+    query: args.query?.trim().toLowerCase()
+  }),
   async run(step, args, { conversation }) {
     const docs = availableDocuments(conversation),
-      wanted = args.name.toLowerCase();
+      wanted = String(args.name || "")
+        .trim()
+        .replace(/\\/g, "/")
+        .toLowerCase();
+    if (!wanted) return documentList(step, docs);
+    const keys = d => [d.name.toLowerCase(), String(d.archive || "").toLowerCase()].filter(Boolean);
     const doc =
-      docs.find(d => d.name.toLowerCase() === wanted) ||
-      docs.find(d => d.name.toLowerCase().includes(wanted)) ||
+      docs.find(d => keys(d).includes(wanted)) ||
+      docs.find(d => keys(d).some(key => key.includes(wanted))) ||
       (docs.length === 1 ? docs[0] : null);
-    if (!doc)
-      return { ok: false, content: `未找到文档「${args.name}」。可读文档：${docs.map(d => d.name).join("、") || "无"}`, display: "未找到" };
+    if (!doc) {
+      const listed = documentList(step, docs);
+      return { ok: false, content: `未找到文档「${args.name}」。${listed.content}`, display: "未找到" };
+    }
     step.title = doc.name;
     let text = "";
     if (doc.archive) {
@@ -65,6 +82,25 @@ defineTool({
     };
   }
 });
+// name 留空（或没找到）时列给模型：附件在前，卷宗里的按新近排，带路径与大小；太多只列最近的
+const DOCUMENT_LIST_LIMIT = 60;
+/** @param {Step} step */
+function documentList(step, docs) {
+  const attached = docs.filter(d => !d.archive),
+    archived = docs.filter(d => d.archive).sort((a, b) => new Date(b.modifiedAt || 0).getTime() - new Date(a.modifiedAt || 0).getTime());
+  step.title ||= "可读文档";
+  const lines = [
+    ...attached.map(d => `附件 ${d.name}`),
+    ...archived.slice(0, DOCUMENT_LIST_LIMIT).map(d => `卷宗 ${d.archive}（${formatFileSize(d.size || 0)}）`)
+  ];
+  const more =
+    archived.length > DOCUMENT_LIST_LIMIT ? `\n…卷宗里另有 ${archived.length - DOCUMENT_LIST_LIMIT} 件较早的，按文件名找即可` : "";
+  return {
+    ok: true,
+    content: lines.length ? `可读文档（name 给文件名或卷宗路径）：\n${lines.join("\n")}${more}` : "没有可读的文档",
+    display: `${docs.length} 件`
+  };
+}
 const ARCHIVE_DOC_EXTENSIONS = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "ods", "odp"]);
 /** @param {Conversation} conversation */
 function availableDocuments(conversation) {
