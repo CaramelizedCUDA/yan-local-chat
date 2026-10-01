@@ -1,5 +1,6 @@
 // 看台：言的页面直连浏览器调试口（这里借测试用的这个 Edge 充当模型所用的浏览器）——
-// 找到浏览器挂出顶栏小屏、标签照抄、画面送到、点按与打字（含输入法那一路）递进网页、旁注开着时让位、收起后小屏回来、拖宽窄有界
+// 调试口从服务的 --config 文件里读、找到浏览器挂出入口、标签照抄、画面送到、点按与打字（含输入法那一路）递进网页、
+// 模型换页跟过去、网页的提示框画在画面上、前后按历史走、旁注开着时让位且停收画面、收起后入口回来、拖宽窄有界
 import { mkdirSync, writeFileSync } from "node:fs";
 import { connect, check, sleep, PAGE, DEBUG, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
@@ -16,7 +17,12 @@ writeFileSync(
     }
   })
 );
-const mcpServers = { 浏览器: { command: "node", args: ["cli.js", "--user-data-dir", PROFILE], disabled: true } };
+// 调试口写在 --config 那份文件里：先写一个没人听的口，开页时找不到浏览器；之后改成测试 Edge 的口再去找
+const CONFIG = `${TMP}/stage.json`;
+const writeConfig = port =>
+  writeFileSync(CONFIG, JSON.stringify({ browser: { launchOptions: { args: [`--remote-debugging-port=${port}`] } } }));
+writeConfig(1);
+const mcpServers = { 浏览器: { command: "node", args: ["cli.js", "--config", CONFIG, "--user-data-dir", PROFILE], disabled: true } };
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
 await evalJs(
@@ -51,7 +57,8 @@ const { targetId } = await browserSend("Target.createTarget", {
 await sleep(800);
 
 check("no pin before the browser is found", await evalJs(`document.querySelector("#stagePin").classList.contains("hidden")`));
-await evalJs(`__yanStage.state.port = ${new URL(DEBUG).port}; __yanStage.locate().then(() => true)`);
+writeConfig(new URL(DEBUG).port);
+await evalJs(`__yanStage.locate().then(() => true)`);
 await waitFor(`!document.querySelector("#stagePin").classList.contains("hidden")`, 8000);
 check("pin appears once the browser is found", true);
 check("tabs mirror the browser", await evalJs(`[...__yanStage.state.tabs.values()].some(t => t.title === "看台测试")`));
@@ -115,8 +122,45 @@ check(
 check("keys typed into the stage stay out of 言's own inputs", await evalJs(`!document.querySelector("#welcomeInput").value`));
 await shot("stage.png");
 
-// 收藏：读浏览器配置目录里的那份，按夹列出；点一条在当前页打开
+// 网页弹的提示框：画在画面上，作答递回网页
 await evalJs(`document.querySelector("#stageKeys").blur(); true`);
+check("back is greyed out with no history", await evalJs(`document.querySelector("[data-stage-nav=back]").disabled`));
+const ask =
+  "data:text/html;charset=utf-8," +
+  encodeURIComponent(`<title>问</title><script>setTimeout(() => (document.title = "答:" + prompt("名字", "言")), 50)</script>`);
+await evalJs(`__yanStage.go(${JSON.stringify(ask)}); true`);
+await waitFor(`!document.querySelector("#stageDialog").classList.contains("hidden")`, 8000).catch(() => {});
+check(
+  "a page's prompt shows on the stage",
+  await evalJs(
+    `(d => !d.classList.contains("hidden") && d.textContent.includes("名字") && d.querySelector("input")?.value === "言")(document.querySelector("#stageDialog"))`
+  )
+);
+await shot("stage-dialog.png");
+await evalJs(
+  `document.querySelector("#stageDialog input").value = "游目"; document.querySelector("[data-stage-answer=yes]").click(); true`
+);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "答:游目"`, 8000).catch(() => {});
+check(
+  "the answer reaches the page",
+  await evalJs(
+    `__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "答:游目" && document.querySelector("#stageDialog").classList.contains("hidden")`
+  ),
+  await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title`)
+);
+// 前后：有了历史，后退亮起；退回去之后前进亮起
+await waitFor(`!document.querySelector("[data-stage-nav=back]").disabled`, 5000).catch(() => {});
+check("back lights up once there is history", await evalJs(`!document.querySelector("[data-stage-nav=back]").disabled`));
+await evalJs(`document.querySelector("[data-stage-nav=back]").click(); true`);
+await waitFor(`!document.querySelector("[data-stage-nav=forward]").disabled`, 5000).catch(() => {});
+check(
+  "back walks the history and forward lights up",
+  await evalJs(
+    `!document.querySelector("[data-stage-nav=forward]").disabled && __yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title !== "答:游目"`
+  )
+);
+
+// 收藏：读浏览器配置目录里的那份，按夹列出；点一条在当前页打开
 check(
   "收藏 shows when the browser's profile is known",
   await evalJs(`!document.querySelector("#stageMarks").classList.contains("hidden")`)
@@ -143,10 +187,24 @@ check(
   (await evalJs(`__yanStage.state.tabs.size === ${before + 1} && __yanStage.state.current !== ${JSON.stringify(targetId)}`)) &&
     (await evalJs(`document.activeElement === document.querySelector("#stageUrl")`))
 );
-await browserSend("Target.closeTarget", { targetId: fresh });
-await evalJs(
-  `[...document.querySelectorAll("[data-stage-tab]")].find(t => t.dataset.stageTab === ${JSON.stringify(targetId)})?.click(); true`
+const clickTab = id =>
+  evalJs(`[...document.querySelectorAll("[data-stage-tab]")].find(t => t.dataset.stageTab === ${JSON.stringify(id)})?.click(); true`);
+// 模型换页：自己点回原来那页后，模型的调用（这里直接去找一回）不把人拽走；模型把那一页请到前台（选签即如此），看台跟过去
+await clickTab(targetId);
+await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
+await sleep(300);
+await evalJs(`__yanStage.locate().then(() => true)`);
+check("a call after the user picked a tab leaves the view alone", await evalJs(`__yanStage.state.current === ${JSON.stringify(targetId)}`));
+await browserSend("Target.activateTarget", { targetId: fresh });
+await sleep(300);
+await evalJs(`__yanStage.locate().then(() => true)`);
+check(
+  "the stage follows the page the model brings to front",
+  await evalJs(`__yanStage.state.current === ${JSON.stringify(fresh)}`),
+  await evalJs(`__yanStage.state.current`)
 );
+await browserSend("Target.closeTarget", { targetId: fresh });
+await clickTab(targetId);
 await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
 
 // 阔：铺满；Esc（焦点不在看台里时）退回
@@ -166,13 +224,23 @@ await mouse("mouseReleased", 1370, grip.y);
 check("drag narrows to the floor", (await evalJs(`document.querySelector("#stagePanel").getBoundingClientRect().width`)) === 320);
 check("width is remembered", (await evalJs(`localStorage.getItem("yan-stage-width")`)) === "320");
 
-// 旁注开着时看台让位（旁注是在右侧同一处）
+// 旁注开着时看台让位（旁注是在右侧同一处）：让位时不收画面、入口回来；旁注收起，画面接上
 await evalJs(`document.querySelector("#sidePanel").classList.remove("hidden"); true`);
 check("side notes take the right side", await evalJs(`getComputedStyle(document.querySelector("#stagePanel")).display === "none"`));
+await waitFor(`__yanStage.state.session === ""`, 3000).catch(() => {});
+check(
+  "screencast pauses while pushed aside, and the entry comes back",
+  await evalJs(`__yanStage.state.session === "" && !document.querySelector("#stagePin").classList.contains("hidden")`)
+);
 await evalJs(`document.querySelector("#sidePanel").classList.add("hidden"); true`);
 check(
   "stage comes back after side notes close",
   await evalJs(`getComputedStyle(document.querySelector("#stagePanel")).display !== "none"`)
+);
+await waitFor(`__yanStage.state.session !== ""`, 5000).catch(() => {});
+check(
+  "screencast resumes",
+  await evalJs(`__yanStage.state.session !== "" && document.querySelector("#stagePin").classList.contains("hidden")`)
 );
 
 // 收起：小屏回来；那一页关了，签跟着没了
