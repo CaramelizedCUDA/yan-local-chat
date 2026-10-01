@@ -22,7 +22,6 @@ const listenClock = seconds => {
   const s = Math.max(0, Math.floor(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
-const listenReduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // ---------- 一曲：卷宗里的一件、或对话里的一件附件 ----------
 function listenArchiveTrack(entry) {
@@ -421,7 +420,7 @@ function listenFrame() {
   listenSwing.t += 1 / 60;
   if (shown) {
     listenRenderPendant();
-    const angle = listenReduced() ? 0 : listenSwing.amp * (box.classList.contains("open") ? 3.2 : 7) * Math.sin(listenSwing.t * 2.4);
+    const angle = inkMotionOff() ? 0 : listenSwing.amp * (box.classList.contains("open") ? 3.2 : 7) * Math.sin(listenSwing.t * 2.4);
     box.style.setProperty("--listen-sway", `${angle.toFixed(2)}deg`);
   }
   if (!el.paused || listenSwing.amp > 0.01) listenFrameId = requestAnimationFrame(listenFrame);
