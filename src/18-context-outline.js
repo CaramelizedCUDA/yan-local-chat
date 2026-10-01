@@ -165,7 +165,6 @@ async function compactContext(c, { auto = false, before = null, profile = active
 /** @param {Profile} profile */
 async function summarize(profile, ask, signal, reasoning = "") {
   const response = await requestPatiently(profile, [{ role: "user", content: ask }], signal, {
-    temperature: 0.2,
     systemPrompt: "",
     reasoning: reasoning ? "low" : ""
   });

@@ -219,9 +219,11 @@ async function handleChat(req, res) {
       model: config.model,
       messages,
       stream: true,
-      stream_options: { include_usage: true },
-      temperature: Math.max(0, Math.min(2, Number(body.temperature ?? 0.7)))
+      stream_options: { include_usage: true }
     };
+    // 温度：页面给了才带（模型设置里留空即不传，由接口定）
+    if (body.temperature !== undefined && body.temperature !== null && Number.isFinite(Number(body.temperature)))
+      payload.temperature = Math.max(0, Math.min(2, Number(body.temperature)));
     // 页面给了才带 max_tokens（Anthropic 与拟题、压缩这几处）；没给就不传，让接口用自己的默认
     if (Number(body.maxTokens) > 0) payload.max_tokens = Math.max(16, Math.round(Number(body.maxTokens)));
     if (Array.isArray(body.tools) && body.tools.length) {

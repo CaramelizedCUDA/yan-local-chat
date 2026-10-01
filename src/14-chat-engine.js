@@ -554,7 +554,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       );
     assistant.status = "complete";
     conversation.updatedAt = now();
-    setTimeout(() => maybeAutoCompact(conversation, profile), 0);
     // 言里动过文件的，卷宗目录多半有了新东西：重新翻一遍，新出的、改过的成品挂在答末，侧栏的件数跟着更新
     if (archiveBefore && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) {
       await refreshArchive();
@@ -605,7 +604,11 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       updateContextGauge();
     }
     renderSendButtons();
-    if (assistant.status === "complete") void maybeAutoTitle(conversation, profile);
+    // 压前文排在这一答撤下作业之后：之前排的话，言里收尾还在等卷宗重翻，这段仍算在作答，压缩会悄悄作罢
+    if (assistant.status === "complete") {
+      setTimeout(() => maybeAutoCompact(conversation, profile), 0);
+      void maybeAutoTitle(conversation, profile);
+    }
   }
 }
 // ---------- 一答的轮次循环：主答、旁注、帮手共用 ----------
@@ -945,7 +948,6 @@ async function maybeAutoTitle(conversation, profile) {
     // 超时给到两分钟；输出上限不能只按题目本身算——会思考的模型把思考也计在 max_tokens 里；开了思考档位的降到最低一档，拟题用不着深想
     const response = await requestChat(profile, [{ role: "user", content: ask }], AbortSignal.timeout(120000), {
       maxTokens: 4000,
-      temperature: 0.3,
       systemPrompt: "",
       reasoning: conversation.reasoning ? "low" : ""
     });

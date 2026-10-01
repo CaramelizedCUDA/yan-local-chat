@@ -261,10 +261,11 @@ async function describeResponseError(response) {
 }
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
+  // 温度与输出上限同一条规矩：模型设置里留空就不传，由接口定——有的接口（OpenAI 的推理模型）只认默认值，传了反倒 400
   const parameters = {
     messages,
     systemPrompt: overrides.systemPrompt ?? "",
-    temperature: Number(overrides.temperature ?? profile.temperature ?? 0.7),
+    temperature: Number.isFinite(profile.temperature) ? profile.temperature : undefined,
     // 输出上限：拟题、压缩、探档位这几处自己给；平时 OpenAI 兼容接口不传（服务端的默认就是模型的上限，
     // 手写一个反而常常把长回答截断），Anthropic 必填、按模型设置或默认值
     maxTokens:
