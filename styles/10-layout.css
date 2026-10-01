@@ -354,9 +354,19 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .history-item:hover:after {
   display: none;
 }
-.history-item.active,
 .history-item:hover {
   background: var(--paper-3);
+}
+/* 正开着的那段：底比悬停深一档，标题加重——与悬停分得开，一眼认得出（2026-10-01 用户嫌原先与悬停同一层浅底「几乎认不出」）。
+   落选的：左缘再加一笔墨竖——组里紧挨着组的那道朱线，看着成了双线 */
+.history-item.active {
+  background: color-mix(in srgb, var(--ink) 9%, var(--paper-3));
+}
+.history-item.active .history-open {
+  font-weight: 600;
+}
+.history-item.active .history-tools {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 9%, var(--paper-3)) 10px);
 }
 .history-open {
   min-width: 0;

@@ -399,25 +399,31 @@ button:focus:not(:focus-visible) {
 .outline.dense .outline-label {
   font-size: 10px;
 }
-/* 「回到最新」与划选浮出的「引用 | 旁注」同是一张纸签：方角、影子收短、顶上一道朱（与游目当前那张签同一个记号）。
-   签上只一枚 ↓，四字收进 title。落选的：白底胶囊（99px 圆角，与「开合不用胶囊」同理被嫌脱节）。见 设计稿/26 二 */
+/* 「回到最新」：一枚圆钮，只一枚 ↓（四字收进 title），顶上一弧朱。
+   落选的：方角纸签（与「引用 | 旁注」同式，用户嫌不如圆的好看，2026-10-01）；白底胶囊（99px 圆角，被嫌脱节）。见 设计稿/26 二 */
 .jump-bottom {
   position: absolute;
   left: 50%;
   bottom: calc(var(--composer-h, 145px) + 14px);
   z-index: 7;
   transform: translateX(-50%);
-  padding: 3px 11px 4px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 1px solid var(--line);
-  border-top: 2px solid var(--accent);
-  border-radius: 2px;
+  border-top-color: var(--accent);
+  border-radius: 50%;
   background: var(--paper);
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1;
   box-shadow: 0 3px 10px rgba(61, 49, 32, 0.1);
   animation: rise 0.2s ease-out;
 }
 .jump-bottom:hover {
+  border-color: var(--accent);
   color: var(--accent);
 }
 .sidebar-scrim {
