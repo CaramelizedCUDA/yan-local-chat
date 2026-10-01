@@ -1,5 +1,5 @@
 // 言 · 本地存储 · 对话：一段一个文件落进对话目录，脏标记、落盘、巡检与读回
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 对话目录可用：桥接报了目录、上次读它没出错
 function chatsOnline() {
   return !!chatsDir() && !chatsBroken;

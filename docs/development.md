@@ -2,7 +2,7 @@
 
 [← 文档目录](README.md)
 
-零依赖、无转译：源码分成多段，桥接在请求 `/support.js` 与 `/app.css` 时按路径顺序即时拼接（子目录就地展开）（ETag 取各段的大小与修改时间），改一段刷新即生效；`node build.js` 产出仓库里的 `support.js` 与 `app.css` 供 `file://` 直接打开。
+零依赖、无转译：源码分成多段，桥接在请求 `/support.js` 与 `/app.css` 时按路径顺序即时拼接（子目录就地展开）（ETag 取各段的大小与修改时间），改一段刷新即生效；不落成文件，仓库里没有拼好的产物。
 
 | 目录 / 文件 | 内容 |
 | --- | --- |
@@ -11,6 +11,6 @@
 | `prompts/` | 内置提示词与工具说明，见其 README |
 | `server.js` · `server/web.js` · `server/http.js` · `server/work/` · `server/chats.js` · `server/store.js` · `server/files.js` · `server/sandbox.js` · `server/mcp/` · `server/env/` | 本机桥接：`server.js` 管转发、静态与拼接，`server/web.js` 管联网（地址门禁、翻网页、检索、调接口），`server/http.js` 是各接口共用的读写 JSON、出错回 400 与原子写盘；`server/work/` 是执事接口（`index.js` 各接口，`paths.js` 目录内外与越界链接，`text.js` 编码认读，`shell.js` 起指令、收进程树与后台指令，`locks.js` 写锁，`folder-picker.js` 目录选择框）与卷宗目录接口（`archive.js`：列、收、取、删）；对话目录接口（整读、存、删）、附件目录接口（存、取、删、清）与存储目录（配置的读写、旧数据迁入、换位置）；MCP 服务池（起、连外部服务，列工具、调工具）；沙箱环境（装、查、清，给桥接起的进程接上）；沙箱的三道筛（指令、路径、环境变量）是纯函数，单独一段 |
 | `test/` | `npm test` 先跑 `test/unit/`（Node 自带的 `node --test`，把 `src/` 拼起来在 Node 里测纯函数：工具参数救治、流式分段、diff 计数、余墨、思考档位、只读指令、输出裁行、沙箱筛查……几百毫秒跑完），再跑端到端：起假模型接口、测试桥接与无头 Edge / Chrome，逐个跑用例（对谈、执事、言行合一与卷宗、差遣、旁注、记忆、分组、余墨与历史、表单、健壮性、桥接安全）；面向 Windows，其他平台未做适配 |
-| `build.js` | 拼接产出；`npm run format` 用 Prettier 统一格式，`npm run check` 用 `tsc --checkJs`（按 `jsconfig.json`）做类型检查——两者都经 npx 临时取用，只在开发时，不进运行时、不进依赖 |
+| `build.js` | 拼接规则（桥接与单元测试共用）；`npm run format` 用 Prettier 统一格式，`npm run check` 用 `tsc --checkJs`（按 `jsconfig.json`）做类型检查——两者都经 npx 临时取用，只在开发时，不进运行时、不进依赖 |
 
 内置提示词的写法、拼接次序与轻重之分，见 [`prompts/README.md`](../prompts/README.md)。

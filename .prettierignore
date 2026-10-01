@@ -1,6 +1,4 @@
 vendor/
-/support.js
-/app.css
 test/.tmp/
 *.md
 *.html

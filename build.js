@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// 把 src/ 下的 .js 拼成 support.js、styles/ 下的 .css 拼成 app.css（零依赖，没有转译；子目录就地展开）。
-// 桥接在线时页面直接从 src/ 与 styles/ 即时拼接，改完刷新即生效；这里产出的文件供 file:// 直接打开与不带桥接的场景使用。
-// 用法：node build.js            也可 require 后调用 bundleScript() / bundleStyles()
+// 拼接规则：src/ 下的 .js 拼成页面请求的 /support.js、styles/ 下的 .css 拼成 /app.css（零依赖，没有转译；子目录就地展开）。
+// 桥接按请求即时拼（server.js），改完刷新即生效；不落成文件——言离不开桥接，没有谁读一份落盘的产物，留着只会与源码对不上。
+// 单元测试（test/unit/harness.mjs）照同一份清单拼
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -56,26 +56,4 @@ function bundleStyles() {
     .join("\n");
   return { text: body, stamp: stampOf(STYLES, files), files };
 }
-function writeIfChanged(file, text) {
-  const current = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
-  if (current === text) return false;
-  fs.writeFileSync(file, text, "utf8");
-  return true;
-}
-function build({ quiet = false } = {}) {
-  const script = bundleScript(),
-    styles = bundleStyles();
-  const written = [];
-  if (script.files.length && writeIfChanged(path.join(ROOT, "support.js"), script.text)) written.push("support.js");
-  if (styles.files.length && writeIfChanged(path.join(ROOT, "app.css"), styles.text)) written.push("app.css");
-  if (!quiet)
-    console.log(
-      written.length
-        ? `已产出 ${written.join("、")}（${script.files.length} 段脚本，${styles.files.length} 段样式）`
-        : "support.js 与 app.css 已是最新"
-    );
-  return written;
-}
-
-module.exports = { bundleScript, bundleStyles, build, scriptParts: () => partsOf(SRC, ".js"), SCRIPT_HEAD, SCRIPT_TAIL };
-if (require.main === module) build();
+module.exports = { bundleScript, bundleStyles, scriptParts: () => partsOf(SRC, ".js"), SCRIPT_HEAD, SCRIPT_TAIL };

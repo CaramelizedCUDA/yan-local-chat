@@ -1,5 +1,5 @@
 // 言 · 输入区、图片查看、问候语、主题与外观
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function composerHasContent() {
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
   return !!(input?.value.trim() || pendingAttachments.length || pendingQuote);

@@ -328,8 +328,7 @@ const ROUTES = new Map(Object.entries({ ...OPEN_ROUTES, ...TRUSTED_ROUTES }));
 const TRUSTED_PATHS = new Set(Object.keys(TRUSTED_ROUTES).map(key => key.split(" ")[1]));
 
 const NOT_FOUND_PAGE = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>此页不存在 · 言</title><style>html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#fbfaf6;color:#292724;font-family:"Noto Serif SC","Songti SC","STSong",serif}@media(prefers-color-scheme:dark){body{background:#1e1c19;color:#e6e1d6}}main{text-align:center;letter-spacing:.06em}.seal{display:inline-grid;place-items:center;width:34px;height:34px;border:1px solid #9b5540;color:#9b5540;font-size:18px;transform:rotate(-3deg)}h1{margin:18px 0 8px;font-weight:500;font-size:24px}p{margin:0 0 22px;opacity:.6;font-size:13px}a{color:#9b5540;text-decoration:none;font-size:13px;border-bottom:1px solid currentColor}</style></head><body><main><span class="seal">空</span><h1>此页不存在</h1><p>所寻之处并无一字</p><a href="/">回到案前</a></main></body></html>`;
-// 页面脚本与样式由多段源文件拼成：按请求即时拼接（ETag 取各段的大小与修改时间），src/ 改一段、刷新即生效；
-// 仓库里的 support.js / app.css 是 build.js 的产物，供 file:// 直接打开时使用，桥接启动时也会顺手刷新它们
+// 页面脚本与样式由多段源文件拼成：按请求即时拼接（ETag 取各段的大小与修改时间），src/ 改一段、刷新即生效；不落成文件
 const BUNDLES = {
   "/support.js": { build: () => currentBundler().bundleScript(), type: "application/javascript; charset=utf-8" },
   "/app.css": { build: () => currentBundler().bundleStyles(), type: "text/css; charset=utf-8" }
@@ -470,11 +469,6 @@ process.on("unhandledRejection", error => console.error(`${stamp()} 桥接内部
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) process.on(signal, () => process.exit(signal === "SIGINT" ? 130 : 0));
 server.listen(PORT, HOST, () => {
   const address = `http://${HOST}:${PORT}`;
-  try {
-    bundler.build({ quiet: true });
-  } catch (error) {
-    console.log(`  （产出 support.js / app.css 失败：${error.message}）`);
-  }
   console.log(`\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  存储    ${STORE.paths().root}\n`);
   console.log("  请保持此窗口开启；关闭后页面刷新、模型转发、联网与执事都会停止。按 Ctrl+C 退出。");
   console.log("  此窗口不会显示 API Key。\n");

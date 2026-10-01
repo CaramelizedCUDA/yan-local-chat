@@ -1,5 +1,5 @@
 // 言 · 对话引擎：历史装配、发送、流式回合、工具定义与系统提示
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function attachmentExcerpt(text, name, label) {
   const value = String(text || "");
   return value.length > HISTORY_TEXT_CHARS

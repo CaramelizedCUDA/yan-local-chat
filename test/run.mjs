@@ -34,7 +34,6 @@ if (!browser) {
 // 语法先过一遍
 const jsFiles = [
   "server.js",
-  "support.js",
   "theme-boot.js",
   "preview-runtime.js",
   "build.js",

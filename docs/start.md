@@ -25,7 +25,7 @@ npm start
 
 ## 直接打开 index.html
 
-言须经本机桥接打开：运行 start.cmd（或 `npm start`），页面在 `http://127.0.0.1:8787`；VS Code 预览也会去连本机的桥接。直接双击 `index.html`（`file://`）接不上桥接——桥接不认来源为 `null` 的页面（`file://` 页面是它，别处网页嵌进来的沙箱 iframe 也是它，分不出来）——页面只提示先运行 start.cmd，接上即开。改过 `src/` 或 `styles/` 后刷新即生效（桥接按请求即时拼接）；仓库里的 `support.js` / `app.css` 由 `npm run build` 或桥接启动时产出。
+言须经本机桥接打开：运行 start.cmd（或 `npm start`），页面在 `http://127.0.0.1:8787`；VS Code 预览也会去连本机的桥接。直接双击 `index.html`（`file://`）接不上桥接——桥接不认来源为 `null` 的页面（`file://` 页面是它，别处网页嵌进来的沙箱 iframe 也是它，分不出来）——页面只提示先运行 start.cmd，接上即开。改过 `src/` 或 `styles/` 后刷新即生效（桥接按请求即时拼接，不落成文件）。
 
 ## 环境变量
 

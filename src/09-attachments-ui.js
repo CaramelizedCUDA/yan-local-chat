@@ -1,5 +1,5 @@
 // 言 · 附件卡片、引用与划选提示
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 回复与问句下的几枚小画：笔意（src/03-brush.js），不再是等宽线稿
 const icons = {
   copy: brushIcon("copy"),

@@ -1,5 +1,5 @@
 // 言 · 小工具：转义、时间、提示、确认框、按需加载、动效开合
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }

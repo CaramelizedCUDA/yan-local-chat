@@ -1,5 +1,5 @@
 // 言 · 行迹与时间线：步骤卡、思绪、出处
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function toolStackLabel() {
   return "行迹";
 }

@@ -1,6 +1,8 @@
 // 差遣（子 Agent）：主模型把子任务交给帮手，帮手用同样的工具另起一段跑完并回报；步骤嵌在差遣卡片里，改动计入本答，主模型没读过的文件仍不能直接改
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { connect, check, sleep, PAGE, WORK } from "./lib.mjs";
+const { bundleStyles } = createRequire(import.meta.url)("../build.js");
 const { send, evalJs, waitFor, shot, close } = await connect();
 mkdirSync(WORK + "/src", { recursive: true });
 writeFileSync(WORK + "/src/a.js", "function f() {\n  return 1;\n}\n");
@@ -71,7 +73,7 @@ check("helper's live thought shown in the panel", thoughtLive);
 check("the marker carries the running state the breathing hooks onto", breathing, String(breathing));
 check(
   "the breathing rule is in the built stylesheet",
-  readFileSync("app.css", "utf8").includes(':root[data-ink-motion="on"] .tool-step-delegate[data-status="running"]')
+  bundleStyles().text.includes(':root[data-ink-motion="on"] .tool-step-delegate[data-status="running"]')
 );
 check(
   "panel steps are updated in place, never re-created",
