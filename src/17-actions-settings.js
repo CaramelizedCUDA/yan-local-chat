@@ -772,7 +772,8 @@ async function readBackup(file) {
   data.attachments = true;
   return { data, attachments: attachments() };
 }
-// 导入采用合并策略：按 id 跳过已存在的对话 / 模型 / 卷宗，附件原件只在本机缺失时写入
+// 导入采用合并策略：按 id 跳过已存在的对话 / 模型 / 卷宗 / 分组 / 预设，MCP 服务按名字跳过，附件原件只在本机缺失时写入。
+// 分组与预设要随对话一起回来：对话里记着 groupId、presetId，定义不在，组织方式与提示词就丢了
 async function importData(file) {
   try {
     const { data, attachments } = await readBackup(file);
@@ -804,6 +805,27 @@ async function importData(file) {
         store.library.push(f);
         library += 1;
       }
+    const groupIds = new Set(store.settings.groups.map(g => g.id)),
+      presetIds = new Set(store.settings.presets.map(p => p.id));
+    let groups = 0,
+      presets = 0,
+      servers = 0;
+    for (const g of incoming.settings.groups)
+      if (g?.id && !groupIds.has(g.id)) {
+        store.settings.groups.push(g);
+        groups += 1;
+      }
+    for (const p of incoming.settings.presets)
+      if (p?.id && !presetIds.has(p.id)) {
+        store.settings.presets.push(p);
+        presets += 1;
+      }
+    // 备份里的 MCP 服务不带环境变量与请求头（令牌多在那里），导入后要用到密钥的需自己补上
+    for (const [name, config] of Object.entries(incoming.settings.mcpServers || {}))
+      if (!store.settings.mcpServers[name] && config && typeof config === "object") {
+        store.settings.mcpServers[name] = config;
+        servers += 1;
+      }
     for (const [key, draft] of Object.entries(incoming.drafts))
       if (!store.drafts[key] && (draft.text || draft.attachments.length || draft.quote)) {
         store.drafts[key] = draft;
@@ -832,7 +854,7 @@ async function importData(file) {
     render();
     renderSettings();
     toast(
-      `已导入 ${conversations} 段对话、${added} 个模型、${library} 件卷宗${drafts ? `、${drafts} 份草稿` : ""}${memories ? `、${memories} 条记忆` : ""}${files ? `，恢复 ${files} 件附件原件` : ""}${data.attachments ? "" : "；备份不含附件原件，旧附件将显示为不可用"}`
+      `已导入 ${conversations} 段对话、${added} 个模型、${library} 件卷宗${groups ? `、${groups} 个分组` : ""}${presets ? `、${presets} 个预设` : ""}${servers ? `、${servers} 个 MCP 服务（密钥需重填）` : ""}${drafts ? `、${drafts} 份草稿` : ""}${memories ? `、${memories} 条记忆` : ""}${files ? `，恢复 ${files} 件附件原件` : ""}${data.attachments ? "" : "；备份不含附件原件，旧附件将显示为不可用"}`
     );
   } catch (error) {
     toast(`导入失败：${String(error.message || error).slice(0, 80)}`);
