@@ -56,11 +56,14 @@ function renderAttachments() {
   scheduleContextGauge(); // 案上的附件也是下一问要送出的，计数随之变
 }
 // 引用追问：在回复或自己的话里划选一段，浮出「引用」；点了就作为引文带进输入框，随下一问送出
+// 游目里圈点的也走这一路（见 src/26-stage.js），欢迎页上同样有一个引文框
 function renderQuote() {
-  const box = $("#composerQuote");
-  if (!box) return;
-  box.classList.toggle("hidden", !pendingQuote);
-  box.querySelector(".composer-quote-text").textContent = pendingQuote?.text || "";
+  for (const box of [$("#composerQuote"), $("#welcomeQuote")]) {
+    if (!box) continue;
+    box.classList.toggle("hidden", !pendingQuote);
+    box.querySelector(".composer-quote-text").textContent = pendingQuote?.text || "";
+  }
+  stageQuoteChanged();
   renderSendButtons();
   scheduleContextGauge();
 }

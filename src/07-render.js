@@ -524,7 +524,7 @@ function renderMessage(message, branch = null, side = false) {
       ? `<div class="sent-attachments">${message.attachments.map(file => attachmentCard(file, null, true)).join("")}</div>`
       : "";
     const quote = message.quote?.text
-      ? `<div class="user-quote" data-quote-source="${escapeHtml(message.quote.messageId || "")}" title="回到出处">${escapeHtml(message.quote.text)}</div>`
+      ? `<div class="user-quote" data-quote-source="${escapeHtml(message.quote.messageId || "")}"${message.quote.url ? ` data-quote-url="${escapeHtml(message.quote.url)}"` : ""} title="回到出处">${escapeHtml(message.quote.text)}</div>`
       : "";
     return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", "复制消息", icons.copy)}${actionIcon("edit", "编辑消息", icons.edit)}</div></article>`;
   }

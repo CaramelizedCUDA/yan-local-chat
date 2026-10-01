@@ -8,7 +8,8 @@ function attachmentExcerpt(text, name, label) {
 }
 /** @param {Message} message */
 function quotedText(message) {
-  const quote = message.quote?.text;
+  // 游目圈点的引文另有一份写给模型的（带网址、各处的位置与字），界面上只显示短的那句
+  const quote = message.quote?.model || message.quote?.text;
   if (!quote) return message.content;
   return `${quote
     .split(/\r?\n/)

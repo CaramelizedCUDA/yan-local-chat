@@ -490,15 +490,19 @@ function bindComposerEvents() {
         syncChatScrollGrabber();
       }
     }).observe($("#composerArea"));
-  $("#composerQuoteClose").onclick = () => {
-    pendingQuote = null;
-    renderQuote();
-    persistDraft();
-    $("#chatInput").focus();
-  };
+  // 对话里与欢迎页各一个引文框，✕ 同一个办法
+  /** @type {HTMLElement} */ for (const close of document.querySelectorAll("[data-quote-close]"))
+    (close).onclick = () => {
+      pendingQuote = null;
+      renderQuote();
+      persistDraft();
+      (currentConversation() ? $("#chatInput") : $("#welcomeInput")).focus();
+    };
   $("#messages").addEventListener("click", event => {
     const block = event.target.closest(".user-quote");
     if (!block) return;
+    // 游目里圈点来的：回到游目那一页
+    if (block.dataset.quoteUrl) return stageRevisit(block.dataset.quoteUrl);
     const source =
       block.dataset.quoteSource && document.querySelector(`#messages [data-message="${CSS.escape(block.dataset.quoteSource)}"]`);
     if (!source) return toast("出处已不在当前页面");

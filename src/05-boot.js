@@ -194,6 +194,7 @@ function bindEvents() {
     if (document.querySelector(".chip-pop")) return closeChipPop();
     const modelMenu = $("#modelMenu");
     if (!modelMenu.classList.contains("hidden") && !modelMenu.classList.contains("leaving")) return closeModelMenu();
+    if (stage.pen) return stageSetPen(false);
     if ($("#stagePanel").classList.contains("wide")) return stageSetWide(false);
     if (confirmResolve) settleConfirm(false);
     else if (!$("#settingsModal").classList.contains("hidden")) closeSettings();
