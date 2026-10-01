@@ -71,12 +71,12 @@ defineTool({
   }
 });
 
-// 后台指令：取上次之后的新输出，可顺带等一会儿，或结束它；只给行，跟着 run_command 的 background 走
+// 后台指令：取上次之后的新输出，可顺带等一会儿，或结束它；跟着 run_command 走——言里也能开后台指令，开了就得看得了
 defineTool({
   name: "check_command",
   group: "work",
   label: "后台",
-  offer: ctx => ctx.files && ctx.work,
+  offer: ctx => ctx.files,
   html: workStepHtml,
   async run(step, args, { conversation, assistant, signal }) {
     const id = args.id.trim(),

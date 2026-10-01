@@ -20,7 +20,7 @@ const desc = (name, vars, work) => prompt(`tools.${name}.${!work && P.tools[name
 const toolDef = (name, vars, work) =>
   JSON.stringify({ type: "function", function: { name, description: desc(name, vars, work), parameters: P.tools[name].parameters } });
 const WORK = ["run_command", "write_file", "edit_file", "read_file", "list_files", "search_files"],
-  CHAT_FILES = ["run_command", "write_file", "read_file", "list_files"],
+  CHAT_FILES = ["run_command", "check_command", "write_file", "read_file", "list_files"],
   MEM = ["remember", "forget", "recall", "search_conversations", "read_conversation"];
 // 照 prompts/assistant.js 的 order 表拼，与页面同一套条件；要填的值在这里给假的（页面里由 src/14-chat-engine.js 的 PROMPT_VARS 给）
 function sys(names, { work = false, archive = false, sub = false } = {}) {

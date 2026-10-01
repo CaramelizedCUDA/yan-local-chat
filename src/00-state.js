@@ -65,6 +65,7 @@
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
  * @property {number} [rat] 调用发起时思绪的长度
  * @property {string} [scope] 帮手的步骤记它所属的帮手 id
+ * @property {string} [root] 读、写、改文件时落在哪个目录（换了目录，先前读过的不算数）
  * @property {Attachment[]} [attachments] 补言（user_note）随带的附件
  * @property {boolean} [cached] 结果是复用的
  * @property {boolean} [skipped]
@@ -146,7 +147,7 @@
  * @property {string} [baseUrl]
  * @property {string} [apiKey]
  * @property {"openai"|"anthropic"} [api] 接口类型；没写按地址认（anthropic.com）
- * @property {number} temperature
+ * @property {number} [temperature] 留空即不传，由接口定
  * @property {number} [maxTokens] 只对 Anthropic 有意义（Messages API 必填）；OpenAI 兼容接口不传，由服务端定
  * @property {string} quota 用量上限，如 "100k"；空则不限
  * @property {number} usedTokens

@@ -13,7 +13,7 @@ defineTool({
   async run(step, args, { conversation, signal }) {
     const data = await bridge("/api/work/write", { ...workScope(conversation), path: args.path, content: args.content }, signal);
     step.title = data.path;
-    markSeen(conversation, data.path, step);
+    step.root = workRoot(conversation);
     step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
     // 覆盖时的增删由桥接按前后两版逐行比出（旧桥接只给原有行数，退回整删整增）；lines 是写后这件的行数，新建的件按它算净增
     step.change = {
@@ -49,7 +49,7 @@ defineTool({
   digest: true,
   async run(step, args, { conversation, signal }) {
     step.title = args.path;
-    if (!workSeen.get(seenKey(conversation, step))?.has(seenPath(conversation, args.path)))
+    if (!seenBefore(conversation, step, args.path))
       return { ok: false, content: prompt("work.unread", { path: args.path }), display: "需先读取" };
     const data = await bridge(
       "/api/work/edit",
@@ -57,6 +57,7 @@ defineTool({
       signal
     );
     step.title = data.path;
+    step.root = workRoot(conversation);
     step.diff = { old: args.old.slice(0, 1500), new: args.new.slice(0, 1500) };
     const counts = diffCounts(args.old, args.new);
     step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced, lines: data.lines };
@@ -84,7 +85,7 @@ defineTool({
       signal
     );
     step.title = data.path;
-    markSeen(conversation, data.path, step);
+    step.root = workRoot(conversation);
     const encoding =
       data.encoding === "utf-8"
         ? ""
@@ -186,25 +187,28 @@ defineTool({
 });
 
 // 本段对话里读过或写过的文件才允许 edit_file：模型必须对着真实内容改，而不是凭记忆猜。
-// 帮手另记一份（按步骤上的 scope 分开）：主模型没亲眼读过帮手改过的文件，要改就得再读一遍，帮手亦然
-const workSeen = new Map();
-// 键里带上目录：对话中途换了目录，之前读过的文件不算数
+// 「读过」不另记一张表，就看这段对话里做完的读、写、改：刷新页面也不丢，与模型自己的历史一致。
+// 帮手各算各的（按步骤上的 scope 分开）：主模型没亲眼读过帮手改过的文件，要改就得再读一遍，帮手亦然；
+// 对话中途换了目录，之前那个目录里读过的不算数（步骤记着它落在哪个目录，早先没记的照算）
+const SEEING_TOOLS = new Set(["read_file", "write_file", "edit_file"]);
 /**
  * @param {Conversation} conversation
- * @param {Step} step
+ * @param {Step} step 正要改的这一步
  */
-function seenKey(conversation, step) {
-  const base = `${conversation.id}@${workRoot(conversation)}`;
-  return step?.scope ? `${base}/${step.scope}` : base;
-}
-/**
- * @param {Conversation} conversation
- * @param {Step} step
- */
-function markSeen(conversation, file, step = null) {
-  const key = seenKey(conversation, step);
-  if (!workSeen.has(key)) workSeen.set(key, new Set());
-  workSeen.get(key).add(seenPath(conversation, file));
+function seenBefore(conversation, step, file) {
+  const root = workRoot(conversation),
+    wanted = seenPath(conversation, file);
+  return conversation.messages.some(message =>
+    allSteps(message).some(
+      seen =>
+        seen !== step &&
+        SEEING_TOOLS.has(seen.name) &&
+        seen.status === "done" &&
+        (seen.scope || "") === (step.scope || "") &&
+        (!seen.root || seen.root === root) &&
+        seenPath(conversation, seen.title) === wanted
+    )
+  );
 }
 // 「读过没有」按同一个文件认：读时写相对路径、改时写完整路径，或 Windows 上大小写不同，都是同一个文件
 /** @param {Conversation} conversation */

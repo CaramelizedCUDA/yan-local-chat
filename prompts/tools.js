@@ -102,6 +102,7 @@
 
   check_command: {
     description: "看后台指令（run_command 的 background）：取上次之后的新输出，可先等几秒；stop 为 true 则结束它。",
+    brief: "看后台指令的新输出；stop 为 true 则结束它。",
     parameters: {
       type: "object",
       properties: {
