@@ -497,14 +497,9 @@ button.source-local {
 }
 .file-viewer-table th,
 .file-viewer-table td {
-  padding: 5px 10px;
-  border: 1px solid var(--line);
+  padding: 5px 16px 5px 2px;
   text-align: left;
   vertical-align: top;
-}
-.file-viewer-table th {
-  background: var(--paper-2);
-  font-weight: 600;
 }
 /* 一件文件在这一答里的改动：各步一段红绿，前面一行小注说是哪一步 */
 .change-diff .file-viewer-note:first-child {

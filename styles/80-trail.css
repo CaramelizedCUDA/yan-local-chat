@@ -426,6 +426,7 @@
 .trail-note table,
 .sub-report table {
   display: block;
+  width: fit-content; /* 三线表的上下两道只与表同宽 */
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
@@ -436,8 +437,7 @@
 .trail-note td,
 .sub-report th,
 .sub-report td {
-  padding: 4px 8px;
-  border: 1px solid var(--line);
+  padding: 4px 14px 4px 2px;
   text-align: left;
   vertical-align: top;
 }
