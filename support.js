@@ -9144,8 +9144,12 @@ async function sendOrStop() {
       toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候或调高上限");
       return;
     }
-    const sendingDraftKey = draftKey();
-    let c = currentConversation();
+    // 案上的东西在点发送这一刻就定下：下面要等工作目录立起来，这期间用户可能已换到别的对话，
+    // 输入框、待发的附件与引文都换成了那一段的草稿，不能等完了再去读
+    const sendingDraftKey = draftKey(),
+      snapshot = composerSnapshot(input);
+    let c = currentConversation(),
+      fresh = false;
     if (c && !(await ensureWorkReady(c))) return;
     if (!c) {
       const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
@@ -9170,30 +9174,40 @@ async function sendOrStop() {
         reasoning: normalizeReasoning(profile.reasoning)
       };
       if (!(await ensureWorkReady(c))) return;
+      fresh = true;
+    }
+    // 还在点发送的那个输入框前：照常收走案上的东西；已换走了：发的是当时那份，那份草稿撤掉，眼前这段的输入框不动，也不把人拉回来
+    const stayed = draftKey() === sendingDraftKey;
+    if (fresh) {
       delete store.settings.pendingGroupId;
       closeChipPop();
       store.conversations.unshift(c);
-      currentId = c.id;
+      if (stayed) currentId = c.id;
     }
-    const user = takeComposer(input, sendingDraftKey);
+    let user;
+    if (stayed) user = takeComposer(input, sendingDraftKey);
+    else {
+      user = composerMessage(snapshot);
+      if (store.drafts) delete store.drafts[sendingDraftKey];
+    }
     return startTurn(c, user, profile);
   } finally {
     sendPreparing = false;
     renderSendButtons();
   }
 }
+// 案上此刻的东西：话、附件、引文（换对话时 restoreDraft 会把附件、引文整个换成另一份，这里拿住的仍是这一份）
+function composerSnapshot(input) {
+  return { content: input.value.trim(), attachments: pendingAttachments, quote: pendingQuote };
+}
+/** @returns {Message} */
+function composerMessage({ content, attachments, quote }) {
+  return { id: uid(), role: "user", content, timestamp: now(), attachments, ...(quote ? { quote } : {}) };
+}
 // 把案上的东西（话、附件、引文）收成一条用户消息，输入框与草稿随之清空
 /** @returns {Message} */
 function takeComposer(input, key = draftKey()) {
-  /** @type {Message} */
-  const user = {
-    id: uid(),
-    role: "user",
-    content: input.value.trim(),
-    timestamp: now(),
-    attachments: pendingAttachments,
-    ...(pendingQuote ? { quote: pendingQuote } : {})
-  };
+  const user = composerMessage(composerSnapshot(input));
   input.value = "";
   input.style.height = "auto";
   delete store.drafts[key];
@@ -13609,7 +13623,8 @@ async function readBackup(file) {
   data.attachments = true;
   return { data, attachments: attachments() };
 }
-// 导入采用合并策略：按 id 跳过已存在的对话 / 模型 / 卷宗，附件原件只在本机缺失时写入
+// 导入采用合并策略：按 id 跳过已存在的对话 / 模型 / 卷宗 / 分组 / 预设，MCP 服务按名字跳过，附件原件只在本机缺失时写入。
+// 分组与预设要随对话一起回来：对话里记着 groupId、presetId，定义不在，组织方式与提示词就丢了
 async function importData(file) {
   try {
     const { data, attachments } = await readBackup(file);
@@ -13641,6 +13656,27 @@ async function importData(file) {
         store.library.push(f);
         library += 1;
       }
+    const groupIds = new Set(store.settings.groups.map(g => g.id)),
+      presetIds = new Set(store.settings.presets.map(p => p.id));
+    let groups = 0,
+      presets = 0,
+      servers = 0;
+    for (const g of incoming.settings.groups)
+      if (g?.id && !groupIds.has(g.id)) {
+        store.settings.groups.push(g);
+        groups += 1;
+      }
+    for (const p of incoming.settings.presets)
+      if (p?.id && !presetIds.has(p.id)) {
+        store.settings.presets.push(p);
+        presets += 1;
+      }
+    // 备份里的 MCP 服务不带环境变量与请求头（令牌多在那里），导入后要用到密钥的需自己补上
+    for (const [name, config] of Object.entries(incoming.settings.mcpServers || {}))
+      if (!store.settings.mcpServers[name] && config && typeof config === "object") {
+        store.settings.mcpServers[name] = config;
+        servers += 1;
+      }
     for (const [key, draft] of Object.entries(incoming.drafts))
       if (!store.drafts[key] && (draft.text || draft.attachments.length || draft.quote)) {
         store.drafts[key] = draft;
@@ -13669,7 +13705,7 @@ async function importData(file) {
     render();
     renderSettings();
     toast(
-      `已导入 ${conversations} 段对话、${added} 个模型、${library} 件卷宗${drafts ? `、${drafts} 份草稿` : ""}${memories ? `、${memories} 条记忆` : ""}${files ? `，恢复 ${files} 件附件原件` : ""}${data.attachments ? "" : "；备份不含附件原件，旧附件将显示为不可用"}`
+      `已导入 ${conversations} 段对话、${added} 个模型、${library} 件卷宗${groups ? `、${groups} 个分组` : ""}${presets ? `、${presets} 个预设` : ""}${servers ? `、${servers} 个 MCP 服务（密钥需重填）` : ""}${drafts ? `、${drafts} 份草稿` : ""}${memories ? `、${memories} 条记忆` : ""}${files ? `，恢复 ${files} 件附件原件` : ""}${data.attachments ? "" : "；备份不含附件原件，旧附件将显示为不可用"}`
     );
   } catch (error) {
     toast(`导入失败：${String(error.message || error).slice(0, 80)}`);
@@ -13803,7 +13839,9 @@ async function compactContext(c, { auto = false, before = null, profile = active
         m.role === "user"
           ? [`用户：${clip(m.content)}`]
           : [
-              ...replyParts(m).map(part => (part.role === "user" ? `用户（途中补言）：${clip(part.note.note)}` : `助手：${clip(part.content)}`)),
+              ...replyParts(m).map(part =>
+                part.role === "user" ? `用户（途中补言）：${clip(part.note.note)}` : `助手：${clip(part.content)}`
+              ),
               stepsDigest(m)
             ].filter(Boolean)
       )
@@ -14080,7 +14118,7 @@ function renderOutline() {
   rail.innerHTML = users
     .map(
       (m, i) =>
-        `<button type="button" class="outline-item" data-target="${escapeHtml(m.id)}" title="第 ${i + 1} 问 · ${escapeHtml(outlineLabel(m).slice(0, 80))}"><span class="outline-label">${escapeHtml(outlineLabel(m).slice(0, 16))}</span><span class="outline-tick" aria-hidden="true"></span></button>`
+        `<button type="button" class="outline-item" data-target="${escapeHtml(m.id)}" title="第 ${i + 1} 问 · ${escapeHtml(outlineLabel(m).slice(0, 80))}"><span class="outline-label"><span>${escapeHtml(outlineLabel(m).slice(0, 16))}</span></span><span class="outline-tick" aria-hidden="true"></span></button>`
     )
     .join("");
   syncOutline();
@@ -15870,7 +15908,13 @@ async function listenLoad(track, play = false) {
   if (follow && listenShown?.key !== track.key) listenShowPage(track);
   // 预览器关页时会收回自己造的 blob 地址，喇叭另要一份自己管
   let url = track.url;
-  if (url.startsWith("blob:")) url = listenOwnUrl = URL.createObjectURL(new Blob([await track.bytes()]));
+  if (url.startsWith("blob:")) {
+    const bytes = await track.bytes();
+    // 读着字节的工夫已换了曲（快点上下首）或收了喇叭：这一份作废，别盖掉后来那一首
+    if (listenTrack !== track) return;
+    if (listenOwnUrl) URL.revokeObjectURL(listenOwnUrl);
+    url = listenOwnUrl = URL.createObjectURL(new Blob([bytes]));
+  }
   el.src = url;
   if (play) await listenPlay();
   listenSync();

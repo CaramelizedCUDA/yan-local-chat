@@ -114,7 +114,9 @@ async function compactContext(c, { auto = false, before = null, profile = active
         m.role === "user"
           ? [`用户：${clip(m.content)}`]
           : [
-              ...replyParts(m).map(part => (part.role === "user" ? `用户（途中补言）：${clip(part.note.note)}` : `助手：${clip(part.content)}`)),
+              ...replyParts(m).map(part =>
+                part.role === "user" ? `用户（途中补言）：${clip(part.note.note)}` : `助手：${clip(part.content)}`
+              ),
               stepsDigest(m)
             ].filter(Boolean)
       )
@@ -391,7 +393,7 @@ function renderOutline() {
   rail.innerHTML = users
     .map(
       (m, i) =>
-        `<button type="button" class="outline-item" data-target="${escapeHtml(m.id)}" title="第 ${i + 1} 问 · ${escapeHtml(outlineLabel(m).slice(0, 80))}"><span class="outline-label">${escapeHtml(outlineLabel(m).slice(0, 16))}</span><span class="outline-tick" aria-hidden="true"></span></button>`
+        `<button type="button" class="outline-item" data-target="${escapeHtml(m.id)}" title="第 ${i + 1} 问 · ${escapeHtml(outlineLabel(m).slice(0, 80))}"><span class="outline-label"><span>${escapeHtml(outlineLabel(m).slice(0, 16))}</span></span><span class="outline-tick" aria-hidden="true"></span></button>`
     )
     .join("");
   syncOutline();
