@@ -382,7 +382,7 @@ function renderOutline() {
   // 压缩过的前文在页上折着，导航条上也不列它们的问；「展开前文」后再列出来
   const c = currentConversation(),
     foldAt = c && !c.showCompacted ? c.messages.map(m => (m.role === "context" && m.summary ? 1 : 0)).lastIndexOf(1) : -1,
-    users = c && view === "chat" ? c.messages.slice(foldAt + 1).filter(m => m.role === "user") : [];
+    users = c && view === "chat" ? c.messages.slice(foldAt + 1).filter(m => m.role === "user" && !m.relay) : [];
   if (users.length < 2) {
     rail.classList.add("hidden");
     rail.innerHTML = "";
@@ -472,6 +472,10 @@ function conversationMarkdown(c) {
         m.summary ? `> **前文摘要**\n>\n> ${String(m.summary).replace(/\n/g, "\n> ")}` : "*（上下文由此重新开始）*",
         ""
       );
+      continue;
+    }
+    if (m.role === "user" && m.relay) {
+      lines.push(`*${m.relay.map(item => `帮手「${exportMarkdownLabel(item.title)}」${item.ok ? "回报" : "未完成"}`).join(" · ")}*`, "");
       continue;
     }
     if (m.role === "user") {

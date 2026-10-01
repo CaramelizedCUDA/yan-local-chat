@@ -4,11 +4,12 @@ defineTool({
   name: "user_note",
   label: "补言",
   offer: false,
-  html: noteStepHtml
+  html: step => noteStepHtml(step)
 });
-// 补言：作答途中用户寄来的话，落在行迹里它到达的那一刻；待寄时转着圈，递给模型后打勾。话不止一行、或带着附件时摊开在下面
+// 补言：作答途中用户寄来的话，落在行迹里它到达的那一刻；待寄时转着圈，递给模型后打勾。话不止一行、或带着附件时摊开在下面。
+// 主模型递给帮手的话（传话）在帮手的时间线里也是这个样子，只是印与标签不同、没有「即刻递上」
 /** @param {Step} step */
-function noteStepHtml(step) {
+function noteStepHtml(step, { seal = "补", label = "补言" } = {}) {
   const status = step.status || "done",
     text = String(step.note || "").trim(),
     first = text.split("\n").find(Boolean)?.slice(0, 80) || "",
@@ -19,5 +20,5 @@ function noteStepHtml(step) {
     text.length > first.length || files.length
       ? `<div class="tool-note">${escapeHtml(text)}${files.length ? `<div class="tool-note-files">${files.map(name => escapeHtml(name)).join("、")}</div>` : ""}</div>`
       : "";
-  return `<div class="tool-step tool-step-note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">补</span>补言</span><span class="tool-title" title="${escapeHtml(text)}">${body ? "" : escapeHtml(first)}</span><span class="tool-meta">${meta}</span>${status === "running" ? `<button type="button" class="note-now" data-note-now title="不等落点，即刻递上" aria-label="即刻递上">↵</button>` : ""}${stepStateHtml(status)}</div>${body}</div>`;
+  return `<div class="tool-step tool-step-note" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${seal}</span>${label}</span><span class="tool-title" title="${escapeHtml(text)}">${body ? "" : escapeHtml(first)}</span><span class="tool-meta">${meta}</span>${status === "running" && step.name === "user_note" ? `<button type="button" class="note-now" data-note-now title="不等落点，即刻递上" aria-label="即刻递上">↵</button>` : ""}${stepStateHtml(status)}</div>${body}</div>`;
 }

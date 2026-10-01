@@ -125,7 +125,8 @@ function trailLabel(message) {
 function trailMeta(message) {
   const base = toolStackMeta(message.steps);
   if (!trailWork(message)) return base;
-  const helpers = message.status === "streaming" ? runningDelegates(message) : [];
+  // 帮手不随这一答收尾：这一答写完了、它还在后台做，收起的行迹题头上也看得见
+  const helpers = runningDelegates(message);
   if (helpers.length > 1)
     return `${helpers.length} 名帮手 · ${helpers.reduce((sum, h) => sum + (h.sub?.steps.length || 0), 0)} 步 · 进行中`;
   if (helpers.length) return `帮手「${String(helpers[0].title || "").slice(0, 20)}」· ${helpers[0].sub?.steps.length || 0} 步 · 进行中`;
@@ -215,8 +216,7 @@ function syncStep(list, step, seen, animate = true) {
   if (added) {
     list.insertAdjacentHTML("beforeend", html);
     el = list.lastElementChild;
-  } else if (TOOLS.get(step.name)?.sync) TOOLS.get(step.name).sync(el, step, prev);
-  else if (prev?.html !== html) {
+  } else if (!TOOLS.get(step.name)?.sync?.(el, step, prev) && prev?.html !== html) {
     el.insertAdjacentHTML("afterend", html);
     const next = el.nextElementSibling;
     el.remove();
@@ -229,14 +229,10 @@ function syncStep(list, step, seen, animate = true) {
   }
   seen.set(step.id, { html, hasBody, status: step.status });
 }
-// 正在工作的帮手（当前对话里进行中的差遣步骤，可能同时有几名）
+// 这一答里还在做的帮手（差遣与续派的那几趟，可能同时有几名）
 /** @param {Message} message */
 function runningDelegates(message) {
-  return (message?.steps || []).filter(step => step.name === "delegate" && step.status === "running");
-}
-/** @param {Message} message */
-function runningDelegate(message) {
-  return runningDelegates(message)[0] || null;
+  return (message?.steps || []).filter(step => step.sub && step.status === "running");
 }
 // 帮手正在做的一句话：最新一步，或最新说的话的第一行
 /** @param {Step} step */
@@ -254,15 +250,15 @@ function delegateDoing(step) {
       .find(Boolean);
   return said ? said.slice(0, 80) : sub?.reasoning ? "正在凝神" : "领命中";
 }
-// 工作条：一答生成期间附在输入框上方——左边这一答的改动合计（帮手改的也算进来，点开浮出清单），右边在做的帮手（点开差遣面板）。
-// 两样都没有就不挂；写完了改动落到回复之下，条子撤掉（见 设计稿/12-改动条与行迹 二·乙）
+// 工作条：附在输入框上方——左边正在写的这一答的改动合计（帮手改的也算进来，点开浮出清单），右边这段对话后台在做的帮手（点开差遣面板）。
+// 帮手不随一答收尾，答写完了它还在做，条子就还挂着它。两样都没有就不挂；写完了改动落到回复之下（见 设计稿/12-改动条与行迹 二·乙）
 let workFilesOpen = false;
 function renderHelperBar() {
   const bar = $("#helperBar");
   if (!bar) return;
   const c = currentConversation(),
     message = c && view === "chat" ? [...c.messages].reverse().find(m => m.role === "assistant" && m.status === "streaming") : null,
-    helpers = message ? runningDelegates(message) : [],
+    helpers = c && view === "chat" ? (crews.get(c.id) || []).map(box => box.step) : [],
     stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 },
     // 等待确认有请示条，不在这里重说
     label = c && requestJob(c.id)?.label,
@@ -300,14 +296,11 @@ function renderHelperBar() {
 // 行迹里只留一枚签（带回报，做事时呼吸），要看帮手具体做了什么才点开——细看是另一种动作，值得整个屏幕：
 // 那条时间线里有 diff、有命令输出、有嵌套步骤，挤在窄栏里必然难看。
 // 瞥一眼不必开窗：签自己在呼吸，输入框上方还有帮手条。几名帮手用 ‹ n/m › 翻，翻不动了就点中间的计数出列表
-let helperStepId = null; // 窗里正看着的那次差遣
+let helperStepId = null; // 窗里正看着的那一趟差遣（或续派）
 const helperSeen = new Map(); // 窗里步骤的就地更新台账（与行迹各记各的，互不干扰）
-/** 当前对话里所有的差遣，按发生先后 */
+/** 当前对话里帮手的每一趟，按发生先后 */
 function allDelegateSteps() {
-  const out = [];
-  for (const message of currentConversation()?.messages || [])
-    for (const step of message.steps || []) if (step.name === "delegate") out.push(step);
-  return out;
+  return helperRuns(currentConversation());
 }
 function helperStepById(id) {
   return allDelegateSteps().find(step => step.id === id) || null;
@@ -316,7 +309,8 @@ function helperPanelOpen() {
   const panel = $("#helperModal");
   return !!panel && !panel.classList.contains("hidden") && !panel.classList.contains("leaving");
 }
-function openHelperPanel(stepId) {
+// noteId：传话的签点开时，直接翻到递去的那句话（它所在那一轮的步骤摊开）
+function openHelperPanel(stepId, noteId = "") {
   const step = helperStepById(stepId);
   if (!step) return;
   if (helperStepId !== step.id) helperSeen.clear();
@@ -327,6 +321,16 @@ function openHelperPanel(stepId) {
   // 换一名帮手是换一张纸，从头看起；不然上一张滚到多深，这张就从多深打开
   const stage = $("#helperScroll");
   if (stage) stage.scrollTop = 0;
+  const note = noteId && $("#helperPanelBody").querySelector(`[data-step-id="${CSS.escape(noteId)}"]`);
+  if (!note) return;
+  const stack = note.closest("details.sub-steps");
+  if (stack) {
+    stack.dataset.touched = "1";
+    setProcessDetails(stack, true);
+  }
+  helperFolded.delete(step.id);
+  syncSubFold($("#helperPanelBody > .sub-trail"), step);
+  requestAnimationFrame(() => note.scrollIntoView({ block: "center" }));
 }
 function closeHelperPanel() {
   helperStepId = null;
@@ -695,17 +699,20 @@ function bindHelperEvents() {
     const id = event.target.closest(".work-helpers")?.dataset.helper;
     if (id) openHelperPanel(id);
   });
-  // 行迹里的那枚签：点它（或敲回车 / 空格）同样开面板
+  // 行迹里的那枚签：点它（或敲回车 / 空格）同样开面板。传话、叫停的签开的是它说到的那名帮手；回报那道细线上点名字也开
+  const openFromCard = card => openHelperPanel(card.dataset.ref || card.dataset.stepId || "", card.dataset.note || "");
   $("#messages").addEventListener("click", event => {
+    const relay = event.target.closest("[data-relay-step]");
+    if (relay) return openHelperPanel(relay.dataset.relayStep || "");
     const head = event.target.closest(".tool-step-delegate > .tool-step-head");
-    if (head) openHelperPanel(head.parentElement.dataset.stepId || "");
+    if (head) openFromCard(head.parentElement);
   });
   $("#messages").addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const head = event.target.closest?.(".tool-step-delegate > .tool-step-head");
     if (!head) return;
     event.preventDefault();
-    openHelperPanel(head.parentElement.dataset.stepId || "");
+    openFromCard(head.parentElement);
   });
   // 合起即回到行迹里那一步——原先「合」与「行迹」两个按钮做的本是同一件事
   $("#helperClose").onclick = () => {

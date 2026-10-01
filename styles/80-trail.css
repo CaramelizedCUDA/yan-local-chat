@@ -547,6 +547,65 @@
   color: var(--ink-3);
 }
 
+/* 续派、传话的签：同一名帮手又有了新的一趟、新递去的话，标一枚「已更新」。小字金色，不加框——签本身已是金的，
+   再框一道就成了签上贴签。传话的签在任务名之后接着那句话，淡一档 */
+.helper-fresh {
+  flex: none;
+  margin-left: 6px;
+  color: var(--gold);
+  font: 10px/1 var(--title);
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+.helper-said {
+  margin-left: 8px;
+  color: var(--ink-3);
+  font-family: inherit;
+}
+/* 主模型递给帮手的话落在帮手的时间线里：与补言同形，印用金（朱留给人自己说话） */
+.tool-step-note[data-tool="helper_note"] .note-seal {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* ---------- 回报另起的一问：一道细线 ----------
+   帮手做完时这段对话没在作答，回报就另起一答。它不是用户说的话，不画成气泡，只是一道细线中间点名，
+   与「前文已压成摘要」的分隔同一个写法；名字是金的，点开是那一趟的经过 */
+.message.relay {
+  margin: 4px 0 22px;
+}
+.relay-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font: 11px var(--title);
+  letter-spacing: 0.06em;
+}
+.relay-line:before,
+.relay-line:after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: color-mix(in srgb, var(--gold) 28%, var(--line));
+}
+.relay-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.relay-name:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.relay-sep {
+  color: var(--ink-3);
+}
+
 /* ---------- 差遣：做事时那枚签在呼吸 ----------
    状态该长在那东西自己身上，而不是另起一条去代言。整枚签一起明灭——底色、金线、
    左缘的晕、标签与印，四样同一个节拍，两秒一轮。它要在余光里就能看见，不必盯着 */

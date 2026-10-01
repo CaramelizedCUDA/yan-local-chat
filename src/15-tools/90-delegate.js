@@ -1,6 +1,7 @@
 // 言 · 差遣：主模型把一件自成一段的子任务交给帮手，帮手另起一段对话做完后回报。桥接在线、且有别的活能交出去时才给；帮手自己不再差遣。
 // 同一轮派出的几名帮手同时开工（parallel），活是主模型分的，不重叠靠它分派时留意（工具说明里有交代）。
-// 行迹里只留一枚签，帮手自己的那条时间线开在差遣面板里（见 08-trail.js）
+// 帮手在后台做，不随派它的那一答收尾：主答只剩等待就收尾，回报到了另起一答（见 mailReport）——等着的时候没有谁醒着。
+// 收了工的帮手还能续派，带着它先前的经过接着做（见 tellHelper）。行迹里只留一枚签，帮手自己的那条时间线开在差遣面板里（见 08-trail.js）
 defineTool({
   name: "delegate",
   group: "delegate",
@@ -10,12 +11,13 @@ defineTool({
   sideEffect: true,
   parallel: true,
   run: delegateInBackground,
-  html: delegateStepHtml,
+  html: step => delegateStepHtml(step),
   sync: syncDelegateCard,
   digest: step =>
     `差遣「${String(step.title || "").slice(0, 40)}」→ ${step.result || step.status}${subChangedPaths(step).length ? `，改了 ${subChangedPaths(step).slice(0, 8).join("、")}` : ""}`
 });
-// 给后台正做着的帮手递话或叫停：话进帮手的收件口，它说到落点时读到（同补言，不掐断）；叫停只停它一个，已做的照未完成回报
+// 给帮手递话：正做着的，话进它的收件口，说到落点时读到（同补言，不掐断）；已收工的即续派，带着先前的经过接着做。
+// 叫停只停正做着的那一个，已做的照未完成回报。这一步在行迹里也是一枚签（续派 / 传话 / 叫停），点开是那名帮手
 defineTool({
   name: "helper",
   group: "delegate",
@@ -23,8 +25,30 @@ defineTool({
   offer: ctx => ctx.offered.includes("delegate"),
   mainOnly: true,
   sideEffect: true,
-  run: tellHelper
+  run: tellHelper,
+  html: helperStepHtml,
+  sync: syncHelperCard
 });
+// 递给帮手的话：落在帮手自己的时间线里它到达的那一刻，待递转圈、递到打勾（与补言同一种画法）
+defineTool({
+  name: "helper_note",
+  label: "传话",
+  offer: false,
+  html: step => noteStepHtml(step, { seal: "传", label: "传话" })
+});
+/** 这段对话里帮手的每一趟（差遣与续派），按先后 @param {Conversation|null} conversation */
+function helperRuns(conversation) {
+  return (conversation?.messages || []).flatMap(message => (message.steps || []).filter(step => step.sub));
+}
+/** 同一名帮手的几趟认同一个 helper（头一趟的 id）；旧对话里没记的就是它自己 @param {Step} step */
+const helperKey = step => step.sub?.helper || step.sub?.id || "";
+/** @param {string} id */
+function stopCrew(id) {
+  for (const box of crews.get(id) || []) {
+    box.halted = true;
+    box.controller.abort();
+  }
+}
 /**
  * @param {Step} step
  * @param {Record<string, any>} args
@@ -34,122 +58,245 @@ function tellHelper(step, args, ctx) {
   const name = String(args.helper || "").trim(),
     text = String(args.message || "").trim(),
     stop = args.stop === true,
-    boxes = requestJob(ctx.conversation.id)?.subs || [],
-    box = boxes.find(item => item.title === name) || (boxes.length === 1 ? boxes[0] : null);
-  step.title = `${stop ? "叫停" : "递给"}「${box?.title || name}」${stop || !text ? "" : `：${text.slice(0, 60)}`}`;
-  if (!box)
-    return {
+    boxes = crews.get(ctx.conversation.id) || [],
+    past = helperRuns(ctx.conversation)
+      .filter(run => run.title === name && run !== step)
+      .at(-1),
+    // 名字对不上、又只有一名在做：多半说的就是它。可名字对得上一名收了工的，那就是要续派那一名
+    box = boxes.find(item => item.title === name) || (!past && boxes.length === 1 ? boxes[0] : null),
+    gone = () => ({
       ok: false,
-      content: prompt("delegate.gone", { title: name, running: boxes.map(item => `「${item.title}」`).join("、") || "无" }),
-      display: "不在做"
-    };
+      content: prompt("delegate.gone", {
+        title: name,
+        running: boxes.map(item => `「${item.title}」`).join("、") || "无",
+        done:
+          [...new Set(helperRuns(ctx.conversation).map(run => run.title))]
+            .filter(title => !boxes.some(item => item.title === title))
+            .map(title => `「${title}」`)
+            .join("、") || "无"
+      }),
+      display: "没有这名帮手"
+    });
+  step.title = box?.title || past?.title || name;
   if (stop) {
+    step.mode = "stop";
+    if (!box) return gone();
+    step.ref = box.step.id;
     box.controller.abort();
     return { ok: true, content: prompt("delegate.stopping", { title: box.title }), display: "已叫停" };
   }
   if (!text) return { ok: false, content: "message 不能为空", display: "无话" };
-  box.queue.push({ report: prompt("delegate.note", { text }) });
-  // 帮手正写着：等它说到落点停这一轮递上；正跑工具：结果交回时递；正等着：当即叫醒
-  if (box.reading) watchSteer(box, box.sub);
-  box.wake?.();
-  return { ok: true, content: prompt("delegate.noted", { title: box.title }), display: "已递" };
+  step.note = text;
+  if (box) {
+    // 正做着：话落在它自己的时间线里，进它的收件口——正说着就等到句尾再停这一轮递上，正跑工具就等结果交回时递
+    const sub = box.sub;
+    /** @type {Step} */
+    const note = {
+      id: `note_${uid().slice(0, 8)}`,
+      name: "helper_note",
+      arguments: "{}",
+      status: "running",
+      title: text.split("\n").find(Boolean)?.slice(0, 80) || "",
+      note: text,
+      at: sub.content.length,
+      rat: String(sub.reasoning || "").length
+    };
+    sub.steps.push(note);
+    step.mode = "tell";
+    step.ref = box.step.id;
+    step.noteId = note.id;
+    box.queue.push({ report: prompt("delegate.note", { text }), note });
+    if (box.reading) watchSteer(box, sub);
+    refreshSteps(box.host);
+    return { ok: true, content: prompt("delegate.noted", { title: box.title }), display: "已递" };
+  }
+  if (!past) return gone();
+  // 已收工：续派。这一步自己成一趟，在当前的行迹里另起一枚签，点开看的是这一趟
+  step.mode = "resume";
+  launchHelper(step, { title: past.title, task: text }, ctx, past);
+  return { ok: true, background: true, content: prompt("delegate.resumed", { title: past.title }), display: "后台进行中" };
 }
-// 帮手在后台做：差遣当即回一句「已开工」，主模型这一轮随即结束、照常往下走；帮手做完，回报寄进这一答的收件口
-//（job.queue，与补言同一个口子），在下一个轮次边界递给主模型。帮手干活时主模型醒着：补言当场能递，它可据此调整。
-// 主模型没别的事可做时，这一答不收尾，等收件口——帮手回报或补言，谁先到先处理（见 streamReply）
+// 差遣当即回一句「已开工」，主模型这一轮随即结束、照常往下走；帮手在后台做，做完回报寄给这段对话（见 mailReport）
 /**
  * @param {Step} step
  * @param {Record<string, any>} args
  * @param {ToolContext} ctx
  */
 function delegateInBackground(step, args, ctx) {
-  const job = requestJob(ctx.conversation.id);
-  if (!job || !String(args.task || "").trim()) return runDelegate(step, args, ctx);
-  job.helpers = (job.helpers || 0) + 1;
-  void runDelegate(step, args, ctx)
+  const task = String(args.task || "").trim();
+  step.title =
+    String(args.title || "")
+      .trim()
+      .slice(0, 40) || task.slice(0, 24);
+  if (!task) return { ok: false, content: "task 不能为空：请把背景、目标、边界与要回报的内容写全", display: "任务为空" };
+  launchHelper(step, args, ctx);
+  return { ok: true, background: true, content: prompt("delegate.started", { title: step.title }), display: "后台进行中" };
+}
+// 起一趟：差遣是头一趟，续派（past 是它上一趟）接着做。做完由它自己收尾这一步，回报寄给这段对话
+/**
+ * @param {Step} step
+ * @param {Record<string, any>} args
+ * @param {ToolContext} ctx
+ * @param {Step|null} [past]
+ */
+function launchHelper(step, args, ctx, past = null) {
+  const { conversation, assistant } = ctx,
+    profile = requestJob(conversation.id)?.profile || activeProfile();
+  void runDelegate(step, args, ctx, profile, past)
     .then(
       outcome => {
         step.status = outcome.ok ? "done" : "error";
         step.result = outcome.display;
-        (job.queue ||= []).push({ report: outcome.content, step });
+        mailReport(conversation, { report: outcome.content, step, profile });
       },
-      // 停了：streamReply 收尾时自会把还在转圈的步骤收束
       error => {
-        if (error.name !== "AbortError") {
-          step.status = "error";
-          step.result = friendlyError(String(error.message || error));
-          (job.queue ||= []).push({
-            report: prompt("delegate.failed", {
-              title: step.title,
-              reason: step.result,
-              steps: step.sub?.steps.length || 0,
-              changed: "",
-              partial: ""
-            }),
-            step
-          });
-        }
+        step.status = "error";
+        // 用户停的（停止、刷新）：不回报，也就不再叫醒谁
+        if (error.name === "AbortError") return void (step.result = "已停止");
+        step.result = friendlyError(String(error.message || error));
+        mailReport(conversation, {
+          report: prompt("delegate.failed", {
+            title: step.title,
+            reason: step.result,
+            steps: step.sub?.steps.length || 0,
+            changed: "",
+            partial: ""
+          }),
+          step,
+          profile
+        });
       }
     )
     .finally(() => {
-      job.helpers -= 1;
-      refreshSteps(ctx.assistant);
+      refreshSteps(assistant);
+      markDirty(conversation.id);
       saveStore();
-      job.wake?.();
+      renderHistory();
+      if (currentId === conversation.id) renderSendButtons();
     });
-  return { ok: true, background: true, content: prompt("delegate.started", { title: step.title }), display: "后台进行中" };
+  renderHistory();
+}
+// 帮手的回报：这段对话正在作答，就进那一答的收件口，在回合边界递上；没在作答（主答只剩等待时已收尾），
+// 同一刻到的几份攒成一问另起一答——回报作这一问，页面上是一道细线（见 relayHtml），不是用户的话
+/** @type {Map<string, Array<{ report: string, step: Step, profile: Profile|null }>>} */
+const mailbags = new Map();
+/** @param {Conversation} conversation */
+function mailReport(conversation, item) {
+  const job = requestJob(conversation.id);
+  if (job) return void job.queue.push(item);
+  const bag = mailbags.get(conversation.id);
+  if (bag) return void bag.push(item);
+  mailbags.set(conversation.id, [item]);
+  setTimeout(() => {
+    const items = mailbags.get(conversation.id) || [];
+    mailbags.delete(conversation.id);
+    wakeWithReports(conversation, items);
+  }, 0);
+}
+/** @param {Conversation} conversation */
+function wakeWithReports(conversation, items) {
+  if (!items.length || !store.conversations.includes(conversation)) return;
+  // 攒着的这一会儿里有人开了一答（用户发了话、上一答收尾时补言另起了一问）：交给它
+  const job = requestJob(conversation.id);
+  if (job) return void job.queue.push(...items);
+  /** @type {Message} */
+  const user = {
+    id: uid(),
+    role: "user",
+    content: items.map(item => item.report).join("\n\n"),
+    timestamp: now(),
+    relay: items.map(({ step }) => ({ step: step.id, title: String(step.title || ""), ok: step.status === "done" }))
+  };
+  const profile = profiles().find(p => p.id === items[0].profile?.id) || activeProfile();
+  if (profile && !quotaBlocked(profile)) return void startTurn(conversation, user, profile);
+  // 没有可用的模型或余墨已尽：回报先记下，等用户换了模型再问
+  conversation.messages.push(user);
+  conversation.updatedAt = now();
+  markDirty(conversation.id);
+  saveStore();
+  if (currentId === conversation.id && view === "chat") renderConversation();
+  else renderHistory();
+  toast(profile ? "余墨已尽，帮手的回报先记下了" : "没有可用的模型，帮手的回报先记下了");
+}
+// 派它的那一答收尾时它还没做完，墨没算进去：做完了记回那一答
+/** @param {Message} assistant @param {Profile|null} profile */
+function chargeHelper(assistant, usage, profile) {
+  const spent = Number(usage?.total_tokens || 0);
+  if (!spent || !profile) return;
+  assistant.usage ||= { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  for (const key of Object.keys(usage)) assistant.usage[key] = Number(assistant.usage[key] || 0) + Number(usage[key] || 0);
+  assistant.tokenCount = Number(assistant.tokenCount || 0) + spent;
+  profile.usedTokens = Math.max(0, Number(profile.usedTokens || 0)) + spent;
+  renderQuota();
+}
+// 续派时帮手先前的经过：每一趟一问一答（所领之命 → 回报），上一趟的行迹冠在下一趟的命前，与主对话的历史同一个写法
+/** @param {Conversation} conversation @param {Step} past */
+function helperHistory(conversation, past) {
+  const runs = helperRuns(conversation),
+    key = helperKey(past),
+    mine = runs.slice(0, runs.indexOf(past) + 1).filter(run => helperKey(run) === key),
+    history = [];
+  mine.forEach((run, i) => {
+    const trail = i ? stepsDigest(mine[i - 1].sub, "上一答的行迹") : "";
+    history.push(
+      { role: "user", content: `${trail ? `${trail}\n\n` : ""}${run.sub.task}` },
+      { role: "assistant", content: String(run.sub.report || run.sub.content || "").trim() || "（未留回报）" }
+    );
+  });
+  return history;
 }
 /** @param {Step} step */
 function subChangedPaths(step) {
   return [...new Set((step.sub?.steps || []).filter(s => s.change && s.status === "done").map(s => s.change.path))];
 }
-// 差遣：主模型把一件自成一段的子任务交给帮手。帮手用同一个模型、同一套工具（不再差遣、不请示用户）另起一段对话跑自己的工具轮次（上限见设置），
-// 步骤都画在主对话这条消息的差遣卡片里（指令照样问而后行），做完把最后一轮的回报连同改动摘要作为工具结果交回主模型
+// 一趟差遣：帮手用同一个模型、同一套工具（不再差遣、不请示用户）另起一段对话跑自己的工具轮次（上限见设置），
+// 步骤都画在派它的那一答的差遣卡片里（指令照样问而后行），做完把最后一轮的回报连同改动摘要交回
 /**
  * @param {Step} step
  * @param {Record<string, any>} args
  * @param {ToolContext} ctx
+ * @param {Profile|null} profile
+ * @param {Step|null} past 续派时它的上一趟
  */
-async function runDelegate(step, args, ctx) {
-  const { conversation, assistant, signal } = ctx;
-  const task = args.task.trim();
-  step.title = args.title.trim().slice(0, 40) || task.slice(0, 24);
-  if (!task) return { ok: false, content: "task 不能为空：请把背景、目标、边界与要回报的内容写全", display: "任务为空" };
-  const job = requestJob(conversation.id),
-    profile = job?.profile || activeProfile();
+async function runDelegate(step, args, ctx, profile, past) {
+  const { conversation, assistant } = ctx;
+  const task = String(args.task).trim();
   if (!profile) return { ok: false, content: "没有可用的模型", display: "无模型" };
   const tools = toolDefinitions(conversation, { sub: true });
   if (!tools) return { ok: false, content: "此对话里没有可交给帮手的工具", display: "无工具可用" };
+  const id = `sub-${uid()}`;
   /** @type {SubAgent} */
-  const sub = { id: `sub-${uid()}`, task, content: "", reasoning: "", steps: [], status: "streaming", usage: null };
+  const sub = { id, helper: past ? helperKey(past) : id, task, content: "", reasoning: "", steps: [], status: "streaming", usage: null };
   step.sub = sub;
-  const history = [{ role: "user", content: task }];
+  const lead = past ? stepsDigest(past.sub, "上一答的行迹") : "";
+  const history = [...(past ? helperHistory(conversation, past) : []), { role: "user", content: `${lead ? `${lead}\n\n` : ""}${task}` }];
   const overrides = {
     systemPrompt: systemPrompt(conversation, tools, { role: "sub" }),
     tools,
     reasoning: conversation.reasoning || "",
-    // 跑得久了上下文会满：任务说明之后的往来由 readReply 按需压成工作笔记（见 keepInWindow），帮手接着做
+    // 跑得久了上下文会满：任务说明（续派时连同先前的几趟）之后的往来由 readReply 按需压成工作笔记（见 keepInWindow），帮手接着做
     head: history.length,
-    onFold: busy => job && setJobLabel(conversation, job, busy ? "帮手整理上下文" : "")
+    onFold: busy => {
+      const job = requestJob(conversation.id);
+      if (job) setJobLabel(conversation, job, busy ? "帮手整理上下文" : "");
+    }
   };
-  // 帮手自己的收件口与中止器，与主答的 job 同形，轮次循环照收：主模型经 helper 递来的话等它说到落点再递（同补言），
-  // 叫停只停它一个；整答停了它跟着停
-  const controller = new AbortController(),
-    stopWithMain = () => controller.abort();
-  signal.addEventListener("abort", stopWithMain, { once: true });
-  const inbox = {
-    controller,
+  // 帮手自己的收件口与中止器，与主答的 job 同形，轮次循环照收：主模型经 helper 递来的话等它说到落点再递（同补言）。
+  // 叫停（halted 为假）只停它一个、已做的照未完成回报；用户按停止（halted）则不回报
+  const box = {
+    controller: new AbortController(),
     queue: [],
     round: null,
     reading: false,
     roundStart: 0,
     steerTimer: 0,
-    helpers: 0,
-    wake: null,
+    halted: false,
     sub,
+    step,
+    host: assistant,
     title: step.title
   };
-  if (job) (job.subs ||= []).push(inbox);
+  crews.set(conversation.id, [...(crews.get(conversation.id) || []), box]);
   const tally = newTally(),
     started = performance.now();
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
@@ -163,13 +310,13 @@ async function runDelegate(step, args, ctx) {
   const ticker = setInterval(paint, 350);
   let failure = "";
   try {
-    // 与主答同一个轮次循环；步骤记在帮手身上、画在主答的差遣卡里
+    // 与主答同一个轮次循环；步骤记在帮手身上、画在派它的那一答的差遣卡里
     await runRounds(sub, history, {
       profile,
       conversation,
       host: assistant,
-      signal: controller.signal,
-      inbox,
+      signal: box.controller.signal,
+      inbox: box,
       overrides,
       tally,
       roundLimit: subRoundLimit(),
@@ -180,7 +327,7 @@ async function runDelegate(step, args, ctx) {
   } catch (error) {
     if (error.name === "AbortError") {
       sub.status = "stopped";
-      if (signal.aborted) throw error;
+      if (box.halted) throw error;
       // 主模型叫停的：照未完成回报，它已做的一并交回
       failure = "已按吩咐叫停";
     } else {
@@ -189,11 +336,21 @@ async function runDelegate(step, args, ctx) {
     }
   } finally {
     clearInterval(ticker);
-    clearInterval(inbox.steerTimer);
-    signal.removeEventListener("abort", stopWithMain);
-    if (job?.subs) job.subs = job.subs.filter(box => box !== inbox);
+    clearInterval(box.steerTimer);
+    const left = (crews.get(conversation.id) || []).filter(item => item !== box);
+    if (left.length) crews.set(conversation.id, left);
+    else crews.delete(conversation.id);
+    // 停了、断了：没跑完的步骤收束；收工前才到、没来得及递的话标出来
+    if (sub.status !== "complete") settleStepList(sub.steps, sub.status === "stopped" ? "已停止" : "已中断");
+    for (const { note } of box.queue)
+      if (note) {
+        note.status = "error";
+        note.result = "帮手已收工，未递到";
+      }
     sub.usage = tally.usageKnown ? tally.usage : null;
     sub.durationMs = Math.round(performance.now() - started);
+    // 派它的那一答还在作答：墨由那一答收尾时一并算；已收尾了（只剩等待就收尾）就在这里记回去
+    if (requestJob(conversation.id)?.assistantId !== assistant.id) chargeHelper(assistant, sub.usage, profile);
     // 回报是最后一段话；裁掉开头的空行，偏移跟着前移
     const lead = trimReply(sub);
     sub.report = sub.content.slice(Math.max(0, tally.replyStart - lead)).trim();
@@ -242,12 +399,13 @@ async function runDelegate(step, args, ctx) {
 // 行迹里只留一枚签：差遣是并行的活，塞进线性的时间线会把后面的东西一直往下顶。
 // 这里只记「此刻遣了谁、做到哪一步」——那确实是这一刻发生的事；回报与帮手自己的那条小时间线都在面板里，
 // 签上不铺回报：主模型接着会把它消化进正文，几名帮手的回报叠在行迹里，正文就被顶到几屏之下了。
-/** @param {Step} step */
-function delegateStepHtml(step) {
+// 续派是同一名帮手的又一趟，签上标「续派」与「已更新」
+/** @param {Step} step @param {string} [kind] 签上的标签：差遣 / 续派 */
+function delegateStepHtml(step, kind = "差遣") {
   const { sub, status, meta } = delegateSubState(step);
-  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" title="展开帮手的行迹"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">遣</span>差遣</span><span class="tool-title" title="${escapeHtml(sub?.task || step.title || "")}">${escapeHtml(step.title || "")}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "未完成") : ""}">${escapeHtml(meta)}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" title="展开帮手的行迹"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">遣</span>${kind}</span><span class="tool-title" title="${escapeHtml(sub?.task || step.title || "")}">${escapeHtml(step.title || "")}</span>${kind === "差遣" ? "" : `<span class="helper-fresh">已更新</span>`}<span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "未完成") : ""}">${escapeHtml(meta)}</span>${stepStateHtml(status)}</div></div>`;
 }
-// 行迹里那枚签的就地更新：只动头上的状态与标题。帮手自己的时间线与回报不在这儿，在面板里
+// 行迹里那枚签的就地更新：只动头上的状态与标题。帮手自己的时间线与回报不在这儿，在面板里。返回真即已就地画好
 /** @param {Step} step */
 function syncDelegateCard(el, step, prev) {
   const { sub, status, meta } = delegateSubState(step);
@@ -261,4 +419,31 @@ function syncDelegateCard(el, step, prev) {
     title.textContent = step.title || "";
     title.title = sub?.task || step.title || "";
   }
+  return true;
+}
+// 传话、叫停、续派的签：与差遣同一种签，点开是那名帮手——传话开到递去的那句话，续派开的是这一趟
+/** @param {Step} step */
+function helperKind(step) {
+  if (step.sub) return "续派";
+  if (step.mode) return step.mode === "stop" ? "叫停" : "传话";
+  const parsed = parseToolArguments(step.arguments);
+  return parsed.ok && parsed.args.stop === true ? "叫停" : "传话";
+}
+/** @param {Step} step */
+function helperStepHtml(step) {
+  const kind = helperKind(step);
+  if (kind === "续派") return delegateStepHtml(step, kind);
+  const parsed = parseToolArguments(step.arguments),
+    name = step.title || String((parsed.ok && parsed.args.helper) || ""),
+    text = step.note || String((parsed.ok && parsed.args.message) || ""),
+    status = step.status || "done",
+    said = text.split("\n").find(Boolean) || "",
+    fresh = kind === "传话" && status !== "error";
+  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"${step.ref ? ` data-ref="${escapeHtml(step.ref)}"` : ""}${step.noteId ? ` data-note="${escapeHtml(step.noteId)}"` : ""}><div class="tool-step-head" role="button" tabindex="0" title="${step.ref ? "看这名帮手" : ""}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">遣</span>${kind}</span><span class="tool-title" title="${escapeHtml(text)}">${escapeHtml(name)}${said ? `<span class="helper-said">${escapeHtml(said.slice(0, 80))}</span>` : ""}</span>${fresh ? `<span class="helper-fresh">已更新</span>` : ""}<span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "") : ""}">${status === "running" ? "" : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div></div>`;
+}
+// 签的种类变了（参数拟完才知道是续派还是传话）就整张换；续派的签与差遣一样就地更新
+/** @param {Step} step */
+function syncHelperCard(el, step, prev) {
+  if (el.dataset.kind !== helperKind(step)) return false;
+  return step.sub ? syncDelegateCard(el, step, prev) : false;
 }

@@ -44,6 +44,10 @@ function recoverConversation(conversation) {
       message.interruptedAt = now();
       settleSteps(message, "连接中断");
       changed = true;
+    } else if ((message.steps || []).some(step => step.sub && step.status === "running") && !crewRunning(conversation.id)) {
+      // 这一答早写完了，后台的帮手却还记着「在做」：做它的那一处已经不在了
+      settleSteps(message, "页面刷新，帮手已中断");
+      changed = true;
     }
   for (const thread of conversation.threads || [])
     for (const message of thread.messages || [])

@@ -25,8 +25,9 @@
 /** @typedef {"running"|"pending"|"done"|"error"|"skipped"} StepStatus */
 /** @typedef {{ question: string, header: string, multi: boolean, options: { label: string, description: string }[] }} AskQuestion */
 /**
- * @typedef {Object} SubAgent 差遣出去的帮手：自己的一段对话，步骤画在主消息的差遣卡片里
+ * @typedef {Object} SubAgent 差遣出去的帮手的一趟：自己的一段对话，步骤画在派它的那一答的差遣卡片里
  * @property {string} id
+ * @property {string} [helper] 同一名帮手的几趟（差遣与续派）认同一个，取头一趟的 id
  * @property {string} task
  * @property {string} content
  * @property {string} reasoning
@@ -70,6 +71,9 @@
  * @property {boolean} [full] 输出看全 / 只看前 10 行
  * @property {boolean} [folded] 差遣卡片整张折起
  * @property {SubAgent} [sub]
+ * @property {"tell"|"resume"|"stop"} [mode] 传话一步做的是哪样：递话、续派、叫停
+ * @property {string} [ref] 传话、叫停说到的那一趟（步骤 id）
+ * @property {string} [noteId] 传话递去的那句话在帮手时间线里的步骤 id
  * @property {{ questions: AskQuestion[] }} [form]
  * @property {string[]} [answers]
  * @property {string} [conversationId] 翻旧谈
@@ -79,6 +83,7 @@
  * @typedef {Object} Message
  * @property {string} id
  * @property {"user"|"assistant"|"context"} role context 是上下文分隔：带 summary 的是压缩，不带的是旧版硬切
+ * @property {{ step: string, title: string, ok: boolean }[]} [relay] 帮手的回报另起的一问：谁回报了（内容是回报原文，只送给模型）
  * @property {string} content
  * @property {string} timestamp
  * @property {"streaming"|"complete"|"stopped"|"error"|"interrupted"} [status]
@@ -349,6 +354,9 @@ class JobMap extends Map {
   }
 }
 const requestJobs = new JobMap();
+// 各段对话在后台做着的帮手（对话 id → 一名一个收件口，见 90-delegate.js）。帮手不随派它的那一答收尾：主答只剩等待就收尾，
+// 回报到了另起一答。所以它与作答一样要攥锁防冻、要报到（别处不该把这段当成没人管）
+const crews = new JobMap();
 // 几个页面同开同一个存储时，谁在作答（见 01-store/40-leases.js 的 syncLeases）：PAGE_ID 是这个页面的名号；
 // remoteBusy 是别处正在作答的对话；leaseHold 是这边作答过、最后一次存盘还没落地的对话——落了地才松手，别处读到的才是写完的
 const PAGE_ID = uid();
@@ -357,12 +365,13 @@ const remoteBusy = new Set(),
 /** @type {{ release: () => void }|null} */
 let awakeHold = null;
 function holdAwake() {
-  if (requestJobs.size && !awakeHold && globalThis.navigator?.locks) {
+  const busy = requestJobs.size || crews.size;
+  if (busy && !awakeHold && globalThis.navigator?.locks) {
     const hold = { release: () => {} },
       done = new Promise(resolve => (hold.release = () => resolve(null)));
     awakeHold = hold;
     navigator.locks.request("yan-at-work", { mode: "shared" }, () => done).catch(() => {});
-  } else if (!requestJobs.size && awakeHold) {
+  } else if (!busy && awakeHold) {
     awakeHold.release();
     awakeHold = null;
   }

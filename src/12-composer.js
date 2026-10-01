@@ -12,12 +12,14 @@ function sealGlyph(button, running) {
   button.innerHTML = `<span class="seal-glyph" aria-hidden="true">${glyph}</span>`;
 }
 // 作答途中：案上空着，印是「止」；写了话，印又成「寄」——寄出去的是补言，递给正在作答的模型，它读了就改道
+// 这一答写完了、帮手还在后台做（crew）：案上空着印也是「止」，停的是帮手；写了话照常是新的一问
 function renderSendButtons() {
   const elsewhere = runningElsewhere(),
     running = conversationRunning() || elsewhere,
+    crew = !running && crewRunning(),
     ended = conversationDry(currentConversation()),
     has = composerHasContent(),
-    stop = running && !has;
+    stop = (running || crew) && !has;
   document.querySelectorAll(".send-trigger").forEach(b => {
     sealGlyph(b, stop);
     b.title = sendPreparing
@@ -25,13 +27,15 @@ function renderSendButtons() {
       : elsewhere
         ? "另一个页面正在这段对话里作答，这里跟着看"
         : stop
-          ? "停止生成"
+          ? crew
+            ? "叫停后台的帮手"
+            : "停止生成"
           : running
             ? "插言引路：模型说到落点便读这句，可就此改道"
             : "发送";
     b.classList.toggle("stop-btn", stop);
     b.classList.toggle("empty", !running && !has);
-    b.disabled = sendPreparing || (!running && ended);
+    b.disabled = sendPreparing || (!running && !crew && ended);
     b.setAttribute("aria-busy", String(sendPreparing));
   });
   const input = $("#chatInput");

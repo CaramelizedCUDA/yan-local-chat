@@ -195,12 +195,13 @@
   },
 
   helper: {
-    description: "给后台正做着的帮手递话（补充、改向）或叫停。话在它说到落点时读到；叫停后它已做的随后送到。",
+    description:
+      "给帮手递话。正做着的，话在它说到落点时读到（补充、改向）；已收工的即续派，它带着先前的经过接着做，同样回报。stop 叫停正做着的，它已做的随后送到。",
     parameters: {
       type: "object",
       properties: {
         helper: { type: "string", description: "差遣时起的任务名" },
-        message: { type: "string", description: "要递的话" },
+        message: { type: "string", description: "要递的话或续派的活" },
         stop: { type: "boolean", description: "true 即叫停" }
       },
       required: ["helper"]

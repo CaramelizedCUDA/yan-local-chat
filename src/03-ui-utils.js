@@ -52,6 +52,10 @@ function requestJob(id = currentId) {
 function conversationRunning(id = currentId) {
   return !!requestJob(id);
 }
+// 后台还有帮手在做（这一段此刻未必在作答）
+function crewRunning(id = currentId) {
+  return !!id && crews.has(id);
+}
 // 作答途中不寻常的状态：等待确认、网络重试、整理上下文。平常写着、跑着不必说，label 为空；
 // 等待确认由请示条与侧栏的「问」示意，其余挂在输入框上方的工作条里（见 renderHelperBar）
 /** @param {Conversation} conversation */

@@ -35,7 +35,7 @@
  * @property {true | ((args: Record<string, any>) => Record<string, any> | null)} [cache] 同一答里同样的参数直接复用结果；函数给出规范化后的参数，给 null 即这次不复用
  * @property {(step: Step, args: Record<string, any>, ctx: ToolContext) => ToolOutcome | Promise<ToolOutcome>} [run]
  * @property {(step: Step, title: string) => string} [html] 行迹卡片；不写用通用的一种
- * @property {(el: Element, step: Step, prev: { status: string } | undefined) => void} [sync] 卡片就地更新（不写则变了就整张换）
+ * @property {(el: Element, step: Step, prev: { status: string } | undefined) => boolean} [sync] 卡片就地更新，返回真即已画好；不写或返回假则变了就整张换
  * @property {(step: Step) => string} [approval] 请示条的内容
  * @property {true | ((step: Step) => string)} [digest] 带给下一问的一行；true 用通用写法，不写即不带
  * @property {(step: Step) => Source[]} [sources] 答末「出处」里列的条目
@@ -199,11 +199,9 @@ async function runSteps(steps, conversation, assistant, signal, toolCache) {
     }
     const remaining = MIN_TOOL_STATUS_MS - (performance.now() - started);
     if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
-    // 在后台接着做的（差遣）：这一步仍是进行中，做完由它自己收尾
-    if (!outcome.background) {
-      step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
-      step.result = outcome.display;
-    }
+    // 在后台接着做的（差遣）：这一步仍是进行中，做完由它自己收尾；先记一句「后台进行中」，下一问的行迹摘要里模型才知道它还没回来
+    if (!outcome.background) step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
+    step.result = outcome.display;
     outcomes.set(step.id, String(outcome.content).slice(0, 60000));
     refreshSteps(assistant);
     saveStore();
@@ -217,16 +215,25 @@ async function runSteps(steps, conversation, assistant, signal, toolCache) {
   }
   return outcomes;
 }
-// 生成结束（停止、出错或中断）时，还在转圈或等待确认的步骤一并收束，不留下永远转圈的卡片
+// 生成结束（停止、出错或中断）时，还在转圈或等待确认的步骤一并收束，不留下永远转圈的卡片。
+// 后台还在做的帮手不归这一答管：它不随这一答收尾，做完自己收这一步（见 90-delegate.js）
 /** @param {Message} assistant */
 function settleSteps(assistant, note) {
-  for (const step of allSteps(assistant))
+  const live = new Set([...crews.values()].flat().map(box => box.step));
+  for (const step of assistant.steps || []) {
+    if (live.has(step)) continue;
+    settleStepList([step, ...(step.sub?.steps || [])], note);
+    if (step.sub?.status === "streaming") step.sub.status = "stopped";
+  }
+}
+/** @param {Step[]} steps */
+function settleStepList(steps, note) {
+  for (const step of steps)
     if (step.status === "running" || step.status === "pending") {
       pendingApprovals.delete(step.id);
       step.status = step.status === "pending" ? "skipped" : "error";
       step.result = note;
     }
-  for (const step of assistant.steps || []) if (step.sub?.status === "streaming") step.sub.status = "stopped";
 }
 // 一答里的全部步骤，含帮手在差遣卡片里跑的那些（只嵌一层：帮手不再差遣）
 /** @param {{ steps?: Step[] }} message 消息或帮手 */

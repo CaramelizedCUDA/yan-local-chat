@@ -10,8 +10,8 @@ let leasing = null;
 function syncLeases() {
   if (!chatsOnline()) return Promise.resolve();
   if (leasing) return leasing;
-  // 正作答的都算上（旁注的作业按它所在的对话记）；作答完了、最后一次存盘也落了地的松手
-  const running = new Set([...requestJobs].map(([key, job]) => job.conversationId || key));
+  // 正作答的都算上（旁注的作业按它所在的对话记），后台还有帮手在做的也算；作答完了、最后一次存盘也落了地的松手
+  const running = new Set([...[...requestJobs].map(([key, job]) => job.conversationId || key), ...crews.keys()]);
   for (const id of running) leaseHold.add(id);
   for (const id of [...leaseHold]) if (!running.has(id) && !chatWritePromises.has(id) && !pendingChatWrites.has(id)) leaseHold.delete(id);
   leasing = bridge("/api/chats/lease", { owner: PAGE_ID, ids: [...leaseHold] }, AbortSignal.timeout(5000))

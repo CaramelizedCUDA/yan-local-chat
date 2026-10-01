@@ -17,7 +17,7 @@ function quotedText(message) {
 }
 // 上一答动过文件、请示过、差遣过、检索翻阅过的，压成一行带给下一问：模型才记得自己读过、改过哪些文件、查到过哪几条，不必从头再探。
 // 哪些步骤带、怎么写，由各工具登记的 digest 定。label 是方括号里的标头：进历史时写「上一答的行迹」（见 historyForApi），存卷宗与压缩转写里写「行迹」
-/** @param {Message} message */
+/** @param {Message|SubAgent} message 帮手的一趟也一样：续派时它上一趟的行迹冠在新的活前面 */
 function stepsDigest(message, label = "行迹") {
   const steps = (message.steps || []).filter(step => TOOLS.get(step.name)?.digest);
   if (!steps.length) return "";
@@ -157,6 +157,7 @@ async function sendOrStop() {
   if (sendPreparing) return;
   // 作答途中：输入框里有话就是补言，递给正在作答的模型；空着才是停止
   if (conversationRunning()) return composerHasContent() ? sendSupplement() : stopGeneration();
+  if (crewRunning() && !composerHasContent()) return stopGeneration();
   // 另一个页面正在这段对话里作答：这边只跟着看，写完再说（话留在输入框里）
   if (runningElsewhere()) return toast("这段对话正在另一个页面作答，写完后这里会跟上，再发不迟");
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
@@ -271,7 +272,7 @@ async function startTurn(c, user, profile) {
 // 就等它说到一个自然的落点（见 watchSteer：思考写完、句尾或段落尾、代码围栏闭合）把这一轮的流停下、已写的留着，随即连同补言
 // 再请它开口——它读了这句接着写，可就此改道；正在拟工具调用或跑着工具时不停，等结果交回、模型再开口之前递上；
 // 这一答若已在收尾、不再有下一回合，就在落笔后作为新的一问送出。引导是为了答得更好，默认不硬掐；
-// 急时由用户点那一步上的折箭头，不等落点当场递上（sendSupplementNow）。帮手在后台做时模型正等着收件口，补言当即递到
+// 急时由用户点那一步上的折箭头，不等落点当场递上（sendSupplementNow）
 // 断线后请模型接着写的那句话：手点「继续生成」与自动续写共用
 const AUTO_RESUMES = 2;
 // 一轮说完、下一轮起笔前隔一个空段；这一轮什么也没说（只调了工具）就不隔，免得正文攒下一串空行
@@ -303,10 +304,8 @@ function sendSupplement() {
   refreshSteps(assistant);
   renderSendButtons();
   if (followBottom) scrollBottom();
-  // 模型正写着：盯着它说到落点再停这一轮，streamReply 的循环接手——已写的留下，补言递上，随即再请它开口；
-  // 正等着帮手（没在写、也没跑工具）：当即叫醒，这就递
+  // 模型正写着：盯着它说到落点再停这一轮，streamReply 的循环接手——已写的留下，补言递上，随即再请它开口
   if (job.reading) watchSteer(job, assistant);
-  job.wake?.();
 }
 // 补言那一步上的折箭头：不等落点，当场停下这一轮递上，已写的正文与思绪都留着——留给特殊情况，平时仍等自然落点。
 // 工具正跑着时本就没有这一轮可停，结果一交回就递
@@ -345,13 +344,17 @@ function trimToBoundary(text) {
   return match && text.length - match[1].length < 120 ? match[1] : text;
 }
 // 回合边界：把收件口里排着的递给模型（历史里接在工具结果之后，或接在被掐断的半截话之后）——补言的那一步打勾；
-// 帮手的回报原样作一条消息递上（它那一步在帮手做完时已收尾）
+// 帮手的回报原样作一条消息递上（它那一步在帮手做完时已收尾）；主模型递给帮手的话（note）同回报一样递，那一步打勾
 async function deliverSupplements(job, history, budget, assistant, { steer = false } = {}) {
   const queue = job.queue || [];
   job.queue = [];
-  for (const { user, step, report } of queue) {
+  for (const { user, step, report, note } of queue) {
     if (report !== undefined) {
       history.push({ role: "user", content: report });
+      if (note) {
+        note.status = "done";
+        note.result = steer ? "已递 · 引路" : "已递";
+      }
       continue;
     }
     history.push(await supplementForApi(user, budget, { latest: true, steer }));
@@ -365,27 +368,6 @@ async function deliverSupplements(job, history, budget, assistant, { steer = fal
     refreshSteps(assistant);
   }
 }
-// 等收件口来东西（帮手回报或补言）；停止即抛 AbortError
-function waitInbox(job) {
-  const signal = job.controller.signal;
-  if (job.queue.length) return Promise.resolve();
-  if (signal.aborted) return Promise.reject(Object.assign(Error("已停止"), { name: "AbortError" }));
-  return new Promise((resolve, reject) => {
-    const done = () => {
-      job.wake = null;
-      signal.removeEventListener("abort", stop);
-    };
-    const stop = () => {
-      done();
-      reject(Object.assign(Error("已停止"), { name: "AbortError" }));
-    };
-    job.wake = () => {
-      done();
-      resolve(null);
-    };
-    signal.addEventListener("abort", stop, { once: true });
-  });
-}
 // 收尾时还没递出去的补言：从行迹里撤下，整答顺利写完的作为新的一问接着送；停了、断了的放回案上，话不能丢
 /**
  * @param {Conversation} conversation
@@ -393,10 +375,13 @@ function waitInbox(job) {
  * @param {Profile} profile
  */
 function settleSupplements(conversation, assistant, job, profile) {
-  // 帮手的回报只对这一答有用，答已收尾便作罢；放回案上、另起一问的只是用户的话
-  const queue = (job.queue || []).filter(item => item.user);
+  const queue = (job.queue || []).filter(item => item.user),
+    reports = (job.queue || []).filter(item => item.report !== undefined);
   job.queue = [];
-  if (!queue.length) return;
+  // 收尾前才到、没来得及递的帮手回报：照没在作答时寄（见 mailReport）。补言若另起一问，回报就并进那一答——
+  // 所以先排补言的那一问、后寄回报。用户按了停的，帮手一并停了，已到的回报也不再另起一答
+  const mail = () => assistant.status !== "stopped" && reports.forEach(item => mailReport(conversation, item));
+  if (!queue.length) return mail();
   const ids = new Set(queue.map(item => item.step.id));
   assistant.steps = (assistant.steps || []).filter(step => !ids.has(step.id));
   if (!assistant.steps.length) delete assistant.steps;
@@ -416,7 +401,7 @@ function settleSupplements(conversation, assistant, job, profile) {
       ...(quote ? { quote } : {})
     };
     setTimeout(() => void startTurn(conversation, user, profile), 0);
-    return;
+    return mail();
   }
   const key = draftKey(conversation.id),
     draft = draftRecord(conversation.id);
@@ -429,14 +414,17 @@ function settleSupplements(conversation, assistant, job, profile) {
   };
   if (currentId === conversation.id && view === "chat") restoreDraft();
   toast("这一答未写完，补言已放回案上");
+  mail();
 }
 function titleFrom(text, attachments) {
   const value = (text || `关于 ${attachments[0]?.name || "附件"}`).replace(/\s+/g, " ").trim();
   return value.slice(0, 28) + (value.length > 28 ? "…" : "");
 }
+// 停止：这一答连同这段对话后台的帮手一起停（帮手停了不回报，也就不再叫醒谁）
 function stopGeneration(id = currentId) {
+  stopCrew(id);
   const job = requestJob(id);
-  if (!job) return;
+  if (!job) return renderSendButtons();
   requestJobs.delete(id);
   markDirty(id);
   job.controller.abort();
@@ -453,6 +441,7 @@ function stopGeneration(id = currentId) {
   renderSendButtons();
 }
 function stopAllGenerations() {
+  for (const id of crews.keys()) stopCrew(id);
   for (const [id, job] of requestJobs) {
     job.controller.abort();
     const conversation = store.conversations.find(item => item.id === (job.conversationId || id));
@@ -476,8 +465,8 @@ function stopAllGenerations() {
 async function streamReply(conversation, assistant, profile, { resume = false } = {}) {
   // 这一答是不是执事的，记在消息自己身上：生成期间用户可能翻去欢迎页或卷宗，页面上一时没有「当前对话」，时间线不能因此改画法
   assistant.work = isWork(conversation);
-  // queue 是这一答的收件口：用户的补言（user）与后台帮手的回报（report）；helpers 是还在后台做的帮手数，wake 叫醒正等收件口的循环
-  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user?: Message, step: Step, report?: string }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number, helpers: number, wake: (() => void)|null, subs?: any[] }} */
+  // queue 是这一答的收件口：用户的补言（user）与后台帮手的回报（report）
+  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user?: Message, step: Step, report?: string }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number }} */
   const job = {
     controller: new AbortController(),
     assistantId: assistant.id,
@@ -487,9 +476,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     round: null,
     reading: false,
     roundStart: 0,
-    steerTimer: 0,
-    helpers: 0,
-    wake: null
+    steerTimer: 0
   };
   requestJobs.set(conversation.id, job);
   renderSendButtons();
@@ -583,13 +570,12 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       assistant.error = friendlyError(error.message);
     }
   } finally {
-    // 这一答断了、出错了，后台的帮手没人收回报：一并停下
-    if (job.helpers) job.controller.abort();
     if (gaugeTicker) clearInterval(gaugeTicker);
     assistant.durationMs = Math.round(performance.now() - started);
-    // 帮手（差遣）自己跑的几轮也是这一答花的墨：这一次新起的步骤里的帮手用量一并计入（续写时此前的已经记过）
+    // 帮手（差遣）自己跑的几轮也是这一答花的墨：这一次新起的步骤里已做完的帮手用量一并计入（续写时此前的已经记过）；
+    // 还在后台做的，做完再记回这一答（见 chargeHelper）
     for (const step of (assistant.steps || []).slice(stepsBefore))
-      if (step.sub?.usage) {
+      if (step.sub?.usage && step.sub.status !== "streaming") {
         tally.usageKnown = true;
         for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(step.sub.usage[key] || 0);
       }
@@ -620,7 +606,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
 // ---------- 一答的轮次循环：主答、旁注、帮手共用 ----------
 // 请模型开口 → 有工具调用就记成步骤、执行、把结果交回 → 再开口，直到它不再调工具。写到一半断了稍候接着写（同一轮最多两回）；
 // 一轮既没说话也没调工具不算收尾；轮次到顶收回工具，请它就已有结果收尾。
-// 带收件口（inbox，即这一答的 job）的还收补言与后台帮手的回报：补言等落点停下这一轮递上，帮手未回时不收尾、等收件口。
+// 带收件口（inbox，即这一答的 job）的还收补言与后台帮手的回报：补言等落点停下这一轮递上；只剩等帮手时就收尾，回报到了另起一答。
 // 用量记在 tally 上——停了、断了也照样有——由调用方收尾时结算
 function newTally() {
   return {
@@ -712,7 +698,8 @@ async function runRounds(target, history, run) {
       // 补言停下的：这一轮写到落点为止，已写的话与补言一起进历史，没执行的工具调用一律作废，随即再开一轮
       const said = trimToBoundary(target.content.slice(roundStart)).replace(/\n+$/, "");
       target.content = target.content.slice(0, roundStart) + said;
-      for (const { step } of inbox.queue) if (typeof step?.at === "number") step.at = Math.min(step.at, target.content.length);
+      for (const { step, note } of inbox.queue)
+        for (const item of [step, note]) if (typeof item?.at === "number") item.at = Math.min(item.at, target.content.length);
       chargePartial(said);
       target.toolCalls = null;
       if (said.trim()) history.push({ role: "assistant", content: said });
@@ -736,12 +723,11 @@ async function runRounds(target, history, run) {
     }
     const calls = (target.toolCalls || []).filter(call => call.name);
     if (!calls.length || !overrides.tools) {
-      // 只剩用户的补言时照旧收尾，补言由 settleSupplements 作下一问送出
-      if (!inbox || (!inbox.helpers && !inbox.queue.some(item => item.report !== undefined))) break;
-      // 这一轮说完了，帮手还在后台：不收尾，等收件口——帮手回报或补言，谁先到先递上，再请它开口
+      // 说完了就收尾，帮手还在后台也不等：回报到了另起一答（见 mailReport），等着的时候没有谁醒着。
+      // 只剩用户的补言也照旧收尾，补言由 settleSupplements 作下一问送出。这一轮说着时已到的回报（或递给帮手的话）才当场递上接着做
+      if (!inbox?.queue.some(item => item.report !== undefined)) break;
       const said = target.content.slice(roundStart).trim();
       if (said) history.push({ role: "assistant", content: said });
-      await waitInbox(inbox);
       await deliverSupplements(inbox, history, run.budget, host);
       target.content = paragraphBreak(target.content);
       continue;
