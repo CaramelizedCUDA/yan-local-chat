@@ -22,6 +22,8 @@ function currentBundler() {
 // Anthropic 适配与页面共用同一份源码（src/19-anthropic.js）：请求换成 Messages API 的，事件流换回 OpenAI 风格
 require("./src/19-anthropic.js");
 const ANTHROPIC = globalThis.YAN_ANTHROPIC;
+// Codex 订阅：借 Codex CLI 登录的 ChatGPT 账号，同样在最外层换一层（见 server/codex.js）
+const CODEX = require("./server/codex.js");
 const { pipeline } = require("node:stream/promises");
 const { sendJson, readJson } = require("./server/http.js");
 // 联网：地址门禁、翻网页、检索、调接口
@@ -114,6 +116,7 @@ function resolveProfile(input, requireModel = true) {
       .trim()
       .toLowerCase()
   };
+  if (CODEX.codexLike(config)) config.baseUrl ||= CODEX.CODEX_BASE;
   if (!config.baseUrl || (requireModel && !config.model)) throw Error(requireModel ? "请填写 Base URL 和模型 ID" : "请填写 Base URL");
   return config;
 }
@@ -122,7 +125,8 @@ function modelsUrl(baseUrl) {
   url.pathname = `${url.pathname.replace(/\/chat\/completions\/?$/i, "").replace(/\/$/, "")}/models`;
   return url;
 }
-function upstreamHeaders(config) {
+async function upstreamHeaders(config) {
+  if (CODEX.codexLike(config)) return CODEX.codexHeaders();
   if (ANTHROPIC.anthropicLike(config)) return ANTHROPIC.anthropicHeaders(config.apiKey);
   return { "Content-Type": "application/json; charset=utf-8", ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) };
 }
@@ -185,7 +189,13 @@ async function handleTest(req, res) {
   try {
     const body = await readJson(req),
       config = resolveProfile(body.profile, true);
-    const response = await fetch(upstreamModelsUrl(config), { headers: upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
+    // Codex 订阅没有列模型的公开接口：凭证读得出（必要时换新）就算连上，模型对照 Codex CLI 缓存的列表
+    if (CODEX.codexLike(config)) {
+      await CODEX.codexHeaders();
+      const models = CODEX.codexModels();
+      return sendJson(res, 200, { ok: true, latencyMs: Date.now() - started, modelFound: !models.length || models.includes(config.model) });
+    }
+    const response = await fetch(upstreamModelsUrl(config), { headers: await upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
     if (!response.ok) throw Error(await upstreamError(response));
     const data = await response.json();
     sendJson(res, 200, {
@@ -201,7 +211,8 @@ async function handleModels(req, res) {
   try {
     const body = await readJson(req),
       config = resolveProfile(body.profile, false);
-    const response = await fetch(upstreamModelsUrl(config), { headers: upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
+    if (CODEX.codexLike(config)) return sendJson(res, 200, { models: CODEX.codexModels() });
+    const response = await fetch(upstreamModelsUrl(config), { headers: await upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
     if (!response.ok) throw Error(await upstreamError(response));
     const data = await response.json();
     const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
@@ -241,15 +252,24 @@ async function handleChat(req, res) {
       `${new Date().toLocaleTimeString("zh-CN", { hour12: false })} → ${config.model}：${messages.length} 条消息${payload.tools ? `，工具 ${payload.tools.length} 个` : ""}`
     );
     // Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格再给页面；OpenAI 兼容的原样透传（thinking_blocks 是 Anthropic 才要的，去掉）
-    const anthropic = ANTHROPIC.anthropicLike(config);
+    const anthropic = ANTHROPIC.anthropicLike(config),
+      codex = CODEX.codexLike(config);
     if (!anthropic) payload.messages = messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
     // 上游的状态码原样带回页面（连不上记作 502）：429、5xx、过载这些页面会等一等再试，参数错之类的 4xx 不试
-    const response = await fetch(anthropic ? ANTHROPIC.anthropicEndpoint(config.baseUrl) : endpoint(config.baseUrl, "/chat/completions"), {
-      method: "POST",
-      headers: upstreamHeaders(config),
-      body: JSON.stringify(anthropic ? ANTHROPIC.anthropicRequest(payload) : payload),
-      signal: abort.signal
-    }).catch(error => {
+    const headers = await upstreamHeaders(config);
+    const response = await fetch(
+      codex
+        ? CODEX.codexEndpoint(config.baseUrl)
+        : anthropic
+          ? ANTHROPIC.anthropicEndpoint(config.baseUrl)
+          : endpoint(config.baseUrl, "/chat/completions"),
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(codex ? CODEX.codexRequest(payload) : anthropic ? ANTHROPIC.anthropicRequest(payload) : payload),
+        signal: abort.signal
+      }
+    ).catch(error => {
       throw Object.assign(Error(`连不上上游接口：${error.cause?.code || error.cause?.message || error.message}`), {
         status: 502,
         name: error.name
@@ -261,15 +281,22 @@ async function handleChat(req, res) {
         retryAfter: response.headers.get("retry-after") || ""
       });
     res.writeHead(200, {
-      "Content-Type": anthropic
-        ? "text/event-stream; charset=utf-8"
-        : response.headers.get("content-type") || "text/event-stream; charset=utf-8",
+      "Content-Type":
+        anthropic || codex
+          ? "text/event-stream; charset=utf-8"
+          : response.headers.get("content-type") || "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no"
     });
     await pipeline(
-      Readable.fromWeb(anthropic ? response.body.pipeThrough(ANTHROPIC.anthropicToOpenAiStream(config.model)) : response.body),
+      Readable.fromWeb(
+        codex
+          ? response.body.pipeThrough(CODEX.codexToOpenAiStream(config.model))
+          : anthropic
+            ? response.body.pipeThrough(ANTHROPIC.anthropicToOpenAiStream(config.model))
+            : response.body
+      ),
       res
     );
   } catch (error) {
