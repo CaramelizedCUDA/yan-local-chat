@@ -21,7 +21,8 @@ function formatFileSize(value) {
       : `${(bytes / 1048576).toFixed(1)} MB`;
 }
 // 一件附件是一条「件条」：与卷宗同一张件图（图片换成它自己的缩略），名字，大小。见 设计稿/27 三·甲
-function attachmentCard(file, index, sent = false) {
+// drop：改问编辑框里的一件，× 是从这一问里去掉它（不删原件，旧版本还用着）
+function attachmentCard(file, index, sent = false, drop = false) {
   const title = `${file.name} · ${formatFileSize(file.size)}`;
   const figure =
     file.kind === "image" && file.id
@@ -43,7 +44,12 @@ function attachmentCard(file, index, sent = false) {
     const action = view || `data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
     return `<div class="attachment-card sent" role="button" tabindex="0" data-kind="${file.kind}" ${action}>${body}${save}</div>`;
   }
-  return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${index !== null ? `<button class="attachment-tool attachment-remove" data-remove-attachment="${index}" title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
+  const remove = drop
+    ? `data-action="drop-attachment" data-file="${escapeHtml(file.id)}"`
+    : index !== null
+      ? `data-remove-attachment="${index}"`
+      : "";
+  return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${remove ? `<button class="attachment-tool attachment-remove" ${remove} title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
 }
 // 随引文的那幅画面画在引文里，不进附件栏（序号仍按 pendingAttachments 算，移除时对得上）
 function renderAttachments() {

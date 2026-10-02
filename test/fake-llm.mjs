@@ -742,6 +742,12 @@ http
         ]);
       if (typeof lastUser === "string" && lastUser.includes("SAMEWORD"))
         return sse(res, [delta({ content: "甲说 StructRAG 好；乙说 StructRAG 更好。" }), delta({}, { usage: { total_tokens: 4 } })]);
+      // 末一问带了几张图：测改问时摘掉附件后，新问确实不再送图
+      if (typeof lastText === "string" && lastText.includes("IMGCOUNT"))
+        return sse(res, [
+          delta({ content: `IMGCOUNT|${Array.isArray(lastUser) ? lastUser.filter(part => part.type === "image_url").length : 0}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
       if (typeof lastText === "string" && lastText.includes("PLAIN")) {
         const leaked =
           msgs.some(m => typeof m.content === "string" && /SIDE|旁注追问/.test(m.content)) ||

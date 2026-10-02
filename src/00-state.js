@@ -309,6 +309,8 @@ let apiBase = null;
 let currentId = null;
 let view = "chat";
 let editingMessageId = null;
+// 改问时去掉的附件（id）：保存后新问不带它们，旧版本里原样留着
+let editingDropped = new Set();
 let renamingId = null,
   renamingDirty = false,
   renderingHistory = false;

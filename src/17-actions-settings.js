@@ -19,6 +19,16 @@ async function handleMessageAction(event) {
   if (button.dataset.action === "note") return openSideIndex(message.id);
   if (button.dataset.action === "branch-prev" || button.dataset.action === "branch-next")
     return switchBranch(c, index, button.dataset.action === "branch-prev" ? -1 : 1);
+  if (button.dataset.action === "drop-attachment") {
+    // 只摘掉这一枚件条、不重画：重画会把编辑框里改到一半的字冲回原文。也别让点击再冒到件条上打开查看器
+    event.stopPropagation();
+    editingDropped.add(button.dataset.file);
+    const card = button.closest(".attachment-card"),
+      list = card?.parentElement;
+    card?.remove();
+    if (list && !list.children.length) list.remove();
+    return;
+  }
   if (button.dataset.action === "cancel-edit") {
     editingMessageId = null;
     renderConversation(false);
@@ -27,6 +37,7 @@ async function handleMessageAction(event) {
   if (button.dataset.action === "edit") {
     if (conversationDry(c)) return toast("余墨已尽，请调高上限或更换模型");
     editingMessageId = message.id;
+    editingDropped = new Set();
     renderConversation(false);
     requestAnimationFrame(() => {
       const input = document.querySelector(`[data-message="${message.id}"] .message-edit-input`);
@@ -69,25 +80,26 @@ async function handleMessageAction(event) {
 }
 /** @param {Conversation} conversation */
 async function saveEditedMessage(conversation, index, value) {
-  const text = value.trim();
-  if (!text) return toast("尚未落笔");
+  const text = value.trim(),
+    old = conversation.messages[index],
+    attachments = (old.attachments || []).filter(file => !editingDropped.has(file.id));
+  if (!text && !attachments.length) return toast("尚未落笔");
   const profile = activeProfile();
   if (!profile) return openSettings("models");
   if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
-  const old = conversation.messages[index];
-  if (text === old.content) {
+  if (text === old.content && attachments.length === (old.attachments || []).length) {
     editingMessageId = null;
     renderConversation(false);
     return;
   }
   if (!(await preparing(() => prepareTurn(conversation)))) return;
-  // 旧问题连同它后面的回答整段留作一个版本；新问题沿用原来的附件与引文
+  // 旧问题连同它后面的回答整段留作一个版本；新问题沿用原来的引文，附件除去改问时摘掉的
   forkTail(conversation, index);
-  const message = { ...old, id: uid(), content: text, timestamp: now() };
+  const message = { ...old, id: uid(), content: text, ...(old.attachments ? { attachments } : {}), timestamp: now() };
   conversation.messages.push(message);
   conversation.updatedAt = now();
   if (index === 0 && conversation.titleAuto !== false) {
-    conversation.title = titleFrom(text, message.attachments || []);
+    conversation.title = titleFrom(text, attachments);
     conversation.titled = false;
   }
   editingMessageId = null;

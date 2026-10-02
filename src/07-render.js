@@ -428,7 +428,7 @@ function foldCompacted(c) {
 const UI_STATE_FIELDS = new Set(["toolsOpen", "toolsTouched", "reasoningOpen", "reasoningTouched", "showCompacted"]);
 /** @param {Message} message */
 function messageSig(message, branch) {
-  return `${branch ? `${branch.at}/${branch.total}|` : ""}${editingMessageId === message.id ? "e|" : ""}${noteCounts.get(message.id) || 0}|${JSON.stringify(message, (key, value) => (UI_STATE_FIELDS.has(key) ? undefined : value))}`;
+  return `${branch ? `${branch.at}/${branch.total}|` : ""}${editingMessageId === message.id ? `e${editingDropped.size}|` : ""}${noteCounts.get(message.id) || 0}|${JSON.stringify(message, (key, value) => (UI_STATE_FIELDS.has(key) ? undefined : value))}`;
 }
 /** @param {Conversation} c */
 function syncMessages(c, converged) {
@@ -518,8 +518,13 @@ function renderMessage(message, branch = null, side = false) {
       : `<div class="context-divider" data-message="${escapeHtml(message.id)}"><span>上下文由此重新开始</span></div>`;
   if (message.role === "user" && message.relay) return relayHtml(message, branch);
   if (message.role === "user") {
-    if (editingMessageId === message.id)
-      return `<article class="message user" data-message="${escapeHtml(message.id)}"><div class="message-editor"><textarea class="message-edit-input">${escapeHtml(message.content)}</textarea><div class="edit-actions"><button class="message-action" data-action="cancel-edit">取消</button><button class="message-action edit-save" data-action="save-edit">保存并重答</button></div></div></article>`;
+    if (editingMessageId === message.id) {
+      // 改问时附件也摆出来，可以去掉（如模型吃不下的图）；旁注里的改问不动附件，不摆
+      const kept = side
+        ? []
+        : (message.attachments || []).filter(file => file.id && !quoteImageOf(file, message.quote) && !editingDropped.has(file.id));
+      return `<article class="message user" data-message="${escapeHtml(message.id)}">${kept.length ? `<div class="sent-attachments">${kept.map(file => attachmentCard(file, null, false, true)).join("")}</div>` : ""}<div class="message-editor"><textarea class="message-edit-input">${escapeHtml(message.content)}</textarea><div class="edit-actions"><button class="message-action" data-action="cancel-edit">取消</button><button class="message-action edit-save" data-action="save-edit">保存并重答</button></div></div></article>`;
+    }
     // 随引文的画面画在引文里（字在上、图在下，随问句靠右），不在件条里再列一回
     const listed = (message.attachments || []).filter(file => !quoteImageOf(file, message.quote)),
       shot = message.quote?.image && message.attachments?.some(file => quoteImageOf(file, message.quote));
