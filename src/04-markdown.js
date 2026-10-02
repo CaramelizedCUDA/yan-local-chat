@@ -46,9 +46,10 @@ function setupMarkdown() {
   });
   if (window.DOMPurify) {
     // 模型写「下载《x.docx》」时常把链接指向 sandbox:/、file:/// 或一个裸文件名——页面上没有这样的路。
-    // 把文件名记在 data-file 上、去掉 href，点击时到卷宗里找同名的那件来下载（见 boot 里的处理）；找不到才说没有
+    // 把文件名记在 data-file 上、去掉 href，点击时到卷宗里找同名的那件来下载（见 boot 里的处理）；找不到才说没有。
+    // 图片同理：![截图](page-1.png) 的 src 也记成 data-file，是这一答工具交回的画面就画成那幅（见 renderReplyShots）
     DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
-      if (node.tagName !== "A" || data.attrName !== "href") return;
+      if (!((node.tagName === "A" && data.attrName === "href") || (node.tagName === "IMG" && data.attrName === "src"))) return;
       const name = localFileName(data.attrValue);
       if (!name) return;
       node.setAttribute("data-file", name);
@@ -351,6 +352,39 @@ async function renderPendingMath(root) {
 function renderEnhancements(root) {
   renderHtmlApps(root);
   void renderPendingMath(root);
+  renderReplyShots(root);
+}
+// 正文里引了这一答工具交回的画面（模型写「![截图](page-1.png)」或「[查看截图](page-1.png)」）：就地画出那幅，点开进图片查看器。
+// 原件本就作附件挂在那一步上（见 mcpResultImages），不另存；引的不是这一答的画面，照旧当卷宗里的文件
+/** @param {Element} root */
+function renderReplyShots(root) {
+  const refs = root.querySelectorAll?.(".markdown [data-file]") || [];
+  if (!refs.length) return;
+  const c = currentConversation(),
+    messages = c ? [...allMessages(c), ...(c.threads || []).flatMap(thread => thread.messages || [])] : [];
+  for (const ref of refs) {
+    const id = ref.closest("[data-message]")?.getAttribute("data-message"),
+      message = messages.find(item => item.id === id),
+      file = allSteps(message)
+        .flatMap(step => step.attachments || [])
+        .findLast(item => item.kind === "image" && item.name === ref.getAttribute("data-file"));
+    if (!file) continue;
+    const shot = document.createElement("span");
+    shot.className = "fi fi-thumb reply-shot";
+    shot.setAttribute("role", "button");
+    shot.tabIndex = 0;
+    shot.dataset.openImage = file.id;
+    shot.title = `查看 ${file.name}`;
+    shot.innerHTML = `<img data-thumb="${escapeHtml(file.id)}" alt="${escapeHtml(ref.getAttribute("alt") || file.name)}">`;
+    // 图换成那幅；链接留着字（点了也是看图），画面接在后面
+    if (ref.tagName === "IMG") ref.replaceWith(shot);
+    else {
+      ref.removeAttribute("data-file");
+      ref.setAttribute("data-open-image", file.id);
+      ref.after(shot);
+    }
+  }
+  void loadThumbnails(root);
 }
 function downloadHref(href, name, revoke = false) {
   const link = document.createElement("a");

@@ -63,7 +63,7 @@ function handle(message) {
     if (name === "snap")
       return reply({
         content: [
-          { type: "text", text: `第 ${args.n} 幅` },
+          { type: "text", text: `第 ${args.n} 幅，存为 C:\\shots\\shot-${args.n}.png` },
           { type: "image", mimeType: "image/png", data: PNG }
         ]
       });

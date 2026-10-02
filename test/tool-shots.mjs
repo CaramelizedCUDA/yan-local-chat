@@ -79,6 +79,12 @@ const reply = await evalJs(`${lastAssistant}.textContent`);
 check("only the latest picture rides along, right after the tool results", /images:1\|tail:true/.test(reply), reply.slice(0, 200));
 check("the earlier picture is replaced by a line of text", /stale:true/.test(reply), reply.slice(0, 200));
 check("the picture goes to the model as a data: url", /png:true/.test(reply), reply.slice(0, 200));
+check("the tool result tells the model the picture's name and how to show it", /named:true/.test(reply), reply.slice(0, 200));
+await waitFor(`!!${lastAssistant}.querySelector(".markdown .reply-shot img[src^='data:image/png']")`, 8000).catch(() => {});
+check(
+  "a picture the reply refers to by name is drawn right in the reply",
+  await evalJs(`!!${lastAssistant}.querySelector(".markdown .reply-shot[data-open-image] img[src^='data:image/png']")`)
+);
 const steps = JSON.parse(
   await evalJs(
     `JSON.stringify(__yanState().conversations[0].messages.at(-1).steps.map(s => ({ name: s.name, files: s.attachments || [] })))`

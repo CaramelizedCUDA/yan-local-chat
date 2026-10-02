@@ -239,8 +239,8 @@ async function runMcpTool(step, server, tool, args, ctx) {
   );
   // 服务说工具变了：下一问前重拉
   if (data.toolsChanged) mcp.key = "";
-  const text = mcpResultText(data.result),
-    images = await mcpResultImages(step, data.result);
+  const { names, images } = await mcpResultImages(step, data.result),
+    text = mcpResultText(data.result, names);
   step.output = trimOutput(text);
   return {
     ok: !data.result.isError,
@@ -249,10 +249,16 @@ async function runMcpTool(step, server, tool, args, ctx) {
     ...(images.length ? { images } : {})
   };
 }
-// 结果里的图（游目截的画面之类）：原件照附件存，挂在这一步上，步骤卡里画缩略、点开即看；data: 地址交回轮次循环，随工具结果给模型看（见 attachToolImages）
+// 结果里的图（游目截的画面之类）：原件照附件存，挂在这一步上，步骤卡里画缩略、点开即看；data: 地址交回轮次循环，随工具结果给模型看（见 attachToolImages）。
+// 名字取服务自己报的文件名（Playwright 截图会说存成了 page-….png，模型多半照它写）；回复里引这个名字，正文就画出这幅（见 renderReplyShots）
 /** @param {Step} step */
 async function mcpResultImages(step, result) {
-  const images = (result.content || []).filter(item => item.type === "image" && item.data);
+  const images = (result.content || []).filter(item => item.type === "image" && item.data),
+    said = (result.content || [])
+      .filter(item => item.type === "text")
+      .map(item => item.text)
+      .join("\n")
+      .match(/[^\\/\s'"`(]+\.(?:png|jpe?g|webp|gif)\b/i)?.[0];
   const stored = await Promise.all(
     images.map(async (item, i) => {
       const mime = String(item.mimeType || "image/png"),
@@ -260,7 +266,10 @@ async function mcpResultImages(step, result) {
         meta = {
           id: uid(),
           kind: /** @type {const} */ ("image"),
-          name: `${step.title || "画面"}${images.length > 1 ? ` ${i + 1}` : ""}.${mime.split("/")[1]?.replace("jpeg", "jpg") || "png"}`,
+          name:
+            images.length === 1 && said
+              ? said
+              : `画面-${step.id.slice(-6)}${images.length > 1 ? `-${i + 1}` : ""}.${mime.split("/")[1]?.replace("jpeg", "jpg") || "png"}`,
           mime,
           size: Math.round(item.data.length * 0.75),
           modifiedAt: Date.now()
@@ -270,7 +279,7 @@ async function mcpResultImages(step, result) {
     })
   );
   if (stored.length) step.attachments = stored.map(item => item.meta);
-  return stored.map(item => item.data);
+  return { names: stored.map(item => item.meta.name), images: stored.map(item => item.data) };
 }
 // 请示条：哪个服务的哪件工具、带什么参数；按钮与指令的请示同一套（径行即此对话此后不再问）
 /** @param {Step} step */
@@ -279,12 +288,13 @@ function mcpApprovalHtml(step) {
   return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">问</span><span class="approval-title">MCP 请示 · ${escapeHtml(where)}</span><span class="approval-hint" title="输入框留空时，Enter 即运行">Enter 运行</span></div><pre class="approval-cmd">${escapeHtml(step.code || "{}")}</pre><div class="approval-actions"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="径行：此对话中后续调用不再询问">径行</button></div>`;
 }
 // 结果的几种内容合成一段文字：文本照录；图片、音频、资源只写一行说明（不把 base64 塞给模型）；只有结构化结果的给 JSON
-function mcpResultText(result) {
+function mcpResultText(result, names = []) {
+  let shot = 0;
   const parts = (result.content || []).map(item =>
     item.type === "text"
       ? item.text
       : item.type === "image"
-        ? `[图片 ${item.mimeType}，附在工具结果之后]`
+        ? `[图片「${names[shot++] || item.mimeType}」，附在工具结果之后；回复里写 ![](${names[shot - 1] || "文件名"}) 即给用户看]`
         : item.type === "audio"
           ? `[音频 ${item.mimeType}，约 ${formatFileSize(Math.round(item.data.length * 0.75))}，未随结果转交]`
           : item.type === "resource_link"

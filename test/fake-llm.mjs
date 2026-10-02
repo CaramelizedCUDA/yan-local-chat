@@ -126,7 +126,7 @@ http
           stale = msgs.some(m => m.role === "user" && typeof m.content === "string" && m.content.includes("已由后来的取代"));
         return sse(res, [
           delta({
-            content: `MCPSHOT|images:${withImages.length}|tail:${msgs.at(-2)?.role === "tool" && withImages[0] === last}|stale:${stale}|png:${String(last?.content?.[1]?.image_url?.url || "").startsWith("data:image/png;base64,")}`
+            content: `![画面](shot-2.png)\n\nMCPSHOT|named:${String(toolResults.at(-1)?.content).includes("![](shot-2.png)")}|images:${withImages.length}|tail:${msgs.at(-2)?.role === "tool" && withImages[0] === last}|stale:${stale}|png:${String(last?.content?.[1]?.image_url?.url || "").startsWith("data:image/png;base64,")}`
           }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);

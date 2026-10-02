@@ -1004,6 +1004,30 @@ html.work-mode .chat-scroll-grabber {
 .markdown a[data-file] {
   cursor: pointer;
 }
+/* 引了这一答工具交回的画面：链接点了看图，画面就地画在正文里——与行迹里的同一张折角小纸，放大到正文里看得清 */
+.markdown a[data-open-image] {
+  cursor: zoom-in;
+}
+.markdown .fi.reply-shot {
+  display: block;
+  width: min(100%, 560px);
+  height: auto;
+  margin: 10px 0 4px;
+  cursor: zoom-in;
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+/* 整页长截图不把正文撑成一长条：高过七成屏就从顶上取景，点开看全幅 */
+.markdown .fi.reply-shot img {
+  height: auto;
+  max-height: 70vh;
+  object-position: top;
+  border-radius: 0;
+}
+.markdown .fi.reply-shot:hover,
+.markdown .fi.reply-shot:focus-visible {
+  outline-color: var(--ink-3);
+}
 .markdown hr {
   border: 0;
   border-top: 1px solid var(--line);

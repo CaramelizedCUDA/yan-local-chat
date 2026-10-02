@@ -138,13 +138,22 @@ test("MCP 结果里的图存成附件挂在这一步上，交回 data: 地址", 
       { type: "image", mimeType: "image/jpeg", data: "QUJD" }
     ]
   };
-  const images = await f.mcpResultImages(step, result);
+  const { names, images } = await f.mcpResultImages(step, result);
   assert.deepEqual(images, ["data:image/jpeg;base64,QUJD"]);
   assert.equal(step.attachments.length, 1);
-  assert.equal(step.attachments[0].name, "截取画面.jpg");
+  assert.equal(step.attachments[0].name, "画面-s.jpg");
   assert.equal(step.attachments[0].data, undefined);
   assert.equal(saved[0].data, "data:image/jpeg;base64,QUJD");
-  assert.match(f.mcpResultText(result), /附在工具结果之后/);
+  assert.match(f.mcpResultText(result, names), /「画面-s\.jpg」，附在工具结果之后；回复里写 !\[\]\(画面-s\.jpg\)/);
+  // 服务自己报了存成什么文件（Playwright 截图）：用那个名字，模型照它写也对得上
+  const step2 = { id: "s2" };
+  await f.mcpResultImages(step2, {
+    content: [
+      { type: "text", text: "Took the viewport screenshot and saved it as E:\\out\\page-2026-10-02T01-33-26-201Z.png" },
+      { type: "image", mimeType: "image/png", data: "QUJD" }
+    ]
+  });
+  assert.equal(step2.attachments[0].name, "page-2026-10-02T01-33-26-201Z.png");
 });
 
 test("MCP 工具名只含字母数字与 _-：中文服务名、超长名、撞名的尾巴都不带冒号", () => {
