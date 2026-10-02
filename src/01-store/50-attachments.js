@@ -73,9 +73,10 @@ function deleteAttachment(id) {
     fileStoreRequest("readwrite", db => db.delete(id)).catch(() => {})
   ]);
 }
+// 消息上的，连同行迹步骤上的（补言带的附件、工具交回的画面）
 function attachmentIds(messages = []) {
   return messages
-    .flatMap(message => message.attachments || [])
+    .flatMap(message => [...(message.attachments || []), ...allSteps(message).flatMap(step => step.attachments || [])])
     .map(file => file.id)
     .filter(Boolean);
 }
@@ -103,7 +104,11 @@ function usedAttachmentBytes() {
     for (const file of files || []) if (file?.id && !seen.has(file.id)) seen.set(file.id, Number(file.size || 0));
   };
   for (const value of Object.values(store.drafts || {})) count(value?.attachments);
-  for (const c of store.conversations) for (const m of allMessages(c)) count(m.attachments);
+  for (const c of store.conversations)
+    for (const m of allMessages(c)) {
+      count(m.attachments);
+      for (const step of allSteps(m)) count(step.attachments);
+    }
   return [...seen.values()].reduce((a, b) => a + b, 0);
 }
 // 已收入卷宗的原件由卷宗管理，删除对话或移除待发附件时不会删掉它
