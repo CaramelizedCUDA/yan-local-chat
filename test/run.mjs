@@ -123,8 +123,10 @@ const runSpec = (file, env = {}) =>
         child.kill();
       } catch {}
     }, 180000);
-    child.on("close", code => {
+    child.on("close", (exit, signal) => {
       clearTimeout(timer);
+      // 超时被杀的退出码是 null、只有 signal：照样算没跑完
+      const code = exit ?? signal;
       const lines = out.split(/\r?\n/),
         p = lines.filter(l => l.startsWith("PASS")).length,
         f = lines.filter(l => l.startsWith("FAIL")).length;

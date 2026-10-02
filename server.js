@@ -5,6 +5,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const os = require("node:os");
 const { Readable } = require("node:stream");
+const { createHash } = require("node:crypto");
 // 拼接规则（build.js）改了就重新载入：页面脚本本是即时拼的，不该因为拼法变了就得重启桥接
 const BUILD_FILE = require.resolve("./build.js");
 let bundler = require(BUILD_FILE),
@@ -369,7 +370,8 @@ function serveBundle(req, res, urlPath) {
   if (!entry) return false;
   const bundle = entry.build();
   if (!bundle.files.length) return false;
-  const etag = `W/"${Buffer.from(bundle.stamp).toString("base64url").slice(0, 40)}-${bundle.text.length.toString(16)}"`;
+  // 版本戳是各段的名字、大小、修改时间连成的一长串：整串取指纹，不能只截开头——后面哪段改了，开头照旧
+  const etag = `W/"${createHash("sha1").update(bundle.stamp).digest("base64url")}-${bundle.text.length.toString(16)}"`;
   const headers = { "Content-Type": entry.type, "Cache-Control": "no-cache", ETag: etag };
   if (req.headers["if-none-match"] === etag) {
     res.writeHead(304, headers);
