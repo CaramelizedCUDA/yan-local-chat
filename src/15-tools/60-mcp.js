@@ -77,10 +77,10 @@ function registerMcpTools() {
     const load = mcpConfigs()[server]?.load;
     if (load === "lazy" || (load !== "inline" && JSON.stringify(state.tools).length > MCP_INLINE_LIMIT)) mcp.lazy.push(server);
     else
-      for (const spec of state.tools) {
+      for (const spec of uniqueBy(state.tools, spec => spec.name)) {
         const tool = mcpInlineTool(server, spec);
         // 名字只留得下字母数字：read.file 与 readfile 会撞成同一个，后来的添个尾巴，不把先来的盖掉（不撞的名字照旧，旧行迹认得出）
-        if (TOOLS.has(tool.name)) tool.name = `${tool.name.slice(0, 57)}_${hashText(`${server}:${spec.name}`).slice(0, 6)}`;
+        if (TOOLS.has(tool.name)) tool.name = `${tool.name.slice(0, 57)}_${nameHash(`${server}:${spec.name}`)}`;
         defineTool(tool);
       }
   }
@@ -115,8 +115,17 @@ function mcpInlineTool(server, spec) {
 }
 function mcpFunctionName(server, tool) {
   const clean = text => text.replace(/[^A-Za-z0-9_-]/g, "");
-  const name = `mcp__${clean(server) || `s${hashText(server).slice(0, 6)}`}__${clean(tool) || hashText(tool).slice(0, 6)}`;
-  return name.length <= 64 ? name : `${name.slice(0, 57)}_${hashText(name).slice(0, 6)}`;
+  const name = `mcp__${clean(server) || `s${nameHash(server)}`}__${clean(tool) || `t${nameHash(tool)}`}`;
+  return name.length <= 64 ? name : `${name.slice(0, 57)}_${nameHash(name)}`;
+}
+// 名字里用的短指纹：接口只认字母数字与 _-，hashText 带着「长度:」的前缀，只取后面的十六进制
+function nameHash(text) {
+  return hashText(text).split(":")[1].slice(0, 6);
+}
+// 服务把同一件工具列了两回（分页拉取重了之类）：只登记一回
+function uniqueBy(list, key) {
+  const seen = new Set();
+  return list.filter(item => !seen.has(key(item)) && !!seen.add(key(item)));
 }
 
 /** @type {Tool[]} 按需给的两件：目录写在 mcp_describe 的说明里 */

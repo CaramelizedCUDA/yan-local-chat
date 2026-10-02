@@ -146,3 +146,17 @@ test("MCP 结果里的图存成附件挂在这一步上，交回 data: 地址", 
   assert.equal(saved[0].data, "data:image/jpeg;base64,QUJD");
   assert.match(f.mcpResultText(result), /附在工具结果之后/);
 });
+
+test("MCP 工具名只含字母数字与 _-：中文服务名、超长名、撞名的尾巴都不带冒号", () => {
+  const { mcpFunctionName, nameHash } = load(["mcpFunctionName", "nameHash"]);
+  const valid = /^[a-zA-Z0-9_-]{1,64}$/;
+  for (const name of [
+    mcpFunctionName("天籁", "synthesize"),
+    mcpFunctionName("景语", "渲染"),
+    mcpFunctionName("浏览器", "browser_navigate"),
+    mcpFunctionName("server", "x".repeat(80)),
+    `mcp__a__b_${nameHash("a:b")}`
+  ])
+    assert.match(name, valid);
+  assert.notEqual(mcpFunctionName("天籁", "t"), mcpFunctionName("景语", "t"));
+});
