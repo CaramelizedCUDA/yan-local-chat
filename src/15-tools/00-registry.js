@@ -7,6 +7,7 @@
  * @property {Conversation} conversation
  * @property {Message} assistant 页面上的那一答（帮手的步骤也画在它的行迹里）
  * @property {AbortSignal} signal
+ * @property {Set<string>} [offered] 这一轮交给模型的工具名：不在其中的一律不执行
  *
  * @typedef {Object} OfferContext 此处给不给某件工具，看这几样
  * @property {Conversation} conversation
@@ -111,9 +112,11 @@ function presetAllows(preset, tool) {
 async function runTool(step, ctx) {
   const tool = TOOLS.get(step.name);
   if (!tool?.run) return { ok: false, content: `未知工具 ${step.name}`, display: "未知工具" };
-  // 帮手没拿到的工具，它也可能照着名字调
-  if (step.scope && tool.mainOnly)
-    return { ok: false, content: `${step.name} 只有主模型可用；需要它做的事写进回报里，由主模型决定。`, display: "帮手无权" };
+  // 没交给它的工具，它也可能照着名字调（旁注只查不改、预设只挑了几组、帮手拿不到只给主模型的）：给哪些就只认哪些
+  if (ctx.offered && !ctx.offered.has(step.name))
+    return step.scope && tool.mainOnly
+      ? { ok: false, content: `${step.name} 只有主模型可用；需要它做的事写进回报里，由主模型决定。`, display: "帮手无权" }
+      : { ok: false, content: `此处没有提供 ${step.name}，只能用这一轮给出的工具。`, display: "此处未提供" };
   const parsed = parseToolArguments(step.arguments);
   if (!parsed.ok)
     return {
@@ -179,9 +182,9 @@ function toolPresentation(step) {
  * @param {Conversation} conversation
  * @param {Message} assistant
  */
-async function runSteps(steps, conversation, assistant, signal, toolCache) {
+async function runSteps(steps, conversation, assistant, signal, toolCache, offered) {
   const outcomes = new Map(),
-    ctx = { conversation, assistant, signal };
+    ctx = { conversation, assistant, signal, offered };
   const runOne = async step => {
     const started = performance.now(),
       key = toolCacheKey(step),

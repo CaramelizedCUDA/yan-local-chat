@@ -76,7 +76,13 @@ function registerMcpTools() {
     if (!state.ok) continue;
     const load = mcpConfigs()[server]?.load;
     if (load === "lazy" || (load !== "inline" && JSON.stringify(state.tools).length > MCP_INLINE_LIMIT)) mcp.lazy.push(server);
-    else for (const spec of state.tools) defineTool(mcpInlineTool(server, spec));
+    else
+      for (const spec of state.tools) {
+        const tool = mcpInlineTool(server, spec);
+        // 名字只留得下字母数字：read.file 与 readfile 会撞成同一个，后来的添个尾巴，不把先来的盖掉（不撞的名字照旧，旧行迹认得出）
+        if (TOOLS.has(tool.name)) tool.name = `${tool.name.slice(0, 57)}_${hashText(`${server}:${spec.name}`).slice(0, 6)}`;
+        defineTool(tool);
+      }
   }
   if (mcp.lazy.length) MCP_LAZY_TOOLS.forEach(defineTool);
   // 接没接浏览器类的服务，定顶栏那枚看台小屏挂不挂
@@ -269,7 +275,7 @@ function mcpHintVars(names, preset) {
     ([server, state]) =>
       state.ok &&
       usage(server, state) &&
-      (mcp.lazy.includes(server) ? lazy.includes(server) : state.tools.some(tool => names.has(mcpFunctionName(server, tool.name))))
+      (mcp.lazy.includes(server) ? lazy.includes(server) : [...TOOLS.values()].some(tool => tool.server === server && names.has(tool.name)))
   );
   return servers.length ? { servers: servers.map(([server, state]) => `【${server}】${usage(server, state)}`).join("\n") } : null;
 }
