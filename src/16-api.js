@@ -13,6 +13,9 @@ function estimateTokens(messages) {
     score += 4;
     // 工具调用的参数也随请求送出（写文件时整份内容都在这里），不算就会把长活的上下文估得太轻
     for (const call of message.tool_calls || []) score += 8 + estimateText(String(call.function?.arguments || ""));
+    // 随工具调用送回的思考（见 thoughtEcho）也占窗口
+    score += estimateText(String(message.reasoning_content || ""));
+    for (const block of message.thinking_blocks || []) score += estimateText(String(block.thinking || ""));
     if (typeof message.content === "string") {
       score += estimateText(message.content);
       continue;

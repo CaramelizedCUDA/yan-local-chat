@@ -9,7 +9,7 @@ writeFileSync(WORK + "/src/a.js", "function f() {\n  return 1;\n}\n");
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
 await evalJs(
-  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 4, settings: { name: "测", theme: "light", inkMotion: "off", mode: "work", activeProfileId: "p1", pendingWorkdir: ${JSON.stringify(WORK)}, autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, maxTokens: 8192, quota: "100k", usedTokens: 0, systemPrompt: "" }], conversations: [], library: [], drafts: {} })); true`
+  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 4, settings: { name: "测", theme: "light", inkMotion: "off", mode: "work", activeProfileId: "p1", pendingWorkdir: ${JSON.stringify(WORK)}, autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, maxTokens: 8192, quota: "100k", usedTokens: 0, systemPrompt: "", reasoningLevels: "low, medium, xhigh" }], conversations: [], library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
@@ -129,6 +129,11 @@ check(
   reportB.endsWith("effort:low") && /思考低$/.test(helperB?.meta || "") && !/思考/.test(helperA?.meta || ""),
   JSON.stringify({ reportB, efforts })
 );
+// 差遣的档位枚举只列这台模型认的几档：通用四档里的 high、max 它不认，主模型挑中了帮手起跑就会被拒
+const opener = await evalJs(`__yanState().conversations[0].messages[1].content`);
+check("the delegate effort enum lists only the levels this model takes", opener.includes("档位 low,medium,xhigh"), opener);
+// 一答之内思考接得上：帮手乙想过再调工具，下一轮请求里那条带调用的 assistant 消息带着它这一轮的思绪
+check("a round's reasoning goes back with its tool call (reasoning_content)", reportB.includes("echo:yes"), reportB);
 // 一答收尾时步骤的 at 会前移，分组的键随之变。页面若不撤掉落单的旧分组，同一次差遣就画两遍
 const painted = await evalJs(
   `JSON.stringify({ markers: document.querySelectorAll(".message.assistant .tool-step-delegate").length, groups: document.querySelectorAll(".message.assistant .tool-stack-body > .trail-group").length, steps: __yanState().conversations[0].messages[1].steps.length })`

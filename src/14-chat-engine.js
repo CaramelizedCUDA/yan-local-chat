@@ -555,7 +555,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     // 预留只是估个数：一答的输出按八千算，不必与接口实际的上限一致
     releaseQuota = reserveTokens(profile, estimateTokens(history) + (Number(profile.maxTokens) || 8192));
     if (profile.tools !== false) await mcpForTurn();
-    const tools = profile.tools !== false ? toolDefinitions(conversation) : null;
+    const tools = profile.tools !== false ? toolDefinitions(conversation, { profile }) : null;
     const overrides = {
       systemPrompt: systemPrompt(conversation, tools),
       tools,
@@ -702,7 +702,8 @@ async function runRounds(target, history, run) {
   for (;;) {
     target.toolCalls = null;
     target.usage = null;
-    const roundStart = (tally.roundStart = target.content.length);
+    const roundStart = (tally.roundStart = target.content.length),
+      thoughtStart = String(target.reasoning || "").length;
     if (!resumed) tally.replyStart = roundStart;
     tally.roundOpen = false;
     // 每一轮自己一个中止器：补言只停这一轮的流，整答的 signal 留给「停止」
@@ -816,7 +817,7 @@ async function runRounds(target, history, run) {
         type: "function",
         function: { name: step.name, arguments: replayArguments(step.arguments) }
       })),
-      ...(target.thinkingBlocks?.length ? { thinking_blocks: target.thinkingBlocks } : {})
+      ...thoughtEcho(target, thoughtStart, profile)
     });
     const offered = new Set(overrides.tools.map(tool => tool.function?.name)),
       { outcomes, images } = await runSteps(steps, conversation, host, signal, toolCache, offered);
@@ -825,6 +826,25 @@ async function runRounds(target, history, run) {
     if (inbox) await deliverSupplements(inbox, history, run.budget, host);
     target.content = paragraphBreak(target.content);
   }
+}
+// 一答之内思考接得上：带工具调用的那一轮，模型为什么调这件工具的思考随调用一起送回。Anthropic、Codex 有带签名的思考块，
+// 经 thinking_blocks 原样送回（桥接各换成该家的格式）；OpenAI 兼容接口（DeepSeek、Kimi、自部署的 Qwen 之类）没有签名，
+// 这一轮的思绪原样作 reasoning_content 送回——模板照它生成时的样子排出思考，前缀不变，缓存也接得上。
+// 只在一答之内：下一问起前文是摘要，思考随之不带。不收这个字段的接口，去掉重发一回，此后这一页不再给它带
+const echolessProfiles = new Set();
+/** @param {Message|SubAgent} target @param {number} from 这一轮的思绪从哪起 @param {Profile} profile */
+function thoughtEcho(target, from, profile) {
+  if (target.thinkingBlocks?.length) return { thinking_blocks: target.thinkingBlocks };
+  const thought = String(target.reasoning || "").slice(from);
+  return thought.trim() && !echolessProfiles.has(profile.id) ? { reasoning_content: thought } : {};
+}
+/** 请求被拒、报错说起思考或多出的字段：去掉送回的思绪，有可去的才算数 @param {Profile} profile */
+function dropThoughtEcho(history, profile, message) {
+  if (!/reasoning|thinking|signature|extra|unrecognized|additional|unknown|not permitted/i.test(message)) return false;
+  const carried = history.filter(item => item.reasoning_content !== undefined);
+  for (const item of carried) delete item.reasoning_content;
+  if (carried.length) echolessProfiles.add(profile.id);
+  return carried.length > 0;
 }
 // 工具交回的图（游目截的画面之类）：tool 消息只收文字，图另起一条用户消息紧随工具结果（Anthropic 那头并进同一条）。
 // 一答里只留最新的一批，先前的换成一行字——浏览时连截十张也只背一张；下一问起不再带，行迹摘要里有那一步即可。
@@ -893,14 +913,14 @@ async function readReply(profile, history, signal, overrides, target, retried = 
     if (overflow) learnContextWindow(profile, message);
     if (overflow && (await keepInWindow(profile, history, signal, overrides, { overflow: true })))
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
-    // 附了工具交回的图被拒（多半是看不了图的模型）：去掉图再发一回
+    // 送回的思绪不收（见 thoughtEcho）、附了工具交回的图被拒（多半是看不了图的模型）：去掉再发一回
     if (
       !retried &&
       !overflow &&
       response.status >= 400 &&
       response.status < 500 &&
       response.status !== 429 &&
-      dropToolImages(history, profile)
+      (dropThoughtEcho(history, profile, message) || dropToolImages(history, profile))
     )
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     throw Error(message);

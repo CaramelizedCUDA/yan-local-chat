@@ -905,11 +905,13 @@ http
             ],
             120
           );
-        // 回报里带上帮手这一趟收到的思考档位：主模型派它时给了 low
+        // 回报里带上帮手这一趟收到的思考档位（主模型派它时给了 low），与上一轮的思绪有没有随工具调用送回
         return sse(
           res,
           [
-            delta({ content: `回报乙：已新建 src/b.js。｜effort:${payload.reasoning_effort ?? "none"}` }),
+            delta({
+              content: `回报乙：已新建 src/b.js。｜echo:${String(msgs.find(m => m.role === "assistant" && m.tool_calls)?.reasoning_content || "").startsWith("帮手乙想第 1 步。") ? "yes" : "no"}｜effort:${payload.reasoning_effort ?? "none"}`
+            }),
             delta({}, { usage: { total_tokens: 7 } })
           ],
           300
@@ -949,7 +951,10 @@ http
             // 主模型也先吐几个空行：收尾裁掉后所有步骤的 at 都会前移，分组的键随之变。
             // 页面若不撤掉落单的旧分组，同一次差遣就会画两遍
             delta({ content: "\n\n\n" }),
-            delta({ content: "主 1：派两名帮手。" }),
+            // 差遣的思考档位只列这台模型认的几档（测试里配的是 low, medium, xhigh）
+            delta({
+              content: `主 1：派两名帮手（档位 ${(payload.tools || []).find(t => t.function.name === "delegate")?.function.parameters.properties.effort?.enum?.join(",")}）。`
+            }),
             delta({
               tool_calls: [
                 {
