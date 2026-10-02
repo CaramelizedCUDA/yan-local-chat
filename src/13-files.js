@@ -70,10 +70,13 @@ async function addFiles(fileList) {
   const files = Array.from(fileList || []);
   if (!files.length) return;
   if (view === "library") return addLibraryFiles(files);
+  // 一件件读的工夫里人可能已换到别的对话：读好的仍归点选时那一段（见 placeAttachment）
+  const key = draftKey();
   let total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0),
+    count = pendingAttachments.length,
     added = 0;
   for (const file of files) {
-    if (pendingAttachments.length >= 10) {
+    if (count >= 10) {
       toast("一次最多置入 10 件附件");
       break;
     }
@@ -86,8 +89,9 @@ async function addFiles(fileList) {
       break;
     }
     try {
-      pendingAttachments.push(await ingestFile(file));
+      placeAttachment(key, await ingestFile(file));
       total += file.size;
+      count += 1;
       added += 1;
     } catch {
       toast(`${file.name} 读取失败`);
@@ -96,6 +100,14 @@ async function addFiles(fileList) {
   persistDraft();
   renderAttachments();
   if (added) toast(`已置入 ${added} 件附件`);
+}
+// 读好的一件放上案：案上（pendingAttachments）此刻若已换成别段的草稿，就记进原来那段的草稿里，回去时还在
+function placeAttachment(key, file) {
+  if (draftKey() === key) return void pendingAttachments.push(file);
+  const draft = draftRecord(key);
+  store.drafts ||= {};
+  store.drafts[key] = { ...draft, attachments: [...draft.attachments, file], updatedAt: now() };
+  saveStoreSoon();
 }
 async function ingestFile(file) {
   /** @type {Attachment["kind"]} */
@@ -522,13 +534,15 @@ async function placeFromArchive(path) {
   }
   if (!entry) return toast("卷宗里已没有这件");
   if (!canPlaceAttachment(entry.size)) return;
+  const key = draftKey();
   try {
     const response = await fetch(archiveFileUrl(path), { signal: AbortSignal.timeout(60000) });
     if (!response.ok) throw Error("取回失败");
     const blob = await response.blob(),
       file = new File([blob], entry.name, { type: blob.type || "", lastModified: Date.parse(entry.modifiedAt) || Date.now() });
-    pendingAttachments.push(await ingestFile(file));
+    placeAttachment(key, await ingestFile(file));
     persistDraft();
+    if (draftKey() !== key) return toast(`${entry.name} 已置于原先那段的案上`);
     closeLibrary();
     toast(`${entry.name} 已置于案上`);
     setTimeout(() => (currentConversation() ? $("#chatInput") : $("#welcomeInput")).focus(), 0);

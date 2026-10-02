@@ -11,9 +11,15 @@ function chatsDir() {
 function markDirty(id) {
   if (id) dirtyChatIds.add(id);
 }
-// 这边正在写它：作答、拟题、压缩中
+// 这边正在写它：作答、旁注、后台帮手、拟题、压缩中——这些都拿着对象本身在写，同步时不能把它换掉
 function busyHere(id) {
-  return conversationRunning(id) || titlingIds.has(id) || compactingIds.has(id);
+  return (
+    conversationRunning(id) ||
+    crews.has(id) ||
+    titlingIds.has(id) ||
+    compactingIds.has(id) ||
+    [...requestJobs.values()].some(job => job.conversationId === id)
+  );
 }
 function conversationsToSave() {
   const ids = new Set(dirtyChatIds);
@@ -218,9 +224,10 @@ function mergeConversation(c, theirs, base = null) {
       const own = new Map(ours.map(item => [item.id, item])),
         before = new Map((Array.isArray(old) ? old : []).map(item => [item.id, item])),
         seen = new Set(other.map(item => item.id));
+      // 这边独有的接上；起点上就有、这边没动过、对方拿掉了的（重答时收进分支的旧答）是对方删的，不再接回来
       return [
         ...other.map(item => (own.has(item.id) ? merge(own.get(item.id), item, before.get(item.id)) : item)),
-        ...ours.filter(item => !seen.has(item.id))
+        ...ours.filter(item => !seen.has(item.id) && !(before.has(item.id) && same(item, before.get(item.id))))
       ];
     }
     if (ours && other && typeof ours === "object" && typeof other === "object" && !Array.isArray(ours) && !Array.isArray(other)) {
