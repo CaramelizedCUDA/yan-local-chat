@@ -254,7 +254,10 @@ async function handleChat(req, res) {
     // Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格再给页面；Codex 同理；OpenAI 兼容的原样透传（thinking_blocks 是这两家才要的，去掉）
     const anthropic = ANTHROPIC.anthropicLike(config),
       codex = CODEX.codexLike(config);
-    if (!anthropic && !codex) payload.messages = messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
+    if (!anthropic && !codex) {
+      payload.messages = messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
+      if (ANTHROPIC.claudeModel(config.model)) payload.messages = ANTHROPIC.markOpenAiCache(payload.messages);
+    }
     // 上游的状态码原样带回页面（连不上记作 502）：429、5xx、过载这些页面会等一等再试，参数错之类的 4xx 不试
     // 探档位（故意送一个不存在的档位）：Codex 的模型表上写着它认哪几档，照表按 OpenAI 的报错样子回，不必真发一趟
     if (codex && payload.reasoning_effort === "probe") {

@@ -661,7 +661,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
 // 用量记在 tally 上——停了、断了也照样有——由调用方收尾时结算
 function newTally() {
   return {
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cached_tokens: 0 },
     usageKnown: false,
     opened: false,
     roundOpen: false,
@@ -926,7 +926,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
   // 与流式一致：有的接口把思考放在 reasoning 而不是 reasoning_content
   target.reasoning = normalizeContent(message?.reasoning_content ?? message?.reasoning) || target.reasoning;
   splitInlineThink(sink);
-  target.usage = data.usage || null;
+  target.usage = data.usage ? withCached(data.usage) : null;
   if (Array.isArray(message?.tool_calls))
     target.toolCalls = message.tool_calls.map(call => ({
       id: call.id,

@@ -159,6 +159,7 @@ function anthropicToOpenAiStream(model = "") {
       const u = data.message?.usage || {};
       usage.prompt_tokens =
         Number(u.input_tokens || 0) + Number(u.cache_read_input_tokens || 0) + Number(u.cache_creation_input_tokens || 0);
+      usage.prompt_tokens_details = { cached_tokens: Number(u.cache_read_input_tokens || 0) };
       if (data.message?.model) model = data.message.model;
     } else if (name === "content_block_start") {
       const block = { ...(data.content_block || {}), text: "", json: "", signature: "" };
@@ -226,5 +227,28 @@ function anthropicToOpenAiStream(model = "") {
     }
   });
 }
+// 经 OpenAI 兼容的中转用 Claude：缓存同样要显式标，不标就一分不省（实测原价重发）。中转认 OpenAI 内容段上的 cache_control、照转给 Claude，
+// 标法与上面相同——系统提示一处、最后一条一处；一答之内第二轮起此前的往来从缓存读，跨答到上一问为止也接得上。别家模型不加，免得严格的接口不认这个字段
+function claudeModel(model) {
+  return /claude/i.test(String(model || ""));
+}
+function markOpenAiCache(messages) {
+  const mark = message => {
+    if (!message?.content) return message;
+    const parts = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content.map(part => ({ ...part }));
+    if (parts.length) parts[parts.length - 1].cache_control = { type: "ephemeral" };
+    return { ...message, content: parts };
+  };
+  const last = messages.length - 1;
+  return messages.map((message, i) => (i === last || (i === 0 && message.role === "system") ? mark(message) : message));
+}
 // 桥接 require 这一段后从 globalThis.YAN_ANTHROPIC 取；不写 module.exports——那会让类型检查把这一段当成独立模块，页面里就找不到这些名字
-globalThis.YAN_ANTHROPIC = { anthropicLike, anthropicEndpoint, anthropicHeaders, anthropicRequest, anthropicToOpenAiStream };
+globalThis.YAN_ANTHROPIC = {
+  anthropicLike,
+  anthropicEndpoint,
+  anthropicHeaders,
+  anthropicRequest,
+  anthropicToOpenAiStream,
+  claudeModel,
+  markOpenAiCache
+};

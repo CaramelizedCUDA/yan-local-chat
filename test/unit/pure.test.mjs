@@ -394,7 +394,7 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
 });
 test("anthropicToOpenAiStream：事件流换成 OpenAI 风格分块——文字、思考、工具调用、签名、用量、[DONE]", async () => {
   const events = [
-    ["message_start", { type: "message_start", message: { model: "claude-x", usage: { input_tokens: 10 } } }],
+    ["message_start", { type: "message_start", message: { model: "claude-x", usage: { input_tokens: 4, cache_read_input_tokens: 6 } } }],
     ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } }],
     ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "想一想" } }],
     ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "sig1" } }],
@@ -430,7 +430,7 @@ test("anthropicToOpenAiStream：事件流换成 OpenAI 风格分块——文字�
   assert.equal(calls.map(c => c.function.arguments).join(""), '{"path":"a.js"}');
   const last = deltas.at(-1);
   assert.equal(last.choices[0].finish_reason, "tool_calls");
-  assert.deepEqual(last.usage, { prompt_tokens: 10, completion_tokens: 7, total_tokens: 17 });
+  assert.deepEqual(last.usage, { prompt_tokens: 10, prompt_tokens_details: { cached_tokens: 6 }, completion_tokens: 7, total_tokens: 17 });
   assert.equal(last.model, "claude-x");
 });
 test("anthropicToOpenAiStream：流到半途的 error 事件按流里的报错交出，不写进正文", async () => {

@@ -293,6 +293,12 @@ async function requestChat(profile, messages, signal, overrides = {}) {
 function profileForRequest(profile) {
   return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profile.api || "" };
 }
+// 提示里有多少走了缓存，各家记法不一（OpenAI 系与桥接换过的 Anthropic、Codex 在 prompt_tokens_details，DeepSeek 叫 prompt_cache_hit_tokens），
+// 归成一个 cached_tokens，一答累加，耗墨的浮签上标出几成走了缓存
+function withCached(usage) {
+  const cached = Number(usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0) || 0;
+  return { ...usage, cached_tokens: cached };
+}
 /** @param {Message} assistant 主消息、帮手，或拟题 / 压缩用的临时消息 */
 async function readSse(response, assistant, { onFrame = null } = {}) {
   const reader = response.body.getReader(),
@@ -464,7 +470,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
             }
             refresh();
           }
-          if (json.usage) assistant.usage = json.usage;
+          if (json.usage) assistant.usage = withCached(json.usage);
         } catch {}
         if (failure) throw Error(failure);
       }

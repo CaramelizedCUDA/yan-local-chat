@@ -578,8 +578,11 @@ function assistantActionsHtml(message) {
 function messageCostHtml(message) {
   const n = Number(message.tokenCount) || 0;
   if (!n) return "";
-  const heavy = n >= CONTEXT_HEAVY;
-  return `<span class="message-cost${heavy ? " heavy" : ""}" title="这一答共耗约 ${formatTokens(n)} token${message.tokenEstimated ? "（估算）" : ""}${heavy ? "；上下文已重，可压缩前文" : ""}">耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}</span>`;
+  const heavy = n >= CONTEXT_HEAVY,
+    prompt = Number(message.usage?.prompt_tokens) || 0,
+    cached = Number(message.usage?.cached_tokens) || 0,
+    hit = prompt && cached ? `；提示里 ${Math.round((cached / prompt) * 100)}% 读自缓存` : "";
+  return `<span class="message-cost${heavy ? " heavy" : ""}" title="这一答共耗约 ${formatTokens(n)} token${message.tokenEstimated ? "（估算）" : ""}${hit}${heavy ? "；上下文已重，可压缩前文" : ""}">耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}</span>`;
 }
 // 一答收尾：就地画成定稿的样子（图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下）；这条不在页上就整段重画
 /**

@@ -21,7 +21,7 @@
  */
 /** @typedef {{ text: string, messageId?: string, model?: string, url?: string, image?: string }} Quote 引用追问：划选的一段与它所在的消息（旁注锚文本作引文时没有 messageId）；游目圈点的另带给模型的一份与网址，image 是那幅画面的附件 id（附件照常随消息走，只是画在引文里） */
 /** @typedef {{ id: string, name: string, arguments: string }} ToolCall 流式拼出的一次工具调用 */
-/** @typedef {{ prompt_tokens: number, completion_tokens: number, total_tokens: number }} Usage */
+/** @typedef {{ prompt_tokens: number, completion_tokens: number, total_tokens: number, cached_tokens?: number }} Usage cached_tokens：提示里读自缓存的部分 */
 /** @typedef {"ask"|"review"|"auto"} CommandPolicy 问而后行 / 审而后行 / 径行 */
 /** @typedef {"running"|"pending"|"done"|"error"|"skipped"} StepStatus */
 /** @typedef {{ question: string, header: string, multi: boolean, options: { label: string, description: string }[] }} AskQuestion */
