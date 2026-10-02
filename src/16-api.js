@@ -60,6 +60,13 @@ function reserveTokens(profile, amount) {
     else reservedTokens.delete(profile.id);
   };
 }
+// 记下花掉的墨。记在此刻表里的那一份上：请求开工时拿住的模型对象，作答途中可能已被配置同步整份换掉，记在旧的上就丢了
+/** @param {Profile} profile @returns {Profile} 记上账的那一份 */
+function spendTokens(profile, amount) {
+  const live = profiles().find(p => p.id === profile.id) || profile;
+  live.usedTokens = Math.max(0, Number(live.usedTokens || 0)) + amount;
+  return live;
+}
 /** @param {Profile} profile */
 function quotaExhausted(profile) {
   const cap = parseTokenLimit(profile?.quota);

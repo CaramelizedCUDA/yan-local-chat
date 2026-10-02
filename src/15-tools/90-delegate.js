@@ -263,7 +263,7 @@ function chargeHelper(assistant, usage, profile) {
   assistant.usage ||= { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   for (const key of Object.keys(usage)) assistant.usage[key] = Number(assistant.usage[key] || 0) + Number(usage[key] || 0);
   assistant.tokenCount = Number(assistant.tokenCount || 0) + spent;
-  profile.usedTokens = Math.max(0, Number(profile.usedTokens || 0)) + spent;
+  spendTokens(profile, spent);
   renderQuota();
 }
 // 续派时帮手先前的经过：每一趟一问一答（所领之命 → 回报），上一趟的行迹冠在下一趟的命前，与主对话的历史同一个写法

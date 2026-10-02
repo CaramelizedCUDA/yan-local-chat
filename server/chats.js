@@ -195,14 +195,17 @@ module.exports = function createChats({ chatsHome }) {
     async body => {
       const owner = String(body.owner || "").slice(0, 80),
         ids = (Array.isArray(body.ids) ? body.ids : []).map(String).slice(0, 200),
+        claim = String(body.claim || ""),
         now = Date.now();
-      if (owner && ids.length) leases.set(owner, { ids, at: now });
-      else if (owner) leases.delete(owner);
       const busy = new Set();
       for (const [who, lease] of leases) {
         if (now - lease.at > LEASE_MS) leases.delete(who);
         else if (who !== owner) for (const id of lease.ids) busy.add(id);
       }
+      // 开工前的认领（claim）：别处正握着这段就不给，这一页的报到也不记——两页同时开工，先到的得手
+      if (claim && busy.has(claim)) return { busy: [...busy] };
+      if (owner && ids.length) leases.set(owner, { ids, at: now });
+      else if (owner) leases.delete(owner);
       return { busy: [...busy] };
     },
     error => errorText(error, 200)

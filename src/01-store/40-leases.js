@@ -27,6 +27,24 @@ function syncLeases() {
     .finally(() => (leasing = null));
   return leasing;
 }
+// 开工前认领：报到每隔几秒才一次，两页几乎同时点发送时都以为没人在写。认领就是一次带上这段的报到，
+// 桥接一次只办一件，先到的那页记上了，后到的一页看见它已有主就让开。桥接连不上时不拦（只剩这一页能写）
+async function claimConversation(id) {
+  if (!chatsOnline()) return true;
+  // 先记进自己手里：认领途中若恰有一趟报到发出，也带着它，不会把刚认下的又报没了
+  const held = leaseHold.has(id);
+  leaseHold.add(id);
+  try {
+    const { busy = [] } = await bridge("/api/chats/lease", { owner: PAGE_ID, ids: [...leaseHold], claim: id }, AbortSignal.timeout(3000));
+    if (!busy.includes(id)) return true;
+    if (!held) leaseHold.delete(id);
+    remoteBusy.add(id);
+    renderSendButtons();
+    return false;
+  } catch {
+    return true;
+  }
+}
 // 页面要关或刷新：先松手。不然刷新后的自己会把刷新前的自己当成「别处在作答」，停在半途的那一答就不收束了
 function releaseLeases() {
   if (!leaseHold.size) return;

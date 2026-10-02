@@ -1,10 +1,11 @@
 // 言 · 消息动作、设置页、导入导出
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
-// 生成中只拦会改动对话的动作（编辑、重答、续写、重试、切版本）；复制与就整条回复开旁注不碍事，下面还在写时上面照样可以注
+// 生成中（连同开工前的准备）只拦会改动对话的动作（编辑、重答、续写、重试、切版本）；复制与就整条回复开旁注不碍事，下面还在写时上面照样可以注
 const ACTIONS_WHILE_RUNNING = new Set(["copy", "note"]);
 async function handleMessageAction(event) {
   const button = event.target.closest("[data-action]");
-  if (!button || ((conversationRunning() || runningElsewhere()) && !ACTIONS_WHILE_RUNNING.has(button.dataset.action))) return;
+  if (!button || ((sendPreparing || conversationRunning() || runningElsewhere()) && !ACTIONS_WHILE_RUNNING.has(button.dataset.action)))
+    return;
   const c = currentConversation();
   if (!c) return;
   const id = button.closest("[data-message]")?.dataset.message,
@@ -42,7 +43,7 @@ async function handleMessageAction(event) {
     const profile = activeProfile();
     if (!profile) return openSettings("models");
     if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
-    if (!(await ensureWorkReady(c))) return;
+    if (!(await preparing(() => prepareTurn(c)))) return;
     message.status = "streaming";
     message.error = "";
     delete message.interruptedAt;
@@ -57,7 +58,7 @@ async function handleMessageAction(event) {
   const profile = activeProfile();
   if (!profile) return openSettings("models");
   if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
-  if (!(await ensureWorkReady(c))) return;
+  if (!(await preparing(() => prepareTurn(c)))) return;
   forkTail(c, userIndex + 1);
   /** @type {Message} */
   const assistant = { id: uid(), role: "assistant", content: "", timestamp: now(), status: "streaming", modelName: profile.name };
@@ -79,7 +80,7 @@ async function saveEditedMessage(conversation, index, value) {
     renderConversation(false);
     return;
   }
-  if (!(await ensureWorkReady(conversation))) return;
+  if (!(await preparing(() => prepareTurn(conversation)))) return;
   // 旧问题连同它后面的回答整段留作一个版本；新问题沿用原来的附件与引文
   forkTail(conversation, index);
   const message = { ...old, id: uid(), content: text, timestamp: now() };

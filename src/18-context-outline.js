@@ -178,9 +178,7 @@ async function summarize(profile, ask, signal, reasoning = "") {
     temp.reasoning = normalizeContent(data?.choices?.[0]?.message?.reasoning_content ?? data?.choices?.[0]?.message?.reasoning);
     temp.usage = data.usage;
   }
-  profile.usedTokens =
-    Math.max(0, Number(profile.usedTokens || 0)) +
-    (Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]));
+  spendTokens(profile, Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]));
   renderQuota();
   const summary = String(temp.content || "")
     .replace(/<think>[\s\S]*?<\/think>/g, "")

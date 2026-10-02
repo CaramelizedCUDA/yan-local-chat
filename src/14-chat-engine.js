@@ -152,8 +152,31 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
   }
   return { role: "user", content };
 }
-// 准备工作目录或重连桥接时还没有生成任务；这段等待里再次点发送不能再起一问。
+// 准备工作目录或重连桥接时还没有生成任务；这段等待里再次点发送、重答、改问、续写都不能再起一问。
 let sendPreparing = false;
+// 消息上的重答、改问、续写与发送共用这一道闸
+async function preparing(task) {
+  if (sendPreparing) return false;
+  sendPreparing = true;
+  renderSendButtons();
+  try {
+    return await task();
+  } finally {
+    sendPreparing = false;
+    renderSendButtons();
+  }
+}
+// 开工前：工作目录立起来，再向桥接认领这段对话——两页同时开工，桥接按先来后到只放一页（见 claimConversation）
+/** @param {Conversation} c */
+async function prepareTurn(c) {
+  if (!(await ensureWorkReady(c))) return false;
+  if (!(await claimConversation(c.id))) {
+    toast("这段对话正在另一个页面作答，写完后这里会跟上，再发不迟");
+    return false;
+  }
+  // 等的这一会儿，后台回报可能已在这段里另起了一答
+  return !conversationRunning(c.id);
+}
 async function sendOrStop() {
   if (sendPreparing) return;
   // 作答途中：输入框里有话就是补言，递给正在作答的模型；空着才是停止
@@ -183,7 +206,7 @@ async function sendOrStop() {
       snapshot = composerSnapshot(input);
     let c = currentConversation(),
       fresh = false;
-    if (c && !(await ensureWorkReady(c))) return;
+    if (c && !(await prepareTurn(c))) return;
     if (!c) {
       const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
       // 行：先把工作目录立起来，立不起来就不发
@@ -218,7 +241,7 @@ async function sendOrStop() {
       if (stayed) currentId = c.id;
     }
     let user;
-    if (stayed) user = takeComposer(input, sendingDraftKey);
+    if (stayed) user = takeComposer(input, sendingDraftKey, snapshot);
     else {
       user = composerMessage(snapshot);
       if (store.drafts) delete store.drafts[sendingDraftKey];
@@ -231,21 +254,33 @@ async function sendOrStop() {
 }
 // 案上此刻的东西：话、附件、引文（换对话时 restoreDraft 会把附件、引文整个换成另一份，这里拿住的仍是这一份）
 function composerSnapshot(input) {
-  return { content: input.value.trim(), attachments: pendingAttachments, quote: pendingQuote };
+  return { content: input.value.trim(), attachments: [...pendingAttachments], quote: pendingQuote };
 }
 /** @returns {Message} */
 function composerMessage({ content, attachments, quote }) {
   return { id: uid(), role: "user", content, timestamp: now(), attachments, ...(quote ? { quote } : {}) };
 }
-// 把案上的东西（话、附件、引文）收成一条用户消息，输入框与草稿随之清空
+// 把案上的东西（话、附件、引文）收成一条用户消息，输入框与草稿随之清空。
+// snapshot：点发送那一刻拍下的；等待开工的工夫里接着写的、又置入的不在其中，留在案上
 /** @returns {Message} */
-function takeComposer(input, key = draftKey()) {
-  const user = composerMessage(composerSnapshot(input));
-  input.value = "";
+function takeComposer(input, key = draftKey(), snapshot = composerSnapshot(input)) {
+  const user = composerMessage(snapshot),
+    typed = input.value.trim(),
+    rest = typed.startsWith(snapshot.content) ? typed.slice(snapshot.content.length).trim() : typed;
+  input.value = rest;
   input.style.height = "auto";
+  pendingAttachments = pendingAttachments.filter(file => !snapshot.attachments.includes(file));
+  if (pendingQuote === snapshot.quote) pendingQuote = null;
   delete store.drafts[key];
-  pendingAttachments = [];
-  pendingQuote = null;
+  // 新对话在点发送后才有 id：留下的那点草稿记到它名下
+  if (rest || pendingAttachments.length || pendingQuote)
+    store.drafts[draftKey()] = {
+      text: rest,
+      attachments: pendingAttachments.map(file => ({ ...file })),
+      quote: pendingQuote,
+      updatedAt: now()
+    };
+  if (rest) grow(input);
   renderAttachments();
   renderQuote();
   return user;
@@ -783,7 +818,8 @@ async function runRounds(target, history, run) {
       })),
       ...(target.thinkingBlocks?.length ? { thinking_blocks: target.thinkingBlocks } : {})
     });
-    const outcomes = await runSteps(steps, conversation, host, signal, toolCache);
+    const offered = new Set(overrides.tools.map(tool => tool.function?.name)),
+      outcomes = await runSteps(steps, conversation, host, signal, toolCache, offered);
     for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
     if (inbox) await deliverSupplements(inbox, history, run.budget, host);
     target.content = paragraphBreak(target.content);
@@ -916,10 +952,10 @@ function accountUsage(
   const estimate = from => estimateTokens(requestMessages) + estimateTokens([{ content: String(assistant.content || "").slice(from) }]);
   const consumed = exact > 0 ? exact + (partialRound ? estimate(roundStart) : 0) : opened ? estimate(0) : 0;
   if (!(consumed > 0)) return;
-  profile.usedTokens = Math.max(0, Number(profile.usedTokens || 0)) + consumed;
+  const live = spendTokens(profile, consumed);
   assistant.tokenCount = consumed;
   assistant.tokenEstimated = !(exact > 0) || partialRound || steered;
-  if (quotaExhausted(profile)) toast("此答写毕，余墨已尽；换个模型可续");
+  if (quotaExhausted(live)) toast("此答写毕，余墨已尽；换个模型可续");
   renderQuota();
 }
 // 首次问答完成后请模型拟一个短标题；用户手动改过题（titleAuto === false）就不再动。
@@ -969,7 +1005,7 @@ async function maybeAutoTitle(conversation, profile) {
       temp.usage = data.usage;
     }
     const spent = Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]);
-    profile.usedTokens = Math.max(0, Number(profile.usedTokens || 0)) + spent;
+    spendTokens(profile, spent);
     renderQuota();
     const title =
       temp.content
