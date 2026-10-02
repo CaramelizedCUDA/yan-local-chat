@@ -43,8 +43,7 @@
   },
 
   download_file: {
-    description:
-      "把网上的文件下载到工作目录（最大 64 MB）。",
+    description: "把网上的文件下载到工作目录（最大 64 MB）。",
     brief: "把网上的文件下载进卷宗（最大 64 MB）。",
     parameters: {
       type: "object",
@@ -122,8 +121,7 @@
   },
 
   edit_file: {
-    description:
-      "精确替换文件中的一段：old 须与文件逐字一致（含缩进）且只出现一次，从 read_file 的结果复制（去掉行号）。",
+    description: "精确替换文件中的一段：old 须与文件逐字一致（含缩进）且只出现一次，从 read_file 的结果复制（去掉行号）。",
     parameters: {
       type: "object",
       properties: {
@@ -192,7 +190,7 @@
           type: "string",
           enum: ["low", "medium", "high", "max"],
           description:
-            "帮手的思考强度，按活的难易定：照章办事（通读归纳、批量检索、按已定方案改）low，要权衡取舍的 medium 或 high，难查的毛病、方案设计与复查 max；省略同你此刻"
+            "帮手的思考强度，按活的难易定：照章办事（通读归纳、批量检索、按已定方案改）取最低档，要权衡取舍的取居中，难查的毛病、方案设计与复查取最高档；省略同你此刻"
         }
       },
       required: ["title", "task"]

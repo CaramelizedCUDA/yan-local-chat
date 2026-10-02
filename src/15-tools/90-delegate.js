@@ -7,6 +7,12 @@ defineTool({
   group: "delegate",
   label: "差遣",
   offer: ctx => ctx.offered.some(name => name !== "ask_user"),
+  // 思考档位只列这台模型认的几档：通用四档里有它不认的，主模型一挑中，帮手起跑就被接口拒；不认档位的模型不给这一项
+  params: (parameters, ctx) => {
+    const { effort, ...rest } = parameters.properties,
+      levels = profileReasoningLevels(ctx.profile);
+    return { ...parameters, properties: levels.length ? { ...rest, effort: { ...effort, enum: levels } } : rest };
+  },
   mainOnly: true,
   sideEffect: true,
   parallel: true,

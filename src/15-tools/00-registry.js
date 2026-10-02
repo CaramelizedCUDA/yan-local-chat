@@ -16,6 +16,7 @@
  * @property {Array<Record<string, any>>} docs 可读的文档
  * @property {string[]} offered 登记在前、此处已经给出的工具
  * @property {Preset|null} preset 这段对话用的预设：只给它挑中的几组与几个 MCP 服务
+ * @property {Profile|null} profile 这一答用的模型：参数里有随模型而定的（帮手的思考档位）
  *
  * @typedef {{ ok: boolean, content: string, display: string, background?: boolean, images?: string[] }} ToolOutcome content 回给模型，display 写在标题行右侧；background：活在后台接着做，步骤由它自己收尾；images：交回的图（data: 地址），随工具结果给模型看
  * @typedef {{ url?: string, title?: string, read?: boolean, talk?: string, date?: string, memory?: string }} Source 答末「出处」的一条：网页、旧谈或记忆
@@ -29,6 +30,7 @@
  * @property {boolean} [mainOnly] 只给主模型，帮手拿不到
  * @property {boolean} [lookup] 旁注（只查不改）也给
  * @property {(ctx: OfferContext) => Record<string, any>} [vars] 说明里 {{名字}} 的值
+ * @property {(parameters: Record<string, any>, ctx: OfferContext) => Record<string, any>} [params] 参数随处境改写（如枚举只列此模型认的几档）
  * @property {{ description: string, brief?: string, parameters: Record<string, any> }} [schema] 自带的说明与参数；不写则取 prompts/tools.js
  * @property {boolean} [parallel] 可与相邻的同类一起跑
  * @property {boolean} [sideEffect] 有副作用：参数 JSON 残缺就不执行
@@ -66,8 +68,8 @@ function toolSpec(name) {
 }
 // 此处交给模型的工具。sub：帮手的一套（只给主模型的除外）；lookup：旁注的一套，只查不改。
 // 言（对谈）里带 brief 的用短说明：对谈的每一问都背着这份定义，越轻越好
-/** @param {Conversation} conversation */
-function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
+/** @param {Conversation} conversation @param {{ sub?: boolean, lookup?: boolean, profile?: Profile|null }} [o] */
+function toolDefinitions(conversation, { sub = false, lookup = false, profile = null } = {}) {
   /** @type {OfferContext} */
   const ctx = {
     conversation,
@@ -75,7 +77,8 @@ function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
     files: !!workRoot(conversation),
     docs: availableDocuments(conversation),
     offered: [],
-    preset: presetOf(conversation)
+    preset: presetOf(conversation),
+    profile
   };
   const tools = [];
   for (const tool of TOOLS.values()) {
@@ -91,7 +94,10 @@ function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
       text = !ctx.work && spec.brief ? spec.brief : spec.description,
       // 外来工具自带的说明原样给，不当模板填（里头的 {{…}} 是人家的字）
       description = tool.schema ? text : fillTemplate(text, tool.vars?.(ctx));
-    tools.push({ type: "function", function: { name: tool.name, description, parameters: spec.parameters } });
+    tools.push({
+      type: "function",
+      function: { name: tool.name, description, parameters: tool.params ? tool.params(spec.parameters, ctx) : spec.parameters }
+    });
     ctx.offered.push(tool.name);
   }
   return tools.length ? tools : null;

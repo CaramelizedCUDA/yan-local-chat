@@ -10,7 +10,7 @@ function contextEstimate(c, draft = "", pending = null) {
     budget = inlineTextBudget(profile);
   let n = 0;
   if (profile) {
-    const tools = profile.tools !== false ? toolDefinitions(c) : null;
+    const tools = profile.tools !== false ? toolDefinitions(c, { profile }) : null;
     n += estimateText(systemPrompt(c, tools));
     if (tools) n += estimateText(JSON.stringify(tools));
   }
