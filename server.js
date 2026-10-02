@@ -251,12 +251,21 @@ async function handleChat(req, res) {
     console.log(
       `${new Date().toLocaleTimeString("zh-CN", { hour12: false })} → ${config.model}：${messages.length} 条消息${payload.tools ? `，工具 ${payload.tools.length} 个` : ""}`
     );
-    // Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格再给页面；OpenAI 兼容的原样透传（thinking_blocks 是 Anthropic 才要的，去掉）
+    // Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格再给页面；Codex 同理；OpenAI 兼容的原样透传（thinking_blocks 是这两家才要的，去掉）
     const anthropic = ANTHROPIC.anthropicLike(config),
       codex = CODEX.codexLike(config);
-    if (!anthropic) payload.messages = messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
+    if (!anthropic && !codex) payload.messages = messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
     // 上游的状态码原样带回页面（连不上记作 502）：429、5xx、过载这些页面会等一等再试，参数错之类的 4xx 不试
-    const headers = await upstreamHeaders(config);
+    // 探档位（故意送一个不存在的档位）：Codex 的模型表上写着它认哪几档，照表按 OpenAI 的报错样子回，不必真发一趟
+    if (codex && payload.reasoning_effort === "probe") {
+      const levels = CODEX.codexLevels(config.model);
+      if (levels.length)
+        throw Object.assign(Error(`Invalid value: 'probe'. Supported values are: ${levels.map(level => `'${level}'`).join(", ")}.`), {
+          status: 400
+        });
+    }
+    const upstreamBody = codex ? CODEX.codexRequest(payload) : anthropic ? ANTHROPIC.anthropicRequest(payload) : payload;
+    const headers = codex ? await CODEX.codexHeaders(upstreamBody.prompt_cache_key) : await upstreamHeaders(config);
     const response = await fetch(
       codex
         ? CODEX.codexEndpoint(config.baseUrl)
@@ -266,7 +275,7 @@ async function handleChat(req, res) {
       {
         method: "POST",
         headers,
-        body: JSON.stringify(codex ? CODEX.codexRequest(payload) : anthropic ? ANTHROPIC.anthropicRequest(payload) : payload),
+        body: JSON.stringify(upstreamBody),
         signal: abort.signal
       }
     ).catch(error => {

@@ -5,6 +5,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { createHash } = require("node:crypto");
 
 const CODEX_BASE = "https://chatgpt.com/backend-api/codex";
 const TOKEN_URL = "https://auth.openai.com/oauth/token";
@@ -61,9 +62,11 @@ async function credentials() {
   })().finally(() => (refreshing = null));
   return refreshing;
 }
-async function codexHeaders() {
+// session 是这段对话的缓存键：后端按请求头里的 session_id 把请求送到存着前文缓存的地方，光有请求体里的 prompt_cache_key 不命中
+async function codexHeaders(session = "") {
   const tokens = await credentials();
   return {
+    ...(session ? { session_id: session } : {}),
     "Content-Type": "application/json",
     Authorization: `Bearer ${tokens.access_token}`,
     ...(tokens.account_id ? { "chatgpt-account-id": tokens.account_id } : {}),
@@ -77,14 +80,22 @@ function codexEndpoint(baseUrl) {
     .replace(/\/+$/, "")
     .replace(/\/responses$/i, "")}/responses`;
 }
-// 模型列表：Codex CLI 自己缓存的那份（models_cache.json），只列它在菜单里露出来的
-function codexModels() {
+// 模型表：Codex CLI 自己缓存的那份（models_cache.json）。列表只列它在菜单里露出来的；思考档位照表上该模型认的几档
+function modelCache() {
   try {
-    const cache = JSON.parse(fs.readFileSync(path.join(codexHome(), "models_cache.json"), "utf8"));
-    return (cache.models || []).filter(m => m.visibility !== "hide").map(m => m.slug);
+    return JSON.parse(fs.readFileSync(path.join(codexHome(), "models_cache.json"), "utf8")).models || [];
   } catch {
     return [];
   }
+}
+function codexModels() {
+  return modelCache()
+    .filter(m => m.visibility !== "hide")
+    .map(m => m.slug);
+}
+function codexLevels(model) {
+  const found = modelCache().find(m => m.slug === model);
+  return (found?.supported_reasoning_levels || []).map(level => level?.effort || level).filter(Boolean);
 }
 function inputParts(content) {
   if (typeof content === "string") return content ? [{ type: "input_text", text: content }] : [];
@@ -119,6 +130,15 @@ function codexRequest(payload) {
       const content = inputParts(message.content);
       if (content.length) input.push({ type: "message", role: "user", content });
     } else if (message.role === "assistant") {
+      // 带工具调用的那一轮的思考（加密原件，页面经 thinking_blocks 带回）：放在调用之前送回，模型接着想时记得为什么调这件工具。
+      // store 为 false，不能带 id——后端不存这一条，带了反倒说找不到
+      for (const block of message.thinking_blocks || [])
+        if (block?.signature)
+          input.push({
+            type: "reasoning",
+            summary: block.thinking ? [{ type: "summary_text", text: block.thinking }] : [],
+            encrypted_content: block.signature
+          });
       const text = typeof message.content === "string" ? message.content : "";
       if (text.trim()) input.push({ type: "message", role: "assistant", content: [{ type: "output_text", text }] });
       for (const call of message.tool_calls || [])
@@ -137,9 +157,17 @@ function codexRequest(payload) {
     instructions: system.join("\n\n") || "You are a helpful assistant.",
     input,
     reasoning: { summary: "auto", ...(effort && effort !== "none" ? { effort } : {}) },
+    include: ["reasoning.encrypted_content"],
     store: false,
     stream: true
   };
+  // 缓存键：同一段对话里固定不变（取开头那条用户消息）；Codex CLI 用的是会话号。桥接另把它放进请求头的 session_id（见 codexHeaders）
+  const opening = input.find(item => item.role === "user");
+  if (opening)
+    body.prompt_cache_key = createHash("sha256")
+      .update(`${payload.model}\n${JSON.stringify(opening.content)}`)
+      .digest("hex")
+      .slice(0, 32);
   if (Array.isArray(payload.tools) && payload.tools.length) {
     body.tools = payload.tools.map(tool => ({
       type: "function",
@@ -189,6 +217,13 @@ function codexToOpenAiStream(model = "") {
       controller.enqueue(chunk({ tool_calls: [{ index: calls.get(data.item_id).slot, function: { arguments: data.delta } }] }));
     } else if (type === "response.output_item.done" && item?.type === "function_call" && calls.has(item.id) && !calls.get(item.id).streamed)
       controller.enqueue(chunk({ tool_calls: [{ index: calls.get(item.id).slot, function: { arguments: item.arguments || "{}" } }] }));
+    // 思考整段收尾：加密原件作 thinking_block 交给页面（signature 一栏装它），这一轮带工具调用时页面原样带回
+    else if (type === "response.output_item.done" && item?.type === "reasoning" && item.encrypted_content)
+      controller.enqueue(
+        chunk({
+          thinking_block: { thinking: (item.summary || []).map(part => part.text || "").join("\n\n"), signature: item.encrypted_content }
+        })
+      );
     else if (type === "response.completed" || type === "response.incomplete") {
       const u = data.response?.usage || {},
         length = data.response?.incomplete_details?.reason === "max_output_tokens";
@@ -226,4 +261,4 @@ function codexToOpenAiStream(model = "") {
   });
 }
 
-module.exports = { CODEX_BASE, codexLike, codexHeaders, codexEndpoint, codexModels, codexRequest, codexToOpenAiStream };
+module.exports = { CODEX_BASE, codexLike, codexHeaders, codexEndpoint, codexModels, codexLevels, codexRequest, codexToOpenAiStream };
