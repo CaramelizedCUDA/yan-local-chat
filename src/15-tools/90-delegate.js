@@ -302,15 +302,28 @@ async function runDelegate(step, args, ctx, profile, past) {
   const tools = toolDefinitions(conversation, { sub: true });
   if (!tools) return { ok: false, content: "此对话里没有可交给帮手的工具", display: "无工具可用" };
   const id = `sub-${uid()}`;
+  // 思考强度：主模型按活的难易给（省略即同主答），续派沿用这名帮手上一趟的；记下的是模型实际认的那一档，卡片上标出
+  const asked = REASONING_ORDER.includes(args.effort) ? args.effort : past?.sub?.effort || conversation.reasoning || "",
+    effort = nearestReasoning(profile, asked);
   /** @type {SubAgent} */
-  const sub = { id, helper: past ? helperKey(past) : id, task, content: "", reasoning: "", steps: [], status: "streaming", usage: null };
+  const sub = {
+    id,
+    helper: past ? helperKey(past) : id,
+    task,
+    content: "",
+    reasoning: "",
+    steps: [],
+    status: "streaming",
+    usage: null,
+    ...(effort ? { effort } : {})
+  };
   step.sub = sub;
   const lead = past ? stepsDigest(past.sub, "上一答的行迹") : "";
   const history = [...(past ? helperHistory(conversation, past) : []), { role: "user", content: `${lead ? `${lead}\n\n` : ""}${task}` }];
   const overrides = {
     systemPrompt: systemPrompt(conversation, tools, { role: "sub" }),
     tools,
-    reasoning: conversation.reasoning || "",
+    reasoning: effort,
     // 跑得久了上下文会满：任务说明（续派时连同先前的几趟）之后的往来由 readReply 按需压成工作笔记（见 keepInWindow），帮手接着做
     head: history.length,
     onFold: busy => {

@@ -216,14 +216,17 @@ function delegateSubState(step) {
     steps,
     live,
     report: live ? "" : String(sub?.report || "").trim(),
-    meta: live
-      ? [
-          steps.length ? `${steps.length} 步` : "领命中",
-          (sub?.startedAt && spentText(Date.now() - sub.startedAt)) || (steps.length ? "进行中" : "")
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : String(step.result || "")
+    meta: [
+      ...(live
+        ? [
+            steps.length ? `${steps.length} 步` : "领命中",
+            (sub?.startedAt && spentText(Date.now() - sub.startedAt)) || (steps.length ? "进行中" : "")
+          ]
+        : [String(step.result || "")]),
+      sub?.effort ? `思考${reasoningLabel(sub.effort)}` : ""
+    ]
+      .filter(Boolean)
+      .join(" · ")
   };
 }
 // 步骤按 id 就地更新：没变的节点一律不动（转圈不重启、已展开的结果不跳）；新步骤淡入上移，结果首次出现或状态翻转时只让那一条轻浮。

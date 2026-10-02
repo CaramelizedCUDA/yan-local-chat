@@ -190,7 +190,13 @@
       type: "object",
       properties: {
         title: { type: "string", description: "四到十个字的任务名，用于显示" },
-        task: { type: "string", description: "给帮手的完整任务说明：背景、要做什么、不该动什么、完成的标准、回报要包含什么" }
+        task: { type: "string", description: "给帮手的完整任务说明：背景、要做什么、不该动什么、完成的标准、回报要包含什么" },
+        effort: {
+          type: "string",
+          enum: ["low", "medium", "high", "max"],
+          description:
+            "帮手的思考强度，按这件活的难易定：照章办事（通读归纳、批量检索、按已定方案改）用 low，要权衡取舍的用 medium 或 high，难查的毛病、方案设计与复查用 max。省略则与你此刻相同"
+        }
       },
       required: ["title", "task"]
     }

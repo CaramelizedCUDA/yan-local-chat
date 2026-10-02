@@ -113,6 +113,22 @@ check(
   JSON.stringify(card)
 );
 check("marker meta counts helper steps and files", /2 步 · 改 1 个文件 · \d+ 秒/.test(card.meta), card.meta);
+// 思考强度：乙领命时给了 low，请求里带的就是 low、签上标「思考低」；甲没给，沿用主答（此处是默认，不带字段、不标）
+const efforts = JSON.parse(
+  await evalJs(
+    `JSON.stringify([...document.querySelectorAll(".message.assistant .tool-step-delegate")].map(d => ({ title: d.querySelector(".tool-title").textContent, meta: d.querySelector(".tool-meta").textContent })))`
+  )
+);
+const helperB = efforts.find(e => e.title === "建 b.js"),
+  helperA = efforts.find(e => e.title === "改 a.js"),
+  reportB = await evalJs(
+    `__yanState().conversations[0].messages.flatMap(m => m.steps || []).find(s => s.title === "建 b.js")?.sub?.report || ""`
+  );
+check(
+  "a helper sent with effort thinks at that level and the marker says so",
+  reportB.endsWith("effort:low") && /思考低$/.test(helperB?.meta || "") && !/思考/.test(helperA?.meta || ""),
+  JSON.stringify({ reportB, efforts })
+);
 // 一答收尾时步骤的 at 会前移，分组的键随之变。页面若不撤掉落单的旧分组，同一次差遣就画两遍
 const painted = await evalJs(
   `JSON.stringify({ markers: document.querySelectorAll(".message.assistant .tool-step-delegate").length, groups: document.querySelectorAll(".message.assistant .tool-stack-body > .trail-group").length, steps: __yanState().conversations[0].messages[1].steps.length })`
@@ -199,7 +215,7 @@ check(
   second.marker === "建 b.js" &&
     second.nested.join() === "写入:done" &&
     second.thought.startsWith("帮手乙想第 1 步。") &&
-    second.report === "回报乙：已新建 src/b.js。",
+    second.report.startsWith("回报乙：已新建 src/b.js。"),
   JSON.stringify(second)
 );
 // 合上那扇窗，后面几项看的是正文

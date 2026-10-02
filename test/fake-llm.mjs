@@ -899,7 +899,15 @@ http
             ],
             120
           );
-        return sse(res, [delta({ content: "回报乙：已新建 src/b.js。" }), delta({}, { usage: { total_tokens: 7 } })], 300);
+        // 回报里带上帮手这一趟收到的思考档位：主模型派它时给了 low
+        return sse(
+          res,
+          [
+            delta({ content: `回报乙：已新建 src/b.js。｜effort:${payload.reasoning_effort ?? "none"}` }),
+            delta({}, { usage: { total_tokens: 7 } })
+          ],
+          300
+        );
       }
       if (typeof lastUser === "string" && lastUser.includes("SUBTASK")) {
         // 帮手那一侧：读 → 改 → 回报。系统提示里须带着帮手的那段话，且不该再有 delegate / ask_user 可用
@@ -951,7 +959,10 @@ http
                   index: 1,
                   id: "call_p0b",
                   type: "function",
-                  function: { name: "delegate", arguments: JSON.stringify({ title: "建 b.js", task: "SUBTASK-B：新建 src/b.js。" }) }
+                  function: {
+                    name: "delegate",
+                    arguments: JSON.stringify({ title: "建 b.js", task: "SUBTASK-B：新建 src/b.js。", effort: "low" })
+                  }
                 }
               ]
             }),
