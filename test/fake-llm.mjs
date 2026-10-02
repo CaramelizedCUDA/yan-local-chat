@@ -116,7 +116,10 @@ http
                   index: 0,
                   id: `call_snap${i}`,
                   type: "function",
-                  function: { name: "mcp__cam__snap", arguments: JSON.stringify({ n: i }) }
+                  function: {
+                    name: "mcp__cam__snap",
+                    arguments: JSON.stringify(i === 2 ? { n: i, file: "test/.tmp/shots/shot-2.png" } : { n: i })
+                  }
                 }
               ]
             });

@@ -2,10 +2,13 @@
 // 工具：echo（只读）、write_note（会写）；--many 再添四十件说明很长的，好让页面按需给。握手时带一句用法 FAKE-MCP-HINT
 import http from "node:http";
 import readline from "node:readline";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 const many = process.argv.includes("--many"),
   snap = process.argv.includes("--snap");
-// --snap：一件回图的 snap（只读，像游目截图），回一张 1×1 的 PNG，参数 n 写进说明字里
+// --snap：一件回图的 snap（只读，像游目截图），回一张 1×1 的 PNG，参数 n 写进说明字里；
+// 给了 file 就像 Playwright 给了 filename：图只落盘（相对工作目录），回一行 Markdown 链接，不回图
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 const tools = [
   {
@@ -26,7 +29,7 @@ const tools = [
         {
           name: "snap",
           description: "截一幅画面。",
-          inputSchema: { type: "object", properties: { n: { type: "number" } }, required: ["n"] },
+          inputSchema: { type: "object", properties: { n: { type: "number" }, file: { type: "string" } }, required: ["n"] },
           annotations: { readOnlyHint: true }
         }
       ]
@@ -60,6 +63,11 @@ function handle(message) {
     const { name, arguments: args } = params;
     if (name === "echo") return reply({ content: [{ type: "text", text: `回声：${args.text}` }] });
     if (name === "write_note") return reply({ content: [{ type: "text", text: `已记：${args.text}` }] });
+    if (name === "snap" && args.file) {
+      mkdirSync(dirname(args.file), { recursive: true });
+      writeFileSync(args.file, Buffer.from(PNG, "base64"));
+      return reply({ content: [{ type: "text", text: `### Result\n- [Screenshot of viewport](./${args.file})` }] });
+    }
     if (name === "snap")
       return reply({
         content: [
