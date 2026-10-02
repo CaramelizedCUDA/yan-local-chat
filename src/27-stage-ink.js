@@ -42,8 +42,7 @@ let stageActs = [];
 /** @type {{ pts: number[][] } | null} 正在下的那一笔 */
 let stageInking = null;
 /** @type {any} 圈点引进去的那条引文（还是它，才算游目的），与那张图的附件 id */
-let stageQuoteMade = null,
-  stageQuoteFile = "";
+let stageQuoteMade = null;
 
 // ---------- 网页里的耳目 ----------
 /** @param {string} sessionId @param {string} frameId 主框架的 id 即页的 targetId */
@@ -212,7 +211,8 @@ function stageNoteBoxes() {
     };
   });
 }
-// 引进输入框：一条引文（游目的那句给人看，带位置的那份给模型），一张画面连朱笔的图；再圈一处，两样一并换新
+// 引进输入框：一条引文（游目的那句给人看，带位置的那份给模型），连同一张画面叠朱笔的图——图是附件、画在引文里（见 renderQuote）；
+// 再圈一处，引文换新，先前那幅随之撤下
 async function stageQuote() {
   const tab = stage.tabs.get(stage.current);
   if (!tab || !stageNotes.length) return;
@@ -247,10 +247,11 @@ async function stageQuote() {
   if (blob) {
     const file = await ingestFile(new File([blob], name, { type: "image/jpeg" })).catch(() => null);
     if (file && pendingQuote === stageQuoteMade) {
-      pendingAttachments = [...pendingAttachments.filter(item => item.id !== stageQuoteFile), file];
-      stageQuoteFile = file.id;
+      pendingAttachments = [...pendingAttachments, { ...file, quoted: true }];
+      stageQuoteMade.image = file.id;
+      renderQuote();
       renderAttachments();
-    }
+    } else if (file) void deleteAttachments([file.id]);
   }
   persistDraft();
 }
@@ -281,7 +282,6 @@ async function stageInkImage() {
 function stageQuoteChanged() {
   if (stageQuoteMade && pendingQuote !== stageQuoteMade) {
     stageQuoteMade = null;
-    stageQuoteFile = "";
     stageNotes = [];
     stageInkRender();
   }

@@ -210,24 +210,12 @@
   overflow: visible;
   font-size: 10.5px;
 }
-/* 工具交回的画面：与附件同一张折角小纸，一步几幅并排；折起时也露着 */
+/* 工具交回的画面：一步几幅并排，折起时也露着（小纸的样子见 30-chat.css 的 .tool-shot） */
 .tool-shots {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   padding: 0 9px 8px 50px;
-}
-.tool-shot {
-  width: 168px;
-  height: auto;
-  aspect-ratio: 16 / 10;
-  cursor: zoom-in;
-  outline: 1px solid var(--line);
-  outline-offset: -1px;
-}
-.tool-shot:hover,
-.tool-shot:focus-visible {
-  outline-color: var(--ink-3);
 }
 /* 计算：代码在上、输出在下，两块之间只留一线 */
 .tool-code {

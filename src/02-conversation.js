@@ -114,7 +114,8 @@ function restoreDraft() {
   if (view !== "chat") return;
   const draft = draftRecord();
   pendingAttachments = draft.attachments.map(file => ({ ...file }));
-  pendingQuote = currentConversation() ? draft.quote : null;
+  // 欢迎页也有引文框（游目圈点可引进新对话），草稿里有就照样放回
+  pendingQuote = draft.quote;
   renderQuote();
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
   if (!input) return;

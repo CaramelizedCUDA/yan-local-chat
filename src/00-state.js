@@ -17,8 +17,9 @@
  * @property {string} [extractionError]
  * @property {string} [savedAt] 收入浏览器内卷宗的时间
  * @property {string} [archive] 磁盘卷宗里的相对路径（availableDocuments 用）
+ * @property {boolean} [quoted] 随引文的画面（游目圈点）：不进附件栏，画在引文里；引文撤了它跟着撤
  */
-/** @typedef {{ text: string, messageId?: string, model?: string, url?: string }} Quote 引用追问：划选的一段与它所在的消息（旁注锚文本作引文时没有 messageId）；游目圈点的另带给模型的一份与网址 */
+/** @typedef {{ text: string, messageId?: string, model?: string, url?: string, image?: string }} Quote 引用追问：划选的一段与它所在的消息（旁注锚文本作引文时没有 messageId）；游目圈点的另带给模型的一份与网址，image 是那幅画面的附件 id（附件照常随消息走，只是画在引文里） */
 /** @typedef {{ id: string, name: string, arguments: string }} ToolCall 流式拼出的一次工具调用 */
 /** @typedef {{ prompt_tokens: number, completion_tokens: number, total_tokens: number }} Usage */
 /** @typedef {"ask"|"review"|"auto"} CommandPolicy 问而后行 / 审而后行 / 径行 */

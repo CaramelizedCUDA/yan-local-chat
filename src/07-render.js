@@ -520,11 +520,14 @@ function renderMessage(message, branch = null, side = false) {
   if (message.role === "user") {
     if (editingMessageId === message.id)
       return `<article class="message user" data-message="${escapeHtml(message.id)}"><div class="message-editor"><textarea class="message-edit-input">${escapeHtml(message.content)}</textarea><div class="edit-actions"><button class="message-action" data-action="cancel-edit">取消</button><button class="message-action edit-save" data-action="save-edit">保存并重答</button></div></div></article>`;
-    const files = message.attachments?.length
-      ? `<div class="sent-attachments">${message.attachments.map(file => attachmentCard(file, null, true)).join("")}</div>`
+    // 随引文的画面画在引文里（字在上、图在下，随问句靠右），不在件条里再列一回
+    const listed = (message.attachments || []).filter(file => !quoteImageOf(file, message.quote)),
+      shot = message.quote?.image && message.attachments?.some(file => quoteImageOf(file, message.quote));
+    const files = listed.length
+      ? `<div class="sent-attachments">${listed.map(file => attachmentCard(file, null, true)).join("")}</div>`
       : "";
     const quote = message.quote?.text
-      ? `<div class="user-quote" data-quote-source="${escapeHtml(message.quote.messageId || "")}"${message.quote.url ? ` data-quote-url="${escapeHtml(message.quote.url)}"` : ""} title="回到出处">${escapeHtml(message.quote.text)}</div>`
+      ? `<div class="user-quote${shot ? " has-shot" : ""}" data-quote-source="${escapeHtml(message.quote.messageId || "")}"${message.quote.url ? ` data-quote-url="${escapeHtml(message.quote.url)}"` : ""} title="回到出处">${shot ? `<span class="user-quote-text">${escapeHtml(message.quote.text)}</span>${quoteShotHtml(message.quote.image, message.quote.text)}` : escapeHtml(message.quote.text)}</div>`
       : "";
     return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", "复制消息", icons.copy)}${actionIcon("edit", "编辑消息", icons.edit)}</div></article>`;
   }

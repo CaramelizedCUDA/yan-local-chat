@@ -218,10 +218,12 @@ check(
   await evalJs(`document.querySelector("#welcomeQuote .composer-quote-text").textContent.includes("圈「链接」")`),
   await evalJs(`document.querySelector("#welcomeQuote .composer-quote-text").textContent`)
 );
-await waitFor(`!!document.querySelector("#welcomeAttachments .attachment-card")`, 8000).catch(() => {});
+await waitFor(`!!document.querySelector("#welcomeQuote .quote-shot img[src^='data:image']")`, 8000).catch(() => {});
 check(
-  "the picture with the circle comes along as an attachment",
-  await evalJs(`document.querySelector("#welcomeAttachments .attachment-name")?.textContent.startsWith("游目")`)
+  "the picture with the circle rides inside the quote, not in the attachment list",
+  await evalJs(
+    `!!document.querySelector("#welcomeQuote .quote-shot img[src^='data:image']") && !document.querySelector("#welcomeAttachments .attachment-card")`
+  )
 );
 check(
   "the page did not take the circling as a click",
@@ -231,6 +233,10 @@ check("the circle stays on the stage", await evalJs(`document.querySelectorAll("
 await shot("stage-ink.png");
 await evalJs(`document.querySelector("#welcomeQuote [data-quote-close]").click(); true`);
 check("removing the quote clears the circle", await evalJs(`document.querySelectorAll("#stageInk > path").length === 0`));
+check(
+  "removing the quote takes its picture along (no hidden attachment left behind)",
+  await evalJs(`!document.querySelector("#welcomeQuote .quote-shot") && !(__yanState().drafts.__new__?.attachments || []).length`)
+);
 await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
 check("Esc puts the pen down", await evalJs(`document.querySelector("#stagePen").getAttribute("aria-pressed") === "false"`));
 await evalJs(`document.querySelector("#welcomeAttachments [data-remove-attachment]")?.click(); true`);
@@ -335,7 +341,11 @@ check("drag narrows to the floor", (await evalJs(`document.querySelector("#stage
 check("width is remembered", (await evalJs(`localStorage.getItem("yan-stage-width")`)) === "320");
 await sleep(800);
 const later = (await browserSend("Browser.getWindowForTarget", { targetId })).bounds;
-check("a pinned viewport keeps the window as it is", later.width === framed.width && later.height === framed.height, JSON.stringify({ framed, later }));
+check(
+  "a pinned viewport keeps the window as it is",
+  later.width === framed.width && later.height === framed.height,
+  JSON.stringify({ framed, later })
+);
 await browserSend("Emulation.clearDeviceMetricsOverride", {}, pinned);
 await browserSend("Target.detachFromTarget", { sessionId: pinned });
 

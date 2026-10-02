@@ -124,6 +124,41 @@ html.work-mode .chat-scroll-grabber {
 .user-quote:hover {
   color: var(--ink-2);
 }
+/* 带画面的引文（游目圈点）：字在上、图在下，随问句靠右，朱线换到右侧。见 设计稿/36 乙 */
+.user-quote.has-shot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 2px 11px 2px 0;
+  border-left: 0;
+  border-right: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  text-align: right;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.user-quote-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* 画面缩略：引文里圈点的、行迹里工具交回的，同一张折角小纸、同一尺寸，点开进图片查看器（带 .fi 压过件图的 18×22） */
+.fi.quote-shot,
+.fi.tool-shot {
+  width: 168px;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  cursor: zoom-in;
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+.fi.quote-shot:hover,
+.fi.quote-shot:focus-visible,
+.fi.tool-shot:hover,
+.fi.tool-shot:focus-visible {
+  outline-color: var(--ink-3);
+}
 .quote-tip {
   position: fixed;
   z-index: 24;
@@ -170,8 +205,17 @@ html.work-mode .chat-scroll-grabber {
   line-height: 1.55;
   animation: rise 0.2s ease-out;
 }
-.composer-quote-text {
+.composer-quote-body {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.composer-quote-shot:empty {
+  display: none;
+}
+.composer-quote-text {
   white-space: pre-wrap;
   display: -webkit-box;
   -webkit-line-clamp: 3;

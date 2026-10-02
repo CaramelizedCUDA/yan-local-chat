@@ -45,10 +45,12 @@ function attachmentCard(file, index, sent = false) {
   }
   return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${index !== null ? `<button class="attachment-tool attachment-remove" data-remove-attachment="${index}" title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
 }
+// 随引文的那幅画面画在引文里，不进附件栏（序号仍按 pendingAttachments 算，移除时对得上）
 function renderAttachments() {
-  const html = pendingAttachments.map((file, index) => attachmentCard(file, index)).join("");
+  const listed = pendingAttachments.map((file, index) => ({ file, index })).filter(({ file }) => !quoteImageOf(file, pendingQuote));
+  const html = listed.map(({ file, index }) => attachmentCard(file, index)).join("");
   [$("#attachments"), $("#welcomeAttachments")].forEach(el => {
-    el.classList.toggle("hidden", !pendingAttachments.length);
+    el.classList.toggle("hidden", !listed.length);
     el.innerHTML = html;
     void loadThumbnails(el);
   });
@@ -58,14 +60,32 @@ function renderAttachments() {
 // 引用追问：在回复或自己的话里划选一段，浮出「引用」；点了就作为引文带进输入框，随下一问送出
 // 游目里圈点的也走这一路（见 src/26-stage.js），欢迎页上同样有一个引文框
 function renderQuote() {
+  // 引文撤了、换了：随先前那条引文的画面跟着撤（附件栏里不列它，留下就成了看不见的附件）
+  const stale = pendingAttachments.filter(file => file.quoted && !quoteImageOf(file, pendingQuote));
+  if (stale.length) {
+    pendingAttachments = pendingAttachments.filter(file => !stale.includes(file));
+    void deleteAttachments(stale.map(file => file.id));
+    renderAttachments();
+  }
   for (const box of [$("#composerQuote"), $("#welcomeQuote")]) {
     if (!box) continue;
     box.classList.toggle("hidden", !pendingQuote);
     box.querySelector(".composer-quote-text").textContent = pendingQuote?.text || "";
+    const shot = box.querySelector(".composer-quote-shot");
+    shot.innerHTML = pendingQuote?.image ? quoteShotHtml(pendingQuote.image, pendingQuote.text) : "";
+    void loadThumbnails(shot);
   }
   stageQuoteChanged();
   renderSendButtons();
   scheduleContextGauge();
+}
+/** @param {Attachment} file @param {Quote|null|undefined} quote */
+function quoteImageOf(file, quote) {
+  return !!quote?.image && file.id === quote.image;
+}
+// 引文里的那幅画面：与行迹里工具交回的画面同一张折角小纸，点开进图片查看器
+function quoteShotHtml(id, text) {
+  return `<span class="fi fi-thumb quote-shot" role="button" tabindex="0" data-open-image="${escapeHtml(id)}" title="查看画面 · ${escapeHtml(text || "")}"><img data-thumb="${escapeHtml(id)}" alt=""></span>`;
 }
 // 划选的这段在正文里是第几次出现：同一条回复里同样的词可能出现不止一次，重画后单靠 indexOf 会落到第一处。
 // 数的是划选起点之前出现过几回，空白全去掉再数——与 markAnchor 里的找法一致

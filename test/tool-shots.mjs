@@ -31,7 +31,37 @@ const seed = {
       systemPrompt: ""
     }
   ],
-  conversations: [],
+  // 一段带游目圈点引文的旧对话：画面是随引文的附件（原件不在也照样画出位置）
+  conversations: [
+    {
+      id: "q1",
+      title: "圈点",
+      forks: [],
+      threads: [],
+      createdAt: "2026-10-02T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+      profileId: "p1",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          content: "这一季为什么涨这么多？",
+          timestamp: "2026-10-02T00:00:00.000Z",
+          attachments: [
+            { id: "img1", kind: "image", name: "游目 · example.com.jpg", mime: "image/jpeg", size: 100, quoted: true },
+            { id: "doc1", kind: "text", name: "笔记.txt", mime: "text/plain", size: 10 }
+          ],
+          quote: {
+            text: "游目 · example.com　圈「营收」",
+            model: "游目 · https://example.com/",
+            url: "https://example.com/",
+            image: "img1"
+          }
+        },
+        { id: "a1", role: "assistant", content: "好的。", timestamp: "2026-10-02T00:00:01.000Z", status: "complete" }
+      ]
+    }
+  ],
   library: [],
   drafts: {}
 };
@@ -71,5 +101,18 @@ check(
 await evalJs(`${lastAssistant}.querySelector(".tool-shot").click(); true`);
 await waitFor(`!document.querySelector("#imageViewer")?.classList.contains("hidden")`, 5000).catch(() => {});
 check("clicking a thumbnail opens the image viewer", await evalJs(`!document.querySelector("#imageViewer")?.classList.contains("hidden")`));
+
+// 带画面的引文：发出后字在上、图在下，随问句靠右；那幅不在件条里再列一回，别的附件照常
+await evalJs(`document.querySelector("#imageViewerClose").click(); true`);
+await evalJs(`document.querySelector('#history [data-conversation="q1"]')?.click(); true`);
+await waitFor(`!!document.querySelector('#messages [data-message="u1"]')`, 8000).catch(() => {});
+const quoted = await evalJs(
+  `(m => ({ shot: !!m.querySelector(".user-quote.has-shot .quote-shot[data-open-image='img1']"), files: [...m.querySelectorAll(".sent-attachments .attachment-name")].map(n => n.textContent) }))(document.querySelector('#messages [data-message="u1"]'))`
+);
+check(
+  "a quote with a picture draws it inside the quote; only the other attachments stay as cards",
+  quoted.shot && quoted.files.length === 1 && quoted.files[0] === "笔记.txt",
+  JSON.stringify(quoted)
+);
 await close();
 process.exit(0);

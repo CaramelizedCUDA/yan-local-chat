@@ -541,7 +541,8 @@ function bindComposerEvents() {
     };
   $("#messages").addEventListener("click", event => {
     const block = event.target.closest(".user-quote");
-    if (!block) return;
+    // 点的是引文里的画面：看图（图片查看器自己接），不回出处
+    if (!block || event.target.closest("[data-open-image]")) return;
     // 游目里圈点来的：回到游目那一页
     if (block.dataset.quoteUrl) return stageRevisit(block.dataset.quoteUrl);
     const source =

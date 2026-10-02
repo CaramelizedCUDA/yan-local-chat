@@ -245,7 +245,8 @@ function normalizeDraft(value) {
             text: String(value.quote.text),
             messageId: String(value.quote.messageId || ""),
             ...(value.quote.model ? { model: String(value.quote.model) } : {}),
-            ...(value.quote.url ? { url: String(value.quote.url) } : {})
+            ...(value.quote.url ? { url: String(value.quote.url) } : {}),
+            ...(value.quote.image ? { image: String(value.quote.image) } : {})
           }
         : null,
     ...(value.updatedAt ? { updatedAt: value.updatedAt } : {})
