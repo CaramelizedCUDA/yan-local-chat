@@ -230,9 +230,38 @@ async function runMcpTool(step, server, tool, args, ctx) {
   );
   // 服务说工具变了：下一问前重拉
   if (data.toolsChanged) mcp.key = "";
-  const text = mcpResultText(data.result);
+  const text = mcpResultText(data.result),
+    images = await mcpResultImages(step, data.result);
   step.output = trimOutput(text);
-  return { ok: !data.result.isError, content: text, display: data.result.isError ? "出错" : `${text.length} 字` };
+  return {
+    ok: !data.result.isError,
+    content: text,
+    display: data.result.isError ? "出错" : images.length ? `${images.length} 幅画面` : `${text.length} 字`,
+    ...(images.length ? { images } : {})
+  };
+}
+// 结果里的图（游目截的画面之类）：原件照附件存，挂在这一步上，步骤卡里画缩略、点开即看；data: 地址交回轮次循环，随工具结果给模型看（见 attachToolImages）
+/** @param {Step} step */
+async function mcpResultImages(step, result) {
+  const images = (result.content || []).filter(item => item.type === "image" && item.data);
+  const stored = await Promise.all(
+    images.map(async (item, i) => {
+      const mime = String(item.mimeType || "image/png"),
+        data = `data:${mime};base64,${item.data}`,
+        meta = {
+          id: uid(),
+          kind: /** @type {const} */ ("image"),
+          name: `${step.title || "画面"}${images.length > 1 ? ` ${i + 1}` : ""}.${mime.split("/")[1]?.replace("jpeg", "jpg") || "png"}`,
+          mime,
+          size: Math.round(item.data.length * 0.75),
+          modifiedAt: Date.now()
+        };
+      await putAttachment({ ...meta, data }).catch(() => {});
+      return { meta, data };
+    })
+  );
+  if (stored.length) step.attachments = stored.map(item => item.meta);
+  return stored.map(item => item.data);
 }
 // 请示条：哪个服务的哪件工具、带什么参数；按钮与指令的请示同一套（径行即此对话此后不再问）
 /** @param {Step} step */
@@ -245,13 +274,15 @@ function mcpResultText(result) {
   const parts = (result.content || []).map(item =>
     item.type === "text"
       ? item.text
-      : item.type === "image" || item.type === "audio"
-        ? `[${item.type === "image" ? "图片" : "音频"} ${item.mimeType}，约 ${formatFileSize(Math.round(item.data.length * 0.75))}，未随结果转交]`
-        : item.type === "resource_link"
-          ? `[资源 ${item.name || ""} ${item.uri}]`
-          : item.type === "resource"
-            ? (item.resource.text ?? `[资源 ${item.resource.uri}（${item.resource.mimeType || "二进制"}）]`)
-            : JSON.stringify(item)
+      : item.type === "image"
+        ? `[图片 ${item.mimeType}，附在工具结果之后]`
+        : item.type === "audio"
+          ? `[音频 ${item.mimeType}，约 ${formatFileSize(Math.round(item.data.length * 0.75))}，未随结果转交]`
+          : item.type === "resource_link"
+            ? `[资源 ${item.name || ""} ${item.uri}]`
+            : item.type === "resource"
+              ? (item.resource.text ?? `[资源 ${item.resource.uri}（${item.resource.mimeType || "二进制"}）]`)
+              : JSON.stringify(item)
   );
   if (!parts.length && result.structuredContent) parts.push(JSON.stringify(result.structuredContent, null, 2));
   return parts.join("\n\n") || "（无输出）";

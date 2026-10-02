@@ -192,7 +192,15 @@ function plainStepHtml(step, title) {
   const status = step.status || "done",
     foldable = !!body,
     folded = foldable && (step.expanded === undefined ? true : !step.expanded);
-  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? "展开" : "收起"}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "工具执行失败") : ""}">${status === "running" ? "查阅中" : status === "error" ? escapeHtml(step.result || "失败") : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div>${body}</div>`;
+  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? "展开" : "收起"}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "工具执行失败") : ""}">${status === "running" ? "查阅中" : status === "error" ? escapeHtml(step.result || "失败") : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div>${stepShotsHtml(step)}${body}</div>`;
+}
+// 工具交回的画面（游目截图之类）：折起时也露着——画面就是这一步的结果；点开进图片查看器
+/** @param {Step} step */
+function stepShotsHtml(step) {
+  const shots = (step.attachments || []).filter(file => file.kind === "image" && file.id);
+  return shots.length
+    ? `<div class="tool-shots">${shots.map(file => `<span class="fi fi-thumb tool-shot" role="button" tabindex="0" data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(file.name)}"><img data-thumb="${escapeHtml(file.id)}" alt=""></span>`).join("")}</div>`
+    : "";
 }
 // 一次差遣此刻的样子：帮手（它自己的一条时间线画在右侧的差遣面板里，见 paintHelperTrail——差遣是并行的活，线性的行迹盛不下）、
 // 在不在做、回报、签上那一句计数
@@ -237,6 +245,7 @@ function syncStep(list, step, seen, animate = true) {
     el.remove();
     el = next;
   }
+  if (el.querySelector("img[data-thumb]:not([src])")) void loadThumbnails(el);
   if (animate && added) el.classList.add("is-new");
   else if (animate && prev) {
     if (hasBody && !prev.hasBody) el.classList.add("body-new");
@@ -629,6 +638,7 @@ function bindTrailEvents() {
       el.className = next.className;
       el.innerHTML = next.innerHTML;
     });
+    void loadThumbnails(el);
   });
   // 出处也是一块可开合的，与思绪、行迹同一种开合
   $("#messages").addEventListener("click", event => {

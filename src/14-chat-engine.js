@@ -819,11 +819,45 @@ async function runRounds(target, history, run) {
       ...(target.thinkingBlocks?.length ? { thinking_blocks: target.thinkingBlocks } : {})
     });
     const offered = new Set(overrides.tools.map(tool => tool.function?.name)),
-      outcomes = await runSteps(steps, conversation, host, signal, toolCache, offered);
+      { outcomes, images } = await runSteps(steps, conversation, host, signal, toolCache, offered);
     for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
+    if (images.length) attachToolImages(history, images, profile);
     if (inbox) await deliverSupplements(inbox, history, run.budget, host);
     target.content = paragraphBreak(target.content);
   }
+}
+// 工具交回的图（游目截的画面之类）：tool 消息只收文字，图另起一条用户消息紧随工具结果（Anthropic 那头并进同一条）。
+// 一答里只留最新的一批，先前的换成一行字——浏览时连截十张也只背一张；下一问起不再带，行迹摘要里有那一步即可。
+// 看不了图的模型：带图被拒就去掉图重发一回（见 readReply），此后这一页不再给它附图
+const toolImageMessages = new WeakSet(),
+  blindProfiles = new Set();
+/** @param {Profile} profile */
+function attachToolImages(history, images, profile) {
+  for (const message of history)
+    if (toolImageMessages.has(message)) {
+      toolImageMessages.delete(message);
+      message.content = prompt("assistant.toolImagesStale");
+    }
+  if (blindProfiles.has(profile.id)) return;
+  const message = {
+    role: "user",
+    content: [
+      { type: "text", text: prompt("assistant.toolImages") },
+      ...images.map(url => ({ type: "image_url", image_url: { url, detail: "auto" } }))
+    ]
+  };
+  toolImageMessages.add(message);
+  history.push(message);
+}
+/** 请求被拒时去掉附上的图：有图可去才算数 @param {Profile} profile */
+function dropToolImages(history, profile) {
+  const carried = history.filter(message => toolImageMessages.has(message));
+  for (const message of carried) {
+    toolImageMessages.delete(message);
+    message.content = prompt("assistant.toolImagesBlind");
+  }
+  if (carried.length) blindProfiles.add(profile.id);
+  return carried.length > 0;
 }
 // 收尾：裁掉正文首尾的空行；开头裁了几行，步骤记的偏移一起前移，不然时间线上每段话都错位、被切在字中间
 /** @param {Message|SubAgent} target */
@@ -858,6 +892,16 @@ async function readReply(profile, history, signal, overrides, target, retried = 
     const overflow = response.status !== 429 && contextOverflow(message);
     if (overflow) learnContextWindow(profile, message);
     if (overflow && (await keepInWindow(profile, history, signal, overrides, { overflow: true })))
+      return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
+    // 附了工具交回的图被拒（多半是看不了图的模型）：去掉图再发一回
+    if (
+      !retried &&
+      !overflow &&
+      response.status >= 400 &&
+      response.status < 500 &&
+      response.status !== 429 &&
+      dropToolImages(history, profile)
+    )
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     throw Error(message);
   }

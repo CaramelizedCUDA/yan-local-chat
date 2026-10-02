@@ -106,6 +106,31 @@ http
       const msgs = payload.messages || [],
         toolResults = msgs.filter(m => m.role === "tool");
       const lastUser = [...msgs].reverse().find(m => m.role === "user")?.content || "";
+      // MCPSHOT：连截两幅（两轮各一次 snap），第三轮报回请求里看到的图——几条带图、最新那条是不是紧跟工具结果、旧的是否换成了字
+      if (msgs.some(m => m.role === "user" && typeof m.content === "string" && m.content.includes("MCPSHOT"))) {
+        const n = toolResults.length,
+          snapCall = i =>
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: `call_snap${i}`,
+                  type: "function",
+                  function: { name: "mcp__cam__snap", arguments: JSON.stringify({ n: i }) }
+                }
+              ]
+            });
+        if (n < 2) return sse(res, [delta({ content: `截第 ${n + 1} 幅。` }), snapCall(n + 1), delta({}, { usage: { total_tokens: 5 } })]);
+        const withImages = msgs.filter(m => Array.isArray(m.content) && m.content.some(part => part.type === "image_url")),
+          last = msgs.at(-1),
+          stale = msgs.some(m => m.role === "user" && typeof m.content === "string" && m.content.includes("已由后来的取代"));
+        return sse(res, [
+          delta({
+            content: `MCPSHOT|images:${withImages.length}|tail:${msgs.at(-2)?.role === "tool" && withImages[0] === last}|stale:${stale}|png:${String(last?.content?.[1]?.image_url?.url || "").startsWith("data:image/png;base64,")}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // 多任务压力用例：占着流连接，直到测试结束或请求取消。
       if (typeof lastUser === "string" && lastUser.includes("HOLDSTREAM")) {
         res.writeHead(200, { "Content-Type": "text/event-stream" });

@@ -108,3 +108,41 @@ test("等待开工时接着写的、又置入的留在案上，只发点发送�
   );
   assert.equal(input.value, "又补一句");
 });
+
+test("工具交回的图随工具结果附上：一答里只留最新一批，看不了图的模型去掉图后此后不再附", () => {
+  const { attachToolImages, dropToolImages } = load(["attachToolImages", "dropToolImages"]);
+  const profile = { id: "p" },
+    history = [{ role: "tool", tool_call_id: "a", content: "截好了" }];
+  attachToolImages(history, ["data:image/png;base64,AAA"], profile);
+  const first = history.at(-1);
+  assert.equal(first.content.filter(part => part.type === "image_url").length, 1);
+  attachToolImages(history, ["data:image/png;base64,BBB"], profile);
+  assert.equal(typeof first.content, "string");
+  assert.equal(history.at(-1).content[1].image_url.url, "data:image/png;base64,BBB");
+  assert.equal(dropToolImages(history, profile), true);
+  assert.equal(typeof history.at(-1).content, "string");
+  assert.equal(dropToolImages(history, profile), false);
+  const before = history.length;
+  attachToolImages(history, ["data:image/png;base64,CCC"], profile);
+  assert.equal(history.length, before);
+});
+
+test("MCP 结果里的图存成附件挂在这一步上，交回 data: 地址", async () => {
+  const f = load(["mcpResultImages", "mcpResultText", "stubPut: fn => { putAttachment = fn; }"]);
+  const saved = [];
+  f.stubPut(async record => saved.push(record));
+  const step = { id: "s", title: "截取画面" };
+  const result = {
+    content: [
+      { type: "text", text: "已截" },
+      { type: "image", mimeType: "image/jpeg", data: "QUJD" }
+    ]
+  };
+  const images = await f.mcpResultImages(step, result);
+  assert.deepEqual(images, ["data:image/jpeg;base64,QUJD"]);
+  assert.equal(step.attachments.length, 1);
+  assert.equal(step.attachments[0].name, "截取画面.jpg");
+  assert.equal(step.attachments[0].data, undefined);
+  assert.equal(saved[0].data, "data:image/jpeg;base64,QUJD");
+  assert.match(f.mcpResultText(result), /附在工具结果之后/);
+});

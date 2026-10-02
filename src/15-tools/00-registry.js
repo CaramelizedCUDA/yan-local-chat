@@ -17,7 +17,7 @@
  * @property {string[]} offered 登记在前、此处已经给出的工具
  * @property {Preset|null} preset 这段对话用的预设：只给它挑中的几组与几个 MCP 服务
  *
- * @typedef {{ ok: boolean, content: string, display: string, background?: boolean }} ToolOutcome content 回给模型，display 写在标题行右侧；background：活在后台接着做，步骤由它自己收尾
+ * @typedef {{ ok: boolean, content: string, display: string, background?: boolean, images?: string[] }} ToolOutcome content 回给模型，display 写在标题行右侧；background：活在后台接着做，步骤由它自己收尾；images：交回的图（data: 地址），随工具结果给模型看
  * @typedef {{ url?: string, title?: string, read?: boolean, talk?: string, date?: string, memory?: string }} Source 答末「出处」的一条：网页、旧谈或记忆
  *
  * @typedef {Object} Tool
@@ -175,7 +175,7 @@ function toolPresentation(step) {
     results: step.results ? structuredClone(step.results) : null
   };
 }
-// 把一批工具调用跑完，返回各步回给模型的结果。相邻的可并发的一起跑（读、搜、翻网页、翻记忆彼此无关）；会改状态或要请示的按原顺序逐个来。
+// 把一批工具调用跑完，返回各步回给模型的结果，连同各步交回的图。相邻的可并发的一起跑（读、搜、翻网页、翻记忆彼此无关）；会改状态或要请示的按原顺序逐个来。
 // 主模型、帮手与旁注共用这一段：assistant 是页面上那条消息（帮手的步骤也画在它的行迹里）
 /**
  * @param {Step[]} steps
@@ -184,6 +184,7 @@ function toolPresentation(step) {
  */
 async function runSteps(steps, conversation, assistant, signal, toolCache, offered) {
   const outcomes = new Map(),
+    images = [],
     ctx = { conversation, assistant, signal, offered };
   const runOne = async step => {
     const started = performance.now(),
@@ -206,6 +207,7 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
     if (!outcome.background) step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
     step.result = outcome.display;
     outcomes.set(step.id, String(outcome.content).slice(0, 60000));
+    if (outcome.images) images.push(...outcome.images);
     refreshSteps(assistant);
     saveStore();
   };
@@ -216,7 +218,7 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
     await Promise.all(steps.slice(i, j).map(runOne));
     i = j;
   }
-  return outcomes;
+  return { outcomes, images };
 }
 // 生成结束（停止、出错或中断）时，还在转圈或等待确认的步骤一并收束，不留下永远转圈的卡片。
 // 后台还在做的帮手不归这一答管：它不随这一答收尾，做完自己收这一步（见 90-delegate.js）

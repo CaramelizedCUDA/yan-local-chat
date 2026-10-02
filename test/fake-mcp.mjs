@@ -3,7 +3,10 @@
 import http from "node:http";
 import readline from "node:readline";
 
-const many = process.argv.includes("--many");
+const many = process.argv.includes("--many"),
+  snap = process.argv.includes("--snap");
+// --snap：一件回图的 snap（只读，像游目截图），回一张 1×1 的 PNG，参数 n 写进说明字里
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 const tools = [
   {
     name: "echo",
@@ -18,6 +21,16 @@ const tools = [
     inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
     annotations: { readOnlyHint: false }
   },
+  ...(snap
+    ? [
+        {
+          name: "snap",
+          description: "截一幅画面。",
+          inputSchema: { type: "object", properties: { n: { type: "number" } }, required: ["n"] },
+          annotations: { readOnlyHint: true }
+        }
+      ]
+    : []),
   ...(many
     ? Array.from({ length: 40 }, (_, i) => ({
         name: `tool_${String(i).padStart(2, "0")}`,
@@ -47,6 +60,13 @@ function handle(message) {
     const { name, arguments: args } = params;
     if (name === "echo") return reply({ content: [{ type: "text", text: `回声：${args.text}` }] });
     if (name === "write_note") return reply({ content: [{ type: "text", text: `已记：${args.text}` }] });
+    if (name === "snap")
+      return reply({
+        content: [
+          { type: "text", text: `第 ${args.n} 幅` },
+          { type: "image", mimeType: "image/png", data: PNG }
+        ]
+      });
     if (name.startsWith("tool_")) return reply({ content: [], structuredContent: { tool: name, n: args.n } });
     return reply({ content: [{ type: "text", text: `没有 ${name}` }], isError: true });
   }
