@@ -60,6 +60,7 @@ window.YAN_PROMPTS.order = [
   // 帮手的身份与主答的执事身份同一个位置：先知道自己是谁，再读环境
   { key: "delegate.system", roles: ["sub"] },
   { key: "work.hint", tool: "run_command", mode: "work" },
+  { key: "work.ledger", tool: "write_file", mode: "work", roles: ["main"] },
   { key: "work.archive", tool: "run_command", mode: "chat" },
   { key: "work.deliver", tool: "run_command", mode: "chat", roles: ["main"] },
   { key: "work.env", tool: "run_command" },

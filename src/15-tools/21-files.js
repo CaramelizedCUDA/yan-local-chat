@@ -198,6 +198,8 @@ const SEEING_TOOLS = new Set(["read_file", "write_file", "edit_file"]);
 function seenBefore(conversation, step, file) {
   const root = workRoot(conversation),
     wanted = seenPath(conversation, file);
+  // 账本每一问都附着全文（见 ledgerNote），主模型不必再读一遍才能改
+  if (!step.scope && ledgers.get(conversation.id) && wanted === seenPath(conversation, LEDGER_PATH)) return true;
   return conversation.messages.some(message =>
     allSteps(message).some(
       seen =>
@@ -258,4 +260,33 @@ async function ensureWorkReady(conversation) {
     return false;
   }
   return true;
+}
+// 账本：跨多答的长活，任务活在目录里、不活在哪一段对话里——目录下 .yan/账本.md 由主模型自己立、自己维护，
+// 只记对这件工程持续有约束的（目标与达标标准、约束与取舍、计划与进展、走不通的路），旧的随手淘汰。
+// 每一答开工时读一回，附在这一问的开头（见 ledgerNote）：压缩了、被回报叫醒另起一答、换一段对话接着做，看到的都是同一份。
+// 附在问上而不进系统提示：账本改了也不冲掉前面的缓存。没有这个文件就什么都不附
+const LEDGER_PATH = ".yan/账本.md",
+  LEDGER_CHARS = 3000, // 过了就请它取舍
+  LEDGER_SHOWN = 12000; // 附上去的至多这么多：手写进来的一大篇不能把每一问都撑胖
+/** @type {Map<string, string>} 这一答开工时读到的账本，按对话；帮手领命时也附上 */
+const ledgers = new Map();
+/** @param {Conversation} conversation */
+async function loadLedger(conversation, signal) {
+  if (!isWork(conversation)) return void ledgers.delete(conversation.id);
+  const data = await bridge("/api/work/read", { ...workScope(conversation), path: LEDGER_PATH, limit: 2000 }, signal).catch(() => null);
+  const text = String(data?.text || "")
+    .replace(/^ *\d+\| /gm, "")
+    .trim();
+  if (text) ledgers.set(conversation.id, text);
+  else ledgers.delete(conversation.id);
+}
+// 冠在这一问开头的一段；帮手的是只读的一份（账本只由主对话写，星形）
+/** @param {Conversation} conversation @param {"main"|"sub"} role */
+function ledgerNote(conversation, role = "main") {
+  const text = ledgers.get(conversation.id);
+  if (!text) return "";
+  const shown = text.length > LEDGER_SHOWN ? `${text.slice(0, LEDGER_SHOWN)}\n…（其后 ${text.length - LEDGER_SHOWN} 字未附）` : text,
+    full =
+      role === "main" && text.length > LEDGER_CHARS ? `\n${prompt("work.ledgerFull", { chars: text.length, limit: LEDGER_CHARS })}` : "";
+  return `${prompt(role === "main" ? "work.ledgerHead" : "work.ledgerSub", { path: LEDGER_PATH, text: shown })}${full}\n\n`;
 }

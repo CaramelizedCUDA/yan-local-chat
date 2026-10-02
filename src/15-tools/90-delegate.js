@@ -324,8 +324,12 @@ async function runDelegate(step, args, ctx, profile, past) {
     ...(effort ? { effort } : {})
   };
   step.sub = sub;
+  // 领命时附上主对话的账本（只读）：目标与约束它也得知道，开头提过的一条小约束才不会在分出去的活里丢了
   const lead = past ? stepsDigest(past.sub, "上一答的行迹") : "";
-  const history = [...(past ? helperHistory(conversation, past) : []), { role: "user", content: `${lead ? `${lead}\n\n` : ""}${task}` }];
+  const history = [
+    ...(past ? helperHistory(conversation, past) : []),
+    { role: "user", content: `${ledgerNote(conversation, "sub")}${lead ? `${lead}\n\n` : ""}${task}` }
+  ];
   const overrides = {
     systemPrompt: systemPrompt(conversation, tools, { role: "sub" }),
     tools,

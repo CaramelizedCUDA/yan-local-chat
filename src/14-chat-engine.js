@@ -547,9 +547,17 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       lastUserId = source.filter(m => m.role === "user").at(-1)?.id;
       const head = summaryMessages(contextIndex >= 0 ? conversation.messages[contextIndex] : null);
       head.push(...(await historyForApi(source, lastUserId, budget)));
+      // 账本冠在这一问的开头（之前的问不带，免得一份账本背上几十遍）
+      const ask = head.findLast(entry => entry.role === "user"),
+        ledger = ledgerNote(conversation);
+      if (ask && ledger) {
+        if (typeof ask.content === "string") ask.content = `${ledger}${ask.content}`;
+        else ask.content[0].text = `${ledger}${ask.content[0].text}`;
+      }
       if (resumeFrom) head.push({ role: "assistant", content: resumeFrom }, { role: "user", content: prompt("assistant.resume") });
       return head;
     };
+    await loadLedger(conversation, job.controller.signal);
     history = await buildHead();
     // 先把这一答预计的用量记到预留里（提示 + 最大输出），别的对话同时开工时看得见；收尾时换成实际用量
     // 预留只是估个数：一答的输出按八千算，不必与接口实际的上限一致

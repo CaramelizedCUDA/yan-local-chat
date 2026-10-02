@@ -171,6 +171,33 @@ http
       // 长活：轮内压缩的请求（开头是 fold 提示）回一份笔记；其余按任务里的记号分派
       const firstUser = String(msgs.find(m => m.role === "user")?.content || ""),
         longKey = ["LONGSUB", "LONGMAIN"].find(k => firstUser.includes(k) && !firstUser.includes("LONGRUN"));
+      // LEDGER：账本只冠在这一问开头、系统提示里有立账本那句；第一问不读就改账本（附着全文即算读过），第二问看到的是改后的那份
+      if (firstUser.includes("LEDGER")) {
+        const sys = String(msgs[0]?.role === "system" ? msgs[0].content : ""),
+          users = msgs.filter(m => m.role === "user").map(m => String(m.content)),
+          last = users.at(-1),
+          marks = `head:${last.startsWith("［账本 .yan/账本.md］") ? "yes" : "no"}|once:${users.slice(0, -1).some(u => u.includes("［账本")) ? "no" : "yes"}|sys:${sys.includes(".yan/账本.md") ? "yes" : "no"}`;
+        if (users.length === 1 && !toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_l0",
+                  type: "function",
+                  function: {
+                    name: "edit_file",
+                    arguments: JSON.stringify({ path: ".yan/账本.md", old: "达标线 0.9", new: "达标线 0.95" })
+                  }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        const edited = String(toolResults.at(-1)?.content || "").startsWith("已修改") ? "yes" : "no",
+          now = last.includes("达标线 0.95") ? "0.95" : last.includes("达标线 0.9") ? "0.9" : "none";
+        return sse(res, [delta({ content: `LEDGER|${marks}|edit:${edited}|now:${now}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
       if (typeof lastUser === "string" && lastUser.startsWith("你在做下面这件事")) {
         const key = ["LONGSUB", "LONGMAIN"].find(k => lastUser.includes(k)) || "?";
         long.folds[key] = (long.folds[key] || 0) + 1;
