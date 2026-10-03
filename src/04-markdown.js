@@ -46,13 +46,14 @@ function setupMarkdown() {
   });
   if (window.DOMPurify) {
     // 模型写「下载《x.docx》」时常把链接指向 sandbox:/、file:/// 或一个裸文件名——页面上没有这样的路。
-    // 把文件名记在 data-file 上、去掉 href，点击时到卷宗里找同名的那件来下载（见 boot 里的处理）；找不到才说没有。
+    // 把文件名记在 data-file、原路记在 data-path 上，去掉 href；点击时按原路在这段对话的落脚处取那件来下载，取不到再到卷宗里找同名的（见 10-archive.js）。
     // 图片同理：![截图](page-1.png) 的 src 也记成 data-file，是这一答工具交回的画面就画成那幅（见 renderReplyShots）
     DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
       if (!((node.tagName === "A" && data.attrName === "href") || (node.tagName === "IMG" && data.attrName === "src"))) return;
       const name = localFileName(data.attrValue);
       if (!name) return;
       node.setAttribute("data-file", name);
+      node.setAttribute("data-path", data.attrValue);
       data.keepAttr = false;
     });
     DOMPurify.addHook("afterSanitizeAttributes", node => {

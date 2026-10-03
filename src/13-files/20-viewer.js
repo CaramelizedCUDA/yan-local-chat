@@ -268,9 +268,9 @@ function openArchiveImage(path, trigger = null) {
   $("#imageViewer").classList.remove("hidden");
   $("#imageViewerClose").focus();
 }
-function downloadArchiveFile(path) {
+function downloadArchiveFile(path, root = archiveDir()) {
   const anchor = document.createElement("a");
-  anchor.href = archiveFileUrl(path, true);
+  anchor.href = archiveFileUrl(path, true, root);
   anchor.download = path.split("/").pop() || "卷宗";
   anchor.click();
 }

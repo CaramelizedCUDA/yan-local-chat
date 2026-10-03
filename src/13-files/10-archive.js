@@ -15,8 +15,40 @@ function parentDir(path) {
   const at = String(path).lastIndexOf("/");
   return at < 0 ? "" : path.slice(0, at);
 }
-function archiveFileUrl(path, download = false) {
-  return `${apiBase}/api/archive/file?root=${encodeURIComponent(archiveDir())}&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
+function archiveFileUrl(path, download = false, root = archiveDir()) {
+  return `${apiBase}/api/archive/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
+}
+// 正文链接里的本地路落在哪：相对路相对这段对话的落脚处（绑了目录是它，没绑是卷宗）；绝对路在落脚处之内的折成相对，
+// 之外的以它所在那层为根。sandbox:/、/mnt/… 这类不是本机的路，返回 null
+function localLinkTarget(raw) {
+  let text = String(raw || "")
+    .trim()
+    .replace(/[?#].*$/, "");
+  try {
+    text = decodeURIComponent(text);
+  } catch {}
+  text = text.replace(/^file:\/*/i, "").replace(/\\/g, "/");
+  const root = workRoot(currentConversation());
+  if (/^[a-z]:\//i.test(text)) {
+    const base = root.replace(/\\/g, "/").replace(/\/+$/, "");
+    if (base && text.toLowerCase().startsWith(`${base.toLowerCase()}/`)) return { root, path: text.slice(base.length + 1) };
+    const cut = text.lastIndexOf("/");
+    return { root: text.slice(0, cut), path: text.slice(cut + 1) };
+  }
+  if (/^[a-z][\w+.-]*:|^\//i.test(text)) return null;
+  return { root, path: text.replace(/^(?:\.\/)+/, "") };
+}
+// 先问一声在不在：直接下一个不存在的件，浏览器只会报一行「下载失败」
+async function archiveFileExists({ root, path }) {
+  const control = new AbortController();
+  try {
+    const response = await fetch(archiveFileUrl(path, false, root), { signal: control.signal });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    control.abort();
+  }
 }
 async function refreshArchive() {
   if (archiveLoading) return archiveLoading;
@@ -572,15 +604,18 @@ function bindLibraryEvents() {
     hideDropVeil();
     void (view === "library" ? addLibraryFiles : addFiles)(event.dataTransfer.files);
   });
-  // 正文里指向本地文件的链接（模型写的「下载《x.docx》」）：页面上没有那样的路，到卷宗里找同名的那件来下载
+  // 正文里指向本地文件的链接（模型写的「下载《x.docx》」）：页面上没有那样的路。先按原路在这段对话的落脚处取，
+  // 取不到（sandbox:/ 之类、或路写错了层）再到卷宗里找同名的那件
   document.addEventListener("click", async event => {
     const link = event.target.closest(".markdown a[data-file]");
     if (!link) return;
     event.preventDefault();
-    const name = link.dataset.file;
+    const name = link.dataset.file,
+      target = localLinkTarget(link.dataset.path);
+    if (target && (await archiveFileExists(target))) return downloadArchiveFile(target.path, target.root);
     if (archiveEntries === null) await refreshArchive();
     const entry = (archiveEntries || []).find(file => file.name === name || file.path === name);
-    if (!entry) return toast(`卷宗里没有「${name}」`);
+    if (!entry) return toast(`找不到「${name}」`);
     downloadArchiveFile(entry.path);
   });
   $("#messages").addEventListener("click", event => {
