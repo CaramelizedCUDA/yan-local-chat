@@ -120,10 +120,12 @@ function chatgpt(req, res) {
       });
     }
     const bearer = String(req.headers.authorization || "").startsWith("Bearer e30.");
+    // 模型表按 client_version 筛：不带版本号时新模型（gpt-new）不列
     if (url.pathname === "/chatgpt/v1/models")
       return json({
         data: [
           { slug: "gpt-sub", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }] },
+          ...(url.searchParams.get("client_version") ? [{ slug: "gpt-new", visibility: "list" }] : []),
           { slug: "gpt-hidden", visibility: "hide" }
         ]
       });

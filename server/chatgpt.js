@@ -215,7 +215,9 @@ module.exports = function createChatgpt({ home }) {
   // 模型表：用户这个账号可用的那几个（visibility 为 list 的），记下各自认的思考档位，探档位时照表回、不必真发一趟
   const levelsByModel = new Map();
   async function models() {
-    const response = await fetch(`${API}/models`, { headers: await headers(), signal: AbortSignal.timeout(20000) });
+    // 模型表按 client_version 筛：各模型标着 Codex 客户端的最低版本（它自己的 apply_patch 之类工具要新版才有），不带就按旧版给，最新的几个看不到。
+    // 言不靠 Codex 客户端的那些功能，这些模型直接调用也放行，所以带一个足够大的版本号，即「不按客户端版本筛」
+    const response = await fetch(`${API}/models?client_version=999.0.0`, { headers: await headers(), signal: AbortSignal.timeout(20000) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw Error(hinted(data.error?.code, data.error?.message || `列模型失败（${response.status}）`));
     const list = (Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : []).filter(

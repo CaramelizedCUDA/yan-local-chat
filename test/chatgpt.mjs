@@ -30,8 +30,8 @@ const url = await evalJs(`${card}.querySelector(".profile-status a").href`);
 const landing = await (await fetch(url)).text();
 check("the callback page says signed in", landing.includes("已登录"), landing.slice(0, 80));
 await waitFor(`${card}.querySelector("[data-chatgpt-account]")?.textContent.includes("me@example.com")`, 8000);
-await waitFor(`${card}.querySelector(".profile-status").textContent.includes("已获取 1 个模型")`, 8000);
-check("after signing in the model list comes in, hidden ones left out", true);
+await waitFor(`${card}.querySelector(".profile-status").textContent.includes("已获取 2 个模型")`, 8000);
+check("after signing in the model list comes in, newest included, hidden ones left out", true);
 const first = (await log()).authorize.slice(before.authorize.length)[0] || {};
 check(
   "first sign-in registers through the dynamic client with PKCE, host id and the app name",
