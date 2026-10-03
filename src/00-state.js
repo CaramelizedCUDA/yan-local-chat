@@ -108,7 +108,6 @@
  * @property {number} [durationMs]
  * @property {number} [startedAt] 正在作答时的起始时刻（毫秒），行迹题头据此走用时；收尾即删
  * @property {{ path: string, name: string, size: number }[]} [deliverables] 言里这一答做出的成品
- * @property {boolean} [work] 这一答是执事的（时间线画法）
  * @property {boolean} [toolsOpen]
  * @property {boolean} [toolsTouched]
  * @property {boolean} [reasoningOpen]
@@ -178,7 +177,6 @@
  * @property {"light"|"dark"|"system"} theme
  * @property {"on"|"off"|"system"} inkMotion
  * @property {"sans"|"serif"|"mixed"|"kai"|"fangsong"} font
- * @property {number} width
  * @property {string} accent
  * @property {string} activeProfileId 默认模型：新对话起手用它；只在设置里「设为默认」时改，打开旧对话、在菜单里换模型都不动它
  * @property {Preset[]} presets
@@ -274,7 +272,6 @@ const defaultStore = {
     theme: "light",
     inkMotion: "on",
     font: "mixed",
-    width: 760,
     accent: "#9b5540",
     activeProfileId: "",
     presets: [],

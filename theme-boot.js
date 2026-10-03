@@ -1,4 +1,4 @@
-// 在样式解析前把主题、印色、字体与阅读宽度写到 <html> 上，避免暗色用户开页先看到一屏米白；正式逻辑仍在 support.js 的 applyAppearance
+// 在样式解析前把主题、印色与字体写到 <html> 上，避免暗色用户开页先看到一屏米白；正式逻辑仍在 support.js 的 applyAppearance
 // 直接双击 index.html（file://）打开的：页面脚本与样式都由桥接现拼，这里拿不到，也接不上桥接（它不认来源为 null 的页面）。
 // 只挂「等候本机桥接」一页，自带几行样式，指明去哪儿打开
 if (location.protocol === "file:") {
@@ -19,7 +19,6 @@ if (location.protocol === "file:") {
     html.dataset.theme = dark ? "dark" : "light";
     html.dataset.inkMotion = motionOff ? "off" : "on";
     if (settings.accent) html.style.setProperty("--accent", settings.accent);
-    if (settings.width) html.style.setProperty("--read", `${Number(settings.width) || 760}px`);
     // 与 support.js 里的 FONT_STACKS 同一份表：--title 是读的字，--body 是界面的字
     const sans = '"Noto Sans SC","Microsoft YaHei UI",system-ui,sans-serif',
       serif = '"Noto Serif SC","Songti SC","STSong",serif',

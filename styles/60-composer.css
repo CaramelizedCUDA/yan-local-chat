@@ -692,8 +692,6 @@
   margin: 2px 0 6px 7px;
   color: var(--ink-2);
   font-family: var(--title);
-  font-size: 14px;
-  line-height: 1.75;
 }
 .trail-note > *:first-child {
   margin-top: 0;
@@ -702,7 +700,7 @@
   margin-bottom: 0;
 }
 .trail-note p {
-  margin: 0 0 6px;
+  margin: 0 0 0.6em;
 }
 .trail-note pre {
   font-size: 11px;

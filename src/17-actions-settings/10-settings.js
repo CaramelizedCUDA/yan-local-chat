@@ -96,17 +96,7 @@ function appearanceSettingsHtml() {
       ["off", "关"]
     ],
     s.inkMotion || "on"
-  )}${fontRow(s.font)}${segmentRow(
-    "阅读宽度",
-    "长文的行宽",
-    "width",
-    [
-      [680, "窄"],
-      [760, "适中"],
-      [860, "宽"]
-    ],
-    s.width
-  )}<div class="setting-row"><div class="setting-copy"><strong>印色</strong><small>界面中的点睛之色</small></div><div class="segmented">${["#9b5540", "#536d62", "#5c6386", "#75644f"].map(v => `<button data-setting="accent" data-value="${v}" class="${s.accent === v ? "active" : ""}" style="color:${v}">●</button>`).join("")}</div></div>`;
+  )}${fontRow(s.font)}<div class="setting-row"><div class="setting-copy"><strong>印色</strong><small>界面中的点睛之色</small></div><div class="segmented">${["#9b5540", "#536d62", "#5c6386", "#75644f"].map(v => `<button data-setting="accent" data-value="${v}" class="${s.accent === v ? "active" : ""}" style="color:${v}">●</button>`).join("")}</div></div>`;
 }
 // 关于：身份、边界、键与手势、开源致谢。随项目本地分发的库与许可见 vendor/
 const CREDITS = [
@@ -321,8 +311,7 @@ function bindSettingsEvents() {
           renderSettings();
           return;
         }
-        store.settings[key] =
-          key === "width" ? Number(value) : ["autoTitle", "archiveRead", "sandbox"].includes(key) ? value === "true" : value;
+        store.settings[key] = ["autoTitle", "archiveRead", "sandbox"].includes(key) ? value === "true" : value;
         saveStore();
         applyAppearance();
         renderSettings();

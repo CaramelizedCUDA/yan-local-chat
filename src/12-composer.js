@@ -421,7 +421,7 @@ async function runDawn(apply, origin, sheets) {
   }
 }
 function applyAppearance() {
-  const { theme, inkMotion, font, width, accent } = store.settings;
+  const { theme, inkMotion, font, accent } = store.settings;
   const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   const html = document.documentElement,
     nextTheme = dark ? "dark" : "light";
@@ -431,7 +431,6 @@ function applyAppearance() {
   if (html.classList.contains("theme-fade")) themeFadeTimer = setTimeout(() => html.classList.remove("theme-fade"), 480);
   html.dataset.theme = nextTheme;
   html.dataset.inkMotion = inkMotion === "off" || (inkMotion === "system" && reducedMotion.matches) ? "off" : "on";
-  document.documentElement.style.setProperty("--read", `${Number(width) || 760}px`);
   document.documentElement.style.setProperty("--accent", accent || "#9b5540");
   const root = document.documentElement.style,
     stacks = FONT_STACKS[font] || FONT_STACKS.mixed;
