@@ -523,7 +523,7 @@ button.source-local {
   color: var(--ink-3);
   font-size: 11px;
 }
-/* 文档按结构抽出后（见 13-files.js 的 docxMarkdown 等）：一行小注在前，「以本机程序打开」看原样 */
+/* 文档按结构抽出后（见 13-files/30-extract.js 的 docxMarkdown 等）：一行小注在前，「以本机程序打开」看原样 */
 .file-viewer-text > .file-viewer-note:first-child,
 .file-viewer-slides > .file-viewer-note:first-child {
   margin: 0 0 14px;

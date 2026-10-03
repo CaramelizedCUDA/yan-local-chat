@@ -52,7 +52,7 @@
 //   tool  交给模型的工具里有这一件才带（工具不在，讲它的话就是白占地方）
 //   mode  work 只给行（绑了目录），chat 只给言
 //   roles 只给这几种请求：main 主答、side 旁注、sub 帮手；不写即三种都带
-// 要填值、或视情形不带的（环境没备好、没有 MCP 服务附用法……），由 src/14-chat-engine.js 的 PROMPT_VARS 给出，给 null 即这回不带。
+// 要填值、或视情形不带的（环境没备好、没有 MCP 服务附用法……），由 src/14-chat-engine/50-prompt.js 的 PROMPT_VARS 给出，给 null 即这回不带。
 // test/prompt-size.mjs 用页面同一份代码拼，量出来的数与页面一致
 window.YAN_PROMPTS.order = [
   { key: "assistant.today" },

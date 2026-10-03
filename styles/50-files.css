@@ -409,7 +409,7 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
-/* 件图（画法见 src/13-files.js 的 fileFigure）：折角小纸，记号着各类的专色，纸面淡染；夹是布面小函贴一条空白题签 */
+/* 件图（画法见 src/13-files/10-archive.js 的 fileFigure）：折角小纸，记号着各类的专色，纸面淡染；夹是布面小函贴一条空白题签 */
 .fi {
   --fc: var(--ink-3);
   display: block;

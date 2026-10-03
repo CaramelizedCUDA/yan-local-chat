@@ -67,4 +67,4 @@
 - 只在看得见时收画面：游目收起、被旁注挤开、言的页面到了后台，都停掉 screencast；回来再接上。
 - 收藏：游目只转网页，浏览器自己的收藏栏在画面之外。收藏存在浏览器配置目录的 `Default/Bookmarks`，目录取自那个服务参数里的 `--user-data-dir`，由桥接读出（`POST /api/stage/bookmarks`，与找调试口一样只递那个服务的参数），每回现读。
 - 网页改标题浏览器不发通知：游目开着时每一秒半问一次标签列表。
-- 代码：`src/26-stage.js`、`styles/56-stage.css`；测试 `test/stage.mjs` 借测试用的 Edge 充当模型的浏览器。
+- 代码：`src/26-stage/`、`styles/56-stage.css`；测试 `test/stage.mjs` 借测试用的 Edge 充当模型的浏览器。

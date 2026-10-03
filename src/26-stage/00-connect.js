@@ -1,0 +1,278 @@
+// 言 · 游目（代码里叫看台 stage）：模型所用的那个浏览器，画面固定在对话右侧——不再是屏幕上另开、挡人的一个窗口。
+// 巧处：浏览器仍归 MCP（如 playwright）起、关与操作；看台只是另一个连上它调试口的看客——Page.startScreencast 收画面，Input.* 递点按。
+// 页面直接连调试口（浏览器以 --remote-allow-origins 放行言的页面），画面不过桥接；桥接只替页面问出连接的地址（server/stage.js）。
+// 标签照抄浏览器自己的（Target.setDiscoverTargets），不另分「成品」与「网页」：模型做的网页由它自己在浏览器里开，也就上了台。
+// 何时去连：开页时、打开看台时，与每次浏览器类的 MCP 调用之后（浏览器多半是这时起的）；断了就等下一次，不轮询。
+// 调试口与配置目录不另设，桥接从那个 MCP 服务的参数（及它 --config 的那份文件）里读出来。
+// 浏览器没开、或被关掉了：看台里点「打开浏览器」，言替你调一次那个 MCP 的 browser_navigate，浏览器照它的配置起来——言自己不起浏览器。
+// 旁注与看台同在右侧：旁注开着时看台让位（纯 CSS，见 styles/56-stage.css），让位时、言的页面在后台时都不收画面。
+// 网页的尺寸：playwright 有头时不设视口，网页多大即窗口多大——看台就把屏幕外那扇窗调成自己的大小（有下限，免得网站换成手机版），
+// 网页原大显示；窗口调不动的（设了视口的）照旧按宽高里较紧的一边缩放，点按按同一倍数换算回去。
+// 浏览器自己画的那几样（网页弹的提示框、载入中、能否后退）在屏幕外的窗上看不到：看台照 Page 域的事件自己画。
+// 画面上的朱笔（人圈点的、执事落笔处）另在 src/27-stage-ink.js
+
+const stage = {
+  /** @type {WebSocket | null} */
+  ws: null,
+  /** @type {Promise<void> | null} */
+  locating: null,
+  seq: 0,
+  /** @type {Map<number, { resolve: (v: any) => void, reject: (e: Error) => void }>} */
+  pending: new Map(),
+  /** @type {Map<string, { title: string, url: string }>} 浏览器里开着的页，按开的先后 */
+  tabs: new Map(),
+  // setDiscoverTargets 会把已开着的页逐个报来：那些不算「新开」，别跟过去
+  listing: false,
+  current: "",
+  // 上回问到的浏览器前台那一页：模型换页（选签会把那页请到前台）时它变，看台跟过去；用户自己点签换的也记成前台，不算模型换页
+  front: "",
+  attached: "",
+  session: "",
+  framed: false,
+  meta: { width: 1280, height: 720 },
+  // 网页此刻滚到哪儿（画面帧里带的，CSS 像素）：圈点按网页里的位置记，滚动后跟着走
+  scroll: { x: 0, y: 0 },
+  // 正看的那一页：载入中、能否后退前进、网页弹出的提示框
+  loading: false,
+  back: false,
+  forward: false,
+  /** @type {{ type: string, message: string, defaultPrompt?: string, multiple?: boolean, node?: number } | null} */
+  dialog: null,
+  // 浏览器配置目录里有收藏（桥接答的），才挂「收藏」
+  marks: false,
+  /** @type {{ text: string, at: number }[]} 执事在浏览器里新近的几步，写成人话 */
+  trail: [],
+  // 执事最近一步的时刻：地址行那两字「执事」在它歇手后再留一会儿
+  lastAct: 0,
+  actTimer: 0,
+  // 指针形状跟着网页：上一回问的时刻、是否还在问
+  cursorAt: 0,
+  cursorAsking: false,
+  // 浏览器的调试口（桥接从配置里读出来的，只用来报错）
+  port: 0,
+  seen: false,
+  busy: 0,
+  launching: false,
+  width: 0,
+  poll: 0,
+  fitTimer: 0,
+  empty: "",
+  click: { at: 0, x: 0, y: 0, count: 0 },
+  // 圈点开着：画面上的点按是下笔，不递进网页（见 src/27-stage-ink.js）
+  pen: false,
+  // 人最近一回在画面上按下的时刻：网页报来的按下若紧跟着它，是人按的，不当执事落笔
+  userAt: 0,
+  /** @type {PointerEvent | null} */
+  moved: null
+};
+
+// ---------- 连上浏览器 ----------
+// 已连着时也问一回：模型若把别的页请到了前台（选签、新开），看台跟过去
+function stageLocate() {
+  if (stage.locating) return stage.locating;
+  stage.locating = bridge("/api/stage", { args: stageConfig()?.args || [] })
+    .then(({ ws, front, marks, port }) => {
+      stage.marks = !!marks;
+      stage.port = port;
+      if (!stage.ws) return ws ? stageConnect(ws, front) : stageSync();
+      if (front && front !== stage.front && stage.tabs.has(front)) stageShow(front);
+      stage.front = front || stage.front;
+      stageSync();
+    })
+    .catch(() => {})
+    .finally(() => (stage.locating = null));
+  return stage.locating;
+}
+/** @param {string} url @param {string} front */
+function stageConnect(url, front) {
+  return new Promise(resolve => {
+    const ws = new WebSocket(url);
+    stage.ws = ws;
+    ws.onmessage = event => stageMessage(JSON.parse(event.data));
+    // 浏览器关了（模型收工、playwright 闲置关掉）：看台清空，等下一次浏览器类的调用再来找
+    ws.onclose = () => {
+      if (stage.ws !== ws) return;
+      stage.ws = null;
+      stage.tabs.clear();
+      stage.current = stage.front = stage.attached = stage.session = "";
+      stage.framed = false;
+      stageResetPage();
+      for (const waiter of stage.pending.values()) waiter.reject(Error("游目已断开"));
+      stage.pending.clear();
+      $("#stageFrame").removeAttribute("src");
+      stageSync();
+      resolve();
+    };
+    ws.onopen = async () => {
+      try {
+        stage.listing = true;
+        await stageSend("Target.setDiscoverTargets", { discover: true });
+        stage.listing = false;
+        stage.front = front;
+        stageShow(stage.tabs.has(front) ? front : [...stage.tabs.keys()].at(-1) || "");
+        stageSync();
+      } catch {
+        ws.close();
+      }
+      resolve();
+    };
+  });
+}
+/** @param {string} method @param {Record<string, any>} [params] @param {string} [sessionId] */
+function stageSend(method, params = {}, sessionId = "") {
+  const ws = stage.ws;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(Error("游目未连上"));
+  const id = ++stage.seq;
+  ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+  return new Promise((resolve, reject) => stage.pending.set(id, { resolve, reject }));
+}
+function stageMessage(message) {
+  if (message.id) {
+    const waiter = stage.pending.get(message.id);
+    stage.pending.delete(message.id);
+    if (waiter) message.error ? waiter.reject(Error(message.error.message)) : waiter.resolve(message.result);
+    return;
+  }
+  const params = message.params || {};
+  if (message.method === "Target.targetCreated" || message.method === "Target.targetInfoChanged") {
+    const info = params.targetInfo;
+    if (info.type !== "page") return;
+    const fresh = !stage.tabs.has(info.targetId);
+    stage.tabs.set(info.targetId, { title: info.title, url: info.url });
+    // 模型新开了一页：跟过去
+    if (fresh && !stage.listing) stageShow(info.targetId);
+    else stageRender();
+  } else if (message.method === "Target.targetDestroyed") {
+    stage.tabs.delete(params.targetId);
+    if (params.targetId === stage.current) stageShow([...stage.tabs.keys()].at(-1) || "");
+    else stageRender();
+  } else if (message.method === "Target.detachedFromTarget") {
+    if (params.sessionId === stage.session) stage.session = stage.attached = "";
+  } else if (message.sessionId && message.sessionId === stage.session) stagePageEvent(message.method, params);
+}
+// 正看的那一页上的事。主框架的 id 与页的 targetId 相同，子框架（iframe）的载入不算
+/** @param {string} method @param {any} params */
+function stagePageEvent(method, params) {
+  if (method === "Page.screencastFrame") {
+    const { scrollOffsetX: x = 0, scrollOffsetY: y = 0 } = params.metadata,
+      moved = x !== stage.scroll.x || y !== stage.scroll.y;
+    stage.scroll = { x, y };
+    const session = stage.session,
+      ack = () => void stageSend("Page.screencastFrameAck", { sessionId: params.sessionId }, session).catch(() => {});
+    // 这一帧解出来了再要下一帧：言这边忙（流式渲染、拖分隔线）时，浏览器跟着放慢，不至于帧帧排队、越积越卡
+    stageFrame(params.data, params.metadata.deviceWidth, params.metadata.deviceHeight).then(ack);
+    // 网页滚了：圈点与执事落笔跟着走
+    if (moved) stageInkRender();
+  } else if (method === "Page.frameStartedLoading" || method === "Page.frameStoppedLoading") {
+    if (params.frameId !== stage.attached) return;
+    stage.loading = method === "Page.frameStartedLoading";
+    stageRenderNav();
+    // frameNavigated 由网页那头报来，常赶在浏览器记下这一步历史之前：载完再问一回
+    if (!stage.loading) void stageReadHistory();
+  } else if ((method === "Page.frameNavigated" && !params.frame.parentId) || method === "Page.navigatedWithinDocument") {
+    if (method === "Page.frameNavigated") stageInkClear();
+    void stageReadHistory();
+  } else if (method === "Runtime.bindingCalled" && params.name === STAGE_BINDING) {
+    stageActSeen(params.payload);
+  } else if (method === "Page.javascriptDialogOpening") {
+    stage.dialog = { type: params.type, message: params.message, defaultPrompt: params.defaultPrompt };
+    stageRenderDialog();
+  } else if (method === "Page.javascriptDialogClosed") {
+    stage.dialog = null;
+    stageRenderDialog();
+  } else if (method === "Page.fileChooserOpened" && params.backendNodeId) {
+    stage.dialog = { type: "file", message: "", multiple: params.mode === "selectMultiple", node: params.backendNodeId };
+    stageRenderDialog();
+  }
+}
+function stageResetPage() {
+  stage.loading = stage.back = stage.forward = false;
+  stage.dialog = null;
+  stageInkClear();
+  stageRenderNav();
+  stageRenderDialog();
+}
+async function stageReadHistory() {
+  const session = stage.session;
+  const history = await stageSend("Page.getNavigationHistory", {}, session).catch(() => null);
+  if (!history || session !== stage.session) return;
+  stage.back = history.currentIndex > 0;
+  stage.forward = history.currentIndex < history.entries.length - 1;
+  stageRenderNav();
+}
+/** @param {number} step -1 后退，1 前进 */
+async function stageTravel(step) {
+  const session = stage.session;
+  const history = await stageSend("Page.getNavigationHistory", {}, session).catch(() => null),
+    entry = history?.entries[history.currentIndex + step];
+  if (entry) void stageSend("Page.navigateToHistoryEntry", { entryId: entry.id }, session).catch(() => {});
+}
+function stageRenderNav() {
+  $("#stageNav").classList.toggle("loading", stage.loading);
+  /** @type {HTMLButtonElement} */ ($("[data-stage-nav=back]")).disabled = !stage.back;
+  /** @type {HTMLButtonElement} */ ($("[data-stage-nav=forward]")).disabled = !stage.forward;
+}
+// 网页弹的提示框（alert / confirm / prompt / 离页挽留）与选文件的窗：浏览器画在屏幕外的窗上，网页就此停住——看台在画面上另画一张，答了递回去。
+// 模型那头 playwright 也收得到，谁先答都行
+function stageRenderDialog() {
+  const box = $("#stageDialog"),
+    dialog = stage.dialog;
+  box.classList.toggle("hidden", !dialog);
+  if (!dialog) return void (box.innerHTML = "");
+  const leave = dialog.type === "beforeunload",
+    file = dialog.type === "file",
+    ask = dialog.type !== "alert",
+    host = stageHost(stage.tabs.get(stage.current)?.url || "");
+  const [head, text, yes, no] = file
+    ? ["网页要你选文件", `${host || "此页"}请你上传文件${dialog.multiple ? "，可多选" : ""}`, "选文件", "取消"]
+    : leave
+      ? ["离开此页？", dialog.message || "此页有尚未存下的改动。", "离开", "留下"]
+      : ["网页的提示", dialog.message, "确定", "取消"];
+  box.innerHTML = `<div class="stage-dialog-card" role="alertdialog" aria-label="${head}"><div class="stage-dialog-head">${head}</div><div class="stage-dialog-text">${escapeHtml(text)}</div>${dialog.type === "prompt" ? `<input class="stage-dialog-input" spellcheck="false" value="${escapeHtml(dialog.defaultPrompt || "")}">` : ""}<div class="stage-dialog-actions">${ask ? `<button type="button" class="outline-btn" data-stage-answer="no">${no}</button>` : ""}<button type="button" class="outline-btn primary" data-stage-answer="yes">${yes}</button></div></div>`;
+  /** @type {HTMLElement} */ (box.querySelector(".stage-dialog-input, [data-stage-answer=yes]")).focus({ preventScroll: true });
+}
+/** @param {boolean} accept */
+function stageAnswer(accept) {
+  const dialog = stage.dialog;
+  // 答完键盘仍交还网页：人是在网页里做事时被问的
+  $("#stageKeys").focus({ preventScroll: true });
+  if (dialog?.type === "file") {
+    stage.dialog = null;
+    stageRenderDialog();
+    if (accept) stagePickFiles(dialog);
+    return;
+  }
+  const input = /** @type {HTMLInputElement | null} */ ($("#stageDialog .stage-dialog-input"));
+  void stageSend("Page.handleJavaScriptDialog", { accept, ...(input ? { promptText: input.value } : {}) }, stage.session).catch(() => {});
+  stage.dialog = null;
+  stageRenderDialog();
+}
+// 选文件用言这边的窗（点「选文件」那一下即是人手的动作，浏览器才许开窗）；选好的落到桥接的临时目录，路径交给网页里那个 <input type=file>
+/** @param {{ multiple?: boolean, node?: number }} dialog */
+function stagePickFiles(dialog) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.multiple = !!dialog.multiple;
+  input.addEventListener("change", () => void stageSendFiles([...(input.files || [])], dialog.node));
+  input.click();
+}
+/** @param {File[]} files @param {number} [node] */
+async function stageSendFiles(files, node) {
+  const session = stage.session;
+  if (!files.length || !session) return;
+  try {
+    const paths = [];
+    for (const file of files) paths.push((await bridge("/api/stage/upload", { name: file.name, data: await readFile(file, "data") })).path);
+    await stageSend("DOM.setFileInputFiles", { files: paths, backendNodeId: node }, session);
+  } catch (error) {
+    toast(`文件没能递进网页：${String(error.message || error).slice(0, 80)}`);
+  }
+}
+/** @param {string} url */
+function stageHost(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}

@@ -64,7 +64,7 @@ function renderAttachments() {
   scheduleContextGauge(); // 案上的附件也是下一问要送出的，计数随之变
 }
 // 引用追问：在回复或自己的话里划选一段，浮出「引用」；点了就作为引文带进输入框，随下一问送出
-// 游目里圈点的也走这一路（见 src/26-stage.js），欢迎页上同样有一个引文框
+// 游目里圈点的也走这一路（见 src/26-stage/），欢迎页上同样有一个引文框
 function renderQuote() {
   // 引文撤了、换了：随先前那条引文的画面跟着撤（附件栏里不列它，留下就成了看不见的附件）
   const stale = pendingAttachments.filter(file => file.quoted && !quoteImageOf(file, pendingQuote));
