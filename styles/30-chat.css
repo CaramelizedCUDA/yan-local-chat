@@ -722,7 +722,7 @@ html.work-mode .chat-scroll-grabber {
   color: color-mix(in srgb, var(--code-green) 70%, var(--ink)) !important;
 }
 /* 并排红绿（见 splitDiffHtml）：旧在左、新在右，一行一格、折行时两边同高，中间一道丝线；
-   未动的淡墨，改了的字同色加深一层（删的另带一道划线），对面没有的那格留白——试过斜纹，整段新增时一大片太抢眼（设计稿/39） */
+   未动的淡墨，改了的字同色加深一层（删的那侧试过再加划线，三层叠着脏），对面没有的那格铺一层淡墨——留白像丢了内容，斜纹整段新增时一大片太抢眼（设计稿/39、41） */
 .tool-diff .split-diff {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -742,6 +742,9 @@ html.work-mode .chat-scroll-grabber {
   overflow: hidden;
   white-space: pre;
   text-overflow: ellipsis;
+}
+.split-diff > .e {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
 }
 .split-diff > span:nth-child(even):not(.gap) {
   box-shadow: inset 1px 0 0 var(--line);
@@ -765,7 +768,6 @@ html.work-mode .chat-scroll-grabber {
 }
 .split-diff > .d mark {
   background: color-mix(in srgb, var(--danger) 24%, transparent);
-  text-decoration: line-through color-mix(in srgb, var(--danger) 45%, transparent);
 }
 .split-diff > .i mark {
   background: color-mix(in srgb, var(--code-green) 28%, transparent);

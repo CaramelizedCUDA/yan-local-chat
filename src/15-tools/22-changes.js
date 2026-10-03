@@ -65,22 +65,33 @@ function changeFilesHtml(stats, open, extra = "") {
 }
 // ---- 并排红绿：旧在左、新在右，逐行对齐（见 设计稿/38、39） ----
 // 行迹里改一处的旧段与新段、预览浮层里覆盖写的前后两版，都走这一套
-/** 两列序列的最长公共子序列，摊成一串 s（同）/ d（删）/ i（增）；两样都行时先删后增 @param {string[]} a @param {string[]} b */
+/**
+ * 两列序列的最长公共子序列，摊成一串 s（同）/ d（删）/ i（增）；两样都行时先删后增。
+ * 首尾相同的先剥掉再比：逐个比时遇到相同的就配上，一句话中间插进一段，开头那个「不」会被配到插进来的那段里去，配歪了
+ * @param {string[]} a @param {string[]} b
+ */
 function lcsOps(a, b) {
-  const dp = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
-  for (let i = a.length - 1; i >= 0; i--)
-    for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  let head = 0,
+    tail = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  const x = a.slice(head, a.length - tail),
+    y = b.slice(head, b.length - tail);
+  const dp = Array.from({ length: x.length + 1 }, () => new Uint16Array(y.length + 1));
+  for (let i = x.length - 1; i >= 0; i--)
+    for (let j = y.length - 1; j >= 0; j--) dp[i][j] = x[i] === y[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
   /** @type {Array<[string, string]>} */
-  const ops = [];
+  const ops = a.slice(0, head).map(t => ["s", t]);
   let i = 0,
     j = 0;
-  while (i < a.length || j < b.length) {
-    if (i < a.length && j < b.length && a[i] === b[j]) {
-      ops.push(["s", a[i++]]);
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) {
+      ops.push(["s", x[i++]]);
       j++;
-    } else if (i < a.length && (j >= b.length || dp[i + 1][j] >= dp[i][j + 1])) ops.push(["d", a[i++]]);
-    else ops.push(["i", b[j++]]);
+    } else if (i < x.length && (j >= y.length || dp[i + 1][j] >= dp[i][j + 1])) ops.push(["d", x[i++]]);
+    else ops.push(["i", y[j++]]);
   }
+  for (const t of a.slice(a.length - tail)) ops.push(["s", t]);
   return ops;
 }
 // 行内按词比：英文数字连成一词，汉字与标点逐个
@@ -92,18 +103,46 @@ function linesAlike(a, b) {
   if (!x.length || !y.length || x.length * y.length > 40000) return false;
   return (2 * lcsOps(x, y).filter(op => op[0] === "s").length) / (x.length + y.length) >= 0.4;
 }
-// 配上对的两行：改了的那几个字包进 <mark>
+// 配上对的两行：改了的那几个字包进 <mark>。逐词比出来的常是碎片——夹在两处改动之间的一两个字、一个标点也被挖成「没改」，
+// 中文改一句就成了满行的碎块，所以这样的小缝并进改动里（只标真有改动的那一侧：只插了字的，旧的那侧不因并进的小缝挂上标记）。
+// 两边都改了大半的，不再逐字标：整行本就是红 / 绿的，满行的标记只是噪声
 function wordMarks(oldLine, newLine) {
   const a = diffTokens(oldLine),
-    b = diffTokens(newLine);
-  if (a.length * b.length > 40000) return [escapeHtml(oldLine), escapeHtml(newLine)];
-  let left = "",
-    right = "";
+    b = diffTokens(newLine),
+    plain = [escapeHtml(oldLine), escapeHtml(newLine)];
+  if (a.length * b.length > 40000) return plain;
+  /** @type {Array<{ same: boolean, old: string, new: string, cut: boolean, put: boolean }>} 同与改交替的几段；cut / put：这段里旧的那侧真删了、新的那侧真增了 */
+  const runs = [];
   for (const [kind, text] of lcsOps(a, b)) {
-    if (kind !== "i") left += kind === "d" ? `<mark>${escapeHtml(text)}</mark>` : escapeHtml(text);
-    if (kind !== "d") right += kind === "i" ? `<mark>${escapeHtml(text)}</mark>` : escapeHtml(text);
+    const same = kind === "s";
+    if (runs.at(-1)?.same !== same) runs.push({ same, old: "", new: "", cut: false, put: false });
+    const run = runs[runs.length - 1];
+    if (kind !== "i") run.old += text;
+    if (kind !== "d") run.new += text;
+    run.cut ||= kind === "d";
+    run.put ||= kind === "i";
   }
-  return [left, right].map(html => html.replaceAll("</mark><mark>", ""));
+  /** @type {typeof runs} */
+  const merged = [];
+  runs.forEach((run, k) => {
+    const seam = run.same && k > 0 && k < runs.length - 1 && run.old.replace(/\s/g, "").length <= 2,
+      last = merged.at(-1);
+    if ((seam || !run.same) && last && !last.same) {
+      last.old += run.old;
+      last.new += run.new;
+      last.cut ||= run.cut;
+      last.put ||= run.put;
+    } else merged.push({ ...run, same: run.same && !seam });
+  });
+  const marked = (/** @type {typeof runs[number]} */ run, /** @type {"old"|"new"} */ side) =>
+    !run.same && (side === "old" ? run.cut : run.put);
+  const share = (/** @type {"old"|"new"} */ side, /** @type {string} */ line) =>
+    merged.filter(run => marked(run, side)).reduce((n, run) => n + run[side].replace(/\s/g, "").length, 0) /
+    (line.replace(/\s/g, "").length || 1);
+  if (Math.min(share("old", oldLine), share("new", newLine)) > 0.5) return plain;
+  const html = (/** @type {"old"|"new"} */ side) =>
+    merged.map(run => (marked(run, side) ? `<mark>${escapeHtml(run[side])}</mark>` : escapeHtml(run[side]))).join("");
+  return [html("old"), html("new")];
 }
 // 一段连着的删与增怎么排：按先后，删的那行往后找第一行像它的配成一对，跳过的新行单独成行
 /** @param {string[]} dels @param {string[]} ins */
