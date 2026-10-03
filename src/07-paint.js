@@ -320,6 +320,7 @@ function paintStack(stack, message, source, view, created) {
       body.innerHTML = `<div class="tool-steps"></div>`;
     if (steps) syncStepList(body.firstElementChild, message.steps, seen, view.animate);
   }
+  markStalePlans(body);
   // 一答只开一次、收一次：第一步起就摊开，整答写完才收（言里模型说话的间隙也不收）；请示时必开。
   // 收是在眼看着它写完的那一刻（不看读者是否正停在这块、是否亲手开过），此后用户再开合就随他
   const was = stack._status;

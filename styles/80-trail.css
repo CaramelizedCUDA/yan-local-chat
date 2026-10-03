@@ -222,58 +222,68 @@
   margin-bottom: 4px;
   color: var(--ink-3);
 }
-/* 计划卡：不是一步动作，是模型一路改着的一张单子，所以给它一张纸——纸的底色，不是专色，与差遣那枚金签不抢；
-   没有这层底，几行清单悬在行迹里就成了散页。一行一项 */
+/* 计划卡：模型一路改着的一张单子。不再铺一张纸（分组靠线不靠块，铺底的块在行迹里像一张贴上去的散页），
+   清单左侧一道淡墨竖痕把它隔出来——行迹里没有横线，试过的三线框突兀；竖痕与听音那一缕同一语汇。
+   题头的事由用读的字、大一号（原是淡灰小字，常认不出是计划）。旧的几张只留题头一行（见 markStalePlans），
+   右侧那排小记号就是进度。落选：铺底的纸（现状）、专色（赭石离朱太近、花青是又一种色）、三线（见 设计稿/40–42） */
 .tool-step-plan {
   margin: 4px 0;
-  padding-bottom: 6px;
-  border-radius: var(--radius-m);
-  background: var(--paper-2);
+  padding-bottom: 2px;
+}
+.tool-step-plan > .tool-step-head .tool-title {
+  color: var(--ink-2);
+  font-family: var(--title);
+  font-size: 13.5px;
+}
+.tool-step-plan.plan-old > .tool-step-head .tool-title {
+  color: var(--ink-3);
+}
+.tool-step-plan.plan-old > .plan-list {
+  display: none;
 }
 .plan-list {
-  margin: 0 9px 8px 50px;
-  padding: 0;
+  margin: 2px 9px 8px 52px;
+  padding: 0 0 0 10px;
+  border-left: 1.5px solid color-mix(in srgb, var(--ink) 12%, transparent);
   list-style: none;
-  font-size: 11.5px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.85;
 }
 .plan-item {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--ink-2);
+  align-items: center;
+  gap: 9px;
+  color: var(--ink-3);
 }
 .plan-mark {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 1.85em;
+}
+.plan-svg {
   width: 12px;
-  text-align: center;
-  color: var(--ink-3);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  height: 11px;
 }
-.plan-item[data-plan="done"] .plan-mark {
-  color: var(--code-green);
+.plan-svg[data-plan="pending"] circle {
+  fill: color-mix(in srgb, var(--ink) 42%, var(--paper));
 }
-.plan-item[data-plan="done"] .plan-text,
-.plan-item[data-plan="skipped"] .plan-text {
-  color: var(--ink-3);
+.plan-item[data-plan="doing"] {
+  color: var(--ink);
+  font-weight: 600;
 }
 .plan-item[data-plan="skipped"] .plan-text {
   text-decoration: line-through;
 }
-.plan-item[data-plan="doing"] .plan-text {
-  color: var(--ink);
+.plan-row {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: -2px;
 }
-.plan-item[data-plan="doing"] .plan-mark:before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  vertical-align: middle;
-}
-:root[data-ink-motion="on"] .tool-step-plan[data-status="running"] .plan-item[data-plan="doing"] .plan-mark:before,
-:root[data-ink-motion="on"] .tool-stack[data-state="streaming"] .plan-item[data-plan="doing"] .plan-mark:before {
+:root[data-ink-motion="on"] .tool-step-plan[data-status="running"] .plan-svg[data-plan="doing"] circle,
+:root[data-ink-motion="on"] .tool-stack[data-state="streaming"] .tool-step-plan:not(.plan-old) .plan-svg[data-plan="doing"] circle {
   animation: pulse 1.4s ease-in-out infinite;
 }
 /* 算一段 JS 用的隐形沙箱页 */
