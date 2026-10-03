@@ -330,6 +330,31 @@ http
           250
         );
       }
+      // BOOKMID：开工时还没有账本，主模型中途立账本、再差遣；帮手领命时拿到的须是刚立的那份
+      if (firstUser.includes("BOOKHELPER"))
+        return sse(res, [
+          delta({ content: `回报：ledger:${firstUser.includes("只用 CPU") ? "yes" : "no"}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      if (firstUser.includes("BOOKMID")) {
+        const call = (id, name, args) =>
+          delta({ tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] });
+        if (firstTurn && !toolResults.length)
+          return sse(res, [
+            call("call_bm0", "write_file", { path: ".yan/账本.md", content: "# 约束\n- 只用 CPU\n" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (firstTurn && toolResults.length === 1)
+          return sse(res, [
+            call("call_bm1", "delegate", { title: "看账本", task: "BOOKHELPER：照账本办，回报看到的约束。" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
+        return sse(res, [
+          delta({ content: `BOOKMID|${String(helperReports.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // HELPERTALK / HELPERSTOP：主模型差一名慢帮手，接着给它递话或叫停，再等回报
       const helperKey = ["HELPERTALK", "HELPERSTOP"].find(k => firstUser.includes(k));
       if (helperKey) {

@@ -268,7 +268,7 @@ async function ensureWorkReady(conversation) {
 const LEDGER_PATH = ".yan/账本.md",
   LEDGER_CHARS = 3000, // 过了就请它取舍
   LEDGER_SHOWN = 12000; // 附上去的至多这么多：手写进来的一大篇不能把每一问都撑胖
-/** @type {Map<string, string>} 这一答开工时读到的账本，按对话；帮手领命时也附上 */
+/** @type {Map<string, string>} 最近读到的账本，按对话：每一答开工时读，差遣帮手时再现读一回 */
 const ledgers = new Map();
 /** @param {Conversation} conversation */
 async function loadLedger(conversation, signal) {
