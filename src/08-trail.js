@@ -14,11 +14,11 @@ function toolStackMeta(steps = []) {
     : `${steps.length} 步${reused ? ` · ${reused} 复用` : ""}${skipped ? ` · ${skipped} 跳过` : ""}${failed ? ` · ${failed} 失败` : ""}`;
 }
 // 等待确认是阻塞式的提问，无论用户之前有没有收起，都把折叠区展开，别让生成静静停在看不见的地方
-// 执事对话里的行迹是一条时间线：模型边做边说的话与各步穿插排列，做的时候摊开看过程，做完自动收起，只留最后的总结在外；对谈里仍是折起的注脚
-// 看的是消息自己记的执事标记；更早的数据没记这一位，退回按当前对话的模式判断
+// 用了工具的答（行与言都是）画成一条时间线：模型边做边说的话与各步穿插排列，做的时候摊开看过程，做完整条收起，只留最后的总结在外——
+// 过程话不再以正文的样子混在结论里。只有旁注那一栏地方窄，仍是折起的注脚
 /** @param {Message} message */
 function trailWork(message) {
-  return !!message.steps?.length && (message.work ?? isWork(currentConversation()));
+  return !!message.steps?.length && !(currentConversation()?.threads || []).some(thread => thread.messages?.includes(message));
 }
 /** @param {Message} message */
 function trailBase(message) {
@@ -492,7 +492,9 @@ function stepStateHtml(status) {
 // 步骤输出的露出规矩：默认摊开的只有两种——目录清单（露前 10 行）与红绿对比（两侧各 10 行），底下一行「展开全部」；
 // 指令输出、读取、搜索这些有明确的行数、往往又长，默认折起，标题行上有结果与行数，点标题行才看；报错的也折起。
 // 步骤上记两位：expanded（折起 / 摊开，未记则按上面的定）与 full（全部 / 前 10 行），重画不丢
-const STEP_SHOW_LINES = 10;
+const STEP_SHOW_LINES = 10,
+  // 并排的红绿一行抵原先上下两行，先看的行数翻倍
+  DIFF_SHOW_ROWS = 20;
 function clampLines(text, full) {
   const lines = String(text || "").split("\n"),
     clipped = !full && lines.length > STEP_SHOW_LINES;
@@ -509,11 +511,10 @@ function workStepHtml(step, title) {
   if (status === "pending")
     body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre>${sandboxWhyHtml(step)}<div class="tool-approve"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="径行：此对话中后续指令不再询问">径行</button></div>`;
   else if (step.diff) {
-    const del = clampLines(step.diff.old, step.full),
-      ins = clampLines(step.diff.new, step.full);
-    body = `<div class="tool-diff"><pre class="tool-output diff-del">${escapeHtml(del.text)}</pre><pre class="tool-output diff-ins">${escapeHtml(ins.text)}</pre></div>`;
-    if (del.clipped || ins.clipped) more = `展开全部 · −${del.total} +${ins.total} 行`;
-    else if (step.full && Math.max(del.total, ins.total) > STEP_SHOW_LINES) more = `只看前 ${STEP_SHOW_LINES} 行`;
+    const diff = splitDiffHtml(step.diff.old, step.diff.new, { limit: step.full ? Infinity : DIFF_SHOW_ROWS, wrap: !!step.full });
+    body = `<div class="tool-diff">${diff.html}</div>`;
+    if (diff.clipped) more = `展开全部 · −${diff.removed} +${diff.added} 行`;
+    else if (step.full && diff.rows > DIFF_SHOW_ROWS) more = `只看前 ${DIFF_SHOW_ROWS} 行`;
   } else if (step.output) {
     const out = clampLines(step.output, step.full);
     body = `<pre class="tool-output">${escapeHtml(out.text)}</pre>`;

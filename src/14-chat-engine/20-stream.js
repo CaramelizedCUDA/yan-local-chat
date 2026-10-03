@@ -6,8 +6,6 @@
  * @param {Profile} profile
  */
 async function streamReply(conversation, assistant, profile, { resume = false } = {}) {
-  // 这一答是不是执事的，记在消息自己身上：生成期间用户可能翻去欢迎页或卷宗，页面上一时没有「当前对话」，时间线不能因此改画法
-  assistant.work = isWork(conversation);
   // queue 是这一答的收件口：用户的补言（user）与后台帮手的回报（report）
   /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user?: Message, step: Step, report?: string }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number }} */
   const job = {
@@ -28,7 +26,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
   // 行迹题头的用时边做边走：长指令跑着时没有新字进来、不会重画，另起一只每秒一跳的钟
   assistant.startedAt = Date.now();
-  const clock = isWork(conversation) ? setInterval(() => tickTrailClock(assistant), 1000) : null;
+  const clock = setInterval(() => tickTrailClock(assistant), 1000);
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
   const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
   // 用量在 finally 里结算：停止、断网、工具链中途出错，前面几轮已经花掉的墨也得记上，不能只在整答顺利收尾时记账

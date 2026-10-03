@@ -523,8 +523,6 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     job = { controller: new AbortController(), assistantId: assistant.id, threadId: thread.id, conversationId: conversation.id };
   requestJobs.set(key, job);
   renderSideSend();
-  // 旁注是折起注脚式的行迹，不是执事的时间线（正文那侧的画法记在消息上，见 streamReply）
-  assistant.work = false;
   const tally = newTally();
   /** @type {Array<Record<string, any>>} */
   let history = [];

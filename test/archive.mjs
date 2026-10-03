@@ -99,8 +99,8 @@ check(
     /## 问[\s\S]*ARCHIVE 做个表[\s\S]*## 答/.test(readFileSync(`${ARCHIVE}/ARCHIVE 做个表.md`, "utf8"))
 );
 check(
-  "chat message keeps the plain tool stack (not the work timeline)",
-  await evalJs(`!document.querySelector(".tool-stack.is-work") && !!document.querySelector(".tool-stack")`)
+  "chat message with tools draws the same timeline as 行 (what it said before the last step folds away with the steps)",
+  await evalJs(`!!document.querySelector(".tool-stack.is-work")`)
 );
 check(
   "chat meta offers to bind a directory",
