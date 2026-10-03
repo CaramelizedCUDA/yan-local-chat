@@ -128,8 +128,9 @@ module.exports = function createChatgpt({ home }) {
     stopPending();
     const auth = load();
     // 本机标识：每台机器一个，头一回登录前定下，此后一直用它
-    if (!auth.hostId) {
-      auth.hostId = randomUUID();
+    // 须写成 urn:uuid:…，裸的 UUID 授权端不认（invalid ext_agent_host_id）；先前存下的裸 UUID 补上前缀，仍是同一台机器
+    if (!auth.hostId?.startsWith("urn:uuid:")) {
+      auth.hostId = `urn:uuid:${auth.hostId || randomUUID()}`;
       save(auth);
     }
     const verifier = base64url(randomBytes(32)),

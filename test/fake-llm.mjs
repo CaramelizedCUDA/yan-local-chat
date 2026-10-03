@@ -91,6 +91,9 @@ function chatgpt(req, res) {
   if (url.pathname === "/chatgpt-auth/api/accounts/authorize") {
     const q = url.searchParams;
     chatgptLog.authorize.push(Object.fromEntries(q));
+    // 本机标识须是 urn:uuid:…（真授权端对裸 UUID 回 invalid ext_agent_host_id）
+    if (!/^urn:uuid:[0-9a-f-]{36}$/.test(q.get("ext_agent_host_id") || ""))
+      return json({ error: { message: "Invalid authorize request", param: "ext_agent_host_id", code: "invalid_authorize_request" } }, 400);
     const back = new URL(q.get("redirect_uri"));
     back.searchParams.set("code", "code-1");
     back.searchParams.set("state", q.get("state"));
