@@ -81,8 +81,66 @@ const anthropicMessages = (payload, res) => {
     ["message_stop", {}]
   ]);
 };
+// ChatGPT 订阅：假的授权端（/chatgpt-auth）与公开接口（/chatgpt/v1）。授权页直接 302 回回调口；头一回登记发下 oaiapp_test
+const jwt = claims => `e30.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.sig`;
+const chatgptLog = { tokens: [], revoked: 0, authorize: [] };
+function chatgpt(req, res) {
+  const url = new URL(req.url, "http://127.0.0.1:8798"),
+    json = (data, status = 200) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(data));
+  if (url.pathname === "/chatgpt-log") return json(chatgptLog);
+  if (url.pathname === "/chatgpt-auth/api/accounts/authorize") {
+    const q = url.searchParams;
+    chatgptLog.authorize.push(Object.fromEntries(q));
+    const back = new URL(q.get("redirect_uri"));
+    back.searchParams.set("code", "code-1");
+    back.searchParams.set("state", q.get("state"));
+    if (q.get("client_id") === "dynamic_agent_client") back.searchParams.set("client_id", "oaiapp_test");
+    return res.writeHead(302, { Location: back.href }).end();
+  }
+  if (url.pathname === "/chatgpt-auth/.well-known/openid-configuration")
+    return json({ revocation_endpoint: "http://127.0.0.1:8798/chatgpt-auth/revoke" });
+  let body = "";
+  req.on("data", c => (body += c));
+  req.on("end", () => {
+    if (url.pathname === "/chatgpt-auth/revoke") {
+      chatgptLog.revoked += 1;
+      return res.writeHead(200).end();
+    }
+    if (url.pathname === "/chatgpt-auth/api/accounts/oauth/token") {
+      const form = Object.fromEntries(new URLSearchParams(body));
+      chatgptLog.tokens.push(form);
+      return json({
+        access_token: jwt({ aud: form.resource }),
+        refresh_token: "refresh-1",
+        id_token: jwt({ email: "me@example.com" }),
+        expires_in: 3600
+      });
+    }
+    const bearer = String(req.headers.authorization || "").startsWith("Bearer e30.");
+    if (url.pathname === "/chatgpt/v1/models")
+      return json({
+        data: [
+          { slug: "gpt-sub", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }] },
+          { slug: "gpt-hidden", visibility: "hide" }
+        ]
+      });
+    if (url.pathname === "/chatgpt/v1/responses") {
+      const payload = JSON.parse(body || "{}");
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      const send = data => res.write(`data: ${JSON.stringify(data)}\n\n`);
+      send({
+        type: "response.output_text.delta",
+        delta: `CHATGPT|bearer:${bearer}|store:${payload.store}|instr:${!!payload.instructions}|effort:${payload.reasoning?.effort || ""}`
+      });
+      send({ type: "response.completed", response: { usage: { input_tokens: 10, output_tokens: 3, total_tokens: 13 } } });
+      return res.end();
+    }
+    json({ error: { message: "not found" } }, 404);
+  });
+}
 http
   .createServer((req, res) => {
+    if (req.url.startsWith("/chatgpt")) return chatgpt(req, res);
     if (req.url.endsWith("/v1/models") && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ data: [{ id: "claude-test", type: "model" }] }));

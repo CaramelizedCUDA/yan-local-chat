@@ -175,7 +175,14 @@ try {
     // 存储根指到临时目录，别把测试的对话、卷宗与配置写进用户的 ~/.yan
     start(process.execPath, ["server.js"], {
       cwd: ROOT,
-      env: { ...process.env, YAN_PORT: String(BRIDGE_PORT), YAN_HOME: path.join(TMP, ".yan") }
+      env: {
+        ...process.env,
+        YAN_PORT: String(BRIDGE_PORT),
+        YAN_HOME: path.join(TMP, ".yan"),
+        // ChatGPT 订阅的授权端与接口指到假服务（见 fake-llm.mjs）
+        YAN_CHATGPT_AUTH: "http://127.0.0.1:8798/chatgpt-auth",
+        YAN_CHATGPT_API: "http://127.0.0.1:8798/chatgpt/v1"
+      }
     });
     start(process.execPath, [path.join(HERE, "fake-llm.mjs")], { cwd: ROOT });
     await waitPort(BRIDGE_PORT);

@@ -624,7 +624,8 @@
     monospace;
   color: var(--ink-2);
 }
-.profile-grid label small {
+.profile-grid label small,
+.profile-grid .profile-cell small {
   display: block;
   margin-top: 4px;
   color: var(--ink-3);
@@ -736,7 +737,8 @@
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
-.profile-grid label {
+.profile-grid label,
+.profile-grid .profile-cell {
   display: block;
   color: var(--ink-3);
   font-size: 10px;

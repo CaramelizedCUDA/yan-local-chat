@@ -22,8 +22,8 @@ function currentBundler() {
 // Anthropic 适配与页面共用同一份源码（src/19-anthropic.js）：请求换成 Messages API 的，事件流换回 OpenAI 风格
 require("./src/19-anthropic.js");
 const ANTHROPIC = globalThis.YAN_ANTHROPIC;
-// Codex 订阅：借 Codex CLI 登录的 ChatGPT 账号，同样在最外层换一层（见 server/codex.js）
-const CODEX = require("./server/codex.js");
+// ChatGPT 订阅：官方的「Sign in with ChatGPT」，请求同样在最外层换一层（见 server/chatgpt.js；登录凭证随存储根，实例在 STORE 之后建）
+const { chatgptLike, hinted, responsesRequest, responsesToOpenAiStream } = require("./server/chatgpt.js");
 const { pipeline } = require("node:stream/promises");
 const { sendJson, readJson } = require("./server/http.js");
 // 联网：地址门禁、翻网页、检索、调接口
@@ -116,7 +116,7 @@ function resolveProfile(input, requireModel = true) {
       .trim()
       .toLowerCase()
   };
-  if (CODEX.codexLike(config)) config.baseUrl ||= CODEX.CODEX_BASE;
+  if (chatgptLike(config)) config.baseUrl ||= CHATGPT.endpoint;
   if (!config.baseUrl || (requireModel && !config.model)) throw Error(requireModel ? "请填写 Base URL 和模型 ID" : "请填写 Base URL");
   return config;
 }
@@ -126,7 +126,7 @@ function modelsUrl(baseUrl) {
   return url;
 }
 async function upstreamHeaders(config) {
-  if (CODEX.codexLike(config)) return CODEX.codexHeaders();
+  if (chatgptLike(config)) return CHATGPT.headers();
   if (ANTHROPIC.anthropicLike(config)) return ANTHROPIC.anthropicHeaders(config.apiKey);
   return { "Content-Type": "application/json; charset=utf-8", ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) };
 }
@@ -139,9 +139,10 @@ async function upstreamError(response) {
   try {
     const json = JSON.parse(raw),
       detail = json.detail;
-    // OpenAI 系 { error: { message } }、有的中转站 { error: "…" }、旧版 vLLM { message }、FastAPI 写的自建服务 { detail }
+    // OpenAI 系 { error: { message } }、有的中转站 { error: "…" }、旧版 vLLM { message }、FastAPI 写的自建服务 { detail }；
+    // ChatGPT 订阅额度那边的几种拒绝换成看得懂的话
     return (
-      (typeof json.error === "string" ? json.error : json.error?.message) ||
+      (typeof json.error === "string" ? json.error : json.error?.message && hinted(json.error.code, json.error.message)) ||
       (typeof json.message === "string" ? json.message : "") ||
       (typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : "") ||
       `上游接口返回 ${response.status}`
@@ -189,11 +190,10 @@ async function handleTest(req, res) {
   try {
     const body = await readJson(req),
       config = resolveProfile(body.profile, true);
-    // Codex 订阅没有列模型的公开接口：凭证读得出（必要时换新）就算连上，模型对照 Codex CLI 缓存的列表
-    if (CODEX.codexLike(config)) {
-      await CODEX.codexHeaders();
-      const models = CODEX.codexModels();
-      return sendJson(res, 200, { ok: true, latencyMs: Date.now() - started, modelFound: !models.length || models.includes(config.model) });
+    // ChatGPT 订阅：列得出这个账号的模型就算连上
+    if (chatgptLike(config)) {
+      const models = await CHATGPT.models();
+      return sendJson(res, 200, { ok: true, latencyMs: Date.now() - started, modelFound: models.includes(config.model) });
     }
     const response = await fetch(upstreamModelsUrl(config), { headers: await upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
     if (!response.ok) throw Error(await upstreamError(response));
@@ -211,7 +211,7 @@ async function handleModels(req, res) {
   try {
     const body = await readJson(req),
       config = resolveProfile(body.profile, false);
-    if (CODEX.codexLike(config)) return sendJson(res, 200, { models: CODEX.codexModels() });
+    if (chatgptLike(config)) return sendJson(res, 200, { models: await CHATGPT.models() });
     const response = await fetch(upstreamModelsUrl(config), { headers: await upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
     if (!response.ok) throw Error(await upstreamError(response));
     const data = await response.json();
@@ -251,30 +251,26 @@ async function handleChat(req, res) {
     console.log(
       `${new Date().toLocaleTimeString("zh-CN", { hour12: false })} → ${config.model}：${messages.length} 条消息${payload.tools ? `，工具 ${payload.tools.length} 个` : ""}`
     );
-    // Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格再给页面；Codex 同理；OpenAI 兼容的原样透传（thinking_blocks 是这两家才要的，去掉）
+    // Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格再给页面；ChatGPT 订阅换成 Responses 的，同理；OpenAI 兼容的原样透传（thinking_blocks 是这两家才要的，去掉）
     const anthropic = ANTHROPIC.anthropicLike(config),
-      codex = CODEX.codexLike(config);
-    if (!anthropic && !codex) {
+      chatgpt = chatgptLike(config);
+    if (!anthropic && !chatgpt) {
       payload.messages = messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
       if (ANTHROPIC.claudeModel(config.model)) payload.messages = ANTHROPIC.markOpenAiCache(payload.messages);
     }
     // 上游的状态码原样带回页面（连不上记作 502）：429、5xx、过载这些页面会等一等再试，参数错之类的 4xx 不试
-    // 探档位（故意送一个不存在的档位）：Codex 的模型表上写着它认哪几档，照表按 OpenAI 的报错样子回，不必真发一趟
-    if (codex && payload.reasoning_effort === "probe") {
-      const levels = CODEX.codexLevels(config.model);
+    // 探档位（故意送一个不存在的档位）：ChatGPT 订阅的模型表上写着它认哪几档，照表按 OpenAI 的报错样子回，不必真发一趟
+    if (chatgpt && payload.reasoning_effort === "probe") {
+      const levels = CHATGPT.levels(config.model);
       if (levels.length)
         throw Object.assign(Error(`Invalid value: 'probe'. Supported values are: ${levels.map(level => `'${level}'`).join(", ")}.`), {
           status: 400
         });
     }
-    const upstreamBody = codex ? CODEX.codexRequest(payload) : anthropic ? ANTHROPIC.anthropicRequest(payload) : payload;
-    const headers = codex ? await CODEX.codexHeaders(upstreamBody.prompt_cache_key) : await upstreamHeaders(config);
+    const upstreamBody = chatgpt ? responsesRequest(payload) : anthropic ? ANTHROPIC.anthropicRequest(payload) : payload;
+    const headers = await upstreamHeaders(config);
     const response = await fetch(
-      codex
-        ? CODEX.codexEndpoint(config.baseUrl)
-        : anthropic
-          ? ANTHROPIC.anthropicEndpoint(config.baseUrl)
-          : endpoint(config.baseUrl, "/chat/completions"),
+      chatgpt ? CHATGPT.endpoint : anthropic ? ANTHROPIC.anthropicEndpoint(config.baseUrl) : endpoint(config.baseUrl, "/chat/completions"),
       {
         method: "POST",
         headers,
@@ -294,7 +290,7 @@ async function handleChat(req, res) {
       });
     res.writeHead(200, {
       "Content-Type":
-        anthropic || codex
+        anthropic || chatgpt
           ? "text/event-stream; charset=utf-8"
           : response.headers.get("content-type") || "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
@@ -303,8 +299,8 @@ async function handleChat(req, res) {
     });
     await pipeline(
       Readable.fromWeb(
-        codex
-          ? response.body.pipeThrough(CODEX.codexToOpenAiStream(config.model))
+        chatgpt
+          ? response.body.pipeThrough(responsesToOpenAiStream(config.model))
           : anthropic
             ? response.body.pipeThrough(ANTHROPIC.anthropicToOpenAiStream(config.model))
             : response.body
@@ -343,6 +339,7 @@ const MCP = require("./server/mcp/index.js")({ version: APP_VERSION, toolEnv: EN
 const STAGE = require("./server/stage.js")();
 // 总线：长请求的响应从页面的一条事件流回去，不再一个请求占一条浏览器连接（见 server/bus.js）
 const BUS = require("./server/bus.js")({ dispatch });
+const CHATGPT = require("./server/chatgpt.js")({ home: () => STORE.paths().root });
 
 // 接口表：「方法 路径」→ 处理函数。受信的那一半能碰本机磁盘与本机服务（执事、卷宗、对话目录、存储、附件，以及能打本机的 http_request），
 // 只受理本站页面与 VS Code Webview；另一半（引导、转发、检索、翻网页）凡是本机桥接认得的来源都可调
@@ -362,7 +359,8 @@ const OPEN_ROUTES = {
     ...FILES.routes,
     ...MCP.routes,
     ...ENV.routes,
-    ...STAGE.routes
+    ...STAGE.routes,
+    ...CHATGPT.routes
   };
 const ROUTES = new Map(Object.entries({ ...OPEN_ROUTES, ...TRUSTED_ROUTES }));
 const TRUSTED_PATHS = new Set(Object.keys(TRUSTED_ROUTES).map(key => key.split(" ")[1]));

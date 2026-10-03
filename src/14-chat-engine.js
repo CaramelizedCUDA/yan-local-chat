@@ -835,7 +835,7 @@ async function runRounds(target, history, run) {
     target.content = paragraphBreak(target.content);
   }
 }
-// 一答之内思考接得上：带工具调用的那一轮，模型为什么调这件工具的思考随调用一起送回。Anthropic、Codex 有带签名的思考块，
+// 一答之内思考接得上：带工具调用的那一轮，模型为什么调这件工具的思考随调用一起送回。Anthropic、ChatGPT 订阅有带签名的思考块，
 // 经 thinking_blocks 原样送回（桥接各换成该家的格式）；OpenAI 兼容接口（DeepSeek、Kimi、自部署的 Qwen 之类）没有签名，
 // 这一轮的思绪原样作 reasoning_content 送回——模板照它生成时的样子排出思考，前缀不变，缓存也接得上。
 // 只在一答之内：下一问起前文是摘要，思考随之不带。不收这个字段的接口，去掉重发一回，此后这一页不再给它带

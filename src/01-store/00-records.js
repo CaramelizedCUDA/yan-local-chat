@@ -153,6 +153,8 @@ function normalizeStoreData(value) {
       .filter(p => p && typeof p === "object")
       .map(({ source, systemPrompt, ...p }) => ({
         ...p,
+        // 借 Codex CLI 登录的「Codex 订阅」换成了官方登录的「ChatGPT 订阅」
+        ...(p.api === "codex" ? { api: "chatgpt" } : {}),
         ...(p.reasoning !== undefined ? { reasoning: normalizeReasoning(p.reasoning) } : {})
       }));
     settings.presets = normalizePresets(settings.presets);
