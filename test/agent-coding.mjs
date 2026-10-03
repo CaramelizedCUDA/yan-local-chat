@@ -102,7 +102,7 @@ await shot("change-diff.png");
 check(
   "clicking a changed file shows its diff in the viewer",
   await evalJs(
-    `(v => !v.classList.contains("hidden") && v.querySelector("#fileViewerName").textContent.startsWith("src/a.js") && v.querySelector(".diff-del")?.textContent.includes("return 1") && v.querySelector(".diff-ins")?.textContent.includes("return 2") && document.querySelector("#fileViewerDownload").classList.contains("hidden"))(document.querySelector("#fileViewer"))`
+    `(v => !v.classList.contains("hidden") && v.querySelector("#fileViewerName").textContent.startsWith("src/a.js") && v.querySelector(".split-diff .d")?.textContent.includes("return 1") && v.querySelector(".split-diff .i")?.textContent.includes("return 2") && document.querySelector("#fileViewerDownload").classList.contains("hidden"))(document.querySelector("#fileViewer"))`
   )
 );
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
@@ -206,7 +206,7 @@ await shot("change-overwrite.png");
 check(
   "opening the overwritten file shows the removed line in red and the added ones in green",
   await evalJs(
-    `(v => v.querySelector(".diff-lines .d")?.textContent === "  return 2;" && [...v.querySelectorAll(".diff-lines .i")].map(s => s.textContent).join("|") === "  return 3;|f();")(document.querySelector("#fileViewer"))`
+    `(v => v.querySelector(".split-diff .d")?.textContent === "  return 2;" && [...v.querySelectorAll(".split-diff .i")].map(s => s.textContent).join("|") === "  return 3;|f();")(document.querySelector("#fileViewer"))`
   )
 );
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
@@ -215,7 +215,7 @@ await sleep(150);
 check(
   "a file made in this answer opens on its final version only",
   await evalJs(
-    `(v => !v.querySelector(".diff-del, .diff-lines .d") && v.querySelector(".diff-ins")?.textContent.startsWith("定稿一") && !v.textContent.includes("草稿"))(document.querySelector("#fileViewer"))`
+    `(v => !v.querySelector(".diff-del, .split-diff .d") && v.querySelector(".split-diff .i")?.textContent.startsWith("定稿一") && !v.textContent.includes("草稿"))(document.querySelector("#fileViewer"))`
   )
 );
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);

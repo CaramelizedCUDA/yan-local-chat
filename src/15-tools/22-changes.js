@@ -63,42 +63,146 @@ function changeFilesHtml(stats, open, extra = "") {
     })
     .join("")}</div>`;
 }
-// 覆盖写的前后两版逐行对齐：删的红、增的绿，成片相同的只留上下两行、中间折成一行「⋯」
-function lineDiffHtml(oldText, newText) {
-  const a = String(oldText)
-      .replace(/\r?\n$/, "")
-      .split(/\r?\n/),
-    b = String(newText)
-      .replace(/\r?\n$/, "")
-      .split(/\r?\n/);
-  if (a.length * b.length > 250000)
-    return `<pre class="tool-output diff-del">${escapeHtml(oldText)}</pre><pre class="tool-output diff-ins">${escapeHtml(newText)}</pre>`;
+// ---- 并排红绿：旧在左、新在右，逐行对齐（见 设计稿/38、39） ----
+// 行迹里改一处的旧段与新段、预览浮层里覆盖写的前后两版，都走这一套
+/** 两列序列的最长公共子序列，摊成一串 s（同）/ d（删）/ i（增）；两样都行时先删后增 @param {string[]} a @param {string[]} b */
+function lcsOps(a, b) {
   const dp = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
   for (let i = a.length - 1; i >= 0; i--)
     for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-  const rows = [];
+  /** @type {Array<[string, string]>} */
+  const ops = [];
   let i = 0,
     j = 0;
   while (i < a.length || j < b.length) {
     if (i < a.length && j < b.length && a[i] === b[j]) {
-      rows.push(["s", a[i]]);
-      i++;
+      ops.push(["s", a[i++]]);
       j++;
-      // 两样都行时先删后增：删去的旧行排在补上的新行之前
-    } else if (i < a.length && (j >= b.length || dp[i + 1][j] >= dp[i][j + 1])) rows.push(["d", a[i++]]);
-    else rows.push(["i", b[j++]]);
+    } else if (i < a.length && (j >= b.length || dp[i + 1][j] >= dp[i][j + 1])) ops.push(["d", a[i++]]);
+    else ops.push(["i", b[j++]]);
   }
-  const near = rows.map((_, k) => rows.slice(Math.max(0, k - 2), k + 3).some(row => row[0] !== "s"));
-  let html = "",
+  return ops;
+}
+// 行内按词比：英文数字连成一词，汉字与标点逐个
+const diffTokens = (/** @type {string} */ line) => line.match(/[A-Za-z0-9_$]+|\s+|[^\sA-Za-z0-9_$]/gu) || [];
+// 两行像不像：去掉空白后同词占四成以上才算「改了这一行」，否则是删一行、另增一行
+function linesAlike(a, b) {
+  const x = diffTokens(a).filter(t => t.trim()),
+    y = diffTokens(b).filter(t => t.trim());
+  if (!x.length || !y.length || x.length * y.length > 40000) return false;
+  return (2 * lcsOps(x, y).filter(op => op[0] === "s").length) / (x.length + y.length) >= 0.4;
+}
+// 配上对的两行：改了的那几个字包进 <mark>
+function wordMarks(oldLine, newLine) {
+  const a = diffTokens(oldLine),
+    b = diffTokens(newLine);
+  if (a.length * b.length > 40000) return [escapeHtml(oldLine), escapeHtml(newLine)];
+  let left = "",
+    right = "";
+  for (const [kind, text] of lcsOps(a, b)) {
+    if (kind !== "i") left += kind === "d" ? `<mark>${escapeHtml(text)}</mark>` : escapeHtml(text);
+    if (kind !== "d") right += kind === "i" ? `<mark>${escapeHtml(text)}</mark>` : escapeHtml(text);
+  }
+  return [left, right].map(html => html.replaceAll("</mark><mark>", ""));
+}
+// 一段连着的删与增怎么排：按先后，删的那行往后找第一行像它的配成一对，跳过的新行单独成行
+/** @param {string[]} dels @param {string[]} ins */
+function pairLines(dels, ins) {
+  /** @type {Array<{ d?: string, i?: string }>} */
+  const out = [];
+  let j = 0;
+  for (const d of dels) {
+    let hit = -1;
+    for (let k = j; k < ins.length; k++)
+      if (linesAlike(d, ins[k])) {
+        hit = k;
+        break;
+      }
+    if (hit < 0) {
+      out.push({ d });
+      continue;
+    }
+    while (j < hit) out.push({ i: ins[j++] });
+    out.push({ d, i: ins[j++] });
+  }
+  while (j < ins.length) out.push({ i: ins[j++] });
+  return out;
+}
+/**
+ * 前后两版比出并排的各行：成片未动的只留改动上下各两行、中间折成「⋯ n 行未动」；两边共有的缩进一起去掉。
+ * limit 只画前几行（行迹里先看前 20 行，「展开全部」再看全），比对总按全文来——先截后比会把截掉的行当成删了。
+ * wrap 为假时一行放不下只放写得下的，末尾省略、悬停看整行（行迹里一步不该被一行长注释撑成半屏）；预览浮层与展开全部时照常折行
+ * @param {string} oldText @param {string} newText @param {{ limit?: number, wrap?: boolean }} [options]
+ * @returns {{ html: string, rows: number, clipped: boolean, added: number, removed: number }}
+ */
+function splitDiffHtml(oldText, newText, { limit = Infinity, wrap = true } = {}) {
+  const lines = text =>
+    text
+      ? String(text)
+          .replace(/\r?\n$/, "")
+          .split(/\r?\n/)
+      : [];
+  let a = lines(oldText),
+    b = lines(newText);
+  // 太长的不逐行比，仍是旧的一块、新的一块
+  if (a.length * b.length > 250000)
+    return {
+      html: `<pre class="tool-output diff-del">${escapeHtml(a.join("\n"))}</pre><pre class="tool-output diff-ins">${escapeHtml(b.join("\n"))}</pre>`,
+      rows: 0,
+      clipped: false,
+      added: b.length,
+      removed: a.length
+    };
+  const lead = Math.min(...[...a, ...b].filter(line => line.trim()).map(line => line.match(/^ */)[0].length));
+  if (lead > 0 && Number.isFinite(lead)) [a, b] = [a, b].map(lines => lines.map(line => line.slice(Math.min(lead, line.length))));
+  const ops = lcsOps(a, b),
+    near = ops.map((_, k) => ops.slice(Math.max(0, k - 2), k + 3).some(op => op[0] !== "s"));
+  /** @type {string[]} */
+  const rows = [];
+  let skipped = 0,
+    added = 0,
+    removed = 0;
+  const gap = () => {
+    if (skipped) rows.push(`<span class="gap">⋯ ${skipped} 行未动</span>`);
     skipped = 0;
-  rows.forEach(([kind, text], k) => {
-    if (kind === "s" && !near[k]) return void skipped++;
-    if (skipped) html += `<span class="gap">⋯ ${skipped} 行未动</span>`;
-    skipped = 0;
-    html += `<span class="${kind}">${escapeHtml(text) || " "}</span>`;
-  });
-  if (skipped) html += `<span class="gap">⋯ ${skipped} 行未动</span>`;
-  return `<pre class="tool-output diff-lines">${html}</pre>`;
+  };
+  const cell = (kind, html, raw = "") =>
+    html === null
+      ? `<span class="e"></span>`
+      : `<span class="${kind}"${!wrap && raw.length > 30 ? ` title="${escapeHtml(raw)}"` : ""}>${html || " "}</span>`;
+  for (let k = 0; k < ops.length; ) {
+    if (ops[k][0] === "s") {
+      if (!near[k]) skipped++;
+      else {
+        gap();
+        rows.push(cell("s", escapeHtml(ops[k][1]), ops[k][1]).repeat(2));
+      }
+      k++;
+      continue;
+    }
+    gap();
+    const dels = [],
+      ins = [];
+    while (k < ops.length && ops[k][0] !== "s") (ops[k][0] === "d" ? dels : ins).push(ops[k++][1]);
+    removed += dels.length;
+    added += ins.length;
+    for (const { d, i } of pairLines(dels, ins)) {
+      const [left, right] =
+        d !== undefined && i !== undefined
+          ? wordMarks(d, i)
+          : [d === undefined ? null : escapeHtml(d), i === undefined ? null : escapeHtml(i)];
+      rows.push(cell("d", left, d) + cell("i", right, i));
+    }
+  }
+  gap();
+  const shown = rows.slice(0, limit);
+  return {
+    html: `<div class="tool-output split-diff${wrap ? "" : " clip"}">${shown.join("")}</div>`,
+    rows: rows.length,
+    clipped: shown.length < rows.length,
+    added,
+    removed
+  };
 }
 // 一件文件在这一答里的改动：不另起接口、不另存一份，用的就是各步本来记着的——改文件那步的前后两段（行迹里同一副红绿），
 // 写文件那步写下的内容与它覆盖掉的原文（逐行比出红绿）；按先后排，摊在预览浮层里。帮手改的也在内。
@@ -113,12 +217,10 @@ function changeDiffHtml(message, path) {
     .map(step => {
       const note = [toolLabel(step.name), step.scope ? "帮手" : "", step.result || step.note || ""].filter(Boolean).join(" · "),
         head = `<p class="file-viewer-note">${escapeHtml(note)}</p>`;
-      if (step.diff)
-        return `${head}<div class="tool-diff"><pre class="tool-output diff-del">${escapeHtml(step.diff.old)}</pre><pre class="tool-output diff-ins">${escapeHtml(step.diff.new)}</pre></div>`;
-      if (step.written !== undefined && step.previous !== undefined && !created)
-        return `${head}<div class="tool-diff">${lineDiffHtml(step.previous, step.written)}</div>`;
+      if (step.diff) return `${head}<div class="tool-diff">${splitDiffHtml(step.diff.old, step.diff.new).html}</div>`;
+      // 新建的件（或没记下原文的）也并排画：左边留空，与改动同一种画法，不一会儿整宽一会儿两栏
       if (step.written !== undefined)
-        return `${head}<div class="tool-diff"><pre class="tool-output diff-ins">${escapeHtml(step.written)}</pre></div>`;
+        return `${head}<div class="tool-diff">${splitDiffHtml(created ? "" : (step.previous ?? ""), step.written).html}</div>`;
       return head;
     })
     .join("")}</div>`;

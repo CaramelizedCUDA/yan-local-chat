@@ -244,16 +244,17 @@ html.work-mode .chat-scroll-grabber {
     background: transparent;
   }
 }
+/* 正文与行迹里说的话同一个字号（中号）：过程与结论靠墨色深浅和时间线那道竖线分，不靠大小——
+   一段话从正文归进行迹时只是墨色变淡，不缩放、不重排（见 设计稿/39） */
 .assistant-block {
   font-family: var(--title);
-  font-size: 16.5px;
+  font-size: 15.5px;
   line-height: 1.85;
 }
-/* 楷与仿宋比宋清瘦，回复放大半号、行距略松，读起来才不费眼 */
+/* 楷与仿宋比宋清瘦，回复放大半号才不费眼 */
 :root[data-font="kai"] .assistant-block,
 :root[data-font="fangsong"] .assistant-block {
-  font-size: 17.5px;
-  line-height: 1.9;
+  font-size: 16px;
 }
 .message-meta {
   display: flex;
@@ -720,30 +721,57 @@ html.work-mode .chat-scroll-grabber {
   background: color-mix(in srgb, var(--code-green) 10%, transparent) !important;
   color: color-mix(in srgb, var(--code-green) 70%, var(--ink)) !important;
 }
-/* 覆盖写的前后两版逐行对齐（见 lineDiffHtml）：一行一色，未动的淡墨，成片未动的折成一行 */
-.diff-lines {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
+/* 并排红绿（见 splitDiffHtml）：旧在左、新在右，一行一格、折行时两边同高，中间一道丝线；
+   未动的淡墨，改了的字同色加深一层（删的另带一道划线），对面没有的那格留白——试过斜纹，整段新增时一大片太抢眼（设计稿/39） */
+.tool-diff .split-diff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  padding: 7px 0;
+  max-height: none;
+  border-left: 0;
+  white-space: normal;
 }
-.diff-lines > span {
-  display: block;
-  padding: 0 10px 0 8px;
+.split-diff > span {
+  min-width: 0;
+  padding: 0 9px 0 7px;
   border-left: 2px solid transparent;
+  white-space: pre-wrap;
 }
-.diff-lines > .s {
+/* 行迹里的：一行放不下只放写得下的，末尾省略，悬停看整行 */
+.split-diff.clip > span {
+  overflow: hidden;
+  white-space: pre;
+  text-overflow: ellipsis;
+}
+.split-diff > span:nth-child(even):not(.gap) {
+  box-shadow: inset 1px 0 0 var(--line);
+}
+.split-diff > .s {
   color: var(--ink-3);
 }
-.diff-lines > .d {
+.split-diff > .d {
   border-left-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 7%, transparent);
   color: color-mix(in srgb, var(--danger) 65%, var(--ink));
 }
-.diff-lines > .i {
+.split-diff > .i {
   border-left-color: var(--code-green);
   background: color-mix(in srgb, var(--code-green) 10%, transparent);
   color: color-mix(in srgb, var(--code-green) 70%, var(--ink));
 }
-.diff-lines > .gap {
+.split-diff mark {
+  border-radius: 2px;
+  color: inherit;
+}
+.split-diff > .d mark {
+  background: color-mix(in srgb, var(--danger) 24%, transparent);
+  text-decoration: line-through color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.split-diff > .i mark {
+  background: color-mix(in srgb, var(--code-green) 28%, transparent);
+}
+.split-diff > .gap {
+  grid-column: 1 / -1;
   color: var(--ink-3);
   opacity: 0.7;
   text-align: center;

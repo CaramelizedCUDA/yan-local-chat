@@ -518,6 +518,11 @@ button.source-local {
 .change-diff .tool-output {
   max-height: none;
 }
+/* 一件文件的改动是并排的两栏：纸面放宽、留白收窄，两边各有一行代码的地方 */
+.file-viewer-text.change-diff {
+  width: min(100%, 1560px);
+  padding: 18px 22px;
+}
 .file-viewer-note {
   margin: 12px 0 0;
   color: var(--ink-3);
