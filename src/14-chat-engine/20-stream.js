@@ -124,6 +124,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       assistant.status = "interrupted";
       assistant.error = friendlyError(error.message);
       assistant.interruptedAt = now();
+      noteBreak(assistant, assistant.error);
     } else {
       assistant.status = "error";
       assistant.error = friendlyError(error.message);

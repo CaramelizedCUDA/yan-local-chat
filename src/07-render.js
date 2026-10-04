@@ -560,7 +560,7 @@ function assistantNoteHtml(message) {
   return message.status === "error"
     ? `<div class="message-error">${escapeHtml(message.error || "请求失败")}</div>`
     : message.status === "interrupted"
-      ? `<div class="resume-note">连接中断，已生成的内容均已保留，可由此续写。</div>`
+      ? `<div class="resume-note">${message.error ? `${escapeHtml(message.error.replace(/[。.\s]+$/, ""))}。` : "连接中断，"}已生成的内容均已保留，可由此续写。</div>`
       : "";
 }
 /** @param {Message} message */

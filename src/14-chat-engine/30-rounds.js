@@ -83,6 +83,7 @@ async function runRounds(target, history, run) {
       // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
       if (error.midStream && !signal.aborted && resumed < AUTO_RESUMES) {
         resumed += 1;
+        noteBreak(target, error.message, true);
         const said = target.content.slice(roundStart);
         chargePartial(said);
         target.toolCalls = null;
@@ -301,6 +302,10 @@ async function readReply(profile, history, signal, overrides, target, retried = 
     }));
   note();
   if (data?.choices?.[0]?.finish_reason === "length") throw Object.assign(Error("模型达到输出长度上限，回复尚未完成"), { midStream: true });
+}
+// 途中断过一回记一笔：只留最近十回，续写不清
+function noteBreak(target, why, auto = false) {
+  target.breaks = [...(target.breaks || []), { at: now(), why: String(why || "").slice(0, 200), ...(auto ? { auto } : {}) }].slice(-10);
 }
 // 网络一晃就断太脆：接口没接下请求时（连不上、限流、5xx、过载）等一等再试，间隔渐长，接口给了 Retry-After 就照它等；
 // 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」

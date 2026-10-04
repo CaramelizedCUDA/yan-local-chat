@@ -40,6 +40,7 @@
  * @property {string} [report] 最后一轮说的话，即交回主模型的回报
  * @property {number} [durationMs]
  * @property {number} [startedAt] 正在做时的起始时刻（毫秒），题头据此走用时；收工即删
+ * @property {Break[]} [breaks]
  * @property {ToolCall[]|null} [toolCalls]
  */
 /**
@@ -105,6 +106,7 @@
  * @property {boolean} [tokenEstimated]
  * @property {string} [error]
  * @property {string} [interruptedAt]
+ * @property {Break[]} [breaks]
  * @property {number} [durationMs]
  * @property {number} [startedAt] 正在作答时的起始时刻（毫秒），行迹题头据此走用时；收尾即删
  * @property {{ path: string, name: string, size: number }[]} [deliverables] 言里这一答做出的成品
@@ -116,6 +118,7 @@
  * @property {number} [compacted] 压进摘要的条数
  * @property {boolean} [compacting]
  */
+/** @typedef {{ at: string, why: string, auto?: boolean }} Break 途中断过的一回：何时、为何；auto 是自动接着写上了的。续写不清，查「为何总断」时翻它 */
 /** @typedef {{ id: string, parentId: string|null, messages: Message[], createdAt: string }} Fork 被换下来的一段尾巴 */
 /** @typedef {{ id: string, anchor: { messageId: string, text: string, occurrence?: number }, createdAt: string, updatedAt: string, messages: Message[] }} Thread 旁注；occurrence 是所注的那段在正文里第几次出现（从 0 起） */
 /**
