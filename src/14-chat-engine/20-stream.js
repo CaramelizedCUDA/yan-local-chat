@@ -22,10 +22,11 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   requestJobs.set(conversation.id, job);
   renderSendButtons();
   renderHistory();
-  const started = performance.now();
+  const started = performance.now(),
+    spentBefore = resume ? Number(assistant.durationMs) || 0 : 0;
   const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
-  // 行迹题头的用时边做边走：长指令跑着时没有新字进来、不会重画，另起一只每秒一跳的钟
-  assistant.startedAt = Date.now();
+  // 行迹题头的用时边做边走：长指令跑着时没有新字进来、不会重画，另起一只每秒一跳的钟。续写接着此前的用时走，不从零起
+  assistant.startedAt = Date.now() - spentBefore;
   const clock = setInterval(() => tickTrailClock(assistant), 1000);
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
   const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
@@ -55,7 +56,11 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
         if (typeof ask.content === "string") ask.content = `${ledger}${ask.content}`;
         else ask.content[0].text = `${ledger}${ask.content[0].text}`;
       }
-      if (resumeFrom) head.push({ role: "assistant", content: resumeFrom }, { role: "user", content: prompt("assistant.resume") });
+      // 续写只递已写的话，做过的步骤也得让它知道（另发一句「继续」时上一答的行迹本就随着去），不然从头再做一遍
+      if (resumeFrom) {
+        const trail = stepsDigest(assistant);
+        head.push({ role: "assistant", content: resumeFrom }, { role: "user", content: `${trail ? `${trail}\n\n` : ""}${prompt("assistant.resume")}` });
+      }
       return head;
     };
     await loadLedger(conversation, job.controller.signal);
@@ -126,7 +131,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   } finally {
     if (gaugeTicker) clearInterval(gaugeTicker);
     if (clock) clearInterval(clock);
-    assistant.durationMs = Math.round(performance.now() - started);
+    assistant.durationMs = spentBefore + Math.round(performance.now() - started);
     delete assistant.startedAt;
     // 帮手（差遣）自己跑的几轮也是这一答花的墨：这一次新起的步骤里已做完的帮手用量一并计入（续写时此前的已经记过）；
     // 还在后台做的，做完再记回这一答（见 chargeHelper）

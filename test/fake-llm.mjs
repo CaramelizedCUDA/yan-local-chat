@@ -758,10 +758,10 @@ http
         ]);
       }
       // 断线后页面自动请它接着写：STREAMERR 那段每回都断（接满两回仍断，才算中断），别的接上一句收尾
-      if (typeof lastUser === "string" && lastUser.startsWith("上一条回复在此处因连接中断")) {
+      if (typeof lastUser === "string" && lastUser.includes("上一条回复在此处中断")) {
         const asked = [...msgs]
           .reverse()
-          .find(m => m.role === "user" && typeof m.content === "string" && !m.content.startsWith("上一条回复在此处因连接中断"));
+          .find(m => m.role === "user" && typeof m.content === "string" && !m.content.includes("上一条回复在此处中断"));
         if (String(asked?.content || "").includes("STREAMERR"))
           return sse(res, [{ error: { message: "rate limited again (fake)", type: "rate_limit_error" } }]);
         return sse(res, [delta({ content: "接着写完。" }), delta({}, { usage: { total_tokens: 5 } })]);

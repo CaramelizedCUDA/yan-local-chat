@@ -571,7 +571,7 @@ function assistantActionsHtml(message) {
       ? actionIcon("retry", "重试", icons.retry)
       : message.status === "interrupted"
         ? `${message.content ? actionIcon("copy", "复制已生成内容", icons.copy) : ""}${actionIcon("resume", "继续生成", icons.resume)}${actionIcon("retry", "从头重试", icons.retry)}`
-        : `${actionIcon("copy", "复制回复", icons.copy)}${actionIcon("regenerate", "重新生成", icons.regenerate)}${actionIcon("note", "旁注", icons.note)}${messageCostHtml(message)}`;
+        : `${actionIcon("copy", "复制回复", icons.copy)}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", "继续生成", icons.resume) : ""}${actionIcon("regenerate", "重新生成", icons.regenerate)}${actionIcon("note", "旁注", icons.note)}${messageCostHtml(message)}`;
 }
 // 这一答耗了多少墨：各轮请求的用量之和（含帮手），接口报了用量就用实数，没报则按字数估；当前上下文有多大另看右下角
 /** @param {Message} message */

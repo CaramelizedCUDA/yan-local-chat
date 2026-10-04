@@ -121,7 +121,9 @@ function trailLabel(message) {
     return live ? `工作中 · ${live}` : "工作中";
   }
   const spent = spentText(message.durationMs);
-  return message.status === "complete" ? (spent ? `工作了 ${spent}` : "工作记录") : message.status === "stopped" ? "已搁笔" : "已中断";
+  if (message.status === "complete") return spent ? `工作了 ${spent}` : "工作记录";
+  // 停下、断了的也记着做了多久：续写时接着这个数走
+  return `${message.status === "stopped" ? "已搁笔" : "已中断"}${spent ? ` · ${spent}` : ""}`;
 }
 // 作答途中每秒一跳：只换行迹题头那一行字，不重画整答
 /** @param {Message} message */
