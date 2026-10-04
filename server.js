@@ -3,8 +3,6 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
-const os = require("node:os");
-const { Readable } = require("node:stream");
 const { createHash } = require("node:crypto");
 // 拼接规则（build.js）改了就重新载入：页面脚本本是即时拼的，不该因为拼法变了就得重启桥接
 const BUILD_FILE = require.resolve("./build.js");
@@ -19,21 +17,13 @@ function currentBundler() {
   }
   return bundler;
 }
-// Anthropic 适配与页面共用同一份源码（src/19-anthropic.js）：请求换成 Messages API 的，事件流换回 OpenAI 风格
-require("./src/19-anthropic.js");
-const ANTHROPIC = globalThis.YAN_ANTHROPIC;
-// ChatGPT 订阅：官方的「Sign in with ChatGPT」，请求同样在最外层换一层（见 server/chatgpt.js；登录凭证随存储根，实例在 STORE 之后建）
-const { chatgptLike, hinted, responsesRequest, responsesToOpenAiStream } = require("./server/chatgpt.js");
-const { finished } = require("node:stream/promises");
-const { sendJson, readJson } = require("./server/http.js");
+const { sendJson } = require("./server/http.js");
 // 联网：地址门禁、翻网页、检索、调接口
 const WEB = require("./server/web.js");
 
 const ROOT = __dirname;
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.YAN_PORT || 8787);
-// 工具定义一次最多带多少件：超过不再静默截掉后面的，明确报错，接入更多工具时一眼能看出来
-const TOOLS_LIMIT = 128;
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -101,62 +91,11 @@ function trustedWorkRequest(req) {
     return false;
   }
 }
-function endpoint(baseUrl, suffix) {
-  const base = String(baseUrl || "").trim();
-  const url = new URL(base);
-  if (!/^https?:$/.test(url.protocol)) throw Error("Base URL 只支持 http 或 https");
-  return /\/chat\/completions\/?$/.test(url.pathname) ? url.href : `${url.href.replace(/\/$/, "")}${suffix}`;
-}
-function resolveProfile(input, requireModel = true) {
-  const config = {
-    baseUrl: String(input?.baseUrl || "").trim(),
-    model: String(input?.model || "").trim(),
-    apiKey: String(input?.apiKey || "").trim(),
-    api: String(input?.api || "")
-      .trim()
-      .toLowerCase()
-  };
-  if (chatgptLike(config)) config.baseUrl ||= CHATGPT.endpoint;
-  if (!config.baseUrl || (requireModel && !config.model)) throw Error(requireModel ? "请填写 Base URL 和模型 ID" : "请填写 Base URL");
-  return config;
-}
-function modelsUrl(baseUrl) {
-  const url = new URL(baseUrl);
-  url.pathname = `${url.pathname.replace(/\/chat\/completions\/?$/i, "").replace(/\/$/, "")}/models`;
-  return url;
-}
-async function upstreamHeaders(config) {
-  if (chatgptLike(config)) return CHATGPT.headers();
-  if (ANTHROPIC.anthropicLike(config)) return ANTHROPIC.anthropicHeaders(config.apiKey);
-  return { "Content-Type": "application/json; charset=utf-8", ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) };
-}
-// 列模型的地址：Anthropic 是 /v1/models，OpenAI 兼容的是 Base URL 下的 /models
-function upstreamModelsUrl(config) {
-  return ANTHROPIC.anthropicLike(config) ? ANTHROPIC.anthropicEndpoint(config.baseUrl, "/v1/models") : modelsUrl(config.baseUrl);
-}
-async function upstreamError(response) {
-  const raw = await response.text().catch(() => "");
-  try {
-    const json = JSON.parse(raw),
-      detail = json.detail;
-    // OpenAI 系 { error: { message } }、有的中转站 { error: "…" }、旧版 vLLM { message }、FastAPI 写的自建服务 { detail }；
-    // ChatGPT 订阅额度那边的几种拒绝换成看得懂的话
-    return (
-      (typeof json.error === "string" ? json.error : json.error?.message && hinted(json.error.code, json.error.message)) ||
-      (typeof json.message === "string" ? json.message : "") ||
-      (typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : "") ||
-      `上游接口返回 ${response.status}`
-    );
-  } catch {
-    return raw.slice(0, 300) || `上游接口返回 ${response.status}`;
-  }
-}
-
 let APP_VERSION = "";
 try {
   APP_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version || "";
 } catch {}
-// 桥接自己的代码（server.js、server/、Anthropic 适配）在启动之后又改过：页面据此提醒重启，
+// 桥接自己的代码（server.js、server/）在启动之后又改过：页面据此提醒重启，
 // 否则新页面对着旧桥接，接口对不上时的毛病无从查起
 const STARTED_AT = Date.now();
 function bridgeStale() {
@@ -164,9 +103,7 @@ function bridgeStale() {
     fs
       .readdirSync(dir, { withFileTypes: true })
       .flatMap(entry => (entry.isDirectory() ? under(path.join(dir, entry.name)) : [path.join(dir, entry.name)]));
-  return [__filename, path.join(ROOT, "src", "19-anthropic.js"), ...under(path.join(ROOT, "server"))].some(
-    file => fs.statSync(file).mtimeMs > STARTED_AT
-  );
+  return [__filename, ...under(path.join(ROOT, "server"))].some(file => fs.statSync(file).mtimeMs > STARTED_AT);
 }
 function handleBootstrap(req, res) {
   sendJson(res, 200, {
@@ -185,165 +122,6 @@ function handleBootstrap(req, res) {
     }
   });
 }
-async function handleTest(req, res) {
-  const started = Date.now();
-  try {
-    const body = await readJson(req),
-      config = resolveProfile(body.profile, true);
-    // ChatGPT 订阅：列得出这个账号的模型就算连上
-    if (chatgptLike(config)) {
-      const models = await CHATGPT.models();
-      return sendJson(res, 200, { ok: true, latencyMs: Date.now() - started, modelFound: models.includes(config.model) });
-    }
-    const response = await fetch(upstreamModelsUrl(config), { headers: await upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
-    if (!response.ok) throw Error(await upstreamError(response));
-    const data = await response.json();
-    sendJson(res, 200, {
-      ok: true,
-      latencyMs: Date.now() - started,
-      modelFound: !Array.isArray(data.data) || data.data.some(item => item.id === config.model)
-    });
-  } catch (error) {
-    sendJson(res, 400, { error: String(error.message || error).slice(0, 500) });
-  }
-}
-async function handleModels(req, res) {
-  try {
-    const body = await readJson(req),
-      config = resolveProfile(body.profile, false);
-    if (chatgptLike(config)) return sendJson(res, 200, { models: await CHATGPT.models() });
-    const response = await fetch(upstreamModelsUrl(config), { headers: await upstreamHeaders(config), signal: AbortSignal.timeout(20000) });
-    if (!response.ok) throw Error(await upstreamError(response));
-    const data = await response.json();
-    const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
-    sendJson(res, 200, { models: list.map(item => (typeof item === "string" ? item : item?.id || item?.name)).filter(Boolean) });
-  } catch (error) {
-    sendJson(res, 400, { error: String(error.message || error).slice(0, 500) });
-  }
-}
-async function handleChat(req, res) {
-  const meter = { model: "", opened: 0, last: 0, bytes: 0 };
-  try {
-    const body = await readJson(req),
-      config = resolveProfile(body.profile, true);
-    meter.model = config.model;
-    if (!Array.isArray(body.messages) || !body.messages.length) throw Error("消息不能为空");
-    const messages = body.systemPrompt ? [{ role: "system", content: String(body.systemPrompt) }, ...body.messages] : body.messages;
-    const payload = {
-      model: config.model,
-      messages,
-      stream: true,
-      stream_options: { include_usage: true }
-    };
-    // 温度：页面给了才带（模型设置里留空即不传，由接口定）
-    if (body.temperature !== undefined && body.temperature !== null && Number.isFinite(Number(body.temperature)))
-      payload.temperature = Math.max(0, Math.min(2, Number(body.temperature)));
-    // 页面给了才带 max_tokens（Anthropic 与拟题、压缩这几处）；没给就不传，让接口用自己的默认
-    if (Number(body.maxTokens) > 0) payload.max_tokens = Math.max(16, Math.round(Number(body.maxTokens)));
-    if (Array.isArray(body.tools) && body.tools.length) {
-      if (body.tools.length > TOOLS_LIMIT) throw Error(`工具定义过多：${body.tools.length} 件，一次最多 ${TOOLS_LIMIT} 件`);
-      payload.tools = body.tools;
-    }
-    // 思考强度：只透传这几个字段
-    for (const key of ["reasoning_effort", "enable_thinking", "thinking_budget"]) if (body[key] !== undefined) payload[key] = body[key];
-    const abort = new AbortController();
-    res.on("close", () => {
-      if (!res.writableEnded) abort.abort();
-    });
-    console.log(
-      `${new Date().toLocaleTimeString("zh-CN", { hour12: false })} → ${config.model}：${messages.length} 条消息${payload.tools ? `，工具 ${payload.tools.length} 个` : ""}`
-    );
-    // Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格再给页面；ChatGPT 订阅换成 Responses 的，同理；OpenAI 兼容的原样透传（thinking_blocks 是这两家才要的，去掉）
-    const anthropic = ANTHROPIC.anthropicLike(config),
-      chatgpt = chatgptLike(config);
-    if (!anthropic && !chatgpt) {
-      payload.messages = messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
-      if (ANTHROPIC.claudeModel(config.model)) payload.messages = ANTHROPIC.markOpenAiCache(payload.messages);
-    }
-    // 上游的状态码原样带回页面（连不上记作 502）：429、5xx、过载这些页面会等一等再试，参数错之类的 4xx 不试
-    // 探档位（故意送一个不存在的档位）：ChatGPT 订阅的模型表上写着它认哪几档，照表按 OpenAI 的报错样子回，不必真发一趟
-    if (chatgpt && payload.reasoning_effort === "probe") {
-      const levels = CHATGPT.levels(config.model);
-      if (levels.length)
-        throw Object.assign(Error(`Invalid value: 'probe'. Supported values are: ${levels.map(level => `'${level}'`).join(", ")}.`), {
-          status: 400
-        });
-    }
-    const upstreamBody = chatgpt ? responsesRequest(payload) : anthropic ? ANTHROPIC.anthropicRequest(payload) : payload;
-    const headers = await upstreamHeaders(config);
-    const response = await fetch(
-      chatgpt ? CHATGPT.endpoint : anthropic ? ANTHROPIC.anthropicEndpoint(config.baseUrl) : endpoint(config.baseUrl, "/chat/completions"),
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify(upstreamBody),
-        signal: abort.signal
-      }
-    ).catch(error => {
-      throw Object.assign(Error(`连不上上游接口：${error.cause?.code || error.cause?.message || error.message}`), {
-        status: 502,
-        name: error.name
-      });
-    });
-    if (!response.ok)
-      throw Object.assign(Error(await upstreamError(response)), {
-        status: response.status,
-        retryAfter: response.headers.get("retry-after") || ""
-      });
-    // 记着流了多少、最后一次来字是何时：途中断了，桥接窗口里一行看得出是对面掐线还是静默太久（见下 catch）
-    meter.opened = Date.now();
-    meter.last = meter.opened;
-    const metered = response.body.pipeThrough(
-      new TransformStream({
-        transform(chunk, controller) {
-          meter.bytes += chunk.byteLength;
-          meter.last = Date.now();
-          controller.enqueue(chunk);
-        }
-      })
-    );
-    res.writeHead(200, {
-      "Content-Type":
-        anthropic || chatgpt
-          ? "text/event-stream; charset=utf-8"
-          : response.headers.get("content-type") || "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no"
-    });
-    // 不用 pipeline：上游一断它连页面这头也一并销毁，下面 catch 里那条「连接中断」的报错事件就补不上了，页面只见一句 network error
-    const source = Readable.fromWeb(
-      chatgpt
-        ? metered.pipeThrough(responsesToOpenAiStream(config.model))
-        : anthropic
-          ? metered.pipeThrough(ANTHROPIC.anthropicToOpenAiStream(config.model))
-          : metered
-    );
-    source.pipe(res, { end: false });
-    await finished(source);
-    res.end();
-  } catch (error) {
-    // 底层的原因码（UND_ERR_SOCKET 对面掐线、UND_ERR_BODY_TIMEOUT 静默五分钟……）比一句「terminated」有用，一并带上
-    const code = error?.cause?.code || error?.code || "",
-      reason = `${String(error.message || error).slice(0, 200)}${code && !String(error.message).includes(code) ? `（${code}）` : ""}`;
-    if (meter.opened && error?.name !== "AbortError")
-      console.log(
-        `${stamp()} ✕ ${meter.model}：途中断了 · ${reason} · 开流 ${Math.round((Date.now() - meter.opened) / 1000)} 秒、收 ${meter.bytes} 字节、最后来字在 ${Math.round((Date.now() - meter.last) / 1000)} 秒前`
-      );
-    if (!res.headersSent) {
-      if (error.retryAfter) res.setHeader("Retry-After", error.retryAfter);
-      sendJson(res, error.status >= 400 ? error.status : 400, { error: String(error.message || error).slice(0, 500) });
-    } else if (!res.writableEnded && !res.destroyed) {
-      // 流开了头才断的（上游掐线、读超时）：不能就这么静静结束——页面会把半截话当成写完了。
-      // 补一条带 error 的事件再收，页面据此按「连接中断」处理，留着续写的余地；页面自己先走了的不必补
-      if (!res.destroyed && error?.name !== "AbortError")
-        try {
-          res.write(`data: ${JSON.stringify({ error: { message: `上游连接中断：${reason}` } })}\n\n`);
-        } catch {}
-      res.end();
-    }
-  }
-}
 // 存储根（默认 ~/.yan）：对话、卷宗、配置都在里面，换位置后下面两处跟着走
 const STORE = require("./server/store.js")();
 // 沙箱环境：存储根里的 环境/，桥接起的进程（指令、MCP 服务）都接上它
@@ -355,27 +133,27 @@ const WORK = require("./server/work/index.js")({
 });
 const CHATS = require("./server/chats.js")({ chatsHome: () => STORE.paths().chats });
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files });
+const STAGE_LIB = require("./server/stage.js");
 // MCP：按设置里的配置起、连外部的 MCP 服务，把它们的工具交给页面
 const MCP = require("./server/mcp/index.js")({
   version: APP_VERSION,
   toolEnv: ENV.apply,
   // 游目自己的浏览器拼成整条；起 Playwright 的 MCP 时补齐游目要的接法（调试口、放行来源、窗口挪到屏幕外），见 server/stage.js
-  prepare: config => require("./server/stage.js").prepareMcp(config, { root: STORE.paths().root, bridgePort: PORT })
+  prepare: config => STAGE_LIB.prepareMcp(config, { root: STORE.paths().root, bridgePort: PORT })
 });
 // 看台：替页面问出模型所用浏览器的调试地址，其余页面直连（见 server/stage.js）
-const STAGE = require("./server/stage.js")({ root: () => STORE.paths().root });
+const STAGE = STAGE_LIB({ root: () => STORE.paths().root });
 // 总线：长请求的响应从页面的一条事件流回去，不再一个请求占一条浏览器连接（见 server/bus.js）
 const BUS = require("./server/bus.js")({ dispatch });
-const CHATGPT = require("./server/chatgpt.js")({ home: () => STORE.paths().root });
+// 模型转发：测试连接、列模型、对话；各家接口的差异都在 server/model/ 的登记表里（ChatGPT 订阅的登录凭证随存储根）
+const MODEL = require("./server/model/index.js")({ home: () => STORE.paths().root });
 
 // 接口表：「方法 路径」→ 处理函数。受信的那一半能碰本机磁盘与本机服务（执事、卷宗、对话目录、存储、附件，以及能打本机的 http_request），
 // 只受理本站页面与 VS Code Webview；另一半（引导、转发、检索、翻网页）凡是本机桥接认得的来源都可调
 const OPEN_ROUTES = {
     "GET /api/bootstrap": handleBootstrap,
-    "POST /api/test": handleTest,
-    "POST /api/models": handleModels,
+    ...MODEL.openRoutes,
     ...WEB.openRoutes,
-    "POST /api/chat": handleChat,
     ...BUS.routes
   },
   TRUSTED_ROUTES = {
@@ -387,7 +165,7 @@ const OPEN_ROUTES = {
     ...MCP.routes,
     ...ENV.routes,
     ...STAGE.routes,
-    ...CHATGPT.routes
+    ...MODEL.routes
   };
 const ROUTES = new Map(Object.entries({ ...OPEN_ROUTES, ...TRUSTED_ROUTES }));
 const TRUSTED_PATHS = new Set(Object.keys(TRUSTED_ROUTES).map(key => key.split(" ")[1]));

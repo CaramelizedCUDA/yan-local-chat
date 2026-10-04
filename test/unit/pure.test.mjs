@@ -40,15 +40,17 @@ const f = load([
   "quotedText",
   "limitLabel",
   "trailGroups",
-  "anthropicRequest",
-  "anthropicToOpenAiStream",
-  "anthropicEndpoint",
   "anthropicLike",
   "PROMPTS",
   "mergeConfig3",
   "looksLikeMermaid",
   "liftBareMermaid"
 ]);
+// 各家接口的适配在桥接里（server/model/）
+const { createRequire: requireFrom } = await import("node:module");
+Object.assign(f, requireFrom(import.meta.url)("../../server/model/anthropic.js"));
+const { upstreamError } = requireFrom(import.meta.url)("../../server/model/index.js");
+const openaiProvider = requireFrom(import.meta.url)("../../server/model/openai.js");
 // 工具的 schema 在 prompts/tools.js 里（挂在 window.YAN_PROMPTS 上）；这里把它接进来，参数归位才有 schema 可查
 const { createRequire } = await import("node:module");
 const req = createRequire(import.meta.url);
@@ -598,9 +600,8 @@ test("contextOverflow / learnContextWindow：vLLM 连带列出 0 个输出 token
   f.learnContextWindow(set, vllm);
   assert.equal(set.contextWindow, 20000);
 });
-test("describeResponseError：各家报错的样子都取得出那句话，不是 JSON 的取原文", async () => {
-  const says = (body, status = 400) =>
-    f.describeResponseError(new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
+test("upstreamError：各家报错的样子都取得出那句话，不是 JSON 的取原文", async () => {
+  const says = (body, status = 400) => upstreamError(new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
   assert.equal(await says({ error: { message: "bad key" } }), "bad key");
   assert.equal(await says({ error: "桥接的话" }), "桥接的话");
   assert.equal(await says({ object: "error", message: "old vllm" }), "old vllm");
@@ -610,5 +611,25 @@ test("describeResponseError：各家报错的样子都取得出那句话，不�
     /reasoning_effort.*'low'/
   );
   assert.equal(await says("modal-http: app stopped", 502), "modal-http: app stopped");
+  assert.equal(await says("", 500), "上游接口返回 500");
+});
+test("describeResponseError：页面只读桥接回的 { error }，不是 JSON 的取原文", async () => {
+  const says = (body, status = 400) =>
+    f.describeResponseError(new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
+  assert.equal(await says({ error: "桥接的话" }), "桥接的话");
+  assert.equal(await says("modal-http: app stopped", 502), "modal-http: app stopped");
   assert.equal(await says("", 500), "请求失败（500）");
+});
+test("OpenAI 兼容：DashScope 的档位换成预算，别家原样；思考块去掉", () => {
+  const payload = { model: "qwen", messages: [{ role: "assistant", content: "x", thinking_blocks: [{}] }], reasoning_effort: "high" };
+  const dash = openaiProvider.request(payload, { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen" });
+  assert.equal(dash.reasoning_effort, undefined);
+  assert.equal(dash.enable_thinking, true);
+  assert.equal(dash.thinking_budget, 32768);
+  assert.equal(dash.messages[0].thinking_blocks, undefined);
+  const plain = openaiProvider.request(payload, { baseUrl: "https://example.com/v1", model: "gpt" });
+  assert.equal(plain.reasoning_effort, "high");
+  assert.equal(plain.enable_thinking, undefined);
+  assert.deepEqual(openaiProvider.levels({ baseUrl: "https://dashscope.aliyuncs.com/v1" }), ["low", "medium", "high", "max"]);
+  assert.equal(openaiProvider.levels({ baseUrl: "https://example.com/v1" }), null);
 });

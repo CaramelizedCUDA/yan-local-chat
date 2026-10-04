@@ -1,14 +1,14 @@
 "use strict";
 // 言 · ChatGPT 订阅：走 OpenAI 给开源与本机应用开的「Sign in with ChatGPT」——在浏览器里授权，额度记在用户的 ChatGPT 订阅上，
 // 请求直发公开的 Responses API（api.openai.com/v1/responses），带言自己的提示与工具，不经 Codex 那一层。
-// 与 Anthropic 适配一个路数：页面照旧送 OpenAI 格式，这里把请求换成 Responses 的，事件流再换回 chat.completions 的分块。
+// 与 Anthropic 适配一个路数：页面照旧送 OpenAI 格式，这里把请求换成 Responses 的，事件流再换回 chat.completions 的分块（登记的样子见 index.js 开头）。
 // 凭证只在桥接里：存储根下的「ChatGPT 登录.json」，不进页面、不进备份
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { createHash, randomBytes, randomUUID } = require("node:crypto");
-const { jsonRoute, writeAtomic } = require("./http.js");
+const { jsonRoute, writeAtomic } = require("../http.js");
 
 // 两处地址可由环境变量换掉，只为测试：起一个假的授权与接口服务
 const AUTH = (process.env.YAN_CHATGPT_AUTH || "https://auth.openai.com").replace(/\/+$/, "");
@@ -35,9 +35,6 @@ const HINTS = {
   subscription_sharing_unsupported_capability: "ChatGPT 订阅不支持这一问里的某样东西（模型、工具或附件）"
 };
 
-function chatgptLike(profile) {
-  return String(profile?.api || "").toLowerCase() === "chatgpt";
-}
 const base64url = buffer => Buffer.from(buffer).toString("base64url");
 function jwtClaims(jwt) {
   try {
@@ -236,7 +233,16 @@ module.exports = function createChatgpt({ home }) {
     "POST /api/chatgpt/status": jsonRoute(status),
     "POST /api/chatgpt/logout": jsonRoute(logout)
   };
-  return { headers, models, levels, endpoint: `${API}/responses`, routes };
+  const provider = {
+    needsBaseUrl: false,
+    url: () => `${API}/responses`,
+    headers: () => headers(),
+    request: payload => responsesRequest(payload),
+    stream: model => responsesToOpenAiStream(model),
+    models: () => models(),
+    levels: config => levels(config.model)
+  };
+  return { provider, routes };
 };
 
 function inputParts(content) {
@@ -403,4 +409,4 @@ function responsesToOpenAiStream(model = "") {
     }
   });
 }
-Object.assign(module.exports, { chatgptLike, hinted, responsesRequest, responsesToOpenAiStream });
+Object.assign(module.exports, { hinted, responsesRequest, responsesToOpenAiStream });

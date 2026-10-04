@@ -2,8 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-createRequire(import.meta.url)("../../src/19-anthropic.js");
-const { claudeModel, markOpenAiCache } = globalThis.YAN_ANTHROPIC;
+const { claudeModel, markOpenAiCache } = createRequire(import.meta.url)("../../server/model/anthropic.js");
 
 test("only Claude models get cache marks", () => {
   assert.ok(claudeModel("claude-opus-5.5"));
@@ -28,7 +27,13 @@ test("marks the system prompt and the last message, leaves the rest", () => {
 });
 
 test("a multi-part tail gets the mark on its last part only", () => {
-  const tail = { role: "user", content: [{ type: "text", text: "看图" }, { type: "image_url", image_url: { url: "data:," } }] };
+  const tail = {
+    role: "user",
+    content: [
+      { type: "text", text: "看图" },
+      { type: "image_url", image_url: { url: "data:," } }
+    ]
+  };
   const [marked] = markOpenAiCache([tail]);
   assert.equal(marked.content[0].cache_control, undefined);
   assert.deepEqual(marked.content[1].cache_control, { type: "ephemeral" });

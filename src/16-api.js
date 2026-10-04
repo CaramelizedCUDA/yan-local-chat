@@ -92,7 +92,7 @@ function formatTokens(value) {
         ? compact(n / 1000, "k")
         : String(n);
 }
-// 思考强度：OpenAI 系接口走 reasoning_effort；DashScope 兼容模式走 enable_thinking / thinking_budget。留空则不带字段，由接口自己定。
+// 思考强度：一律以 reasoning_effort 送到桥接，各家怎么换算（Anthropic 的 effort 与预算、DashScope 的 thinking_budget）由桥接定（见 server/model/）。留空则不带字段，由接口自己定。
 // 各家接受的档位不一样（有的只有 low / medium / xhigh，有的多一个 minimal 或 max）：模型配置里可填「思考档位」，
 // 没填就按四档（低 / 中 / 高 / 最高）列；只认三档的接口拒绝某个档位时，从它的报错里读出它认的那几档记到模型上，
 // 把这一问换成最接近的一档重发一次，此后菜单只列它认的。菜单上没有「关」：愿意接 Key 的人不至于连思考都不愿开，
@@ -140,13 +140,6 @@ function nearestReasoning(profile, level) {
 }
 /** @param {Profile} profile */
 function reasoningFields(profile, level) {
-  level = normalizeReasoning(level);
-  if (!level) return {};
-  if (/dashscope|aliyuncs/i.test(profile.baseUrl || ""))
-    return {
-      enable_thinking: true,
-      thinking_budget: { minimal: 1024, low: 2048, medium: 8192, high: 32768, xhigh: 65536, max: 81920 }[level] || 8192
-    };
   const effort = nearestReasoning(profile, level);
   return effort ? { reasoning_effort: effort } : {};
 }
@@ -180,7 +173,7 @@ function learnReasoningLevels(profile, message, sent) {
 // 报错说它压根不认识 reasoning_effort，记成 none（菜单上只剩「默认」）；接口照单全收（中转站常常忽略这个字段）就按通用四档列。
 // 鉴权、网络之类别的错不算探过，下次再探。探过的记在 reasoningProbed 上——记的是「接口 + 地址 + 模型」三样合成的键，
 // 换了模型、换了地址或接口类型都得重探；探测发出去之后模型被换了（探着 A 的时候切到 B），回来的结果作废，不往 B 上写。
-// Anthropic 与 DashScope 的档位是换算成预算送的，没有可探的枚举，直接算探过。回值是探到的几档，没探成给 null
+// 档位有定表的接口（Anthropic、DashScope、ChatGPT 订阅）由桥接照表回同样的报错，不必另走一路。回值是探到的几档，没探成给 null
 /** @param {Profile} profile 探的是这个模型此刻的身份 */
 function reasoningProbeKey(profile) {
   return `${anthropicLike(profile) ? "anthropic" : "openai"}|${String(profile?.baseUrl || "").trim()}|${String(profile?.model || "").trim()}`;
@@ -211,12 +204,6 @@ function reasoningManual(profile) {
 async function probeReasoningLevels(profile, force = false) {
   if (!profile?.model || (!force && reasoningProbed(profile))) return null;
   const key = reasoningProbeKey(profile);
-  if (anthropicLike(profile) || /dashscope|aliyuncs/i.test(profile.baseUrl || "")) {
-    profile.reasoningLevels = "";
-    profile.reasoningProbed = key;
-    saveStoreSoon();
-    return profileReasoningLevels(profile);
-  }
   const controller = new AbortController(),
     timer = setTimeout(() => controller.abort(), 20000);
   try {
@@ -250,24 +237,17 @@ async function probeReasoningLevels(profile, force = false) {
     controller.abort();
   }
 }
-// 接口没接下请求时回的那句话。各家的样子不一：OpenAI 系 { error: { message } }、桥接 { error: "…" }、旧版 vLLM { message }、
-// FastAPI 写的自建服务 { detail }（参数校验错是一串对象，整串交出去，思考档位的报错才读得出它认哪几档）；不是 JSON 的取原文开头
+// 桥接没接下请求时回的那句话：桥接一律回 { error }（各家上游的报错样子在桥接那头归一，见 server/model/index.js 的 upstreamError）；
+// 不是 JSON 的（桥接之外的什么挡在了中间）取原文开头
 async function describeResponseError(response) {
   const raw = await response.text().catch(() => "");
-  let data;
+  let error;
   try {
-    data = JSON.parse(raw);
+    error = JSON.parse(raw)?.error;
   } catch {
     return raw.trim().slice(0, 300) || `请求失败（${response.status}）`;
   }
-  const error = data?.error,
-    detail = data?.detail;
-  return (
-    (typeof error === "string" ? error : error?.message) ||
-    (typeof data?.message === "string" ? data.message : "") ||
-    (typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : "") ||
-    `请求失败（${response.status}）`
-  );
+  return (typeof error === "string" && error) || `请求失败（${response.status}）`;
 }
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
@@ -294,8 +274,16 @@ async function requestChat(profile, messages, signal, overrides = {}) {
 }
 /** @param {Profile} profile */
 function profileForRequest(profile) {
-  return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profile.api || "" };
+  return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profileApi(profile) };
 }
+// 接口类型：设置里选的为准；旧配置没写的按地址认（anthropic.com）。桥接照它挑这一家的登记，不再自己认
+/** @param {Profile} profile @returns {"openai"|"anthropic"|"chatgpt"} */
+function profileApi(profile) {
+  const api = String(profile?.api || "").toLowerCase();
+  if (api === "anthropic" || api === "chatgpt") return api;
+  return !api && /anthropic\.com/i.test(String(profile?.baseUrl || "")) ? "anthropic" : "openai";
+}
+const anthropicLike = profile => profileApi(profile) === "anthropic";
 // 提示里有多少走了缓存，各家记法不一（OpenAI 系与桥接换过的 Anthropic、ChatGPT 订阅在 prompt_tokens_details，DeepSeek 叫 prompt_cache_hit_tokens），
 // 归成一个 cached_tokens，一答累加，耗墨的浮签上标出几成走了缓存
 function withCached(usage) {

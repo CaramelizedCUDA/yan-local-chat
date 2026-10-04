@@ -16,7 +16,7 @@ function profileCardHtml(p) {
     quota = quotaParts(p.quota),
     models = Array.isArray(p.modelList) ? p.modelList : [],
     listed = models.includes(p.model),
-    chatgpt = p.api === "chatgpt";
+    chatgpt = profileApi(p) === "chatgpt";
   const modelField = `<div class="field-row">${models.length ? `<select class="field wide select" data-model-select>${models.map(m => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("")}<option value="__custom__"${listed ? "" : " selected"}>手动输入…</option></select>` : ""}<input class="field wide${models.length && listed ? " hidden" : ""}" data-field="model" value="${escapeHtml(p.model)}" placeholder="如 gpt-4o-mini"><button class="outline-btn" data-profile-action="models" title="从接口的 /models 获取可用模型">${models.length ? "刷新" : "获取列表"}</button></div>`;
   const quotaField = `<div class="field-row"><input type="number" min="0" step="any" class="field wide" data-quota-amount value="${escapeHtml(quota.amount)}" placeholder="不限" ${invalidQuota ? `aria-invalid="true"` : ""}><select class="field select" data-quota-unit>${[
     ["k", "千 (k)"],
@@ -79,7 +79,7 @@ async function chatgptLogin(profile, card) {
 }
 /** @param {Profile} p */
 function profileGist(p) {
-  return [p.model || "未填模型", p.api === "chatgpt" ? "ChatGPT 订阅" : anthropicLike(p) ? "Anthropic" : "OpenAI 兼容"].join(" · ");
+  return [p.model || "未填模型", { chatgpt: "ChatGPT 订阅", anthropic: "Anthropic", openai: "OpenAI 兼容" }[profileApi(p)]].join(" · ");
 }
 
 // 选定模型后探它认哪几档，结果写在卡片的状态行上，高级配置里的「思考档位」也跟着填；探不成不吭声（撞了错再学）。
@@ -176,12 +176,7 @@ async function handleProfileAction(profile, action, card) {
       status = card.querySelector(".profile-status");
       status.textContent = "连接中…";
       const started = performance.now();
-      const response = await fetch(`${apiBase}/api/test`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: profileForRequest(profile) })
-      });
-      if (!response.ok) throw Error(await describeResponseError(response));
+      await bridge("/api/test", { profile: profileForRequest(profile) });
       status.textContent = `可用 · ${Math.round(performance.now() - started)} ms`;
       // 测试连接是亲手要的一次核对：档位也重探一遍
       void reportReasoningProbe(profile, card, true);
@@ -192,13 +187,7 @@ async function handleProfileAction(profile, action, card) {
 }
 /** @param {Profile} profile */
 async function fetchModelList(profile) {
-  if (!String(profile.baseUrl || "").trim() && profile.api !== "chatgpt") throw Error("请先填写 Base URL");
-  const response = await fetch(`${apiBase}/api/models`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ profile: profileForRequest(profile) })
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Error(data.error || `请求失败（${response.status}）`);
+  if (!String(profile.baseUrl || "").trim() && profileApi(profile) !== "chatgpt") throw Error("请先填写 Base URL");
+  const data = await bridge("/api/models", { profile: profileForRequest(profile) });
   return [...new Set(data.models || [])].sort();
 }

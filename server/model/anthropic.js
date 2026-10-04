@@ -1,6 +1,7 @@
 // 言 · Anthropic 适配：页面与桥接内部一律用 OpenAI 的格式（消息、工具、流式分块）；接 Anthropic 时在这里换一层——
 // 把 OpenAI 格式的请求换成 Messages API 的，再把它的事件流换回 OpenAI 风格的 SSE 分块，其余代码一字不动。
-// 这一段两处跑：浏览器里随 support.js 拼进闭包（页面只用 anthropicLike 判断接口种类），桥接里由 server.js require（经桥接时用）；不能碰 DOM
+// 登记的样子见 index.js 开头
+"use strict";
 const ANTHROPIC_VERSION = "2023-06-01";
 // 老模型（4.5 及以前、Haiku、认不出型号的）：思考档位换成思考预算（token）；预算得小于 max_tokens，不够就把 max_tokens 抬上去
 const ANTHROPIC_BUDGETS = { minimal: 1024, low: 2048, medium: 8192, high: 16384, xhigh: 32768, max: 65536 };
@@ -13,12 +14,6 @@ function anthropicGeneration(model) {
   const version = m ? Number(m[2]) + Number(m[3] || 0) / 10 : 0;
   return { adaptive: !!m && m[1] !== "haiku" && version >= 4.6, noSampling: version >= 4.7, thinksByDefault: version >= 5, version };
 }
-// 是不是 Anthropic 的接口：模型上明说的优先，没说就看地址
-function anthropicLike(profile) {
-  const api = String(profile?.api || "").toLowerCase();
-  if (api) return api === "anthropic";
-  return /anthropic\.com/i.test(String(profile?.baseUrl || ""));
-}
 // Base URL 可以填到根、到 /v1 或到 /v1/messages，都归到根再拼
 function anthropicEndpoint(baseUrl, suffix = "/v1/messages") {
   const url = String(baseUrl || "")
@@ -28,13 +23,8 @@ function anthropicEndpoint(baseUrl, suffix = "/v1/messages") {
   if (!/^https?:\/\//i.test(url)) throw Error("Base URL 只支持 http 或 https");
   return `${url}${suffix}`;
 }
-function anthropicHeaders(apiKey, browser = false) {
-  return {
-    "Content-Type": "application/json",
-    "x-api-key": String(apiKey || ""),
-    "anthropic-version": ANTHROPIC_VERSION,
-    ...(browser ? { "anthropic-dangerous-direct-browser-access": "true" } : {})
-  };
+function anthropicHeaders(apiKey) {
+  return { "Content-Type": "application/json", "x-api-key": String(apiKey || ""), "anthropic-version": ANTHROPIC_VERSION };
 }
 // 用户消息里的一段内容换成内容块：文字、图片（data: 或 http 地址）、PDF（按文件名认）；别的文件只能以一行说明代替
 function anthropicUserBlocks(content) {
@@ -235,20 +225,27 @@ function claudeModel(model) {
 function markOpenAiCache(messages) {
   const mark = message => {
     if (!message?.content) return message;
-    const parts = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content.map(part => ({ ...part }));
+    const parts =
+      typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content.map(part => ({ ...part }));
     if (parts.length) parts[parts.length - 1].cache_control = { type: "ephemeral" };
     return { ...message, content: parts };
   };
   const last = messages.length - 1;
   return messages.map((message, i) => (i === last || (i === 0 && message.role === "system") ? mark(message) : message));
 }
-// 桥接 require 这一段后从 globalThis.YAN_ANTHROPIC 取；不写 module.exports——那会让类型检查把这一段当成独立模块，页面里就找不到这些名字
-globalThis.YAN_ANTHROPIC = {
-  anthropicLike,
+module.exports = {
   anthropicEndpoint,
-  anthropicHeaders,
   anthropicRequest,
   anthropicToOpenAiStream,
   claudeModel,
-  markOpenAiCache
+  markOpenAiCache,
+  provider: {
+    url: config => anthropicEndpoint(config.baseUrl),
+    modelsUrl: config => anthropicEndpoint(config.baseUrl, "/v1/models"),
+    headers: config => anthropicHeaders(config.apiKey),
+    request: payload => anthropicRequest(payload),
+    stream: model => anthropicToOpenAiStream(model),
+    // 档位换算成预算或 effort 送出，没有可探的枚举：按通用四档列
+    levels: () => ["low", "medium", "high", "max"]
+  }
 };
