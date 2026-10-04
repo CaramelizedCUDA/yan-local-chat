@@ -121,13 +121,22 @@ await sleep(200);
 check(
   "memory tab renders with seal and count",
   await evalJs(
-    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && h.querySelector(".about-version")?.textContent === "1 / 200 条 · 1 类" && h.querySelectorAll(".memory-cat").length === 1 && !h.querySelector(".memory-item"))(document.querySelector("#settingsContent"))`
+    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && h.querySelector(".about-version")?.textContent === "1 / 324 条 · 1 类" && h.querySelectorAll(".memory-cat").length === 1 && h.querySelector(".memory-cat.active") && h.querySelectorAll(".memory-item").length === 1 && !h.querySelector(".memory-item textarea"))(document.querySelector("#settingsContent"))`
   )
 );
 await evalJs(`document.querySelector('#settingsContent [data-memory-cat="偏好"]').click(); true`);
 await sleep(150);
 check("opening a category lists its items", await evalJs(`document.querySelectorAll("#settingsContent .memory-item").length === 1`));
-check("item shows source conversation", await evalJs(`!!document.querySelector('#settingsContent [data-memory-open]')`));
+// 条目平时一行摘要，点开才摊开全文、露出来源与小画；点「改」才换成输入框
+await evalJs(`document.querySelector("#settingsContent .memory-row").click(); true`);
+await sleep(100);
+check(
+  "an item opens in place and shows its source conversation",
+  await evalJs(`!!document.querySelector('#settingsContent .memory-item.open .memory-body') && !!document.querySelector('#settingsContent [data-memory-open]')`)
+);
+await shot("memory-settings.png");
+await evalJs(`document.querySelector("#settingsContent [data-memory-edit]").click(); true`);
+await sleep(100);
 await evalJs(
   `(a => { a.value = "改过的记忆"; a.dispatchEvent(new Event("input")); })(document.querySelector("#settingsContent .memory-text")); true`
 );
@@ -143,8 +152,10 @@ check("hand-written item added", (await memory()).items.length === 2 && (await m
 await evalJs(`document.querySelector('#settingsContent .memory-item [data-memory-delete]').click(); true`);
 await sleep(200);
 check("delete removes one", (await memory()).items.length === 1);
-// 改归别类：点条下的分类名弹出各类，另起一类即就地写名、回车落定
-await evalJs(`document.querySelector("#settingsContent .memory-move").click(); true`);
+// 归入别类：摊开一条，点那枚小画弹出各类，另起一类即就地写名、回车落定
+await evalJs(`document.querySelector("#settingsContent .memory-row").click(); true`);
+await sleep(100);
+await evalJs(`document.querySelector("#settingsContent [data-memory-move]").click(); true`);
 await sleep(150);
 check(
   "the category menu is the app's own pop, above the settings window",
@@ -160,13 +171,10 @@ await evalJs(
 await sleep(200);
 check(
   "an item can be filed under another category; the emptied one goes away",
-  (await memory()).items[0].category === "工作" && (await evalJs(`!document.querySelector("#settingsContent .memory-item")`))
-);
-await evalJs(`document.querySelector('#settingsContent [data-memory-cat=""]')?.click(); true`);
-await sleep(150);
-check(
-  "the index now shows the new category",
-  await evalJs(`[...document.querySelectorAll("#settingsContent .memory-cat strong")].map(n => n.textContent).join() === "工作"`)
+  (await memory()).items[0].category === "工作" &&
+    (await evalJs(
+      `[...document.querySelectorAll("#settingsContent .memory-cat span")].map(n => n.textContent).join() === "工作" && document.querySelectorAll("#settingsContent .memory-item").length === 1`
+    ))
 );
 await evalJs(`document.querySelector("#closeSettings").click(); true`);
 await sleep(300);

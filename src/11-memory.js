@@ -4,11 +4,14 @@
 // 一条条由模型在对谈中记下的话，跨对话可翻。每条归在一个分类下（言的开发、偏好……），分类不另存，就是各条上的名字：
 // 同名即同类，没有条目的分类自然消失。内容不进系统提示（只报有哪几类），模型要看得自己 recall：先看分类一览，再打开某一类。
 // 单条不截断——早先限 200 字、超出悄悄截掉，记下来的话常常没说完；现在过长就退回让模型拆开或精简
-const MAX_MEMORY_ITEMS = 200,
+const MAX_MEMORY_ITEMS = 324,
   MEMORY_TEXT_CHARS = 2000,
   MEMORY_UNSORTED = "未分类";
-/** 设置页「记忆」里打开着的那一类；null 即分类一览 */
+/** 设置页「记忆」里选着的那一类；null 或已没了即最近动过的那一类 */
 let memoryCategoryOpen = null;
+/** 设置页里摊开着的那一条、正改着的那一条（id） */
+let memoryItemOpen = "",
+  memoryItemEditing = "";
 function memoryEnabled() {
   return store.memory.enabled !== false;
 }
@@ -72,46 +75,61 @@ function addMemory(text, source = null, category = "") {
   saveStore();
   return item;
 }
-// 设置页开着「记忆」时，模型记入或删去要立刻反映在列表里
+// 设置页开着「记忆」时，模型记入或删去要立刻反映在列表里；正在改的那条不打断（重画会把输入框连同光标冲掉）
 function refreshMemorySettings() {
+  if (document.activeElement?.matches?.("#settingsContent .memory-text")) return;
   if (settingsTab === "memory" && !$("#settingsModal").classList.contains("hidden")) renderSettings();
 }
 function memoryGist(text) {
   const line = String(text || "").replace(/\s+/g, " ");
   return line.length > 60 ? `${line.slice(0, 60)}…` : line;
 }
-// 分类一览：一类一行（名 · 最近一条的开头 · 几条 · 日子），点开看这一类的全部条目
-function memoryIndexHtml(categories) {
-  return categories.length
-    ? `<div class="memory-cats">${categories
-        .map(
-          cat =>
-            `<button type="button" class="memory-cat" data-memory-cat="${escapeHtml(cat.name)}"><strong>${escapeHtml(cat.name)}</strong><span class="memory-cat-gist">${escapeHtml(memoryGist(cat.items[0].text))}</span><span class="memory-cat-count">${cat.items.length} 条</span><span class="memory-cat-date">${escapeHtml(formatDay(cat.updatedAt))}</span></button>`
-        )
-        .join("")}</div>`
-    : `<p class="memory-empty">尚无一条</p>`;
+// 设置页里的一行摘要：** 去掉、空白收拢，多长由样式截
+function memoryLineGist(text) {
+  return String(text || "")
+    .replace(/\*\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
-// 一类里的条目：正文可改，太长的先收起几行，点进去即全文；条下注日子、来源、所属分类（点开可改归别类）
-function memoryCategoryHtml(cat) {
-  const row = item => {
-    const source =
+// 摊开的全文：只认 **加粗**，别的照原样（换行由样式留着）
+function memoryRichText(text) {
+  return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+}
+// 一条：平时一行摘要 + 日子，点开就地摊开全文；摊开的底下注日子、来源，右边三枚小画——改、归入别类、删去。
+// 落选（设计稿/49）：条目常开输入框、长的半截淡出，条下重写类名——读着全是碎字，像没画完
+function memoryItemHtml(item) {
+  const id = escapeHtml(item.id),
+    day = `<span class="memory-day">${escapeHtml(formatDay(item.updatedAt || item.createdAt))}</span>`;
+  if (item.id !== memoryItemOpen && item.id !== memoryItemEditing)
+    return `<div class="memory-item" data-memory="${id}"><button type="button" class="memory-row" data-memory-toggle><span class="memory-gist">${escapeHtml(memoryLineGist(item.text))}</span>${day}</button></div>`;
+  const editing = item.id === memoryItemEditing,
+    source =
       item.source?.conversationId && store.conversations.some(c => c.id === item.source.conversationId)
-        ? `<button type="button" data-memory-open="${escapeHtml(item.source.conversationId)}" title="打开来源对话">${escapeHtml(item.source.title || "来源对话")}</button>`
-        : item.source?.title
-          ? `<span>${escapeHtml(item.source.title)}</span>`
-          : `<span>手记</span>`;
-    return `<div class="memory-item" data-memory="${escapeHtml(item.id)}"><textarea class="memory-text" rows="1" spellcheck="false" aria-label="记忆内容">${escapeHtml(item.text)}</textarea><div class="memory-meta"><span>${escapeHtml(formatDay(item.updatedAt || item.createdAt))}</span>${source}<span class="memory-spacer"></span><button type="button" class="memory-move" title="改归别类" aria-haspopup="menu">${escapeHtml(memoryCategoryOf(item))}</button><button type="button" data-memory-delete title="删去这条">删去</button></div></div>`;
-  };
+        ? `<button type="button" class="memory-source" data-memory-open="${escapeHtml(item.source.conversationId)}" title="打开来源对话">${escapeHtml(item.source.title || "来源对话")}</button>`
+        : `<span>${escapeHtml(item.source?.title || "手记")}</span>`,
+    body = editing
+      ? `<textarea class="memory-text" rows="1" spellcheck="false" aria-label="记忆内容">${escapeHtml(item.text)}</textarea>`
+      : `<div class="memory-body" data-memory-toggle title="点一下收起">${memoryRichText(item.text)}</div>`;
+  return `<div class="memory-item open" data-memory="${id}">${body}<div class="memory-meta">${day}${source}<span class="memory-spacer"></span><span class="memory-ops"><button type="button" data-memory-edit title="${editing ? "改好了" : "改"}">${brushIcon("edit")}</button><button type="button" data-memory-move title="归入别类" aria-haspopup="menu">${brushIcon("groups")}</button><button type="button" class="memory-del" data-memory-delete title="删去这条">${brushIcon("strike")}</button></span></div></div>`;
+}
+// 分栏：左一列类目（选着的左缘一道朱、名字加重），右边这一类的条目；类名在右栏顶上就地可改
+function memorySplitHtml(categories, open) {
   return (
-    `<div class="memory-crumbs"><button type="button" class="memory-back" data-memory-cat="">‹ 记忆</button><input id="memoryCatName" class="memory-cat-name" value="${escapeHtml(cat.name)}" maxlength="24" spellcheck="false" aria-label="分类名"><span class="memory-cat-count">${cat.items.length} 条</span></div>` +
-    `<div class="memory-list">${cat.items.map(row).join("")}</div>`
+    `<div class="memory-split"><div class="memory-cats">${categories
+      .map(
+        cat =>
+          `<button type="button" class="memory-cat${cat === open ? " active" : ""}" data-memory-cat="${escapeHtml(cat.name)}"><span>${escapeHtml(cat.name)}</span><em>${cat.items.length}</em></button>`
+      )
+      .join("")}<div class="memory-side"><button type="button" id="addMemory">手记一条</button><button type="button" id="clearMemory">清空记忆</button></div></div>` +
+    `<div class="memory-pane"><div class="memory-pane-head"><input id="memoryCatName" class="memory-cat-name" value="${escapeHtml(open.name)}" maxlength="24" spellcheck="false" aria-label="分类名" title="改名；改成已有的名字即并入那一类"><span class="memory-cat-count">${open.items.length} 条</span><span class="memory-spacer"></span><button type="button" id="dropMemoryCat">删去此类</button></div>` +
+    `<div class="memory-list">${open.items.map(memoryItemHtml).join("")}</div></div></div>`
   );
 }
 function memorySettingsHtml() {
   const categories = memoryCategories(),
     enabled = memoryEnabled(),
-    open = memoryCategoryOpen !== null ? categories.find(cat => cat.name === memoryCategoryOpen) : null;
-  if (!open) memoryCategoryOpen = null;
+    open = categories.find(cat => cat.name === memoryCategoryOpen) || categories[0];
+  memoryCategoryOpen = open?.name ?? null;
   return (
     `<div class="about-head memory-head settings-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="about-version">${store.memory.items.length} / ${MAX_MEMORY_ITEMS} 条${categories.length ? ` · ${categories.length} 类` : ""}</span></div>` +
     segmentRow(
@@ -124,14 +142,9 @@ function memorySettingsHtml() {
       ],
       String(enabled)
     ) +
-    (open ? memoryCategoryHtml(open) : memoryIndexHtml(categories)) +
-    `<div class="memory-foot"><button id="addMemory" class="outline-btn" type="button">手记一条</button>${
-      open
-        ? `<button id="dropMemoryCat" class="outline-btn" type="button">删去此类</button>`
-        : store.memory.items.length
-          ? `<button id="clearMemory" class="outline-btn" type="button">清空记忆</button>`
-          : ""
-    }</div>`
+    (open
+      ? memorySplitHtml(categories, open)
+      : `<p class="memory-empty">尚无一条</p><div class="memory-foot"><button id="addMemory" class="outline-btn" type="button">手记一条</button></div>`)
   );
 }
 function fileMemory(item, category) {
@@ -139,23 +152,27 @@ function fileMemory(item, category) {
   if (to === memoryCategoryOf(item)) return renderSettings();
   item.category = to;
   item.updatedAt = now();
+  memoryItemEditing = "";
   saveStore();
   toast(`已归入「${to}」`);
   renderSettings();
 }
-function openMemoryCategory(name) {
+/** @param {string | null} name @param {string} [item] 换过去后摊开着的那一条 */
+function openMemoryCategory(name, item = "") {
+  const moved = name !== memoryCategoryOpen;
   memoryCategoryOpen = name;
+  memoryItemOpen = item;
+  memoryItemEditing = "";
   renderSettings();
-  $("#settingsContent").scrollTop = 0;
+  if (moved) $("#settingsContent").scrollTop = 0;
 }
 function bindMemoryEvents() {
   const host = $("#settingsContent");
   if (settingsTab !== "memory" || !host) return;
-  // 文本框随字长高；长过几行的平时收起（见 .memory-text.long），点进去即全文
+  // 改着的输入框随字长高
   const grow = area => {
     area.style.height = "auto";
     area.style.height = `${area.scrollHeight}px`;
-    area.classList.toggle("long", area.scrollHeight > 110);
   };
   host
     .querySelectorAll("[data-memory-cat]")
@@ -173,30 +190,52 @@ function bindMemoryEvents() {
   host.querySelectorAll(".memory-item").forEach(row => {
     const item = store.memory.items.find(entry => entry.id === row.dataset.memory);
     if (!item) return;
+    // 一行摘要点开即摊开全文，摊开的再点一下收起（划选字时不收）
+    row.querySelector("[data-memory-toggle]")?.addEventListener("click", () => {
+      if (String(window.getSelection()).trim()) return;
+      memoryItemOpen = memoryItemOpen === item.id ? "" : item.id;
+      renderSettings();
+    });
     const area = row.querySelector("textarea");
-    grow(area);
-    area.addEventListener("input", () => {
+    if (area) {
       grow(area);
-      const text = cleanMemoryText(area.value).slice(0, MEMORY_TEXT_CHARS);
-      if (text) {
-        item.text = text;
-        item.updatedAt = now();
-        saveStoreSoon();
-      }
-    });
-    // 收起的长条目：点进去即摊开全文
-    area.addEventListener("focus", () => grow(area));
-    area.addEventListener("blur", () => {
-      if (!area.value.trim()) {
-        store.memory.items = store.memory.items.filter(entry => entry !== item);
-        saveStore();
+      area.addEventListener("input", () => {
+        grow(area);
+        const text = cleanMemoryText(area.value).slice(0, MEMORY_TEXT_CHARS);
+        if (text) {
+          item.text = text;
+          item.updatedAt = now();
+          saveStoreSoon();
+        }
+      });
+      // 焦点离开这一条即改完、回到只读；挪到这一条的小画上不算，免得重画吞了那一下点按。改空了即删去
+      area.addEventListener("blur", e => {
+        if (row.contains(e.relatedTarget)) return;
+        memoryItemEditing = "";
+        if (!area.value.trim()) {
+          store.memory.items = store.memory.items.filter(entry => entry !== item);
+          saveStore();
+        }
         renderSettings();
-      }
+      });
+      area.addEventListener("keydown", e => {
+        if (e.key !== "Escape") return;
+        e.stopPropagation();
+        area.blur();
+      });
+    }
+    row.querySelector("[data-memory-edit]")?.addEventListener("click", () => {
+      memoryItemEditing = memoryItemEditing === item.id ? "" : item.id;
+      memoryItemOpen = item.id;
+      renderSettings();
+      const field = host.querySelector(`[data-memory="${item.id}"] textarea`);
+      field?.focus();
+      field?.setSelectionRange(field.value.length, field.value.length);
     });
-    // 改归别类：弹出各类（与侧栏「移入分组」同一副菜单），另可起一类；归走了这条就从眼前这一类里移走。
+    // 归入别类：弹出各类（与侧栏「移入分组」同一副菜单），另可起一类；归走了这条就从眼前这一类里移走。
     // 落选：原生 <datalist> 的候选框——样子由浏览器画，一点开是一块黑底，与纸面不搭
-    const move = row.querySelector(".memory-move");
-    move.addEventListener("click", event => {
+    const move = row.querySelector("[data-memory-move]");
+    move?.addEventListener("click", event => {
       // 这一下点击若冒泡到页面，「点别处即收」会把刚弹出的菜单收掉
       event.stopPropagation();
       const others = memoryCategories()
@@ -236,7 +275,7 @@ function bindMemoryEvents() {
         field.addEventListener("blur", () => settle(true));
       });
     });
-    row.querySelector("[data-memory-delete]").addEventListener("click", () => {
+    row.querySelector("[data-memory-delete]")?.addEventListener("click", () => {
       store.memory.items = store.memory.items.filter(entry => entry !== item);
       saveStore();
       renderSettings();
@@ -246,14 +285,16 @@ function bindMemoryEvents() {
       openConversation(e.currentTarget.dataset.memoryOpen);
     });
   });
-  // 手记一条：在打开着的那一类里记；在一览上记的归「未分类」，记完打开那一类
+  // 手记一条：记在选着的那一类里（还没有一类时归「未分类」），就地摊开着改
   $("#addMemory")?.addEventListener("click", () => {
     if (store.memory.items.length >= MAX_MEMORY_ITEMS) return toast(`记忆已有 ${MAX_MEMORY_ITEMS} 条，请先删去一些`);
     const category = memoryCategoryOpen ?? MEMORY_UNSORTED,
       item = { id: memoryId(), text: "", category, createdAt: now(), updatedAt: now(), source: null };
     store.memory.items.push(item);
-    openMemoryCategory(category);
-    setTimeout(() => host.querySelector(`[data-memory="${item.id}"] textarea`)?.focus(), 0);
+    memoryCategoryOpen = category;
+    memoryItemOpen = memoryItemEditing = item.id;
+    renderSettings();
+    host.querySelector(`[data-memory="${item.id}"] textarea`)?.focus();
   });
   $("#dropMemoryCat")?.addEventListener("click", async () => {
     const name = memoryCategoryOpen,

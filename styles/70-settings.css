@@ -81,110 +81,155 @@
 .memory-head {
   align-items: center;
 }
-/* 记忆分两层：先是分类一览（一类一行：名 · 最近一条的开头 · 几条 · 日子），点开一类才是条目。
-   单条不截断，长过几行的平时收起、带一层淡出，点进去即全文 */
-.memory-cats,
-.memory-list {
+/* 记忆分栏（设计稿/49 甲）：左一列类目，右边选着那一类的条目。条目平时只读、一条一行摘要，点开就地摊开全文，
+   「改」才换输入框。落选：先列分类、点进去再列条目（一层套一层，回来只靠一枚小「‹ 记忆」）；条目常开输入框、
+   长的半截淡出（像没画完），条下重写类名（碎字） */
+.memory-split {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  margin-top: 10px;
   border-top: 1px solid var(--line);
 }
-.memory-cat {
-  display: grid;
-  grid-template-columns: minmax(6em, max-content) minmax(0, 1fr) auto 7.5em;
-  align-items: baseline;
-  gap: 16px;
-  width: 100%;
-  padding: 13px 2px;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
+.memory-cats {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px 0 0;
+  border-right: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
 }
-.memory-cat strong {
-  max-width: 14em;
-  overflow: hidden;
-  color: var(--ink);
-  font: 500 14px var(--title);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.memory-cat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 0 7px 10px;
+  border-left: 2px solid transparent;
+  color: var(--ink-2);
+  font: 13.5px var(--title);
+  text-align: left;
   transition: color 0.15s;
 }
-.memory-cat:hover strong {
-  color: var(--accent);
-}
-.memory-cat-gist {
+.memory-cat span {
+  min-width: 0;
   overflow: hidden;
-  color: var(--ink-3);
-  font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.memory-cat-count,
-.memory-cat-date {
+.memory-cat em {
+  margin-left: auto;
+  color: var(--ink-3);
+  font: normal 11px var(--title);
+}
+.memory-cat:hover {
+  color: var(--ink);
+}
+.memory-cat.active {
+  border-left-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+.memory-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 0 0 14px 12px;
+}
+.memory-side button,
+#dropMemoryCat {
+  color: var(--ink-3);
+  font: 12px var(--title);
+  letter-spacing: 0.06em;
+  transition: color 0.15s;
+}
+.memory-side button:hover,
+#dropMemoryCat:hover {
+  color: var(--ink);
+}
+.memory-pane {
+  min-width: 0;
+  padding-left: 18px;
+}
+.memory-pane-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.memory-cat-count {
   color: var(--ink-3);
   font: 11px var(--title);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
-.memory-cat-date {
-  text-align: right;
-}
-.memory-crumbs {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 4px 0 10px;
-}
-.memory-back {
-  color: var(--ink-3);
-  font: 12px var(--title);
-  letter-spacing: 0.06em;
-}
-.memory-back:hover {
-  color: var(--ink);
-}
 /* 分类名就地可改：改成已有的名字即并入那一类 */
 .memory-cat-name {
   field-sizing: content;
   min-width: 3em;
+  max-width: 100%;
   padding: 0 2px;
   border: 0;
   border-bottom: 1px dashed transparent;
   outline: 0;
   background: none;
   color: var(--ink);
-  font: 500 16px var(--title);
+  font: 600 15px var(--title);
   letter-spacing: 0.06em;
 }
 .memory-cat-name:hover,
 .memory-cat-name:focus {
   border-bottom-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
-.memory-text.long:not(:focus) {
-  max-height: 110px;
-  -webkit-mask-image: linear-gradient(#000 65%, transparent);
-  mask-image: linear-gradient(#000 65%, transparent);
-  cursor: pointer;
+.memory-item {
+  border-bottom: 1px solid var(--line);
 }
-/* 条下的所属分类：平时是一行小字，点开可改、可从已有的类里挑 */
-.memory-move {
-  field-sizing: content;
-  min-width: 3em;
-  max-width: 12em;
-  padding: 0 2px;
-  border: 0;
-  border-bottom: 1px dashed transparent;
-  outline: 0;
-  background: none;
+.memory-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 0;
+  text-align: left;
+}
+.memory-gist {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.memory-row:hover .memory-gist {
+  color: var(--ink);
+}
+.memory-day {
   color: var(--ink-3);
   font: 11px var(--title);
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
-.memory-move:hover,
-.memory-move:focus {
-  border-bottom-color: var(--line);
+/* 摊开的一条：左侧一道淡墨竖痕 */
+.memory-item.open {
+  margin: 4px 0;
+  padding: 12px 0 8px 12px;
+  border-left: 1.5px solid color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.memory-body,
+.memory-text {
   color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
 }
-.memory-item {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+.memory-body {
+  white-space: pre-wrap;
+  cursor: default;
+}
+.memory-body b {
+  font-weight: 600;
 }
 .memory-text {
   display: block;
@@ -193,10 +238,6 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 13.5px;
-  line-height: 1.65;
   resize: none;
   overflow: hidden;
 }
@@ -207,27 +248,61 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 5px;
+  margin-top: 6px;
   color: var(--ink-3);
   font: 11px var(--title);
   letter-spacing: 0.04em;
 }
-.memory-meta button {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
+.memory-source {
+  border-bottom: 1px dashed color-mix(in srgb, var(--ink) 25%, transparent);
   color: var(--ink-3);
   font: inherit;
   letter-spacing: inherit;
-  cursor: pointer;
   transition: color 0.16s;
 }
-.memory-meta button:hover {
+.memory-source:hover {
   color: var(--accent);
 }
 .memory-spacer {
   flex: 1;
+}
+/* 改 · 归入别类 · 删去：三枚小画，删的那一笔透一点朱 */
+.memory-ops {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.memory-ops button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-s);
+  transition: background 0.15s;
+}
+.memory-ops button:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.memory-ops svg {
+  width: 15px;
+  height: 15px;
+}
+.memory-ops .memory-del svg .ink {
+  fill: color-mix(in srgb, var(--accent) 85%, var(--ink));
+}
+/* 另起一类时就地换成的输入框 */
+.memory-move {
+  field-sizing: content;
+  min-width: 4em;
+  max-width: 12em;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 1px dashed var(--line);
+  outline: 0;
+  background: none;
+  color: var(--ink);
+  font: 11px var(--title);
+  letter-spacing: 0.04em;
 }
 .memory-empty {
   margin: 0;
