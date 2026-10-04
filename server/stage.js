@@ -116,8 +116,8 @@ function stageHome(root) {
   };
 }
 /**
- * 页面递来的是几项选择（{ browser, profile, fileAccess }），这里拼成起服务的那一整条
- * @param {{ browser?: string, profile?: string, fileAccess?: boolean }} stage
+ * 页面递来的是几项选择（{ browser, profile }），这里拼成起服务的那一整条；本机文件一律许开（执事做的网页要自己开来看）
+ * @param {{ browser?: string, profile?: string }} stage
  * @param {string} root
  */
 function builtinConfig(stage, root) {
@@ -133,7 +133,7 @@ function builtinConfig(stage, root) {
       String(stage?.profile || "") || at.profile,
       "--output-dir",
       at.output,
-      ...(stage?.fileAccess === false ? [] : ["--allow-unrestricted-file-access"])
+      "--allow-unrestricted-file-access"
     ],
     cwd: at.home,
     env: browser === "chromium" ? { PLAYWRIGHT_BROWSERS_PATH: at.engine } : {}

@@ -1,22 +1,22 @@
-// 言 · 游目 · 设置里的一栏：游目自己的浏览器怎么配——开没开、用哪个浏览器、依赖、登录与收藏存在哪、许不许开本机文件。
+// 言 · 游目 · 设置里的一栏：游目自己的浏览器怎么配——开没开、用哪个浏览器、驱动、登录与收藏存在哪。本机文件一律许开，不设开关。
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 浏览器不再要人去 MCP 里接：这里开着，言自己起一个 Playwright 的 MCP 服务，名叫「游目」（页面只递几项选择，桥接拼成整条、补齐接法，
-// 见 server/stage.js 的 builtinConfig / prepareMcp）。家当都在存储根的「游目」目录里：依赖、浏览器（登录与收藏）、下载、内核。
-// 适应页面、搜索用哪家开着游目就能调，在纸签里，不在这儿
+// 见 server/stage.js 的 builtinConfig / prepareMcp）。家当都在存储根的「游目」目录里：依赖（驱动）、浏览器（登录与收藏）、下载、内核。
+// 适应页面、搜索用哪家开着游目就能调，在纸签里，不在这儿；打开浏览器也在游目里点，这儿不另设
 
 // 运行时并进 mcpConfigs 的那一个：设置里开着才有
 function stageBuiltinConfig() {
   const s = store.settings.stage;
   if (!s?.enabled) return null;
   return {
-    stage: { browser: s.browser || "msedge", profile: s.profile || "", fileAccess: s.fileAccess !== false },
+    stage: { browser: s.browser || "msedge", profile: s.profile || "" },
     note: "我说「打开浏览器」即指这个",
     timeout: 60
   };
 }
 /** @type {{ home: string, profile: string, output: string, installed: boolean, version: string, browsers: Record<string, boolean> } | null} */
 let stageHomeState = null;
-// 正在装的：依赖 deps / 内核 chromium
+// 正在装的：驱动 deps / 内核 chromium
 let stageInstalling = "";
 const STAGE_BROWSERS = /** @type {const} */ ([
   ["msedge", "Edge"],
@@ -42,19 +42,20 @@ function stageSettingsHtml() {
     seg = (/** @type {string} */ key, /** @type {[string, string, boolean?][]} */ items, /** @type {string} */ active) =>
       `<div class="segmented">${items.map(([value, label, off]) => `<button type="button" data-stage-opt="${key}" data-value="${value}" class="${value === active ? "active" : ""}${off ? " off" : ""}"${off ? ` title="本机未装"` : ""}>${label}</button>`).join("")}</div>`;
   const state = !on
-    ? "关着：游目不起浏览器"
+    ? "已关，执事碰不到浏览器"
     : !at
       ? "……"
       : !at.installed
-        ? "依赖未装，先在下面装上"
+        ? "还缺驱动，先在下面装上"
         : browser === "chromium" && !at.browsers.chromium
-          ? "自带内核未装，先在下面装上"
+          ? "还缺内核，先在下面装上"
           : stage.ws
-            ? "浏览器开着"
-            : "就绪，执事用到或你点「打开浏览器」时起";
+            ? "正开着，在右侧那一笔朱竖里"
+            : "执事要看网页时自会打开";
   const deps = !at
     ? "……"
-    : `${at.installed ? `@playwright/mcp ${escapeHtml(at.version)}` : "未装"}${browser === "chromium" ? ` · 自带内核${at.browsers.chromium ? "已装" : "未装"}` : ""}`;
+    : `${at.installed ? `执事借它翻页、点按、填写 · ${escapeHtml(at.version)} 版` : "未装，执事还使不动浏览器"}${browser === "chromium" ? ` · 内核${at.browsers.chromium ? "已装" : "未装"}` : ""}`;
+  const browserLabel = STAGE_BROWSERS.find(([value]) => value === browser)?.[1] || "Edge";
   const installing = (/** @type {string} */ what, /** @type {string} */ label) =>
     `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? "正在装…" : label}</button>`;
   return (
@@ -62,29 +63,21 @@ function stageSettingsHtml() {
     (legacy
       ? `<div class="setting-row"><div class="setting-copy"><strong>MCP 里的「${escapeHtml(legacy)}」</strong><small>另接着一个 Playwright，与游目各起一个浏览器；迁过来沿用它的登录与收藏，并从 MCP 里撤掉</small></div><button type="button" class="outline-btn" data-stage-migrate="${escapeHtml(legacy)}">迁过来</button></div>`
       : "") +
-    `<div class="setting-row"><div class="setting-copy"><strong>游目</strong><small>${state}</small></div><div class="setting-actions">${on && at?.installed && !stage.ws ? `<button type="button" id="stageLaunchBtn" class="outline-btn">打开浏览器</button>` : ""}${seg(
+    `<div class="setting-row"><div class="setting-copy"><strong>游目</strong><small>${state}</small></div>${seg(
       "enabled",
       [
         ["true", "开"],
         ["false", "关"]
       ],
       String(on)
-    )}</div></div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>浏览器</strong><small>${browser === "chromium" ? "Playwright 自带的那个，装在游目里" : "用本机装着的"}</small></div>${seg(
+    )}</div>` +
+    `<div class="setting-row"><div class="setting-copy"><strong>浏览器</strong><small>${browser === "chromium" ? "不借本机的，另装一个放在游目里" : `借本机的 ${browserLabel} 另起一份，与平日所用互不相扰`}</small></div>${seg(
       "browser",
       STAGE_BROWSERS.map(([value, label]) => [value, label, !!at && value !== "chromium" && !at.browsers[value]]),
       browser
     )}</div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>依赖</strong><small>${deps}</small></div><div class="setting-actions">${installing("deps", at?.installed ? "更新" : "安装")}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", "装内核") : ""}</div></div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>登录与收藏</strong><small>${code(s.profile || at?.profile || "")}</small></div><div class="setting-actions"><button type="button" class="outline-btn" id="stageProfilePick">选择…</button>${s.profile ? `<button type="button" class="outline-btn" id="stageProfileReset">复原</button>` : ""}</div></div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>本机文件</strong><small>执事做的网页，自己开来看、改了再看</small></div>${seg(
-      "fileAccess",
-      [
-        ["true", "许"],
-        ["false", "不许"]
-      ],
-      String(s.fileAccess !== false)
-    )}</div>` +
+    `<div class="setting-row"><div class="setting-copy"><strong>驱动</strong><small>${deps}</small></div><div class="setting-actions">${installing("deps", at?.installed ? "更新" : "安装")}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", "装内核") : ""}</div></div>` +
+    `<div class="setting-row"><div class="setting-copy"><strong>登录与收藏</strong><small>${s.profile ? `登过的站、收过的页记在 ${code(s.profile)}` : "登过的站、收过的页，记在游目的「浏览器」里"}</small></div><div class="setting-actions"><button type="button" class="outline-btn" id="stageProfilePick">另选…</button>${s.profile ? `<button type="button" class="outline-btn" id="stageProfileReset">复原</button>` : ""}</div></div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>所在</strong><small>${at ? code(at.home) : "……"}</small></div><button type="button" class="outline-btn" id="stageRevealHome">打开文件夹</button></div>`
   );
 }
@@ -110,7 +103,7 @@ async function stageInstall(what) {
       { what, mirror: store.settings.env?.mirror || "china" },
       AbortSignal.timeout(15 * 60000)
     );
-    toast(what === "deps" ? "依赖已装好" : "内核已装好");
+    toast(what === "deps" ? "驱动已装好" : "内核已装好");
     if (store.settings.stage?.enabled) stageSetOptions({});
   } catch (error) {
     toast(String(/** @type {any} */ (error).message || error).slice(0, 160), 6000);
@@ -137,10 +130,9 @@ function stageMigrate(name) {
   stageSetOptions({
     enabled: true,
     ...(["msedge", "chrome", "chromium"].includes(browser) ? { browser: /** @type {"msedge"|"chrome"|"chromium"} */ (browser) } : {}),
-    ...(arg("--user-data-dir") ? { profile: arg("--user-data-dir") } : {}),
-    fileAccess: args.includes("--allow-unrestricted-file-access")
+    ...(arg("--user-data-dir") ? { profile: arg("--user-data-dir") } : {})
   });
-  toast(`已迁过来：沿用「${name}」的登录与收藏${stageHomeState?.installed ? "" : "，依赖装上即可用"}`, 4000);
+  toast(`已迁过来：沿用「${name}」的登录与收藏${stageHomeState?.installed ? "" : "，驱动装上即可用"}`, 4000);
 }
 function bindStageSettings() {
   const page = $("#settingsContent");
@@ -157,7 +149,6 @@ function bindStageSettings() {
     }
     if (target.dataset.stageInstall) return void stageInstall(/** @type {"deps" | "chromium"} */ (target.dataset.stageInstall));
     if (target.dataset.stageMigrate) return stageMigrate(target.dataset.stageMigrate);
-    if (target.id === "stageLaunchBtn") return void stageLaunch().then(() => settingsTab === "stage" && renderSettings());
     if (target.id === "stageRevealHome" && stageHomeState)
       return void bridge("/api/stage/reveal", { path: stageHomeState.home }).catch(error =>
         toast(String(error.message || error).slice(0, 80))
