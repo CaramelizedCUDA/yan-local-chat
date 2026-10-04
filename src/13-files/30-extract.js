@@ -26,13 +26,9 @@ function trimExtractedText(value) {
     : text;
 }
 async function extractDocumentText(name, data) {
-  const extension = String(name || "")
-    .split(".")
-    .pop()
-    .toLowerCase();
-  if (extension === "pdf") return trimExtractedText(await extractPdfText(data));
-  if (["docx", "pptx", "xlsx", "odt", "ods", "odp"].includes(extension))
-    return trimExtractedText(await extractZipDocumentText(extension, bytesFromDataUrl(data)));
+  const extract = fileKind(name).extract;
+  if (extract === "pdf") return trimExtractedText(await extractPdfText(data));
+  if (extract === "zip") return trimExtractedText(await extractZipDocumentText(fileExtension(name), bytesFromDataUrl(data)));
   return "";
 }
 async function extractPdfText(data) {

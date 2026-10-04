@@ -26,7 +26,7 @@ function attachmentCard(file, index, sent = false, drop = false) {
   const view =
     file.id && file.kind === "image"
       ? `data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
-      : file.id && previewKind(file.name) !== "none"
+      : file.id && fileKind(file.name).view
         ? `data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
         : "";
   if (sent && file.id) {

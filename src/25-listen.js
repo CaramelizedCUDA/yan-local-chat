@@ -42,7 +42,7 @@ function listenTrackFrom(source, name, reader) {
     const entry = (archiveEntries || []).find(file => file.path === source.path) || { path: source.path, name, size: 0 },
       dir = source.path.split("/").slice(0, -1).join("/"),
       siblings = (archiveEntries || []).filter(
-        file => file.path.split("/").slice(0, -1).join("/") === dir && previewKind(file.name) === "audio"
+        file => file.path.split("/").slice(0, -1).join("/") === dir && fileKind(file.name).group === "audio"
       ),
       list = (siblings.length ? siblings : [entry]).map(listenArchiveTrack);
     const track = listenArchiveTrack(entry);

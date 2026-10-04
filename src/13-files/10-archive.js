@@ -74,28 +74,10 @@ async function refreshArchive() {
     });
   return archiveLoading;
 }
-function archiveKind(name) {
-  const extension = String(name || "")
-    .split(".")
-    .pop()
-    .toLowerCase();
-  if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(extension)) return "image";
-  if (PREVIEW_AUDIO.has(extension)) return "audio";
-  if (PREVIEW_VIDEO.has(extension)) return "video";
-  return isTextFile({ name, type: "" }) ? "text" : "file";
-}
 
 // ---------- 件图：每一件画成一张右上折角的小纸，纸面上的记号分出是什么；夹与分组是一只布面小函 ----------
 // 记号借项目里现成的专色（码 花青、表 石绿、文书 朱、演示 泥金、网页 青绿、音 黛、影 胭脂），纸面淡染一层：
 // 先按颜色分大类，再看形状。见 设计稿/17-卷宗包边与件图（落选：一律墨色——列表里十来像素，文、码、文书分不开）
-const FIGURE_EXT = {
-  text: ["txt", "md", "markdown", "log", "rst"],
-  table: ["csv", "tsv", "xls", "xlsx", "ods"],
-  doc: ["pdf", "doc", "docx", "odt", "rtf", "epub"],
-  slides: ["ppt", "pptx", "odp", "key"],
-  html: ["html", "htm"],
-  zip: ["zip", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz"]
-};
 // 纸面 16×20，记号画在 3.5–13 × 7–17 之间
 const FIGURE_MARKS = {
   text: `<path class="m" d="M3.8 8.3H12.5M3.8 10.8H12.5M3.8 13.3H12.5M3.8 15.8H9"/>`,
@@ -108,17 +90,9 @@ const FIGURE_MARKS = {
   video: `<path class="f" d="M6.4 9.4L10.4 12.2L6.4 15ZM3 8h1.2v1.2H3zM3 10.9h1.2v1.2H3zM3 13.8h1.2v1.2H3zM12.1 8h1.2v1.2h-1.2zM12.1 10.9h1.2v1.2h-1.2zM12.1 13.8h1.2v1.2h-1.2z"/>`,
   zip: `<path class="m" d="M8.2 1.2V3M8.2 4.4V6.2M8.2 7.6V9.4M7 10.6H9.4V14.4H7Z"/>`
 };
-function figureKind(name) {
-  const kind = archiveKind(name);
-  if (kind === "image" || kind === "audio" || kind === "video") return kind;
-  const extension = fileExtension(name);
-  for (const [figure, list] of Object.entries(FIGURE_EXT)) if (list.includes(extension)) return figure;
-  // 余下认得出是文本的，多是代码与配置（json、yaml、js……）
-  return kind === "text" ? "code" : "other";
-}
 /** 一件的小图：图片就是它自己的缩略，别的按类画记号 */
 function fileFigure(name, path = "") {
-  const figure = figureKind(name);
+  const figure = fileKind(name).figure;
   if (figure === "image" && path)
     return `<span class="fi fi-thumb" aria-hidden="true"><img src="${escapeHtml(archiveFileUrl(path))}" alt="" loading="lazy"></span>`;
   return `<svg class="fi" data-figure="${figure}" viewBox="0 0 16 20" aria-hidden="true"><path class="body" d="M1 .5H11L15.5 5V19.5H1Z"/><path class="fold" d="M11 .5V5H15.5Z"/>${FIGURE_MARKS[figure] || ""}</svg>`;
@@ -202,7 +176,7 @@ function renderLibrary() {
     browsing = !query && libraryKind === "all";
   const diskItems = browsing
       ? (archiveEntries || []).filter(file => parentDir(file.path) === libraryDir)
-      : (archiveEntries || []).filter(file => matches(file.name, archiveKind(file.name))),
+      : (archiveEntries || []).filter(file => matches(file.name, fileKind(file.name).group)),
     folders = browsing
       ? archiveDirs.filter(dir => parentDir(dir.path) === libraryDir).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
       : [];
@@ -473,7 +447,7 @@ function bindLibraryEvents() {
   const openItem = (row, trigger = row) => {
     if (row.dataset.libraryDisk === undefined) return enterLibraryDir(row.dataset.libraryDir);
     const path = row.dataset.libraryDisk;
-    archiveKind(path) === "image" ? openArchiveImage(path, trigger) : void openFileViewer(path, "", trigger);
+    fileKind(path).group === "image" ? openArchiveImage(path, trigger) : void openFileViewer(path, "", trigger);
   };
   $("#libraryGrid").addEventListener("click", e => {
     if (e.target.closest(".strip-rename")) return;

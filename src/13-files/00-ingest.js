@@ -11,68 +11,6 @@ async function handleFiles(event) {
   await addFiles(event.target.files);
   event.target.value = "";
 }
-function isTextFile(file) {
-  const extension = String(file.name || "")
-      .split(".")
-      .pop()
-      .toLowerCase(),
-    mime = String(file.type || "").toLowerCase();
-  return (
-    mime.startsWith("text/") ||
-    [
-      "application/json",
-      "application/xml",
-      "application/javascript",
-      "application/x-javascript",
-      "application/typescript",
-      "application/yaml",
-      "application/x-yaml",
-      "application/csv"
-    ].includes(mime) ||
-    mime.endsWith("+json") ||
-    mime.endsWith("+xml") ||
-    [
-      "txt",
-      "md",
-      "markdown",
-      "json",
-      "jsonl",
-      "csv",
-      "tsv",
-      "xml",
-      "yaml",
-      "yml",
-      "js",
-      "mjs",
-      "cjs",
-      "ts",
-      "tsx",
-      "jsx",
-      "html",
-      "htm",
-      "css",
-      "scss",
-      "less",
-      "py",
-      "rb",
-      "go",
-      "rs",
-      "java",
-      "c",
-      "h",
-      "cpp",
-      "hpp",
-      "cs",
-      "php",
-      "sh",
-      "ps1",
-      "sql",
-      "toml",
-      "ini",
-      "log"
-    ].includes(extension)
-  );
-}
 async function addFiles(fileList) {
   const files = Array.from(fileList || []);
   if (!files.length) return;

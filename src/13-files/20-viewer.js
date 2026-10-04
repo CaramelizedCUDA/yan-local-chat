@@ -1,30 +1,6 @@
 // 言 · 文件 · 预览：卷宗与附件的悬浮预览（图看画、文看字、表看格、网页进沙箱、PDF、音视频）
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // ---------- 卷宗文件的悬浮预览：图看画、文看字、表看格、网页进沙箱、PDF 交给浏览器、音视频就地放；都不必先下载 ----------
-const PREVIEW_IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "ico"]),
-  PREVIEW_DOC = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "ods", "odp"]),
-  PREVIEW_AUDIO = new Set(["mp3", "wav", "ogg", "oga", "opus", "m4a", "aac", "flac", "weba"]),
-  PREVIEW_VIDEO = new Set(["mp4", "m4v", "webm", "ogv", "mov", "mkv"]);
-function fileExtension(name) {
-  return String(name || "")
-    .split(".")
-    .pop()
-    .toLowerCase();
-}
-function previewKind(name) {
-  const extension = fileExtension(name);
-  if (PREVIEW_IMAGE.has(extension)) return "image";
-  if (extension === "svg") return "svg";
-  if (extension === "pdf") return "pdf";
-  if (PREVIEW_AUDIO.has(extension)) return "audio";
-  if (PREVIEW_VIDEO.has(extension)) return "video";
-  if (extension === "html" || extension === "htm") return "html";
-  if (extension === "csv" || extension === "tsv") return "table";
-  if (extension === "md" || extension === "markdown") return "markdown";
-  if (PREVIEW_DOC.has(extension)) return "doc";
-  if (isTextFile({ name, type: "" })) return "text";
-  return "none";
-}
 // 预览器看两种来源：磁盘卷宗（走桥接取回）与对话里的附件（就在这个浏览器里）。同一种文件，不论从哪儿来，看法一样——
 // 自己上传的 CSV、PDF、Markdown 点开就该是看，而不是把刚发出去的东西再下载一遍。
 // viewerSource 记着当前看的是哪一件：{ path } 是卷宗，{ attachmentId } 是附件；viewerPath 仍留给卷宗那一路的下载
@@ -79,7 +55,7 @@ async function openFileViewer(target, name = "", trigger = null) {
         .split("/")
         .pop() ||
       "附件",
-    kind = previewKind(title);
+    kind = fileKind(title).view || "none";
   viewerPath = source.path || "";
   viewerSource = source;
   viewerReturnFocus = trigger || document.activeElement;
@@ -119,8 +95,7 @@ function downloadViewerFile() {
   else if (viewerPath) downloadArchiveFile(viewerPath);
 }
 async function fileViewerBody(reader, name, kind) {
-  if (kind === "image" || kind === "svg")
-    return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;
+  if (kind === "image") return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;
   // PDF 交给浏览器自带的阅读器；卷宗的响应带 CSP: sandbox，脚本不会以本站身份运行
   if (kind === "pdf") return `<iframe class="file-viewer-frame" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></iframe>`;
   // 音频摊成听音整页（放音不在这层浮层里，关了也不断，见 src/25-listen.js）；视频交给浏览器自带的播放器，编码认不得（如某些 mkv）时换成下载提示，见 bindViewerEvents
@@ -181,10 +156,10 @@ async function fileViewerBody(reader, name, kind) {
     if (!text)
       return `<div class="file-viewer-empty">未能抽出正文<br>${VIEWER_OPEN_BUTTON}<button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
     const note = `<p class="file-viewer-note">本机按结构抽出，不含原排版 · <button type="button" class="viewer-open-link" data-viewer-open>以本机程序打开</button></p>`,
-      extension = fileExtension(name),
+      sort = fileKind(name).name,
       // 按「## 」分节：表格一张表一节，演示一页一节
       sections = text.split(/^(?=## )/m).filter(part => part.trim());
-    if (["xlsx", "ods"].includes(extension) && sections.length)
+    if (sort === "sheet" && sections.length)
       return `<div class="file-viewer-text file-viewer-wide">${note}<div class="viewer-tabs">${sections
         .map(
           (part, i) =>
@@ -196,7 +171,7 @@ async function fileViewerBody(reader, name, kind) {
             `<div class="viewer-sheet markdown${i ? " hidden" : ""}" data-viewer-panel="${i}">${renderMarkdown(part.replace(/^## .*\n+/, ""))}</div>`
         )
         .join("")}</div>`;
-    if (["pptx", "odp"].includes(extension) && sections.length)
+    if (sort === "slides" && sections.length)
       return `<div class="file-viewer-slides">${note}${sections.map(part => `<div class="viewer-slide markdown">${renderMarkdown(part)}</div>`).join("")}</div>`;
     return `<div class="file-viewer-text markdown">${note}${renderMarkdown(text)}</div>`;
   }

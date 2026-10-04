@@ -101,7 +101,6 @@ function documentList(step, docs) {
     display: `${docs.length} 件`
   };
 }
-const ARCHIVE_DOC_EXTENSIONS = new Set(["pdf", "docx", "pptx", "xlsx", "odt", "ods", "odp"]);
 /** @param {Conversation} conversation */
 function availableDocuments(conversation) {
   const seen = new Map();
@@ -109,8 +108,7 @@ function availableDocuments(conversation) {
     if (file.id && !seen.has(file.name) && (file.kind === "text" || (file.kind === "file" && file.extracted))) seen.set(file.name, file);
   if (store.settings.archiveRead !== false)
     for (const entry of archiveEntries || []) {
-      const extension = String(entry.name).split(".").pop().toLowerCase();
-      if (seen.has(entry.name) || !(ARCHIVE_DOC_EXTENSIONS.has(extension) || isTextFile({ name: entry.name, type: "" }))) continue;
+      if (seen.has(entry.name) || !(fileKind(entry.name).extract || isTextFile({ name: entry.name, type: "" }))) continue;
       seen.set(entry.name, { name: entry.name, archive: entry.path, size: entry.size, modifiedAt: entry.modifiedAt, kind: "archive" });
     }
   return [...seen.values()];
