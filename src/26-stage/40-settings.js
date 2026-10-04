@@ -55,7 +55,9 @@ function stageSettingsHtml() {
             : "执事要看网页时自会打开";
   const deps = !at
     ? "……"
-    : `${at.installed ? `执事借它翻页、点按、填写 · ${escapeHtml(at.version)} 版` : "未装，执事还使不动浏览器"}${browser === "chromium" ? ` · 内核${at.browsers.chromium ? "已装" : "未装"}` : ""}`;
+    : at.installed
+      ? `执事借它翻页、点按、填写 · ${escapeHtml(at.version)} 版`
+      : "未装，执事还使不动浏览器";
   const installing = (/** @type {string} */ what, /** @type {string} */ label) =>
     `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? "正在装…" : label}</button>`;
   return (
@@ -70,16 +72,16 @@ function stageSettingsHtml() {
     )}</div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>浏览器</strong><small>${
       browser === "chromium"
-        ? "不借本机的，另装一个放在游目里"
+        ? `不借本机的，另装一个放在游目里${at && !at.browsers.chromium ? "，还没装" : ""}`
         : missing
           ? `本机没装 ${browserLabel}：装好即用，或选自带内核`
           : `借本机的 ${browserLabel} 另起一份，与平日所用互不相扰`
-    }</small></div><div class="setting-actions">${missing ? `<button type="button" class="outline-btn" data-stage-get="${browser}">去下载</button>` : ""}${seg(
+    }</small></div><div class="setting-actions">${missing ? `<button type="button" class="outline-btn" data-stage-get="${browser}">去下载</button>` : ""}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", "装内核") : ""}${seg(
       "browser",
       STAGE_BROWSERS.map(([value, label]) => [value, label, !!at && value !== "chromium" && !at.browsers[value]]),
       browser
     )}</div></div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>驱动</strong><small>${deps}</small></div><div class="setting-actions">${installing("deps", at?.installed ? "更新" : "安装")}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", "装内核") : ""}</div></div>` +
+    `<div class="setting-row"><div class="setting-copy"><strong>驱动</strong><small>${deps}</small></div>${installing("deps", at?.installed ? "更新" : "安装")}</div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>存储</strong><small>登录、收藏、下载都在这里 ${at ? code(at.home) : "……"}</small></div><button type="button" class="outline-btn" id="stageRevealHome">打开文件夹</button></div>`
   );
 }
