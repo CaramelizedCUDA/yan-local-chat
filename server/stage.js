@@ -95,10 +95,153 @@ function prepareBrowser(config, { root, bridgePort }) {
 /** @param {string} dir */
 const bookmarksFile = dir => path.join(dir, "Default", "Bookmarks");
 
-module.exports = function createStage() {
+// ---------- 游目自己的浏览器 ----------
+// 浏览器不再要人去 MCP 里接：设置 → 游目里开着，言自己起一个 Playwright 的 MCP 服务（名叫「游目」）。家当都在存储根的「游目」目录：
+//   依赖/  @playwright/mcp 装在这里（npm install，一键）
+//   浏览器/  登录状态、收藏（--user-data-dir；可指到别处，如旧的那份）
+//   下载/  下载落在这里（--output-dir）
+//   内核/  本机没有 Edge / Chrome 时，Playwright 自带的那个浏览器装在这里（PLAYWRIGHT_BROWSERS_PATH）
+//   playwright.json  接法（prepareBrowser 写的）
+const BROWSERS = ["msedge", "chrome", "chromium"];
+/** @param {string} root 存储根 */
+function stageHome(root) {
+  const home = path.join(root, "游目");
+  return {
+    home,
+    deps: path.join(home, "依赖"),
+    profile: path.join(home, "浏览器"),
+    output: path.join(home, "下载"),
+    engine: path.join(home, "内核"),
+    cli: path.join(home, "依赖", "node_modules", "@playwright", "mcp", "cli.js")
+  };
+}
+/**
+ * 页面递来的是几项选择（{ browser, profile, fileAccess }），这里拼成起服务的那一整条
+ * @param {{ browser?: string, profile?: string, fileAccess?: boolean }} stage
+ * @param {string} root
+ */
+function builtinConfig(stage, root) {
+  const at = stageHome(root),
+    browser = BROWSERS.includes(String(stage?.browser)) ? String(stage.browser) : "msedge";
+  return {
+    command: process.execPath,
+    args: [
+      at.cli,
+      "--browser",
+      browser,
+      "--user-data-dir",
+      String(stage?.profile || "") || at.profile,
+      "--output-dir",
+      at.output,
+      ...(stage?.fileAccess === false ? [] : ["--allow-unrestricted-file-access"])
+    ],
+    cwd: at.home,
+    env: browser === "chromium" ? { PLAYWRIGHT_BROWSERS_PATH: at.engine } : {}
+  };
+}
+/** 起 MCP 服务前：游目自己的那个先拼成整条，Playwright 的再补接法 @param {Record<string, any>} config @param {{ root: string, bridgePort: number }} where */
+function prepareMcp(config, where) {
+  if (!config?.stage) return prepareBrowser(config, where);
+  const { stage, ...rest } = config,
+    built = { ...rest, ...builtinConfig(stage, where.root) };
+  try {
+    fs.mkdirSync(stageHome(where.root).output, { recursive: true });
+  } catch {}
+  return prepareBrowser(built, where);
+}
+// 页面问调试口、收藏、下载目录时递来的那个服务：游目自己的递选择，别的递参数
+/** @param {any} body @param {string} root @returns {{ args: unknown[], cwd: string }} */
+function serviceOf(body, root) {
+  if (body?.stage) {
+    const built = builtinConfig(body.stage, root);
+    return { args: built.args, cwd: built.cwd };
+  }
+  return { args: body?.args || [], cwd: String(body?.cwd || "") };
+}
+// 本机有哪几个浏览器：Edge、Chrome 看常见的安装处，自带内核看「内核」目录
+function localBrowsers(root) {
+  const env = process.env,
+    has = (/** @type {string[]} */ list) => list.some(file => !!file && fs.existsSync(file)),
+    pf = [env["ProgramFiles(x86)"], env.ProgramFiles, env.LOCALAPPDATA].filter(Boolean);
+  let chromium = false;
+  try {
+    chromium = fs.readdirSync(stageHome(root).engine).some(name => name.startsWith("chromium-"));
+  } catch {}
+  return {
+    msedge: has(pf.map(dir => path.join(String(dir), "Microsoft", "Edge", "Application", "msedge.exe"))),
+    chrome: has(pf.map(dir => path.join(String(dir), "Google", "Chrome", "Application", "chrome.exe"))),
+    chromium
+  };
+}
+// 装依赖或内核：在「游目」目录里跑 npm / playwright install，跑完才回。下载源随「环境」那一栏（国内镜像或官方）
+/** @param {"deps" | "chromium"} what @param {string} root @param {boolean} china */
+function installStage(what, root, china) {
+  const at = stageHome(root);
+  fs.mkdirSync(at.deps, { recursive: true });
+  const pkg = path.join(at.deps, "package.json");
+  if (!fs.existsSync(pkg)) fs.writeFileSync(pkg, JSON.stringify({ name: "yan-stage", private: true }, null, 2));
+  const npm = path.join(path.dirname(process.execPath), process.platform === "win32" ? "npm.cmd" : "npm");
+  const [file, args, env] =
+    what === "deps"
+      ? [
+          fs.existsSync(npm) ? npm : "npm",
+          [
+            "install",
+            "@playwright/mcp@latest",
+            "--no-audit",
+            "--no-fund",
+            "--loglevel=error",
+            ...(china ? ["--registry=https://registry.npmmirror.com"] : [])
+          ],
+          {}
+        ]
+      : [
+          process.execPath,
+          [path.join(at.deps, "node_modules", "playwright-core", "cli.js"), "install", "chromium", "--no-shell"],
+          {
+            PLAYWRIGHT_BROWSERS_PATH: at.engine,
+            ...(china ? { PLAYWRIGHT_DOWNLOAD_HOST: "https://cdn.npmmirror.com/binaries/playwright" } : {})
+          }
+        ];
+  if (what === "chromium" && !fs.existsSync(args[0])) return Promise.reject(Error("先装依赖，再装内核"));
+  return new Promise((resolve, reject) => {
+    // npm 在 Windows 上是 .cmd，得经 shell 起；参数都是言自己写的，没有外来的字
+    // 路径里有空格（D:\Program Files\npm.cmd）：经 shell 起时整条加引号
+    const shell = /\.cmd$/i.test(file) || file === "npm",
+      child = spawn(shell ? `"${file}"` : file, args, { cwd: at.deps, env: { ...process.env, ...env }, shell, windowsHide: true });
+    let tail = "";
+    const keep = (/** @type {Buffer} */ chunk) => (tail = (tail + chunk.toString()).slice(-1200));
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
+    child.on("error", reject);
+    child.on("close", code =>
+      code === 0 ? resolve(tail) : reject(Error(tail.trim().split("\n").slice(-3).join(" ") || `退出码 ${code}`))
+    );
+  });
+}
+/** @param {string} root */
+function stageState(root) {
+  const at = stageHome(root);
+  let version = "";
+  try {
+    version = JSON.parse(fs.readFileSync(path.join(path.dirname(at.cli), "package.json"), "utf8")).version || "";
+  } catch {}
+  return {
+    home: at.home,
+    profile: at.profile,
+    output: at.output,
+    installed: fs.existsSync(at.cli),
+    version,
+    browsers: localBrowsers(root)
+  };
+}
+
+/** @param {{ root?: () => string }} [options] 存储根（游目自己的浏览器在它底下） */
+module.exports = function createStage({ root = () => "" } = {}) {
   async function locate(req, res) {
     const body = await readJson(req),
-      { port, dir, output } = browserOf(body.args, String(body.cwd || ""));
+      service = serviceOf(body, root()),
+      { port, dir, output } = browserOf(service.args, service.cwd);
     const marks = !!dir && fs.existsSync(bookmarksFile(dir));
     const get = path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(1500) }).then(r => r.json());
     try {
@@ -118,7 +261,8 @@ module.exports = function createStage() {
   }
   // 只回 id、名字、网址与夹的层次（改收藏时按 id 认），读不到就是空的
   async function bookmarks(req, res) {
-    const { dir } = browserOf((await readJson(req)).args);
+    const service = serviceOf(await readJson(req), root()),
+      { dir } = browserOf(service.args, service.cwd);
     /** @returns {any} */
     const slim = node =>
       node.type === "folder"
@@ -136,6 +280,22 @@ module.exports = function createStage() {
       sendJson(res, 200, { bar: [], other: [] });
     }
   }
+  // 设置 → 游目：家当在哪、依赖装没装、本机有哪几个浏览器
+  async function home(req, res) {
+    await readJson(req);
+    sendJson(res, 200, stageState(root()));
+  }
+  // 装依赖（@playwright/mcp）或自带内核：跑完才回，一两分钟
+  async function install(req, res) {
+    const body = await readJson(req),
+      what = body.what === "chromium" ? "chromium" : "deps";
+    try {
+      await installStage(what, root(), body.mirror !== "official");
+      sendJson(res, 200, stageState(root()));
+    } catch (error) {
+      sendJson(res, 500, { error: `没装上：${String(/** @type {any} */ (error).message || error).slice(0, 300)}` });
+    }
+  }
   // 只收 http / https；测试里不真去开（YAN_NO_EXTERNAL）
   async function open(req, res) {
     const url = String((await readJson(req)).url || "");
@@ -146,13 +306,17 @@ module.exports = function createStage() {
   }
   // 只显出、不打开：下载来的可能是程序，开它要人自己在资源管理器里点
   async function reveal(req, res) {
-    const { args, cwd, path: file } = await readJson(req),
+    const body = await readJson(req),
+      { path: file } = body,
       target = String(file || "");
     if (target && fs.existsSync(target)) {
-      spawn("explorer.exe", [`/select,${path.resolve(target)}`], { detached: true, stdio: "ignore" }).unref();
+      // 目录直接打开，文件在它所在的目录里选中
+      const dir = fs.statSync(target).isDirectory();
+      spawn("explorer.exe", [dir ? path.resolve(target) : `/select,${path.resolve(target)}`], { detached: true, stdio: "ignore" }).unref();
       return sendJson(res, 200, { ok: true });
     }
-    const { output } = browserOf(args, String(cwd || ""));
+    const service = serviceOf(body, root()),
+      { output } = browserOf(service.args, service.cwd);
     if (!output || !fs.existsSync(output)) return sendJson(res, 404, { error: "还没有下载过，或找不到存下载的目录" });
     spawn("explorer.exe", [output], { detached: true, stdio: "ignore" }).unref();
     sendJson(res, 200, { ok: true });
@@ -180,10 +344,16 @@ module.exports = function createStage() {
       "POST /api/stage/bookmarks": bookmarks,
       "POST /api/stage/upload": upload,
       "POST /api/stage/reveal": reveal,
-      "POST /api/stage/open": open
+      "POST /api/stage/open": open,
+      "POST /api/stage/home": home,
+      "POST /api/stage/install": install
     }
   };
 };
 module.exports.browserOf = browserOf;
 module.exports.prepareBrowser = prepareBrowser;
+module.exports.prepareMcp = prepareMcp;
+module.exports.builtinConfig = builtinConfig;
+module.exports.installStage = installStage;
+module.exports.stageState = stageState;
 module.exports.isPlaywright = isPlaywright;

@@ -90,7 +90,7 @@ const stage = {
 // 已连着时也问一回：模型若把别的页请到了前台（选签、新开），看台跟过去
 function stageLocate() {
   if (stage.locating) return stage.locating;
-  stage.locating = bridge("/api/stage", { args: stageConfig()?.args || [], cwd: stageConfig()?.cwd || "" })
+  stage.locating = bridge("/api/stage", stageService())
     .then(({ ws, front, marks, port, output }) => {
       stage.marks = !!marks;
       stage.port = port;

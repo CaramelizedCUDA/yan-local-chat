@@ -12,13 +12,13 @@ function mcpSettingsHtml() {
   return `<div id="mcpPage"><h2>MCP</h2><div id="mcpList" class="card-list">${mcpCardsHtml()}</div><div class="card-foot"><button id="mcpAdd" class="outline-btn" type="button">＋ 新增服务</button><button id="mcpJson" class="outline-btn" type="button">${mcpJsonOpen ? "收起 JSON" : "以 JSON 编辑"}</button></div><div id="mcpJsonBox" class="json-box${mcpJsonOpen ? "" : " hidden"}">${mcpJsonHtml()}</div></div>`;
 }
 function mcpCardsHtml() {
-  const names = Object.keys(mcpConfigs());
+  const names = Object.keys(mcpUserConfigs());
   const cards = names.map(name => (name === mcpEditing ? mcpFormHtml(name) : mcpCardHtml(name)));
   if (mcpEditing === "") cards.unshift(mcpFormHtml(""));
   return cards.join("") || `<p class="card-note">尚未接入任何服务</p>`;
 }
 function mcpCardHtml(name) {
-  const config = mcpConfigs()[name],
+  const config = mcpUserConfigs()[name],
     state = mcp.servers[name];
   const [kind, text] = config.disabled
     ? ["", "已停用"]
@@ -38,7 +38,7 @@ function mcpCardHtml(name) {
 }
 // 就地改的表单：本机与远端两种接法各有几栏；键值对一行一个；配置里表单不认得的字段原样留着
 function mcpFormHtml(name) {
-  const config = mcpMask(mcpConfigs()[name] || { command: "" }),
+  const config = mcpMask(mcpUserConfigs()[name] || { command: "" }),
     local = mcpFormKind === "remote" ? false : mcpFormKind === "local" ? true : !config.url;
   const pairs = (object, sep) =>
     Object.entries(object || {})
@@ -66,7 +66,7 @@ function mcpFormHtml(name) {
 /** @type {"local"|"remote"|null} 表单里切了接法、还没存时记在这里 */
 let mcpFormKind = null;
 function mcpJsonHtml() {
-  const servers = Object.fromEntries(Object.entries(mcpConfigs()).map(([name, config]) => [name, mcpMask(config)]));
+  const servers = Object.fromEntries(Object.entries(mcpUserConfigs()).map(([name, config]) => [name, mcpMask(config)]));
   return `<div class="json-head"><span>整份配置 · mcpServers 写法；遮住的密钥保持原样即沿用原值</span><button type="button" class="outline-btn" id="mcpJsonReveal">${mcpRevealed ? "遮住密钥" : "显示密钥"}</button></div><textarea id="mcpConfig" class="field field-area json-editor" spellcheck="false" autocomplete="off">${escapeHtml(JSON.stringify({ mcpServers: servers }, null, 2))}</textarea><div class="card-form-foot"><button id="mcpJsonSave" class="outline-btn" type="button">保存并连接</button><span id="mcpError" class="card-error"></span></div>`;
 }
 // 环境变量与请求头里像密钥的值遮住（显示密钥时不遮）
@@ -107,7 +107,7 @@ function parseMcpConfig(text) {
   for (const [name, config] of Object.entries(servers)) {
     if (!config || typeof config !== "object" || !(typeof config.command === "string" || typeof config.url === "string"))
       throw Error(`「${name}」要有 command（本机程序）或 url（远端服务）`);
-    mcpUnmask(name, config, mcpConfigs()[name]);
+    mcpUnmask(name, config, mcpUserConfigs()[name]);
   }
   return servers;
 }
@@ -196,7 +196,7 @@ function bindMcpEvents() {
     const card = target.closest("[data-mcp]");
     if (card && target.dataset.mcpAction) {
       const name = card.dataset.mcp,
-        config = mcpConfigs()[name];
+        config = mcpUserConfigs()[name];
       if (target.dataset.mcpAction === "edit") {
         mcpEditing = name;
         mcpFormKind = null;
@@ -206,7 +206,7 @@ function bindMcpEvents() {
         if (config.disabled) delete config.disabled;
         else config.disabled = true;
       }
-      return commit(mcpConfigs(), [name]);
+      return commit(mcpUserConfigs(), [name]);
     }
     const form = target.closest("[data-mcp-edit]");
     if (!form) return;
@@ -230,7 +230,7 @@ function bindMcpEvents() {
       return (form.outerHTML = mcpFormHtml(before));
     }
     if (action === "delete") {
-      const { [before]: _gone, ...rest } = mcpConfigs();
+      const { [before]: _gone, ...rest } = mcpUserConfigs();
       mcpEditing = null;
       delete mcp.servers[before];
       return commit(rest);
@@ -240,12 +240,12 @@ function bindMcpEvents() {
     try {
       const name = form.querySelector('[data-f="name"]').value.trim();
       if (!name) throw Error("请填名称");
-      if (name !== before && mcpConfigs()[name]) throw Error(`已有名为「${name}」的服务`);
-      const config = mcpUnmask(name, mcpFormConfig(form, mcpConfigs()[before]), mcpConfigs()[before]);
+      if (name !== before && mcpUserConfigs()[name]) throw Error(`已有名为「${name}」的服务`);
+      const config = mcpUnmask(name, mcpFormConfig(form, mcpUserConfigs()[before]), mcpUserConfigs()[before]);
       // 改了名的留在原来的位置
       const servers = before
-        ? Object.fromEntries(Object.entries(mcpConfigs()).map(([key, value]) => (key === before ? [name, config] : [key, value])))
-        : { ...mcpConfigs(), [name]: config };
+        ? Object.fromEntries(Object.entries(mcpUserConfigs()).map(([key, value]) => (key === before ? [name, config] : [key, value])))
+        : { ...mcpUserConfigs(), [name]: config };
       mcpEditing = null;
       delete mcp.servers[before];
       commit(servers, [name]);

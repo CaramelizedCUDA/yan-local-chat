@@ -359,11 +359,11 @@ const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().file
 const MCP = require("./server/mcp/index.js")({
   version: APP_VERSION,
   toolEnv: ENV.apply,
-  // 起 Playwright 的 MCP 时补齐游目要的接法（调试口、放行来源、窗口挪到屏幕外），见 server/stage.js
-  prepare: config => require("./server/stage.js").prepareBrowser(config, { root: STORE.paths().root, bridgePort: PORT })
+  // 游目自己的浏览器拼成整条；起 Playwright 的 MCP 时补齐游目要的接法（调试口、放行来源、窗口挪到屏幕外），见 server/stage.js
+  prepare: config => require("./server/stage.js").prepareMcp(config, { root: STORE.paths().root, bridgePort: PORT })
 });
 // 看台：替页面问出模型所用浏览器的调试地址，其余页面直连（见 server/stage.js）
-const STAGE = require("./server/stage.js")();
+const STAGE = require("./server/stage.js")({ root: () => STORE.paths().root });
 // 总线：长请求的响应从页面的一条事件流回去，不再一个请求占一条浏览器连接（见 server/bus.js）
 const BUS = require("./server/bus.js")({ dispatch });
 const CHATGPT = require("./server/chatgpt.js")({ home: () => STORE.paths().root });

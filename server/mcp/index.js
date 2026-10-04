@@ -9,7 +9,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { McpClient } = require("./client.js");
 
-const CONNECTION_KEYS = ["command", "args", "cwd", "env", "url", "headers", "type", "transport"];
+// stage：游目自己的浏览器只递几项选择，由桥接拼成整条（见 server/stage.js 的 prepareMcp）
+const CONNECTION_KEYS = ["command", "args", "cwd", "env", "url", "headers", "type", "transport", "stage"];
 // 服务把图存进了文件、只回一条链接（Playwright 截图时模型给了 filename 就是这样：图落盘，回一行「- [Screenshot](./x.png)」）：
 // 读出来补进结果，页面照有图处理。只认本机进程的服务（路径按它的工作目录解析，言不给 roots，它也以此为准）、
 // 链到确实存在的图片文件、不过 8MB、至多四张；结果里本就有图的不补

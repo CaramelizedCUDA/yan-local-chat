@@ -12,8 +12,16 @@ const MCP_INLINE_LIMIT = 12000;
 const mcp = { key: "", loading: null, servers: {}, lazy: [], retryAt: 0, waitWarned: false };
 
 /** 设置里的全部配置：{ 名字: { command, args, cwd, env } 或 { url, headers, type }，另可带 disabled / autoApprove / timeout / load / note } */
-function mcpConfigs() {
+// 游目自己的浏览器在 MCP 里的名字（设置 → 游目里开着才有，见 src/26-stage/40-settings.js）
+const STAGE_SERVER = "游目";
+// 人在设置 → MCP 里接的
+function mcpUserConfigs() {
   return store.settings.mcpServers;
+}
+// 运行时认的：人接的，加上游目自己的浏览器（设置 → 游目里开着时，名叫「游目」，见 src/26-stage/40-settings.js）
+function mcpConfigs() {
+  const builtin = stageBuiltinConfig();
+  return builtin ? { ...store.settings.mcpServers, [STAGE_SERVER]: builtin } : store.settings.mcpServers;
 }
 function mcpActiveConfigs() {
   return Object.fromEntries(Object.entries(mcpConfigs()).filter(([, config]) => !config.disabled));

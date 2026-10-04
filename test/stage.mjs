@@ -509,27 +509,46 @@ check(
   ),
   await evalJs(`document.querySelector("#stageLetter").textContent`)
 );
-// 设置 → 游目：题下写名字的来历；适应页面关掉，留白处挂「放开」；搜索用哪家记进配置
-const setting = (key, value) =>
-  evalJs(
-    `(document.querySelector("#settingsModal").classList.contains("hidden") && document.querySelector("#openSettings").click(), document.querySelector('[data-tab="stage"]').click(), document.querySelector('[data-setting="${key}"][data-value="${value}"]').click(), true)`
-  );
-await setting("stageFit", "false");
+// 纸签里关掉适应页面：留白处挂「放开」；搜索用哪家点一下换一家，都记进配置
+await menuPick("fit");
 check(
-  "the 游目 tab sits before 记忆 and says where the name comes from",
+  "with 适应页面 off (in the menu) the strip offers 放开",
+  (await evalJs(
+    `__yanState().settings.stageFit === false && document.querySelector(".chip-pop.stage-menu [data-stage-menu=fit] small")?.textContent === "关"`
+  )) && (await evalJs(`!!document.querySelector("#stageLetter [data-stage-release]")`))
+);
+await menuPick("search");
+check("the search engine is kept in the config", await evalJs(`__yanState().settings.stageSearch === "baidu"`));
+await menuPick("search");
+await menuPick("search");
+await menuPick("fit");
+await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
+
+// 设置 → 游目：只管游目自己的浏览器怎么配（开没开、用哪个、依赖、登录与收藏、本机文件、所在），排在 MCP 之后、记忆之前
+await evalJs(`document.querySelector("#openSettings").click(); document.querySelector('[data-tab="stage"]').click(); true`);
+await waitFor(
+  `!!document.querySelector('#settingsContent [data-stage-opt="browser"]') && !document.querySelector("#settingsContent").textContent.includes("……")`,
+  8000
+).catch(() => {});
+check(
+  "the 游目 tab sits between MCP and 记忆, with the line it is named after",
   await evalJs(
-    `(t => t.nextElementSibling?.dataset.tab === "memory" && t.previousElementSibling?.dataset.tab === "mcp")(document.querySelector('[data-tab="stage"]')) && document.querySelector("#settingsContent .settings-lead")?.textContent.includes("兰亭集序") && !!document.querySelector("#settingsContent .settings-mark")`
+    `(t => t.nextElementSibling?.dataset.tab === "memory" && t.previousElementSibling?.dataset.tab === "mcp")(document.querySelector('[data-tab="stage"]')) && document.querySelector("#settingsContent .settings-lead")?.textContent === "游目骋怀，足以极视听之娱。" && !!document.querySelector("#settingsContent .settings-mark")`
   )
 );
 check(
-  "with 适应页面 off (in settings) the strip offers 放开",
-  (await evalJs(`__yanState().settings.stageFit === false`)) &&
-    (await evalJs(`!!document.querySelector("#stageLetter [data-stage-release]")`))
+  "it shows where its things live and whether the dependency is in",
+  await evalJs(
+    `(t => t.includes("游目") && t.includes("依赖") && (t.includes("未装") || t.includes("@playwright/mcp")))(document.querySelector("#settingsContent").textContent)`
+  )
 );
-await setting("stageSearch", "baidu");
-check("the search engine is kept in the config", await evalJs(`__yanState().settings.stageSearch === "baidu"`));
-await setting("stageSearch", "bing");
-await setting("stageFit", "true");
+await evalJs(`document.querySelector('[data-stage-opt="browser"][data-value="chrome"]').click(); true`);
+check("picking a browser is kept in the config", await evalJs(`__yanState().settings.stage?.browser === "chrome"`));
+await evalJs(`document.querySelector('[data-stage-opt="browser"][data-value="msedge"]').click(); true`);
+check(
+  "游目's own browser stays out of the MCP list while it is off",
+  await evalJs(`!Object.keys(__yanState().settings.mcpServers).includes("游目")`)
+);
 await shot("stage-settings.png");
 await evalJs(`document.querySelector("#closeSettings").click(); true`);
 await browserSend("Emulation.clearDeviceMetricsOverride", {}, pinned);

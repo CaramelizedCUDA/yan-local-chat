@@ -1139,3 +1139,8 @@ button.stage-mark-badge:hover .brush .ink,
 .stage-view.empty .stage-letter {
   display: none;
 }
+
+/* 设置 → 游目：本机没装的浏览器淡下去（仍可点，点了「依赖」那行提示要装什么） */
+.segmented button.off {
+  opacity: 0.45;
+}

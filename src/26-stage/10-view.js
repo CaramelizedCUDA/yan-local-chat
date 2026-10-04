@@ -118,7 +118,7 @@ function stageIdle() {
 function stageMaybeRelease() {
   if (stageFitOn() && stage.pinned && stageIdle() && stageVisible()) void stageRelease();
 }
-// 适应页面（设置 → 游目，默认开）
+// 适应页面（纸签里的开关，默认开，记在配置里）
 const stageFitOn = () => store.settings.stageFit !== false;
 /** @param {boolean} on */
 function stageSetFit(on) {

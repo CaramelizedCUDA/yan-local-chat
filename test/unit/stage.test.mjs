@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { load } from "./harness.mjs";
 
 const { stageUrlOf } = load(["stageUrlOf"]);
-const { browserOf, prepareBrowser } = createRequire(import.meta.url)("../../server/stage.js");
+const { browserOf, prepareBrowser, prepareMcp, builtinConfig } = createRequire(import.meta.url)("../../server/stage.js");
 
 test("地址栏：网址补 https，本机的照走，不像网址的交给搜索", () => {
   assert.equal(stageUrlOf("  example.com "), "https://example.com");
@@ -98,4 +98,34 @@ test("接法由言补齐：在人写的 --config 上合并，人写了的照人�
   // 无头的不挪窗口
   prepareBrowser({ command: "npx", args: ["@playwright/mcp", "--headless"] }, where);
   assert.ok(!JSON.parse(readFileSync(file, "utf8")).browser.launchOptions.args.some(a => a.startsWith("--window-position")));
+});
+
+test("游目自己的浏览器：几项选择拼成整条，家当都在存储根的「游目」里，再补接法", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "yan-root-")),
+    home = path.join(root, "游目");
+  const edge = builtinConfig({ browser: "msedge" }, root);
+  assert.equal(edge.command, process.execPath);
+  assert.deepEqual(edge.args, [
+    path.join(home, "依赖", "node_modules", "@playwright", "mcp", "cli.js"),
+    "--browser",
+    "msedge",
+    "--user-data-dir",
+    path.join(home, "浏览器"),
+    "--output-dir",
+    path.join(home, "下载"),
+    "--allow-unrestricted-file-access"
+  ]);
+  assert.equal(edge.cwd, home);
+  // 自带内核：指到「内核」目录；不许开本机文件、登录与收藏指到别处
+  const own = builtinConfig({ browser: "chromium", fileAccess: false, profile: "E:/旧/.edge-profile" }, root);
+  assert.equal(own.env.PLAYWRIGHT_BROWSERS_PATH, path.join(home, "内核"));
+  assert.ok(!own.args.includes("--allow-unrestricted-file-access"));
+  assert.equal(own.args[own.args.indexOf("--user-data-dir") + 1], "E:/旧/.edge-profile");
+  // 起的时候：拼成整条、带上接法那份 --config，note 之类照留
+  const ready = prepareMcp({ stage: { browser: "msedge" }, note: "说明" }, { root, bridgePort: 8787 });
+  assert.equal(ready.note, "说明");
+  assert.ok(!("stage" in ready));
+  assert.deepEqual(ready.args.slice(-2), ["--config", path.join(home, "playwright.json")]);
+  // 页面问调试口、收藏时递几项选择，认得出配置目录
+  assert.equal(browserOf(builtinConfig({}, root).args, home).dir, path.join(home, "浏览器"));
 });

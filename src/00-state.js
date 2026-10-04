@@ -192,6 +192,7 @@
  * @property {CommandPolicy} commandPolicyDefault 新对话默认的指令权限模式
  * @property {boolean} [sandbox] 沙箱总开关（默认开）：桥接那头筛指令、锁目录、去机密环境变量
  * @property {"anywhere"|"inside"} toolReach
+ * @property {{ enabled?: boolean, browser?: "msedge"|"chrome"|"chromium", profile?: string, fileAccess?: boolean }} [stage] 游目自己的浏览器（设置 → 游目）：开没开、用哪个、登录与收藏存在哪（空即存储根/游目/浏览器）、许不许开本机文件
  * @property {boolean} [stageFit] 游目「适应页面」：执事定死的视口等它歇手后放开（默认开）
  * @property {"bing"|"baidu"|"google"} [stageSearch] 游目地址栏里输的不像网址时交给哪家搜（默认必应）
  * @property {boolean} archiveRead

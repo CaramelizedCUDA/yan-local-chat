@@ -80,10 +80,15 @@ function stageConfig() {
   const configs = mcpConfigs();
   return (
     configs[stageServer()] ||
-    Object.values(configs).find(config =>
-      (config.args || []).some(arg => /playwright|^--(config|user-data-dir|cdp-endpoint)\b/.test(String(arg)))
+    Object.values(configs).find(
+      config => config.stage || (config.args || []).some(arg => /playwright|^--(config|user-data-dir|cdp-endpoint)\b/.test(String(arg)))
     )
   );
+}
+// 问桥接时递的那个服务：游目自己的递几项选择（桥接拼成整条），别的递参数与目录
+function stageService() {
+  const config = stageConfig();
+  return config?.stage ? { stage: config.stage } : { args: config?.args || [], cwd: config?.cwd || "" };
 }
 // 浏览器没开（或被关了）：替用户调一次那个服务的 browser_navigate，浏览器照它的配置起来，再去连
 async function stageLaunch() {
@@ -128,7 +133,7 @@ const stageMarkOf = node => ({
 // 读一回：刚改过的十秒内用改完时浏览器递回的那份（配置文件过一两秒才落盘）
 async function stageReadMarks() {
   if (stage.markTree && Date.now() - stage.markTreeAt < 10000) return stage.markTree;
-  const data = await bridge("/api/stage/bookmarks", { args: stageConfig()?.args || [] }).catch(() => null);
+  const data = await bridge("/api/stage/bookmarks", stageService()).catch(() => null);
   if (data) {
     stage.markTree = [
       { id: data.barId || "1", name: "收藏夹栏", children: (data.bar || []).map(stageMarkOf) },
@@ -357,7 +362,7 @@ const STAGE_SEARCH = /** @type {const} */ ({
   baidu: ["百度", "https://www.baidu.com/s?wd="],
   google: ["Google", "https://www.google.com/search?q="]
 });
-// 地址栏里输的不像网址时交给哪家：设置 → 游目里选，记在配置里
+// 地址栏里输的不像网址时交给哪家：纸签里点一下换一家，记在配置里
 function stageSearchEngine() {
   const key = store.settings.stageSearch || "bing";
   return /** @type {keyof typeof STAGE_SEARCH} */ (key in STAGE_SEARCH ? key : "bing");
@@ -381,6 +386,9 @@ function stageOpenMenu(anchor) {
     row("system", "用系统浏览器打开") +
     row("devtools", "开发者工具") +
     rule +
+    row("fit", "适应页面", `<small>${stageFitOn() ? "开" : "关"}</small>`) +
+    row("search", "搜索用", `<small>${STAGE_SEARCH[stageSearchEngine()][0]} ›</small>`) +
+    rule +
     row("settings", "浏览器设置…") +
     row("stage-settings", "游目设置…");
   const pop = openFloatingPop(anchor, html, { align: "right" });
@@ -391,6 +399,18 @@ function stageOpenMenu(anchor) {
     if (zoom) return stageZoomStep(Number(zoom.dataset.stageZoom));
     const act = /** @type {HTMLElement | null} */ (target.closest("[data-stage-menu]"))?.dataset.stageMenu;
     if (!act) return;
+    // 适应页面、搜索用哪家：点了就换，不收纸签（记进配置）
+    if (act === "fit" || act === "search") {
+      if (act === "fit") stageSetFit(!stageFitOn());
+      else {
+        const keys = /** @type {(keyof typeof STAGE_SEARCH)[]} */ (Object.keys(STAGE_SEARCH));
+        store.settings.stageSearch = keys[(keys.indexOf(stageSearchEngine()) + 1) % keys.length];
+        saveStore();
+      }
+      const label = /** @type {HTMLElement} */ (pop.querySelector(`[data-stage-menu=${act}] small`));
+      label.textContent = act === "fit" ? (stageFitOn() ? "开" : "关") : `${STAGE_SEARCH[stageSearchEngine()][0]} ›`;
+      return;
+    }
     closeChipPop();
     stageMenuAct(act, anchor);
   });
@@ -475,9 +495,8 @@ function stageOpenDownloads(anchor) {
       return stageOpenInside("downloads");
     }
     if (!reveal) return;
-    const config = stageConfig();
-    void bridge("/api/stage/reveal", { args: config?.args || [], cwd: config?.cwd || "", path: reveal.dataset.stageReveal || "" }).catch(
-      error => toast(String(error.message || error).slice(0, 80))
+    void bridge("/api/stage/reveal", { ...stageService(), path: reveal.dataset.stageReveal || "" }).catch(error =>
+      toast(String(error.message || error).slice(0, 80))
     );
   });
 }
