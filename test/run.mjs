@@ -181,6 +181,8 @@ try {
         YAN_HOME: path.join(TMP, ".yan"),
         // ChatGPT 订阅的授权端与接口指到假服务（见 fake-llm.mjs）
         YAN_CHATGPT_AUTH: "http://127.0.0.1:8798/chatgpt-auth",
+        // 游目「用系统浏览器打开」：测试里不真去开系统浏览器
+        YAN_NO_EXTERNAL: "1",
         YAN_CHATGPT_API: "http://127.0.0.1:8798/chatgpt/v1"
       }
     });

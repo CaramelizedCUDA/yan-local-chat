@@ -228,7 +228,7 @@ function bindStage() {
     e.stopPropagation();
     stageOpenMenu(/** @type {HTMLElement} */ (e.currentTarget));
   });
-  $("#stageFitBtn").addEventListener("click", () => stageSetFit(!stage.fit));
+  $("#stageWide").addEventListener("click", () => stageSetWide(!$("#stagePanel").classList.contains("wide")));
   $("#stageLetter").addEventListener("click", e => {
     if (/** @type {HTMLElement} */ (e.target).closest("[data-stage-release]")) void stageRelease(true);
   });
@@ -239,7 +239,6 @@ function bindStage() {
     stage.downloads = JSON.parse(localStorage.getItem("yan-stage-downloads") || "[]");
     stage.downloadsSeen = Date.now();
   } catch {}
-  $("#stageFitBtn").setAttribute("aria-pressed", String(stage.fit));
   bindStageFind();
   $("#stageNewTab").addEventListener("click", stageNewTab);
   $("#stageMarks").addEventListener("click", e => {

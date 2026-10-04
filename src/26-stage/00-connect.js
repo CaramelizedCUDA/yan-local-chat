@@ -159,7 +159,7 @@ function stageMessage(message) {
   const params = message.params || {};
   if (message.method === "Target.targetCreated" || message.method === "Target.targetInfoChanged") {
     const info = params.targetInfo;
-    if (info.type !== "page" || (stage.helperCtx && info.browserContextId === stage.helperCtx)) return;
+    if (!stageTabType(info) || (stage.helperCtx && info.browserContextId === stage.helperCtx)) return;
     if (stageNotTab(info)) return void stageDropTab(info.targetId);
     const fresh = !stage.tabs.has(info.targetId);
     stage.tabs.set(info.targetId, { title: info.title, url: info.url });
@@ -174,9 +174,13 @@ function stageMessage(message) {
     if (params.sessionId === stage.session) stage.session = stage.attached = "";
   } else if (message.sessionId && message.sessionId === stage.session) stagePageEvent(message.method, params);
 }
-// Edge 自己的气泡（下载时弹的 downloads-hub 之类）也报成一页：不是网页，不列。它起初网址是空的、后来才补上，报来时与轮询时都要认
+// 列成签的：寻常网页；Edge 的设置页报成 browser_ui，也算（不列它，点「浏览器设置」就像没反应）
+/** @param {{ type: string, url: string }} info */
+const stageTabType = info => info.type === "page" || (info.type === "browser_ui" && /^(edge|chrome):\/\/settings/.test(info.url));
+// Edge 自己的气泡与对话框（下载时弹的 downloads-hub、登录后弹的 sync-confirmation-dialog 之类）也报成一页：不是网页，不列，也不跟过去。
+// 它起初网址是空的、后来才补上，报来时与轮询时都要认
 /** @param {{ url: string }} info */
-const stageNotTab = info => /^edge:\/\/[\w-]*-hub\b/.test(info.url);
+const stageNotTab = info => /^edge:\/\/[\w-]*-(hub|dialog)\b/.test(info.url);
 /** @param {string} id */
 function stageDropTab(id) {
   if (!stage.tabs.delete(id)) return;

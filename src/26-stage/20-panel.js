@@ -44,6 +44,7 @@ function closeStage() {
 /** @param {boolean} on */
 function stageSetWide(on) {
   $("#stagePanel").classList.toggle("wide", on);
+  $("#stageWide").setAttribute("aria-pressed", String(on));
 }
 /** @param {number} px */
 function stageSetWidth(px) {
@@ -197,30 +198,50 @@ async function stageOpenMarks(anchor) {
 function stageMarksRefresh(pop) {
   pop.innerHTML = stageMarksHtml();
 }
+// 收起了哪些夹：记在本机
+function stageMarksShut() {
+  try {
+    return new Set(/** @type {string[]} */ (JSON.parse(localStorage.getItem("yan-stage-marks-shut") || "[]")));
+  } catch {
+    return new Set();
+  }
+}
+// 层次（设计稿/48 丙）：夹是一枚细折角、一只小函（卷宗夹的件图缩小）、墨色加重的名字与条数，点题头开合；
+// 同夹的条以一道淡墨竖痕收拢，条前一枚淡墨书签带。改、删是小画（那支笔、字上一笔划去），指着才露
 function stageMarksHtml() {
   const tab = stage.tabs.get(stage.current),
     mine = stageThisMark(),
     canMark = !!tab?.url && !/^(about|devtools|edge|chrome):/.test(tab.url),
     tree = stage.markTree || [],
+    shut = stageMarksShut(),
+    ribbon = brushIcon("mark", "stage-mark-ribbon"),
+    box = `<svg class="fi stage-mark-case" viewBox="0 0 16 20" aria-hidden="true"><rect class="case" x="1" y=".5" width="14.5" height="19"/><rect class="slip" x="4" y="3" width="4" height="11.5"/></svg>`,
     ops = (/** @type {StageMark} */ node) =>
-      `<span class="stage-mark-ops"><button type="button" data-mark-edit="${escapeHtml(node.id)}">改</button><button type="button" data-mark-del="${escapeHtml(node.id)}">删</button></span>`;
+      `<span class="stage-mark-ops"><button type="button" data-mark-edit="${escapeHtml(node.id)}" title="改" aria-label="改">${brushIcon("edit")}</button><button type="button" class="del" data-mark-del="${escapeHtml(node.id)}" title="删" aria-label="删">${brushIcon("strike")}</button></span>`;
+  // fixed：「其他收藏」是浏览器自己的根，不改不删
+  /** @param {StageMark} node @param {boolean} [fixed] */
+  const dir = (node, fixed = false) => {
+    const closed = shut.has(node.id);
+    return `<div class="stage-mark-dir${closed ? " shut" : ""}"><button type="button" class="stage-mark-fold" data-mark-fold="${escapeHtml(node.id)}" aria-expanded="${!closed}"><i class="stage-mark-chev" aria-hidden="true"></i>${box}<span>${escapeHtml(node.name)}</span><small>${stageMarkFlat(node.children || []).length}</small></button>${fixed ? "" : ops(node)}</div>${closed ? "" : `<div class="stage-mark-group">${list(node.children || [])}</div>`}`;
+  };
   /** @param {StageMark[]} nodes @returns {string} */
-  const list = (nodes, depth = 0) =>
+  const list = nodes =>
     nodes
       .map(node =>
         node.children
-          ? `<div class="stage-mark-dir" style="--depth:${depth}"><span>${escapeHtml(node.name)}</span>${ops(node)}</div>${list(node.children, depth + 1)}`
-          : `<div class="stage-mark-row" style="--depth:${depth}"><button type="button" class="stage-mark-name" data-stage-mark="${escapeHtml(node.url || "")}" title="${escapeHtml(node.url || "")}"><span>${escapeHtml(node.name || node.url || "")}</span></button>${ops(node)}</div>`
+          ? dir(node)
+          : `<div class="stage-mark-row"><button type="button" class="stage-mark-name" data-stage-mark="${escapeHtml(node.url || "")}" title="${escapeHtml(node.url || "")}">${ribbon}<span>${escapeHtml(node.name || node.url || "")}</span></button>${ops(node)}</div>`
       )
       .join("");
+  // 头一行是这一页：题在左，右端一枚书签带——没收是墨、点即收；已收着朱，旁边改与删
   const head = !canMark
     ? ""
     : mine
-      ? `<div class="stage-mark-this on"><span>此页已收</span><button type="button" data-mark-edit="${escapeHtml(mine.id)}">改</button><button type="button" data-mark-del="${escapeHtml(mine.id)}">移除</button></div>`
-      : `<div class="stage-mark-this"><button type="button" data-mark-add>收藏此页</button></div>`;
+      ? `<div class="stage-mark-this on"><span>${escapeHtml(mine.name)}</span>${ops(mine)}<i class="stage-mark-badge" title="此页已收">${brushIcon("mark")}</i></div>`
+      : `<div class="stage-mark-this"><span>${escapeHtml(stageTitle(tab))}</span><button type="button" class="stage-mark-badge" data-mark-add title="收藏此页" aria-label="收藏此页">${brushIcon("mark")}</button></div>`;
   const bar = tree[0]?.children || [],
-    other = tree[1]?.children || [],
-    body = list(bar) + (other.length ? `<div class="stage-mark-dir"><span>其他收藏</span></div>${list(other, 1)}` : "");
+    other = tree[1],
+    body = list(bar) + (other?.children?.length ? dir({ ...other, name: "其他收藏" }, true) : "");
   return `${head}<div class="stage-mark-list">${body || `<div class="stage-mark-empty">还没有收藏</div>`}</div><div class="stage-pop-foot"><button type="button" data-mark-folder>新夹</button><button type="button" data-mark-manage>整理…</button></div>`;
 }
 /** @param {string} id @param {StageMark[]} [nodes] @returns {StageMark | undefined} */
@@ -243,6 +264,16 @@ async function stageMarksClick(pop, target) {
     if (go) {
       closeChipPop();
       return stageGo(go.dataset.stageMark || "");
+    }
+    const fold = hit("data-mark-fold");
+    if (fold) {
+      const shut = stageMarksShut(),
+        id = fold.dataset.markFold || "";
+      shut.has(id) ? shut.delete(id) : shut.add(id);
+      try {
+        localStorage.setItem("yan-stage-marks-shut", JSON.stringify([...shut]));
+      } catch {}
+      return stageMarksRefresh(pop);
     }
     if (hit("data-mark-manage")) {
       closeChipPop();
@@ -291,7 +322,10 @@ async function stageMarksClick(pop, target) {
       // 夹里有东西：先换成「确定删」，再点一下才删
       if (node.children?.length && !del.classList.contains("sure")) {
         del.classList.add("sure");
-        del.textContent = `连同 ${stageMarkFlat(node.children).length} 条删去`;
+        del.title = "再点一下删去";
+        del
+          .closest(".stage-mark-ops")
+          ?.insertAdjacentHTML("afterbegin", `<small>连同 ${stageMarkFlat(node.children).length} 条，再点删去</small>`);
         return;
       }
       await stageMarkDo(`await bm(${js(node.children ? "removeTree" : "remove")}, ${js(node.id)})`);
@@ -349,7 +383,7 @@ function stageOpenMenu(anchor) {
     row("system", "用系统浏览器打开") +
     row("devtools", "开发者工具") +
     rule +
-    row("wide", "铺满整页", "<small>Esc 退回</small>") +
+    row("fit", "适应页面", `<small>${stage.fit ? "开" : "关"}</small>`) +
     row("search", "搜索用", `<small>${STAGE_SEARCH[stageSearchEngine()][0]} ›</small>`) +
     row("settings", "浏览器设置…");
   const pop = openFloatingPop(anchor, html, { align: "right" });
@@ -360,6 +394,13 @@ function stageOpenMenu(anchor) {
     if (zoom) return stageZoomStep(Number(zoom.dataset.stageZoom));
     const act = /** @type {HTMLElement | null} */ (target.closest("[data-stage-menu]"))?.dataset.stageMenu;
     if (!act) return;
+    // 适应页面：开关，点了不收纸签
+    if (act === "fit") {
+      stageSetFit(!stage.fit);
+      const label = /** @type {HTMLElement} */ (pop.querySelector("[data-stage-menu=fit] small"));
+      label.textContent = stage.fit ? "开" : "关";
+      return;
+    }
     if (act === "search") {
       const keys = /** @type {(keyof typeof STAGE_SEARCH)[]} */ (Object.keys(STAGE_SEARCH)),
         next = keys[(keys.indexOf(stageSearchEngine()) + 1) % keys.length];
@@ -381,14 +422,19 @@ function stageMenuAct(act, anchor) {
   if (act === "find") stageFindOpen();
   else if (act === "downloads") stageOpenDownloads(anchor);
   else if (act === "history" || act === "favorites" || act === "settings") stageOpenInside(act);
-  else if (act === "wide") stageSetWide(true);
   else if (act === "copy" && url)
     void navigator.clipboard.writeText(stageReadable(url)).then(
       () => toast("网址已复制"),
       () => toast("没能复制")
     );
-  // 交给言所在的这个浏览器开（多半就是系统默认的那个）：要登自己的账号、或要看外头那扇窗时
-  else if (act === "system" && /^https?:/.test(url)) window.open(url, "_blank", "noopener");
+  // 交给系统默认的浏览器开（经桥接：言跑在 VS Code 里时 window.open 不管用）：要登自己的账号、或要看外头那扇窗时
+  else if (act === "system") {
+    if (!/^https?:/.test(url)) return toast("只有网页（http / https）能交给系统浏览器");
+    void bridge("/api/stage/open", { url }).then(
+      () => toast("已交给系统浏览器"),
+      error => toast(`没能打开：${String(error.message || error).slice(0, 80)}`)
+    );
+  }
   // 开发者工具：浏览器自带的那套前端，由它的调试口供出；要在调试口的放行来源里加上它自己（见 docs/stage.md）
   else if (act === "devtools" && stage.current && stage.port)
     window.open(

@@ -282,9 +282,18 @@ await waitFor(`!!document.querySelector(".chip-pop.stage-marks [data-stage-mark]
 check(
   "bookmarks list folders and entries",
   await evalJs(
-    `(p => !!p && p.querySelector(".stage-mark-dir > span")?.textContent === "学术" && p.querySelector("[data-stage-mark]")?.textContent === "测试收藏")(document.querySelector(".chip-pop.stage-marks"))`
+    `(p => !!p && p.querySelector(".stage-mark-fold span")?.textContent === "学术" && p.querySelector("[data-stage-mark]")?.textContent === "测试收藏")(document.querySelector(".chip-pop.stage-marks"))`
   )
 );
+// 夹可开合：点题头收起，条数还在、条目不见；再点展开（记在本机）
+await evalJs(`document.querySelector(".chip-pop.stage-marks [data-mark-fold]").click(); true`);
+check(
+  "a folder folds up, keeping its count",
+  await evalJs(
+    `(p => p.querySelector(".stage-mark-dir").classList.contains("shut") && p.querySelector(".stage-mark-fold small").textContent === "1" && !p.querySelector("[data-stage-mark]"))(document.querySelector(".chip-pop.stage-marks"))`
+  )
+);
+await evalJs(`document.querySelector(".chip-pop.stage-marks [data-mark-fold]").click(); true`);
 await evalJs(`document.querySelector(".chip-pop.stage-marks [data-stage-mark]").click(); true`);
 await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "收藏页"`, 8000).catch(() => {});
 check("a bookmark opens in the current tab", await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "收藏页"`));
@@ -300,9 +309,7 @@ await evalJs(`document.querySelector(".chip-pop.stage-marks [data-mark-add]").cl
 await waitFor(`document.querySelector("#stageMarks").classList.contains("on")`, 10000).catch(() => {});
 check(
   "收藏此页 goes through the browser's own bookmarks and the ribbon turns red",
-  await evalJs(
-    `document.querySelector("#stageMarks").classList.contains("on") && document.querySelector(".stage-mark-this")?.textContent.includes("此页已收")`
-  )
+  await evalJs(`document.querySelector("#stageMarks").classList.contains("on") && !!document.querySelector(".stage-mark-this.on")`)
 );
 check("the borrowed bookmarks page never shows as a tab", (await evalJs(`__yanStage.state.tabs.size`)) === tabsBefore);
 await evalJs(`document.querySelector(".stage-mark-this [data-mark-edit]").click(); true`);
@@ -429,26 +436,45 @@ await sleep(250);
 await shot("stage-downloads.png");
 await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
 
-// 浏览器自己的页：历史开成一张新签（下载签开着时点「调律」即换成纸签）
-const tabsNow = await evalJs(`__yanStage.state.tabs.size`);
-await evalJs(`document.querySelector(".chip-pop.stage-menu [data-stage-menu=history]").click(); true`);
-const historyOpen = `[...__yanStage.state.tabs.values()].some(t => /^(edge|chrome):/.test(t.url) && t.url.includes("history"))`;
-await waitFor(historyOpen, 8000).catch(() => {});
+// 纸签里的一项：纸签没开着先开
+const menuPick = act =>
+  evalJs(
+    `(document.querySelector(".chip-pop.stage-menu") || document.querySelector("#stageMenuBtn").click(), document.querySelector(".chip-pop.stage-menu [data-stage-menu=${act}]").click(), true)`
+  );
+// 浏览器自己的页（历史、设置）开成一张新签；设置页在新版 Edge 里报成 browser_ui，也得列出来
+for (const [act, word] of [
+  ["history", "history"],
+  ["settings", "settings"]
+]) {
+  await menuPick(act);
+  const opened = `[...__yanStage.state.tabs.values()].some(t => /^(edge|chrome):/.test(t.url) && t.url.includes("${word}"))`;
+  await waitFor(opened, 8000).catch(() => {});
+  check(
+    `${act} opens the browser's own page as a tab`,
+    await evalJs(opened),
+    JSON.stringify(await evalJs(`[...__yanStage.state.tabs.values()].map(t => t.url)`)) +
+      JSON.stringify((await browserSend("Target.getTargets")).targetInfos.map(t => t.type + " " + t.url.slice(0, 40)))
+  );
+  const id = await evalJs(`[...__yanStage.state.tabs].find(([, t]) => /^(edge|chrome):/.test(t.url) && t.url.includes("${word}"))?.[0]`);
+  if (id) await browserSend("Target.closeTarget", { targetId: id });
+  await clickTab(targetId);
+  await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
+}
 check(
-  "历史 opens the browser's own history page as a tab",
-  await evalJs(`${historyOpen} && __yanStage.state.tabs.size === ${tabsNow + 1}`)
+  "Edge's own dialogs (sync confirmation and the like) never become tabs",
+  await evalJs(`![...__yanStage.state.tabs.values()].some(t => /-(dialog|hub)\b/.test(t.url))`)
 );
-const historyTab = await evalJs(
-  `[...__yanStage.state.tabs].find(([, t]) => /^(edge|chrome):/.test(t.url) && t.url.includes("history"))?.[0]`
-);
-if (historyTab) await browserSend("Target.closeTarget", { targetId: historyTab });
+// 用系统浏览器打开：交给桥接（测试里不真去开）；只收 http 页
+await evalJs(`__yanStage.go(${JSON.stringify(PAGE + "icon.svg")}); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.url.endsWith("icon.svg")`, 8000).catch(() => {});
+await menuPick("system");
+await waitFor(`document.querySelector("#toast")?.textContent === "已交给系统浏览器"`, 5000).catch(() => {});
+check("用系统浏览器打开 goes through the bridge", await evalJs(`document.querySelector("#toast")?.textContent === "已交给系统浏览器"`));
 await clickTab(targetId);
 await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
 
-// 阔：从纸签进，铺满；Esc（焦点不在看台里时）退回
-await evalJs(
-  `document.activeElement?.blur(); document.querySelector("#stageMenuBtn").click(); document.querySelector(".chip-pop.stage-menu [data-stage-menu=wide]").click(); true`
-);
+// 阔：栏顶那枚，铺满；Esc（焦点不在看台里时）退回
+await evalJs(`document.activeElement?.blur(); document.querySelector("#stageWide").click(); true`);
 check("wide covers the page", await evalJs(`getComputedStyle(document.querySelector("#stagePanel")).position === "fixed"`));
 await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
 await sleep(150);
@@ -483,14 +509,19 @@ check(
   ),
   await evalJs(`document.querySelector("#stageLetter").textContent`)
 );
-await evalJs(`document.querySelector("#stageFitBtn").click(); true`);
+const toggleFit = () =>
+  evalJs(
+    `(document.querySelector(".chip-pop.stage-menu") || document.querySelector("#stageMenuBtn").click(), document.querySelector(".chip-pop.stage-menu [data-stage-menu=fit]").click(), true)`
+  );
+await toggleFit();
 check(
-  "with 适应页面 off the strip offers 放开",
-  await evalJs(
-    `document.querySelector("#stageFitBtn").getAttribute("aria-pressed") === "false" && !!document.querySelector("#stageLetter [data-stage-release]")`
-  )
+  "with 适应页面 off (in the menu) the strip offers 放开",
+  (await evalJs(
+    `__yanStage.state.fit === false && document.querySelector(".chip-pop.stage-menu [data-stage-menu=fit] small")?.textContent === "关"`
+  )) && (await evalJs(`!!document.querySelector("#stageLetter [data-stage-release]")`))
 );
-await evalJs(`document.querySelector("#stageFitBtn").click(); true`);
+await toggleFit();
+await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
 await browserSend("Emulation.clearDeviceMetricsOverride", {}, pinned);
 await browserSend("Target.detachFromTarget", { sessionId: pinned });
 await evalJs(`document.querySelector("#stagePanel").style.width = "600px"; true`);

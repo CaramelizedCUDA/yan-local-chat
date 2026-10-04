@@ -121,7 +121,6 @@ function stageMaybeRelease() {
 /** @param {boolean} on */
 function stageSetFit(on) {
   stage.fit = on;
-  $("#stageFitBtn").setAttribute("aria-pressed", String(on));
   try {
     localStorage.setItem("yan-stage-fit", on ? "1" : "0");
   } catch {}
@@ -182,7 +181,7 @@ async function stageRefreshTabs() {
   let changed = false;
   for (const info of result?.targetInfos || []) {
     const tab = stage.tabs.get(info.targetId);
-    if (info.type !== "page" || !tab || (tab.title === info.title && tab.url === info.url)) continue;
+    if (!stageTabType(info) || !tab || (tab.title === info.title && tab.url === info.url)) continue;
     if (stageNotTab(info)) {
       stageDropTab(info.targetId);
       continue;
