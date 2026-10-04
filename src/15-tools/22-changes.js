@@ -168,7 +168,7 @@ function pairLines(dels, ins) {
   return out;
 }
 /**
- * 前后两版比出并排的各行：成片未动的只留改动上下各两行、中间折成「⋯ n 行未动」；两边共有的缩进一起去掉。
+ * 前后两版比出并排的各行：成片未动的只留改动上下各两行，两处改动之间隔一道丝线、不写跳过几行（本就只列变化）；两边共有的缩进一起去掉。
  * limit 只画前几行（行迹里先看前 20 行，「展开全部」再看全），比对总按全文来——先截后比会把截掉的行当成删了。
  * wrap 为假时一行放不下只放写得下的，末尾省略、悬停看整行（行迹里一步不该被一行长注释撑成半屏）；预览浮层与展开全部时照常折行
  * @param {string} oldText @param {string} newText @param {{ limit?: number, wrap?: boolean }} [options]
@@ -202,7 +202,7 @@ function splitDiffHtml(oldText, newText, { limit = Infinity, wrap = true } = {})
     added = 0,
     removed = 0;
   const gap = () => {
-    if (skipped) rows.push(`<span class="gap">⋯ ${skipped} 行未动</span>`);
+    if (skipped && rows.length) rows.push(`<span class="gap"></span>`);
     skipped = 0;
   };
   const cell = (kind, html, raw = "") =>
@@ -233,7 +233,6 @@ function splitDiffHtml(oldText, newText, { limit = Infinity, wrap = true } = {})
       rows.push(cell("d", left, d) + cell("i", right, i));
     }
   }
-  gap();
   const shown = rows.slice(0, limit);
   return {
     html: `<div class="tool-output split-diff${wrap ? "" : " clip"}">${shown.join("")}</div>`,
