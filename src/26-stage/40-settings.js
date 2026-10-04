@@ -52,13 +52,9 @@ function stageSettingsHtml() {
           : missing
             ? `本机没装 ${browserLabel}，先装上或换一个`
             : stage.ws
-            ? "正开着，在右侧那一笔朱竖里"
-            : "执事要看网页时自会打开";
-  const deps = !at
-    ? "……"
-    : at.installed
-      ? `执事借它翻页、点按、填写 · ${escapeHtml(at.version)} 版`
-      : "未装，执事还使不动浏览器";
+              ? "正开着，在右侧那一笔朱竖里"
+              : "执事要看网页时自会打开";
+  const deps = !at ? "……" : at.installed ? `执事借它翻页、点按、填写 · ${escapeHtml(at.version)} 版` : "未装，执事还使不动浏览器";
   const installing = (/** @type {string} */ what, /** @type {string} */ label) =>
     `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? stageInstallLabel() : label}</button>`;
   return (
@@ -144,9 +140,9 @@ function bindStageSettings() {
       return stageSetOptions(opt === "browser" ? { browser: /** @type {any} */ (value) } : { [opt]: value === "true" });
     }
     if (target.dataset.stageGet)
-      return void bridge("/api/stage/open", { url: STAGE_BROWSER_SITES[/** @type {"msedge" | "chrome"} */ (target.dataset.stageGet)] }).catch(error =>
-        toast(String(error.message || error).slice(0, 80))
-      );
+      return void bridge("/api/stage/open", {
+        url: STAGE_BROWSER_SITES[/** @type {"msedge" | "chrome"} */ (target.dataset.stageGet)]
+      }).catch(error => toast(String(error.message || error).slice(0, 80)));
     if (target.dataset.stageInstall) return void stageInstall(/** @type {"deps" | "chromium"} */ (target.dataset.stageInstall));
     if (target.id === "stageRevealHome" && stageHomeState)
       return void bridge("/api/stage/reveal", { path: stageHomeState.home }).catch(error =>

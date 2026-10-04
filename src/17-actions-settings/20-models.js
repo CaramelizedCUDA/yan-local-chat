@@ -1,5 +1,8 @@
 // 言 · 设置 · 模型：模型卡片、ChatGPT 账号、思考档位探测、测试连接与模型列表
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+const advancedOpen = new Set();
+// 模型设置里摊开着的那几个（一个模型平时收成一行，点开才是整张表）
+const profileOpen = new Set();
 function modelsSettingsHtml() {
   return `<h2>模型</h2><div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">＋ 接入模型</button>`;
 }

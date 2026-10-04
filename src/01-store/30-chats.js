@@ -1,5 +1,31 @@
 // 言 · 本地存储 · 对话：一段一个文件落进对话目录，脏标记、落盘、巡检与读回
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+const CHAT_DISK_INTERVAL = 1200, // 静止时同一段对话连续落盘的最短间隔（毫秒）
+  CHAT_STREAM_DISK_INTERVAL = 3000; // 流式生成时少改几遍整份 JSON；收尾会恢复上面的短间隔
+// 对话的存取状态：目录是否可用、正在合、指纹与时间戳、待写与在写、没删成的（见 01-store/10-state-db.js 开头的说明）
+let chatsBroken = false,
+  chatsSyncing = false,
+  // 这一回开页后对话已从目录读全过：之后才敢按「没人用」清附件原件
+  chatsLoaded = false,
+  freshBrowser = false,
+  // 开页时浏览器里是一份没带版本标记的记录（更老的版本，或测试灌进来的）：与 配置.json 对齐时以它为准
+  localSeeded = false,
+  chatSaveWarned = false,
+  unloading = false;
+const dirtyChatIds = new Set(),
+  chatHashes = new Map(),
+  chatStamps = new Map(),
+  // 每段对话上次与目录对齐时目录里那份的时间戳：写的时候带去，目录里那份若更新，桥接就不写（见 mergeConversation）
+  chatDiskStamps = new Map(),
+  // 上次读到的目录原文；并发编辑时以它为共同起点逐字段合并
+  chatBases = new Map(),
+  pendingChatWrites = new Map(),
+  activeChatWrites = new Map(),
+  chatWritePromises = new Map(),
+  deletedChatIds = new Set(),
+  chatDiskWrites = new Map(),
+  pendingChatDeletes = new Set();
+let saveTimer = null;
 // 对话目录可用：桥接报了目录、上次读它没出错
 function chatsOnline() {
   return !!chatsDir() && !chatsBroken;

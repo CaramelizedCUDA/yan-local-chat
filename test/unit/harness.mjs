@@ -46,11 +46,6 @@ const stubs = {
   innerHeight: 800,
   requestAnimationFrame: noop,
   cancelAnimationFrame: noop,
-  // 游目开页时盯着看台一栏的大小（bindStage）
-  ResizeObserver: class {
-    observe() {}
-    disconnect() {}
-  },
   indexedDB: { open: () => ({}) },
   performance: globalThis.performance,
   crypto: globalThis.crypto,

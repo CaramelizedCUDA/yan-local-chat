@@ -1,5 +1,6 @@
 // 言 · 对话引擎 · 历史：每一问送给模型的历史怎么装（附件、引文、上一答的行迹、补言）
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+const HISTORY_TEXT_CHARS = 3000;
 function attachmentExcerpt(text, name, label) {
   const value = String(text || "");
   return value.length > HISTORY_TEXT_CHARS

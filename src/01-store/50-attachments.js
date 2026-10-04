@@ -1,5 +1,8 @@
 // 言 · 本地存储 · 附件原件：存储根的 附件/ 与本机 IndexedDB 暂存
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+const FILE_DB_NAME = "yan-chat-files-v1";
+const FILE_STORE_NAME = "attachments";
+let fileDbPromise = null;
 function openFileDb() {
   if (fileDbPromise) return fileDbPromise;
   fileDbPromise = new Promise((resolve, reject) => {

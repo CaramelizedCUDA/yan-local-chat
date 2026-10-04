@@ -398,6 +398,5 @@ function bindStage() {
     } catch {}
   });
 }
-bindStage();
 // 给端到端测试：读状态、立即去连（见 test/stage.mjs）
 window.__yanStage = { state: stage, locate: stageLocate, go: stageGo, sendFiles: stageSendFiles };

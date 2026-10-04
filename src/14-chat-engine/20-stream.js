@@ -59,7 +59,10 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       // 续写只递已写的话，做过的步骤也得让它知道（另发一句「继续」时上一答的行迹本就随着去），不然从头再做一遍
       if (resumeFrom) {
         const trail = stepsDigest(assistant);
-        head.push({ role: "assistant", content: resumeFrom }, { role: "user", content: `${trail ? `${trail}\n\n` : ""}${prompt("assistant.resume")}` });
+        head.push(
+          { role: "assistant", content: resumeFrom },
+          { role: "user", content: `${trail ? `${trail}\n\n` : ""}${prompt("assistant.resume")}` }
+        );
       }
       return head;
     };

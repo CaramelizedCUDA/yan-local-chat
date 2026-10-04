@@ -1,5 +1,13 @@
 // 言 · 本地存储 · 暂存：记录怎么存、IndexedDB 的状态表、配置的本机缓存
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+const STATE_DB_NAME = "yan-chat-state-v1";
+const STATE_STORE_NAME = "state"; // 旧版整份记录的表（main 一条），迁走后就空着
+const STATE_RECORD_KEY = "main";
+const CHATS_STORE_NAME = "conversations"; // 落盘不成与离页时对话暂存这里，一段一条
+let stateDbPromise = null,
+  stateDb = null;
+let metaRevision = 0,
+  metaSaveWarned = false;
 // ---------- 记录怎么存 ----------
 // 记录分两半。「配置」（设置、模型含 API Key、记忆、草稿）小而常改：正本在存储根的 配置.json（默认 ~/.yan，
 // 几个浏览器共用这一份，见 syncConfigWithDisk），localStorage 里那份是缓存，记着与磁盘对齐时的基准。

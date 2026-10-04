@@ -45,8 +45,6 @@ async function boot() {
   // MCP 服务起得慢（起进程、握手）：先起着，头一问发出前会等它；环境备没备好也问一声，系统提示里要说
   void mcpReady();
   void refreshEnv();
-  // 模型所用的浏览器若已开着（页面刷新过、桥接重启过），看台直接接上
-  void stageLocate();
   if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
   // 先问一声别处在作答什么，那几段不当成中断
   await syncLeases();
@@ -54,6 +52,8 @@ async function boot() {
   rewatchBackground();
   applyAppearance();
   bindEvents();
+  // 模型所用的浏览器若已开着（页面刷新过、桥接重启过），看台直接接上
+  void stageLocate();
   (window.requestIdleCallback || (fn => setTimeout(fn, 800)))(() => void themeSheets());
   void refreshArchive();
   // 侧栏的开合记在本机（不随备份走）：宽屏按上次的来，窄屏一律收起；theme-boot 已按同一记录先把宽度放好，这里接过来
@@ -125,6 +125,8 @@ function bindEvents() {
   setupSidePanel();
   bindContentEvents();
   bindAttachmentEvents();
+  bindStage();
+  bindStageInk();
   document.querySelectorAll(".tab-btn").forEach(
     button =>
       (button.onclick = () => {

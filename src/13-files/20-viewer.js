@@ -315,3 +315,46 @@ function bindViewerEvents() {
     else if (e.target === $("#imageViewerStage")) closeImageViewer();
   });
 }
+function toggleImageViewerZoom() {
+  const stage = $("#imageViewerStage"),
+    actual = !stage.classList.contains("actual");
+  stage.classList.toggle("actual", actual);
+  $("#imageViewerZoom").textContent = actual ? "适应" : "原图";
+  $("#imageViewerZoom").setAttribute("aria-pressed", String(actual));
+}
+let imageViewerAttachmentId = null,
+  imageViewerReturnFocus = null;
+function closeImageViewer() {
+  const viewer = $("#imageViewer");
+  if (viewer.classList.contains("hidden")) return;
+  viewer.classList.add("hidden");
+  $("#imageViewerImage").removeAttribute("src");
+  $("#imageViewerStage").classList.remove("actual");
+  $("#imageViewerZoom").textContent = "原图";
+  $("#imageViewerZoom").setAttribute("aria-pressed", "false");
+  imageViewerAttachmentId = null;
+  const target = imageViewerReturnFocus;
+  imageViewerReturnFocus = null;
+  if (target?.isConnected) target.focus();
+}
+async function openImageViewer(id, trigger = null) {
+  try {
+    const file = await getAttachment(id);
+    if (!file) return toast("图片原件已找不到");
+    if (file.kind !== "image") return openFileViewer({ attachmentId: id }, file.name, trigger);
+    imageViewerAttachmentId = id;
+    imageViewerArchivePath = null;
+    imageViewerReturnFocus = trigger || document.activeElement;
+    $("#imageViewerName").textContent = `${file.name || "图片"} · ${formatFileSize(file.size)}`;
+    const image = $("#imageViewerImage");
+    image.src = file.data;
+    image.alt = file.name || "图片预览";
+    $("#imageViewerStage").classList.remove("actual");
+    $("#imageViewerZoom").textContent = "原图";
+    $("#imageViewerZoom").setAttribute("aria-pressed", "false");
+    $("#imageViewer").classList.remove("hidden");
+    $("#imageViewerClose").focus();
+  } catch {
+    toast("图片读取失败");
+  }
+}

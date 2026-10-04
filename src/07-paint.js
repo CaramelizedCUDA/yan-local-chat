@@ -348,6 +348,7 @@ function stepSeen(id) {
   }
   return seen;
 }
+const knownStepIds = new Map();
 // 一列步骤按 id 对齐：新的接在后头，变了的就地换，撤下的（没递出去的补言）拿掉
 /** @param {Step[]} steps */
 function syncStepList(list, steps, seen, animate) {
@@ -522,4 +523,35 @@ function paintHelperTrail(trail, step, animate) {
     parts.push({ key: "report", sig: report, html: () => `<div class="sub-report"></div>`, paint: el => paintMarkdown(el, report) });
   syncParts(trail, parts, animate);
   if (sub) syncSubFold(trail, step);
+}
+// 把尾段末尾最近写出的字按帧分组包进 .ink-fresh（用负 animation-delay 对齐各自的年龄，重绘也不会重放），并在最后一个字后放一支光标
+function decorateTail(tail, groups) {
+  if (tail.querySelector(".viz-pending")) return;
+  const nodes = [];
+  const walker = document.createTreeWalker(tail, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) if (walker.currentNode.data.trim()) nodes.push(walker.currentNode);
+  let node = nodes.pop();
+  if (!node) return;
+  const cursor = document.createElement("span");
+  cursor.className = "ink-cursor";
+  node.after(cursor);
+  for (const group of groups) {
+    let need = group.count;
+    while (need > 0 && node) {
+      const text = node.data,
+        take = Math.min(need, text.length),
+        span = document.createElement("span");
+      span.className = "ink-fresh";
+      span.style.animationDelay = `-${Math.round(group.age)}ms`;
+      span.textContent = text.slice(text.length - take);
+      node.data = text.slice(0, text.length - take);
+      node.after(span);
+      need -= take;
+      if (!node.data) {
+        node.remove();
+        node = nodes.pop();
+      }
+    }
+    if (!node) break;
+  }
 }

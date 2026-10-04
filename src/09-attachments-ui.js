@@ -216,3 +216,22 @@ function bindAttachmentEvents() {
     }
   });
 }
+// 图片缩略图：原件在 IndexedDB，渲染后异步补上 src；缓存最近 40 张
+async function loadThumbnails(root) {
+  for (const img of root.querySelectorAll("img[data-thumb]:not([src])")) {
+    const id = img.dataset.thumb;
+    try {
+      let url = thumbCache.get(id);
+      if (!url) {
+        const file = await getAttachment(id);
+        if (!file || file.kind !== "image") continue;
+        url = file.data;
+        thumbCache.set(id, url);
+        if (thumbCache.size > 40) thumbCache.delete(thumbCache.keys().next().value);
+      }
+      img.src = url;
+      img.closest(".attachment-card")?.classList.add("has-thumb");
+    } catch {}
+  }
+}
+const thumbCache = new Map();

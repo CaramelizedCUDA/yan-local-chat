@@ -1,5 +1,7 @@
 // 言 · 文件 · 卷宗：跨对话保存的文件库——列表、件图、夹，收入、置入、改名与移动
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+let libraryQuery = "",
+  libraryKind = "all";
 // ---------- 卷宗：跨对话保存的文件库 ----------
 // 卷宗是存储根里的一个目录（bootstrap.work.archive）：拖进来的文件落盘，没绑目录的对话里模型写出的文件也在这里，页面即目录的视图。
 let archiveEntries = null,
@@ -81,10 +83,6 @@ function archiveKind(name) {
   if (PREVIEW_AUDIO.has(extension)) return "audio";
   if (PREVIEW_VIDEO.has(extension)) return "video";
   return isTextFile({ name, type: "" }) ? "text" : "file";
-}
-// 附件记的 kind 只分 画 / 文 / 卷（送给模型时的读法）；画在卡片上、按类筛选时，卷里再分出音与影
-function displayKind(file) {
-  return file.kind === "file" ? archiveKind(file.name) : file.kind;
 }
 
 // ---------- 件图：每一件画成一张右上折角的小纸，纸面上的记号分出是什么；夹与分组是一只布面小函 ----------

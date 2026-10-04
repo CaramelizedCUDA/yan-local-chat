@@ -1,5 +1,9 @@
 // 言 · 整体渲染：顶栏、模型菜单、历史、对话与消息
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+let lastRenderedConvId = null,
+  convergeTimer = null;
+const nodeSig = new WeakMap();
+let lastVizThemeKey = "";
 function render(shouldScroll = false) {
   rememberPlace();
   const c = currentConversation(),
@@ -775,4 +779,17 @@ function bindScrollEvents() {
     followBottom = true;
     el.scrollTo({ top: el.scrollHeight, behavior: reducedMotion.matches ? "instant" : "smooth" });
   };
+}
+function scrollBottom() {
+  const el = $("#chatScroll");
+  if (!el) return;
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 1) {
+    autoScrolling = false;
+    return;
+  }
+  autoScrolling = true;
+  el.scrollTop = el.scrollHeight;
+  requestAnimationFrame(() => {
+    autoScrolling = false;
+  });
 }

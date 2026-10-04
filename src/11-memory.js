@@ -140,7 +140,10 @@ function memorySettingsHtml() {
       ["true", "开"],
       ["false", "关"]
     ]
-      .map(([value, label]) => `<button data-setting="memoryEnabled" data-value="${value}" class="${String(enabled) === value ? "active" : ""}">${label}</button>`)
+      .map(
+        ([value, label]) =>
+          `<button data-setting="memoryEnabled" data-value="${value}" class="${String(enabled) === value ? "active" : ""}">${label}</button>`
+      )
       .join("")}</div></div></div>` +
     (open
       ? memorySplitHtml(categories, open)

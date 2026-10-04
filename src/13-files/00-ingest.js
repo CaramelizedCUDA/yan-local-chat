@@ -1,5 +1,12 @@
 // 言 · 文件 · 接入：选取、拖入、粘贴的文件读成附件；附件原件的下载
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+// 附件的几道上限：单件、单次合计、卷宗与附件原件合计、收入卷宗的单件；界面上的提示都从这里取数（见 limitLabel），改一处即可
+const MB = 1024 * 1024;
+const MAX_FILE_BYTES = 32 * MB;
+const MAX_PENDING_BYTES = 64 * MB;
+const MAX_ARCHIVE_FILE_BYTES = 256 * MB;
+const limitLabel = bytes => (bytes >= 1024 * MB ? `${bytes / (1024 * MB)} GB` : `${Math.round(bytes / MB)} MB`);
+const MAX_EXTRACTED_CHARS = 300000;
 async function handleFiles(event) {
   await addFiles(event.target.files);
   event.target.value = "";

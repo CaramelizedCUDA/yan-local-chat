@@ -7,6 +7,10 @@ function estimateText(text) {
 // 上下文过重的门槛：每一答的用量标注超过它就转为印色提醒
 const CONTEXT_HEAVY = 24000;
 const SSE_IDLE_MS = 300000;
+// Anthropic 的 max_tokens 没填时的值：今日的 Claude 都认得下这个数；OpenAI 兼容接口根本不传这个字段
+const DEFAULT_MAX_TOKENS = 32000;
+const REVEAL_RATE = 0.16,
+  FRESH_MS = 640; // 每帧写出积压字数的比例；新字渐显持续时间
 function estimateTokens(messages) {
   let score = 0;
   for (const message of messages) {
@@ -465,37 +469,6 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   inkReveal.delete(assistant.id);
   closed = true; // 之后迟到的帧一律作废：后台标签页里 rAF 会攒到切回来才跑，那时收尾已把图表画好，再用 suppressViz 重绘会把它们打回占位
 }
-// 把尾段末尾最近写出的字按帧分组包进 .ink-fresh（用负 animation-delay 对齐各自的年龄，重绘也不会重放），并在最后一个字后放一支光标
-function decorateTail(tail, groups) {
-  if (tail.querySelector(".viz-pending")) return;
-  const nodes = [];
-  const walker = document.createTreeWalker(tail, NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) if (walker.currentNode.data.trim()) nodes.push(walker.currentNode);
-  let node = nodes.pop();
-  if (!node) return;
-  const cursor = document.createElement("span");
-  cursor.className = "ink-cursor";
-  node.after(cursor);
-  for (const group of groups) {
-    let need = group.count;
-    while (need > 0 && node) {
-      const text = node.data,
-        take = Math.min(need, text.length),
-        span = document.createElement("span");
-      span.className = "ink-fresh";
-      span.style.animationDelay = `-${Math.round(group.age)}ms`;
-      span.textContent = text.slice(text.length - take);
-      node.data = text.slice(0, text.length - take);
-      node.after(span);
-      need -= take;
-      if (!node.data) {
-        node.remove();
-        node = nodes.pop();
-      }
-    }
-    if (!node) break;
-  }
-}
 function normalizeContent(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return content.map(part => part?.text || part?.content || "").join("");
@@ -508,17 +481,4 @@ function friendlyError(message) {
   if (/Failed to fetch|NetworkError|Load failed/i.test(message))
     return "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
   return String(message).slice(0, 500);
-}
-function scrollBottom() {
-  const el = $("#chatScroll");
-  if (!el) return;
-  if (el.scrollHeight - el.scrollTop - el.clientHeight < 1) {
-    autoScrolling = false;
-    return;
-  }
-  autoScrolling = true;
-  el.scrollTop = el.scrollHeight;
-  requestAnimationFrame(() => {
-    autoScrolling = false;
-  });
 }

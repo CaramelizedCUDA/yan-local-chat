@@ -126,9 +126,3 @@ function clearDraft(id = currentId) {
   store.drafts ||= {};
   delete store.drafts[draftKey(id)];
 }
-function draftAttachmentIds() {
-  return Object.values(store.drafts || {})
-    .flatMap(value => (Array.isArray(value?.attachments) ? value.attachments : []))
-    .map(file => file?.id)
-    .filter(Boolean);
-}

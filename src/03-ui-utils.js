@@ -3,6 +3,21 @@
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
+function safeWebUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return /^https?:$/.test(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+function safeHost(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "未填写地址";
+  }
+}
 function formatTime(value) {
   return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
@@ -28,6 +43,7 @@ function dayBucket(value) {
   const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(value).setHours(0, 0, 0, 0)) / 86400000);
   return days <= 0 ? "今天" : days < 7 ? "过去七天" : "更早";
 }
+let toastTimer = null;
 function toast(message, ms = 2200) {
   const el = $("#toast");
   el.textContent = message;
@@ -45,23 +61,6 @@ function scrollChatTo(article, block = "start", margin = 12) {
         ? host.scrollTop + offset - Math.max(0, (host.clientHeight - article.offsetHeight) / 2)
         : host.scrollTop + offset - margin;
   host.scrollTo({ top: Math.max(0, target), behavior: reducedMotion.matches ? "instant" : "smooth" });
-}
-function requestJob(id = currentId) {
-  return id ? requestJobs.get(id) || null : null;
-}
-function conversationRunning(id = currentId) {
-  return !!requestJob(id);
-}
-// 后台还有帮手在做（这一段此刻未必在作答）
-function crewRunning(id = currentId) {
-  return !!id && crews.has(id);
-}
-// 作答途中不寻常的状态：等待确认、网络重试、整理上下文。平常写着、跑着不必说，label 为空；
-// 等待确认由请示条与侧栏的「问」示意，其余挂在输入框上方的工作条里（见 renderHelperBar）
-/** @param {Conversation} conversation */
-function setJobLabel(conversation, job, label = "") {
-  job.label = label;
-  if (currentId === conversation.id) renderHelperBar();
 }
 function grow(el) {
   el.style.height = "auto";
