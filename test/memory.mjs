@@ -121,7 +121,7 @@ await sleep(200);
 check(
   "memory tab renders with seal and count",
   await evalJs(
-    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && h.querySelector(".about-version")?.textContent === "1 / 324 条 · 1 类" && h.querySelectorAll(".memory-cat").length === 1 && h.querySelector(".memory-cat.active") && h.querySelectorAll(".memory-item").length === 1 && !h.querySelector(".memory-item textarea"))(document.querySelector("#settingsContent"))`
+    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && h.querySelector(".about-version")?.textContent === "1 / 324 条 · 1 类" && h.querySelectorAll(".memory-cat[data-memory-cat]").length === 1 && h.querySelector(".memory-cat.active") && h.querySelectorAll(".memory-item").length === 1 && !h.querySelector(".memory-item textarea"))(document.querySelector("#settingsContent"))`
   )
 );
 await evalJs(`document.querySelector('#settingsContent [data-memory-cat="偏好"]').click(); true`);
@@ -175,6 +175,23 @@ check(
     (await evalJs(
       `[...document.querySelectorAll("#settingsContent .memory-cat span")].map(n => n.textContent).join() === "工作" && document.querySelectorAll("#settingsContent .memory-item").length === 1`
     ))
+);
+// 另起一类：写名回车即在新类里手记第一条；第一条没写就离开，这一类随之消失
+await evalJs(`document.querySelector("#newMemoryCat").click(); true`);
+await evalJs(
+  `(i => { i.value = "新类"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })(document.querySelector("#settingsContent input.memory-cat-new")); true`
+);
+await sleep(150);
+check(
+  "a new category opens with its first item being written",
+  await evalJs(`document.querySelector("#settingsContent .memory-cat.active span")?.textContent === "新类" && !!document.activeElement?.matches(".memory-text")`)
+);
+await evalJs(`document.activeElement.blur(); true`);
+await sleep(150);
+check(
+  "leaving its first item empty drops the new category",
+  (await memory()).items.length === 1 &&
+    (await evalJs(`![...document.querySelectorAll("#settingsContent .memory-cat span")].some(n => n.textContent === "新类")`))
 );
 await evalJs(`document.querySelector("#closeSettings").click(); true`);
 await sleep(300);

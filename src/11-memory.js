@@ -112,7 +112,8 @@ function memoryItemHtml(item) {
       : `<div class="memory-body" data-memory-toggle title="点一下收起">${memoryRichText(item.text)}</div>`;
   return `<div class="memory-item open" data-memory="${id}">${body}<div class="memory-meta">${day}${source}<span class="memory-spacer"></span><span class="memory-ops"><button type="button" data-memory-edit title="${editing ? "改好了" : "改"}">${brushIcon("edit")}</button><button type="button" data-memory-move title="归入别类" aria-haspopup="menu">${brushIcon("groups")}</button><button type="button" class="memory-del" data-memory-delete title="删去这条">${brushIcon("strike")}</button></span></div></div>`;
 }
-// 分栏：左一列类目（选着的左缘一道朱、名字加重），右边这一类的条目；右栏顶上类名就地可改，「手记一条」「删去此类」都对着这一类
+// 分栏：左一列类目（选着的左缘一道朱、名字加重），末尾「另起一类」；右边这一类的条目，右栏顶上类名就地可改，
+// 「手记一条」「删去此类」两枚小画都对着这一类
 function memorySplitHtml(categories, open) {
   return (
     `<div class="memory-split"><div class="memory-cats">${categories
@@ -120,8 +121,8 @@ function memorySplitHtml(categories, open) {
         cat =>
           `<button type="button" class="memory-cat${cat === open ? " active" : ""}" data-memory-cat="${escapeHtml(cat.name)}"><span>${escapeHtml(cat.name)}</span><em>${cat.items.length}</em></button>`
       )
-      .join("")}</div>` +
-    `<div class="memory-pane"><div class="memory-pane-head"><input id="memoryCatName" class="memory-cat-name" value="${escapeHtml(open.name)}" maxlength="24" spellcheck="false" aria-label="分类名" title="改名；改成已有的名字即并入那一类"><span class="memory-cat-count">${open.items.length} 条</span><span class="memory-spacer"></span><button type="button" id="addMemory">手记一条</button><button type="button" id="dropMemoryCat">删去此类</button></div>` +
+      .join("")}<button type="button" id="newMemoryCat" class="memory-cat memory-cat-new">另起一类</button></div>` +
+    `<div class="memory-pane"><div class="memory-pane-head"><input id="memoryCatName" class="memory-cat-name" value="${escapeHtml(open.name)}" maxlength="24" spellcheck="false" aria-label="分类名" title="改名；改成已有的名字即并入那一类"><span class="memory-cat-count">${open.items.length} 条</span><span class="memory-spacer"></span><span class="memory-ops"><button type="button" id="addMemory" title="手记一条">${brushIcon("add")}</button><button type="button" id="dropMemoryCat" class="memory-del" title="删去此类">${brushIcon("strike")}</button></span></div>` +
     `<div class="memory-list">${open.items.map(memoryItemHtml).join("")}</div></div></div>`
   );
 }
@@ -285,15 +286,42 @@ function bindMemoryEvents() {
     });
   });
   // 手记一条：记在选着的那一类里（还没有一类时归「未分类」），就地摊开着改
-  $("#addMemory")?.addEventListener("click", () => {
+  const jot = category => {
     if (store.memory.items.length >= MAX_MEMORY_ITEMS) return toast(`记忆已有 ${MAX_MEMORY_ITEMS} 条，请先删去一些`);
-    const category = memoryCategoryOpen ?? MEMORY_UNSORTED,
-      item = { id: memoryId(), text: "", category, createdAt: now(), updatedAt: now(), source: null };
+    const item = { id: memoryId(), text: "", category, createdAt: now(), updatedAt: now(), source: null };
     store.memory.items.push(item);
     memoryCategoryOpen = category;
     memoryItemOpen = memoryItemEditing = item.id;
     renderSettings();
     host.querySelector(`[data-memory="${item.id}"] textarea`)?.focus();
+  };
+  $("#addMemory")?.addEventListener("click", () => jot(memoryCategoryOpen ?? MEMORY_UNSORTED));
+  // 另起一类：就地换成输入框写名，回车即在这一类里手记第一条——类不另存，有了条目才算有这一类，
+  // 第一条没写就离开，这一类也随之消失。写的是已有的名字即打开那一类
+  $("#newMemoryCat")?.addEventListener("click", e => {
+    const field = document.createElement("input");
+    field.className = "memory-cat memory-cat-new";
+    field.placeholder = "新类名";
+    field.maxLength = 24;
+    e.currentTarget.replaceWith(field);
+    field.focus();
+    let settled = false;
+    const settle = keep => {
+      if (settled) return;
+      settled = true;
+      const name = keep && field.value.trim() ? cleanMemoryCategory(field.value) : "";
+      if (!name) return renderSettings();
+      if (memoryCategories().some(cat => cat.name === name)) return openMemoryCategory(name);
+      jot(name);
+    };
+    field.addEventListener("keydown", e => {
+      if (e.key === "Enter") settle(true);
+      else if (e.key === "Escape") {
+        e.stopPropagation();
+        settle(false);
+      }
+    });
+    field.addEventListener("blur", () => settle(true));
   });
   $("#dropMemoryCat")?.addEventListener("click", async () => {
     const name = memoryCategoryOpen,
