@@ -109,6 +109,9 @@ test("diffCounts：新建全算增、删除全算减、其余按最长公共子�
   assert.deepEqual(f.diffCounts("a\nb", ""), { added: 0, removed: 2 });
   assert.deepEqual(f.diffCounts("a\nb\nc", "a\nx\nc"), { added: 1, removed: 1 });
   assert.deepEqual(f.diffCounts("a", "a"), { added: 0, removed: 0 });
+  // 末尾的换行不算多一行：删掉一段以换行收尾的，是删了两行不是三行
+  assert.deepEqual(f.diffCounts("foo\nbar\n", ""), { added: 0, removed: 2 });
+  assert.deepEqual(f.diffCounts("a\n", "b"), { added: 1, removed: 1 });
 });
 test("chineseNumber：一、两问、十二、二十三，过百回退阿拉伯数字", () => {
   assert.equal(f.chineseNumber(1), "一");

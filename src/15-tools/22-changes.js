@@ -1,17 +1,20 @@
 // 言 · 改动与成品：执事这一答改过哪些文件（改动条），言这一答在卷宗里新出了哪几件（成品条）
 // 改动摘要：这一答里执事改过哪些文件、各增减多少行。生成中附在输入框上的工作条里实时累加（见 renderHelperBar），
 // 不跟着正文尾巴跑；写完才落到回复之下，是一道线而不是一只框（见 设计稿/12-改动条与行迹）
+// 按行切开：末尾的换行不算多出一行空行（与桥接的 countLines 同一惯例），空的就是没有行
+const diffLines = text =>
+  text
+    ? String(text)
+        .replace(/\r?\n$/, "")
+        .split(/\r?\n/)
+    : [];
+// 增删各几行：与点开看的红绿同一套切法、同一套比法，两边对得上
 function diffCounts(oldText, newText) {
-  const a = String(oldText || "").split(/\r?\n/),
-    b = String(newText || "").split(/\r?\n/);
-  if (!oldText) return { added: b.length, removed: 0 };
-  if (!newText) return { added: 0, removed: a.length };
+  const a = diffLines(oldText),
+    b = diffLines(newText);
   if (a.length * b.length > 250000) return { added: b.length, removed: a.length };
-  const dp = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
-  for (let i = a.length - 1; i >= 0; i--)
-    for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-  const common = dp[0][0];
-  return { added: b.length - common, removed: a.length - common };
+  const ops = lcsOps(a, b);
+  return { added: ops.filter(op => op[0] === "i").length, removed: ops.filter(op => op[0] === "d").length };
 }
 /** @param {{ steps?: Step[] }} message */
 function changeStats(message) {
@@ -175,14 +178,8 @@ function pairLines(dels, ins) {
  * @returns {{ html: string, rows: number, clipped: boolean, added: number, removed: number }}
  */
 function splitDiffHtml(oldText, newText, { limit = Infinity, wrap = true } = {}) {
-  const lines = text =>
-    text
-      ? String(text)
-          .replace(/\r?\n$/, "")
-          .split(/\r?\n/)
-      : [];
-  let a = lines(oldText),
-    b = lines(newText);
+  let a = diffLines(oldText),
+    b = diffLines(newText);
   // 太长的不逐行比，仍是旧的一块、新的一块
   if (a.length * b.length > 250000)
     return {
