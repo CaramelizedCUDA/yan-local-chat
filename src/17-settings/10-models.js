@@ -194,3 +194,110 @@ async function fetchModelList(profile) {
   const data = await bridge("/api/models", { profile: profileForRequest(profile) });
   return [...new Set(data.models || [])].sort();
 }
+// 模型一栏：添一个模型、各张模型卡里的输入与按钮
+function bindModelSettings() {
+  $("#addProfile")?.addEventListener("click", () => {
+    /** @type {Profile} */
+    const p = {
+      id: uid(),
+      name: "新模型",
+      model: "",
+      baseUrl: "",
+      apiKey: "",
+      quota: "",
+      usedTokens: 0
+    };
+    store.profiles.push(p);
+    store.settings.activeProfileId ||= p.id;
+    profileOpen.add(p.id);
+    saveStore();
+    renderSettings();
+    setTimeout(() => document.querySelector(`[data-profile-card="${p.id}"] [data-field="name"]`)?.focus(), 0);
+  });
+  document.querySelectorAll("[data-profile-card]").forEach(card => {
+    const p = profiles().find(item => item.id === card.dataset.profileCard);
+    if (!p) return;
+    card.querySelectorAll("[data-field]").forEach(input =>
+      input.addEventListener("input", e => {
+        const field = e.target.dataset.field;
+        // 温度清空即不传（Number("") 是 0，不能照转）
+        if (field === "temperature" && !e.target.value.trim()) delete p.temperature;
+        else
+          p[field] = ["temperature", "maxTokens", "usedTokens", "contextWindow"].includes(field) ? Number(e.target.value) : e.target.value;
+        if (field === "contextWindow") updateContextGauge();
+        // 亲手填的档位就是定论，不再探；清空了下次选模型再探
+        if (field === "reasoningLevels") p.reasoningProbed = e.target.value.trim() ? `manual|${reasoningProbeKey(p)}` : "";
+        // 收起时那一行跟着改
+        if (field === "name") card.querySelector(".profile-name").textContent = p.name;
+        if (field === "model") card.querySelector(".profile-gist").textContent = profileGist(p);
+        saveStoreSoon();
+      })
+    );
+    // 手动输入的模型 ID：改定了（失焦或回车）探一下它认哪几档
+    card.querySelector('[data-field="model"]')?.addEventListener("change", () => void reportReasoningProbe(p, card));
+    const amount = card.querySelector("[data-quota-amount]"),
+      unit = card.querySelector("[data-quota-unit]");
+    const applyQuota = () => {
+      const value = amount.value.trim() ? `${amount.value.trim()}${unit.value}` : "",
+        valid = !value || parseTokenLimit(value) !== null;
+      if (valid) amount.removeAttribute("aria-invalid");
+      else amount.setAttribute("aria-invalid", "true");
+      card.querySelector(".profile-status").textContent = valid ? "" : "请填写大于 0 的数值，或留空不限";
+      if (!valid) return;
+      if (p.quota !== value) {
+        p.quota = value;
+        p.usedTokens = 0;
+        saveStoreSoon();
+        if (p.id === activeProfile()?.id) renderQuota();
+      }
+    };
+    amount.addEventListener("input", applyQuota);
+    unit.addEventListener("change", applyQuota);
+    card.querySelector("[data-model-select]")?.addEventListener("change", e => {
+      const input = card.querySelector('[data-field="model"]');
+      if (e.target.value === "__custom__") {
+        input.classList.remove("hidden");
+        input.focus();
+        return;
+      }
+      input.classList.add("hidden");
+      input.value = e.target.value;
+      p.model = e.target.value;
+      card.querySelector(".profile-gist").textContent = profileGist(p);
+      saveStoreSoon();
+      renderHeader();
+      void reportReasoningProbe(p, card);
+    });
+    card.querySelectorAll("[data-toggle-field]").forEach(
+      button =>
+        (button.onclick = () => {
+          p[button.dataset.toggleField] = button.dataset.value === "true";
+          saveStore();
+          renderSettings();
+        })
+    );
+    card.querySelectorAll("[data-choice-field]").forEach(
+      button =>
+        (button.onclick = () => {
+          if (button.disabled) return;
+          p[button.dataset.choiceField] = button.dataset.value;
+          saveStore();
+          renderSettings();
+        })
+    );
+    // toggle 不冒泡：卡片自己的开合与里头「高级配置」的开合各听各的
+    card.addEventListener("toggle", e => {
+      if (e.target !== card) return;
+      if (card.open) profileOpen.add(p.id);
+      else profileOpen.delete(p.id);
+    });
+    card.querySelector(".profile-advanced")?.addEventListener("toggle", e => {
+      if (e.target.open) advancedOpen.add(p.id);
+      else advancedOpen.delete(p.id);
+    });
+    card
+      .querySelectorAll("[data-profile-action]")
+      .forEach(button => (button.onclick = () => handleProfileAction(p, button.dataset.profileAction, card)));
+  });
+  if (document.querySelector("[data-chatgpt-account]")) void refreshChatgptAccount();
+}

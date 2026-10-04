@@ -1,5 +1,19 @@
-// 言 · 设置页：开合、各栏的画法与事件、存储位置
-// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+// 设置的各栏：画法与接事件成对登记，左侧栏目钮（index.html 的 .tab-btn）照 data-tab 认。换一栏只画、只接这一栏；
+// 各栏自己的面板写在各自领域里（记忆在 11-memory，游目在 26-stage/40-settings），这里只登记。加一栏只需加一行与一枚栏目钮
+const SETTINGS_TABS = {
+  general: [generalSettingsHtml, bindGeneralSettings],
+  appearance: [appearanceSettingsHtml],
+  models: [modelsSettingsHtml, bindModelSettings],
+  presets: [presetsSettingsHtml, bindPresetEvents],
+  tools: [toolsSettingsHtml, bindToolSettings],
+  env: [envSettingsHtml, bindEnvEvents],
+  mcp: [mcpSettingsHtml, bindMcpEvents],
+  stage: [stageSettingsHtml, bindStageSettings],
+  memory: [memorySettingsHtml, bindMemoryEvents],
+  guide: [guideSettingsHtml, bindGuideEvents],
+  about: [aboutSettingsHtml]
+};
+let settingsTab = "general";
 let settingsReturnFocus = null;
 function openSettings(tab = settingsTab) {
   if ($("#settingsModal").classList.contains("hidden")) settingsReturnFocus = document.activeElement;
@@ -23,21 +37,13 @@ function closeSettings() {
   render();
 }
 function renderSettings() {
+  if (!SETTINGS_TABS[settingsTab]) settingsTab = "general";
+  const [html, bind] = SETTINGS_TABS[settingsTab];
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === settingsTab));
   const host = $("#settingsContent");
   const tabChanged = host.dataset.tab !== settingsTab;
   host.dataset.tab = settingsTab;
-  if (settingsTab === "general") host.innerHTML = generalSettingsHtml();
-  if (settingsTab === "appearance") host.innerHTML = appearanceSettingsHtml();
-  if (settingsTab === "models") host.innerHTML = modelsSettingsHtml();
-  if (settingsTab === "presets") host.innerHTML = presetsSettingsHtml();
-  if (settingsTab === "tools") host.innerHTML = toolsSettingsHtml();
-  if (settingsTab === "env") host.innerHTML = envSettingsHtml();
-  if (settingsTab === "mcp") host.innerHTML = mcpSettingsHtml();
-  if (settingsTab === "stage") host.innerHTML = stageSettingsHtml();
-  if (settingsTab === "memory") host.innerHTML = memorySettingsHtml();
-  if (settingsTab === "guide") host.innerHTML = guideSettingsHtml();
-  if (settingsTab === "about") host.innerHTML = aboutSettingsHtml();
+  host.innerHTML = html();
   // 每栏题头：这一栏的笔意图标、标题（导语跟在题下），压一道墨线（记忆页自带）；文档里翻开的一篇有自己的书口，关于页的题目是「言」本身，都不加
   const title = host.querySelector("h2");
   if (BRUSH_ICONS[settingsTab] && title && !title.previousElementSibling && !title.parentElement.classList.contains("about-head")) {
@@ -49,19 +55,41 @@ function renderSettings() {
     head.append(title);
     if (lead) head.append(lead);
   }
-  bindSettingsEvents();
-  bindMemoryEvents();
-  bindMcpEvents();
-  bindStageSettings();
-  bindEnvEvents();
-  bindPresetEvents();
-  bindGuideEvents();
+  // 栏里的内容整片换过，挂在里头的事件随旧节点撤了；只有挂在容器本身上的要撤（游目那栏用它接点按）
+  host.onclick = null;
+  bindSettingRows();
+  bind?.();
   if (tabChanged) {
     host.classList.remove("tab-fade");
     void host.offsetWidth;
     host.classList.add("tab-fade");
   }
 }
+// 设置窗本身：开合、栏目钮、点窗外即收、Tab 不跑出窗外（boot 时接一次）
+function bindSettingsShell() {
+  $("#openSettings").onclick = () => openSettings("general");
+  $("#closeSettings").onclick = closeSettings;
+  $("#settingsModal").addEventListener("click", e => {
+    if (e.target === $("#settingsModal")) closeSettings();
+  });
+  $("#settingsModal").addEventListener("keydown", e => {
+    if (e.key === "Tab" && !confirmResolve) trapModalFocus(e, $("#settingsModal"));
+  });
+  document.querySelectorAll(".tab-btn").forEach(
+    button =>
+      (button.onclick = () => {
+        settingsTab = button.dataset.tab;
+        renderSettings();
+      })
+  );
+  $("#importInput").onchange = async e => {
+    const [file] = e.target.files;
+    e.target.value = "";
+    if (file) await importData(file);
+  };
+}
+// 言 · 设置 · 外壳：各栏的登记、开合与画法；通用、工具、个性化、关于这几栏
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 存储位置：对话、卷宗、配置（含模型配置）都在这一个 .yan 目录里，几个浏览器共用；换位置时整份拷过去，旧处留着
 function storageSettingsHtml() {
   const info = bootstrap.store || {},
@@ -167,24 +195,14 @@ function storageSize() {
   const bytes = new Blob([JSON.stringify(store)]).size;
   return bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
 }
-// 存储位置的更换排着队来（见 bindSettingsEvents 里的 commitStore）
+// 存储位置的更换排着队来（见 bindGeneralSettings 里的 commitStore）
 let storeMoves = Promise.resolve();
-function bindSettingsEvents() {
+// 通用：显示名称、存储位置、备份、清空对话
+function bindGeneralSettings() {
   $("#settingName")?.addEventListener("input", e => {
     store.settings.name = e.target.value || "访客";
     saveStoreSoon();
   });
-  for (const [id, key, fallback] of [
-    ["#settingToolRounds", "toolRounds", DEFAULT_TOOL_ROUNDS],
-    ["#settingSubRounds", "subRounds", DEFAULT_SUB_ROUNDS]
-  ])
-    $(id)?.addEventListener("input", e => {
-      // 留空记作 0：不限
-      const text = e.target.value.trim(),
-        value = Math.floor(Number(text));
-      store.settings[key] = !text ? 0 : value >= 1 ? value : fallback;
-      saveStoreSoon();
-    });
   // 存储位置：桥接把整份拷到新处（那里已有言的数据就直接用），页面换上新路径后把对话与配置对一遍、卷宗重翻；旧处不删
   const storeInput = $("#settingStore");
   let storeTimer = null;
@@ -202,32 +220,12 @@ function bindSettingsEvents() {
         return toast(String(error.message || error).slice(0, 80));
       }
       if (!data.moved) return;
-      bootstrap.store = { root: data.root, parent: data.parent, fresh: false };
-      bootstrap.work = { ...bootstrap.work, chats: data.chats, archive: data.archive, files: data.files };
+      await switchStoreRoot(data);
       envStatus = null;
       clearTimeout(envPoll);
       void refreshEnv();
-      chatsBroken = false;
-      chatHashes.clear();
-      chatStamps.clear();
-      chatDiskStamps.clear();
-      chatBases.clear();
-      chatDiskWrites.clear();
-      // 搬到一个已有言数据的地方：那边的配置为准；拷过去的：这边的就是那边的
-      if (data.adopted) {
-        configBase = "";
-        configSyncedAt = 0;
-        const disk = await bridge("/api/store/config/load", {}, AbortSignal.timeout(20000)).catch(() => null);
-        if (disk?.config) adoptConfig(disk.config, Number(disk.savedAt) || 0);
-      } else saveConfigNow({ force: true });
-      await syncChatsWithDisk();
-      const ids = store.conversations.map(conversation => conversation.id);
-      flushConversations(ids, { force: true });
       archiveEntries = null;
       await refreshArchive();
-      try {
-        localStorage.setItem(STORE_ROOT_KEY, data.root);
-      } catch {}
       renderSettings();
       toast(`存储已换到 ${pathTail(data.root)}；${data.adopted ? "用的是那里原有的数据" : "旧处原样留着"}`);
     };
@@ -252,24 +250,8 @@ function bindSettingsEvents() {
       button.disabled = false;
     }
   });
-  // 测试联网：检索走的是桥接，与哪个模型无关，放在工具一栏
-  $("#testSearch")?.addEventListener("click", async () => {
-    const status = $("#searchStatus");
-    status.textContent = "检索中…";
-    try {
-      const data = await bridge("/api/search", { query: "OpenAI", count: 1 }, AbortSignal.timeout(20000));
-      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已连上，但这回没有结果";
-    } catch (error) {
-      status.textContent = friendlyError(error.message).slice(0, 60);
-    }
-  });
   $("#exportData")?.addEventListener("click", () => exportData($("#exportFiles")?.checked));
   $("#importData")?.addEventListener("click", () => $("#importInput").click());
-  $("#importInput").onchange = async e => {
-    const [file] = e.target.files;
-    e.target.value = "";
-    if (file) await importData(file);
-  };
   $("#clearAll")?.addEventListener("click", async () => {
     if (
       !(await askConfirm({
@@ -297,6 +279,34 @@ function bindSettingsEvents() {
     renderSettings();
     toast("所有对话已清空");
   });
+}
+// 工具：轮次上限、测试联网
+function bindToolSettings() {
+  for (const [id, key, fallback] of [
+    ["#settingToolRounds", "toolRounds", DEFAULT_TOOL_ROUNDS],
+    ["#settingSubRounds", "subRounds", DEFAULT_SUB_ROUNDS]
+  ])
+    $(id)?.addEventListener("input", e => {
+      // 留空记作 0：不限
+      const text = e.target.value.trim(),
+        value = Math.floor(Number(text));
+      store.settings[key] = !text ? 0 : value >= 1 ? value : fallback;
+      saveStoreSoon();
+    });
+  // 测试联网：检索走的是桥接，与哪个模型无关，放在工具一栏
+  $("#testSearch")?.addEventListener("click", async () => {
+    const status = $("#searchStatus");
+    status.textContent = "检索中…";
+    try {
+      const data = await bridge("/api/search", { query: "OpenAI", count: 1 }, AbortSignal.timeout(20000));
+      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已连上，但这回没有结果";
+    } catch (error) {
+      status.textContent = friendlyError(error.message).slice(0, 60);
+    }
+  });
+}
+// 各栏共用的分段钮：data-setting 是设置里的键、data-value 是值（主题与记忆总开关另有讲究）
+function bindSettingRows() {
   document.querySelectorAll("[data-setting]").forEach(
     button =>
       (button.onclick = () => {
@@ -319,108 +329,4 @@ function bindSettingsEvents() {
         renderSettings();
       })
   );
-  $("#addProfile")?.addEventListener("click", () => {
-    /** @type {Profile} */
-    const p = {
-      id: uid(),
-      name: "新模型",
-      model: "",
-      baseUrl: "",
-      apiKey: "",
-      quota: "",
-      usedTokens: 0
-    };
-    store.profiles.push(p);
-    store.settings.activeProfileId ||= p.id;
-    profileOpen.add(p.id);
-    saveStore();
-    renderSettings();
-    setTimeout(() => document.querySelector(`[data-profile-card="${p.id}"] [data-field="name"]`)?.focus(), 0);
-  });
-  document.querySelectorAll("[data-profile-card]").forEach(card => {
-    const p = profiles().find(item => item.id === card.dataset.profileCard);
-    if (!p) return;
-    card.querySelectorAll("[data-field]").forEach(input =>
-      input.addEventListener("input", e => {
-        const field = e.target.dataset.field;
-        // 温度清空即不传（Number("") 是 0，不能照转）
-        if (field === "temperature" && !e.target.value.trim()) delete p.temperature;
-        else
-          p[field] = ["temperature", "maxTokens", "usedTokens", "contextWindow"].includes(field) ? Number(e.target.value) : e.target.value;
-        if (field === "contextWindow") updateContextGauge();
-        // 亲手填的档位就是定论，不再探；清空了下次选模型再探
-        if (field === "reasoningLevels") p.reasoningProbed = e.target.value.trim() ? `manual|${reasoningProbeKey(p)}` : "";
-        // 收起时那一行跟着改
-        if (field === "name") card.querySelector(".profile-name").textContent = p.name;
-        if (field === "model") card.querySelector(".profile-gist").textContent = profileGist(p);
-        saveStoreSoon();
-      })
-    );
-    // 手动输入的模型 ID：改定了（失焦或回车）探一下它认哪几档
-    card.querySelector('[data-field="model"]')?.addEventListener("change", () => void reportReasoningProbe(p, card));
-    const amount = card.querySelector("[data-quota-amount]"),
-      unit = card.querySelector("[data-quota-unit]");
-    const applyQuota = () => {
-      const value = amount.value.trim() ? `${amount.value.trim()}${unit.value}` : "",
-        valid = !value || parseTokenLimit(value) !== null;
-      if (valid) amount.removeAttribute("aria-invalid");
-      else amount.setAttribute("aria-invalid", "true");
-      card.querySelector(".profile-status").textContent = valid ? "" : "请填写大于 0 的数值，或留空不限";
-      if (!valid) return;
-      if (p.quota !== value) {
-        p.quota = value;
-        p.usedTokens = 0;
-        saveStoreSoon();
-        if (p.id === activeProfile()?.id) renderQuota();
-      }
-    };
-    amount.addEventListener("input", applyQuota);
-    unit.addEventListener("change", applyQuota);
-    card.querySelector("[data-model-select]")?.addEventListener("change", e => {
-      const input = card.querySelector('[data-field="model"]');
-      if (e.target.value === "__custom__") {
-        input.classList.remove("hidden");
-        input.focus();
-        return;
-      }
-      input.classList.add("hidden");
-      input.value = e.target.value;
-      p.model = e.target.value;
-      card.querySelector(".profile-gist").textContent = profileGist(p);
-      saveStoreSoon();
-      renderHeader();
-      void reportReasoningProbe(p, card);
-    });
-    card.querySelectorAll("[data-toggle-field]").forEach(
-      button =>
-        (button.onclick = () => {
-          p[button.dataset.toggleField] = button.dataset.value === "true";
-          saveStore();
-          renderSettings();
-        })
-    );
-    card.querySelectorAll("[data-choice-field]").forEach(
-      button =>
-        (button.onclick = () => {
-          if (button.disabled) return;
-          p[button.dataset.choiceField] = button.dataset.value;
-          saveStore();
-          renderSettings();
-        })
-    );
-    // toggle 不冒泡：卡片自己的开合与里头「高级配置」的开合各听各的
-    card.addEventListener("toggle", e => {
-      if (e.target !== card) return;
-      if (card.open) profileOpen.add(p.id);
-      else profileOpen.delete(p.id);
-    });
-    card.querySelector(".profile-advanced")?.addEventListener("toggle", e => {
-      if (e.target.open) advancedOpen.add(p.id);
-      else advancedOpen.delete(p.id);
-    });
-    card
-      .querySelectorAll("[data-profile-action]")
-      .forEach(button => (button.onclick = () => handleProfileAction(p, button.dataset.profileAction, card)));
-  });
-  if (document.querySelector("[data-chatgpt-account]")) void refreshChatgptAccount();
 }

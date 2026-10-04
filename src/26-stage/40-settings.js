@@ -128,9 +128,6 @@ async function stageInstall(what) {
 }
 function bindStageSettings() {
   const page = $("#settingsContent");
-  // 只在这一栏接点按；换到别栏即撤
-  page.onclick = null;
-  if (settingsTab !== "stage") return;
   page.onclick = event => {
     const target = /** @type {HTMLElement} */ (event.target).closest("button");
     if (!target) return;

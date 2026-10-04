@@ -92,7 +92,6 @@ function renderPresetSettings() {
   renderSettings();
 }
 function bindPresetEvents() {
-  if (settingsTab !== "presets") return;
   const page = $("#presetPage"),
     presetIn = el => store.settings.presets.find(preset => preset.id === el.closest("[data-preset-card]")?.dataset.presetCard);
   $("#presetAdd").addEventListener("click", () => {

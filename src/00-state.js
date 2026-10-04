@@ -48,7 +48,6 @@ let pendingProfileId = "";
 let pendingQuote = null;
 // 这个页面的名号：总线认它回话（01-bridge.js），几个页面同开时租约认它是谁在作答（01-store/40-leases.js）
 const PAGE_ID = uid();
-let settingsTab = "general";
 let suppressViz = false;
 let followBottom = true,
   autoScrolling = false;

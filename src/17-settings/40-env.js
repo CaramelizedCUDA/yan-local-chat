@@ -62,7 +62,6 @@ const splitNames = text =>
     .split(/[\s,，]+/)
     .filter(Boolean);
 function bindEnvEvents() {
-  if (settingsTab !== "env") return;
   if (!envStatus) void refreshEnv();
   for (const [id, key] of [
     ["#envPip", "pip"],

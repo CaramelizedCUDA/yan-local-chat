@@ -171,7 +171,6 @@ function openMemoryCategory(name, item = "") {
 }
 function bindMemoryEvents() {
   const host = $("#settingsContent");
-  if (settingsTab !== "memory" || !host) return;
   // 改着的输入框随字长高
   const grow = area => {
     area.style.height = "auto";

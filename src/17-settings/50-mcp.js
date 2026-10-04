@@ -156,7 +156,6 @@ function mcpFormConfig(form, previous) {
   };
 }
 function bindMcpEvents() {
-  if (settingsTab !== "mcp") return;
   const commit = (servers, restart = []) => {
     store.settings.mcpServers = servers;
     saveStore();

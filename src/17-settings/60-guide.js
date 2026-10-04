@@ -331,7 +331,6 @@ function guideSettingsHtml() {
     )}</div><div class="guide-pager">${prev ? `<button type="button" data-guide="${prev.id}">‹ 卷${chineseNumber(index)} · ${escapeHtml(prev.title)}</button>` : "<span></span>"}${next ? `<button type="button" data-guide="${next.id}">卷${chineseNumber(index + 2)} · ${escapeHtml(next.title)} ›</button>` : "<span></span>"}</div></div>`;
 }
 function bindGuideEvents() {
-  if (settingsTab !== "guide") return;
   $("#guidePage").addEventListener("click", event => {
     const target = /** @type {HTMLElement} */ (event.target).closest("[data-guide]");
     if (!target) return;

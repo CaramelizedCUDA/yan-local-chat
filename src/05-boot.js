@@ -85,11 +85,7 @@ function bindEvents() {
   };
   $("#openLibrary").onclick = () => (view === "library" ? closeLibrary() : openLibrary());
   $("#openGroups").onclick = () => (view === "groups" ? closeGroupsPage() : openGroupsPage());
-  $("#openSettings").onclick = () => openSettings("general");
-  $("#closeSettings").onclick = closeSettings;
-  $("#settingsModal").addEventListener("click", e => {
-    if (e.target === $("#settingsModal")) closeSettings();
-  });
+  bindSettingsShell();
   bindModelMenuEvents();
   $("#themeToggle").onclick = e => switchTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark", e.currentTarget);
   $("#quotaStatus").onclick = () => openSettings("models");
@@ -109,9 +105,6 @@ function bindEvents() {
   $("#confirmModal").addEventListener("keydown", e => {
     if (e.key === "Tab") trapModalFocus(e, $("#confirmModal"));
   });
-  $("#settingsModal").addEventListener("keydown", e => {
-    if (e.key === "Tab" && !confirmResolve) trapModalFocus(e, $("#settingsModal"));
-  });
   bindViewerEvents();
   bindComposerEvents();
   bindLibraryEvents();
@@ -127,13 +120,6 @@ function bindEvents() {
   bindAttachmentEvents();
   bindStage();
   bindStageInk();
-  document.querySelectorAll(".tab-btn").forEach(
-    button =>
-      (button.onclick = () => {
-        settingsTab = button.dataset.tab;
-        renderSettings();
-      })
-  );
   window.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     // 图片查看器盖在卷宗预览之上，先收它；CSV、Markdown、PDF 这些预览单独开着时，Esc 也得关得掉
