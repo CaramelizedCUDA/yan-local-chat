@@ -19,14 +19,7 @@ async function refreshEnv() {
 }
 function envSettingsHtml() {
   const s = envSettings();
-  return `<div id="envPage"><h2>环境</h2><div id="envStatus">${envStatusHtml()}</div><h3 class="settings-sub">工具包</h3><div id="envPacks" class="card-list">${envPacksHtml()}</div><div class="setting-row"><div class="setting-copy"><strong>另装</strong><small>包名以空格分开</small></div><div class="setting-actions env-extra"><label class="setting-inline">Python<input id="envPip" class="field" spellcheck="false" placeholder="如 sympy jieba" value="${escapeHtml(s.pip)}"></label><label class="setting-inline">Node<input id="envNpm" class="field" spellcheck="false" placeholder="如 pnpm" value="${escapeHtml(s.npm)}"></label></div></div><div class="setting-row"><div class="setting-copy"><strong>下载源</strong><small>模型自装的包也走这一路</small></div><div class="segmented">${[
-    ["china", "国内镜像"],
-    ["official", "官方"]
-  ]
-    .map(
-      ([value, label]) => `<button type="button" data-env-mirror="${value}" class="${s.mirror === value ? "active" : ""}">${label}</button>`
-    )
-    .join("")}</div></div></div>`;
+  return `<div id="envPage"><h2>环境</h2><div id="envStatus">${envStatusHtml()}</div><h3 class="settings-sub">工具包</h3><div id="envPacks" class="card-list">${envPacksHtml()}</div><div class="setting-row"><div class="setting-copy"><strong>另装</strong><small>包名以空格分开</small></div><div class="setting-actions env-extra"><label class="setting-inline">Python<input id="envPip" class="field" spellcheck="false" placeholder="如 sympy jieba" value="${escapeHtml(s.pip)}"></label><label class="setting-inline">Node<input id="envNpm" class="field" spellcheck="false" placeholder="如 pnpm" value="${escapeHtml(s.npm)}"></label></div></div></div>`;
 }
 function envStatusHtml() {
   if (!envStatus) return `<div class="card"><div class="card-head"><span class="card-name">查看中…</span></div></div>`;
@@ -89,12 +82,6 @@ function bindEnvEvents() {
       saveStore();
       return renderEnvStatus();
     }
-    if (button.dataset.envMirror) {
-      envSettings().mirror = button.dataset.envMirror;
-      saveStore();
-      button.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("active", b === button));
-      return;
-    }
     if (button.id === "envPrepare") {
       const s = envSettings();
       const removed = (envStatus?.state?.packs || []).filter(
@@ -114,8 +101,7 @@ function bindEnvEvents() {
       envStatus = await bridge("/api/env/prepare", {
         packs: s.packs,
         pip: splitNames(s.pip),
-        npm: splitNames(s.npm),
-        mirror: s.mirror
+        npm: splitNames(s.npm)
       }).catch(error => {
         toast(String(error.message || error));
         return envStatus;

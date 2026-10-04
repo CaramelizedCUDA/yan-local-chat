@@ -5,8 +5,8 @@
 //   node/    npm 的全局目录：npm i -g 装进这里（Node 用桥接自己的那一份）
 //   go/ rust/ java/ …  自己下载解压的工具链，一组一个目录（见 packs.js 的 fetch）
 //   cache/   uv 与 npm 的下载缓存、下载到一半的压缩包
-//   已备.json 装了什么、用哪路下载源
-// 接口：POST /api/env/status；/api/env/prepare { packs, pip, npm, mirror } 在后台装，页面轮询 status 看进度；/api/env/clear 整个删掉
+//   已备.json 装了什么、用哪路下载源（准备时自己比出来的，模型往后自装的包也走这一路）
+// 接口：POST /api/env/status；/api/env/prepare { packs, pip, npm } 在后台装，页面轮询 status 看进度；/api/env/clear 整个删掉
 // 准备环境就是把环境对齐到勾选：勾上的装，上回装了、这回没勾的卸掉
 "use strict";
 const { sendJson, readJson, jsonRoute, errorText } = require("../http.js");
@@ -16,11 +16,13 @@ const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { spawn, execFileSync } = require("node:child_process");
 const PACKS = require("./packs.js");
+const { pickSource } = require("../mirror.js");
 
 const PYTHON = "3.12",
   STATE_FILE = "已备.json",
   LOG_KEEP = 400;
-// 下载源：国内走清华（PyPI）、中科大（Python 本体）、npmmirror、南大（Go、Rust、JDK，实测最快）、goproxy.cn、rsproxy（crates）；官方各走各家
+// 下载源：国内走清华（PyPI）、中科大（Python 本体）、npmmirror、南大（Go、Rust、JDK，实测最快）、goproxy.cn、rsproxy（crates）；官方各走各家。
+// 走哪一路不让人选，准备时两边比一比挑快的（见 ../mirror.js）
 const MIRRORS = {
   china: {
     pypi: "https://pypi.tuna.tsinghua.edu.cn/simple",
@@ -128,12 +130,13 @@ module.exports = function createEnv({ envHome }) {
       job: job && { running: job.running, step: job.step, error: job.error, log: job.log.slice(-60) }
     };
   }
-  async function prepare({ packs = [], pip = [], npm = [], mirror = "china" }) {
+  async function prepare({ packs = [], pip = [], npm = [] }) {
     const chosen = PACKS.filter(pack => pack.base || packs.includes(pack.id)),
       before = readState(),
       dropped = PACKS.filter(pack => before?.packs.includes(pack.id) && !chosen.includes(pack)),
-      m = MIRRORS[mirror] || MIRRORS.china,
       d = dirs();
+    let mirror = "china",
+      m = MIRRORS.china;
     const say = line => {
       job.log.push(line);
       if (job.log.length > LOG_KEEP) job.log.splice(0, job.log.length - LOG_KEEP);
@@ -144,6 +147,10 @@ module.exports = function createEnv({ envHome }) {
     };
     try {
       fs.mkdirSync(d.bin, { recursive: true });
+      step("挑下载源");
+      mirror = await pickSource();
+      m = MIRRORS[mirror];
+      say(mirror === "china" ? "国内镜像快些，走镜像" : "官方源快些，走官方");
       const pipPackages = unique([...chosen.flatMap(pack => pack.pip || []), ...pip]),
         npmPackages = unique([...chosen.flatMap(pack => pack.npm || []), ...npm]),
         // 上回装了、这回不要的：去掉仍被别组或「另装」用着的

@@ -10,6 +10,7 @@
 const fs = require("node:fs");
 const { spawn, execFile } = require("node:child_process");
 const os = require("node:os");
+const { fasterSide, pickSource } = require("./mirror.js");
 const path = require("node:path");
 const { sendJson, readJson } = require("./http.js");
 
@@ -175,14 +176,14 @@ function localBrowsers(root) {
   };
 }
 const MIRROR_HOST = "https://cdn.npmmirror.com/binaries/playwright";
-/** 跑一下、拿它的标准输出；退出码不为 0 也照收（curl 到了时限即非 0，量出的速度照样写在输出里） @returns {Promise<string>} */
+/** 跑一下、拿它的标准输出 @returns {Promise<string>} */
 const outputOf = (/** @type {string} */ file, /** @type {string[]} */ args, env = {}) =>
   new Promise(resolve =>
     execFile(file, args, { env: { ...process.env, ...env }, windowsHide: true, timeout: 20000 }, (_error, stdout) => resolve(String(stdout || "")))
   );
 /**
- * 内核走哪个下载源：国内镜像不总是快——Playwright 新出的内核它要现去源站拉，几十 KB/s，近两百兆得装几个钟头，看着像卡死；
- * 开装前两边各取开头 2 MB 比一比，挑快的。经 curl 取（随系统代理变量走，与 Playwright 下载时一样）
+ * 内核走哪个下载源：拿要下的那个文件本身两边比（见 mirror.js）——Playwright 新出的内核镜像要现去源站拉，
+ * 拿常用包比的结果不作数
  * @param {string} cli playwright-core 的 cli.js @returns {Promise<Record<string, string>>} 装时添的环境变量
  */
 async function engineHost(cli) {
@@ -190,15 +191,60 @@ async function engineHost(cli) {
     /Download url:\s*(\S+)/
   )?.[1];
   if (!mirror?.startsWith(MIRROR_HOST)) return { PLAYWRIGHT_DOWNLOAD_HOST: MIRROR_HOST };
-  const speed = async (/** @type {string} */ url) =>
-    Number(await outputOf("curl.exe", ["-sL", "-o", "NUL", "-r", "0-2097151", "-m", "6", "-w", "%{speed_download}", url])) || 0;
-  const [near, far] = await Promise.all([speed(mirror), speed(mirror.replace(MIRROR_HOST, "https://cdn.playwright.dev"))]);
+  const { side } = await fasterSide(mirror, mirror.replace(MIRROR_HOST, "https://cdn.playwright.dev"));
   // 官方源不设变量：Playwright 自带几个备用地址，一个不通换下一个
-  return far > near * 1.5 ? {} : { PLAYWRIGHT_DOWNLOAD_HOST: MIRROR_HOST };
+  return side === "official" ? {} : { PLAYWRIGHT_DOWNLOAD_HOST: MIRROR_HOST };
 }
-// 装依赖或内核：在「游目」目录里跑 npm / playwright install，跑完才回。下载源随「环境」那一栏（国内镜像或官方）；内核另比一比镜像与官方哪个快
-/** @param {"deps" | "chromium"} what @param {string} root @param {boolean} china */
-async function installStage(what, root, china) {
+// 装内核时多久没有一点进展算卡住：Playwright 每下完一成吐一行进度，正常的网一成十来秒；
+// 测速那几秒两边都没测准（刚连上时常卡一下）就会挑错源，挑错了靠这个换另一个源重来
+const STALL_MS = 90000;
+/**
+ * 跑一趟安装，跑完才回；吐出的「n% of」报给 onProgress
+ * @param {string} file @param {string[]} args @param {Record<string, string>} env @param {string} cwd
+ * @param {{ stall?: number, onProgress?: (percent: number) => void }} [options] stall：多久没有输出即结束它、以 stalled 退回
+ * @returns {Promise<string>}
+ */
+function runInstall(file, args, env, cwd, { stall = 0, onProgress = () => {} } = {}) {
+  return new Promise((resolve, reject) => {
+    // npm 在 Windows 上是 .cmd，得经 shell 起；参数都是言自己写的，没有外来的字
+    // 路径里有空格（D:\Program Files\npm.cmd）：经 shell 起时整条加引号
+    const shell = /\.cmd$/i.test(file) || file === "npm",
+      child = spawn(shell ? `"${file}"` : file, args, { cwd, env: { ...process.env, ...env }, shell, windowsHide: true });
+    let tail = "",
+      /** @type {NodeJS.Timeout | undefined} */ timer;
+    const watch = () => {
+      if (!stall) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        // 下载在它另起的子进程里，连根结束
+        spawn("taskkill", ["/T", "/F", "/PID", String(child.pid)], { windowsHide: true });
+        reject(Object.assign(Error("下载卡住了"), { stalled: true }));
+      }, stall);
+    };
+    const keep = (/** @type {Buffer} */ chunk) => {
+      tail = (tail + chunk.toString()).slice(-1200);
+      const percent = [...chunk.toString().matchAll(/(\d+)% of/g)].at(-1)?.[1];
+      if (percent) onProgress(Number(percent));
+      watch();
+    };
+    watch();
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
+    child.on("error", error => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", code => {
+      clearTimeout(timer);
+      code === 0 ? resolve(tail) : reject(Error(tail.trim().split("\n").slice(-3).join(" ") || `退出码 ${code}`));
+    });
+  });
+}
+// 装依赖或内核：在「游目」目录里跑 npm / playwright install，跑完才回。下载源自己挑（见 mirror.js）：
+// 驱动随常用包比的结果，内核拿它自己比，下着卡住了再换另一个
+/** @param {"deps" | "chromium"} what @param {string} root @param {(percent: number) => void} [onProgress] */
+async function installStage(what, root, onProgress) {
+  const china = what === "deps" && (await pickSource()) === "china";
   const at = stageHome(root);
   fs.mkdirSync(at.deps, { recursive: true });
   const pkg = path.join(at.deps, "package.json");
@@ -223,24 +269,19 @@ async function installStage(what, root, china) {
           [path.join(at.deps, "node_modules", "playwright-core", "cli.js"), "install", "chromium", "--no-shell"],
           { PLAYWRIGHT_BROWSERS_PATH: at.engine }
         ];
-  if (what === "chromium") {
-    if (!fs.existsSync(args[0])) throw Error("先装依赖，再装内核");
-    if (china) Object.assign(env, await engineHost(args[0]));
+  if (what !== "chromium") return runInstall(file, args, env, at.deps);
+  if (!fs.existsSync(args[0])) throw Error("先装依赖，再装内核");
+  const first = await engineHost(args[0]),
+    other = first.PLAYWRIGHT_DOWNLOAD_HOST ? {} : { PLAYWRIGHT_DOWNLOAD_HOST: MIRROR_HOST };
+  try {
+    return await runInstall(file, args, { ...env, ...first }, at.deps, { stall: STALL_MS, onProgress });
+  } catch (error) {
+    if (!(/** @type {any} */ (error).stalled)) throw error;
+    // 被结束的那一趟留着 Playwright 的目录锁，不清掉下一趟要干等它过期
+    fs.rmSync(path.join(at.engine, "__dirlock"), { recursive: true, force: true });
+    onProgress?.(0);
+    return runInstall(file, args, { ...env, ...other }, at.deps, { stall: STALL_MS, onProgress });
   }
-  return new Promise((resolve, reject) => {
-    // npm 在 Windows 上是 .cmd，得经 shell 起；参数都是言自己写的，没有外来的字
-    // 路径里有空格（D:\Program Files\npm.cmd）：经 shell 起时整条加引号
-    const shell = /\.cmd$/i.test(file) || file === "npm",
-      child = spawn(shell ? `"${file}"` : file, args, { cwd: at.deps, env: { ...process.env, ...env }, shell, windowsHide: true });
-    let tail = "";
-    const keep = (/** @type {Buffer} */ chunk) => (tail = (tail + chunk.toString()).slice(-1200));
-    child.stdout.on("data", keep);
-    child.stderr.on("data", keep);
-    child.on("error", reject);
-    child.on("close", code =>
-      code === 0 ? resolve(tail) : reject(Error(tail.trim().split("\n").slice(-3).join(" ") || `退出码 ${code}`))
-    );
-  });
 }
 /** @param {string} root */
 function stageState(root) {
@@ -309,16 +350,22 @@ module.exports = function createStage({ root = () => "" } = {}) {
   // 设置 → 游目：家当在哪、依赖装没装、本机有哪几个浏览器
   async function home(req, res) {
     await readJson(req);
-    sendJson(res, 200, { ...stageState(root()), installing: Object.keys(installing)[0] || "" });
+    const going = Object.keys(installing)[0] || "";
+    sendJson(res, 200, { ...stageState(root()), installing: going, progress: progress[going] ?? null });
   }
   /** 正在装的：页面刷新后再点、或两处同点，跟着同一趟等，不另起一个（另起的会卡在 Playwright 的目录锁上干等） @type {Record<string, Promise<unknown>>} */
   const installing = {};
+  /** 内核下到几成（页面装着时隔一会儿问一次） @type {Record<string, number>} */
+  const progress = {};
   // 装依赖（@playwright/mcp）或自带内核：跑完才回，一两分钟
   async function install(req, res) {
     const body = await readJson(req),
       what = body.what === "chromium" ? "chromium" : "deps";
     try {
-      await (installing[what] ||= installStage(what, root(), body.mirror !== "official").finally(() => delete installing[what]));
+      await (installing[what] ||= installStage(what, root(), percent => (progress[what] = percent)).finally(() => {
+        delete installing[what];
+        delete progress[what];
+      }));
       sendJson(res, 200, stageState(root()));
     } catch (error) {
       sendJson(res, 500, { error: `没装上：${String(/** @type {any} */ (error).message || error).slice(0, 300)}` });

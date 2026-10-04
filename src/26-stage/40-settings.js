@@ -14,10 +14,11 @@ function stageBuiltinConfig() {
     timeout: 60
   };
 }
-/** @type {{ home: string, output: string, installed: boolean, version: string, browsers: Record<string, boolean>, installing?: string } | null} */
+/** @type {{ home: string, output: string, installed: boolean, version: string, browsers: Record<string, boolean>, installing?: string, progress?: number | null } | null} */
 let stageHomeState = null;
-// 正在装的：驱动 deps / 内核 chromium
-let stageInstalling = "";
+// 正在装的：驱动 deps / 内核 chromium；内核下到几成（装着时隔两秒问一次桥接）
+let stageInstalling = "",
+  /** @type {number | null} */ stageProgress = null;
 const STAGE_BROWSERS = /** @type {const} */ ([
   ["msedge", "Edge"],
   ["chrome", "Chrome"],
@@ -59,7 +60,7 @@ function stageSettingsHtml() {
       ? `执事借它翻页、点按、填写 · ${escapeHtml(at.version)} 版`
       : "未装，执事还使不动浏览器";
   const installing = (/** @type {string} */ what, /** @type {string} */ label) =>
-    `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? "正在装…" : label}</button>`;
+    `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? stageInstallLabel() : label}</button>`;
   return (
     `<h2>游目</h2><p class="settings-lead">游目骋怀，足以极视听之娱。</p>` +
     `<div class="setting-row"><div class="setting-copy"><strong>游目</strong><small>${state}</small></div>${seg(
@@ -100,22 +101,32 @@ function stageSetOptions(patch) {
   void mcpReady([STAGE_SERVER]).then(() => settingsTab === "stage" && renderSettings());
   renderSettings();
 }
+function stageInstallLabel() {
+  return stageProgress === null ? "正在装…" : `正在装 ${stageProgress}%`;
+}
 /** @param {"deps" | "chromium"} what */
 async function stageInstall(what) {
   stageInstalling = what;
+  stageProgress = null;
   renderSettings();
+  // 只改按钮上的字，不整页重画（免得打断别的点按）
+  const ticker = setInterval(async () => {
+    const at = await bridge("/api/stage/home", {}).catch(() => null);
+    if (typeof at?.progress !== "number") return;
+    stageProgress = at.progress;
+    const button = document.querySelector(`#settingsContent [data-stage-install="${what}"]`);
+    if (button) button.textContent = stageInstallLabel();
+  }, 2000);
   try {
-    stageHomeState = await bridge(
-      "/api/stage/install",
-      { what, mirror: store.settings.env?.mirror || "china" },
-      AbortSignal.timeout(15 * 60000)
-    );
+    stageHomeState = await bridge("/api/stage/install", { what }, AbortSignal.timeout(15 * 60000));
     toast(what === "deps" ? "驱动已装好" : "内核已装好");
     if (store.settings.stage?.enabled) stageSetOptions({});
   } catch (error) {
     toast(String(/** @type {any} */ (error).message || error).slice(0, 160), 6000);
   } finally {
+    clearInterval(ticker);
     stageInstalling = "";
+    stageProgress = null;
     if (settingsTab === "stage") renderSettings();
   }
 }

@@ -140,14 +140,14 @@ function normalizeStoreData(value) {
     delete settings.archiveDir;
     delete settings.reasoning;
     delete settings.workAutoDefault;
-    const env = settings.env && typeof settings.env === "object" ? settings.env : {};
+    // mirror：早先页面上可选下载源，现由桥接自己比，旧存档里的这一项丢掉
+    const { mirror: _mirror, ...env } = settings.env && typeof settings.env === "object" ? settings.env : {};
     settings.env = {
       ...defaultStore.settings.env,
       ...env,
       packs: Array.isArray(env.packs) ? [...new Set(env.packs.map(String))] : [...defaultStore.settings.env.packs],
       pip: String(env.pip || ""),
-      npm: String(env.npm || ""),
-      mirror: env.mirror === "official" ? "official" : "china"
+      npm: String(env.npm || "")
     };
     const profiles = (Array.isArray(data.profiles) ? data.profiles : [])
       .filter(p => p && typeof p === "object")
