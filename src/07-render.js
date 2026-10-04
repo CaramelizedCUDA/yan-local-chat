@@ -538,7 +538,7 @@ function renderMessage(message, branch = null, side = false) {
     const quote = message.quote?.text
       ? `<div class="user-quote${shot ? " has-shot" : ""}" data-quote-source="${escapeHtml(message.quote.messageId || "")}"${message.quote.url ? ` data-quote-url="${escapeHtml(message.quote.url)}"` : ""} title="回到出处">${shot ? `<span class="user-quote-text">${escapeHtml(message.quote.text)}</span>${quoteShotHtml(message.quote.image, message.quote.text)}` : escapeHtml(message.quote.text)}</div>`
       : "";
-    return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", "复制消息", icons.copy)}${actionIcon("edit", "编辑消息", icons.edit)}</div></article>`;
+    return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", "复制消息")}${actionIcon("edit", "编辑消息")}</div></article>`;
   }
   return assistantShellHtml(message);
 }
@@ -572,10 +572,10 @@ function assistantActionsHtml(message) {
   return message.status === "streaming"
     ? ""
     : message.status === "error"
-      ? actionIcon("retry", "重试", icons.retry)
+      ? actionIcon("retry", "重试")
       : message.status === "interrupted"
-        ? `${message.content ? actionIcon("copy", "复制已生成内容", icons.copy) : ""}${actionIcon("resume", "继续生成", icons.resume)}${actionIcon("retry", "从头重试", icons.retry)}`
-        : `${actionIcon("copy", "复制回复", icons.copy)}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", "继续生成", icons.resume) : ""}${actionIcon("regenerate", "重新生成", icons.regenerate)}${actionIcon("note", "旁注", icons.note)}${messageCostHtml(message)}`;
+        ? `${message.content ? actionIcon("copy", "复制已生成内容") : ""}${actionIcon("resume", "继续生成")}${actionIcon("retry", "从头重试")}`
+        : `${actionIcon("copy", "复制回复")}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", "继续生成") : ""}${actionIcon("regenerate", "重新生成")}${actionIcon("note", "旁注")}${messageCostHtml(message)}`;
 }
 // 这一答耗了多少墨：各轮请求的用量之和（含帮手），接口报了用量就用实数，没报则按字数估；当前上下文有多大另看右下角
 /** @param {Message} message */

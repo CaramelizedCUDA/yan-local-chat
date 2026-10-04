@@ -85,7 +85,7 @@ function paintAssistant(article, message, { steps = true, side = !!article.close
     actions = side
       ? status === "streaming"
         ? ""
-        : `${message.content ? actionIcon("copy", "复制回复", icons.copy) : ""}${actionIcon("regenerate", status === "complete" ? "重新生成" : "重试", icons.regenerate)}`
+        : `${message.content ? actionIcon("copy", "复制回复") : ""}${actionIcon("regenerate", status === "complete" ? "重新生成" : "重试")}`
       : assistantActionsHtml(message) + branchNavHtml(branch),
     bar = actions ? `<div class="message-actions${branch ? " has-branch" : ""}">${actions}</div>` : "";
   /** @type {Part[]} */
