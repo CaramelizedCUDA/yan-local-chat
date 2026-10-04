@@ -24,7 +24,7 @@ require("./src/19-anthropic.js");
 const ANTHROPIC = globalThis.YAN_ANTHROPIC;
 // ChatGPT 订阅：官方的「Sign in with ChatGPT」，请求同样在最外层换一层（见 server/chatgpt.js；登录凭证随存储根，实例在 STORE 之后建）
 const { chatgptLike, hinted, responsesRequest, responsesToOpenAiStream } = require("./server/chatgpt.js");
-const { pipeline } = require("node:stream/promises");
+const { finished } = require("node:stream/promises");
 const { sendJson, readJson } = require("./server/http.js");
 // 联网：地址门禁、翻网页、检索、调接口
 const WEB = require("./server/web.js");
@@ -222,9 +222,11 @@ async function handleModels(req, res) {
   }
 }
 async function handleChat(req, res) {
+  const meter = { model: "", opened: 0, last: 0, bytes: 0 };
   try {
     const body = await readJson(req),
       config = resolveProfile(body.profile, true);
+    meter.model = config.model;
     if (!Array.isArray(body.messages) || !body.messages.length) throw Error("消息不能为空");
     const messages = body.systemPrompt ? [{ role: "system", content: String(body.systemPrompt) }, ...body.messages] : body.messages;
     const payload = {
@@ -288,6 +290,18 @@ async function handleChat(req, res) {
         status: response.status,
         retryAfter: response.headers.get("retry-after") || ""
       });
+    // 记着流了多少、最后一次来字是何时：途中断了，桥接窗口里一行看得出是对面掐线还是静默太久（见下 catch）
+    meter.opened = Date.now();
+    meter.last = meter.opened;
+    const metered = response.body.pipeThrough(
+      new TransformStream({
+        transform(chunk, controller) {
+          meter.bytes += chunk.byteLength;
+          meter.last = Date.now();
+          controller.enqueue(chunk);
+        }
+      })
+    );
     res.writeHead(200, {
       "Content-Type":
         anthropic || chatgpt
@@ -297,17 +311,25 @@ async function handleChat(req, res) {
       Connection: "keep-alive",
       "X-Accel-Buffering": "no"
     });
-    await pipeline(
-      Readable.fromWeb(
-        chatgpt
-          ? response.body.pipeThrough(responsesToOpenAiStream(config.model))
-          : anthropic
-            ? response.body.pipeThrough(ANTHROPIC.anthropicToOpenAiStream(config.model))
-            : response.body
-      ),
-      res
+    // 不用 pipeline：上游一断它连页面这头也一并销毁，下面 catch 里那条「连接中断」的报错事件就补不上了，页面只见一句 network error
+    const source = Readable.fromWeb(
+      chatgpt
+        ? metered.pipeThrough(responsesToOpenAiStream(config.model))
+        : anthropic
+          ? metered.pipeThrough(ANTHROPIC.anthropicToOpenAiStream(config.model))
+          : metered
     );
+    source.pipe(res, { end: false });
+    await finished(source);
+    res.end();
   } catch (error) {
+    // 底层的原因码（UND_ERR_SOCKET 对面掐线、UND_ERR_BODY_TIMEOUT 静默五分钟……）比一句「terminated」有用，一并带上
+    const code = error?.cause?.code || error?.code || "",
+      reason = `${String(error.message || error).slice(0, 200)}${code && !String(error.message).includes(code) ? `（${code}）` : ""}`;
+    if (meter.opened && error?.name !== "AbortError")
+      console.log(
+        `${stamp()} ✕ ${meter.model}：途中断了 · ${reason} · 开流 ${Math.round((Date.now() - meter.opened) / 1000)} 秒、收 ${meter.bytes} 字节、最后来字在 ${Math.round((Date.now() - meter.last) / 1000)} 秒前`
+      );
     if (!res.headersSent) {
       if (error.retryAfter) res.setHeader("Retry-After", error.retryAfter);
       sendJson(res, error.status >= 400 ? error.status : 400, { error: String(error.message || error).slice(0, 500) });
@@ -316,7 +338,7 @@ async function handleChat(req, res) {
       // 补一条带 error 的事件再收，页面据此按「连接中断」处理，留着续写的余地；页面自己先走了的不必补
       if (!res.destroyed && error?.name !== "AbortError")
         try {
-          res.write(`data: ${JSON.stringify({ error: { message: `上游连接中断：${String(error.message || error).slice(0, 200)}` } })}\n\n`);
+          res.write(`data: ${JSON.stringify({ error: { message: `上游连接中断：${reason}` } })}\n\n`);
         } catch {}
       res.end();
     }
