@@ -14,7 +14,7 @@ function stageBuiltinConfig() {
     timeout: 60
   };
 }
-/** @type {{ home: string, output: string, installed: boolean, version: string, browsers: Record<string, boolean> } | null} */
+/** @type {{ home: string, output: string, installed: boolean, version: string, browsers: Record<string, boolean>, installing?: string } | null} */
 let stageHomeState = null;
 // 正在装的：驱动 deps / 内核 chromium
 let stageInstalling = "";
@@ -23,12 +23,20 @@ const STAGE_BROWSERS = /** @type {const} */ ([
   ["chrome", "Chrome"],
   ["chromium", "自带内核"]
 ]);
+// 本机没装 Edge / Chrome 时，「去下载」交给系统浏览器开官网（装系统浏览器要管理员权限，言不代装）
+const STAGE_BROWSER_SITES = {
+  msedge: "https://www.microsoft.com/zh-cn/edge/download",
+  chrome: "https://www.google.com/intl/zh-CN/chrome/"
+};
 function stageSettingsHtml() {
   if (!stageHomeState) void stageLoadHome();
   const s = store.settings.stage || {},
     at = stageHomeState,
     on = !!s.enabled,
     browser = s.browser || "msedge",
+    browserLabel = STAGE_BROWSERS.find(([value]) => value === browser)?.[1] || "Edge",
+    // 选了本机没装的 Edge / Chrome
+    missing = !!at && browser !== "chromium" && !at.browsers[browser],
     code = (/** @type {string} */ text) => `<code title="${escapeHtml(text)}">${escapeHtml(text)}</code>`,
     seg = (/** @type {string} */ key, /** @type {[string, string, boolean?][]} */ items, /** @type {string} */ active) =>
       `<div class="segmented">${items.map(([value, label, off]) => `<button type="button" data-stage-opt="${key}" data-value="${value}" class="${value === active ? "active" : ""}${off ? " off" : ""}"${off ? ` title="本机未装"` : ""}>${label}</button>`).join("")}</div>`;
@@ -40,13 +48,14 @@ function stageSettingsHtml() {
         ? "还缺驱动，先在下面装上"
         : browser === "chromium" && !at.browsers.chromium
           ? "还缺内核，先在下面装上"
-          : stage.ws
+          : missing
+            ? `本机没装 ${browserLabel}，先装上或换一个`
+            : stage.ws
             ? "正开着，在右侧那一笔朱竖里"
             : "执事要看网页时自会打开";
   const deps = !at
     ? "……"
     : `${at.installed ? `执事借它翻页、点按、填写 · ${escapeHtml(at.version)} 版` : "未装，执事还使不动浏览器"}${browser === "chromium" ? ` · 内核${at.browsers.chromium ? "已装" : "未装"}` : ""}`;
-  const browserLabel = STAGE_BROWSERS.find(([value]) => value === browser)?.[1] || "Edge";
   const installing = (/** @type {string} */ what, /** @type {string} */ label) =>
     `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? "正在装…" : label}</button>`;
   return (
@@ -59,17 +68,26 @@ function stageSettingsHtml() {
       ],
       String(on)
     )}</div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>浏览器</strong><small>${browser === "chromium" ? "不借本机的，另装一个放在游目里" : `借本机的 ${browserLabel} 另起一份，与平日所用互不相扰`}</small></div>${seg(
+    `<div class="setting-row"><div class="setting-copy"><strong>浏览器</strong><small>${
+      browser === "chromium"
+        ? "不借本机的，另装一个放在游目里"
+        : missing
+          ? `本机没装 ${browserLabel}：装好即用，或选自带内核`
+          : `借本机的 ${browserLabel} 另起一份，与平日所用互不相扰`
+    }</small></div><div class="setting-actions">${missing ? `<button type="button" class="outline-btn" data-stage-get="${browser}">去下载</button>` : ""}${seg(
       "browser",
       STAGE_BROWSERS.map(([value, label]) => [value, label, !!at && value !== "chromium" && !at.browsers[value]]),
       browser
-    )}</div>` +
+    )}</div></div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>驱动</strong><small>${deps}</small></div><div class="setting-actions">${installing("deps", at?.installed ? "更新" : "安装")}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", "装内核") : ""}</div></div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>存储</strong><small>登录、收藏、下载都在这里 ${at ? code(at.home) : "……"}</small></div><button type="button" class="outline-btn" id="stageRevealHome">打开文件夹</button></div>`
   );
 }
 async function stageLoadHome() {
   stageHomeState = await bridge("/api/stage/home", {}).catch(() => null);
+  // 页面刷新前点过「安装」、桥接那边还在装：接着等那一趟（桥接不另起一个），装完照常报
+  const going = stageHomeState?.installing;
+  if ((going === "deps" || going === "chromium") && !stageInstalling) return void stageInstall(going);
   if (stageHomeState && settingsTab === "stage" && !$("#settingsModal").classList.contains("hidden")) renderSettings();
 }
 /** @param {Partial<NonNullable<typeof store.settings.stage>>} patch */
@@ -112,6 +130,10 @@ function bindStageSettings() {
       const value = target.dataset.value || "";
       return stageSetOptions(opt === "browser" ? { browser: /** @type {any} */ (value) } : { [opt]: value === "true" });
     }
+    if (target.dataset.stageGet)
+      return void bridge("/api/stage/open", { url: STAGE_BROWSER_SITES[/** @type {"msedge" | "chrome"} */ (target.dataset.stageGet)] }).catch(error =>
+        toast(String(error.message || error).slice(0, 80))
+      );
     if (target.dataset.stageInstall) return void stageInstall(/** @type {"deps" | "chromium"} */ (target.dataset.stageInstall));
     if (target.id === "stageRevealHome" && stageHomeState)
       return void bridge("/api/stage/reveal", { path: stageHomeState.home }).catch(error =>

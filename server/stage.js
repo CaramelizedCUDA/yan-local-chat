@@ -8,7 +8,7 @@
 // 下载签的「打开所在文件夹」：在资源管理器里显出那个文件；没记着路径的，开那个服务存下载的目录（Playwright 默认是工作目录下的 .playwright-mcp）
 "use strict";
 const fs = require("node:fs");
-const { spawn } = require("node:child_process");
+const { spawn, execFile } = require("node:child_process");
 const os = require("node:os");
 const path = require("node:path");
 const { sendJson, readJson } = require("./http.js");
@@ -174,9 +174,31 @@ function localBrowsers(root) {
     chromium
   };
 }
-// 装依赖或内核：在「游目」目录里跑 npm / playwright install，跑完才回。下载源随「环境」那一栏（国内镜像或官方）
+const MIRROR_HOST = "https://cdn.npmmirror.com/binaries/playwright";
+/** 跑一下、拿它的标准输出；退出码不为 0 也照收（curl 到了时限即非 0，量出的速度照样写在输出里） @returns {Promise<string>} */
+const outputOf = (/** @type {string} */ file, /** @type {string[]} */ args, env = {}) =>
+  new Promise(resolve =>
+    execFile(file, args, { env: { ...process.env, ...env }, windowsHide: true, timeout: 20000 }, (_error, stdout) => resolve(String(stdout || "")))
+  );
+/**
+ * 内核走哪个下载源：国内镜像不总是快——Playwright 新出的内核它要现去源站拉，几十 KB/s，近两百兆得装几个钟头，看着像卡死；
+ * 开装前两边各取开头 2 MB 比一比，挑快的。经 curl 取（随系统代理变量走，与 Playwright 下载时一样）
+ * @param {string} cli playwright-core 的 cli.js @returns {Promise<Record<string, string>>} 装时添的环境变量
+ */
+async function engineHost(cli) {
+  const mirror = (await outputOf(process.execPath, [cli, "install", "chromium", "--no-shell", "--dry-run"], { PLAYWRIGHT_DOWNLOAD_HOST: MIRROR_HOST })).match(
+    /Download url:\s*(\S+)/
+  )?.[1];
+  if (!mirror?.startsWith(MIRROR_HOST)) return { PLAYWRIGHT_DOWNLOAD_HOST: MIRROR_HOST };
+  const speed = async (/** @type {string} */ url) =>
+    Number(await outputOf("curl.exe", ["-sL", "-o", "NUL", "-r", "0-2097151", "-m", "6", "-w", "%{speed_download}", url])) || 0;
+  const [near, far] = await Promise.all([speed(mirror), speed(mirror.replace(MIRROR_HOST, "https://cdn.playwright.dev"))]);
+  // 官方源不设变量：Playwright 自带几个备用地址，一个不通换下一个
+  return far > near * 1.5 ? {} : { PLAYWRIGHT_DOWNLOAD_HOST: MIRROR_HOST };
+}
+// 装依赖或内核：在「游目」目录里跑 npm / playwright install，跑完才回。下载源随「环境」那一栏（国内镜像或官方）；内核另比一比镜像与官方哪个快
 /** @param {"deps" | "chromium"} what @param {string} root @param {boolean} china */
-function installStage(what, root, china) {
+async function installStage(what, root, china) {
   const at = stageHome(root);
   fs.mkdirSync(at.deps, { recursive: true });
   const pkg = path.join(at.deps, "package.json");
@@ -199,12 +221,12 @@ function installStage(what, root, china) {
       : [
           process.execPath,
           [path.join(at.deps, "node_modules", "playwright-core", "cli.js"), "install", "chromium", "--no-shell"],
-          {
-            PLAYWRIGHT_BROWSERS_PATH: at.engine,
-            ...(china ? { PLAYWRIGHT_DOWNLOAD_HOST: "https://cdn.npmmirror.com/binaries/playwright" } : {})
-          }
+          { PLAYWRIGHT_BROWSERS_PATH: at.engine }
         ];
-  if (what === "chromium" && !fs.existsSync(args[0])) return Promise.reject(Error("先装依赖，再装内核"));
+  if (what === "chromium") {
+    if (!fs.existsSync(args[0])) throw Error("先装依赖，再装内核");
+    if (china) Object.assign(env, await engineHost(args[0]));
+  }
   return new Promise((resolve, reject) => {
     // npm 在 Windows 上是 .cmd，得经 shell 起；参数都是言自己写的，没有外来的字
     // 路径里有空格（D:\Program Files\npm.cmd）：经 shell 起时整条加引号
@@ -287,14 +309,16 @@ module.exports = function createStage({ root = () => "" } = {}) {
   // 设置 → 游目：家当在哪、依赖装没装、本机有哪几个浏览器
   async function home(req, res) {
     await readJson(req);
-    sendJson(res, 200, stageState(root()));
+    sendJson(res, 200, { ...stageState(root()), installing: Object.keys(installing)[0] || "" });
   }
+  /** 正在装的：页面刷新后再点、或两处同点，跟着同一趟等，不另起一个（另起的会卡在 Playwright 的目录锁上干等） @type {Record<string, Promise<unknown>>} */
+  const installing = {};
   // 装依赖（@playwright/mcp）或自带内核：跑完才回，一两分钟
   async function install(req, res) {
     const body = await readJson(req),
       what = body.what === "chromium" ? "chromium" : "deps";
     try {
-      await installStage(what, root(), body.mirror !== "official");
+      await (installing[what] ||= installStage(what, root(), body.mirror !== "official").finally(() => delete installing[what]));
       sendJson(res, 200, stageState(root()));
     } catch (error) {
       sendJson(res, 500, { error: `没装上：${String(/** @type {any} */ (error).message || error).slice(0, 300)}` });
