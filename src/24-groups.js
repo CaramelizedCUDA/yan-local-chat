@@ -96,52 +96,43 @@ async function dissolveGroup(id) {
 // 组首「⋯」：改名、打开组的设置（分组页里这一组）、解散；在此组新建已有「＋」，不再列
 /** @param {string} id @param {Element} anchor */
 function openGroupMenu(id, anchor) {
-  if (document.querySelector(`.chip-pop[data-kind=group][data-for="${CSS.escape(id)}"]`)) return closeChipPop();
-  const pop = openFloatingPop(
+  openMenu(
     anchor,
-    `<button type="button" data-group-act="rename">改名</button><button type="button" data-group-act="settings">设置</button><button type="button" class="danger" data-group-act="dissolve">解散</button>`,
-    { align: "right" }
+    [
+      { id: "rename", label: "改名", run: () => startGroupRename(id) },
+      { id: "settings", label: "设置", run: () => openGroupsPage(id) },
+      { id: "dissolve", label: "解散", danger: true, run: () => void dissolveGroup(id) }
+    ],
+    { kind: "group", key: id }
   );
-  pop.dataset.kind = "group";
-  pop.dataset.for = id;
-  pop.addEventListener("click", event => {
-    const button = /** @type {HTMLElement} */ (event.target).closest("[data-group-act]");
-    if (!button) return;
-    closeChipPop();
-    const act = button.dataset.groupAct;
-    if (act === "rename") startGroupRename(id);
-    else if (act === "settings") openGroupsPage(id);
-    else void dissolveGroup(id);
-  });
 }
 // 对话「⋯」里的「移入分组」：列出各组，另有新建一组与移出
 /** @param {Conversation} c @param {Element} anchor */
 function openMoveMenu(c, anchor) {
   const current = groupOf(c);
-  const pop = openFloatingPop(
+  openMenu(
     anchor,
-    `${groupsList()
-      .map(
-        group =>
-          `<button type="button" data-move="${escapeHtml(group.id)}"${group === current ? ' class="active" disabled' : ""}>${escapeHtml(group.name)}</button>`
-      )
-      .join(
-        ""
-      )}<button type="button" data-move="__new">新建分组…</button>${current ? `<button type="button" data-move="">移出「${escapeHtml(current.name)}」</button>` : ""}`,
-    { align: "right" }
+    [
+      ...groupsList().map(group => ({
+        id: group.id,
+        label: group.name,
+        active: group === current,
+        disabled: group === current,
+        run: () => moveToGroup(c, group.id)
+      })),
+      {
+        id: "new",
+        label: "新建分组…",
+        run: () => {
+          const group = createGroup();
+          moveToGroup(c, group.id);
+          startGroupRename(group.id);
+        }
+      },
+      current && { id: "out", label: `移出「${current.name}」`, run: () => moveToGroup(c, "") }
+    ],
+    { kind: "group-move" }
   );
-  pop.dataset.kind = "group-move";
-  pop.addEventListener("click", event => {
-    const button = /** @type {HTMLElement} */ (event.target).closest("[data-move]");
-    if (!button) return;
-    closeChipPop();
-    const target = button.dataset.move;
-    if (target === "__new") {
-      const group = createGroup();
-      moveToGroup(c, group.id);
-      startGroupRename(group.id);
-    } else moveToGroup(c, target);
-  });
 }
 
 // ---------- 输入框左下「＋」旁的分组签：欢迎页是待归的那一组（可撤），对话页是这段对话所在的组（点开分组页） ----------

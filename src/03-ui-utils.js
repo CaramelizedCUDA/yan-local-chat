@@ -104,6 +104,84 @@ function isShown(selector) {
   const el = $(selector);
   return !!el && !el.classList.contains("hidden");
 }
+// ---------- 浮着的小菜单与弹层：挂在 body 上、按锚点定位，点别处、Esc、锚点所在容器滚动都收 ----------
+function closeChipPop() {
+  document.querySelectorAll(".chip-pop").forEach(pop => pop.remove());
+}
+function openChipPop(anchor, host, html) {
+  closeChipPop();
+  const pop = document.createElement("div");
+  pop.className = "chip-pop";
+  pop.innerHTML = html;
+  pop.style.left = `${anchor.offsetLeft}px`;
+  host.append(pop);
+  return pop;
+}
+// 浮层菜单：挂在 body 上、按锚点定位（fixed），不受侧栏与输入区的滚动、overflow 裁剪；贴近锚点，上下空间不够就翻向另一侧。
+// 与目录签的弹层同一套 .chip-pop 外观与关闭逻辑：点别处、Esc、锚点所在容器滚动都收
+function openFloatingPop(anchor, html, { align = "left", menu = true } = {}) {
+  closeChipPop();
+  const pop = document.createElement("div");
+  pop.className = `chip-pop floating${menu ? " chip-menu" : ""}`;
+  pop.innerHTML = html;
+  pop.addEventListener("click", event => event.stopPropagation());
+  document.body.append(pop);
+  const rect = anchor.getBoundingClientRect(),
+    gap = 6,
+    edge = 10;
+  const width = pop.offsetWidth,
+    height = pop.offsetHeight;
+  const below = innerHeight - rect.bottom - gap,
+    up = below < height + edge && rect.top - gap > below;
+  pop.classList.toggle("drop-up", up);
+  const top = up ? rect.top - gap - height : rect.bottom + gap;
+  let left = align === "right" ? rect.right - width : rect.left;
+  left = Math.max(edge, Math.min(left, innerWidth - width - edge));
+  pop.style.top = `${Math.max(edge, top)}px`;
+  pop.style.left = `${left}px`;
+  const scroller = anchor.closest("#history, #chatScroll, .composer-area, #settingsContent");
+  scroller?.addEventListener("scroll", closeChipPop, { once: true, passive: true });
+  return pop;
+}
+// 一张菜单：一列项，按钮与点了做什么出自同一份，不必先拼一串按钮、再写一串 if 认是哪个。一项是
+//   { id, label, note?, noteClass?, danger?, active?, disabled?, keep?, run(button, pop) }——点了先收菜单再 run（keep 的不收：
+//   就地换字的开关、在菜单里接着选的）。字符串原样插进去（分隔线、自带控件的一行，它们的点按由 onClick 接）；假值略去。
+// kind 与 key 认「同一处的同一张」：开着时再点一下即收，回 null
+/**
+ * @typedef {{ id: string, label: string, note?: string, noteClass?: string, danger?: boolean, active?: boolean, disabled?: boolean, keep?: boolean, run: (button: HTMLElement, pop: HTMLElement) => void }} MenuItem
+ * @param {Element} anchor
+ * @param {(MenuItem|string|false|null|undefined)[]} items
+ * @param {{ align?: "left"|"right", kind?: string, key?: string, className?: string, onClick?: (event: MouseEvent) => void }} [options]
+ */
+function openMenu(anchor, items, { align = "right", kind = "", key = "", className = "", onClick = null } = {}) {
+  const same = kind && `.chip-pop[data-kind="${kind}"]${key ? `[data-for="${CSS.escape(key)}"]` : ""}`;
+  if (same && document.querySelector(same)) {
+    closeChipPop();
+    return null;
+  }
+  const list = /** @type {(MenuItem|string)[]} */ (items.filter(Boolean));
+  const html = list
+    .map((item, i) => {
+      if (typeof item === "string") return item;
+      const classes = [item.danger && "danger", item.active && "active"].filter(Boolean).join(" ");
+      return `<button type="button" data-menu="${escapeHtml(item.id)}" data-menu-index="${i}"${classes ? ` class="${classes}"` : ""}${item.disabled ? " disabled" : ""}><span>${escapeHtml(item.label)}</span>${item.note ? `<small${item.noteClass ? ` class="${item.noteClass}"` : ""}>${escapeHtml(item.note)}</small>` : ""}</button>`;
+    })
+    .join("");
+  const pop = openFloatingPop(anchor, html, { align });
+  if (kind) pop.dataset.kind = kind;
+  if (key) pop.dataset.for = key;
+  if (className) pop.classList.add(...className.split(/\s+/));
+  pop.addEventListener("click", event => {
+    const button = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (event.target).closest("[data-menu-index]"));
+    if (!button) return onClick?.(event);
+    const item = /** @type {MenuItem} */ (list[Number(button.dataset.menuIndex)]);
+    if (!item.keep) closeChipPop();
+    item.run(button, pop);
+  });
+  return pop;
+}
+// 浮着的小菜单（附件签、历史条目的「⋯」、目录签的弹层）：Esc 只收它，别连带把底下的旁注面板也关了
+defineLayer({ name: "pop", rank: 90, open: () => !!document.querySelector(".chip-pop"), close: closeChipPop });
 // 同风格的确认弹层，替代浏览器自带的 confirm()
 let confirmResolve = null;
 let confirmReturnFocus = null;

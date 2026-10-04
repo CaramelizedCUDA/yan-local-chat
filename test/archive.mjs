@@ -221,8 +221,8 @@ check(
 await evalJs(`document.querySelector("#newChat").click(); true`);
 await waitFor(`!document.querySelector("#welcome").classList.contains("hidden")`);
 await evalJs(`document.querySelector("#welcome .attach-trigger").click(); true`);
-await waitFor(`!!document.querySelector('.chip-pop[data-kind=attach] [data-attach="archive"]')`);
-await evalJs(`document.querySelector('.chip-pop[data-kind=attach] [data-attach="archive"]').click(); true`);
+await waitFor(`!!document.querySelector('.chip-pop[data-kind=attach] [data-menu="archive"]')`);
+await evalJs(`document.querySelector('.chip-pop[data-kind=attach] [data-menu="archive"]').click(); true`);
 await waitFor(`!!document.querySelector('.chip-pop.attach-picker [data-pick="报表.csv"]')`);
 await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="报表.csv"]').click(); true`);
 await waitFor(`!!document.querySelector("#welcomeAttachments .attachment-card[data-name='报表.csv']")`);

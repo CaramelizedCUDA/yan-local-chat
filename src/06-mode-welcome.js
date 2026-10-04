@@ -106,61 +106,23 @@ function renderChips(work) {
   approve.title = `${meta[0]}：${meta[1]}（新对话默认）`;
   renderGroupTags();
 }
-function closeChipPop() {
-  document.querySelectorAll(".chip-pop").forEach(pop => pop.remove());
-}
-function openChipPop(anchor, host, html) {
-  closeChipPop();
-  const pop = document.createElement("div");
-  pop.className = "chip-pop";
-  pop.innerHTML = html;
-  pop.style.left = `${anchor.offsetLeft}px`;
-  host.append(pop);
-  return pop;
-}
-// 浮层菜单：挂在 body 上、按锚点定位（fixed），不受侧栏与输入区的滚动、overflow 裁剪；贴近锚点，上下空间不够就翻向另一侧。
-// 与目录签的弹层同一套 .chip-pop 外观与关闭逻辑：点别处、Esc、锚点所在容器滚动都收
-function openFloatingPop(anchor, html, { align = "left", menu = true } = {}) {
-  closeChipPop();
-  const pop = document.createElement("div");
-  pop.className = `chip-pop floating${menu ? " chip-menu" : ""}`;
-  pop.innerHTML = html;
-  pop.addEventListener("click", event => event.stopPropagation());
-  document.body.append(pop);
-  const rect = anchor.getBoundingClientRect(),
-    gap = 6,
-    edge = 10;
-  const width = pop.offsetWidth,
-    height = pop.offsetHeight;
-  const below = innerHeight - rect.bottom - gap,
-    up = below < height + edge && rect.top - gap > below;
-  pop.classList.toggle("drop-up", up);
-  const top = up ? rect.top - gap - height : rect.bottom + gap;
-  let left = align === "right" ? rect.right - width : rect.left;
-  left = Math.max(edge, Math.min(left, innerWidth - width - edge));
-  pop.style.top = `${Math.max(edge, top)}px`;
-  pop.style.left = `${left}px`;
-  const scroller = anchor.closest("#history, #chatScroll, .composer-area, #settingsContent");
-  scroller?.addEventListener("scroll", closeChipPop, { once: true, passive: true });
-  return pop;
-}
-// 附件签「＋」：展开后二选一——外件（本机文件）或卷宗（已收入的文件，点选即置于案上）
+// 附件签「＋」：展开后二选一——外件（本机文件）或卷宗（已收入的文件，点选即置于案上，在这张菜单里接着选）
 function openAttachMenu(anchor) {
-  if (document.querySelector(".chip-pop[data-kind=attach]")) return closeChipPop();
   const total = libraryTotal();
-  const pop = openFloatingPop(
+  openMenu(
     anchor,
-    `<button type="button" data-attach="file"><span>外件</span><small>本机文件</small></button><button type="button" data-attach="archive"><span>卷宗</span><small>${total ? `${total} 件` : "尚空"}</small></button>`
+    [
+      { id: "file", label: "外件", note: "本机文件", run: () => $("#fileInput").click() },
+      {
+        id: "archive",
+        label: "卷宗",
+        note: total ? `${total} 件` : "尚空",
+        keep: true,
+        run: (button, pop) => (total ? renderArchivePicker(pop, anchor) : toast("卷宗尚空"))
+      }
+    ],
+    { align: "left", kind: "attach" }
   );
-  pop.dataset.kind = "attach";
-  pop.querySelector('[data-attach="file"]').onclick = () => {
-    closeChipPop();
-    $("#fileInput").click();
-  };
-  pop.querySelector('[data-attach="archive"]').onclick = () => {
-    if (!total) return toast("卷宗尚空");
-    renderArchivePicker(pop, anchor);
-  };
 }
 // 卷宗选件：一栏可查找的清单，点一件即置于案上；子目录里的件注上它所在的夹，查找也认夹名
 function renderArchivePicker(pop, anchor) {
@@ -204,40 +166,36 @@ function renderArchivePicker(pop, anchor) {
   }
   setTimeout(() => input.focus(), 0);
 }
-// 历史条目的「⋯」：置顶、改名、绑定（更换目录）、删除
+// 历史条目的「⋯」：置顶、改名、绑定（更换目录）、分组、导出、删除
 function openHistoryMenu(id, anchor) {
   const c = store.conversations.find(item => item.id === id);
   if (!c) return;
-  if (document.querySelector(`.chip-pop[data-kind=history][data-for="${CSS.escape(id)}"]`)) return closeChipPop();
-  const pop = openFloatingPop(
+  const row = anchor.closest(".history-item") || anchor;
+  openMenu(
     anchor,
-    `<button type="button" data-menu="pin">${c.pinned ? "取消置顶" : "置顶"}</button><button type="button" data-menu="rename">改名</button><button type="button" data-menu="bind">${isWork(c) ? "更换目录" : "绑定目录"}</button><button type="button" data-menu="group">${groupOf(c) ? "移至他组" : "移入分组"}</button><button type="button" data-menu="export"><span>导出</span><small>存入卷宗</small></button><button type="button" class="danger" data-menu="delete">删除</button>`,
-    { align: "right" }
+    [
+      { id: "pin", label: c.pinned ? "取消置顶" : "置顶", run: () => togglePin(id) },
+      { id: "rename", label: "改名", run: () => startRename(id) },
+      {
+        id: "bind",
+        label: isWork(c) ? "更换目录" : "绑定目录",
+        run: () =>
+          openWorkdirPop({
+            anchor: row,
+            host: null,
+            value: c.workdir || "",
+            live: false,
+            bound: isWork(c),
+            floating: true,
+            onCommit: dir => void bindWorkdir(c, dir)
+          })
+      },
+      { id: "group", label: groupOf(c) ? "移至他组" : "移入分组", run: () => openMoveMenu(c, row) },
+      { id: "export", label: "导出", note: "存入卷宗", run: () => void exportConversationMarkdown(c) },
+      { id: "delete", label: "删除", danger: true, run: () => deleteConversation(id) }
+    ],
+    { kind: "history", key: id }
   );
-  pop.dataset.kind = "history";
-  pop.dataset.for = id;
-  pop.addEventListener("click", event => {
-    const button = event.target.closest("[data-menu]");
-    if (!button) return;
-    closeChipPop();
-    const action = button.dataset.menu;
-    if (action === "pin") togglePin(id);
-    else if (action === "rename") startRename(id);
-    else if (action === "delete") deleteConversation(id);
-    else if (action === "export") void exportConversationMarkdown(c);
-    else if (action === "group") openMoveMenu(c, anchor.closest(".history-item") || anchor);
-    else if (action === "bind") {
-      openWorkdirPop({
-        anchor: anchor.closest(".history-item") || anchor,
-        host: null,
-        value: c.workdir || "",
-        live: false,
-        bound: isWork(c),
-        floating: true,
-        onCommit: dir => void bindWorkdir(c, dir)
-      });
-    }
-  });
 }
 // 目录签的弹层，欢迎页与对话页共用：输入 / 选择；不列「最近」——删掉的目录会留在那儿、点了又能把它绑回来，每次自己选。
 // live 时每敲一字都落值（欢迎页记到待绑目录），否则回车、点选才落值（对话页要经桥接绑定）
@@ -682,5 +640,3 @@ const WORK_SUGGESTIONS = [
   ],
   ["写一段脚本并运行", "编写一个脚本完成下述事项，置于工作目录中；写好后运行一遍并给出输出，若有报错则修正至可运行：\n\n（要做的事）"]
 ];
-// 浮着的小菜单（附件签、历史条目的「⋯」、目录签的弹层）：Esc 只收它，别连带把底下的旁注面板也关了
-defineLayer({ name: "pop", rank: 90, open: () => !!document.querySelector(".chip-pop"), close: closeChipPop });

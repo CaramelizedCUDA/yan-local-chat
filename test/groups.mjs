@@ -30,7 +30,7 @@ check(
 );
 await evalJs(`document.querySelector('.chip-pop [data-menu="group"]').click(); true`);
 await sleep(150);
-await evalJs(`document.querySelector('.chip-pop [data-move="__new"]').click(); true`);
+await evalJs(`document.querySelector('.chip-pop [data-menu="new"]').click(); true`);
 await sleep(150);
 await evalJs(
   `(i => { i.value = "读书"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); return true })(document.querySelector("#history .group-rename"))`
@@ -163,9 +163,9 @@ await evalJs(`document.querySelector('#history [data-group-menu="${groupId}"]').
 await sleep(150);
 check(
   "the group head ⋯ offers rename, settings and dissolve",
-  await evalJs(`[...document.querySelectorAll(".chip-pop [data-group-act]")].map(b => b.textContent).join() === "改名,设置,解散"`)
+  await evalJs(`[...document.querySelectorAll(".chip-pop [data-menu]")].map(b => b.textContent).join() === "改名,设置,解散"`)
 );
-await evalJs(`document.querySelector('.chip-pop [data-group-act="settings"]').click(); true`);
+await evalJs(`document.querySelector('.chip-pop [data-menu="settings"]').click(); true`);
 await sleep(200);
 check(
   "⋯ → 设置 opens that group's page",

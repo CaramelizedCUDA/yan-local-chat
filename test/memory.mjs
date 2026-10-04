@@ -132,7 +132,9 @@ await evalJs(`document.querySelector("#settingsContent .memory-row").click(); tr
 await sleep(100);
 check(
   "an item opens in place and shows its source conversation",
-  await evalJs(`!!document.querySelector('#settingsContent .memory-item.open .memory-body') && !!document.querySelector('#settingsContent [data-memory-open]')`)
+  await evalJs(
+    `!!document.querySelector('#settingsContent .memory-item.open .memory-body') && !!document.querySelector('#settingsContent [data-memory-open]')`
+  )
 );
 await shot("memory-settings.png");
 await evalJs(`document.querySelector("#settingsContent [data-memory-edit]").click(); true`);
@@ -160,10 +162,10 @@ await sleep(150);
 check(
   "the category menu is the app's own pop, above the settings window",
   await evalJs(
-    `(p => !!p && getComputedStyle(p).zIndex === "60" && !!p.querySelector('[data-move-to=""]'))(document.querySelector(".chip-pop.floating"))`
+    `(p => !!p && getComputedStyle(p).zIndex === "60" && !!p.querySelector('[data-menu="new"]'))(document.querySelector(".chip-pop.floating"))`
   )
 );
-await evalJs(`document.querySelector('.chip-pop.floating [data-move-to=""]').click(); true`);
+await evalJs(`document.querySelector('.chip-pop.floating [data-menu="new"]').click(); true`);
 await sleep(100);
 await evalJs(
   `(i => { i.value = "工作"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })(document.querySelector("#settingsContent input.memory-move")); true`
@@ -184,7 +186,9 @@ await evalJs(
 await sleep(150);
 check(
   "a new category opens with its first item being written",
-  await evalJs(`document.querySelector("#settingsContent .memory-cat.active span")?.textContent === "新类" && !!document.activeElement?.matches(".memory-text")`)
+  await evalJs(
+    `document.querySelector("#settingsContent .memory-cat.active span")?.textContent === "新类" && !!document.activeElement?.matches(".memory-text")`
+  )
 );
 await evalJs(`document.activeElement.blur(); true`);
 await sleep(150);

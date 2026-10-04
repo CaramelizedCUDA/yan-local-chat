@@ -243,39 +243,37 @@ function bindMemoryEvents() {
       const others = memoryCategories()
         .map(cat => cat.name)
         .filter(name => name !== memoryCategoryOf(item));
-      const pop = openFloatingPop(
-        move,
-        `${others.map(name => `<button type="button" data-move-to="${escapeHtml(name)}">${escapeHtml(name)}</button>`).join("")}<button type="button" data-move-to="">另起一类…</button>`,
-        { align: "right" }
-      );
-      pop.addEventListener("click", event => {
-        const choice = event.target.closest("[data-move-to]");
-        if (!choice) return;
-        closeChipPop();
-        if (choice.dataset.moveTo) return fileMemory(item, choice.dataset.moveTo);
-        // 另起一类：就地换成一个输入框，回车落定，Esc 作罢
-        const field = document.createElement("input");
-        field.className = "memory-move";
-        field.placeholder = "新类名";
-        field.maxLength = 24;
-        move.replaceWith(field);
-        field.focus();
-        let settled = false;
-        const settle = keep => {
-          if (settled) return;
-          settled = true;
-          if (keep && field.value.trim()) fileMemory(item, field.value);
-          else renderSettings();
-        };
-        field.addEventListener("keydown", e => {
-          if (e.key === "Enter") settle(true);
-          else if (e.key === "Escape") {
-            e.stopPropagation();
-            settle(false);
+      openMenu(move, [
+        ...others.map(name => ({ id: name, label: name, run: () => fileMemory(item, name) })),
+        {
+          id: "new",
+          label: "另起一类…",
+          run: () => {
+            // 另起一类：就地换成一个输入框，回车落定，Esc 作罢
+            const field = document.createElement("input");
+            field.className = "memory-move";
+            field.placeholder = "新类名";
+            field.maxLength = 24;
+            move.replaceWith(field);
+            field.focus();
+            let settled = false;
+            const settle = keep => {
+              if (settled) return;
+              settled = true;
+              if (keep && field.value.trim()) fileMemory(item, field.value);
+              else renderSettings();
+            };
+            field.addEventListener("keydown", e => {
+              if (e.key === "Enter") settle(true);
+              else if (e.key === "Escape") {
+                e.stopPropagation();
+                settle(false);
+              }
+            });
+            field.addEventListener("blur", () => settle(true));
           }
-        });
-        field.addEventListener("blur", () => settle(true));
-      });
+        }
+      ]);
     });
     row.querySelector("[data-memory-delete]")?.addEventListener("click", () => {
       store.memory.items = store.memory.items.filter(entry => entry !== item);

@@ -388,7 +388,7 @@ check(
 
 // 纸签：缩放一档，窗按倍数收窄；复原。量窗口本身——静着的页不重绘就不出新帧，画面的尺寸会停在旧值
 await evalJs(`document.querySelector("#stageKeys").blur(); document.querySelector("#stageMenuBtn").click(); true`);
-check("the menu opens from the tune icon", await evalJs(`!!document.querySelector(".chip-pop.stage-menu [data-stage-menu=find]")`));
+check("the menu opens from the tune icon", await evalJs(`!!document.querySelector(".chip-pop.stage-menu [data-menu=find]")`));
 await sleep(250);
 await shot("stage-menu.png");
 const windowWidth = async () => (await browserSend("Browser.getWindowForTarget", { targetId })).bounds.width;
@@ -425,9 +425,9 @@ check(
 await evalJs(`document.querySelector(".chip-pop.stage-menu") || document.querySelector("#stageMenuBtn").click(); true`);
 check(
   "the menu shows the new download count",
-  await evalJs(`document.querySelector(".chip-pop.stage-menu [data-stage-menu=downloads] .fresh")?.textContent === "1"`)
+  await evalJs(`document.querySelector(".chip-pop.stage-menu [data-menu=downloads] .fresh")?.textContent === "1"`)
 );
-await evalJs(`document.querySelector(".chip-pop.stage-menu [data-stage-menu=downloads]").click(); true`);
+await evalJs(`document.querySelector(".chip-pop.stage-menu [data-menu=downloads]").click(); true`);
 check(
   "the downloads slip lists it",
   await evalJs(`document.querySelector(".chip-pop.stage-downloads .stage-dl-name")?.textContent === "下载测.txt"`)
@@ -439,7 +439,7 @@ await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
 // 纸签里的一项：纸签没开着先开
 const menuPick = act =>
   evalJs(
-    `(document.querySelector(".chip-pop.stage-menu") || document.querySelector("#stageMenuBtn").click(), document.querySelector(".chip-pop.stage-menu [data-stage-menu=${act}]").click(), true)`
+    `(document.querySelector(".chip-pop.stage-menu") || document.querySelector("#stageMenuBtn").click(), document.querySelector(".chip-pop.stage-menu [data-menu=${act}]").click(), true)`
   );
 // 浏览器自己的页（历史、设置）开成一张新签；设置页在新版 Edge 里报成 browser_ui，也得列出来
 for (const [act, word] of [
@@ -514,7 +514,7 @@ await menuPick("fit");
 check(
   "with 适应页面 off (in the menu) the strip offers 放开",
   (await evalJs(
-    `__yanState().settings.stageFit === false && document.querySelector(".chip-pop.stage-menu [data-stage-menu=fit] small")?.textContent === "关"`
+    `__yanState().settings.stageFit === false && document.querySelector(".chip-pop.stage-menu [data-menu=fit] small")?.textContent === "关"`
   )) && (await evalJs(`!!document.querySelector("#stageLetter [data-stage-release]")`))
 );
 await menuPick("search");

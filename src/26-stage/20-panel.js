@@ -369,80 +369,91 @@ function stageSearchEngine() {
 }
 /** @param {HTMLElement} anchor */
 function stageOpenMenu(anchor) {
-  if (document.querySelector(".chip-pop.stage-menu")) return closeChipPop();
   const fresh = stage.downloads.filter(item => item.at > stage.downloadsSeen).length,
-    row = (/** @type {string} */ act, /** @type {string} */ text, extra = "") =>
-      `<button type="button" data-stage-menu="${act}"><span>${text}</span>${extra}</button>`,
+    url = () => stage.tabs.get(stage.current)?.url || "",
     rule = `<i class="stage-pop-rule"></i>`;
-  const html =
-    row("find", "查找", "<small>Ctrl+F</small>") +
-    `<div class="stage-menu-zoom"><span>缩放</span><span class="stage-zoom"><button type="button" data-stage-zoom="-1" aria-label="缩小">−</button><button type="button" class="stage-zoom-pct" data-stage-zoom="0" title="复原">${Math.round(stage.zoom * 100)}%</button><button type="button" data-stage-zoom="1" aria-label="放大">＋</button></span></div>` +
-    rule +
-    row("history", "历史") +
-    row("downloads", "下载", fresh ? `<small class="fresh">${fresh}</small>` : "") +
-    row("favorites", "整理收藏…") +
-    rule +
-    row("copy", "复制网址") +
-    row("system", "用系统浏览器打开") +
-    row("devtools", "开发者工具") +
-    rule +
-    row("fit", "适应页面", `<small>${stageFitOn() ? "开" : "关"}</small>`) +
-    row("search", "搜索用", `<small>${STAGE_SEARCH[stageSearchEngine()][0]} ›</small>`) +
-    rule +
-    row("settings", "浏览器设置…") +
-    row("stage-settings", "游目设置…");
-  const pop = openFloatingPop(anchor, html, { align: "right" });
-  pop.classList.add("stage-menu", "stage-pop");
-  pop.addEventListener("click", e => {
-    const target = /** @type {HTMLElement} */ (e.target),
-      zoom = /** @type {HTMLElement | null} */ (target.closest("[data-stage-zoom]"));
-    if (zoom) return stageZoomStep(Number(zoom.dataset.stageZoom));
-    const act = /** @type {HTMLElement | null} */ (target.closest("[data-stage-menu]"))?.dataset.stageMenu;
-    if (!act) return;
-    // 适应页面、搜索用哪家：点了就换，不收纸签（记进配置）
-    if (act === "fit" || act === "search") {
-      if (act === "fit") stageSetFit(!stageFitOn());
-      else {
-        const keys = /** @type {(keyof typeof STAGE_SEARCH)[]} */ (Object.keys(STAGE_SEARCH));
-        store.settings.stageSearch = keys[(keys.indexOf(stageSearchEngine()) + 1) % keys.length];
-        saveStore();
+  openMenu(
+    anchor,
+    [
+      { id: "find", label: "查找", note: "Ctrl+F", run: () => stageFindOpen() },
+      `<div class="stage-menu-zoom"><span>缩放</span><span class="stage-zoom"><button type="button" data-stage-zoom="-1" aria-label="缩小">−</button><button type="button" class="stage-zoom-pct" data-stage-zoom="0" title="复原">${Math.round(stage.zoom * 100)}%</button><button type="button" data-stage-zoom="1" aria-label="放大">＋</button></span></div>`,
+      rule,
+      { id: "history", label: "历史", run: () => stageOpenInside("history") },
+      { id: "downloads", label: "下载", note: fresh ? String(fresh) : "", noteClass: "fresh", run: () => stageOpenDownloads(anchor) },
+      { id: "favorites", label: "整理收藏…", run: () => stageOpenInside("favorites") },
+      rule,
+      {
+        id: "copy",
+        label: "复制网址",
+        run: () =>
+          url() &&
+          void navigator.clipboard.writeText(stageReadable(url())).then(
+            () => toast("网址已复制"),
+            () => toast("没能复制")
+          )
+      },
+      // 交给系统默认的浏览器开（经桥接：言跑在 VS Code 里时 window.open 不管用）：要登自己的账号、或要看外头那扇窗时
+      {
+        id: "system",
+        label: "用系统浏览器打开",
+        run: () => {
+          if (!/^https?:/.test(url())) return toast("只有网页（http / https）能交给系统浏览器");
+          void bridge("/api/stage/open", { url: url() }).then(
+            () => toast("已交给系统浏览器"),
+            error => toast(`没能打开：${String(error.message || error).slice(0, 80)}`)
+          );
+        }
+      },
+      // 开发者工具：浏览器自带的那套前端，由它的调试口供出；要在调试口的放行来源里加上它自己（见 docs/stage.md）
+      {
+        id: "devtools",
+        label: "开发者工具",
+        run: () =>
+          stage.current &&
+          stage.port &&
+          window.open(
+            `http://127.0.0.1:${stage.port}/devtools/inspector.html?ws=127.0.0.1:${stage.port}/devtools/page/${stage.current}`,
+            "_blank",
+            "noopener"
+          )
+      },
+      rule,
+      // 适应页面、搜索用哪家：点了就换，不收纸签（记进配置）
+      {
+        id: "fit",
+        label: "适应页面",
+        note: stageFitOn() ? "开" : "关",
+        keep: true,
+        run: button => {
+          stageSetFit(!stageFitOn());
+          button.querySelector("small").textContent = stageFitOn() ? "开" : "关";
+        }
+      },
+      {
+        id: "search",
+        label: "搜索用",
+        note: `${STAGE_SEARCH[stageSearchEngine()][0]} ›`,
+        keep: true,
+        run: button => {
+          const keys = /** @type {(keyof typeof STAGE_SEARCH)[]} */ (Object.keys(STAGE_SEARCH));
+          store.settings.stageSearch = keys[(keys.indexOf(stageSearchEngine()) + 1) % keys.length];
+          saveStore();
+          button.querySelector("small").textContent = `${STAGE_SEARCH[stageSearchEngine()][0]} ›`;
+        }
+      },
+      rule,
+      { id: "settings", label: "浏览器设置…", run: () => stageOpenInside("settings") },
+      { id: "stage-settings", label: "游目设置…", run: () => openSettings("stage") }
+    ],
+    {
+      kind: "stage-menu",
+      className: "stage-menu stage-pop",
+      onClick: event => {
+        const zoom = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (event.target).closest("[data-stage-zoom]"));
+        if (zoom) stageZoomStep(Number(zoom.dataset.stageZoom));
       }
-      const label = /** @type {HTMLElement} */ (pop.querySelector(`[data-stage-menu=${act}] small`));
-      label.textContent = act === "fit" ? (stageFitOn() ? "开" : "关") : `${STAGE_SEARCH[stageSearchEngine()][0]} ›`;
-      return;
     }
-    closeChipPop();
-    stageMenuAct(act, anchor);
-  });
-}
-/** @param {string} act @param {HTMLElement} anchor */
-function stageMenuAct(act, anchor) {
-  const tab = stage.tabs.get(stage.current),
-    url = tab?.url || "";
-  if (act === "find") stageFindOpen();
-  else if (act === "downloads") stageOpenDownloads(anchor);
-  else if (act === "history" || act === "favorites" || act === "settings") stageOpenInside(act);
-  else if (act === "stage-settings") openSettings("stage");
-  else if (act === "copy" && url)
-    void navigator.clipboard.writeText(stageReadable(url)).then(
-      () => toast("网址已复制"),
-      () => toast("没能复制")
-    );
-  // 交给系统默认的浏览器开（经桥接：言跑在 VS Code 里时 window.open 不管用）：要登自己的账号、或要看外头那扇窗时
-  else if (act === "system") {
-    if (!/^https?:/.test(url)) return toast("只有网页（http / https）能交给系统浏览器");
-    void bridge("/api/stage/open", { url }).then(
-      () => toast("已交给系统浏览器"),
-      error => toast(`没能打开：${String(error.message || error).slice(0, 80)}`)
-    );
-  }
-  // 开发者工具：浏览器自带的那套前端，由它的调试口供出；要在调试口的放行来源里加上它自己（见 docs/stage.md）
-  else if (act === "devtools" && stage.current && stage.port)
-    window.open(
-      `http://127.0.0.1:${stage.port}/devtools/inspector.html?ws=127.0.0.1:${stage.port}/devtools/page/${stage.current}`,
-      "_blank",
-      "noopener"
-    );
+  );
 }
 
 // ---------- 下载 ----------
