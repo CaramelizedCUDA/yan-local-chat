@@ -116,10 +116,9 @@ test("游目自己的浏览器：几项选择拼成整条，家当都在存储�
     "--allow-unrestricted-file-access"
   ]);
   assert.equal(edge.cwd, home);
-  // 自带内核：指到「内核」目录；登录与收藏指到别处
-  const own = builtinConfig({ browser: "chromium", profile: "E:/旧/.edge-profile" }, root);
+  // 自带内核：指到「内核」目录
+  const own = builtinConfig({ browser: "chromium" }, root);
   assert.equal(own.env.PLAYWRIGHT_BROWSERS_PATH, path.join(home, "内核"));
-  assert.equal(own.args[own.args.indexOf("--user-data-dir") + 1], "E:/旧/.edge-profile");
   // 起的时候：拼成整条、带上接法那份 --config，note 之类照留
   const ready = prepareMcp({ stage: { browser: "msedge" }, note: "说明" }, { root, bridgePort: 8787 });
   assert.equal(ready.note, "说明");

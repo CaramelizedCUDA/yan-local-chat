@@ -524,7 +524,7 @@ await menuPick("search");
 await menuPick("fit");
 await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
 
-// 设置 → 游目：只管游目自己的浏览器怎么配（开没开、用哪个、依赖、登录与收藏、本机文件、所在），排在 MCP 之后、记忆之前
+// 设置 → 游目：只管游目自己的浏览器怎么配（开没开、用哪个、驱动、存储），排在 MCP 之后、记忆之前
 await evalJs(`document.querySelector("#openSettings").click(); document.querySelector('[data-tab="stage"]').click(); true`);
 await waitFor(
   `!!document.querySelector('#settingsContent [data-stage-opt="browser"]') && !document.querySelector("#settingsContent").textContent.includes("……")`,
@@ -539,7 +539,7 @@ check(
 check(
   "it shows where its things live and whether the dependency is in",
   await evalJs(
-    `(t => t.includes("游目") && t.includes("依赖") && (t.includes("未装") || t.includes("@playwright/mcp")))(document.querySelector("#settingsContent").textContent)`
+    `(t => t.includes("存储") && t.includes("游目") && t.includes("驱动") && (t.includes("未装") || t.includes(" 版")))(document.querySelector("#settingsContent").textContent)`
   )
 );
 await evalJs(`document.querySelector('[data-stage-opt="browser"][data-value="chrome"]').click(); true`);

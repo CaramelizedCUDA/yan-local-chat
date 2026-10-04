@@ -98,7 +98,7 @@ const bookmarksFile = dir => path.join(dir, "Default", "Bookmarks");
 // ---------- 游目自己的浏览器 ----------
 // 浏览器不再要人去 MCP 里接：设置 → 游目里开着，言自己起一个 Playwright 的 MCP 服务（名叫「游目」）。家当都在存储根的「游目」目录：
 //   依赖/  @playwright/mcp 装在这里（npm install，一键）
-//   浏览器/  登录状态、收藏（--user-data-dir；可指到别处，如旧的那份）
+//   浏览器/  登录状态、收藏（--user-data-dir）
 //   下载/  下载落在这里（--output-dir）
 //   内核/  本机没有 Edge / Chrome 时，Playwright 自带的那个浏览器装在这里（PLAYWRIGHT_BROWSERS_PATH）
 //   playwright.json  接法（prepareBrowser 写的）
@@ -116,8 +116,8 @@ function stageHome(root) {
   };
 }
 /**
- * 页面递来的是几项选择（{ browser, profile }），这里拼成起服务的那一整条；本机文件一律许开（执事做的网页要自己开来看）
- * @param {{ browser?: string, profile?: string }} stage
+ * 页面递来的是几项选择（{ browser }），这里拼成起服务的那一整条；家当一律落在「游目」目录，本机文件一律许开（执事做的网页要自己开来看）
+ * @param {{ browser?: string }} stage
  * @param {string} root
  */
 function builtinConfig(stage, root) {
@@ -130,7 +130,7 @@ function builtinConfig(stage, root) {
       "--browser",
       browser,
       "--user-data-dir",
-      String(stage?.profile || "") || at.profile,
+      at.profile,
       "--output-dir",
       at.output,
       "--allow-unrestricted-file-access"
@@ -145,7 +145,8 @@ function prepareMcp(config, where) {
   const { stage, ...rest } = config,
     built = { ...rest, ...builtinConfig(stage, where.root) };
   try {
-    fs.mkdirSync(stageHome(where.root).output, { recursive: true });
+    const at = stageHome(where.root);
+    for (const dir of [at.profile, at.output]) fs.mkdirSync(dir, { recursive: true });
   } catch {}
   return prepareBrowser(built, where);
 }
@@ -222,13 +223,16 @@ function installStage(what, root, china) {
 /** @param {string} root */
 function stageState(root) {
   const at = stageHome(root);
+  // 该有的目录先建好，「打开文件夹」总打得开
+  try {
+    for (const dir of [at.profile, at.output]) fs.mkdirSync(dir, { recursive: true });
+  } catch {}
   let version = "";
   try {
     version = JSON.parse(fs.readFileSync(path.join(path.dirname(at.cli), "package.json"), "utf8")).version || "";
   } catch {}
   return {
     home: at.home,
-    profile: at.profile,
     output: at.output,
     installed: fs.existsSync(at.cli),
     version,

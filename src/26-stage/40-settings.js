@@ -1,4 +1,4 @@
-// 言 · 游目 · 设置里的一栏：游目自己的浏览器怎么配——开没开、用哪个浏览器、驱动、登录与收藏存在哪。本机文件一律许开，不设开关。
+// 言 · 游目 · 设置里的一栏：游目自己的浏览器怎么配——开没开、用哪个浏览器、驱动、存储。本机文件一律许开，不设开关；存储不许另选，缺的目录起服务时自建。
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 浏览器不再要人去 MCP 里接：这里开着，言自己起一个 Playwright 的 MCP 服务，名叫「游目」（页面只递几项选择，桥接拼成整条、补齐接法，
 // 见 server/stage.js 的 builtinConfig / prepareMcp）。家当都在存储根的「游目」目录里：依赖（驱动）、浏览器（登录与收藏）、下载、内核。
@@ -9,12 +9,12 @@ function stageBuiltinConfig() {
   const s = store.settings.stage;
   if (!s?.enabled) return null;
   return {
-    stage: { browser: s.browser || "msedge", profile: s.profile || "" },
+    stage: { browser: s.browser || "msedge" },
     note: "我说「打开浏览器」即指这个",
     timeout: 60
   };
 }
-/** @type {{ home: string, profile: string, output: string, installed: boolean, version: string, browsers: Record<string, boolean> } | null} */
+/** @type {{ home: string, output: string, installed: boolean, version: string, browsers: Record<string, boolean> } | null} */
 let stageHomeState = null;
 // 正在装的：驱动 deps / 内核 chromium
 let stageInstalling = "";
@@ -23,21 +23,12 @@ const STAGE_BROWSERS = /** @type {const} */ ([
   ["chrome", "Chrome"],
   ["chromium", "自带内核"]
 ]);
-// MCP 里另接着的 Playwright：迁过来，沿用它的登录与收藏，免得两边各起一个浏览器
-function stageLegacyServer() {
-  return Object.keys(mcpUserConfigs()).find(name => {
-    const config = mcpUserConfigs()[name];
-    return /@playwright[\\/]mcp|playwright-mcp|mcp-server-playwright/i.test([config.command || "", ...(config.args || [])].join(" "));
-  });
-}
-
 function stageSettingsHtml() {
   if (!stageHomeState) void stageLoadHome();
   const s = store.settings.stage || {},
     at = stageHomeState,
     on = !!s.enabled,
     browser = s.browser || "msedge",
-    legacy = stageLegacyServer(),
     code = (/** @type {string} */ text) => `<code title="${escapeHtml(text)}">${escapeHtml(text)}</code>`,
     seg = (/** @type {string} */ key, /** @type {[string, string, boolean?][]} */ items, /** @type {string} */ active) =>
       `<div class="segmented">${items.map(([value, label, off]) => `<button type="button" data-stage-opt="${key}" data-value="${value}" class="${value === active ? "active" : ""}${off ? " off" : ""}"${off ? ` title="本机未装"` : ""}>${label}</button>`).join("")}</div>`;
@@ -60,9 +51,6 @@ function stageSettingsHtml() {
     `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? "正在装…" : label}</button>`;
   return (
     `<h2>游目</h2><p class="settings-lead">游目骋怀，足以极视听之娱。</p>` +
-    (legacy
-      ? `<div class="setting-row"><div class="setting-copy"><strong>MCP 里的「${escapeHtml(legacy)}」</strong><small>另接着一个 Playwright，与游目各起一个浏览器；迁过来沿用它的登录与收藏，并从 MCP 里撤掉</small></div><button type="button" class="outline-btn" data-stage-migrate="${escapeHtml(legacy)}">迁过来</button></div>`
-      : "") +
     `<div class="setting-row"><div class="setting-copy"><strong>游目</strong><small>${state}</small></div>${seg(
       "enabled",
       [
@@ -77,8 +65,7 @@ function stageSettingsHtml() {
       browser
     )}</div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>驱动</strong><small>${deps}</small></div><div class="setting-actions">${installing("deps", at?.installed ? "更新" : "安装")}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", "装内核") : ""}</div></div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>登录与收藏</strong><small>${s.profile ? `登过的站、收过的页记在 ${code(s.profile)}` : "登过的站、收过的页，记在游目的「浏览器」里"}</small></div><div class="setting-actions"><button type="button" class="outline-btn" id="stageProfilePick">另选…</button>${s.profile ? `<button type="button" class="outline-btn" id="stageProfileReset">复原</button>` : ""}</div></div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>所在</strong><small>${at ? code(at.home) : "……"}</small></div><button type="button" class="outline-btn" id="stageRevealHome">打开文件夹</button></div>`
+    `<div class="setting-row"><div class="setting-copy"><strong>存储</strong><small>登录、收藏、下载都在这里 ${at ? code(at.home) : "……"}</small></div><button type="button" class="outline-btn" id="stageRevealHome">打开文件夹</button></div>`
   );
 }
 async function stageLoadHome() {
@@ -112,28 +99,6 @@ async function stageInstall(what) {
     if (settingsTab === "stage") renderSettings();
   }
 }
-/** @param {string} name */
-function stageMigrate(name) {
-  const config = mcpUserConfigs()[name],
-    args = (config?.args || []).map(String),
-    arg = (/** @type {string} */ key) => {
-      const at = args.indexOf(key);
-      return at >= 0 ? args[at + 1] || "" : args.find(item => item.startsWith(`${key}=`))?.slice(key.length + 1) || "";
-    },
-    browser = arg("--browser");
-  const { [name]: _gone, ...rest } = mcpUserConfigs();
-  store.settings.mcpServers = rest;
-  // 预设里点名给了那个服务的，换成游目
-  for (const preset of store.settings.presets || [])
-    if (preset.mcp?.includes(name)) preset.mcp = [...new Set(preset.mcp.map(server => (server === name ? STAGE_SERVER : server)))];
-  delete mcp.servers[name];
-  stageSetOptions({
-    enabled: true,
-    ...(["msedge", "chrome", "chromium"].includes(browser) ? { browser: /** @type {"msedge"|"chrome"|"chromium"} */ (browser) } : {}),
-    ...(arg("--user-data-dir") ? { profile: arg("--user-data-dir") } : {})
-  });
-  toast(`已迁过来：沿用「${name}」的登录与收藏${stageHomeState?.installed ? "" : "，驱动装上即可用"}`, 4000);
-}
 function bindStageSettings() {
   const page = $("#settingsContent");
   // 只在这一栏接点按；换到别栏即撤
@@ -148,15 +113,9 @@ function bindStageSettings() {
       return stageSetOptions(opt === "browser" ? { browser: /** @type {any} */ (value) } : { [opt]: value === "true" });
     }
     if (target.dataset.stageInstall) return void stageInstall(/** @type {"deps" | "chromium"} */ (target.dataset.stageInstall));
-    if (target.dataset.stageMigrate) return stageMigrate(target.dataset.stageMigrate);
     if (target.id === "stageRevealHome" && stageHomeState)
       return void bridge("/api/stage/reveal", { path: stageHomeState.home }).catch(error =>
         toast(String(error.message || error).slice(0, 80))
       );
-    if (target.id === "stageProfileReset") return stageSetOptions({ profile: "" });
-    if (target.id === "stageProfilePick")
-      return void bridge("/api/work/pick", { current: store.settings.stage?.profile || stageHomeState?.profile || "" })
-        .then(({ path }) => path && stageSetOptions({ profile: path }))
-        .catch(error => toast(String(error.message || error).slice(0, 80)));
   };
 }
