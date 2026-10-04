@@ -235,7 +235,6 @@ function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
 const APP_VERSION = "0.4.0"; // 与 package.json 同步；以桥接返回的为准
-const LOCAL_BRIDGE = "http://127.0.0.1:8787";
 const FILE_DB_NAME = "yan-chat-files-v1";
 const FILE_STORE_NAME = "attachments";
 // 附件的几道上限：单件、单次合计、卷宗与附件原件合计、收入卷宗的单件；界面上的提示都从这里取数（见 limitLabel），改一处即可
@@ -305,9 +304,6 @@ let store = loadStore();
 // 给端到端测试看内存里的记录（对话不再整份镜像在 localStorage 里，测试没别的地方读）
 window.__yanState = () => store;
 window.__yanSave = () => saveStore();
-// 桥接的引导信息（目录、平台、shell）；notice 是页面自己写的桥接状态提示，在设置 → 模型顶部显示
-let bootstrap = { notice: "" };
-let apiBase = null;
 /** @type {string|null} 正在看的对话 */
 let currentId = null;
 let view = "chat";

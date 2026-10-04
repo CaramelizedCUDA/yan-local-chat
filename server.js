@@ -177,21 +177,8 @@ const BUNDLES = {
   "/app.css": { build: () => currentBundler().bundleStyles(), type: "text/css; charset=utf-8" }
 };
 // 静态服务只开放页面运行真正需要的文件。仓库根目录里还有桥接源码、测试、.git 与用户可能临时放入的配置，
-// 不能因为它们恰好位于 ROOT 下就一并交给浏览器；vendor/ 是随页面分发的纯前端资源，提示词则逐个列出。
-const PUBLIC_STATIC_FILES = new Set([
-  "index.html",
-  "theme-boot.js",
-  "icon.svg",
-  "preview.html",
-  "preview-runtime.js",
-  "prompts/assistant.js",
-  "prompts/work.js",
-  "prompts/side.js",
-  "prompts/memory.js",
-  "prompts/delegate.js",
-  "prompts/mcp.js",
-  "prompts/tools.js"
-]);
+// 不能因为它们恰好位于 ROOT 下就一并交给浏览器；vendor/ 是随页面分发的纯前端资源；提示词随页面脚本拼进 /support.js。
+const PUBLIC_STATIC_FILES = new Set(["index.html", "theme-boot.js", "icon.svg", "preview.html", "preview-runtime.js"]);
 const REAL_ROOT = fs.realpathSync(ROOT);
 function publicStaticTarget(requested) {
   // URL 路径里的反斜杠在 Windows 上也是目录分隔符；先统一再规范化，vendor/../server.js 不能借前缀混进来。

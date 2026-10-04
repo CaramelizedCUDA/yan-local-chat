@@ -237,18 +237,6 @@ async function probeReasoningLevels(profile, force = false) {
     controller.abort();
   }
 }
-// 桥接没接下请求时回的那句话：桥接一律回 { error }（各家上游的报错样子在桥接那头归一，见 server/model/index.js 的 upstreamError）；
-// 不是 JSON 的（桥接之外的什么挡在了中间）取原文开头
-async function describeResponseError(response) {
-  const raw = await response.text().catch(() => "");
-  let error;
-  try {
-    error = JSON.parse(raw)?.error;
-  } catch {
-    return raw.trim().slice(0, 300) || `请求失败（${response.status}）`;
-  }
-  return (typeof error === "string" && error) || `请求失败（${response.status}）`;
-}
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
   // 温度与输出上限同一条规矩：模型设置里留空就不传，由接口定——有的接口（OpenAI 的推理模型）只认默认值，传了反倒 400

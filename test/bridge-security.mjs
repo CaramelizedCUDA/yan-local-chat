@@ -80,15 +80,7 @@ const openBus = (page, origin) =>
 const win = process.platform === "win32",
   workdir = WORK.split("/").join(win ? "\\" : "/");
 // 静态服务只给页面资源：仓库源码、测试与 .git 即使同在服务根目录，也不能被其他本地网页读走。
-for (const publicPath of [
-  "/",
-  "/support.js",
-  "/app.css",
-  "/theme-boot.js",
-  "/preview.html",
-  "/prompts/assistant.js",
-  "/vendor/marked.umd.js"
-]) {
+for (const publicPath of ["/", "/support.js", "/app.css", "/theme-boot.js", "/preview.html", "/vendor/marked.umd.js"]) {
   const response = await fetch(BASE + publicPath, { headers: { Origin: "http://127.0.0.1:9999" } });
   check(`public static asset ${publicPath} is served`, response.status === 200, String(response.status));
   await response.body?.cancel();
@@ -99,6 +91,8 @@ for (const privatePath of [
   "/server/store.js",
   "/test/bridge-security.mjs",
   "/prompts/README.md",
+  // 提示词拼进了 /support.js，不再单独给
+  "/prompts/assistant.js",
   "/.git/config",
   "/package.json",
   "/vendor%5c..%5cserver.js"
