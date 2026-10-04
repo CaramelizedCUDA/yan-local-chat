@@ -167,7 +167,7 @@
       type: "object",
       properties: {
         query: { type: "string", description: "正则（默认不区分大小写）" },
-        path: { type: "string", description: "只在此子目录里找" },
+        path: { type: "string", description: "只在此子目录或文件里找" },
         glob: { type: "string", description: "只找匹配的文件，如 *.py" },
         literal: { type: "boolean", description: "按原文而非正则匹配" },
         limit: { type: "number", description: "最多返回几条，默认 60，最大 200" }

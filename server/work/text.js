@@ -1,4 +1,4 @@
-// 言 · 桥接 · 执事的文字：文本文件的编码认读与写回、PowerShell 的编码指令与 CLIXML 报错还原、截尾、数行。纯函数
+// 言 · 桥接 · 执事的文字：文本文件的编码认读与写回、PowerShell 的编码指令与 CLIXML 报错还原、截尾、数行、对不上时找最像的一段。纯函数
 "use strict";
 const { decodeEntities } = require("../web.js");
 
@@ -82,4 +82,34 @@ function lineDiffCounts(oldText, newText) {
   return { added: n - prev[n], removed: m - prev[n] };
 }
 
-module.exports = { tail, encodePowerShell, decodeClixml, decodeText, encodeText, countLines, lineDiffCounts };
+// edit_file 的 old 对不上时：文件里最像它的那一段，照现在的样子带行号交回。
+// 拿 old 的每一行（去掉首尾空白）到文件里找同样的行，各自推出「old 若从这里开始」的起点，起点得票最多的那段即是；
+// 太短的行（}、else:、空行）满文件都是，不投票，除非 old 里只有这种行。票太少（多行的 old 只对上一行）的不算像，宁可不给
+function nearestPassage(source, oldText, { context = 1, maxLines = 60 } = {}) {
+  const lines = String(source).split(/\r?\n/),
+    want = String(oldText).split(/\r?\n/),
+    keyed = want.map((line, k) => ({ k, text: line.trim() })).filter(item => item.text);
+  if (!keyed.length) return "";
+  const strong = keyed.filter(item => item.text.length >= 8),
+    voters = strong.length ? strong : keyed;
+  const at = new Map();
+  lines.forEach((line, i) => {
+    const text = line.trim();
+    if (text) at.set(text, [...(at.get(text) || []), i]);
+  });
+  const votes = new Map();
+  for (const { k, text } of voters) for (const i of at.get(text) || []) votes.set(i - k, (votes.get(i - k) || 0) + 1);
+  let best = null,
+    score = 0;
+  for (const [start, count] of votes) if (count > score || (count === score && start < best)) [best, score] = [start, count];
+  if (best === null || score < Math.min(2, voters.length)) return "";
+  const from = Math.max(0, best - context),
+    to = Math.min(lines.length, best + want.length + context, from + maxLines),
+    width = String(to).length;
+  return lines
+    .slice(from, to)
+    .map((line, i) => `${String(from + i + 1).padStart(width)}│${line}`)
+    .join("\n");
+}
+
+module.exports = { tail, encodePowerShell, decodeClixml, decodeText, encodeText, countLines, lineDiffCounts, nearestPassage };

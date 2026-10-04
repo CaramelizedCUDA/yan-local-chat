@@ -150,12 +150,14 @@ defineTool({
     );
     const lines = data.matches.map(match => `${match.file}:${match.line}: ${match.text}`);
     step.output = trimOutput(lines.join("\n"));
-    step.note = lines.length ? "" : "无匹配";
+    // 桥接替模型圆过的（正则写不成，按字面搜了）：说在结果前头
+    step.note = data.note || (lines.length ? "" : "无匹配");
+    const found = lines.length
+      ? `${lines.join("\n")}${data.truncated ? "\n…（结果已截断，请缩小范围或加 glob）" : ""}`
+      : `未找到匹配「${args.query}」的内容（扫描了 ${data.scanned} 个文件）`;
     return {
       ok: true,
-      content: lines.length
-        ? `${lines.join("\n")}${data.truncated ? "\n…（结果已截断，请缩小范围或加 glob）" : ""}`
-        : `未找到匹配「${args.query}」的内容（扫描了 ${data.scanned} 个文件）`,
+      content: data.note ? `（${data.note}）\n${found}` : found,
       display: `${lines.length} 处 · ${data.files} 文件`
     };
   }

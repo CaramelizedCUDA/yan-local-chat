@@ -9,7 +9,7 @@ const sandbox = require("../sandbox.js");
 const { fetchPublicResponse, readLimitedBytes } = require("../web.js");
 const paths = require("./paths.js");
 const { SCRATCH_DIR, WORK_SKIP, describeFsError, clampNumber, pathIsInside, resolveTarget, assertReachable, relPath } = paths;
-const { decodeText, encodeText, countLines, lineDiffCounts } = require("./text.js");
+const { decodeText, encodeText, countLines, lineDiffCounts, nearestPassage } = require("./text.js");
 const { pickFolder } = require("./folder-picker.js");
 const createShell = require("./shell.js");
 const createLocks = require("./locks.js");
@@ -25,7 +25,8 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
   // 卷宗：对话没绑工作目录时，模型的工具就落在这里——写出的表格、文档都收在卷宗里；页面上的卷宗即这个目录的视图。
   // 位置在存储根里（archiveHome()，见 server/store.js），随每个请求的 root 传来的也认。
   // 各接口出错时回给页面的那句话：截到 300 字
-  const failed = error => errorText(error, 300);
+  // 报错原样交给模型（卡片上只露头一句）：放得下一段线索——路径不对时同名的在哪、old 对不上时文件里最像的那一段
+  const failed = error => errorText(error, 4000);
   const WORK_FILE_LIMIT = 200000,
     WORK_LIST_LIMIT = 300,
     // 覆盖写时捎回原文的长度，与页面留存写入内容的长度（src/15-tools/21-files.js 的 WRITTEN_KEEP_CHARS）一致
@@ -46,6 +47,35 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
       if (why) throw Error(why);
     }
     return target;
+  }
+  // 路径不对时给一句线索，模型下一回就能找对，不必先列目录：同名的在目录里别处（多半记错了上一层），
+  // 不然列出还在的最近一层目录里有什么。沙箱里不借它报出机密文件的名字
+  const HINT_SCAN = 4000,
+    HINT_LIST = 15;
+  async function missingHint(workdir, target, boxed) {
+    const name = path.basename(target).toLowerCase(),
+      visible = full => !(boxed && sandbox.screenPath(relPath(workdir, full))),
+      same = [];
+    let seen = 0;
+    const walk = async dir => {
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (++seen > HINT_SCAN || same.length >= 3) return;
+        const full = path.join(dir, entry.name);
+        if (entry.name.toLowerCase() === name && visible(full)) same.push(shownPath(workdir, full));
+        if (entry.isDirectory() && !entry.isSymbolicLink() && !WORK_SKIP.has(entry.name)) await walk(full);
+      }
+    };
+    if (pathIsInside(workdir, target)) await walk(workdir);
+    if (same.length) return `；同名的在：${same.join("、")}`;
+    let parent = path.dirname(target);
+    while (!(await fs.promises.stat(parent).catch(() => null))?.isDirectory() && path.dirname(parent) !== parent)
+      parent = path.dirname(parent);
+    const entries = (await fs.promises.readdir(parent, { withFileTypes: true }).catch(() => []))
+      .filter(entry => !WORK_SKIP.has(entry.name) && visible(path.join(parent, entry.name)))
+      .map(entry => (entry.isDirectory() ? `${entry.name}/` : entry.name));
+    if (!entries.length) return "";
+    return `；${shownPath(workdir, parent) || "."}/ 下有：${entries.slice(0, HINT_LIST).join("、")}${entries.length > HINT_LIST ? ` 等 ${entries.length} 项` : ""}`;
   }
   // 给页面与模型看的路径：目录之内给相对路径，目录之外给完整路径
   function shownPath(workdir, file) {
@@ -178,7 +208,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     const workdir = resolveWorkdir(body.workdir),
       file = await targetOf(workdir, body);
     const stat = await fs.promises.stat(file).catch(() => null);
-    if (!stat) throw Error(`文件不存在：${body.path}`);
+    if (!stat) throw Error(`文件不存在：${body.path}${await missingHint(workdir, file, strictBox(body))}`);
     if (stat.isDirectory()) throw Error(`${body.path} 是目录，请改用 list_files`);
     if (stat.size > 8 * 1024 * 1024) throw Error("文件超过 8 MB，不予读取");
     const buffer = await fs.promises.readFile(file).catch(error => {
@@ -241,7 +271,10 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     const workdir = resolveWorkdir(body.workdir),
       dir = await targetOf(workdir, body);
     const stat = await fs.promises.stat(dir).catch(() => null);
-    if (!stat?.isDirectory()) throw Error(`目录不存在：${body.path || "."}`);
+    if (!stat?.isDirectory())
+      throw Error(
+        stat ? `${body.path} 是文件，不是目录` : `目录不存在：${body.path || "."}${await missingHint(workdir, dir, strictBox(body))}`
+      );
     const filter = globToRegExp(body.pattern),
       out = [];
     await listTree(dir, dir, Math.floor(clampNumber(body.depth, filter ? 8 : 2, 1, 8)), out, filter);
@@ -262,7 +295,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     const release = await lockFile(workdir, file, signal);
     try {
       const stat = await fs.promises.stat(file).catch(() => null);
-      if (!stat) throw Error(`文件不存在：${body.path}`);
+      if (!stat) throw Error(`文件不存在：${body.path}${await missingHint(workdir, file, strictBox(body))}`);
       if (stat.isDirectory()) throw Error(`${body.path} 是目录`);
       if (stat.size > 8 * 1024 * 1024) throw Error("文件超过 8 MB，不予编辑");
       const decoded = decodeText(await fs.promises.readFile(file));
@@ -275,7 +308,15 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
         replacement = crlf ? newText.replace(/\r?\n/g, "\r\n") : newText;
       let count = 0;
       for (let at = source.indexOf(needle); at >= 0; at = source.indexOf(needle, at + needle.length)) count += 1;
-      if (!count) throw Error("未找到要替换的文本：old 必须与文件内容逐字一致（含缩进与空格），请先 read_file 核对");
+      if (!count) {
+        // 多半是手里的原文旧了（指令或别处改过这个文件）：把文件里最像的那一段照现在的样子附上，下一回照着改即可，不必先 read_file
+        const near = nearestPassage(source, oldText);
+        throw Error(
+          near
+            ? `未找到要替换的文本：old 须与文件内容逐字一致。文件里最像的一段，现在是这样（行号仅供对照，不属于内容）：\n${near}`
+            : "未找到要替换的文本：old 必须与文件内容逐字一致（含缩进与空格），请先 read_file 核对"
+        );
+      }
       if (count > 1 && !replaceAll) throw Error(`要替换的文本出现了 ${count} 处，请提供更长的唯一片段，或设置 replace_all`);
       const result = replaceAll ? source.split(needle).join(replacement) : source.replace(needle, () => replacement);
       // 按原来的编码写回：UTF-16 的还是 UTF-16，带 BOM 的还带 BOM
@@ -326,23 +367,52 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
       boxed = strictBox(body);
     const query = String(body.query || "");
     if (!query.trim()) throw Error("query 不能为空");
-    let regex;
-    try {
-      regex = new RegExp(
-        body.literal === true ? query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : query,
-        body.caseSensitive === true ? "" : "i"
-      );
-    } catch (error) {
-      throw Error(`正则无效：${error.message}`);
-    }
+    // 写不成正则的（url( 这类没转义的括号）按字面搜，并说一声
+    const flags = body.caseSensitive === true ? "" : "i",
+      literal = text => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), flags);
+    let regex,
+      note = "";
+    if (body.literal === true) regex = literal(query);
+    else
+      try {
+        regex = new RegExp(query, flags);
+      } catch (error) {
+        regex = literal(query);
+        note = `正则无效（${error.message}），已按字面搜`;
+      }
     const filter = globToRegExp(body.glob),
       limit = Math.floor(clampNumber(body.limit, 60, 1, SEARCH_MATCH_LIMIT));
     const stat = await fs.promises.stat(dir).catch(() => null);
-    if (!stat?.isDirectory()) throw Error(`目录不存在：${body.path || "."}`);
+    if (!stat) throw Error(`目录不存在：${body.path || "."}${await missingHint(workdir, dir, boxed)}`);
     const matches = [];
     let scanned = 0,
       filesHit = new Set(),
       truncated = false;
+    // 搜一件：rel 是它相对于搜索起点的路径（glob 与沙箱筛查按它认）
+    const scanFile = async (full, rel) => {
+      if (boxed && sandbox.screenPath(rel)) return; // 沙箱不借检索带出机密文件
+      if (++scanned > SEARCH_FILE_LIMIT) {
+        truncated = true;
+        return;
+      }
+      const size = await fs.promises
+        .stat(full)
+        .then(s => s.size)
+        .catch(() => 0);
+      if (!size || size > SEARCH_FILE_BYTES) return;
+      const buffer = await fs.promises.readFile(full).catch(() => null),
+        decoded = buffer && decodeText(buffer);
+      if (!decoded) return;
+      const lines = decoded.text.split(/\r?\n/);
+      for (const i of matchLines(regex, lines, rel)) {
+        filesHit.add(rel);
+        matches.push({ file: shownPath(workdir, full), line: i + 1, text: lines[i].trim().slice(0, 240) });
+        if (matches.length >= limit) {
+          truncated = true;
+          return;
+        }
+      }
+    };
     const walk = async current => {
       if (truncated) return;
       const entries = await fs.promises.readdir(current, { withFileTypes: true }).catch(() => []);
@@ -357,32 +427,13 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
           continue;
         }
         if (filter && !filter.test(rel)) continue;
-        if (boxed && sandbox.screenPath(rel)) continue; // 沙箱不借检索带出机密文件
-        if (++scanned > SEARCH_FILE_LIMIT) {
-          truncated = true;
-          return;
-        }
-        const size = await fs.promises
-          .stat(full)
-          .then(s => s.size)
-          .catch(() => 0);
-        if (!size || size > SEARCH_FILE_BYTES) continue;
-        const buffer = await fs.promises.readFile(full).catch(() => null),
-          decoded = buffer && decodeText(buffer);
-        if (!decoded) continue;
-        const lines = decoded.text.split(/\r?\n/);
-        for (const i of matchLines(regex, lines, rel)) {
-          filesHit.add(rel);
-          matches.push({ file: shownPath(workdir, full), line: i + 1, text: lines[i].trim().slice(0, 240) });
-          if (matches.length >= limit) {
-            truncated = true;
-            return;
-          }
-        }
+        await scanFile(full, rel);
       }
     };
-    await walk(dir);
-    return { path: shownPath(workdir, dir) || ".", matches, files: filesHit.size, scanned, truncated };
+    // 给的是一件文件：就搜这一件（模型常把要查的那个文件当 path 给）
+    if (stat.isDirectory()) await walk(dir);
+    else await scanFile(dir, path.basename(dir));
+    return { path: shownPath(workdir, dir) || ".", matches, files: filesHit.size, scanned, truncated, ...(note ? { note } : {}) };
   }, failed);
   // ---- download_file：把网上的文件存进工作目录。地址门禁与 fetch_page 同一套（不许本机与内网）；path 给目录或省略时按网址里的文件名存，
   // 已有同名文件就加 (2)；最多 64 MB
