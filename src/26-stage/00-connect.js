@@ -40,6 +40,26 @@ const stage = {
   dialog: null,
   // 浏览器配置目录里有收藏（桥接答的），才挂「收藏」
   marks: false,
+  /** @type {any[] | null} 收藏的树（夹与条，带 id），读过一回记着：书签带着不着朱、收藏签都从它来 */
+  markTree: null,
+  // 上面那棵树是刚改完时浏览器递回的：配置文件过一两秒才落盘，这会儿先信它
+  markTreeAt: 0,
+  // 改收藏借的那个浏览器上下文：它里头的页不列进标签
+  helperCtx: "",
+  // 浏览器自家页的协议（edge:// 或 chrome://），连上时问一回
+  scheme: "edge",
+  // 适应页面：执事把视口定死时，等它歇手后放开（见 stageRelease）。记在本机
+  fit: true,
+  /** @type {{ width: number, height: number } | null} 正看的这一页视口被定死了多大；没定死是 null */
+  pinned: null,
+  // 放开过的那一页与时刻：放不开时不一回回再试
+  released: { url: "", at: 0 },
+  // 缩放：调那扇窗的宽，窗窄一档网页里的字就大一档（浏览器自己的缩放调不动，见 docs/stage.md）
+  zoom: 1,
+  /** @type {{ guid: string, name: string, url: string, total: number, got: number, state: string, at: number, path?: string, by?: string }[]} 下载过的，新的在前 */
+  downloads: [],
+  // 下载签打开后才算看过：纸签上「下载」后的数目是没看过的
+  downloadsSeen: 0,
   /** @type {{ text: string, at: number }[]} 执事在浏览器里新近的几步，写成人话 */
   trail: [],
   // 执事最近一步的时刻：地址行那两字「执事」在它歇手后再留一会儿
@@ -108,9 +128,12 @@ function stageConnect(url, front) {
         stage.listing = true;
         await stageSend("Target.setDiscoverTargets", { discover: true });
         stage.listing = false;
+        const { product = "" } = await stageSend("Browser.getVersion").catch(() => ({}));
+        stage.scheme = /^Edg/.test(product) ? "edge" : "chrome";
         stage.front = front;
         stageShow(stage.tabs.has(front) ? front : [...stage.tabs.keys()].at(-1) || "");
         stageSync();
+        void stageReadMarks();
       } catch {
         ws.close();
       }
@@ -136,7 +159,8 @@ function stageMessage(message) {
   const params = message.params || {};
   if (message.method === "Target.targetCreated" || message.method === "Target.targetInfoChanged") {
     const info = params.targetInfo;
-    if (info.type !== "page") return;
+    if (info.type !== "page" || (stage.helperCtx && info.browserContextId === stage.helperCtx)) return;
+    if (stageNotTab(info)) return void stageDropTab(info.targetId);
     const fresh = !stage.tabs.has(info.targetId);
     stage.tabs.set(info.targetId, { title: info.title, url: info.url });
     // 模型新开了一页：跟过去
@@ -149,6 +173,15 @@ function stageMessage(message) {
   } else if (message.method === "Target.detachedFromTarget") {
     if (params.sessionId === stage.session) stage.session = stage.attached = "";
   } else if (message.sessionId && message.sessionId === stage.session) stagePageEvent(message.method, params);
+}
+// Edge 自己的气泡（下载时弹的 downloads-hub 之类）也报成一页：不是网页，不列。它起初网址是空的、后来才补上，报来时与轮询时都要认
+/** @param {{ url: string }} info */
+const stageNotTab = info => /^edge:\/\/[\w-]*-hub\b/.test(info.url);
+/** @param {string} id */
+function stageDropTab(id) {
+  if (!stage.tabs.delete(id)) return;
+  if (id === stage.current) stageShow([...stage.tabs.keys()].at(-1) || "");
+  else stageRender();
 }
 // 正看的那一页上的事。主框架的 id 与页的 targetId 相同，子框架（iframe）的载入不算
 /** @param {string} method @param {any} params */
@@ -183,10 +216,31 @@ function stagePageEvent(method, params) {
   } else if (method === "Page.fileChooserOpened" && params.backendNodeId) {
     stage.dialog = { type: "file", message: "", multiple: params.mode === "selectMultiple", node: params.backendNodeId };
     stageRenderDialog();
+  } else if (method === "Page.downloadWillBegin") {
+    // 下载：浏览器在屏幕外存，游目只记一笔（名、来处、多大、到哪一步）；存到哪由 MCP 的结果补上（见 stageNoteDownload）
+    stage.downloads = [
+      {
+        guid: params.guid,
+        name: params.suggestedFilename || "未命名",
+        url: params.url || "",
+        total: 0,
+        got: 0,
+        state: "inProgress",
+        at: Date.now()
+      },
+      ...stage.downloads.filter(item => item.guid !== params.guid)
+    ].slice(0, 30);
+    stageSaveDownloads();
+  } else if (method === "Page.downloadProgress") {
+    const item = stage.downloads.find(entry => entry.guid === params.guid);
+    if (!item) return;
+    Object.assign(item, { total: params.totalBytes || item.total, got: params.receivedBytes || item.got, state: params.state });
+    if (params.state !== "inProgress") stageSaveDownloads();
   }
 }
 function stageResetPage() {
   stage.loading = stage.back = stage.forward = false;
+  stagePin(null);
   stage.dialog = null;
   stageInkClear();
   stageRenderNav();

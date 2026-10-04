@@ -1,4 +1,4 @@
-// 游目：地址栏的话怎么换成网址、执事的一步怎么写成人话；桥接怎么从 MCP 服务的参数里读出调试口与配置目录
+// 游目：地址栏的话怎么换成网址、执事的一步怎么写成人话；桥接怎么从 MCP 服务的参数里读出调试口、配置目录与存下载的目录
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -29,11 +29,18 @@ test("调试口与配置目录：参数里直写的、--config 文件里的，�
     file,
     JSON.stringify({ browser: { userDataDir: "D:/profile", launchOptions: { args: ["--remote-debugging-port=9300"] } } })
   );
-  assert.deepEqual(browserOf(["cli.js", "--config", file]), { port: 9300, dir: "D:/profile" });
-  assert.deepEqual(browserOf(["cli.js", `--config=${file}`, "--user-data-dir", "E:/p"]), { port: 9300, dir: "E:/p" });
-  assert.deepEqual(browserOf(["--cdp-endpoint", "http://localhost:9411"]), { port: 9411, dir: "" });
-  assert.deepEqual(browserOf(["--config", path.join(dir, "无此文件.json")]), { port: 9288, dir: "" });
-  assert.deepEqual(browserOf(undefined), { port: 9288, dir: "" });
+  assert.deepEqual(browserOf(["cli.js", "--config", file]), { port: 9300, dir: "D:/profile", output: "" });
+  assert.deepEqual(browserOf(["cli.js", `--config=${file}`, "--user-data-dir", "E:/p"]), { port: 9300, dir: "E:/p", output: "" });
+  assert.deepEqual(browserOf(["--cdp-endpoint", "http://localhost:9411"]), { port: 9411, dir: "", output: "" });
+  assert.deepEqual(browserOf(["--config", path.join(dir, "无此文件.json")]), { port: 9288, dir: "", output: "" });
+  assert.deepEqual(browserOf(undefined), { port: 9288, dir: "", output: "" });
+});
+
+test("存下载的目录：参数里的 --output-dir，没写的是服务工作目录下的 .playwright-mcp", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "yan-stage-"));
+  assert.equal(browserOf(["cli.js"], cwd).output, path.join(cwd, ".playwright-mcp"));
+  assert.equal(browserOf(["cli.js", "--output-dir", "out"], cwd).output, path.join(cwd, "out"));
+  assert.equal(browserOf(["cli.js"]).output, "");
 });
 
 test("执事的一步写成一句两字动词：照 playwright 的参数，认不得的只写工具名", () => {

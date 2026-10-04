@@ -29,7 +29,11 @@ function openStage() {
   // 浏览器早开着、看台却没连上的（桥接重启过、浏览器是别处起的）：开时再找一回
   if (!stage.ws) void stageLocate();
   clearInterval(stage.poll);
-  stage.poll = window.setInterval(() => document.hidden || stageRefreshTabs(), 1500);
+  stage.poll = window.setInterval(() => {
+    if (document.hidden) return;
+    void stageRefreshTabs();
+    stageMaybeRelease();
+  }, 1500);
 }
 function closeStage() {
   stageSetWide(false);
@@ -40,7 +44,6 @@ function closeStage() {
 /** @param {boolean} on */
 function stageSetWide(on) {
   $("#stagePanel").classList.toggle("wide", on);
-  $("#stageWide").setAttribute("aria-pressed", String(on));
 }
 /** @param {number} px */
 function stageSetWidth(px) {
@@ -58,7 +61,8 @@ function stageSync() {
   $("#stageBusy").classList.toggle("busy", stage.busy > 0);
   clearTimeout(stage.actTimer);
   if (acting && !stage.busy) stage.actTimer = window.setTimeout(stageSync, 8000 - (Date.now() - stage.lastAct) + 50);
-  $("#stageMarks").classList.toggle("hidden", !stage.marks);
+  // 收藏：连上了就挂（收藏此页要它）；没连上时浏览器配置目录里有收藏也挂，点一条可开
+  $("#stageMarks").classList.toggle("hidden", !stage.ws && !stage.marks);
   stageRender();
 }
 // 接进来的浏览器类 MCP：工具里有 browser_navigate 的那个服务（playwright 即是）
@@ -110,30 +114,356 @@ function stageNewTab() {
     .then(stageEditUrl)
     .catch(() => {});
 }
-// 收藏：看台只转网页，浏览器自己的收藏栏看不到——读它配置目录里的那份，按夹分层列出，点一条在当前页打开。每回现读
+// ---------- 收藏 ----------
+// 看台只转网页，浏览器自己的收藏栏看不到。读：桥接读它配置目录里那份（每回现读）；改：借浏览器自己的收藏页——那一页里调得到 chrome.bookmarks，
+// 改了浏览器即刻生效，不碰配置文件。那一页开在另起的一个浏览器上下文里：执事（Playwright）不认得它、游目也不列它；收藏是整个配置共用的，照样进主收藏夹
+/** @typedef {{ id: string, name: string, url?: string, children?: StageMark[] }} StageMark */
+/** @param {any} node @returns {StageMark} */
+const stageMarkOf = node => ({
+  id: String(node.id ?? ""),
+  name: String(node.name ?? node.title ?? ""),
+  ...(node.children ? { children: node.children.map(stageMarkOf) } : { url: String(node.url || "") })
+});
+// 读一回：刚改过的十秒内用改完时浏览器递回的那份（配置文件过一两秒才落盘）
+async function stageReadMarks() {
+  if (stage.markTree && Date.now() - stage.markTreeAt < 10000) return stage.markTree;
+  const data = await bridge("/api/stage/bookmarks", { args: stageConfig()?.args || [] }).catch(() => null);
+  if (data) {
+    stage.markTree = [
+      { id: data.barId || "1", name: "收藏夹栏", children: (data.bar || []).map(stageMarkOf) },
+      { id: data.otherId || "2", name: "其他收藏", children: (data.other || []).map(stageMarkOf) }
+    ];
+    stage.markTreeAt = 0;
+  }
+  stageRenderMarkBtn();
+  return stage.markTree;
+}
+/** @param {StageMark[]} nodes @returns {StageMark[]} */
+const stageMarkFlat = nodes => nodes.flatMap(node => (node.children ? stageMarkFlat(node.children) : [node]));
+// 这一页收没收：书签带着朱
+function stageThisMark() {
+  const url = stage.tabs.get(stage.current)?.url || "";
+  return url ? stageMarkFlat(stage.markTree || []).find(node => node.url === url) : undefined;
+}
+function stageRenderMarkBtn() {
+  $("#stageMarks").classList.toggle("on", !!stageThisMark());
+}
+// 在浏览器的收藏页里跑一段：body 里可用 bm(方法, ...参数)，跑完递回整棵收藏树
+/** @param {string} body */
+async function stageMarkDo(body) {
+  if (!stage.ws) throw Error("游目未连上");
+  const { browserContextId } = await stageSend("Target.createBrowserContext", { disposeOnDetach: true });
+  stage.helperCtx = browserContextId;
+  try {
+    const { targetId } = await stageSend("Target.createTarget", { url: `${stage.scheme}://favorites/`, browserContextId });
+    const { sessionId } = await stageSend("Target.attachToTarget", { targetId, flatten: true });
+    const run = (/** @type {string} */ expression) =>
+      stageSend("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, sessionId);
+    // 页里的 chrome.bookmarks 载好才有
+    for (let i = 0; i < 50; i++) {
+      const ready = await run("typeof chrome === 'object' && !!chrome.bookmarks").catch(() => null);
+      if (ready?.result?.value) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    const { result, exceptionDetails } = await run(
+      `(async () => { const bm = (fn, ...args) => new Promise((ok, no) => chrome.bookmarks[fn](...args, r => chrome.runtime.lastError ? no(Error(chrome.runtime.lastError.message)) : ok(r))); ${body}; return (await bm("getTree"))[0].children; })()`
+    );
+    if (exceptionDetails) throw Error(exceptionDetails.exception?.description?.split("\n")[0] || "收藏没改成");
+    const roots = /** @type {any[]} */ (result.value || []);
+    stage.markTree = roots.slice(0, 2).map((root, i) => ({ ...stageMarkOf(root), name: i ? "其他收藏" : "收藏夹栏" }));
+    stage.markTreeAt = Date.now();
+    stageRenderMarkBtn();
+  } finally {
+    void stageSend("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
+  }
+}
+// 收藏签：头一行是这一页（收 / 已收可改可移除）；底下按夹分层，指着一条露「改 · 删」，改就地展开；签底「新夹」「整理…」（浏览器自己的收藏页）
 /** @param {HTMLElement} anchor */
 async function stageOpenMarks(anchor) {
   if (document.querySelector(".chip-pop.stage-marks")) return closeChipPop();
-  const data = await bridge("/api/stage/bookmarks", { args: stageConfig()?.args || [] }).catch(() => ({ bar: [], other: [] })),
-    marks = [...data.bar, ...(data.other.length ? [{ name: "其他收藏", children: data.other }] : [])];
-  if (!marks.length) return toast("这个浏览器里还没有收藏");
-  /** @param {any[]} nodes @returns {string} */
+  await stageReadMarks();
+  const pop = openFloatingPop(anchor, stageMarksHtml(), { align: "right", menu: false });
+  pop.classList.add("stage-marks", "stage-pop");
+  pop.addEventListener("click", e => void stageMarksClick(pop, /** @type {HTMLElement} */ (e.target)));
+  pop.addEventListener("keydown", e => {
+    const form = /** @type {HTMLElement} */ (e.target).closest(".stage-mark-form");
+    if (!form) return;
+    e.stopPropagation();
+    if (e.key === "Enter") void stageMarksClick(pop, /** @type {HTMLElement} */ (form.querySelector("[data-mark-save]")));
+    else if (e.key === "Escape") stageMarksRefresh(pop);
+  });
+}
+/** @param {HTMLElement} pop */
+function stageMarksRefresh(pop) {
+  pop.innerHTML = stageMarksHtml();
+}
+function stageMarksHtml() {
+  const tab = stage.tabs.get(stage.current),
+    mine = stageThisMark(),
+    canMark = !!tab?.url && !/^(about|devtools|edge|chrome):/.test(tab.url),
+    tree = stage.markTree || [],
+    ops = (/** @type {StageMark} */ node) =>
+      `<span class="stage-mark-ops"><button type="button" data-mark-edit="${escapeHtml(node.id)}">改</button><button type="button" data-mark-del="${escapeHtml(node.id)}">删</button></span>`;
+  /** @param {StageMark[]} nodes @returns {string} */
   const list = (nodes, depth = 0) =>
     nodes
       .map(node =>
         node.children
-          ? `<div class="stage-mark-dir" style="--depth:${depth}">${escapeHtml(node.name)}</div>${list(node.children, depth + 1)}`
-          : `<button type="button" data-stage-mark="${escapeHtml(node.url)}" style="--depth:${depth}" title="${escapeHtml(node.url)}"><span>${escapeHtml(node.name || node.url)}</span></button>`
+          ? `<div class="stage-mark-dir" style="--depth:${depth}"><span>${escapeHtml(node.name)}</span>${ops(node)}</div>${list(node.children, depth + 1)}`
+          : `<div class="stage-mark-row" style="--depth:${depth}"><button type="button" class="stage-mark-name" data-stage-mark="${escapeHtml(node.url || "")}" title="${escapeHtml(node.url || "")}"><span>${escapeHtml(node.name || node.url || "")}</span></button>${ops(node)}</div>`
       )
       .join("");
-  const pop = openFloatingPop(anchor, list(marks), { align: "right" });
-  pop.classList.add("stage-marks");
+  const head = !canMark
+    ? ""
+    : mine
+      ? `<div class="stage-mark-this on"><span>此页已收</span><button type="button" data-mark-edit="${escapeHtml(mine.id)}">改</button><button type="button" data-mark-del="${escapeHtml(mine.id)}">移除</button></div>`
+      : `<div class="stage-mark-this"><button type="button" data-mark-add>收藏此页</button></div>`;
+  const bar = tree[0]?.children || [],
+    other = tree[1]?.children || [],
+    body = list(bar) + (other.length ? `<div class="stage-mark-dir"><span>其他收藏</span></div>${list(other, 1)}` : "");
+  return `${head}<div class="stage-mark-list">${body || `<div class="stage-mark-empty">还没有收藏</div>`}</div><div class="stage-pop-foot"><button type="button" data-mark-folder>新夹</button><button type="button" data-mark-manage>整理…</button></div>`;
+}
+/** @param {string} id @param {StageMark[]} [nodes] @returns {StageMark | undefined} */
+function stageMarkById(id, nodes = stage.markTree || []) {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const found = node.children && stageMarkById(id, node.children);
+    if (found) return found;
+  }
+}
+/** @param {HTMLElement} pop @param {HTMLElement} target */
+async function stageMarksClick(pop, target) {
+  const hit = (/** @type {string} */ attr) => /** @type {HTMLElement | null} */ (target.closest(`[${attr}]`)),
+    js = (/** @type {unknown} */ value) => JSON.stringify(value);
+  const go = hit("data-stage-mark"),
+    edit = hit("data-mark-edit"),
+    del = hit("data-mark-del"),
+    save = hit("data-mark-save");
+  try {
+    if (go) {
+      closeChipPop();
+      return stageGo(go.dataset.stageMark || "");
+    }
+    if (hit("data-mark-manage")) {
+      closeChipPop();
+      return stageOpenInside("favorites");
+    }
+    if (hit("data-mark-add")) {
+      const tab = stage.tabs.get(stage.current);
+      if (!tab) return;
+      await stageMarkDo(
+        `await bm("create", { parentId: ${js(stage.markTree?.[0]?.id || "1")}, title: ${js(stageTitle(tab))}, url: ${js(tab.url)} })`
+      );
+      return stageMarksRefresh(pop);
+    }
+    if (hit("data-mark-cancel")) return stageMarksRefresh(pop);
+    if (hit("data-mark-folder")) {
+      stageMarksRefresh(pop);
+      pop.querySelector(".stage-mark-list")?.insertAdjacentHTML("afterbegin", stageMarkFormHtml("", "新夹", null));
+      return /** @type {HTMLInputElement | null} */ (pop.querySelector(".stage-mark-form input"))?.select();
+    }
+    if (edit) {
+      const node = stageMarkById(edit.dataset.markEdit || "");
+      if (!node) return;
+      stageMarksRefresh(pop);
+      const row =
+        [...pop.querySelectorAll(`[data-mark-edit="${CSS.escape(node.id)}"]`)].at(-1)?.closest(".stage-mark-row, .stage-mark-dir") ||
+        pop.querySelector(".stage-mark-this");
+      row?.insertAdjacentHTML("afterend", stageMarkFormHtml(node.id, node.name, node.children ? null : node.url || ""));
+      row?.classList.add("hidden");
+      return /** @type {HTMLInputElement | null} */ (pop.querySelector(".stage-mark-form input"))?.select();
+    }
+    if (save) {
+      const form = /** @type {HTMLElement} */ (save.closest(".stage-mark-form")),
+        [name, url] = [...form.querySelectorAll("input")].map(input => input.value.trim()),
+        id = form.dataset.id || "",
+        node = stageMarkById(id);
+      if (!name && !url) return;
+      // 址一栏给人看的是解开的网址：没改就不存它，免得把原网址换成解开的那串
+      const changes = { title: name, ...(url && node?.url && url !== stageReadable(node.url) ? { url: stageUrlOf(url) || url } : {}) };
+      if (!id) await stageMarkDo(`await bm("create", { parentId: ${js(stage.markTree?.[0]?.id || "1")}, title: ${js(name || "新夹")} })`);
+      else await stageMarkDo(`await bm("update", ${js(id)}, ${js(changes)})`);
+      return stageMarksRefresh(pop);
+    }
+    if (del) {
+      const node = stageMarkById(del.dataset.markDel || "");
+      if (!node) return;
+      // 夹里有东西：先换成「确定删」，再点一下才删
+      if (node.children?.length && !del.classList.contains("sure")) {
+        del.classList.add("sure");
+        del.textContent = `连同 ${stageMarkFlat(node.children).length} 条删去`;
+        return;
+      }
+      await stageMarkDo(`await bm(${js(node.children ? "removeTree" : "remove")}, ${js(node.id)})`);
+      return stageMarksRefresh(pop);
+    }
+  } catch (error) {
+    toast(`收藏没改成：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
+  }
+}
+/** @param {string} id 空即新建夹 @param {string} name @param {string | null} url 夹没有网址 */
+function stageMarkFormHtml(id, name, url) {
+  return `<div class="stage-mark-form" data-id="${escapeHtml(id)}"><label>名<input value="${escapeHtml(name)}" spellcheck="false"></label>${url === null ? "" : `<label>址<input value="${escapeHtml(stageReadable(url))}" spellcheck="false"></label>`}<div class="stage-mark-acts"><button type="button" data-mark-cancel>取消</button><button type="button" data-mark-save>存</button></div></div>`;
+}
+
+// ---------- 浏览器自己的页 ----------
+// 历史、下载、收藏、设置：浏览器本有，经调试口在游目里开得出、能点能改，言不另做一套。开成一张新签
+/** @param {string} page favorites / history / downloads / settings */
+function stageOpenInside(page) {
+  if (!stage.ws) return void stageLaunch();
+  void stageSend("Target.createTarget", { url: `${stage.scheme}://${page}/` }).catch(error =>
+    toast(`打不开：${String(error.message || error).slice(0, 80)}`)
+  );
+}
+
+// ---------- 栏顶「调律」的纸签：游目的杂项 ----------
+// 平时一眼要的放上头（查找、缩放），翻旧账的居中（历史、下载、收藏），偶尔一用的居后
+const STAGE_SEARCH = /** @type {const} */ ({
+  bing: ["必应", "https://www.bing.com/search?q="],
+  baidu: ["百度", "https://www.baidu.com/s?wd="],
+  google: ["Google", "https://www.google.com/search?q="]
+});
+function stageSearchEngine() {
+  let key = "bing";
+  try {
+    key = localStorage.getItem("yan-stage-search") || key;
+  } catch {}
+  return /** @type {keyof typeof STAGE_SEARCH} */ (key in STAGE_SEARCH ? key : "bing");
+}
+/** @param {HTMLElement} anchor */
+function stageOpenMenu(anchor) {
+  if (document.querySelector(".chip-pop.stage-menu")) return closeChipPop();
+  const fresh = stage.downloads.filter(item => item.at > stage.downloadsSeen).length,
+    row = (/** @type {string} */ act, /** @type {string} */ text, extra = "") =>
+      `<button type="button" data-stage-menu="${act}"><span>${text}</span>${extra}</button>`,
+    rule = `<i class="stage-pop-rule"></i>`;
+  const html =
+    row("find", "查找", "<small>Ctrl+F</small>") +
+    `<div class="stage-menu-zoom"><span>缩放</span><span class="stage-zoom"><button type="button" data-stage-zoom="-1" aria-label="缩小">−</button><button type="button" class="stage-zoom-pct" data-stage-zoom="0" title="复原">${Math.round(stage.zoom * 100)}%</button><button type="button" data-stage-zoom="1" aria-label="放大">＋</button></span></div>` +
+    rule +
+    row("history", "历史") +
+    row("downloads", "下载", fresh ? `<small class="fresh">${fresh}</small>` : "") +
+    row("favorites", "整理收藏…") +
+    rule +
+    row("copy", "复制网址") +
+    row("system", "用系统浏览器打开") +
+    row("devtools", "开发者工具") +
+    rule +
+    row("wide", "铺满整页", "<small>Esc 退回</small>") +
+    row("search", "搜索用", `<small>${STAGE_SEARCH[stageSearchEngine()][0]} ›</small>`) +
+    row("settings", "浏览器设置…");
+  const pop = openFloatingPop(anchor, html, { align: "right" });
+  pop.classList.add("stage-menu", "stage-pop");
   pop.addEventListener("click", e => {
-    const mark = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest("[data-stage-mark]"));
-    if (!mark) return;
+    const target = /** @type {HTMLElement} */ (e.target),
+      zoom = /** @type {HTMLElement | null} */ (target.closest("[data-stage-zoom]"));
+    if (zoom) return stageZoomStep(Number(zoom.dataset.stageZoom));
+    const act = /** @type {HTMLElement | null} */ (target.closest("[data-stage-menu]"))?.dataset.stageMenu;
+    if (!act) return;
+    if (act === "search") {
+      const keys = /** @type {(keyof typeof STAGE_SEARCH)[]} */ (Object.keys(STAGE_SEARCH)),
+        next = keys[(keys.indexOf(stageSearchEngine()) + 1) % keys.length];
+      try {
+        localStorage.setItem("yan-stage-search", next);
+      } catch {}
+      const label = /** @type {HTMLElement} */ (pop.querySelector("[data-stage-menu=search] small"));
+      label.textContent = `${STAGE_SEARCH[next][0]} ›`;
+      return;
+    }
     closeChipPop();
-    stageGo(mark.dataset.stageMark || "");
+    stageMenuAct(act, anchor);
   });
+}
+/** @param {string} act @param {HTMLElement} anchor */
+function stageMenuAct(act, anchor) {
+  const tab = stage.tabs.get(stage.current),
+    url = tab?.url || "";
+  if (act === "find") stageFindOpen();
+  else if (act === "downloads") stageOpenDownloads(anchor);
+  else if (act === "history" || act === "favorites" || act === "settings") stageOpenInside(act);
+  else if (act === "wide") stageSetWide(true);
+  else if (act === "copy" && url)
+    void navigator.clipboard.writeText(stageReadable(url)).then(
+      () => toast("网址已复制"),
+      () => toast("没能复制")
+    );
+  // 交给言所在的这个浏览器开（多半就是系统默认的那个）：要登自己的账号、或要看外头那扇窗时
+  else if (act === "system" && /^https?:/.test(url)) window.open(url, "_blank", "noopener");
+  // 开发者工具：浏览器自带的那套前端，由它的调试口供出；要在调试口的放行来源里加上它自己（见 docs/stage.md）
+  else if (act === "devtools" && stage.current && stage.port)
+    window.open(
+      `http://127.0.0.1:${stage.port}/devtools/inspector.html?ws=127.0.0.1:${stage.port}/devtools/page/${stage.current}`,
+      "_blank",
+      "noopener"
+    );
+}
+
+// ---------- 下载 ----------
+// 网页里开始下载（人点的、执事点的都算），浏览器在屏幕外存下：游目记一笔。执事经 MCP 下的，结果里写着存到哪，补上（见 60-mcp 的 stageNoteDownload）
+function stageSaveDownloads() {
+  try {
+    localStorage.setItem("yan-stage-downloads", JSON.stringify(stage.downloads.slice(0, 30)));
+  } catch {}
+}
+/** @param {string} name 浏览器给的文件名 @param {string} path 存到的地方 */
+function stageNoteDownload(name, path) {
+  const item = stage.downloads.find(entry => !entry.path && (entry.name === name || path.endsWith(entry.name)));
+  if (item) item.path = path;
+  else stage.downloads.unshift({ guid: uid(), name, url: "", total: 0, got: 0, state: "completed", at: Date.now(), path, by: "执事" });
+  stageSaveDownloads();
+}
+/** @param {HTMLElement} anchor */
+function stageOpenDownloads(anchor) {
+  stage.downloadsSeen = Date.now();
+  const tone = (/** @type {string} */ name) =>
+    /\.(exe|msi|bat|cmd|ps1|vbs|js|lnk|scr|com)$/i.test(name)
+      ? "var(--accent)"
+      : /\.(zip|rar|7z|tar|gz)$/i.test(name)
+        ? "var(--gold)"
+        : "var(--ink-3)";
+  const rows = stage.downloads
+    .map(item => {
+      const state =
+          item.state === "inProgress"
+            ? `${item.total ? Math.round((item.got / item.total) * 100) : 0}%`
+            : item.state === "canceled"
+              ? "已取消"
+              : "已下完",
+        size = item.total ? formatFileSize(item.total) : "",
+        meta = [size, item.by || "", stageHost(item.url), stageAgo(item.at)].filter(Boolean).join(" · ");
+      return `<button type="button" class="stage-dl" data-stage-reveal="${escapeHtml(item.path || "")}" title="${escapeHtml(item.path || item.url)}"><i class="stage-dl-file" style="--fc:${tone(item.name)}"></i><span class="stage-dl-name">${escapeHtml(item.name)}</span><span class="stage-dl-state${item.state === "canceled" ? " off" : ""}">${state}</span><span class="stage-dl-meta">${escapeHtml(meta)}</span></button>`;
+    })
+    .join("");
+  const pop = openFloatingPop(
+    anchor,
+    `<div class="stage-pop-head">下载</div>${rows || `<div class="stage-mark-empty">还没有下载过</div>`}<div class="stage-pop-foot"><button type="button" data-stage-reveal="">打开所在文件夹</button><button type="button" data-stage-inside="downloads">全部下载…</button></div>`,
+    { align: "right", menu: false }
+  );
+  pop.classList.add("stage-downloads", "stage-pop");
+  pop.addEventListener("click", e => {
+    const target = /** @type {HTMLElement} */ (e.target),
+      reveal = /** @type {HTMLElement | null} */ (target.closest("[data-stage-reveal]"));
+    if (target.closest("[data-stage-inside]")) {
+      closeChipPop();
+      return stageOpenInside("downloads");
+    }
+    if (!reveal) return;
+    const config = stageConfig();
+    void bridge("/api/stage/reveal", { args: config?.args || [], cwd: config?.cwd || "", path: reveal.dataset.stageReveal || "" }).catch(
+      error => toast(String(error.message || error).slice(0, 80))
+    );
+  });
+}
+/** @param {number} at */
+function stageAgo(at) {
+  const minutes = Math.round((Date.now() - at) / 60000);
+  return minutes < 1
+    ? "刚才"
+    : minutes < 60
+      ? `${minutes} 分钟前`
+      : minutes < 1440
+        ? `${Math.round(minutes / 60)} 小时前`
+        : `${Math.round(minutes / 1440)} 天前`;
 }
 /** @param {{ title: string, url: string }} tab */
 function stageTitle(tab) {
@@ -210,6 +540,7 @@ function stageRender() {
         `<div class="stage-tab${id === stage.current ? " on" : ""}" role="tab" aria-selected="${id === stage.current}" data-stage-tab="${escapeHtml(id)}" title="${escapeHtml(tab.title || tab.url)}"><span class="stage-tab-name">${escapeHtml(stageTitle(tab))}</span>${acting && id === stage.front ? `<span class="stage-tab-live" title="执事在这一页"></span>` : ""}<button type="button" class="stage-tab-x" data-stage-close="${escapeHtml(id)}" title="关闭此页" aria-label="关闭此页">×</button>${id === stage.current ? `<svg class="stage-tab-under" viewBox="0 0 18 5" aria-hidden="true">${under}</svg>` : ""}</div>`
     )
     .join("");
+  stageRenderMarkBtn();
   const tab = stage.tabs.get(stage.current),
     addr = $("#stageAddr");
   if (document.activeElement !== $("#stageUrl")) {
@@ -243,7 +574,8 @@ function stageWatch(tool, args = {}) {
     stage.busy -= 1;
     stage.lastAct = Date.now();
     stageSync();
-    void stageLocate();
+    // 调完再量一回视口：执事若刚把它定死，留白处写明
+    void stageLocate().then(stageFit);
   };
 }
 

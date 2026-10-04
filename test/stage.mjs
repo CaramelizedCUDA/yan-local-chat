@@ -282,12 +282,42 @@ await waitFor(`!!document.querySelector(".chip-pop.stage-marks [data-stage-mark]
 check(
   "bookmarks list folders and entries",
   await evalJs(
-    `(p => !!p && p.querySelector(".stage-mark-dir")?.textContent === "学术" && p.querySelector("[data-stage-mark]")?.textContent === "测试收藏")(document.querySelector(".chip-pop.stage-marks"))`
+    `(p => !!p && p.querySelector(".stage-mark-dir > span")?.textContent === "学术" && p.querySelector("[data-stage-mark]")?.textContent === "测试收藏")(document.querySelector(".chip-pop.stage-marks"))`
   )
 );
 await evalJs(`document.querySelector(".chip-pop.stage-marks [data-stage-mark]").click(); true`);
 await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "收藏页"`, 8000).catch(() => {});
 check("a bookmark opens in the current tab", await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "收藏页"`));
+
+// 收藏此页、改名、移除：借浏览器自己的收藏页（开在另起的上下文里，不列进标签），书签带随之着朱、褪朱
+const unmarked = "data:text/html;charset=utf-8," + encodeURIComponent("<title>待收</title>");
+await evalJs(`__yanStage.go(${JSON.stringify(unmarked)}); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "待收"`, 8000).catch(() => {});
+const tabsBefore = await evalJs(`__yanStage.state.tabs.size`);
+await evalJs(`document.querySelector("#stageMarks").click(); true`);
+await waitFor(`!!document.querySelector(".chip-pop.stage-marks .stage-mark-this")`, 5000).catch(() => {});
+await evalJs(`document.querySelector(".chip-pop.stage-marks [data-mark-add]").click(); true`);
+await waitFor(`document.querySelector("#stageMarks").classList.contains("on")`, 10000).catch(() => {});
+check(
+  "收藏此页 goes through the browser's own bookmarks and the ribbon turns red",
+  await evalJs(
+    `document.querySelector("#stageMarks").classList.contains("on") && document.querySelector(".stage-mark-this")?.textContent.includes("此页已收")`
+  )
+);
+check("the borrowed bookmarks page never shows as a tab", (await evalJs(`__yanStage.state.tabs.size`)) === tabsBefore);
+await evalJs(`document.querySelector(".stage-mark-this [data-mark-edit]").click(); true`);
+await evalJs(
+  `(f => { f.querySelector("input").value = "改过的名"; f.querySelector("[data-mark-save]").click(); return true; })(document.querySelector(".stage-mark-form"))`
+);
+const renamed = `[...document.querySelectorAll(".chip-pop.stage-marks [data-stage-mark]")].some(b => b.textContent === "改过的名")`;
+await waitFor(renamed, 10000).catch(() => {});
+check("a bookmark can be renamed in place", await evalJs(renamed));
+await sleep(250);
+await shot("stage-marks.png");
+await evalJs(`document.querySelector(".stage-mark-this [data-mark-del]").click(); true`);
+await waitFor(`!document.querySelector("#stageMarks").classList.contains("on")`, 10000).catch(() => {});
+check("removing it takes the red off the ribbon", await evalJs(`!document.querySelector("#stageMarks").classList.contains("on")`));
+await evalJs(`document.querySelector("#stageMarks").click(); true`);
 
 // ＋：新开一页，看台跟过去，地址栏等着输网址
 const before = await evalJs(`__yanStage.state.tabs.size`);
@@ -319,8 +349,106 @@ await browserSend("Target.closeTarget", { targetId: fresh });
 await clickTab(targetId);
 await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
 
-// 阔：铺满；Esc（焦点不在看台里时）退回
-await evalJs(`document.activeElement?.blur(); document.querySelector("#stageWide").click(); true`);
+// 页内查找：Ctrl+F 换出查找栏，数出几处、Enter 下一处并滚到眼前，Esc 收起
+const findPage =
+  "data:text/html;charset=utf-8," + encodeURIComponent(`<title>找</title><p>甲言</p><p style="margin-top:1500px">乙言</p><p>丙言</p>`);
+await evalJs(`__yanStage.go(${JSON.stringify(findPage)}); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "找"`, 8000).catch(() => {});
+await sleep(300);
+await mouse("mousePressed", ...at(0.5, 0.05));
+await mouse("mouseReleased", ...at(0.5, 0.05));
+await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "f", code: "KeyF", windowsVirtualKeyCode: 70, modifiers: 2 });
+await send("Input.dispatchKeyEvent", { type: "keyUp", key: "f", code: "KeyF", windowsVirtualKeyCode: 70, modifiers: 2 });
+check("Ctrl+F swaps the address row for a find bar", await evalJs(`document.activeElement === document.querySelector("#stageFindInput")`));
+await send("Input.insertText", { text: "言" });
+const findCount = () => evalJs(`document.querySelector("#stageFindCount").textContent`);
+await waitFor(`document.querySelector("#stageFindCount").textContent === "1 / 3"`, 5000).catch(() => {});
+check("the find bar counts the hits", (await findCount()) === "1 / 3", await findCount());
+await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+await waitFor(`document.querySelector("#stageFindCount").textContent === "2 / 3" && __yanStage.state.scroll.y > 500`, 5000).catch(() => {});
+check(
+  "Enter moves to the next hit and scrolls it into view",
+  await evalJs(`document.querySelector("#stageFindCount").textContent === "2 / 3" && __yanStage.state.scroll.y > 500`),
+  JSON.stringify(await evalJs(`[document.querySelector("#stageFindCount").textContent, __yanStage.state.scroll]`))
+);
+await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+check(
+  "Esc folds the find bar",
+  await evalJs(
+    `document.querySelector("#stageFind").classList.contains("hidden") && !document.querySelector("#stageNav").classList.contains("finding")`
+  )
+);
+
+// 纸签：缩放一档，窗按倍数收窄；复原。量窗口本身——静着的页不重绘就不出新帧，画面的尺寸会停在旧值
+await evalJs(`document.querySelector("#stageKeys").blur(); document.querySelector("#stageMenuBtn").click(); true`);
+check("the menu opens from the tune icon", await evalJs(`!!document.querySelector(".chip-pop.stage-menu [data-stage-menu=find]")`));
+await sleep(250);
+await shot("stage-menu.png");
+const windowWidth = async () => (await browserSend("Browser.getWindowForTarget", { targetId })).bounds.width;
+const plain = await windowWidth();
+await evalJs(`document.querySelector(".chip-pop.stage-menu [data-stage-zoom='1']").click(); true`);
+await sleep(800);
+const zoomed = await windowWidth();
+check(
+  "zooming in narrows the window by the factor",
+  (await evalJs(`__yanStage.state.zoom === 1.1 && document.querySelector(".stage-zoom-pct").textContent === "110%"`)) &&
+    plain - zoomed > 60,
+  JSON.stringify({ plain, zoomed })
+);
+await evalJs(`document.querySelector(".chip-pop.stage-menu [data-stage-zoom='0']").click(); true`);
+await sleep(800);
+// 复原后的窗按此刻网页的滚动条重算，可能比放大前宽一条滚动条
+check("zoom resets", (await evalJs(`__yanStage.state.zoom === 1`)) && (await windowWidth()) >= plain - 3);
+await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
+
+// 下载：网页里一开始下载，纸签上「下载」后记着数，下载签里列出来
+await browserSend("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: TMP.replace(/\//g, "\\") });
+const dlPage =
+  "data:text/html;charset=utf-8," +
+  encodeURIComponent(`<title>下</title><a id="d" download="下载测.txt" href="data:text/plain,hi">下载</a>`);
+await evalJs(`__yanStage.go(${JSON.stringify(dlPage)}); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "下"`, 8000).catch(() => {});
+await browserSend("Runtime.evaluate", { expression: `document.getElementById("d").click()` }, modelSession);
+await waitFor(`__yanStage.state.downloads.some(d => d.name === "下载测.txt")`, 8000).catch(() => {});
+check("a download in the page is noted", await evalJs(`__yanStage.state.downloads.some(d => d.name === "下载测.txt")`));
+check(
+  "Edge's own download bubble does not become a tab",
+  await evalJs(`![...__yanStage.state.tabs.values()].some(t => t.url.includes("downloads-hub"))`)
+);
+await evalJs(`document.querySelector(".chip-pop.stage-menu") || document.querySelector("#stageMenuBtn").click(); true`);
+check(
+  "the menu shows the new download count",
+  await evalJs(`document.querySelector(".chip-pop.stage-menu [data-stage-menu=downloads] .fresh")?.textContent === "1"`)
+);
+await evalJs(`document.querySelector(".chip-pop.stage-menu [data-stage-menu=downloads]").click(); true`);
+check(
+  "the downloads slip lists it",
+  await evalJs(`document.querySelector(".chip-pop.stage-downloads .stage-dl-name")?.textContent === "下载测.txt"`)
+);
+await sleep(250);
+await shot("stage-downloads.png");
+await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
+
+// 浏览器自己的页：历史开成一张新签（下载签开着时点「调律」即换成纸签）
+const tabsNow = await evalJs(`__yanStage.state.tabs.size`);
+await evalJs(`document.querySelector(".chip-pop.stage-menu [data-stage-menu=history]").click(); true`);
+const historyOpen = `[...__yanStage.state.tabs.values()].some(t => /^(edge|chrome):/.test(t.url) && t.url.includes("history"))`;
+await waitFor(historyOpen, 8000).catch(() => {});
+check(
+  "历史 opens the browser's own history page as a tab",
+  await evalJs(`${historyOpen} && __yanStage.state.tabs.size === ${tabsNow + 1}`)
+);
+const historyTab = await evalJs(
+  `[...__yanStage.state.tabs].find(([, t]) => /^(edge|chrome):/.test(t.url) && t.url.includes("history"))?.[0]`
+);
+if (historyTab) await browserSend("Target.closeTarget", { targetId: historyTab });
+await clickTab(targetId);
+await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
+
+// 阔：从纸签进，铺满；Esc（焦点不在看台里时）退回
+await evalJs(
+  `document.activeElement?.blur(); document.querySelector("#stageMenuBtn").click(); document.querySelector(".chip-pop.stage-menu [data-stage-menu=wide]").click(); true`
+);
 check("wide covers the page", await evalJs(`getComputedStyle(document.querySelector("#stagePanel")).position === "fixed"`));
 await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
 await sleep(150);
@@ -346,8 +474,31 @@ check(
   later.width === framed.width && later.height === framed.height,
   JSON.stringify({ framed, later })
 );
+// 留白处写明：适应页面开着（默认）说执事歇手后铺满；关掉则挂一个「放开」
+await waitFor(`!document.querySelector("#stageLetter").classList.contains("hidden")`, 5000).catch(() => {});
+check(
+  "the blank strip says who pinned the viewport and how big",
+  await evalJs(
+    `(l => !l.classList.contains("hidden") && l.textContent.includes("1600×1200") && l.textContent.includes("歇手后铺满"))(document.querySelector("#stageLetter"))`
+  ),
+  await evalJs(`document.querySelector("#stageLetter").textContent`)
+);
+await evalJs(`document.querySelector("#stageFitBtn").click(); true`);
+check(
+  "with 适应页面 off the strip offers 放开",
+  await evalJs(
+    `document.querySelector("#stageFitBtn").getAttribute("aria-pressed") === "false" && !!document.querySelector("#stageLetter [data-stage-release]")`
+  )
+);
+await evalJs(`document.querySelector("#stageFitBtn").click(); true`);
 await browserSend("Emulation.clearDeviceMetricsOverride", {}, pinned);
 await browserSend("Target.detachFromTarget", { sessionId: pinned });
+await evalJs(`document.querySelector("#stagePanel").style.width = "600px"; true`);
+await waitFor(`document.querySelector("#stageLetter").classList.contains("hidden")`, 5000).catch(() => {});
+check(
+  "the strip goes once the viewport follows the window again",
+  await evalJs(`document.querySelector("#stageLetter").classList.contains("hidden")`)
+);
 
 // 旁注开着时看台让位（旁注是在右侧同一处）：让位时不收画面、入口回来；旁注收起，画面接上
 await evalJs(`document.querySelector("#sidePanel").classList.remove("hidden"); true`);

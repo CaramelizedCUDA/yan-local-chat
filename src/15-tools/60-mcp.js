@@ -240,7 +240,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
   // 服务说工具变了：下一问前重拉
   if (data.toolsChanged) mcp.key = "";
   const { names, images } = await mcpResultImages(step, data.result),
-    text = mcpResultText(data.result, names);
+    text = mcpResultText(data.result, names) + stageResultNote(tool, args, data.result);
   step.output = trimOutput(text);
   return {
     ok: !data.result.isError,
@@ -248,6 +248,15 @@ async function runMcpTool(step, server, tool, args, ctx) {
     display: data.result.isError ? "出错" : images.length ? `${images.length} 幅画面` : `${text.length} 字`,
     ...(images.length ? { images } : {})
   };
+}
+// 浏览器类的结果：下载存到了哪，记进游目的下载签；执事若把视口定死了，补一句——不然它下回测完照样拿 setViewportSize「还原」，游目上下留白
+/** @param {string} tool @param {Record<string, any>} args */
+function stageResultNote(tool, args, result) {
+  if (!/^browser_/.test(tool)) return "";
+  const said = (result.content || []).map((/** @type {any} */ item) => (item.type === "text" ? item.text : "")).join("\n");
+  for (const [, name, path] of said.matchAll(/- Downloaded file (.+?) to "(.+?)"/g)) stageNoteDownload(name, path);
+  const pins = tool === "browser_resize" || (tool === "browser_run_code_unsafe" && /setViewportSize\s*\(/.test(String(args.code || "")));
+  return pins && !result.isError ? `\n\n${prompt("mcp.stagePinned")}` : "";
 }
 // 结果里的图（游目截的画面之类）：原件照附件存，挂在这一步上，步骤卡里画缩略、点开即看；data: 地址交回轮次循环，随工具结果给模型看（见 attachToolImages）。
 // 名字取服务自己报的文件名（Playwright 截图会说存成了 page-….png，模型多半照它写）；回复里引这个名字，正文就画出这幅（见 renderReplyShots）

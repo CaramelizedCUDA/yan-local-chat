@@ -7,5 +7,9 @@
 
   unknown: "没有这件工具：{{server}} / {{tool}}。{{known}}",
 
-  badArgs: "调用 {{server}} / {{tool}} 的参数不合要求：{{problems}}。它收的参数：{{hint}}"
+  badArgs: "调用 {{server}} / {{tool}} 的参数不合要求：{{problems}}。它收的参数：{{hint}}",
+
+  // 浏览器的视口一经设定就钉死，不再随用户看的那一栏变：测完要回原样只能换一页
+  stagePinned:
+    "（视口已定死，此后不随用户那边的浏览器栏变。测完要回到原样，用 browser_tabs 新开一页接着做，别再设一个桌面尺寸来「还原」。）"
 };

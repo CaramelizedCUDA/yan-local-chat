@@ -59,6 +59,8 @@ function stageShortcut(e) {
     ctrl = e.ctrlKey || e.metaKey;
   if (key === "escape" && stage.pen) stageSetPen(false);
   else if ((ctrl && key === "l") || (e.altKey && key === "d") || key === "f6") stageEditUrl();
+  else if (ctrl && key === "f") stageFindOpen();
+  else if (ctrl && (key === "=" || key === "+" || key === "-" || key === "0")) stageZoomStep(key === "0" ? 0 : key === "-" ? -1 : 1);
   else if (key === "f5" || (ctrl && key === "r")) {
     if (stage.session) void stageSend("Page.reload", { ignoreCache: e.shiftKey }, stage.session).catch(() => {});
   } else if (e.altKey && (key === "arrowleft" || key === "arrowright")) void stageTravel(key === "arrowleft" ? -1 : 1);
@@ -104,7 +106,7 @@ function stageGo(raw) {
   const go = stage.session ? stageSend("Page.navigate", { url }, stage.session) : stageSend("Target.createTarget", { url });
   void go.catch(error => toast(`打不开：${String(error.message || error).slice(0, 80)}`));
 }
-// 地址栏里输的话换成网址：本机路径、本机服务、带协议的照走；像网址的（有点、没空格）补 https；余下当成要搜的话
+// 地址栏里输的话换成网址：本机路径、本机服务、带协议的照走；像网址的（有点、没空格）补 https；余下当成要搜的话，交给纸签里选的那家
 /** @param {string} raw */
 function stageUrlOf(raw) {
   const text = raw.trim();
@@ -117,7 +119,104 @@ function stageUrlOf(raw) {
         ? text
         : !/\s/.test(text) && /^[^/?#]+\.[^/?#.]+([/?#:]|$)/.test(text)
           ? `https://${text}`
-          : `https://www.bing.com/search?q=${encodeURIComponent(text)}`;
+          : `${STAGE_SEARCH[stageSearchEngine()][1]}${encodeURIComponent(text)}`;
+}
+
+// ---------- 页内查找 ----------
+// 浏览器自带的查找条在屏幕外看不见，言自己画：地址行换成查找栏。网页里用 CSS 的高亮（::highlight，不动网页的 DOM），
+// 各处淡黄、当前一处着朱并滚到眼前；只找同一段文字里的（跨标签的一句找不到，够用）
+const STAGE_FIND = `(q, step) => {
+  const st = (window[Symbol.for("yan-find")] ||= { q: "", ranges: [], at: -1 });
+  if (!st.sheet) {
+    st.sheet = new CSSStyleSheet();
+    st.sheet.replaceSync("::highlight(yan-find){background:rgba(232,186,72,.45)}::highlight(yan-find-at){background:rgba(196,98,64,.7);color:#fff}");
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, st.sheet];
+  }
+  if (!q) {
+    CSS.highlights.delete("yan-find");
+    CSS.highlights.delete("yan-find-at");
+    st.q = "";
+    st.ranges = [];
+    return { n: 0, at: 0 };
+  }
+  if (q !== st.q || !step) {
+    st.q = q;
+    st.ranges = [];
+    st.at = -1;
+    const needle = q.toLowerCase(),
+      walk = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT, {
+        acceptNode: n => (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(n.parentElement?.tagName || "") || !n.parentElement?.checkVisibility?.() ? 2 : 1)
+      });
+    for (let node; (node = walk.nextNode()) && st.ranges.length < 2000; ) {
+      const text = node.data.toLowerCase();
+      for (let i = text.indexOf(needle); i >= 0 && st.ranges.length < 2000; i = text.indexOf(needle, i + needle.length)) {
+        const range = new Range();
+        range.setStart(node, i);
+        range.setEnd(node, i + needle.length);
+        st.ranges.push(range);
+      }
+    }
+  }
+  const n = st.ranges.length;
+  if (!n) {
+    CSS.highlights.delete("yan-find");
+    CSS.highlights.delete("yan-find-at");
+    return { n: 0, at: 0 };
+  }
+  st.at = st.at < 0 ? 0 : (st.at + (step || 0) + n) % n;
+  CSS.highlights.set("yan-find", new Highlight(...st.ranges));
+  CSS.highlights.set("yan-find-at", new Highlight(st.ranges[st.at]));
+  st.ranges[st.at].startContainer.parentElement?.scrollIntoView({ block: "center", inline: "nearest" });
+  return { n, at: st.at + 1 };
+}`;
+function stageFindOpen() {
+  const input = /** @type {HTMLInputElement} */ ($("#stageFindInput"));
+  $("#stageFind").classList.remove("hidden");
+  $("#stageNav").classList.add("finding");
+  input.focus();
+  input.select();
+  if (input.value) void stageFindRun(0);
+}
+function stageFindClose() {
+  $("#stageFind").classList.add("hidden");
+  $("#stageNav").classList.remove("finding");
+  $("#stageFindCount").textContent = "";
+  if (stage.session) void stageSend("Runtime.evaluate", { expression: `(${STAGE_FIND})("", 0)` }, stage.session).catch(() => {});
+  $("#stageKeys").focus({ preventScroll: true });
+}
+/** @param {number} step 0 重找，1 下一处，-1 上一处 */
+async function stageFindRun(step) {
+  const q = /** @type {HTMLInputElement} */ ($("#stageFindInput")).value;
+  if (!stage.session) return;
+  const result = await stageSend(
+    "Runtime.evaluate",
+    { expression: `(${STAGE_FIND})(${JSON.stringify(q)}, ${step})`, returnByValue: true },
+    stage.session
+  ).catch(() => null);
+  const { n = 0, at = 0 } = result?.result?.value || {};
+  $("#stageFindCount").textContent = !q ? "" : n ? `${at} / ${n}` : "无";
+}
+function bindStageFind() {
+  const input = /** @type {HTMLInputElement} */ ($("#stageFindInput"));
+  let timer = 0;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(() => void stageFindRun(0), 120);
+  });
+  input.addEventListener("keydown", e => {
+    e.stopPropagation();
+    if (e.key === "Enter") void stageFindRun(e.shiftKey ? -1 : 1);
+    else if (e.key === "Escape") stageFindClose();
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      input.select();
+    }
+  });
+  $("#stageFind").addEventListener("click", e => {
+    const step = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest("[data-stage-find]"))?.dataset.stageFind;
+    if (step === "close") stageFindClose();
+    else if (step) void stageFindRun(Number(step));
+  });
 }
 
 function bindStage() {
@@ -125,7 +224,23 @@ function bindStage() {
   $("#stagePin svg").innerHTML = brushStroke([6, 0, 5.4, 32, 6.3, 62], 4.2, { tone: "zhu", tail: 0, head: 1 });
   $("#stagePin").addEventListener("click", openStage);
   $("#stageClose").addEventListener("click", closeStage);
-  $("#stageWide").addEventListener("click", () => stageSetWide(!$("#stagePanel").classList.contains("wide")));
+  $("#stageMenuBtn").addEventListener("click", e => {
+    e.stopPropagation();
+    stageOpenMenu(/** @type {HTMLElement} */ (e.currentTarget));
+  });
+  $("#stageFitBtn").addEventListener("click", () => stageSetFit(!stage.fit));
+  $("#stageLetter").addEventListener("click", e => {
+    if (/** @type {HTMLElement} */ (e.target).closest("[data-stage-release]")) void stageRelease(true);
+  });
+  // 记在本机的几样：适应页面（默认开）、缩放、下载记录
+  try {
+    stage.fit = localStorage.getItem("yan-stage-fit") !== "0";
+    stage.zoom = Number(localStorage.getItem("yan-stage-zoom")) || 1;
+    stage.downloads = JSON.parse(localStorage.getItem("yan-stage-downloads") || "[]");
+    stage.downloadsSeen = Date.now();
+  } catch {}
+  $("#stageFitBtn").setAttribute("aria-pressed", String(stage.fit));
+  bindStageFind();
   $("#stageNewTab").addEventListener("click", stageNewTab);
   $("#stageMarks").addEventListener("click", e => {
     e.stopPropagation();

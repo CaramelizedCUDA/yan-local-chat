@@ -39,7 +39,8 @@ async function stageAttach() {
   } catch {}
   void stageFit();
 }
-// 屏幕外那扇窗调成看台的大小：窗比网页多出的边（标签栏、地址栏、边框）照现量补上。窗口的尺寸与网页的 CSS 像素同一单位
+// 屏幕外那扇窗调成看台的大小：窗比网页多出的边（标签栏、地址栏、边框）照现量补上。窗口的尺寸与网页的 CSS 像素同一单位。
+// 缩放即调窗：放大一档，窗按倍数收窄，网页照自己的断点重排、字在游目里大一档（浏览器自己的缩放经调试口调不动）
 const STAGE_FLOOR = { width: 960, height: 600 };
 async function stageFit() {
   const session = stage.session,
@@ -47,8 +48,8 @@ async function stageFit() {
   if (!session || !stageVisible()) return;
   const view = $("#stageView").getBoundingClientRect(),
     want = {
-      width: Math.max(STAGE_FLOOR.width, Math.round(view.width - 24)),
-      height: Math.max(STAGE_FLOOR.height, Math.round(view.height - 24))
+      width: Math.round(Math.max(STAGE_FLOOR.width, view.width - 24) / stage.zoom),
+      height: Math.round(Math.max(STAGE_FLOOR.height, view.height - 24) / stage.zoom)
     };
   try {
     const [{ windowId, bounds }, { cssVisualViewport: port }] = await Promise.all([
@@ -57,13 +58,93 @@ async function stageFit() {
     ]);
     const edgeX = bounds.width - port.clientWidth,
       edgeY = bounds.height - port.clientHeight;
-    // 网页的视口被定死了（模型调过 browser_resize）：窗口管不着它，多出的边不是边，再照着调只会一回小一圈
-    if (edgeX < 0 || edgeY < 0 || edgeX > 120 || edgeY > 320) return;
+    // 网页的视口被定死了（执事 setViewportSize / browser_resize 过）：窗口管不着它，多出的边不是边，再照着调只会一回小一圈。
+    // 记下定死的大小：留白处写一行，开着「适应页面」的等执事歇手后放开
+    const pinned = edgeX < 0 || edgeY < 0 || edgeX > 120 || edgeY > 320;
+    stagePin(pinned ? { width: Math.round(port.clientWidth), height: Math.round(port.clientHeight) } : null);
+    if (pinned) return;
     const width = Math.round(edgeX + want.width),
       height = Math.round(edgeY + want.height);
     if (bounds.windowState !== "normal" || (Math.abs(width - bounds.width) < 2 && Math.abs(height - bounds.height) < 2)) return;
     await stageSend("Browser.setWindowBounds", { windowId, bounds: { width, height } });
   } catch {}
+}
+/** @param {{ width: number, height: number } | null} size */
+function stagePin(size) {
+  if (JSON.stringify(size) === JSON.stringify(stage.pinned)) return;
+  stage.pinned = size;
+  stageRenderLetter();
+  stageMaybeRelease();
+}
+// 留白处的一行：视口被定死、画面因此留白时写明是谁定的、多大；开着「适应页面」的补一句何时铺满
+function stageRenderLetter() {
+  const letter = $("#stageLetter"),
+    size = stage.pinned;
+  letter.classList.toggle("hidden", !size);
+  if (size)
+    letter.innerHTML = `执事把视口定在 <b>${size.width}×${size.height}</b>${stage.fit ? "，它歇手后铺满" : `<button type="button" data-stage-release>放开</button>`}`;
+}
+// 放开定死的视口：执事那头（Playwright）记着那个尺寸，换页也会再钉回去，游目这头清不掉——只有新开一页最干净。
+// 经那个 MCP 服务的 browser_tabs 办：同一网址新开一页、关掉旧的，执事那边的标签账也对得上（它下回调用时看得到）。
+// 「适应页面」开着：执事歇手（没有在途的浏览器调用、也没有在答的对话）才放；关着：只在人点「放开」时放
+/** @param {boolean} [now] 人点了「放开」 */
+async function stageRelease(now = false) {
+  const server = stageServer(),
+    tab = stage.tabs.get(stage.current),
+    url = tab?.url || "";
+  if (!server || !stage.pinned || !url || /^(about|data|devtools|edge|chrome):/.test(url)) return;
+  if (!now && stage.released.url === url && Date.now() - stage.released.at < 60000) return;
+  stage.released = { url, at: Date.now() };
+  const config = mcpConfigs()[server],
+    call = (/** @type {Record<string, any>} */ args) =>
+      bridge("/api/mcp/call", { server, config, tool: "browser_tabs", arguments: args, timeout: 30 });
+  try {
+    // 执事那边的第几页：照它报的「- 2: (current) [题](网址)」认
+    const listed = await call({ action: "list" }),
+      lines = String((listed.result?.content || []).map((/** @type {any} */ item) => item.text || "").join("\n")).split("\n"),
+      rows = lines.map(line => line.match(/^- (\d+): (\(current\) )?\[.*\]\((.*)\)\s*$/)).filter(Boolean),
+      old = rows.find(row => row?.[3] === url && row[2]) || rows.find(row => row?.[3] === url);
+    if (!old) return;
+    await call({ action: "new", url });
+    await call({ action: "close", index: Number(old[1]) });
+  } catch (error) {
+    if (now) toast(`没能放开：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
+  }
+}
+// 执事歇手了吗：没有在途的浏览器调用、没有在答的对话与差遣
+function stageIdle() {
+  return !stage.busy && !requestJobs.size && !crews.size;
+}
+function stageMaybeRelease() {
+  if (stage.fit && stage.pinned && stageIdle() && stageVisible()) void stageRelease();
+}
+/** @param {boolean} on */
+function stageSetFit(on) {
+  stage.fit = on;
+  $("#stageFitBtn").setAttribute("aria-pressed", String(on));
+  try {
+    localStorage.setItem("yan-stage-fit", on ? "1" : "0");
+  } catch {}
+  stageRenderLetter();
+  stageMaybeRelease();
+}
+/** @param {number} zoom */
+function stageSetZoom(zoom) {
+  stage.zoom = Math.round(Math.max(0.5, Math.min(2, zoom)) * 100) / 100;
+  try {
+    localStorage.setItem("yan-stage-zoom", String(stage.zoom));
+  } catch {}
+  const pct = document.querySelector(".stage-zoom-pct");
+  if (pct) pct.textContent = `${Math.round(stage.zoom * 100)}%`;
+  stageFrameSize();
+  void stageFit();
+}
+const STAGE_ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+/** @param {number} step 1 放大一档，-1 缩小一档，0 复原 */
+function stageZoomStep(step) {
+  if (!step) return stageSetZoom(1);
+  const at = STAGE_ZOOMS.findIndex(z => z >= stage.zoom - 0.001);
+  stageSetZoom(STAGE_ZOOMS[Math.max(0, Math.min(STAGE_ZOOMS.length - 1, (at < 0 ? STAGE_ZOOMS.length - 1 : at) + step))]);
 }
 async function stageDetach() {
   const session = stage.session;
@@ -78,15 +159,21 @@ async function stageDetach() {
 function stageFrame(data, width, height) {
   if (width !== stage.meta.width || height !== stage.meta.height || !stage.framed) {
     stage.meta = { width, height };
-    const view = $("#stageView");
-    view.style.setProperty("--ar", String(width / height));
-    view.style.setProperty("--fw", String(width));
+    stageFrameSize();
   }
   stage.framed = true;
   const img = /** @type {HTMLImageElement} */ ($("#stageFrame"));
   img.src = `data:image/jpeg;base64,${data}`;
   // 解码中途换了下一帧会报错，不碍事
   return img.decode().catch(() => {});
+}
+
+// 画面的比例与最大宽：不放大过原尺寸，缩放过的按倍数放大
+function stageFrameSize() {
+  const view = $("#stageView"),
+    { width, height } = stage.meta;
+  view.style.setProperty("--ar", String(width / height));
+  view.style.setProperty("--fw", String(Math.round(width * stage.zoom)));
 }
 
 // 网页改了标题，浏览器不发通知（开页、关页、跳转才发）：看台开着时隔一会儿问一次，变了才重画
@@ -96,6 +183,10 @@ async function stageRefreshTabs() {
   for (const info of result?.targetInfos || []) {
     const tab = stage.tabs.get(info.targetId);
     if (info.type !== "page" || !tab || (tab.title === info.title && tab.url === info.url)) continue;
+    if (stageNotTab(info)) {
+      stageDropTab(info.targetId);
+      continue;
+    }
     Object.assign(tab, { title: info.title, url: info.url });
     changed = true;
   }

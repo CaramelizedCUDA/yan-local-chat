@@ -1,4 +1,4 @@
-/* 游目（看台）：对话右侧一栏，拖左缘调宽窄；「阔」铺满整页。见 src/26-stage.js、src/27-stage-ink.js 与 设计稿/24–25、31–32 */
+/* 游目（看台）：对话右侧一栏，拖左缘调宽窄；「阔」铺满整页。见 src/26-stage/、src/27-stage-ink.js 与 设计稿/24–25、31–32、47 */
 .stage-panel {
   position: relative;
   flex: none;
@@ -173,7 +173,8 @@
   color: var(--ink);
   background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
-/* 栏顶右端：圈点（一支笔）、阔（往两角撑开），都是笔意小画；开着时转朱。× 与它们隔一道细线 */
+/* 栏顶右端：调律（纸签）、圈点（一支笔）、适应页面（上下撑满），都是笔意小画；开着时转朱。× 与它们隔一道细线。
+   「阔」用得少，挪进了纸签 */
 .stage-tools {
   flex: none;
   display: flex;
@@ -698,23 +699,371 @@
   }
 }
 
-/* 收藏浮出的清单：夹名淡、缩进表层次 */
-.chip-pop.stage-marks {
-  max-height: min(60vh, 520px);
+/* 游目浮出的几张签（「调律」的纸签、收藏、下载）：与划选「引用 | 旁注」同式——方角、顶上一道朱，几组之间一道淡朱丝栏。见 设计稿/47 */
+.chip-pop.stage-pop {
+  border-radius: var(--radius-s);
+  border-top: 2px solid var(--accent);
+}
+.chip-pop.floating.chip-menu.stage-menu {
   min-width: 220px;
+}
+.chip-pop.floating.chip-menu.stage-pop button {
+  border-radius: var(--radius-s);
+}
+.chip-pop.stage-menu button small.fresh {
+  color: var(--accent);
+  font-family: var(--title);
+}
+.stage-pop-rule {
+  display: block;
+  height: 1px;
+  margin: 4px 10px;
+  background: color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+.stage-menu-zoom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 6px 5px 10px;
+  color: var(--ink-2);
+  font: 12.5px var(--title);
+  letter-spacing: 0.025em;
+}
+.stage-zoom {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+.chip-pop.floating.chip-menu .stage-zoom button {
+  width: auto;
+  padding: 2px 9px;
+  border-radius: 0;
+  font: 12px var(--body);
+}
+.chip-pop.floating.chip-menu .stage-zoom button + button {
+  border-left: 1px solid var(--line);
+}
+.chip-pop.floating.chip-menu .stage-zoom .stage-zoom-pct {
+  min-width: 48px;
+  justify-content: center;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.stage-pop-head {
+  padding: 6px 12px 6px;
+  color: var(--ink-3);
+  font: 11px var(--title);
+  letter-spacing: 0.2em;
+}
+.stage-pop-foot {
+  display: flex;
+  margin: 6px -10px -10px;
+  border-top: 1px solid var(--line);
+}
+.stage-pop-foot button {
+  padding: 8px 14px;
+  color: var(--ink-2);
+  font: 12px var(--title);
+  letter-spacing: 0.04em;
+}
+.stage-pop-foot button + button {
+  border-left: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+.stage-pop-foot button:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+/* 收藏签：头一行是这一页（收 / 已收可改可移除）；夹名淡、缩进表层次，指着一条露「改 · 删」，改就地展开两栏 */
+.chip-pop.stage-marks {
+  width: 320px;
+  max-height: min(64vh, 560px);
   overflow-y: auto;
 }
-.chip-pop.stage-marks button {
-  padding-left: calc(12px + var(--depth, 0) * 14px);
+.stage-mark-this {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -4px -2px 6px;
+  padding: 4px 10px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  color: var(--ink-2);
+  font: 12.5px var(--title);
 }
-.chip-pop.stage-marks button span {
+.stage-mark-this span {
+  margin-right: auto;
+  color: var(--accent);
+}
+.stage-mark-this button {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.stage-mark-this button:hover {
+  color: var(--ink);
+}
+.stage-mark-this [data-mark-add] {
+  padding: 1px 1px 2px;
+  border-bottom: 1.4px solid var(--accent);
+  color: var(--ink-2);
+  letter-spacing: 0.12em;
+}
+.stage-mark-row,
+.stage-mark-dir {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: calc(var(--depth, 0) * 14px);
+  border-radius: var(--radius-s);
+}
+.stage-mark-row:hover,
+.stage-mark-dir:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.stage-mark-name {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  color: var(--ink-2);
+  font: 12.5px var(--title);
+  text-align: left;
+}
+.stage-mark-name span {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.stage-mark-row:hover .stage-mark-name {
+  color: var(--ink);
+}
 .stage-mark-dir {
-  padding: 8px 12px 3px calc(12px + var(--depth, 0) * 14px);
+  padding-top: 6px;
+  padding-bottom: 2px;
   color: var(--ink-3);
   font: 11px var(--title);
   letter-spacing: 0.12em;
+}
+.stage-mark-dir > span {
+  flex: 1;
+  padding-left: 10px;
+}
+.stage-mark-ops {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding-right: 6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.stage-mark-row:hover .stage-mark-ops,
+.stage-mark-dir:hover .stage-mark-ops,
+.stage-mark-ops:focus-within {
+  opacity: 1;
+}
+.stage-mark-ops button {
+  padding: 2px 5px;
+  color: var(--ink-3);
+  font: 11.5px var(--title);
+  letter-spacing: 0;
+}
+.stage-mark-ops button:hover,
+.stage-mark-ops button.sure {
+  color: var(--accent);
+}
+.stage-mark-form {
+  margin: 2px 0;
+  padding: 6px 10px 8px;
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.stage-mark-form label {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+  margin: 3px 0;
+  color: var(--ink-3);
+  font: 11px var(--title);
+}
+.stage-mark-form input {
+  min-width: 0;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--paper);
+  color: var(--ink);
+  font: 12px var(--body);
+  outline: none;
+}
+.stage-mark-form input:focus {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+}
+.stage-mark-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 6px;
+  font: 12px var(--title);
+}
+.stage-mark-acts button {
+  color: var(--ink-3);
+}
+.stage-mark-acts [data-mark-save] {
+  color: var(--accent);
+}
+.stage-mark-empty {
+  padding: 10px 12px;
+  color: var(--ink-3);
+  font: 12px var(--title);
+}
+/* 这一页已收：书签带着朱 */
+.stage-nav > #stageMarks.on .brush .ink,
+.stage-nav > #stageMarks.on .brush .ink2 {
+  fill: var(--accent);
+}
+
+/* 下载签：件图照卷宗的设色（程序朱、压缩包泥金），点一条在资源管理器里显出它 */
+.chip-pop.stage-downloads {
+  width: 360px;
+  max-height: min(64vh, 520px);
+  overflow-y: auto;
+}
+.stage-dl {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 2px 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: var(--radius-s);
+  text-align: left;
+}
+.stage-dl + .stage-dl {
+  border-top: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line));
+}
+.stage-dl:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.stage-dl-file {
+  grid-row: span 2;
+  position: relative;
+  width: 18px;
+  height: 22px;
+  background: color-mix(in srgb, var(--ink) 8%, var(--paper));
+  clip-path: polygon(0 0, 70% 0, 100% 26%, 100% 100%, 0 100%);
+}
+.stage-dl-file::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 5px;
+  height: 2px;
+  background: var(--fc, var(--ink-3));
+}
+.stage-dl-name {
+  overflow: hidden;
+  color: var(--ink);
+  font: 12.5px var(--title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-dl-state {
+  grid-row: span 2;
+  color: var(--ink-3);
+  font: 11.5px var(--title);
+}
+.stage-dl-state.off {
+  color: color-mix(in srgb, var(--ink-3) 60%, transparent);
+}
+.stage-dl-meta {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--ink-3);
+  font: 11px var(--body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 页内查找：顶替地址行——一道朱线下是要找的字，右边几处、上下、收起 */
+.stage-find {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 2px;
+}
+.stage-nav.finding > :not(.stage-find):not(#stageMarks) {
+  display: none;
+}
+.stage-find-label {
+  flex: none;
+  color: var(--ink-3);
+  font: 11px var(--title);
+  letter-spacing: 0.2em;
+}
+.stage-find input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 2px;
+  border: 0;
+  border-bottom: 1.4px solid var(--accent);
+  background: transparent;
+  color: var(--ink);
+  font: 13px var(--body);
+  outline: none;
+}
+.stage-find-count {
+  flex: none;
+  min-width: 36px;
+  color: var(--ink-2);
+  font: 12px var(--body);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.stage-find button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-m);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.stage-find button:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+}
+
+/* 留白处的一行：执事把视口定死时写明多大；关着「适应页面」的带一个「放开」 */
+.stage-letter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--ink-3);
+  font: 12px var(--title);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+.stage-letter b {
+  margin: 0 2px;
+  color: var(--ink-2);
+  font: 400 12px var(--body);
+  font-variant-numeric: tabular-nums;
+}
+.stage-letter button {
+  margin-left: 8px;
+  padding: 0 1px 1px;
+  border-bottom: 1.2px solid var(--accent);
+  color: var(--ink-2);
+  font: 12px var(--title);
+  letter-spacing: 0.12em;
+  pointer-events: auto;
+}
+.stage-view.empty .stage-letter {
+  display: none;
 }
