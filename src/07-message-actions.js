@@ -132,3 +132,14 @@ function bindMessageActionEvents() {
     e.target.closest(".message-editor")?.querySelector('[data-action="save-edit"]')?.click();
   });
 }
+// 改着一条问：Esc 放弃改动
+defineLayer({
+  name: "editing",
+  rank: 50,
+  open: () => !!editingMessageId,
+  close: () => {
+    editingMessageId = null;
+    renderConversation(false);
+    if (sidePanelOpen()) renderSidePanel();
+  }
+});

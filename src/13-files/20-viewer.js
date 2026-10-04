@@ -358,3 +358,14 @@ async function openImageViewer(id, trigger = null) {
     toast("图片读取失败");
   }
 }
+// 图片查看器盖在卷宗预览之上，先收它（连同底下的预览）；CSV、Markdown、PDF 这些预览单独开着时，Esc 也得关得掉
+defineLayer({
+  name: "image",
+  rank: 130,
+  open: () => isShown("#imageViewer"),
+  close: () => {
+    closeImageViewer();
+    closeFileViewer();
+  }
+});
+defineLayer({ name: "file", rank: 120, open: () => isShown("#fileViewer"), close: () => closeFileViewer() });

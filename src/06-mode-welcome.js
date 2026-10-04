@@ -682,3 +682,5 @@ const WORK_SUGGESTIONS = [
   ],
   ["写一段脚本并运行", "编写一个脚本完成下述事项，置于工作目录中；写好后运行一遍并给出输出，若有报错则修正至可运行：\n\n（要做的事）"]
 ];
+// 浮着的小菜单（附件签、历史条目的「⋯」、目录签的弹层）：Esc 只收它，别连带把底下的旁注面板也关了
+defineLayer({ name: "pop", rank: 90, open: () => !!document.querySelector(".chip-pop"), close: closeChipPop });

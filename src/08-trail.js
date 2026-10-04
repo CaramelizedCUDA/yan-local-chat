@@ -790,3 +790,11 @@ function bindHelperEvents() {
     if (id) openHelperPanel(id);
   });
 }
+// 差遣那扇窗盖在正文上，Esc 先收它；窗里摊开的帮手清单又在窗上
+defineLayer({
+  name: "helper-list",
+  rank: 105,
+  open: () => helperPanelOpen() && isShown("#helperList"),
+  close: () => $("#helperList").classList.add("hidden")
+});
+defineLayer({ name: "helper", rank: 100, open: helperPanelOpen, close: closeHelperPanel });

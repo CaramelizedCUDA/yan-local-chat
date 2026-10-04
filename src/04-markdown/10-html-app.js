@@ -271,3 +271,4 @@ function bindHtmlAppEvents() {
     if (data.state === "ready" && followBottom) requestAnimationFrame(scrollBottom);
   });
 }
+defineLayer({ name: "work-expanded", rank: 110, open: () => !!document.querySelector(".work-expanded"), close: () => closeExpandedWork() });

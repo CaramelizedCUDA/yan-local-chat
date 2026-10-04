@@ -793,3 +793,9 @@ function scrollBottom() {
     autoScrolling = false;
   });
 }
+defineLayer({
+  name: "model-menu",
+  rank: 85,
+  open: () => isShown("#modelMenu") && !$("#modelMenu").classList.contains("leaving"),
+  close: closeModelMenu
+});

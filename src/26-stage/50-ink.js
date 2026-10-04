@@ -304,3 +304,4 @@ function bindStageInk() {
   // 画面换了大小：朱笔的粗细按新的缩放重画
   new ResizeObserver(() => (stageNotes.length || stageActs.length) && stageInkRender()).observe($("#stageSheet"));
 }
+defineLayer({ name: "stage-pen", rank: 80, open: () => !!stage.pen, close: () => stageSetPen(false) });

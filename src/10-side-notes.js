@@ -595,3 +595,4 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     else renderSideSend();
   }
 }
+defineLayer({ name: "side", rank: 40, open: sidePanelOpen, close: closeSidePanel });

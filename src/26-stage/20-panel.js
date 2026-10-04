@@ -660,3 +660,4 @@ function stageActionText(tool, args) {
   };
   return say[name]?.() || name;
 }
+defineLayer({ name: "stage-wide", rank: 75, open: () => $("#stagePanel").classList.contains("wide"), close: () => stageSetWide(false) });

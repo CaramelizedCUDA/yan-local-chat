@@ -82,6 +82,28 @@ function growEditor(el) {
 function isMobile() {
   return innerWidth <= 760;
 }
+// ---------- 浮层：盖在正文上的一层层（查看器、全屏的作品、差遣窗、小菜单、设置、确认框、旁注……） ----------
+// Esc 收最上面开着的那一层。各层在自己那一段登记：叫什么、多高（rank，越大越在上）、开着没有、怎么收；Esc 一层也不认得。
+// 层次是定好的高低，不是开的先后：图片查看器总盖在卷宗预览上，收小菜单不连带底下的旁注。加一种浮层只需登记一层
+/** @typedef {{ name: string, rank: number, open: () => boolean, close: () => void }} Layer */
+/** @type {Layer[]} */
+const LAYERS = [];
+/** @param {Layer} layer */
+function defineLayer(layer) {
+  LAYERS.push(layer);
+  LAYERS.sort((a, b) => b.rank - a.rank);
+}
+// 收最上面那一层；一层都没开着回 false
+function closeTopLayer() {
+  const top = LAYERS.find(layer => layer.open());
+  top?.close();
+  return !!top;
+}
+// 带 hidden 类开合的那几层：在页上、且没藏着
+function isShown(selector) {
+  const el = $(selector);
+  return !!el && !el.classList.contains("hidden");
+}
 // 同风格的确认弹层，替代浏览器自带的 confirm()
 let confirmResolve = null;
 let confirmReturnFocus = null;
@@ -110,6 +132,7 @@ function settleConfirm(value) {
   if (confirmReturnFocus?.isConnected) confirmReturnFocus.focus();
   confirmReturnFocus = null;
 }
+defineLayer({ name: "confirm", rank: 70, open: () => !!confirmResolve, close: () => settleConfirm(false) });
 function trapModalFocus(event, modal) {
   const focusable = [
     ...modal.querySelectorAll(

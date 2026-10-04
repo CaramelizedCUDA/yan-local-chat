@@ -330,3 +330,4 @@ function bindSettingRows() {
       })
   );
 }
+defineLayer({ name: "settings", rank: 60, open: () => isShown("#settingsModal"), close: closeSettings });

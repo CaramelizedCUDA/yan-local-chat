@@ -235,3 +235,14 @@ async function loadThumbnails(root) {
   }
 }
 const thumbCache = new Map();
+// 输入框空着时，Esc 去掉挂着的引文
+defineLayer({
+  name: "quote",
+  rank: 30,
+  open: () => !!pendingQuote && document.activeElement === $("#chatInput") && !$("#chatInput").value,
+  close: () => {
+    pendingQuote = null;
+    renderQuote();
+    persistDraft();
+  }
+});

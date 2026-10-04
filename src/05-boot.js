@@ -120,47 +120,9 @@ function bindEvents() {
   bindAttachmentEvents();
   bindStage();
   bindStageInk();
+  // Esc 收最上面开着的那一层浮层（各层在自己那一段登记，见 03-ui-utils.js 的 LAYERS）
   window.addEventListener("keydown", e => {
-    if (e.key !== "Escape") return;
-    // 图片查看器盖在卷宗预览之上，先收它；CSV、Markdown、PDF 这些预览单独开着时，Esc 也得关得掉
-    if (!$("#imageViewer").classList.contains("hidden")) {
-      closeImageViewer();
-      closeFileViewer();
-      return;
-    }
-    if ($("#fileViewer") && !$("#fileViewer").classList.contains("hidden")) {
-      closeFileViewer();
-      return;
-    }
-    const expanded = document.querySelector(".work-expanded");
-    if (expanded) {
-      closeExpandedWork();
-      return;
-    }
-    // 差遣那扇窗盖在正文上，Esc 先收它
-    if (helperPanelOpen()) {
-      if (!$("#helperList").classList.contains("hidden")) return $("#helperList").classList.add("hidden");
-      closeHelperPanel();
-      return;
-    }
-    // 浮着的小菜单（附件签、历史条目的「⋯」、目录签的弹层、模型菜单）：Esc 只收它，别连带把底下的旁注面板也关了
-    if (document.querySelector(".chip-pop")) return closeChipPop();
-    const modelMenu = $("#modelMenu");
-    if (!modelMenu.classList.contains("hidden") && !modelMenu.classList.contains("leaving")) return closeModelMenu();
-    if (stage.pen) return stageSetPen(false);
-    if ($("#stagePanel").classList.contains("wide")) return stageSetWide(false);
-    if (confirmResolve) settleConfirm(false);
-    else if (!$("#settingsModal").classList.contains("hidden")) closeSettings();
-    else if (editingMessageId) {
-      editingMessageId = null;
-      renderConversation(false);
-      if (sidePanelOpen()) renderSidePanel();
-    } else if (sidePanelOpen()) closeSidePanel();
-    else if (pendingQuote && document.activeElement === $("#chatInput") && !$("#chatInput").value) {
-      pendingQuote = null;
-      renderQuote();
-      persistDraft();
-    }
+    if (e.key === "Escape") closeTopLayer();
   });
   bindScrollEvents();
   bindOutlineEvents();
