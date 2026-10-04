@@ -357,11 +357,9 @@ const STAGE_SEARCH = /** @type {const} */ ({
   baidu: ["百度", "https://www.baidu.com/s?wd="],
   google: ["Google", "https://www.google.com/search?q="]
 });
+// 地址栏里输的不像网址时交给哪家：设置 → 游目里选，记在配置里
 function stageSearchEngine() {
-  let key = "bing";
-  try {
-    key = localStorage.getItem("yan-stage-search") || key;
-  } catch {}
+  const key = store.settings.stageSearch || "bing";
   return /** @type {keyof typeof STAGE_SEARCH} */ (key in STAGE_SEARCH ? key : "bing");
 }
 /** @param {HTMLElement} anchor */
@@ -383,9 +381,8 @@ function stageOpenMenu(anchor) {
     row("system", "用系统浏览器打开") +
     row("devtools", "开发者工具") +
     rule +
-    row("fit", "适应页面", `<small>${stage.fit ? "开" : "关"}</small>`) +
-    row("search", "搜索用", `<small>${STAGE_SEARCH[stageSearchEngine()][0]} ›</small>`) +
-    row("settings", "浏览器设置…");
+    row("settings", "浏览器设置…") +
+    row("stage-settings", "游目设置…");
   const pop = openFloatingPop(anchor, html, { align: "right" });
   pop.classList.add("stage-menu", "stage-pop");
   pop.addEventListener("click", e => {
@@ -394,23 +391,6 @@ function stageOpenMenu(anchor) {
     if (zoom) return stageZoomStep(Number(zoom.dataset.stageZoom));
     const act = /** @type {HTMLElement | null} */ (target.closest("[data-stage-menu]"))?.dataset.stageMenu;
     if (!act) return;
-    // 适应页面：开关，点了不收纸签
-    if (act === "fit") {
-      stageSetFit(!stage.fit);
-      const label = /** @type {HTMLElement} */ (pop.querySelector("[data-stage-menu=fit] small"));
-      label.textContent = stage.fit ? "开" : "关";
-      return;
-    }
-    if (act === "search") {
-      const keys = /** @type {(keyof typeof STAGE_SEARCH)[]} */ (Object.keys(STAGE_SEARCH)),
-        next = keys[(keys.indexOf(stageSearchEngine()) + 1) % keys.length];
-      try {
-        localStorage.setItem("yan-stage-search", next);
-      } catch {}
-      const label = /** @type {HTMLElement} */ (pop.querySelector("[data-stage-menu=search] small"));
-      label.textContent = `${STAGE_SEARCH[next][0]} ›`;
-      return;
-    }
     closeChipPop();
     stageMenuAct(act, anchor);
   });
@@ -422,6 +402,7 @@ function stageMenuAct(act, anchor) {
   if (act === "find") stageFindOpen();
   else if (act === "downloads") stageOpenDownloads(anchor);
   else if (act === "history" || act === "favorites" || act === "settings") stageOpenInside(act);
+  else if (act === "stage-settings") openSettings("stage");
   else if (act === "copy" && url)
     void navigator.clipboard.writeText(stageReadable(url)).then(
       () => toast("网址已复制"),

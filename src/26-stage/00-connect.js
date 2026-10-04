@@ -48,8 +48,8 @@ const stage = {
   helperCtx: "",
   // 浏览器自家页的协议（edge:// 或 chrome://），连上时问一回
   scheme: "edge",
-  // 适应页面：执事把视口定死时，等它歇手后放开（见 stageRelease）。记在本机
-  fit: true,
+  // 那个服务存下载的目录（桥接从参数里读的，设置 → 游目里给人看）
+  output: "",
   /** @type {{ width: number, height: number } | null} 正看的这一页视口被定死了多大；没定死是 null */
   pinned: null,
   // 放开过的那一页与时刻：放不开时不一回回再试
@@ -68,7 +68,7 @@ const stage = {
   // 指针形状跟着网页：上一回问的时刻、是否还在问
   cursorAt: 0,
   cursorAsking: false,
-  // 浏览器的调试口（桥接从配置里读出来的，只用来报错）
+  // 浏览器的调试口（桥接从配置里读出来的：报错、开发者工具用）
   port: 0,
   seen: false,
   busy: 0,
@@ -90,10 +90,11 @@ const stage = {
 // 已连着时也问一回：模型若把别的页请到了前台（选签、新开），看台跟过去
 function stageLocate() {
   if (stage.locating) return stage.locating;
-  stage.locating = bridge("/api/stage", { args: stageConfig()?.args || [] })
-    .then(({ ws, front, marks, port }) => {
+  stage.locating = bridge("/api/stage", { args: stageConfig()?.args || [], cwd: stageConfig()?.cwd || "" })
+    .then(({ ws, front, marks, port, output }) => {
       stage.marks = !!marks;
       stage.port = port;
+      stage.output = output || "";
       if (!stage.ws) return ws ? stageConnect(ws, front) : stageSync();
       if (front && front !== stage.front && stage.tabs.has(front)) stageShow(front);
       stage.front = front || stage.front;

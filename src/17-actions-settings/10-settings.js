@@ -34,6 +34,7 @@ function renderSettings() {
   if (settingsTab === "tools") host.innerHTML = toolsSettingsHtml();
   if (settingsTab === "env") host.innerHTML = envSettingsHtml();
   if (settingsTab === "mcp") host.innerHTML = mcpSettingsHtml();
+  if (settingsTab === "stage") host.innerHTML = stageSettingsHtml();
   if (settingsTab === "memory") host.innerHTML = memorySettingsHtml();
   if (settingsTab === "guide") host.innerHTML = guideSettingsHtml();
   if (settingsTab === "about") host.innerHTML = aboutSettingsHtml();
@@ -51,6 +52,7 @@ function renderSettings() {
   bindSettingsEvents();
   bindMemoryEvents();
   bindMcpEvents();
+  bindStageSettings();
   bindEnvEvents();
   bindPresetEvents();
   bindGuideEvents();
@@ -311,7 +313,7 @@ function bindSettingsEvents() {
           renderSettings();
           return;
         }
-        store.settings[key] = ["autoTitle", "archiveRead", "sandbox"].includes(key) ? value === "true" : value;
+        store.settings[key] = ["autoTitle", "archiveRead", "sandbox", "stageFit"].includes(key) ? value === "true" : value;
         saveStore();
         applyAppearance();
         renderSettings();

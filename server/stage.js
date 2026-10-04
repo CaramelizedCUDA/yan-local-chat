@@ -38,21 +38,82 @@ function browserOf(raw, cwd = "") {
   const output = arg("--output-dir") || String(file.outputDir || "") || (cwd ? path.join(cwd, ".playwright-mcp") : "");
   return { port, dir: arg("--user-data-dir") || String(file.userDataDir || ""), output: output && path.resolve(cwd || ".", output) };
 }
+// ---------- 接法由言补齐 ----------
+// 游目要那个浏览器开着调试口、放行言的页面（与调试口自己——开发者工具的前端由它供出）、窗口挪到屏幕外。先前要人自己写一份 stage.json 挂在 --config 上，
+// 漏一项就有一样不灵。言本就是起这个 MCP 服务的那一方：起它时把这几项补进去——在人原有的 --config 上合并（人写了的照人的），
+// 合并好的写到存储根的「游目」目录里，参数里的 --config 换成它。认得的只有 Playwright 的 MCP；别的服务原样起
+const PLAYWRIGHT = /@playwright[\\/]mcp|playwright-mcp|mcp-server-playwright/i;
+/** @param {{ command?: string, args?: unknown[] }} config */
+const isPlaywright = config => !!config?.command && PLAYWRIGHT.test([config.command, ...(config.args || [])].join(" "));
+/**
+ * @param {Record<string, any>} config MCP 服务的配置
+ * @param {{ root: string, bridgePort: number }} where 存储根、桥接的端口
+ * @returns {Record<string, any>} 要起的配置（不是 Playwright 的原样递回）
+ */
+function prepareBrowser(config, { root, bridgePort }) {
+  if (!isPlaywright(config)) return config;
+  const args = (config.args || []).map(String),
+    cwd = String(config.cwd || ""),
+    at = args.findIndex(item => item === "--config" || item.startsWith("--config=")),
+    userFile = at < 0 ? "" : args[at] === "--config" ? args[at + 1] || "" : args[at].slice("--config=".length);
+  /** @type {any} */
+  let file = {};
+  try {
+    if (userFile) file = JSON.parse(fs.readFileSync(path.resolve(cwd || ".", userFile), "utf8")) || {};
+  } catch {}
+  const browser = (file.browser ||= {}),
+    launch = (browser.launchOptions ||= {}),
+    extra = (launch.args = (launch.args || []).map(String));
+  // 接的是别处起好的浏览器（--cdp-endpoint）：它的启动参数言管不着，不补
+  if (!args.includes("--cdp-endpoint") && !args.some(item => item.startsWith("--cdp-endpoint=")) && !browser.cdpEndpoint) {
+    const given = extra.find(item => item.startsWith("--remote-debugging-port=")),
+      port = Number(given?.split("=")[1]) || DEFAULT_PORT;
+    if (!given) extra.push(`--remote-debugging-port=${port}`);
+    const allow = extra.findIndex(item => item.startsWith("--remote-allow-origins=")),
+      origins = new Set(allow < 0 ? [] : extra[allow].slice("--remote-allow-origins=".length).split(",").filter(Boolean));
+    origins.add(`http://127.0.0.1:${bridgePort}`);
+    origins.add(`http://127.0.0.1:${port}`);
+    const line = `--remote-allow-origins=${[...origins].join(",")}`;
+    allow < 0 ? extra.push(line) : (extra[allow] = line);
+    // 无头的不必挪；人自己定了窗口位置的照人的
+    if (!args.includes("--headless") && launch.headless !== true && !extra.some(item => item.startsWith("--window-position=")))
+      extra.push("--window-position=-32000,-32000");
+  }
+  const dir = path.join(root, "游目"),
+    out = path.join(dir, "playwright.json"),
+    text = JSON.stringify(file, null, 2);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(out) || fs.readFileSync(out, "utf8") !== text) fs.writeFileSync(out, text);
+  } catch {
+    return config;
+  }
+  const rest = at < 0 ? args : args.filter((_, i) => i !== at && !(args[at] === "--config" && i === at + 1));
+  return { ...config, args: [...rest, "--config", out] };
+}
+
 /** @param {string} dir */
 const bookmarksFile = dir => path.join(dir, "Default", "Bookmarks");
 
 module.exports = function createStage() {
   async function locate(req, res) {
-    const { port, dir } = browserOf((await readJson(req)).args);
+    const body = await readJson(req),
+      { port, dir, output } = browserOf(body.args, String(body.cwd || ""));
     const marks = !!dir && fs.existsSync(bookmarksFile(dir));
     const get = path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(1500) }).then(r => r.json());
     try {
       const [version, list] = await Promise.all([get("/json/version"), get("/json/list")]);
       // /json/list 按最近活动排，头一个页面即浏览器前台的那一页——多半就是模型正在用的
-      sendJson(res, 200, { ws: version.webSocketDebuggerUrl || "", front: list.find(t => t.type === "page")?.id || "", port, marks });
+      sendJson(res, 200, {
+        ws: version.webSocketDebuggerUrl || "",
+        front: list.find(t => t.type === "page")?.id || "",
+        port,
+        marks,
+        output
+      });
     } catch {
       // 浏览器没开：不算错，页面等下一次
-      sendJson(res, 200, { ws: "", port, marks });
+      sendJson(res, 200, { ws: "", port, marks, output });
     }
   }
   // 只回 id、名字、网址与夹的层次（改收藏时按 id 认），读不到就是空的
@@ -124,3 +185,5 @@ module.exports = function createStage() {
   };
 };
 module.exports.browserOf = browserOf;
+module.exports.prepareBrowser = prepareBrowser;
+module.exports.isPlaywright = isPlaywright;

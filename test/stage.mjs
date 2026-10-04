@@ -509,19 +509,29 @@ check(
   ),
   await evalJs(`document.querySelector("#stageLetter").textContent`)
 );
-const toggleFit = () =>
+// 设置 → 游目：题下写名字的来历；适应页面关掉，留白处挂「放开」；搜索用哪家记进配置
+const setting = (key, value) =>
   evalJs(
-    `(document.querySelector(".chip-pop.stage-menu") || document.querySelector("#stageMenuBtn").click(), document.querySelector(".chip-pop.stage-menu [data-stage-menu=fit]").click(), true)`
+    `(document.querySelector("#settingsModal").classList.contains("hidden") && document.querySelector("#openSettings").click(), document.querySelector('[data-tab="stage"]').click(), document.querySelector('[data-setting="${key}"][data-value="${value}"]').click(), true)`
   );
-await toggleFit();
+await setting("stageFit", "false");
 check(
-  "with 适应页面 off (in the menu) the strip offers 放开",
-  (await evalJs(
-    `__yanStage.state.fit === false && document.querySelector(".chip-pop.stage-menu [data-stage-menu=fit] small")?.textContent === "关"`
-  )) && (await evalJs(`!!document.querySelector("#stageLetter [data-stage-release]")`))
+  "the 游目 tab sits before 记忆 and says where the name comes from",
+  await evalJs(
+    `(t => t.nextElementSibling?.dataset.tab === "memory" && t.previousElementSibling?.dataset.tab === "mcp")(document.querySelector('[data-tab="stage"]')) && document.querySelector("#settingsContent .settings-lead")?.textContent.includes("兰亭集序") && !!document.querySelector("#settingsContent .settings-mark")`
+  )
 );
-await toggleFit();
-await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
+check(
+  "with 适应页面 off (in settings) the strip offers 放开",
+  (await evalJs(`__yanState().settings.stageFit === false`)) &&
+    (await evalJs(`!!document.querySelector("#stageLetter [data-stage-release]")`))
+);
+await setting("stageSearch", "baidu");
+check("the search engine is kept in the config", await evalJs(`__yanState().settings.stageSearch === "baidu"`));
+await setting("stageSearch", "bing");
+await setting("stageFit", "true");
+await shot("stage-settings.png");
+await evalJs(`document.querySelector("#closeSettings").click(); true`);
 await browserSend("Emulation.clearDeviceMetricsOverride", {}, pinned);
 await browserSend("Target.detachFromTarget", { sessionId: pinned });
 await evalJs(`document.querySelector("#stagePanel").style.width = "600px"; true`);

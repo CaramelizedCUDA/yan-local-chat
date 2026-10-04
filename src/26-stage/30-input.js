@@ -232,9 +232,8 @@ function bindStage() {
   $("#stageLetter").addEventListener("click", e => {
     if (/** @type {HTMLElement} */ (e.target).closest("[data-stage-release]")) void stageRelease(true);
   });
-  // 记在本机的几样：适应页面（默认开）、缩放、下载记录
+  // 记在本机的几样：缩放、下载记录（适应页面与搜索用哪家在配置里，见设置 → 游目）
   try {
-    stage.fit = localStorage.getItem("yan-stage-fit") !== "0";
     stage.zoom = Number(localStorage.getItem("yan-stage-zoom")) || 1;
     stage.downloads = JSON.parse(localStorage.getItem("yan-stage-downloads") || "[]");
     stage.downloadsSeen = Date.now();

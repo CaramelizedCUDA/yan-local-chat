@@ -1,14 +1,14 @@
 // 游目：地址栏的话怎么换成网址、执事的一步怎么写成人话；桥接怎么从 MCP 服务的参数里读出调试口、配置目录与存下载的目录
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { load } from "./harness.mjs";
 
 const { stageUrlOf } = load(["stageUrlOf"]);
-const { browserOf } = createRequire(import.meta.url)("../../server/stage.js");
+const { browserOf, prepareBrowser } = createRequire(import.meta.url)("../../server/stage.js");
 
 test("地址栏：网址补 https，本机的照走，不像网址的交给搜索", () => {
   assert.equal(stageUrlOf("  example.com "), "https://example.com");
@@ -52,4 +52,50 @@ test("执事的一步写成一句两字动词：照 playwright 的参数，认�
   assert.equal(stageActionText("browser_tabs", { action: "new" }), "新开一页");
   assert.equal(stageActionText("browser_wait_for", { time: 2 }), "等候 2 秒");
   assert.equal(stageActionText("browser_mouse_move_xy", { x: 1, y: 2 }), "mouse_move_xy");
+});
+
+test("接法由言补齐：在人写的 --config 上合并，人写了的照人的；别的服务原样起", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "yan-root-")),
+    cwd = mkdtempSync(path.join(tmpdir(), "yan-mcp-")),
+    where = { root, bridgePort: 8787 };
+  // 不是 Playwright 的：原样递回
+  const other = { command: "node", args: ["server.js"] };
+  assert.equal(prepareBrowser(other, where), other);
+  // 没有 --config：补一份
+  const bare = prepareBrowser({ command: "npx", args: ["-y", "@playwright/mcp@latest", "--browser", "msedge"] }, where),
+    file = path.join(root, "游目", "playwright.json");
+  assert.deepEqual(bare.args.slice(-2), ["--config", file]);
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).browser.launchOptions.args, [
+    "--remote-debugging-port=9288",
+    "--remote-allow-origins=http://127.0.0.1:8787,http://127.0.0.1:9288",
+    "--window-position=-32000,-32000"
+  ]);
+  // 人写的 stage.json 只放行了言：补上调试口自己，端口与别的设定照人的，--config 换成合并好的那份
+  writeFileSync(
+    path.join(cwd, "stage.json"),
+    JSON.stringify({
+      browser: {
+        userDataDir: "D:/p",
+        launchOptions: { args: ["--remote-debugging-port=9300", "--remote-allow-origins=http://127.0.0.1:8787", "--window-position=0,0"] }
+      }
+    })
+  );
+  const merged = prepareBrowser(
+    { command: "node", args: ["E:/MCP/playwright/node_modules/@playwright/mcp/cli.js", "--config", "stage.json", "--x"], cwd },
+    where
+  );
+  assert.deepEqual(merged.args, ["E:/MCP/playwright/node_modules/@playwright/mcp/cli.js", "--x", "--config", file]);
+  const browser = JSON.parse(readFileSync(file, "utf8")).browser;
+  assert.equal(browser.userDataDir, "D:/p");
+  assert.deepEqual(browser.launchOptions.args, [
+    "--remote-debugging-port=9300",
+    "--remote-allow-origins=http://127.0.0.1:8787,http://127.0.0.1:9300",
+    "--window-position=0,0"
+  ]);
+  // 接别处起好的浏览器（--cdp-endpoint）：它的启动参数言管不着，不补
+  prepareBrowser({ command: "npx", args: ["@playwright/mcp", "--cdp-endpoint", "http://127.0.0.1:9333"] }, where);
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).browser.launchOptions.args, []);
+  // 无头的不挪窗口
+  prepareBrowser({ command: "npx", args: ["@playwright/mcp", "--headless"] }, where);
+  assert.ok(!JSON.parse(readFileSync(file, "utf8")).browser.launchOptions.args.some(a => a.startsWith("--window-position")));
 });

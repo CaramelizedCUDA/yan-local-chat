@@ -38,7 +38,7 @@ async function attachLinkedImages(result, config) {
     } catch {}
 }
 
-module.exports = function createMcp({ version, toolEnv }) {
+module.exports = function createMcp({ version, toolEnv, prepare = config => config }) {
   /** @type {Map<string, { key: string, client: McpClient, ready: Promise<McpClient> }>} */
   const clients = new Map();
   const keyOf = config => JSON.stringify(CONNECTION_KEYS.map(key => config[key]));
@@ -51,7 +51,8 @@ module.exports = function createMcp({ version, toolEnv }) {
       entry = null;
     }
     if (!entry) {
-      const client = new McpClient({ name, config, version, toolEnv });
+      // 起之前可再补几项（游目要的浏览器接法，见 server/stage.js 的 prepareBrowser）；缓存仍按人写的配置认
+      const client = new McpClient({ name, config: prepare(config), version, toolEnv });
       entry = { key, client, ready: client.connect() };
       // 连不上的收掉，下次用到时重来
       entry.ready.catch(() => client.close());

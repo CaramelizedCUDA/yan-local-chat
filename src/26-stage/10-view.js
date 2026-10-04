@@ -82,7 +82,7 @@ function stageRenderLetter() {
     size = stage.pinned;
   letter.classList.toggle("hidden", !size);
   if (size)
-    letter.innerHTML = `执事把视口定在 <b>${size.width}×${size.height}</b>${stage.fit ? "，它歇手后铺满" : `<button type="button" data-stage-release>放开</button>`}`;
+    letter.innerHTML = `执事把视口定在 <b>${size.width}×${size.height}</b>${stageFitOn() ? "，它歇手后铺满" : `<button type="button" data-stage-release>放开</button>`}`;
 }
 // 放开定死的视口：执事那头（Playwright）记着那个尺寸，换页也会再钉回去，游目这头清不掉——只有新开一页最干净。
 // 经那个 MCP 服务的 browser_tabs 办：同一网址新开一页、关掉旧的，执事那边的标签账也对得上（它下回调用时看得到）。
@@ -116,14 +116,14 @@ function stageIdle() {
   return !stage.busy && !requestJobs.size && !crews.size;
 }
 function stageMaybeRelease() {
-  if (stage.fit && stage.pinned && stageIdle() && stageVisible()) void stageRelease();
+  if (stageFitOn() && stage.pinned && stageIdle() && stageVisible()) void stageRelease();
 }
+// 适应页面（设置 → 游目，默认开）
+const stageFitOn = () => store.settings.stageFit !== false;
 /** @param {boolean} on */
 function stageSetFit(on) {
-  stage.fit = on;
-  try {
-    localStorage.setItem("yan-stage-fit", on ? "1" : "0");
-  } catch {}
+  store.settings.stageFit = on;
+  saveStore();
   stageRenderLetter();
   stageMaybeRelease();
 }
