@@ -93,7 +93,7 @@
 .memory-cats {
   display: flex;
   flex-direction: column;
-  padding: 10px 14px 0 0;
+  padding: 10px 14px 14px 0;
   border-right: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
 }
 .memory-cat {
@@ -127,25 +127,6 @@
   color: var(--ink);
   font-weight: 600;
 }
-.memory-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 14px;
-  padding: 0 0 14px 12px;
-}
-.memory-side button,
-#dropMemoryCat {
-  color: var(--ink-3);
-  font: 12px var(--title);
-  letter-spacing: 0.06em;
-  transition: color 0.15s;
-}
-.memory-side button:hover,
-#dropMemoryCat:hover {
-  color: var(--ink);
-}
 .memory-pane {
   min-width: 0;
   padding-left: 18px;
@@ -156,6 +137,16 @@
   gap: 10px;
   padding: 12px 0 8px;
   border-bottom: 1px solid var(--line);
+}
+.memory-pane-head button {
+  margin-left: 8px;
+  color: var(--ink-3);
+  font: 12px var(--title);
+  letter-spacing: 0.06em;
+  transition: color 0.15s;
+}
+.memory-pane-head button:hover {
+  color: var(--ink);
 }
 .memory-cat-count {
   color: var(--ink-3);
