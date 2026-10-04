@@ -14,7 +14,7 @@ const f = load([
   "toolDefinitions",
   `setup: prompts => {
     Object.assign(PROMPTS, prompts);
-    bootstrap = { work: { archive: "C:\\\\Users\\\\我\\\\.yan\\\\卷宗", platform: "win32", shell: "PowerShell", scratch: ".草稿" } };
+    bootstrap = { work: { archive: "C:\\\\Users\\\\我\\\\.yan\\\\卷宗", platform: "win32", shell: "PowerShell 7", scratch: ".草稿" } };
     store.memory.items = Array.from({ length: 12 }, (_, i) => ({ id: "m" + i, text: "一条记忆", category: i % 2 ? "偏好" : "言的开发", createdAt: "", updatedAt: "" }));
   }`
 ]);

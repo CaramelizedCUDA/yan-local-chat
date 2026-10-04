@@ -1,6 +1,6 @@
 // 言 · 内置提示词 · 行 · 执事 / 言 · 卷宗
 // role + hint 是执事对话（绑了工作目录）的系统提示；archive + deliver 是对谈（没绑目录、但桥接在线）的：文件工具落在卷宗，检查电脑走终端，不带执事的作风。
-// 何时带上见 assistant.js 末的 order 表；各行按顺序拼接；windowsShell 仅在 Windows 上填进 {{shellNote}}。
+// 何时带上见 assistant.js 末的 order 表；各行按顺序拼接；windowsShell / windowsShellLegacy 仅在 Windows 上填进 {{shellNote}}。
 // 六件工具各自做什么、edit_file 的逐字规则、run_command 的 timeout 等，都在 tools.js 的工具说明里，这里不重复；这里只放环境、做法与确认规则。
 // unread 是工具结果里回给模型的话（未读先改），不是系统提示；用户没批的回话是 assistant.declined。
 (window.YAN_PROMPTS ||= {}).work = {
@@ -47,7 +47,9 @@
   bgDone:
     "后台指令 {{id}}（{{command}}）已结束，退出码 {{exitCode}}，共 {{duration}}。新的输出：\n--- stdout ---\n{{stdout}}\n--- stderr ---\n{{stderr}}",
 
-  windowsShell: "指令用 PowerShell 语法（多条以 ; 相连，用 cmdlet），不要 && 与 bash 写法。",
+  // 桥接用 PowerShell 7 时（&& 可用）用前一句；本机没装、退回 Windows PowerShell 5.1 时用后一句
+  windowsShell: "指令用 PowerShell 语法（cmdlet），不是 bash。",
+  windowsShellLegacy: "指令用 PowerShell 语法（多条以 ; 相连，用 cmdlet），不要 && 与 bash 写法。",
 
   unread: "本段对话尚未读过 {{path}}，请先用 read_file 读取后再编辑。"
 };

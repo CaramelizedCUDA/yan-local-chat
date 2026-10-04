@@ -4,8 +4,27 @@ const { spawn, spawnSync } = require("node:child_process");
 const sandbox = require("../sandbox.js");
 const { tail, decodeClixml, encodePowerShell } = require("./text.js");
 
-const WORK_SHELL = process.platform === "win32" ? "PowerShell" : "sh";
+// Windows 上有 PowerShell 7（pwsh）就用它：被 Select-Object -First 截断的原生程序不再报退出码 -1、&& 与 || 可用、
+// 原生程序的 stderr 经 2>&1 不再裹成一串 NativeCommandError；没装的退回系统自带的 Windows PowerShell 5.1
+const PWSH = process.platform === "win32" && spawnSync("where.exe", ["pwsh"], { windowsHide: true }).status === 0;
+const WORK_SHELL = process.platform !== "win32" ? "sh" : PWSH ? "PowerShell 7" : "Windows PowerShell 5.1";
+// 包在指令外的一层：先把输入输出切到 UTF-8，再把指令（经环境变量 YAN_COMMAND 递进来）当作一段脚本解析、在当前作用域执行。
+// 指令若直接拼进来，写错了（bash 的 heredoc 之类）整段解析不过、切编码那行也没跑，报错按系统代码页吐出来就成了乱码；
+// 分开解析，报错是读得懂的字，模型一看就知道改。末尾追记的 $? 是指令最后一句成没成（包成脚本块后外头的 $? 不再是它）。
+// 原生程序的退出码在 $LASTEXITCODE；cmdlet 出错不设它，靠那个 $? 兜底，让模型能从退出码看出失败
+const POWERSHELL_WRAPPER = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; $OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference='SilentlyContinue'
+if ($PSStyle) { $PSStyle.OutputRendering = 'PlainText' }
+try { $__yan = [ScriptBlock]::Create($env:YAN_COMMAND + [Environment]::NewLine + '$__yanOk = $?') }
+catch { [Console]::Error.WriteLine("PowerShell 解析不了这条指令：" + $(if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message })); exit 1 }
+Remove-Item Env:YAN_COMMAND
+$__yanOk = $true
+. $__yan
+if ($LASTEXITCODE) { exit $LASTEXITCODE } elseif (-not $__yanOk) { exit 1 }`;
 const WORK_OUTPUT_LIMIT = 20000;
+// 交给模型的输出：stderr 里 PowerShell 的 CLIXML 还原成字，终端的颜色控制符（pytest、PowerShell 7 的报错都会带）去掉，过长的留尾
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
+const shownOutput = (text, stderr = false) =>
+  tail((stderr && process.platform === "win32" ? decodeClixml(text) : text).replace(ANSI, ""), WORK_OUTPUT_LIMIT);
 // 杀整棵进程树：PowerShell 起的子进程（node、python、构建脚本）不能只杀 shell 本身，否则用户点了停止，脚本还在后台改文件
 function killTree(child) {
   if (!child.pid || child.exitCode !== null || child.signalCode) return;
@@ -26,17 +45,13 @@ function killTree(child) {
   });
 }
 module.exports = function createShell({ toolEnv }) {
-  // 起一个 shell 跑指令：PowerShell 默认按系统代码页输出，中文会成乱码；先把输入输出都切到 UTF-8。
-  // 原生程序的退出码在 $LASTEXITCODE；cmdlet 出错不设它，靠 $? 兜底，让模型能从退出码看出失败
+  // 起一个 shell 跑指令（Windows 上外面包一层，见 POWERSHELL_WRAPPER）；指令经环境变量递进去，比塞进命令行能长两倍多
   function spawnShell(command, cwd, { boxed = false } = {}) {
     const win = process.platform === "win32";
-    const script = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; $OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference='SilentlyContinue'
-  ${command}
-  $ok = $?; if ($LASTEXITCODE) { exit $LASTEXITCODE } elseif (-not $ok) { exit 1 }`;
     const args = win
-      ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)]
+      ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(POWERSHELL_WRAPPER)]
       : ["-c", command];
-    const child = spawn(win ? "powershell.exe" : "/bin/sh", args, {
+    const child = spawn(win ? (PWSH ? "pwsh.exe" : "powershell.exe") : "/bin/sh", args, {
       cwd,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -46,7 +61,8 @@ module.exports = function createShell({ toolEnv }) {
         NO_COLOR: "1",
         PYTHONIOENCODING: "utf-8",
         PYTHONUTF8: "1",
-        CI: "1"
+        CI: "1",
+        ...(win ? { YAN_COMMAND: command } : {})
       }
     });
     // 按字交出输出：一块一块各自解码，汉字恰好跨在两块之间就被劈成两个 �
@@ -95,8 +111,8 @@ module.exports = function createShell({ toolEnv }) {
         signal?.removeEventListener("abort", onAbort);
         resolve({
           exitCode: code ?? (timedOut ? 124 : signalName || aborted ? 1 : 0),
-          stdout: tail(stdout, WORK_OUTPUT_LIMIT),
-          stderr: tail(win ? decodeClixml(stderr) : stderr, WORK_OUTPUT_LIMIT),
+          stdout: shownOutput(stdout),
+          stderr: shownOutput(stderr, true),
           timedOut,
           aborted
         });
@@ -170,8 +186,8 @@ module.exports = function createShell({ toolEnv }) {
       key: job.key,
       running: job.exitCode === null,
       exitCode: job.exitCode,
-      stdout: tail(out, WORK_OUTPUT_LIMIT),
-      stderr: tail(process.platform === "win32" ? decodeClixml(err) : err, WORK_OUTPUT_LIMIT),
+      stdout: shownOutput(out),
+      stderr: shownOutput(err, true),
       durationMs: Date.now() - job.started
     };
   }

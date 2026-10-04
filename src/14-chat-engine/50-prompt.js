@@ -60,6 +60,6 @@ function workVars(conversation) {
     ),
     platform: win ? "Windows" : bootstrap.work?.platform || "类 Unix",
     shell,
-    shellNote: win ? prompt("work.windowsShell") : ""
+    shellNote: win ? prompt(/5\.1/.test(shell) ? "work.windowsShellLegacy" : "work.windowsShell") : ""
   };
 }
