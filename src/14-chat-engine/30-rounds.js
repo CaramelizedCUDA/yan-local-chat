@@ -242,7 +242,7 @@ function trimReply(target) {
  */
 async function readReply(profile, history, signal, overrides, target, retried = false, onOpen = null, onFrame = null) {
   target.thinkingBlocks = null;
-  // 长活：这一答的工具往来快撑满窗口了，先压掉较早的几轮再发（见 18-context-outline.js 的 keepInWindow）
+  // 长活：这一答的工具往来快撑满窗口了，先压掉较早的几轮再发（见 14-chat-engine/60-context.js 的 keepInWindow）
   if (!retried) await keepInWindow(profile, history, signal, overrides);
   const response = await requestPatiently(profile, history, signal, overrides);
   if (!response.ok) {

@@ -58,7 +58,7 @@
 - 跟页：每次 `browser_*` 调用之后顺带问一声浏览器前台是哪一页（调试口的 `/json/list` 按最近活动排，模型选签会把那页请到前台），与上回问到的不同才跟；你点签时游目也把那页请到前台并记下，所以不算模型换页。
 - 浏览器自己画的那几样（提示框、载入中、能否后退）在屏幕外：游目对正看的那一页开 `Page.enable`，照 `javascriptDialogOpening`、`frameStartedLoading`、`frameNavigated` 等事件自己画；前后走 `Page.navigateToHistoryEntry`，不经网页里的脚本。选文件开 `Page.setInterceptFileChooserDialog`，收到 `fileChooserOpened` 浮纸签；选好的文件经桥接落到临时目录（`POST /api/stage/upload`，一天后清），路径以 `DOM.setFileInputFiles` 交给网页。
 - 指针：鼠标在画面上移动时，一秒至多十回问网页那一处的 `cursor`（`Runtime.evaluate`），照样设到画面上。
-- 模型的动静：`browser_*` 调用的参数照 playwright MCP 的写法写成两字动词的一句（`stageActionText`），记最近几步。它在网页上哪儿下手，靠网页里一个只给游目听的耳目（`src/27-stage-ink.js`）：独立的脚本世界里听真按下与输入，经 `Runtime.addBinding` 报回那一块的位置；执事正在调浏览器、又不是人刚在画面上按的，便画一笔。
+- 模型的动静：`browser_*` 调用的参数照 playwright MCP 的写法写成两字动词的一句（`stageActionText`），记最近几步。它在网页上哪儿下手，靠网页里一个只给游目听的耳目（`src/26-stage/50-ink.js`）：独立的脚本世界里听真按下与输入，经 `Runtime.addBinding` 报回那一块的位置；执事正在调浏览器、又不是人刚在画面上按的，便画一笔。
 - 圈点：与划选正文「引用」同一条路，不另起标注。圈点按网页里的位置记（视口坐标加上画面帧里报来的滚动），网页滚动后朱笔跟着走；落笔时问网页那一块看得见的字（点是那一处那一件的字）。引文分两份：界面上一句，给模型的那份另带网址与各处的位置（CSS 像素，与附图同一取景）。附图是此刻的画面叠上朱笔，存成一件寻常附件；再圈一处，引文与图一并换新。点那一问上方的引文回到游目那一页。
 - 只在看得见时收画面：游目收起、被旁注挤开、言的页面到了后台，都停掉 screencast；回来再接上。
 - 收藏：游目只转网页，浏览器自己的收藏栏在画面之外。收藏存在浏览器配置目录的 `Default/Bookmarks`，目录取自那个服务参数里的 `--user-data-dir`，由桥接读出（`POST /api/stage/bookmarks`，与找调试口一样只递那个服务的参数），每回现读。改收藏借浏览器自己的收藏页：那一页里调得到 `chrome.bookmarks`，增删改浏览器即刻生效，不碰配置文件。那一页开在另起的一个浏览器上下文里（`Target.createBrowserContext`）——执事（Playwright）不认得它、游目也不列它，收藏是整个配置共用的，照样进主收藏夹；调完即关。刚改完的十秒内信浏览器递回的那棵树（文件过一两秒才落盘）。
