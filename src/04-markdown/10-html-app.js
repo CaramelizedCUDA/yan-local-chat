@@ -1,97 +1,24 @@
-// 言 · Markdown、代码高亮、公式、图表与网页沙箱
+// 言 · 正文嵌件 · 交互网页：模型写一页自足的 HTML（```html），在隔离沙箱里就地渲染；旧对话里的 mermaid / echarts 换成等价的一页
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
-// ---------- Markdown：marked 解析、DOMPurify 净化、highlight.js 代码高亮、KaTeX 公式 ----------
-const PURIFY_OPTIONS = { ADD_ATTR: ["target"], FORBID_TAGS: ["style", "form", "iframe", "object", "embed"] };
-function setupMarkdown() {
-  if (!window.marked) return;
-  const inlineMath = {
-    name: "mathInline",
-    level: "inline",
-    start(src) {
-      const m = src.match(/\$(?!\s)|\\\(/);
-      return m ? m.index : -1;
-    },
-    tokenizer(src) {
-      const m = src.match(/^\$(?!\s)((?:\\.|[^\\$\n])+?)(?<!\s)\$(?!\d)/) || src.match(/^\\\(([\s\S]+?)\\\)/);
-      return m ? { type: "mathInline", raw: m[0], text: m[1] } : undefined;
-    },
-    renderer(token) {
-      return renderMath(token.text, false);
-    }
-  };
-  const blockMath = {
-    name: "mathBlock",
-    level: "block",
-    start(src) {
-      const m = src.match(/\$\$|\\\[/);
-      return m ? m.index : -1;
-    },
-    tokenizer(src) {
-      const m = src.match(/^\$\$([\s\S]+?)\$\$(?:\n+|$)/) || src.match(/^\\\[([\s\S]+?)\\\](?:\n+|$)/);
-      return m ? { type: "mathBlock", raw: m[0], text: m[1].trim() } : undefined;
-    },
-    renderer(token) {
-      return `<div class="math-block">${renderMath(token.text, true)}</div>\n`;
-    }
-  };
-  marked.use({
-    gfm: true,
-    breaks: true,
-    renderer: {
-      code({ text, lang }) {
-        return codeBlockHtml(text, lang);
-      }
-    },
-    extensions: [blockMath, inlineMath]
-  });
-  if (window.DOMPurify) {
-    // 模型写「下载《x.docx》」时常把链接指向 sandbox:/、file:/// 或一个裸文件名——页面上没有这样的路。
-    // 把文件名记在 data-file、原路记在 data-path 上，去掉 href；点击时按原路在这段对话的落脚处取那件来下载，取不到再到卷宗里找同名的（见 10-archive.js）。
-    // 图片同理：![截图](page-1.png) 的 src 也记成 data-file，是这一答工具交回的画面就画成那幅（见 renderReplyShots）
-    DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
-      if (!((node.tagName === "A" && data.attrName === "href") || (node.tagName === "IMG" && data.attrName === "src"))) return;
-      const name = localFileName(data.attrValue);
-      if (!name) return;
-      node.setAttribute("data-file", name);
-      node.setAttribute("data-path", data.attrValue);
-      data.keepAttr = false;
-    });
-    DOMPurify.addHook("afterSanitizeAttributes", node => {
-      if (node.tagName === "A" && node.hasAttribute("href")) {
-        node.setAttribute("target", "_blank");
-        node.setAttribute("rel", "noopener noreferrer");
-      }
-      if (node.tagName === "INPUT") node.setAttribute("disabled", "");
-    });
-  }
-}
-// 不是网址、末段像个文件名的链接：取出文件名。网址、邮件、页内锚点都不算
-function localFileName(href) {
-  const raw = String(href || "").trim();
-  if (!raw || /^(?:https?|mailto|tel|data|blob):/i.test(raw) || raw.startsWith("#")) return "";
-  let name = raw
-    .replace(/[?#].*$/, "")
-    .split(/[\\/]/)
-    .pop();
-  try {
-    name = decodeURIComponent(name);
-  } catch {}
-  return /^[^<>:"|?*\u0000-\u001f]+\.[a-z0-9]{1,8}$/i.test(name) ? name : "";
-}
-function renderMath(tex, display) {
-  // KaTeX 未加载时先放一个占位，库到位后由 renderPendingMath 就地替换；流式尾段每帧重绘，加载完成后自然变成正式渲染
-  if (!window.katex) {
-    void ensureLib("katex");
-    return `<span class="math-pending" data-tex="${escapeHtml(tex)}" data-display="${display ? "1" : "0"}"><code>${escapeHtml(tex)}</code></span>`;
-  }
-  try {
-    return window.katex
-      ? katex.renderToString(tex, { displayMode: display, throwOnError: false, output: "html", strict: "ignore" })
-      : `<code>${escapeHtml(tex)}</code>`;
-  } catch {
-    return `<code>${escapeHtml(tex)}</code>`;
-  }
-}
+// 页内可视化只有一条路：自足的 HTML 在隔离沙箱里就地渲染（数据图表、流程图也在里面画，见 preview-runtime.js）。
+// 旧对话里的 ```mermaid / ```echarts 换成等价的一页 HTML 照样成图；模型把流程图写进 ```pre 或不标语言的围栏，内容一看就是 mermaid 的，也照画
+const legacyViz = (language, text) =>
+  language === "mermaid" || language === "echarts" || ((language === "pre" || !language) && looksLikeMermaid(text));
+defineEmbed({
+  name: "html",
+  fence: (language, text) => ["html", "interactive", "app"].includes(language) || legacyViz(language, text),
+  // 流式尾段尚未闭合时先立一个占位框，框里是一页草图（见 pendingSketchHtml）
+  pending(text, language) {
+    const lines = String(text || "").split("\n").length;
+    return `<div class="viz viz-pending" data-viz-pending="html" data-lines="${lines}" style="--phase:${vizPhase()}" role="status" aria-label="交互内容仍在生成，已写 ${lines} 行"><div class="code-head"><span class="code-lang">${language}</span><span class="viz-pending-signal" aria-hidden="true"></span></div><div class="viz-pending-body" aria-hidden="true">${pendingSketchHtml()}</div></div>\n`;
+  },
+  html(text, language) {
+    const source = legacyViz(language, text) ? legacyVizHtml(language, text) : text;
+    return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">html · 正在载入</span><span>${vizTool("data-app-restart", "重来", "reload")}${vizTool("data-app-download", "下载", "download")}${vizTool("data-work-expand", "全屏", "wide")}${vizTool("data-copy-code", "复制源码", "copy")}</span></div><div class="html-app-stage"><span>正在载入交互内容</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
+  },
+  mount: renderHtmlApps,
+  bind: bindHtmlAppEvents
+});
 // 占位框里的动效在逐帧重画的尾段里会随节点重建从头再来，看着像定住了：把相位记在节点上（负的 animation-delay），重建也接着原来的拍子走
 const vizPhase = () => `-${Math.round(performance.now())}ms`;
 // 占位框里是一页草图：将要画的东西的底稿（一页版式）——
@@ -121,63 +48,6 @@ function pulseInkStroke(pending) {
     duration: 900,
     easing: "ease-out"
   });
-}
-// 尾段每帧整段重画，占位框若跟着重建，虚痕的呼吸每帧都从头来一遍：这里把已在页上的那个占位框留在原处不动，
-// 只换它周围的内容；行数变了就让虚痕吸一口墨
-function paintTail(tail, html) {
-  const live = [...tail.querySelectorAll(".viz-pending")].at(-1);
-  if (!live || live.parentNode !== tail) {
-    tail.innerHTML = html;
-    return;
-  }
-  const fresh = document.createElement("div");
-  fresh.innerHTML = html;
-  const next = [...fresh.querySelectorAll(".viz-pending")].at(-1);
-  if (!next || next.parentNode !== fresh || next.dataset.vizPending !== live.dataset.vizPending) {
-    tail.innerHTML = html;
-    return;
-  }
-  const grew = live.dataset.lines !== next.dataset.lines;
-  live.dataset.lines = next.dataset.lines;
-  if (grew) pulseInkStroke(live);
-  live.setAttribute("aria-label", next.getAttribute("aria-label"));
-  for (const node of [...tail.childNodes]) if (node !== live) node.remove();
-  const before = [],
-    after = [];
-  let seen = false;
-  for (const node of [...fresh.childNodes]) {
-    if (node === next) seen = true;
-    else (seen ? after : before).push(node);
-  }
-  live.before(...before);
-  live.after(...after);
-}
-function codeBlockHtml(text, lang) {
-  const language = String(lang || "")
-      .trim()
-      .split(/\s+/)[0]
-      .toLowerCase(),
-    known = !!(window.hljs && language && hljs.getLanguage(language));
-  // 页内可视化只有一条路：自足的 HTML 在隔离沙箱里就地渲染（数据图表、流程图也在里面画，见 preview-runtime.js）。
-  // 旧对话里的 ```mermaid / ```echarts 换成等价的一页 HTML 照样成图；模型把流程图写进 ```pre 或不标语言的围栏，内容一看就是 mermaid 的，也照画
-  const legacy = language === "mermaid" || language === "echarts" || ((language === "pre" || !language) && looksLikeMermaid(text)),
-    htmlApp = ["html", "interactive", "app"].includes(language) || legacy;
-  // 流式尾段尚未闭合时先立一个占位框，框里是一页草图（见 pendingSketchHtml）
-  if (suppressViz && htmlApp) {
-    const lines = String(text || "").split("\n").length;
-    return `<div class="viz viz-pending" data-viz-pending="html" data-lines="${lines}" style="--phase:${vizPhase()}" role="status" aria-label="交互内容仍在生成，已写 ${lines} 行"><div class="code-head"><span class="code-lang">${language}</span><span class="viz-pending-signal" aria-hidden="true"></span></div><div class="viz-pending-body" aria-hidden="true">${pendingSketchHtml()}</div></div>\n`;
-  }
-  if (!suppressViz && htmlApp) {
-    const source = legacy ? legacyVizHtml(language, text) : text;
-    return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">html · 正在载入</span><span>${vizTool("data-app-restart", "重来", "reload")}${vizTool("data-app-download", "下载", "download")}${vizTool("data-work-expand", "全屏", "wide")}${vizTool("data-copy-code", "复制源码", "copy")}</span></div><div class="html-app-stage"><span>正在载入交互内容</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
-  }
-  let html;
-  try {
-    html = known ? hljs.highlight(text, { language, ignoreIllegals: true }).value : escapeHtml(text);
-  } catch {
-    html = escapeHtml(text);
-  }
-  return `<div class="code-block"><div class="code-head"><span class="code-lang">${escapeHtml(language || "text")}</span><button type="button" class="code-copy" data-copy-code>复制</button></div><pre><code class="hljs${known ? ` language-${escapeHtml(language)}` : ""}">${html}</code></pre></div>\n`;
 }
 // 一段文字是不是 mermaid 图：头一行（跳过 %% 注释与 --- 前言）整行就是它的图种声明——graph = build() 这类代码不算
 const MERMAID_HEAD =
@@ -224,9 +94,6 @@ function legacyVizHtml(language, text) {
   if (language !== "echarts") return `<pre class="mermaid">${escapeHtml(text)}</pre>`;
   const option = text.replace(/<\/(script)/gi, "<\\/$1");
   return `<div id="chart"></div>\n<script src="yan:echarts"></script>\n<script>const option = (${option}\n), chart = document.getElementById("chart");\nchart.style.height = Math.min(560, Math.max(220, Number(option.height) || 320)) + "px";\ndelete option.height;\necharts.init(chart).setOption(option);</script>`;
-}
-function cssVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 function htmlAppSource(el) {
   return el.querySelector(".html-app-source code")?.textContent || "";
@@ -340,63 +207,6 @@ function mountHtmlApp(el) {
 function renderHtmlApps(root) {
   for (const el of root.querySelectorAll(".html-app[data-html-app]:not([data-rendered])")) mountHtmlApp(el);
 }
-async function renderPendingMath(root) {
-  if (!root.querySelector(".math-pending") || !(await ensureLib("katex"))) return;
-  for (const el of root.querySelectorAll(".math-pending")) {
-    el.insertAdjacentHTML(
-      "afterend",
-      window.DOMPurify ? DOMPurify.sanitize(renderMath(el.dataset.tex || "", el.dataset.display === "1"), PURIFY_OPTIONS) : ""
-    );
-    el.remove();
-  }
-}
-function renderEnhancements(root) {
-  renderHtmlApps(root);
-  void renderPendingMath(root);
-  renderReplyShots(root);
-}
-// 正文里引了这一答工具交回的画面（模型写「![截图](page-1.png)」或「[查看截图](page-1.png)」）：就地画出那幅，点开进图片查看器。
-// 原件本就作附件挂在那一步上（见 mcpResultImages），不另存；引的不是这一答的画面，照旧当卷宗里的文件
-/** @param {Element} root */
-function renderReplyShots(root) {
-  const refs = root.querySelectorAll?.(".markdown [data-file]") || [];
-  if (!refs.length) return;
-  const c = currentConversation(),
-    messages = c ? [...allMessages(c), ...(c.threads || []).flatMap(thread => thread.messages || [])] : [];
-  for (const ref of refs) {
-    const id = ref.closest("[data-message]")?.getAttribute("data-message"),
-      message = messages.find(item => item.id === id),
-      file = allSteps(message)
-        .flatMap(step => step.attachments || [])
-        .findLast(item => item.kind === "image" && item.name === ref.getAttribute("data-file"));
-    if (!file) continue;
-    const shot = document.createElement("span");
-    shot.className = "fi fi-thumb reply-shot";
-    shot.setAttribute("role", "button");
-    shot.tabIndex = 0;
-    shot.dataset.openImage = file.id;
-    shot.title = `查看 ${file.name}`;
-    shot.innerHTML = `<img data-thumb="${escapeHtml(file.id)}" alt="${escapeHtml(ref.getAttribute("alt") || file.name)}">`;
-    // 图换成那幅；链接留着字（点了也是看图），画面接在后面
-    if (ref.tagName === "IMG") ref.replaceWith(shot);
-    else {
-      ref.removeAttribute("data-file");
-      ref.setAttribute("data-open-image", file.id);
-      ref.after(shot);
-    }
-  }
-  void loadThumbnails(root);
-}
-function downloadHref(href, name, revoke = false) {
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = name;
-  link.click();
-  if (revoke) setTimeout(() => URL.revokeObjectURL(href), 1000);
-}
-function downloadText(text, type, name) {
-  downloadHref(URL.createObjectURL(new Blob([text], { type })), name, true);
-}
 // 交互内容工具条上的一枚：笔意小画，字收进 title 与 aria-label（与回复下的复制、重答同一套画法）。
 // 源码不另设一钮：复制、下载拿到的就是它，出错的说明在标签的 title 上
 function vizTool(attr, label, icon) {
@@ -422,46 +232,9 @@ function toggleWorkExpanded(el, button) {
   labelTool(button, open ? "收起" : "全屏");
   document.documentElement.classList.toggle("work-mode", open);
 }
-function renderMarkdown(source = "") {
-  const text = String(source).replace(/^\n+|\n+$/g, "");
-  if (!text) return "";
-  const plain = () => `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
-  if (!window.marked || !window.DOMPurify) return plain();
-  try {
-    return DOMPurify.sanitize(marked.parse(liftBareMermaid(text), { async: false }), PURIFY_OPTIONS);
-  } catch {
-    return plain();
-  }
-}
-// 流式渲染的分段点：最后一个空行，且它前面没有未闭合的代码围栏、后面不是列表 / 缩进 / 表格的延续
-function stableCut(content) {
-  const listy = line => /^\s*(?:[-*+]|\d+[.)])\s/.test(line) || /^\s+\S/.test(line);
-  let cut = content.lastIndexOf("\n\n");
-  while (cut > 0) {
-    const before = content.slice(0, cut),
-      prevLine = before.slice(before.lastIndexOf("\n") + 1),
-      nextLine = content.slice(cut + 2).split("\n")[0];
-    const inFence = (before.match(/^ {0,3}(?:`{3,}|~{3,})/gm) || []).length % 2 === 1;
-    const continues =
-      /^\s+\S/.test(nextLine) || (listy(nextLine) && listy(prevLine)) || (/^\s*\|/.test(nextLine) && prevLine.includes("|"));
-    if (!inFence && !continues) break;
-    cut = content.lastIndexOf("\n\n", cut - 1);
-  }
-  return Math.max(0, cut);
-}
-
-// 正文里的代码块与交互作品：复制、重来、下载、放大；预览 iframe 报来的状态与高度
-function bindContentEvents() {
+// 交互作品的工具条（重来、下载、放大）与预览 iframe 报来的状态与高度
+function bindHtmlAppEvents() {
   document.addEventListener("click", e => {
-    const copy = e.target.closest("[data-copy-code]");
-    if (copy) {
-      void copyText(copy.closest(".code-block, .html-app")?.querySelector("code")?.textContent || "");
-      // 小画钮不换字（换了画就没了），说一声；代码块上的字钮照旧换成「已复制」
-      if (copy.classList.contains("code-icon")) return toast("已复制");
-      copy.textContent = "已复制";
-      setTimeout(() => (copy.textContent = "复制"), 1200);
-      return;
-    }
     const appRestart = e.target.closest("[data-app-restart]");
     if (appRestart) {
       mountHtmlApp(appRestart.closest(".html-app"));
