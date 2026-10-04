@@ -398,6 +398,7 @@ const BUNDLES = {
 const PUBLIC_STATIC_FILES = new Set([
   "index.html",
   "theme-boot.js",
+  "icon.svg",
   "preview.html",
   "preview-runtime.js",
   "prompts/assistant.js",
