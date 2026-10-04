@@ -143,16 +143,30 @@ function wordMarks(oldLine, newLine) {
     merged.filter(run => marked(run, side)).reduce((n, run) => n + run[side].replace(/\s/g, "").length, 0) /
     (line.replace(/\s/g, "").length || 1);
   if (Math.min(share("old", oldLine), share("new", newLine)) > 0.5) return plain;
+  // 标记不含两头的空白：对齐注释的那串空格跟着变长变短，标上了只是一截截空的色块
+  const mark = (/** @type {string} */ text) => {
+    const [, lead, body, trail] = /** @type {RegExpMatchArray} */ (text.match(/^(\s*)([\s\S]*?)(\s*)$/));
+    return body ? `${escapeHtml(lead)}<mark>${escapeHtml(body)}</mark>${escapeHtml(trail)}` : escapeHtml(text);
+  };
   const html = (/** @type {"old"|"new"} */ side) =>
-    merged.map(run => (marked(run, side) ? `<mark>${escapeHtml(run[side])}</mark>` : escapeHtml(run[side]))).join("");
+    merged.map(run => (marked(run, side) ? mark(run[side]) : escapeHtml(run[side]))).join("");
   return [html("old"), html("new")];
 }
-// 一段连着的删与增怎么排：按先后，删的那行往后找第一行像它的配成一对，跳过的新行单独成行
+// 一段连着的删与增怎么排：按先后，删的那行往后找第一行像它的配成一对。
+// 两对之间落单的删与跳过的增左右并进同几行（loose，不逐字比）——各占一行会排成台阶，一边一块空洞
 /** @param {string[]} dels @param {string[]} ins */
 function pairLines(dels, ins) {
-  /** @type {Array<{ d?: string, i?: string }>} */
+  /** @type {Array<{ d?: string, i?: string, loose?: boolean }>} */
   const out = [];
+  /** @type {string[]} */
+  let lone = [];
   let j = 0;
+  const flush = (/** @type {number} */ until) => {
+    const skipped = ins.slice(j, until);
+    for (let k = 0; k < Math.max(lone.length, skipped.length); k++) out.push({ d: lone[k], i: skipped[k], loose: true });
+    lone = [];
+    j = until;
+  };
   for (const d of dels) {
     let hit = -1;
     for (let k = j; k < ins.length; k++)
@@ -161,13 +175,13 @@ function pairLines(dels, ins) {
         break;
       }
     if (hit < 0) {
-      out.push({ d });
+      lone.push(d);
       continue;
     }
-    while (j < hit) out.push({ i: ins[j++] });
+    flush(hit);
     out.push({ d, i: ins[j++] });
   }
-  while (j < ins.length) out.push({ i: ins[j++] });
+  flush(ins.length);
   return out;
 }
 /**
@@ -222,9 +236,9 @@ function splitDiffHtml(oldText, newText, { limit = Infinity, wrap = true } = {})
     while (k < ops.length && ops[k][0] !== "s") (ops[k][0] === "d" ? dels : ins).push(ops[k++][1]);
     removed += dels.length;
     added += ins.length;
-    for (const { d, i } of pairLines(dels, ins)) {
+    for (const { d, i, loose } of pairLines(dels, ins)) {
       const [left, right] =
-        d !== undefined && i !== undefined
+        d !== undefined && i !== undefined && !loose
           ? wordMarks(d, i)
           : [d === undefined ? null : escapeHtml(d), i === undefined ? null : escapeHtml(i)];
       rows.push(cell("d", left, d) + cell("i", right, i));
