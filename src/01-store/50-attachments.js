@@ -83,19 +83,17 @@ function attachmentIds(messages = []) {
     .map(file => file.id)
     .filter(Boolean);
 }
-// 仍在用的附件：各段对话（含换下的版本、旁注、行迹里补言带的）、草稿、案上待发的
+// 仍在用的附件：各段对话（含换下的版本、旁注，连同行迹里补言带的、工具交回的画面）、草稿、案上待发的
 function attachmentKeepIds() {
   const ids = new Set();
   const add = files => {
     for (const file of files || []) if (file?.id) ids.add(file.id);
   };
-  for (const c of store.conversations) {
-    for (const m of allMessages(c)) {
+  for (const c of store.conversations)
+    for (const m of everyMessage(c)) {
       add(m.attachments);
       for (const step of allSteps(m)) add(step.attachments);
     }
-    for (const thread of c.threads || []) for (const m of thread.messages || []) add(m.attachments);
-  }
   for (const value of Object.values(store.drafts || {})) add(value?.attachments);
   add(pendingAttachments);
   return ids;
@@ -108,7 +106,7 @@ function usedAttachmentBytes() {
   };
   for (const value of Object.values(store.drafts || {})) count(value?.attachments);
   for (const c of store.conversations)
-    for (const m of allMessages(c)) {
+    for (const m of everyMessage(c)) {
       count(m.attachments);
       for (const step of allSteps(m)) count(step.attachments);
     }

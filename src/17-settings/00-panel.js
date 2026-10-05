@@ -221,7 +221,7 @@ function bindGeneralSettings() {
         .filter(([key]) => conversationIds.has(key))
         .flatMap(([, draft]) => (Array.isArray(draft?.attachments) ? draft.attachments.map(file => file.id) : []));
     const currentDraftFiles = currentId ? pendingAttachments.map(file => file.id) : [];
-    void deleteAttachments([...attachmentIds(store.conversations.flatMap(allMessages)), ...draftFiles, ...currentDraftFiles]);
+    void deleteAttachments([...attachmentIds(store.conversations.flatMap(everyMessage)), ...draftFiles, ...currentDraftFiles]);
     for (const c of store.conversations) void deleteConversationStorage(c.id);
     store.conversations = [];
     store.drafts = store.drafts?.[NEW_DRAFT_ID] ? { [NEW_DRAFT_ID]: store.drafts[NEW_DRAFT_ID] } : {};

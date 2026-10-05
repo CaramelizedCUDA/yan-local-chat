@@ -6,6 +6,11 @@
 function allMessages(c) {
   return [...(c.messages || []), ...(c.forks || []).flatMap(fork => fork.messages || [])];
 }
+// 再加上旁注里的往来：数附件、找消息这类要一网打尽的用它
+/** @param {Conversation} c */
+function everyMessage(c) {
+  return [...allMessages(c), ...(c.threads || []).flatMap(thread => thread.messages || [])];
+}
 /** @param {Conversation} c */
 function forkTail(c, index) {
   const tail = c.messages.slice(index);

@@ -470,9 +470,8 @@ async function sendSide() {
     job.controller.abort();
     return;
   }
-  const input = $("#sideInput"),
-    text = input.value.trim();
-  if (!text) return;
+  const input = $("#sideInput");
+  if (!input.value.trim()) return;
   const profile = activeProfile();
   if (!profile) {
     toast("请先接入模型");
@@ -480,6 +479,9 @@ async function sendSide() {
   }
   if (quotaBlocked(profile))
     return toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候");
+  // 认领的工夫里接着写的也算上，所以到这里才取
+  const text = (await claimSide(c, thread)) && input.value.trim();
+  if (!text) return;
   /** @type {Message} */
   const user = { id: uid(), role: "user", content: text, timestamp: now() };
   /** @type {Message} */
@@ -493,6 +495,16 @@ async function sendSide() {
   renderSidePanel();
   await streamSideReply(c, thread, assistant, profile);
 }
+// 旁注写进的也是这段对话：开工前与正文一样向桥接认领，两页不同时写。等认领的工夫里这条旁注已开了一答（连点两下）、
+// 面板已关或换了对话、这条旁注被并进来的新版换掉，都作罢——输入框里的话还在
+/** @param {Conversation} c @param {Thread} thread */
+async function claimSide(c, thread) {
+  if (runningElsewhere(c.id) || !(await claimConversation(c.id))) {
+    toast("此对话正在另一页面作答，稍后再发");
+    return false;
+  }
+  return !sideJob(thread) && currentThread() === thread;
+}
 // 就旁注里的某一问再答：截掉从 from 起的往来（那一问之后的），另起一答。编辑后重问与重新生成都走这里
 /**
  * @param {Conversation} c
@@ -502,6 +514,7 @@ async function askSideAgain(c, thread, from) {
   const profile = activeProfile();
   if (!profile) return openSettings("models");
   if (quotaBlocked(profile)) return toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足，请稍候");
+  if (!(await claimSide(c, thread))) return;
   /** @type {Message} */
   const assistant = { id: uid(), role: "assistant", content: "", timestamp: now(), status: "streaming", modelName: profile.name };
   thread.messages = [...thread.messages.slice(0, from), assistant];

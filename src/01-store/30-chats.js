@@ -274,10 +274,18 @@ function mergeConversation(c, theirs, base = null) {
       for (const key of Object.keys(theirs))
         if (!["messages", "forks", "threads", "unread"].includes(key) && same(c[key], base[key])) c[key] = theirs[key];
     for (const key of ["messages", "forks", "threads"]) {
-      const seen = new Set(c[key].map(item => item.id));
-      const added = theirs[key].filter(item => !seen.has(item.id));
-      if (key === "messages") c.messages.push(...added);
-      else c[key].push(...added);
+      const own = new Map(c[key].map(item => [item.id, item]));
+      for (const item of theirs[key]) {
+        const mine = own.get(item.id);
+        if (!mine) c[key].push(item);
+        // 两边都有的旁注：对方在里头新写的往来照常并进来；这边正写着的那条留在原位不动
+        else if (key === "threads" && !requestJobs.has(`side:${item.id}`))
+          c.threads[c.threads.indexOf(mine)] = merge(
+            mine,
+            item,
+            base?.threads?.find(thread => thread.id === item.id)
+          );
+      }
     }
     return c;
   }

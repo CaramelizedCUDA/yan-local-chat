@@ -181,7 +181,7 @@ function renderReplyShots(root) {
   const refs = root.querySelectorAll?.(".markdown [data-file]") || [];
   if (!refs.length) return;
   const c = currentConversation(),
-    messages = c ? [...allMessages(c), ...(c.threads || []).flatMap(thread => thread.messages || [])] : [];
+    messages = c ? everyMessage(c) : [];
   for (const ref of refs) {
     const id = ref.closest("[data-message]")?.getAttribute("data-message"),
       message = messages.find(item => item.id === id),
