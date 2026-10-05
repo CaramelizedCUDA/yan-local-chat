@@ -19,18 +19,16 @@ async function refreshEnv() {
 }
 function envSettingsHtml() {
   const s = envSettings();
-  return `<div id="envPage"><h2>环境</h2><div id="envStatus">${envStatusHtml()}</div><h3 class="settings-sub">工具包</h3><div id="envPacks" class="card-list">${envPacksHtml()}</div><div class="setting-row"><div class="setting-copy"><strong>另装</strong><small>包名以空格分开</small></div><div class="setting-actions env-extra"><label class="setting-inline">Python<input id="envPip" class="field" spellcheck="false" placeholder="如 sympy jieba" value="${escapeHtml(s.pip)}"></label><label class="setting-inline">Node<input id="envNpm" class="field" spellcheck="false" placeholder="如 pnpm" value="${escapeHtml(s.npm)}"></label></div></div></div>`;
+  return `<div id="envPage"><h2>环境</h2><div id="envStatus">${envStatusHtml()}</div><h3 class="settings-sub">工具包</h3><div id="envPacks" class="card-list">${envPacksHtml()}</div><div class="setting-row"><div class="setting-copy"><strong>另装</strong><small>包名以空格分隔</small></div><div class="setting-actions env-extra"><label class="setting-inline">Python<input id="envPip" class="field" spellcheck="false" placeholder="如 sympy jieba" value="${escapeHtml(s.pip)}"></label><label class="setting-inline">Node<input id="envNpm" class="field" spellcheck="false" placeholder="如 pnpm" value="${escapeHtml(s.npm)}"></label></div></div></div>`;
 }
 function envStatusHtml() {
   if (!envStatus) return `<div class="card"><div class="card-head"><span class="card-name">查看中…</span></div></div>`;
   const { state, job, home } = envStatus,
     running = !!job?.running;
-  const summary = state
-    ? `${state.python} · ${state.packs.length - 1} 组工具 · ${formatDay(state.at)}准备`
-    : "勾选要用的工具，点「准备环境」；头一回要下载几十到几百 MB";
+  const summary = state ? `${state.python} · ${state.packs.length - 1} 组工具 · ${formatDay(state.at)}准备` : "首次准备需下载数十至数百 MB";
   const log =
     job && (running || job.error)
-      ? `<div class="card-note">${escapeHtml(running ? `正在${job.step || "开始"}…` : `没装成：${job.error}`)}</div><pre class="env-log">${escapeHtml(job.log.join("\n"))}</pre>`
+      ? `<div class="card-note">${escapeHtml(running ? `正在${job.step || "开始"}…` : `未能装成：${job.error}`)}</div><pre class="env-log">${escapeHtml(job.log.join("\n"))}</pre>`
       : "";
   return `<div class="card"><div class="card-head"><span class="card-name">${running ? "准备中" : state ? "已备好" : "尚未准备"}</span><span class="card-state${state ? " ok" : ""}" title="${escapeHtml(summary)}">${escapeHtml(summary)}</span><span class="card-actions"><button id="envPrepare" type="button" class="outline-btn"${running ? " disabled" : ""}>${running ? "准备中…" : state ? "更新环境" : "准备环境"}</button>${state && !running ? `<button id="envClear" type="button" class="danger-btn">清空</button>` : ""}</span></div><div class="card-sub" title="${escapeHtml(home)}">${escapeHtml(home)}</div>${log}</div>`;
 }
@@ -39,7 +37,7 @@ function envPacksHtml() {
   const packs = envStatus?.packs || [],
     chosen = new Set(envSettings().packs),
     installed = new Set(envStatus?.state?.packs || []);
-  if (!packs.length) return `<p class="card-note">桥接接通后列出可装的工具包</p>`;
+  if (!packs.length) return `<p class="card-note">桥接未接通</p>`;
   return packs
     .map(pack => {
       const on = pack.base || chosen.has(pack.id),
@@ -108,7 +106,13 @@ function bindEnvEvents() {
       return refreshEnv();
     }
     if (button.id === "envClear") {
-      if (!(await askConfirm({ title: "清空环境？", body: "环境目录整个删去；装过的包都得重装。对话、卷宗与配置不受影响。", ok: "清空" })))
+      if (
+        !(await askConfirm({
+          title: "清空环境？",
+          body: "整个环境目录将被删除，已装的包需重新安装；对话、卷宗与配置不受影响。",
+          ok: "清空"
+        }))
+      )
         return;
       envStatus = await bridge("/api/env/clear", {}).catch(error => {
         toast(String(error.message || error));

@@ -275,7 +275,7 @@ function bindViewerEvents() {
     e => {
       if (!e.target.matches?.("audio, video")) return;
       e.target.closest(".file-viewer-media").outerHTML =
-        `<div class="file-viewer-empty">浏览器放不了这种编码，请下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
+        `<div class="file-viewer-empty">浏览器不支持此编码，可下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
     },
     true
   );

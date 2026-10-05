@@ -37,8 +37,8 @@ function profileCardHtml(p) {
 let chatgptAccount = null;
 function chatgptAccountHtml() {
   const a = chatgptAccount,
-    text = !a ? "…" : a.signedIn ? `已登录${a.email ? ` · ${a.email}` : ""}` : a.pending ? "等浏览器里授权…" : "未登录";
-  return `<div class="profile-full profile-cell">账号<div class="field-row"><span class="field wide" data-chatgpt-account>${escapeHtml(text)}</span><button class="outline-btn" data-profile-action="${a?.signedIn ? "logout" : "login"}">${a?.signedIn ? "退出登录" : "登录"}</button></div><small>在浏览器里用 ChatGPT 账号授权；用多少可在 ChatGPT 设置里查看、设上限</small></div>`;
+    text = !a ? "…" : a.signedIn ? `已登录${a.email ? ` · ${a.email}` : ""}` : a.pending ? "等待浏览器授权…" : "未登录";
+  return `<div class="profile-full profile-cell">账号<div class="field-row"><span class="field wide" data-chatgpt-account>${escapeHtml(text)}</span><button class="outline-btn" data-profile-action="${a?.signedIn ? "logout" : "login"}">${a?.signedIn ? "退出登录" : "登录"}</button></div><small>以 ChatGPT 账号授权，用量记在订阅上</small></div>`;
 }
 // 问一回桥接，只改账号那一行，不重画整页（卡片里正填着的字不丢）
 async function refreshChatgptAccount() {
@@ -65,7 +65,7 @@ async function chatgptLogin(profile, card) {
   const status = card.querySelector(".profile-status");
   try {
     const { url } = await bridge("/api/chatgpt/login", {});
-    status.innerHTML = `已在浏览器中打开授权页 · <a href="${escapeHtml(url)}" target="_blank" rel="noopener">没打开就点这里</a>`;
+    status.innerHTML = `授权页已在浏览器中打开 · <a href="${escapeHtml(url)}" target="_blank" rel="noopener">手动打开</a>`;
     await refreshChatgptAccount();
     for (let i = 0; i < 400; i++) {
       await new Promise(resolve => setTimeout(resolve, 1500));
@@ -75,7 +75,7 @@ async function chatgptLogin(profile, card) {
     const now = document.querySelector(`[data-profile-card="${profile.id}"]`);
     if (!now) return;
     if (chatgptAccount?.signedIn) await handleProfileAction(profile, "models", now);
-    else now.querySelector(".profile-status").textContent = chatgptAccount?.error || "没有登录";
+    else now.querySelector(".profile-status").textContent = chatgptAccount?.error || "未登录";
   } catch (error) {
     status.textContent = friendlyError(error.message);
   }

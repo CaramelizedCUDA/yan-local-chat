@@ -105,9 +105,9 @@ async function stageLaunch() {
       timeout: 60
     });
     await stageLocate();
-    if (!stage.ws) toast(`浏览器已开，游目却连不上它的调试口${stage.port ? ` ${stage.port}` : ""}（见 docs/stage.md 的接法）`);
+    if (!stage.ws) toast(`浏览器已开，但连不上调试口${stage.port ? ` ${stage.port}` : ""}`);
   } catch (error) {
-    toast(`打不开浏览器：${String(error.message || error).slice(0, 80)}`);
+    toast(`浏览器打开失败：${String(error.message || error).slice(0, 80)}`);
   } finally {
     stage.launching = false;
     stageSync();
@@ -174,7 +174,7 @@ async function stageMarkDo(body) {
     const { result, exceptionDetails } = await run(
       `(async () => { const bm = (fn, ...args) => new Promise((ok, no) => chrome.bookmarks[fn](...args, r => chrome.runtime.lastError ? no(Error(chrome.runtime.lastError.message)) : ok(r))); ${body}; return (await bm("getTree"))[0].children; })()`
     );
-    if (exceptionDetails) throw Error(exceptionDetails.exception?.description?.split("\n")[0] || "收藏没改成");
+    if (exceptionDetails) throw Error(exceptionDetails.exception?.description?.split("\n")[0] || "收藏未能更改");
     const roots = /** @type {any[]} */ (result.value || []);
     stage.markTree = roots.slice(0, 2).map((root, i) => ({ ...stageMarkOf(root), name: i ? "其他收藏" : "收藏夹栏" }));
     stage.markTreeAt = Date.now();
@@ -247,7 +247,7 @@ function stageMarksHtml() {
   const bar = tree[0]?.children || [],
     other = tree[1],
     body = list(bar) + (other?.children?.length ? dir({ ...other, name: "其他收藏" }, true) : "");
-  return `${head}<div class="stage-mark-list">${body || `<div class="stage-mark-empty">还没有收藏</div>`}</div><div class="stage-pop-foot"><button type="button" data-mark-folder>新夹</button><button type="button" data-mark-manage>整理…</button></div>`;
+  return `${head}<div class="stage-mark-list">${body || `<div class="stage-mark-empty">尚无收藏</div>`}</div><div class="stage-pop-foot"><button type="button" data-mark-folder>新夹</button><button type="button" data-mark-manage>整理…</button></div>`;
 }
 /** @param {string} id @param {StageMark[]} [nodes] @returns {StageMark | undefined} */
 function stageMarkById(id, nodes = stage.markTree || []) {
@@ -337,7 +337,7 @@ async function stageMarksClick(pop, target) {
       return stageMarksRefresh(pop);
     }
   } catch (error) {
-    toast(`收藏没改成：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
+    toast(`收藏未能更改：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
   }
 }
 /** @param {string} id 空即新建夹 @param {string} name @param {string | null} url 夹没有网址 */
@@ -351,7 +351,7 @@ function stageMarkFormHtml(id, name, url) {
 function stageOpenInside(page) {
   if (!stage.ws) return void stageLaunch();
   void stageSend("Target.createTarget", { url: `${stage.scheme}://${page}/` }).catch(error =>
-    toast(`打不开：${String(error.message || error).slice(0, 80)}`)
+    toast(`打开失败：${String(error.message || error).slice(0, 80)}`)
   );
 }
 
@@ -389,7 +389,7 @@ function stageOpenMenu(anchor) {
           url() &&
           void navigator.clipboard.writeText(stageReadable(url())).then(
             () => toast("网址已复制"),
-            () => toast("没能复制")
+            () => toast("复制失败")
           )
       },
       // 交给系统默认的浏览器开（经桥接：言跑在 VS Code 里时 window.open 不管用）：要登自己的账号、或要看外头那扇窗时
@@ -397,10 +397,10 @@ function stageOpenMenu(anchor) {
         id: "system",
         label: "用系统浏览器打开",
         run: () => {
-          if (!/^https?:/.test(url())) return toast("只有网页（http / https）能交给系统浏览器");
+          if (!/^https?:/.test(url())) return toast("仅网页（http / https）可交系统浏览器打开");
           void bridge("/api/stage/open", { url: url() }).then(
             () => toast("已交给系统浏览器"),
-            error => toast(`没能打开：${String(error.message || error).slice(0, 80)}`)
+            error => toast(`打开失败：${String(error.message || error).slice(0, 80)}`)
           );
         }
       },
@@ -494,7 +494,7 @@ function stageOpenDownloads(anchor) {
     .join("");
   const pop = openFloatingPop(
     anchor,
-    `<div class="stage-pop-head">下载</div>${rows || `<div class="stage-mark-empty">还没有下载过</div>`}<div class="stage-pop-foot"><button type="button" data-stage-reveal="">打开所在文件夹</button><button type="button" data-stage-inside="downloads">全部下载…</button></div>`,
+    `<div class="stage-pop-head">下载</div>${rows || `<div class="stage-mark-empty">尚无下载</div>`}<div class="stage-pop-foot"><button type="button" data-stage-reveal="">打开所在文件夹</button><button type="button" data-stage-inside="downloads">全部下载…</button></div>`,
     { align: "right", menu: false }
   );
   pop.classList.add("stage-downloads", "stage-pop");

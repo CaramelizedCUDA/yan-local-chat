@@ -254,8 +254,8 @@ function renderSideIndex(c) {
     .join("");
   // 「＋」另起一条：正文里划着一段就注在那一段上；没划就是就整条回复而谈（从哪条回复进来的就是哪条，否则是最末一答）
   $("#sideMessages").innerHTML =
-    `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? `${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="划选正文中的一段即注在那一段上；未划选则就整条回复而谈"><span>＋</span>另起一条</button></div></div>${
-      items ? items : `<div class="side-empty">还没有旁注</div>`
+    `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? `${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="另起一条旁注"><span>＋</span>另起一条</button></div></div>${
+      items ? items : `<div class="side-empty">尚无旁注</div>`
     }</div>`;
   renderSideSend();
 }
@@ -324,7 +324,7 @@ function setupSidePanel() {
     if (!e.target.closest("[data-side-new]")) return;
     const c = currentConversation(),
       anchor = c && indexNewAnchor(c);
-    if (!anchor) return toast("这段对话里还没有可注的回复");
+    if (!anchor) return toast("此对话尚无可注的回复");
     getSelection()?.removeAllRanges();
     createThread(anchor);
   });

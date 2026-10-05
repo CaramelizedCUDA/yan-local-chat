@@ -104,7 +104,7 @@ function stageGo(raw) {
   if (!url || !stage.ws) return;
   // 一页都没开着：新开一页去
   const go = stage.session ? stageSend("Page.navigate", { url }, stage.session) : stageSend("Target.createTarget", { url });
-  void go.catch(error => toast(`打不开：${String(error.message || error).slice(0, 80)}`));
+  void go.catch(error => toast(`打开失败：${String(error.message || error).slice(0, 80)}`));
 }
 // 地址栏里输的话换成网址：本机路径、本机服务、带协议的照走；像网址的（有点、没空格）补 https；余下当成要搜的话，交给纸签里选的那家
 /** @param {string} raw */

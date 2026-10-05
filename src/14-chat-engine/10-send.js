@@ -19,7 +19,7 @@ async function preparing(task) {
 async function prepareTurn(c) {
   if (!(await ensureWorkReady(c))) return false;
   if (!(await claimConversation(c.id))) {
-    toast("这段对话正在另一个页面作答，写完后这里会跟上，再发不迟");
+    toast("此对话正在另一页面作答，稍后再发");
     return false;
   }
   // 等的这一会儿，后台回报可能已在这段里另起了一答
@@ -31,7 +31,7 @@ async function sendOrStop() {
   if (conversationRunning()) return composerHasContent() ? sendSupplement() : stopGeneration();
   if (crewRunning() && !composerHasContent()) return stopGeneration();
   // 另一个页面正在这段对话里作答：这边只跟着看，写完再说（话留在输入框里）
-  if (runningElsewhere()) return toast("这段对话正在另一个页面作答，写完后这里会跟上，再发不迟");
+  if (runningElsewhere()) return toast("此对话正在另一页面作答，稍后再发");
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
   const text = input.value.trim();
   if (!text && !pendingAttachments.length && !pendingQuote) return;
@@ -196,7 +196,7 @@ function sendSupplement() {
 function sendSupplementNow() {
   const job = requestJob();
   if (!job?.queue?.some(item => item.user)) return;
-  if (!job.reading || !job.round) return toast("工具跑完即递");
+  if (!job.reading || !job.round) return toast("工具执行完毕即递上");
   clearInterval(job.steerTimer);
   job.steerTimer = 0;
   job.round.abort();

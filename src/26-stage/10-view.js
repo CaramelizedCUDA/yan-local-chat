@@ -108,7 +108,7 @@ async function stageRelease(now = false) {
     await call({ action: "new", url });
     await call({ action: "close", index: Number(old[1]) });
   } catch (error) {
-    if (now) toast(`没能放开：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
+    if (now) toast(`未能放开：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
   }
 }
 // 执事歇手了吗：没有在途的浏览器调用、没有在答的对话与差遣

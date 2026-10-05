@@ -136,8 +136,8 @@ function listenInit() {
     if (!listenTrack) return;
     const page = $("#fileViewerStage .listen-page");
     if (page && listenShown?.key === listenTrack.key)
-      page.outerHTML = `<div class="file-viewer-empty">浏览器放不了这种编码，请下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
-    else toast("这一曲放不了");
+      page.outerHTML = `<div class="file-viewer-empty">浏览器不支持此编码，可下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
+    else toast("此曲无法播放");
     listenRelease();
   });
 }

@@ -539,7 +539,7 @@ check(
 check(
   "it shows where its things live and whether the dependency is in",
   await evalJs(
-    `(t => t.includes("存储") && t.includes("游目") && t.includes("驱动") && (t.includes("未装") || t.includes(" 版")))(document.querySelector("#settingsContent").textContent)`
+    `(t => t.includes("存储") && t.includes("游目") && t.includes("驱动") && (t.includes("未安装") || t.includes(" 版")))(document.querySelector("#settingsContent").textContent)`
   )
 );
 await evalJs(`document.querySelector('[data-stage-opt="browser"][data-value="chrome"]').click(); true`);

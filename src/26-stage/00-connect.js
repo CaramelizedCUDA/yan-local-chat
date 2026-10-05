@@ -324,7 +324,7 @@ async function stageSendFiles(files, node) {
     for (const file of files) paths.push((await bridge("/api/stage/upload", { name: file.name, data: await readFile(file, "data") })).path);
     await stageSend("DOM.setFileInputFiles", { files: paths, backendNodeId: node }, session);
   } catch (error) {
-    toast(`文件没能递进网页：${String(error.message || error).slice(0, 80)}`);
+    toast(`文件未能传入网页：${String(error.message || error).slice(0, 80)}`);
   }
 }
 /** @param {string} url */

@@ -41,9 +41,9 @@ function renderModeSwitch() {
   seal.title = work ? "行 · 执事：指令与改动落在工作目录" : "言 · 对谈：产出收入卷宗";
 }
 const COMMAND_POLICY_META = {
-  ask: ["问而后行", "明确只读的指令径直运行，其余先经确认"],
-  review: ["审而后行", "桥接代为审过：常规改动与整机查看放行，明确的高风险动作当场回绝，不来打扰"],
-  auto: ["径行", "不再审查；沙箱开着时仍守着它那道界"]
+  ask: ["问而后行", "只读指令径行，其余逐条确认"],
+  review: ["审而后行", "桥接代审：常规改动放行，高危动作回绝"],
+  auto: ["径行", "不再审查；沙箱之界照守"]
 };
 function commandPolicyOf(c) {
   return normalizeCommandPolicy(c?.commandPolicy, normalizeCommandPolicy(store.settings.commandPolicyDefault));
@@ -356,7 +356,7 @@ async function deleteConversation(id) {
   const removed = store.conversations.find(c => c.id === id);
   if (!removed) return;
   // 那一处还在写，删了它也会写回来
-  if (runningElsewhere(id)) return toast("这段对话正在另一个页面作答，那边停下后再删");
+  if (runningElsewhere(id)) return toast("此对话正在另一页面作答，暂不能删除");
   if (!(await askConfirm({ title: "删除这段对话？", body: `「${removed.title}」将连同其附件一起移除，无法撤销。`, ok: "删除" }))) return;
   if (conversationRunning(id)) stopGeneration(id);
   for (const [key, job] of requestJobs)

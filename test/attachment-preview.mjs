@@ -204,7 +204,7 @@ await sleep(300);
 check(
   "a video the browser cannot decode turns into a download hint",
   await evalJs(
-    `!document.querySelector("#fileViewerStage video") && document.querySelector("#fileViewerStage").textContent.includes("放不了")`
+    `!document.querySelector("#fileViewerStage video") && document.querySelector("#fileViewerStage").textContent.includes("不支持此编码")`
   )
 );
 await close();

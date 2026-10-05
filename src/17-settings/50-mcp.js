@@ -29,7 +29,7 @@ function mcpCardHtml(name) {
             "ok",
             `${state.tools.length} 件工具 · ${mcp.lazy.includes(name) ? "按需给" : "逐件给"}${state.server?.version ? ` · v${state.server.version}` : ""}`
           ]
-        : ["err", `连不上：${state.error}`];
+        : ["err", `连接失败：${state.error}`];
   const where = config.command ? [config.command, ...(config.args || [])].join(" ") : config.url;
   const tools = state?.ok
     ? `<details class="card-more"><summary>工具</summary><div class="card-chips">${state.tools.map(tool => `<span>${escapeHtml(tool.name)}${mcpReadOnly(tool) ? "<small>只读</small>" : ""}</span>`).join("")}</div></details>`
@@ -52,7 +52,7 @@ function mcpFormHtml(name) {
   return `<div class="card editing" data-mcp-edit="${escapeHtml(name)}"><div class="profile-grid">${field("名称", "name", name, "如 github", false)}<label>接法<div class="segmented"><button type="button" data-mcp-kind="local" class="${local ? "active" : ""}">本机程序</button><button type="button" data-mcp-kind="remote" class="${local ? "" : "active"}">远端地址</button></div></label>${
     local
       ? `${field("命令", "command", config.command, "npx、uvx、python，或程序的完整路径")}${area("参数", "args", (config.args || []).join("\n"), "一行一个")}${field("工作目录", "cwd", config.cwd, "可不填")}${area("环境变量", "env", pairs(config.env, "="), "KEY=值，一行一个；令牌多放在这里")}`
-      : `${field("地址", "url", config.url, "https://…/mcp")}${area("请求头", "headers", pairs(config.headers, ": "), "Authorization: Bearer …，一行一个")}<label class="check profile-full"><input type="checkbox" data-f="sse"${/sse/i.test(config.type || "") ? " checked" : ""}>旧式 HTTP+SSE（没勾时连不上也会自动退回再试）</label>`
+      : `${field("地址", "url", config.url, "https://…/mcp")}${area("请求头", "headers", pairs(config.headers, ": "), "Authorization: Bearer …，一行一个")}<label class="check profile-full"><input type="checkbox" data-f="sse"${/sse/i.test(config.type || "") ? " checked" : ""}>旧式 HTTP+SSE（未勾选时连接失败亦会自动回退）</label>`
   }${field("单次最多等（秒）", "timeout", config.timeout, "默认 600", false)}<label>交给模型<div class="segmented">${[
     ["auto", "按多少定"],
     ["inline", "逐件"],
@@ -61,13 +61,13 @@ function mcpFormHtml(name) {
     .map(([value, label]) => `<button type="button" data-mcp-load="${value}" class="${load === value ? "active" : ""}">${label}</button>`)
     .join(
       ""
-    )}</div></label>${field("免请示的工具", "autoApprove", (config.autoApprove || []).join(", "), "工具名，逗号分隔；只读的本就不问")}${area("给模型的话", "note", config.note || "", "随系统提示交给模型，如：我说「打开浏览器」即指这个")}</div><div class="card-form-foot"><button type="button" class="outline-btn" data-mcp-form="save">保存</button><button type="button" class="outline-btn" data-mcp-form="cancel">取消</button><button type="button" class="outline-btn" data-mcp-form="reveal">${mcpRevealed ? "遮住密钥" : "显示密钥"}</button><span class="card-error"></span>${name ? `<button type="button" class="danger-btn" data-mcp-form="delete">删除</button>` : ""}</div></div>`;
+    )}</div></label>${field("免请示的工具", "autoApprove", (config.autoApprove || []).join(", "), "工具名，逗号分隔；只读工具本不请示")}${area("给模型的话", "note", config.note || "", "随系统提示交给模型")}</div><div class="card-form-foot"><button type="button" class="outline-btn" data-mcp-form="save">保存</button><button type="button" class="outline-btn" data-mcp-form="cancel">取消</button><button type="button" class="outline-btn" data-mcp-form="reveal">${mcpRevealed ? "遮住密钥" : "显示密钥"}</button><span class="card-error"></span>${name ? `<button type="button" class="danger-btn" data-mcp-form="delete">删除</button>` : ""}</div></div>`;
 }
 /** @type {"local"|"remote"|null} 表单里切了接法、还没存时记在这里 */
 let mcpFormKind = null;
 function mcpJsonHtml() {
   const servers = Object.fromEntries(Object.entries(mcpUserConfigs()).map(([name, config]) => [name, mcpMask(config)]));
-  return `<div class="json-head"><span>整份配置 · mcpServers 写法；遮住的密钥保持原样即沿用原值</span><button type="button" class="outline-btn" id="mcpJsonReveal">${mcpRevealed ? "遮住密钥" : "显示密钥"}</button></div><textarea id="mcpConfig" class="field field-area json-editor" spellcheck="false" autocomplete="off">${escapeHtml(JSON.stringify({ mcpServers: servers }, null, 2))}</textarea><div class="card-form-foot"><button id="mcpJsonSave" class="outline-btn" type="button">保存并连接</button><span id="mcpError" class="card-error"></span></div>`;
+  return `<div class="json-head"><span>整份配置 · mcpServers 格式；遮蔽的密钥原样保留即沿用</span><button type="button" class="outline-btn" id="mcpJsonReveal">${mcpRevealed ? "遮住密钥" : "显示密钥"}</button></div><textarea id="mcpConfig" class="field field-area json-editor" spellcheck="false" autocomplete="off">${escapeHtml(JSON.stringify({ mcpServers: servers }, null, 2))}</textarea><div class="card-form-foot"><button id="mcpJsonSave" class="outline-btn" type="button">保存并连接</button><span id="mcpError" class="card-error"></span></div>`;
 }
 // 环境变量与请求头里像密钥的值遮住（显示密钥时不遮）
 function mcpMask(config) {
@@ -82,7 +82,7 @@ function mcpUnmask(name, config, previous) {
     for (const [key, value] of Object.entries(config[part] || {})) {
       if (value !== SECRET_MASK) continue;
       const original = previous?.[part]?.[key];
-      if (original === undefined) throw Error(`「${name}」的 ${key} 还是隐藏的占位，找不到原值，请重填`);
+      if (original === undefined) throw Error(`「${name}」的 ${key} 仍是遮蔽占位，原值已不可寻，请重填`);
       config[part][key] = original;
     }
   return config;

@@ -125,7 +125,7 @@ function renderLibraryCount() {
 // 名目一格：平时是名字（平铺查找时下注所在的那一层），改名时换成一个输入框
 function libraryNameCell(item, where = "") {
   if (libraryRenaming === item.path)
-    return `<span class="strip-name"><input class="strip-rename" value="${escapeHtml(item.name)}" maxlength="200" spellcheck="false" autocomplete="off" aria-label="新名字"></span>`;
+    return `<span class="strip-name"><input class="strip-rename" value="${escapeHtml(item.name)}" maxlength="200" spellcheck="false" autocomplete="off" aria-label="新名称"></span>`;
   return `<span class="strip-name"><strong title="${escapeHtml(item.path)}">${escapeHtml(item.name)}</strong>${where ? `<small>${escapeHtml(where)}</small>` : ""}</span>`;
 }
 function libraryRowHtml(file, showDir = true) {
@@ -293,7 +293,7 @@ function rebaseDeliverables(from, to) {
 // 条子拖到夹上、或拖回路径里的上一级：挪进那一层（件与夹一样）；那一层有同名的就另取名
 async function moveArchiveItem(path, dir) {
   if (parentDir(path) === dir || dir === path) return;
-  if (dir.startsWith(`${path}/`)) return toast("夹不能挪进它自己里头");
+  if (dir.startsWith(`${path}/`)) return toast("夹不能移入其自身");
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
       renamed = moved.name !== path.split("/").pop();
@@ -410,7 +410,7 @@ async function placeFromArchive(path) {
       file = new File([blob], entry.name, { type: blob.type || "", lastModified: Date.parse(entry.modifiedAt) || Date.now() });
     placeAttachment(key, await ingestFile(file));
     persistDraft();
-    if (draftKey() !== key) return toast(`${entry.name} 已置于原先那段的案上`);
+    if (draftKey() !== key) return toast(`${entry.name} 已置于原对话的案上`);
     closeLibrary();
     toast(`${entry.name} 已置于案上`);
     setTimeout(() => (currentConversation() ? $("#chatInput") : $("#welcomeInput")).focus(), 0);

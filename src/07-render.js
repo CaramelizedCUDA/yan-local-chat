@@ -147,7 +147,7 @@ function renderModelMenu() {
   if (all.length)
     $("#modelMenu").insertAdjacentHTML(
       "beforeend",
-      `${presetMenuHtml()}<div class="menu-section"><div class="menu-section-title"><span>思考深度</span><span title="每个模型分别记住所选档位；默认不带字段，由接口决定。各模型所认的档位可在高级配置中填写">当前模型</span></div>${choices.length > 1 ? `<div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div>` : `<div class="menu-section-note">此模型不认思考档位</div>`}</div><button class="model-option model-manage" data-manage>模型设置</button>`
+      `${presetMenuHtml()}<div class="menu-section"><div class="menu-section-title"><span>思考深度</span><span>当前模型</span></div>${choices.length > 1 ? `<div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div>` : `<div class="menu-section-note">此模型不认思考档位</div>`}</div><button class="model-option model-manage" data-manage>模型设置</button>`
     );
   $("#configureFirst")?.addEventListener("click", () => openSettings("models"));
   $("#modelMenu [data-manage]")?.addEventListener("click", e => {
@@ -508,8 +508,8 @@ function relayHtml(message, branch = null) {
     names = items
       .map(item =>
         item.kind === "bg"
-          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="回到挂它的那一步">后台 ${escapeHtml(item.title)} 已结束${item.ok ? "" : ` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
-          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="看这一趟的经过">帮手「${escapeHtml(item.title)}」${item.ok ? "回报" : "未完成"}</button>`
+          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="回到所在一步">后台 ${escapeHtml(item.title)} 已结束${item.ok ? "" : ` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
+          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="查看经过">帮手「${escapeHtml(item.title)}」${item.ok ? "回报" : "未完成"}</button>`
       )
       .join(`<span class="relay-sep" aria-hidden="true">·</span>`),
     seal = items.every(item => item.kind === "bg") ? "候" : "遣";

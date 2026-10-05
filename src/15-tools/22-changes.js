@@ -294,7 +294,7 @@ function deliverableFileHtml(f) {
   return `<div class="deliver-file${missing ? " missing" : ""}" data-deliver="${escapeHtml(f.path)}">${fileFigure(f.name, f.path)}<span class="deliver-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</span><small>${formatFileSize(f.size)}</small>${
     missing
       ? `<span class="deliver-gone">已移出卷宗</span>`
-      : `<button type="button" class="deliver-btn" data-deliver-action="view" title="在此预览，不必下载">预览</button><button type="button" class="deliver-btn" data-deliver-action="download" title="另存到本机">下载</button>`
+      : `<button type="button" class="deliver-btn" data-deliver-action="view" title="预览">预览</button><button type="button" class="deliver-btn" data-deliver-action="download" title="另存到本机">下载</button>`
   }</div>`;
 }
 /** @param {Message} message */

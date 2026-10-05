@@ -121,7 +121,7 @@ await sleep(200);
 check(
   "memory tab renders with seal and count",
   await evalJs(
-    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && h.querySelector(".about-version")?.textContent === "1 / 324 条 · 1 类" && h.querySelectorAll(".memory-cat[data-memory-cat]").length === 1 && h.querySelector(".memory-cat.active") && h.querySelectorAll(".memory-item").length === 1 && !h.querySelector(".memory-item textarea"))(document.querySelector("#settingsContent"))`
+    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && h.querySelector(".settings-meta")?.textContent === "1 / 324 条 · 1 类" && h.querySelectorAll(".memory-cat[data-memory-cat]").length === 1 && h.querySelector(".memory-cat.active") && h.querySelectorAll(".memory-item").length === 1 && !h.querySelector(".memory-item textarea"))(document.querySelector("#settingsContent"))`
   )
 );
 await evalJs(`document.querySelector('#settingsContent [data-memory-cat="偏好"]').click(); true`);

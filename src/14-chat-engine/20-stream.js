@@ -105,7 +105,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     if (!assistant.content)
       throw Error(
         assistant.steps?.length
-          ? "模型执行工具后未返回正文，可点「继续生成」请它收尾"
+          ? "模型执行工具后未返回正文，可继续生成以收尾"
           : anthropicLike(profile)
             ? "模型未返回正文，可在模型的高级配置里调高 max_tokens 后重试"
             : "模型未返回正文，可重试"

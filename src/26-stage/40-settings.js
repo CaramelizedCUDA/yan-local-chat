@@ -42,23 +42,23 @@ function stageSettingsHtml() {
     seg = (/** @type {string} */ key, /** @type {[string, string, boolean?][]} */ items, /** @type {string} */ active) =>
       `<div class="segmented">${items.map(([value, label, off]) => `<button type="button" data-stage-opt="${key}" data-value="${value}" class="${value === active ? "active" : ""}${off ? " off" : ""}"${off ? ` title="本机未装"` : ""}>${label}</button>`).join("")}</div>`;
   const state = !on
-    ? "已关，执事碰不到浏览器"
+    ? "已关闭"
     : !at
       ? "……"
       : !at.installed
-        ? "还缺驱动，先在下面装上"
+        ? "尚缺驱动"
         : browser === "chromium" && !at.browsers.chromium
-          ? "还缺内核，先在下面装上"
+          ? "尚缺内核"
           : missing
-            ? `本机没装 ${browserLabel}，先装上或换一个`
+            ? `本机未装 ${browserLabel}`
             : stage.ws
-              ? "正开着，在右侧那一笔朱竖里"
-              : "执事要看网页时自会打开";
-  const deps = !at ? "……" : at.installed ? `执事借它翻页、点按、填写 · ${escapeHtml(at.version)} 版` : "未装，执事还使不动浏览器";
+              ? "浏览器已开"
+              : "执事的浏览器，随用随启";
+  const deps = !at ? "……" : at.installed ? `Playwright MCP · ${escapeHtml(at.version)} 版` : "未安装";
   const installing = (/** @type {string} */ what, /** @type {string} */ label) =>
     `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? stageInstallLabel() : label}</button>`;
   return (
-    `<h2>游目</h2><p class="settings-lead">游目骋怀，足以极视听之娱。</p>` +
+    `<h2>游目</h2>` +
     `<div class="setting-row"><div class="setting-copy"><strong>游目</strong><small>${state}</small></div>${seg(
       "enabled",
       [
@@ -69,17 +69,17 @@ function stageSettingsHtml() {
     )}</div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>浏览器</strong><small>${
       browser === "chromium"
-        ? `不借本机的，另装一个放在游目里${at && !at.browsers.chromium ? "，还没装" : ""}`
+        ? `独立的 Chromium 内核${at && !at.browsers.chromium ? " · 尚未安装" : ""}`
         : missing
-          ? `本机没装 ${browserLabel}：装好即用，或选自带内核`
-          : `借本机的 ${browserLabel} 另起一份，与平日所用互不相扰`
-    }</small></div><div class="setting-actions">${missing ? `<button type="button" class="outline-btn" data-stage-get="${browser}">去下载</button>` : ""}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", "装内核") : ""}${seg(
+          ? `本机未装 ${browserLabel}`
+          : `借本机 ${browserLabel} 另起一份，不扰日常浏览`
+    }</small></div><div class="setting-actions">${missing ? `<button type="button" class="outline-btn" data-stage-get="${browser}">前往下载</button>` : ""}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", "安装内核") : ""}${seg(
       "browser",
       STAGE_BROWSERS.map(([value, label]) => [value, label, !!at && value !== "chromium" && !at.browsers[value]]),
       browser
     )}</div></div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>驱动</strong><small>${deps}</small></div>${installing("deps", at?.installed ? "更新" : "安装")}</div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>存储</strong><small>登录、收藏、下载都在这里 ${at ? code(at.home) : "……"}</small></div><button type="button" class="outline-btn" id="stageRevealHome">打开文件夹</button></div>`
+    `<div class="setting-row"><div class="setting-copy"><strong>存储</strong><small>登录、收藏与下载 · ${at ? code(at.home) : "……"}</small></div><button type="button" class="outline-btn" id="stageRevealHome">打开文件夹</button></div>`
   );
 }
 async function stageLoadHome() {
@@ -98,7 +98,7 @@ function stageSetOptions(patch) {
   renderSettings();
 }
 function stageInstallLabel() {
-  return stageProgress === null ? "正在装…" : `正在装 ${stageProgress}%`;
+  return stageProgress === null ? "安装中…" : `安装中 ${stageProgress}%`;
 }
 /** @param {"deps" | "chromium"} what */
 async function stageInstall(what) {
@@ -115,7 +115,7 @@ async function stageInstall(what) {
   }, 2000);
   try {
     stageHomeState = await bridge("/api/stage/install", { what }, AbortSignal.timeout(15 * 60000));
-    toast(what === "deps" ? "驱动已装好" : "内核已装好");
+    toast(what === "deps" ? "驱动已安装" : "内核已安装");
     if (store.settings.stage?.enabled) stageSetOptions({});
   } catch (error) {
     toast(String(/** @type {any} */ (error).message || error).slice(0, 160), 6000);
