@@ -161,16 +161,17 @@ async function stageMarkDo(body) {
   const { browserContextId } = await stageSend("Target.createBrowserContext", { disposeOnDetach: true });
   stage.helperCtx = browserContextId;
   try {
-    const { targetId } = await stageSend("Target.createTarget", { url: `${stage.scheme}://favorites/`, browserContextId });
+    const { targetId } = await stageSend("Target.createTarget", { url: stageInsideUrl("favorites"), browserContextId });
     const { sessionId } = await stageSend("Target.attachToTarget", { targetId, flatten: true });
     const run = (/** @type {string} */ expression) =>
       stageSend("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, sessionId);
     // 页里的 chrome.bookmarks 载好才有
-    for (let i = 0; i < 50; i++) {
-      const ready = await run("typeof chrome === 'object' && !!chrome.bookmarks").catch(() => null);
-      if (ready?.result?.value) break;
-      await new Promise(resolve => setTimeout(resolve, 100));
+    let ready = false;
+    for (let i = 0; i < 50 && !ready; i++) {
+      ready = !!(await run("typeof chrome === 'object' && !!chrome.bookmarks").catch(() => null))?.result?.value;
+      if (!ready) await new Promise(resolve => setTimeout(resolve, 100));
     }
+    if (!ready) throw Error("浏览器的收藏页未能载入");
     const { result, exceptionDetails } = await run(
       `(async () => { const bm = (fn, ...args) => new Promise((ok, no) => chrome.bookmarks[fn](...args, r => chrome.runtime.lastError ? no(Error(chrome.runtime.lastError.message)) : ok(r))); ${body}; return (await bm("getTree"))[0].children; })()`
     );
@@ -346,11 +347,16 @@ function stageMarkFormHtml(id, name, url) {
 }
 
 // ---------- 浏览器自己的页 ----------
-// 历史、下载、收藏、设置：浏览器本有，经调试口在游目里开得出、能点能改，言不另做一套。开成一张新签
+// 历史、下载、收藏、设置：浏览器本有，经调试口在游目里开得出、能点能改，言不另做一套。开成一张新签。
+// 收藏页 Edge 叫 favorites，Chrome 与自带内核叫 bookmarks（chrome://favorites 是错误页）；其余同名
 /** @param {string} page favorites / history / downloads / settings */
+function stageInsideUrl(page) {
+  return `${stage.scheme}://${stage.scheme === "chrome" && page === "favorites" ? "bookmarks" : page}/`;
+}
+/** @param {string} page */
 function stageOpenInside(page) {
   if (!stage.ws) return void stageLaunch();
-  void stageSend("Target.createTarget", { url: `${stage.scheme}://${page}/` }).catch(error =>
+  void stageSend("Target.createTarget", { url: stageInsideUrl(page) }).catch(error =>
     toast(`打开失败：${String(error.message || error).slice(0, 80)}`)
   );
 }
