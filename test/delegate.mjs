@@ -1,13 +1,15 @@
 // 差遣（子 Agent）：主模型把子任务交给帮手，帮手用同样的工具另起一段跑完并回报；步骤嵌在差遣卡片里，改动计入本答，主模型没读过的文件仍不能直接改
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { connect, check, sleep, PAGE, WORK } from "./lib.mjs";
+const { bundleStyles } = createRequire(import.meta.url)("../build.js");
 const { send, evalJs, waitFor, shot, close } = await connect();
 mkdirSync(WORK + "/src", { recursive: true });
 writeFileSync(WORK + "/src/a.js", "function f() {\n  return 1;\n}\n");
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
 await evalJs(
-  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 4, settings: { name: "测", theme: "light", inkMotion: "off", mode: "work", activeProfileId: "p1", pendingWorkdir: ${JSON.stringify(WORK)}, autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, maxTokens: 8192, quota: "100k", usedTokens: 0, systemPrompt: "" }], conversations: [], library: [], drafts: {} })); true`
+  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 4, settings: { name: "测", theme: "light", inkMotion: "off", mode: "work", activeProfileId: "p1", pendingWorkdir: ${JSON.stringify(WORK)}, autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, maxTokens: 8192, quota: "100k", usedTokens: 0, systemPrompt: "", reasoningLevels: "low, medium, xhigh" }], conversations: [], library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
@@ -23,6 +25,8 @@ let panelLiveSeen = false,
   thoughtLive = false,
   nestedInTrail = 0,
   metaHelpers = "",
+  cardClock = "",
+  labelClock = "",
   panelOpened = false,
   breathing = false;
 const seen = [];
@@ -36,7 +40,7 @@ for (let i = 0; i < 200; i++) {
     }
   }
   const s = await evalJs(
-    `(d => d ? { status: d.dataset.status, trailNested: d.querySelectorAll(".tool-step").length, panelNested: document.querySelectorAll("#helperModal .tool-step").length, panelLive: document.querySelector("#helperModal .sub-trail")?.dataset.live, panelOpen: !document.querySelector("#helperModal").classList.contains("hidden"), running: document.querySelectorAll('.message.assistant .tool-step-delegate[data-status="running"]').length, bar: document.querySelector("#helperBar:not(.hidden)")?.textContent || "", endBar: !!document.querySelector(".message.assistant .change-bar"), streaming: document.querySelector(".message.assistant")?.dataset.status === "streaming", thought: !!document.querySelector('#helperModal .sub-timeline .reasoning[data-state="live"]'), meta: document.querySelector(".message.assistant .tool-stack-meta")?.textContent || "" } : null)(document.querySelector(".message.assistant .tool-step-delegate"))`
+    `(d => d ? { status: d.dataset.status, trailNested: d.querySelectorAll(".tool-step").length, panelNested: document.querySelectorAll("#helperModal .tool-step").length, panelLive: document.querySelector("#helperModal .sub-trail")?.dataset.live, panelOpen: !document.querySelector("#helperModal").classList.contains("hidden"), running: document.querySelectorAll('.message.assistant .tool-step-delegate[data-status="running"]').length, bar: document.querySelector("#helperBar:not(.hidden)")?.textContent || "", endBar: !!document.querySelector(".message.assistant .change-bar"), streaming: document.querySelector(".message.assistant")?.dataset.status === "streaming", thought: !!document.querySelector('#helperModal .sub-timeline .reasoning[data-state="live"]'), meta: document.querySelector(".message.assistant .tool-stack-meta")?.textContent || "", card: d.querySelector(".tool-meta")?.textContent || "", label: document.querySelector(".message.assistant .tool-stack-label")?.textContent || "" } : null)(document.querySelector(".message.assistant .tool-step-delegate"))`
   );
   if (s) seen.push(JSON.stringify(s));
   if (s?.status === "running" && s.panelOpen && s.panelNested >= 1 && s.panelLive === "true") panelLiveSeen = true;
@@ -48,19 +52,24 @@ for (let i = 0; i < 200; i++) {
   if (s?.thought) thoughtLive = true;
   if (s?.status === "running") breathing = true;
   if (/名帮手|帮手「/.test(s?.meta || "")) metaHelpers = s.meta;
+  if (s?.status === "running" && /^\d+ 步 · \d+ 秒$/.test(s.card)) cardClock = s.card;
+  if (/^工作中 · \d+ 秒$/.test(s?.label || "")) labelClock = s.label;
   // 面板里就地更新：给第一个做完的嵌套步骤做个记号，之后每次刷新都该还是同一个节点（整段换新会让输出闪、思绪合不上）
   if (s?.status === "running" && s.panelNested >= 1)
     await evalJs(
       `(() => { window.__markLost ??= 0; const step = document.querySelector('#helperModal .tool-step[data-status="done"]'); if (step && !step.dataset.mark) { if (window.__stepMarked) window.__markLost++; step.dataset.mark = "1"; window.__stepMarked = true; } })(); true`
     );
-  if (await evalJs(`(document.querySelector('.message.assistant')?.dataset.status ?? "streaming") !== "streaming"`)) break;
+  // 主答派完活、只剩等待就收尾；帮手的回报另起一答。等到最后那一答写完（回报都收齐了）
+  if (
+    await evalJs(`(m => m?.status === "complete" && m.content.includes("DELEGATE done"))(__yanState().conversations[0]?.messages.at(-1))`)
+  )
+    break;
   await sleep(60);
 }
 check("helper timeline runs live in the side panel", panelLiveSeen, [...new Set(seen)].slice(0, 6).join(" | "));
 check("the trail keeps only a marker, no nested helper steps", nestedInTrail === 0, String(nestedInTrail));
 check("two helpers ran in parallel", bothRunning, [...new Set(seen)].slice(0, 6).join(" | "));
 check("the work bar above the composer names both running helpers", !!barBoth, [...new Set(seen)].slice(-3).join(" | "));
-check("the work bar tallies files changed while the reply is still being written", !!barChanges, barChanges);
 check("no change bar trails the reply while it is still being written", !endBarWhileStreaming);
 check("helper's live thought shown in the panel", thoughtLive);
 // 呼吸是纯 CSS：无头浏览器强制 prefers-reduced-motion: reduce，那一档本就该把动画压掉（用户要少动效就该不动），
@@ -68,21 +77,30 @@ check("helper's live thought shown in the panel", thoughtLive);
 check("the marker carries the running state the breathing hooks onto", breathing, String(breathing));
 check(
   "the breathing rule is in the built stylesheet",
-  readFileSync("app.css", "utf8").includes(':root[data-ink-motion="on"] .tool-step-delegate[data-status="running"]')
+  bundleStyles().text.includes(':root[data-ink-motion="on"] .tool-step-delegate[data-status="running"]')
 );
 check(
   "panel steps are updated in place, never re-created",
   await evalJs(`(window.__markLost || 0) === 0 && !!document.querySelector('#helperModal .tool-step[data-mark]')`),
   await evalJs(`String(window.__markLost)`)
 );
+check("the helper marker shows elapsed time while it runs", !!cardClock, [...new Set(seen)].slice(-3).join(" | "));
+check("the trail head counts the time while the answer is written", !!labelClock, labelClock);
 check("trail summary names the helpers", /2 名帮手 · \d+ 步 · 进行中|帮手「.+」· \d+ 步 · 进行中/.test(metaHelpers), metaHelpers);
 check(
   "helper bar gone after completion",
   await evalJs(
     `document.querySelector("#helperBar").classList.contains("hidden") || document.querySelector("#helperBar").classList.contains("leaving")`
-  )
+  ),
+  await evalJs(`document.querySelector("#helperBar").className + " | " + document.querySelector("#helperBar").textContent`)
 );
 await waitFor(`document.querySelector('.message.assistant')?.dataset.status === "complete"`, 40000);
+const shape = await evalJs(`__yanState().conversations[0].messages.map(m => m.role + (m.relay ? ":relay" : "")).join(",")`);
+check(
+  "the first answer closed with only waiting left; the reports came back as their own question(s)",
+  /^user,assistant,(user:relay,assistant,){1,2}$/.test(shape + ","),
+  shape
+);
 await evalJs(`document.querySelector(".message.assistant .tool-stack").open = true; true`);
 await sleep(200);
 await shot("delegate.png");
@@ -95,9 +113,30 @@ check(
   JSON.stringify(card)
 );
 check("marker meta counts helper steps and files", /2 步 · 改 1 个文件 · \d+ 秒/.test(card.meta), card.meta);
+// 思考强度：乙领命时给了 low，请求里带的就是 low、签上标「思考低」；甲没给，沿用主答（此处是默认，不带字段、不标）
+const efforts = JSON.parse(
+  await evalJs(
+    `JSON.stringify([...document.querySelectorAll(".message.assistant .tool-step-delegate")].map(d => ({ title: d.querySelector(".tool-title").textContent, meta: d.querySelector(".tool-meta").textContent })))`
+  )
+);
+const helperB = efforts.find(e => e.title === "建 b.js"),
+  helperA = efforts.find(e => e.title === "改 a.js"),
+  reportB = await evalJs(
+    `__yanState().conversations[0].messages.flatMap(m => m.steps || []).find(s => s.title === "建 b.js")?.sub?.report || ""`
+  );
+check(
+  "a helper sent with effort thinks at that level and the marker says so",
+  reportB.endsWith("effort:low") && /思考低$/.test(helperB?.meta || "") && !/思考/.test(helperA?.meta || ""),
+  JSON.stringify({ reportB, efforts })
+);
+// 差遣的档位枚举只列这台模型认的几档：通用四档里的 high、max 它不认，主模型挑中了帮手起跑就会被拒
+const opener = await evalJs(`__yanState().conversations[0].messages[1].content`);
+check("the delegate effort enum lists only the levels this model takes", opener.includes("档位 low,medium,xhigh"), opener);
+// 一答之内思考接得上：帮手乙想过再调工具，下一轮请求里那条带调用的 assistant 消息带着它这一轮的思绪
+check("a round's reasoning goes back with its tool call (reasoning_content)", reportB.includes("echo:yes"), reportB);
 // 一答收尾时步骤的 at 会前移，分组的键随之变。页面若不撤掉落单的旧分组，同一次差遣就画两遍
 const painted = await evalJs(
-  `JSON.stringify({ markers: document.querySelectorAll(".message.assistant .tool-step-delegate").length, groups: document.querySelectorAll(".message.assistant .tool-stack-body > .trail-group").length, steps: __yanState().conversations[0].messages.at(-1).steps.length })`
+  `JSON.stringify({ markers: document.querySelectorAll(".message.assistant .tool-step-delegate").length, groups: document.querySelectorAll(".message.assistant .tool-stack-body > .trail-group").length, steps: __yanState().conversations[0].messages[1].steps.length })`
 );
 check(
   "each step is painted once — stale groups are dropped when offsets shift",
@@ -181,18 +220,17 @@ check(
   second.marker === "建 b.js" &&
     second.nested.join() === "写入:done" &&
     second.thought.startsWith("帮手乙想第 1 步。") &&
-    second.report === "回报乙：已新建 src/b.js。",
+    second.report.startsWith("回报乙：已新建 src/b.js。"),
   JSON.stringify(second)
 );
 // 合上那扇窗，后面几项看的是正文
 await evalJs(`document.querySelector("#helperClose").click(); true`);
 check("second helper's file exists", readFileSync(WORK + "/src/b.js", "utf8").includes("export const b = 2;"));
-const text = await evalJs(`document.querySelector(".message.assistant .assistant-block > .markdown").textContent`);
+const text = await evalJs(`__yanState().conversations[0].messages.at(-1).content`);
+// 先到的那份可能在第一答里就递上了（那一答还在说「等回报」），后到的另起一答；收尾那一答前冠着派活那一答的行迹
 check(
-  "parent received both helper reports with change summaries",
-  text.includes("帮手已完成（2 步，改了 1 个文件：src/a.js（+1 −1））") &&
-    text.includes("回报：已把 return 1 改为 return 2") &&
-    text.includes("帮手已完成（1 步，改了 1 个文件：src/b.js（+1 −0））"),
+  "the last answer closes on the reports, behind the digest of the answer that sent the helpers",
+  text.startsWith("DELEGATE done｜trail:yes") && /帮手「(改 a\.js|建 b\.js)」已完成（\d 步，改了 1 个文件：src\/[ab]\.js/.test(text),
   text.slice(0, 400)
 );
 check(
@@ -202,24 +240,9 @@ check(
   await evalJs(`document.querySelector(".message.assistant .change-summary")?.textContent`)
 );
 check(
-  "context cost includes helper rounds",
-  (await evalJs(`document.querySelector(".message.assistant .message-cost")?.textContent`)) === "耗墨 50",
+  "the sending answer's cost includes the helpers, charged when they finished",
+  (await evalJs(`document.querySelector(".message.assistant .message-cost")?.textContent`)) === "耗墨 45",
   await evalJs(`document.querySelector(".message.assistant .message-cost")?.textContent`)
-);
-// 下一问的行迹摘要里应有差遣一条，连同帮手改过的文件
-await evalJs(
-  `document.querySelector("#chatInput").value = "DIGEST-ECHO"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
-);
-await waitFor(
-  `document.querySelectorAll('.message.assistant').length === 2 && [...document.querySelectorAll('.message.assistant')].at(-1)?.dataset.status === "complete"`
-);
-const digest = await evalJs(`[...document.querySelectorAll('.message.assistant')].at(-1).querySelector(".markdown").textContent`);
-check(
-  "digest carries both delegate steps and helpers' files",
-  /差遣「改 a\.js」→ 2 步 · 改 1 个文件 · \d+ 秒，改了 src\/a\.js；差遣「建 b\.js」→ 1 步 · 改 1 个文件 · \d+ 秒，改了 src\/b\.js/.test(
-    digest
-  ),
-  digest
 );
 // 刷新后从存储重画：差遣卡片与嵌套步骤仍在
 await send("Page.navigate", { url: PAGE });

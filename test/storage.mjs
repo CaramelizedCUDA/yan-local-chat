@@ -217,7 +217,7 @@ check(
 );
 // ---- 保存请求已经从待写队列取走、却还没返回时离页：最新状态仍同步兜进 IndexedDB，下次开页再推回目录
 await evalJs(
-  `(() => { const real = window.fetch.bind(window), gate = {}; gate.promise = new Promise(resolve => gate.release = resolve); window.__storageRealFetch = real; window.__storageSaveGate = gate; window.__storageSaveStarted = false; window.fetch = (...args) => { if (!window.__storageSaveStarted && String(args[0]).includes("/api/chats/save")) { window.__storageSaveStarted = true; return gate.promise.then(() => real(...args)); } return real(...args); }; const c = __yanState().conversations.find(c => c.id === "stored-chat"); c.messages.push({ id: "u3", role: "user", content: "离页前最后一句", timestamp: new Date().toISOString() }); __yanSave(); return true; })()`
+  `(() => { const real = window.fetch.bind(window), gate = {}; gate.promise = new Promise(resolve => gate.release = resolve); window.__storageRealFetch = real; window.__storageSaveGate = gate; window.__storageSaveStarted = false; window.fetch = (...args) => { if (!window.__storageSaveStarted && (String(args[0]).includes("/api/chats/save") || String(args[1]?.body || "").includes('"path":"/api/chats/save"'))) { window.__storageSaveStarted = true; return gate.promise.then(() => real(...args)); } return real(...args); }; const c = __yanState().conversations.find(c => c.id === "stored-chat"); c.messages.push({ id: "u3", role: "user", content: "离页前最后一句", timestamp: new Date().toISOString() }); __yanSave(); return true; })()`
 );
 await waitFor(`window.__storageSaveStarted === true`, 5000);
 await evalJs(`window.dispatchEvent(new PageTransitionEvent("pagehide")); true`);
@@ -391,7 +391,7 @@ check("a failed config save is reported and retried", readConfig()?.settings?.na
 await evalJs(`document.querySelector('[data-conversation="stored-chat"] .history-open').click(); true`);
 await sleep(150);
 await evalJs(
-  `(() => { const real = window.fetch.bind(window), gate = {}; gate.promise = new Promise(resolve => gate.release = resolve); window.__storageRealFetch = real; window.__storageSaveGate = gate; window.__storageSaveStarted = false; window.fetch = (...args) => { if (!window.__storageSaveStarted && String(args[0]).includes("/api/chats/save")) { window.__storageSaveStarted = true; return gate.promise.then(() => real(...args)); } return real(...args); }; const c = __yanState().conversations.find(c => c.id === "stored-chat"); c.messages.push({ id: "u4", role: "user", content: "将与删除竞速", timestamp: new Date().toISOString() }); __yanSave(); return true; })()`
+  `(() => { const real = window.fetch.bind(window), gate = {}; gate.promise = new Promise(resolve => gate.release = resolve); window.__storageRealFetch = real; window.__storageSaveGate = gate; window.__storageSaveStarted = false; window.fetch = (...args) => { if (!window.__storageSaveStarted && (String(args[0]).includes("/api/chats/save") || String(args[1]?.body || "").includes('"path":"/api/chats/save"'))) { window.__storageSaveStarted = true; return gate.promise.then(() => real(...args)); } return real(...args); }; const c = __yanState().conversations.find(c => c.id === "stored-chat"); c.messages.push({ id: "u4", role: "user", content: "将与删除竞速", timestamp: new Date().toISOString() }); __yanSave(); return true; })()`
 );
 await waitFor(`window.__storageSaveStarted === true`, 5000);
 await evalJs(`document.querySelector('[data-conversation="stored-chat"] [data-history-action="menu"]').click(); true`);
@@ -437,8 +437,8 @@ const imported = await evalJs(
   `(() => { const s = __yanState(), c = s.conversations.find(c => c.id === "imported-old"); return { policy: c.commandPolicy, workAuto: "workAuto" in c, reasoning: c.reasoning, messages: c.messages.length, forks: Array.isArray(c.forks), draft: s.drafts["imported-old"] }; })()`
 );
 check(
-  "an old backup is migrated on import: workAuto → commandPolicy, dangling compacting marker dropped, string draft wrapped",
-  imported.policy === "auto" &&
+  "an old backup is tidied on import: stale workAuto dropped, dangling compacting marker dropped, string draft wrapped",
+  imported.policy === "ask" &&
     !imported.workAuto &&
     imported.reasoning === "" &&
     imported.messages === 1 &&

@@ -1,5 +1,5 @@
 // 言 · 旁注：锚点、面板、侧线请求
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // ---------- 旁注：附在正文某条消息某一处的旁支小对话。它读得到正文（到所注消息为止），正文永远读不到它 ----------
 let sideThreadId = null; // 面板里正打开的旁注（内存态，刷新后收起，旁注本身仍在）
 let sideIndexFor = null; // 目录页是从哪条消息打开的：目录里「另起一条」落在它上面
@@ -254,10 +254,8 @@ function renderSideIndex(c) {
     .join("");
   // 「＋」另起一条：正文里划着一段就注在那一段上；没划就是就整条回复而谈（从哪条回复进来的就是哪条，否则是最末一答）
   $("#sideMessages").innerHTML =
-    `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? `${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="划选正文中的一段即注在那一段上；未划选则就整条回复而谈"><span>＋</span>另起一条</button></div></div>${
-      items
-        ? `${items}<p class="side-index-foot">划选正文中的一段，即可就那一段另起旁注</p>`
-        : `<div class="side-empty">还没有旁注<br>划选正文中的一段，或按上面的「另起一条」</div>`
+    `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? `${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="另起一条旁注"><span>＋</span>另起一条</button></div></div>${
+      items ? items : `<div class="side-empty">尚无旁注</div>`
     }</div>`;
   renderSideSend();
 }
@@ -326,7 +324,7 @@ function setupSidePanel() {
     if (!e.target.closest("[data-side-new]")) return;
     const c = currentConversation(),
       anchor = c && indexNewAnchor(c);
-    if (!anchor) return toast("这段对话里还没有可注的回复");
+    if (!anchor) return toast("此对话尚无可注的回复");
     getSelection()?.removeAllRanges();
     createThread(anchor);
   });
@@ -472,9 +470,8 @@ async function sendSide() {
     job.controller.abort();
     return;
   }
-  const input = $("#sideInput"),
-    text = input.value.trim();
-  if (!text) return;
+  const input = $("#sideInput");
+  if (!input.value.trim()) return;
   const profile = activeProfile();
   if (!profile) {
     toast("请先接入模型");
@@ -482,6 +479,9 @@ async function sendSide() {
   }
   if (quotaBlocked(profile))
     return toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候");
+  // 认领的工夫里接着写的也算上，所以到这里才取
+  const text = (await claimSide(c, thread)) && input.value.trim();
+  if (!text) return;
   /** @type {Message} */
   const user = { id: uid(), role: "user", content: text, timestamp: now() };
   /** @type {Message} */
@@ -495,6 +495,16 @@ async function sendSide() {
   renderSidePanel();
   await streamSideReply(c, thread, assistant, profile);
 }
+// 旁注写进的也是这段对话：开工前与正文一样向桥接认领，两页不同时写。等认领的工夫里这条旁注已开了一答（连点两下）、
+// 面板已关或换了对话、这条旁注被并进来的新版换掉，都作罢——输入框里的话还在
+/** @param {Conversation} c @param {Thread} thread */
+async function claimSide(c, thread) {
+  if (runningElsewhere(c.id) || !(await claimConversation(c.id))) {
+    toast("此对话正在另一页面作答，稍后再发");
+    return false;
+  }
+  return !sideJob(thread) && currentThread() === thread;
+}
 // 就旁注里的某一问再答：截掉从 from 起的往来（那一问之后的），另起一答。编辑后重问与重新生成都走这里
 /**
  * @param {Conversation} c
@@ -504,6 +514,7 @@ async function askSideAgain(c, thread, from) {
   const profile = activeProfile();
   if (!profile) return openSettings("models");
   if (quotaBlocked(profile)) return toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足，请稍候");
+  if (!(await claimSide(c, thread))) return;
   /** @type {Message} */
   const assistant = { id: uid(), role: "assistant", content: "", timestamp: now(), status: "streaming", modelName: profile.name };
   thread.messages = [...thread.messages.slice(0, from), assistant];
@@ -525,13 +536,9 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     job = { controller: new AbortController(), assistantId: assistant.id, threadId: thread.id, conversationId: conversation.id };
   requestJobs.set(key, job);
   renderSideSend();
-  // 旁注是折起注脚式的行迹，不是执事的时间线（正文那侧的画法记在消息上，见 streamReply）
-  assistant.work = false;
-  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  const tally = newTally();
   /** @type {Array<Record<string, any>>} */
   let history = [];
-  let opened = false,
-    usageKnown = false;
   try {
     const anchorIndex = conversation.messages.findIndex(m => m.id === thread.anchor.messageId);
     const main = anchorIndex >= 0 ? conversation.messages.slice(0, anchorIndex + 1) : conversation.messages;
@@ -550,7 +557,7 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       })
     );
     // 旁注带只查不改的工具（检索、翻网页、翻文档、翻记忆）：模型说「我去查一下」就真能查，不会说完就断在那里；
-    // 没有工具可用时（模型关了本机工具、没桥接）在提示里说明，免得它许诺去查
+    // 没有工具可用时（模型关了本机工具）在提示里说明，免得它许诺去查
     if (profile.tools !== false) await mcpForTurn();
     const tools = profile.tools !== false ? toolDefinitions(conversation, { lookup: true }) : null;
     const overrides = {
@@ -564,55 +571,17 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       const el = $("#sideScroll");
       if (el) el.scrollTop = el.scrollHeight;
     };
-    const toolCache = new Map();
-    let rounds = 0;
-    for (;;) {
-      assistant.toolCalls = null;
-      assistant.usage = null;
-      const roundStart = assistant.content.length;
-      await readReply(profile, history, job.controller.signal, overrides, assistant, false, () => (opened = true), onFrame);
-      if (assistant.usage) {
-        usageKnown = true;
-        for (const key of Object.keys(usage)) usage[key] += Number(assistant.usage[key] || 0);
-      }
-      const calls = (assistant.toolCalls || []).filter(call => call.name);
-      if (!calls.length || !overrides.tools) break;
-      if (++rounds > toolRoundLimit()) {
-        const said = assistant.content.slice(roundStart).trim();
-        if (said) history.push({ role: "assistant", content: said });
-        history.push({ role: "user", content: prompt("assistant.roundLimit") });
-        overrides.tools = null;
-        assistant.content = paragraphBreak(assistant.content);
-        continue;
-      }
-      /** @type {Step[]} */
-      const steps = calls.map(call => ({
-        id: call.id || `call_${uid().slice(0, 8)}`,
-        name: call.name,
-        arguments: call.arguments || "{}",
-        status: "running",
-        at: assistant.content.length,
-        rat: String(assistant.reasoning || "").length
-      }));
-      (assistant.steps ||= []).push(...steps);
-      refreshSteps(assistant);
-      history.push({
-        role: "assistant",
-        content: assistant.content.slice(roundStart) || null,
-        tool_calls: steps.map(step => ({
-          id: step.id,
-          type: "function",
-          function: { name: step.name, arguments: replayArguments(step.arguments) }
-        })),
-        ...(assistant.thinkingBlocks?.length ? { thinking_blocks: assistant.thinkingBlocks } : {})
-      });
-      const outcomes = await runSteps(steps, conversation, assistant, job.controller.signal, toolCache);
-      for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
-      assistant.content = paragraphBreak(assistant.content);
-    }
-    const leadTrim = assistant.content.match(/^\n*/)[0].length;
-    assistant.content = assistant.content.replace(/^\n+|\n+$/g, "");
-    if (leadTrim) for (const step of assistant.steps || []) if (typeof step.at === "number") step.at = Math.max(0, step.at - leadTrim);
+    await runRounds(assistant, history, {
+      profile,
+      conversation,
+      host: assistant,
+      signal: job.controller.signal,
+      overrides,
+      tally,
+      roundLimit: toolRoundLimit(),
+      onFrame
+    });
+    trimReply(assistant);
     if (!assistant.content) throw Error(assistant.steps?.length ? "模型查阅后未返回正文" : "模型未返回正文");
     assistant.status = "complete";
     thread.updatedAt = now();
@@ -625,8 +594,13 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     }
   } finally {
     // 停止或中断也结算：接口接下了请求就花了墨；查阅了几轮的，各轮用量相加
-    assistant.usage = usageKnown ? usage : null;
-    accountUsage(profile, assistant, history, conversation, { opened });
+    assistant.usage = tally.usageKnown ? tally.usage : null;
+    accountUsage(profile, assistant, history, conversation, {
+      opened: tally.opened,
+      partialRound: tally.roundOpen,
+      roundStart: tally.roundStart,
+      steered: tally.steered
+    });
     if (requestJobs.get(key) === job) requestJobs.delete(key);
     markDirty(conversation.id);
     saveStore();
@@ -634,3 +608,4 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     else renderSideSend();
   }
 }
+defineLayer({ name: "side", rank: 40, open: sidePanelOpen, close: closeSidePanel });

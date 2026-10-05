@@ -2,11 +2,12 @@
 // 请示条从输入框上方浮出，不必去行迹里找那一行；条上画什么由那件工具的 approval 定。输入框留空时按 Enter 即运行或翻到下一题
 const pendingApprovals = new Map();
 /**
- * 挂起这一步，等用户在请示条上定夺，返回定夺的结果；定了之后任务条上写 label
+ * 挂起这一步，等用户在请示条上定夺，返回定夺的结果
  * @param {Step} step
  * @param {ToolContext} ctx
  */
-async function askApproval(step, { conversation, assistant, signal }, label) {
+async function askApproval(step, { conversation, assistant, signal }) {
+  signal.throwIfAborted();
   const job = requestJob(conversation.id);
   step.status = "pending";
   if (job) setJobLabel(conversation, job, "等待确认");
@@ -28,7 +29,7 @@ async function askApproval(step, { conversation, assistant, signal }, label) {
     renderApprovalBar();
   }).finally(renderApprovalBar);
   step.status = "running";
-  if (job) setJobLabel(conversation, job, label);
+  if (job) setJobLabel(conversation, job);
   refreshSteps(assistant);
   renderHistory();
   return answer;
@@ -135,7 +136,8 @@ function bindApprovalEvents() {
     c.commandPolicy = nextCommandPolicy(commandPolicyOf(c));
     saveStore();
     renderWorkAuto();
+    // 只放行指令与外部服务的请示；等着作答的表单不是「批不批」，不能拿 true 打发掉
     if (c.commandPolicy !== "ask")
-      for (const [stepId, entry] of pendingApprovals) if (entry.conversationId === c.id) settleApproval(stepId, true);
+      for (const [stepId, entry] of pendingApprovals) if (entry.conversationId === c.id && !entry.step.form) settleApproval(stepId, true);
   };
 }

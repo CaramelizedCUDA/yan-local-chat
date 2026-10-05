@@ -37,7 +37,7 @@ input[type="checkbox"] {
   height: 14px;
   margin: 0;
   border: 1px solid var(--ink-3);
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   background: transparent;
   vertical-align: -2px;
   cursor: pointer;
@@ -84,12 +84,23 @@ input[type="number"]::-webkit-outer-spin-button {
   /* 胭脂：改动的印。花鸟里点花瓣的紫红，比朱冷一档——回复之下与输入框上方那枚「改」印专用，
      与「成」的朱印挨着也分得开（见 设计稿/14-改印候选与收起写法；落选：朱砂同「成」、雌黄近泥金、赭石太沉、花青撞黛） */
   --rouge: #963a50;
+  /* 函套的布面与题签：卷宗与分组里的夹、组画成一只小函，夹条左缘包一道这色的布边 */
+  --cloth: color-mix(in srgb, var(--keep) 78%, var(--ink));
+  --slip: #f6f1e4;
   --code-green: #536d62;
   --code-blue: #5c6386;
   --shadow: 0 18px 55px rgba(61, 49, 32, 0.13);
-  --read: 760px;
+  /* 阅读宽度不设选项：860，中号字一行约 53 字；试过 960，正文一行太长、整页散了（设计稿/39） */
+  --read: 860px;
   --body: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
   --title: "Noto Serif SC", "Songti SC", "STSong", serif;
+  /* 圆角三档：小件（标签、行内代码、纸签、卡片）、块（条目、按钮、菜单项、工具输出）、输入框与面板（代码块、气泡、弹层）。
+     原先十几种数值按就近归档：2–5 → 小、6–9 → 块、10–18 → 面板；不对称的逐角归档，「一角收小」的形照留。
+     不归档的：50% 的圆钮圆点、墨滴的椭圆、0 与 1–1.5px 的细条、滚动条与墨痕的 99px。
+     落选的 2 · 4 · 6（见 设计稿/34）：输入框与弹层也成了方块，大面失了纸的软 */
+  --radius-s: 3px;
+  --radius-m: 6px;
+  --radius-l: 10px;
 }
 /* 笔意图标（画法见 src/03-brush.js）：墨分两色，一片淡墨作纸，一点朱。
    落选的：等宽圆头的线稿加实心色块（UI 图标的画法，怎么减细节都偏卡通）；卷宗一个「卷」字小印（与「工」印混在一处，认不出是入口） */
@@ -110,6 +121,10 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .brush .zhu {
   fill: var(--accent);
+}
+/* 全长的淡痕（余墨的底、圆相未走到的那一圈） */
+.brush .ghost {
+  fill: color-mix(in srgb, var(--ink) 10%, transparent);
 }
 .library-open:hover .archive-icon,
 .new-chat:hover .brush {
@@ -219,6 +234,8 @@ input[type="number"]::-webkit-outer-spin-button {
   --keep: #8fa6b4;
   --reach: #8fb3a0;
   --rouge: #d07d92;
+  --cloth: color-mix(in srgb, var(--keep) 34%, var(--paper-3));
+  --slip: #d8d1c1;
   --code-green: #8fb3a3;
   --code-blue: #9aa3cc;
   --shadow: 0 22px 64px rgba(0, 0, 0, 0.36);
@@ -232,4 +249,32 @@ body {
 }
 ::selection {
   background: var(--accent-soft);
+}
+/* 接不上本机桥接时的一页：盖住整个界面，接上即撤 */
+.bridge-gate {
+  display: none;
+}
+:root[data-bridge="waiting"] .bridge-gate {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--title);
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+.bridge-gate h1 {
+  margin: 8px 0 0;
+  font-weight: 500;
+  font-size: 22px;
+}
+.bridge-gate p {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
 }

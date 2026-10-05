@@ -135,16 +135,59 @@ check(
 );
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
 await openPending("一声.wav");
-await waitFor(`document.querySelector("#fileViewerStage audio")?.readyState >= 1`, 8000);
+await waitFor(`document.querySelector("#listenAudio")?.readyState >= 1 && !!document.querySelector("#fileViewerStage .listen-page")`, 8000);
+await sleep(500);
 await shot("attachment-audio.png");
-const audio = await evalJs(`(a => ({ src: a.src, duration: a.duration }))(document.querySelector("#fileViewerStage audio"))`);
-check("audio plays in place with its duration known", Math.abs(audio.duration - 1) < 0.05, JSON.stringify(audio));
+const audio = await evalJs(`(a => ({ src: a.src, duration: a.duration }))(document.querySelector("#listenAudio"))`);
+check("audio opens as a listening page with its duration known", Math.abs(audio.duration - 1) < 0.05, JSON.stringify(audio));
 const part = await fetch(audio.src, { headers: { Range: "bytes=0-3" } });
 check(
   "media answers byte ranges so the player can seek",
   part.status === 206 && part.headers.get("content-range") === "bytes 0-3/8044" && (await part.text()) === "RIFF"
 );
+// 放着点空白：预览收起，声不断，顶栏垂下一根绳（一秒的样本太短，循环着放）
+const gesture = expression => send("Runtime.evaluate", { expression, userGesture: true, awaitPromise: true });
+await evalJs(`document.querySelector("#listenAudio").loop = true; true`);
+await gesture(`document.querySelector('#fileViewerStage [data-listen-do="toggle"]').click()`);
+await waitFor(`!document.querySelector("#listenAudio").paused`, 4000);
+await evalJs(`document.querySelector("#fileViewerStage").click(); true`);
+await waitFor(
+  `document.querySelector("#fileViewer").classList.contains("hidden") && !document.querySelector("#listenPendant").classList.contains("hidden")`,
+  3000
+);
+await sleep(300);
+await shot("listen-rope.png");
+check(
+  "leaving the page by a blank click keeps playing and hangs the pendant",
+  await evalJs(`!document.querySelector("#listenAudio").paused`)
+);
+await evalJs(
+  `document.querySelector('#listenPendant [data-listen="rope"]').dispatchEvent(new MouseEvent("click", { bubbles: true })); true`
+);
+await sleep(700);
+await shot("listen-pendant.png");
+check("the rope lowers the pendant", await evalJs(`document.querySelector("#listenPendant").classList.contains("open")`));
+// 点题名回整页：玉佩收起，仍在放；× 才停
+await evalJs(`document.querySelector('#listenPendant [data-listen="page"]').click(); true`);
+await waitFor(`!!document.querySelector("#fileViewerStage .listen-page")`, 4000);
+check(
+  "the title returns to the page, still playing",
+  await evalJs(`document.querySelector("#listenPendant").classList.contains("hidden") && !document.querySelector("#listenAudio").paused`)
+);
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+await sleep(200);
+check(
+  "× stops it and nothing hangs",
+  await evalJs(
+    `document.querySelector("#listenAudio").paused && !document.querySelector("#listenAudio").getAttribute("src") && document.querySelector("#listenPendant").classList.contains("hidden")`
+  )
+);
+// 没放就离开：不挂
+await openPending("一声.wav");
+await waitFor(`!!document.querySelector("#fileViewerStage .listen-page")`, 8000);
+await evalJs(`document.querySelector("#fileViewerStage").click(); true`);
+await sleep(200);
+check("leaving without playing hangs nothing", await evalJs(`document.querySelector("#listenPendant").classList.contains("hidden")`));
 await openPending("一片.webm");
 await waitFor(`document.querySelector("#fileViewerStage video")?.readyState >= 1`, 8000);
 await evalJs(`document.querySelector("#fileViewerStage video").currentTime = 0.5; true`);
@@ -161,7 +204,7 @@ await sleep(300);
 check(
   "a video the browser cannot decode turns into a download hint",
   await evalJs(
-    `!document.querySelector("#fileViewerStage video") && document.querySelector("#fileViewerStage").textContent.includes("放不了")`
+    `!document.querySelector("#fileViewerStage video") && document.querySelector("#fileViewerStage").textContent.includes("不支持此编码")`
   )
 );
 await close();

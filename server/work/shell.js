@@ -4,8 +4,27 @@ const { spawn, spawnSync } = require("node:child_process");
 const sandbox = require("../sandbox.js");
 const { tail, decodeClixml, encodePowerShell } = require("./text.js");
 
-const WORK_SHELL = process.platform === "win32" ? "PowerShell" : "sh";
+// Windows 上有 PowerShell 7（pwsh）就用它：被 Select-Object -First 截断的原生程序不再报退出码 -1、&& 与 || 可用、
+// 原生程序的 stderr 经 2>&1 不再裹成一串 NativeCommandError；没装的退回系统自带的 Windows PowerShell 5.1
+const PWSH = process.platform === "win32" && spawnSync("where.exe", ["pwsh"], { windowsHide: true }).status === 0;
+const WORK_SHELL = process.platform !== "win32" ? "sh" : PWSH ? "PowerShell 7" : "Windows PowerShell 5.1";
+// 包在指令外的一层：先把输入输出切到 UTF-8，再把指令（经环境变量 YAN_COMMAND 递进来）当作一段脚本解析、在当前作用域执行。
+// 指令若直接拼进来，写错了（bash 的 heredoc 之类）整段解析不过、切编码那行也没跑，报错按系统代码页吐出来就成了乱码；
+// 分开解析，报错是读得懂的字，模型一看就知道改。末尾追记的 $? 是指令最后一句成没成（包成脚本块后外头的 $? 不再是它）。
+// 原生程序的退出码在 $LASTEXITCODE；cmdlet 出错不设它，靠那个 $? 兜底，让模型能从退出码看出失败
+const POWERSHELL_WRAPPER = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; $OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference='SilentlyContinue'
+if ($PSStyle) { $PSStyle.OutputRendering = 'PlainText' }
+try { $__yan = [ScriptBlock]::Create($env:YAN_COMMAND + [Environment]::NewLine + '$__yanOk = $?') }
+catch { [Console]::Error.WriteLine("PowerShell 解析不了这条指令：" + $(if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message })); exit 1 }
+Remove-Item Env:YAN_COMMAND
+$__yanOk = $true
+. $__yan
+if ($LASTEXITCODE) { exit $LASTEXITCODE } elseif (-not $__yanOk) { exit 1 }`;
 const WORK_OUTPUT_LIMIT = 20000;
+// 交给模型的输出：stderr 里 PowerShell 的 CLIXML 还原成字，终端的颜色控制符（pytest、PowerShell 7 的报错都会带）去掉，过长的留尾
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
+const shownOutput = (text, stderr = false) =>
+  tail((stderr && process.platform === "win32" ? decodeClixml(text) : text).replace(ANSI, ""), WORK_OUTPUT_LIMIT);
 // 杀整棵进程树：PowerShell 起的子进程（node、python、构建脚本）不能只杀 shell 本身，否则用户点了停止，脚本还在后台改文件
 function killTree(child) {
   if (!child.pid || child.exitCode !== null || child.signalCode) return;
@@ -26,17 +45,13 @@ function killTree(child) {
   });
 }
 module.exports = function createShell({ toolEnv }) {
-  // 起一个 shell 跑指令：PowerShell 默认按系统代码页输出，中文会成乱码；先把输入输出都切到 UTF-8。
-  // 原生程序的退出码在 $LASTEXITCODE；cmdlet 出错不设它，靠 $? 兜底，让模型能从退出码看出失败
+  // 起一个 shell 跑指令（Windows 上外面包一层，见 POWERSHELL_WRAPPER）；指令经环境变量递进去，比塞进命令行能长两倍多
   function spawnShell(command, cwd, { boxed = false } = {}) {
     const win = process.platform === "win32";
-    const script = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; $OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference='SilentlyContinue'
-  ${command}
-  $ok = $?; if ($LASTEXITCODE) { exit $LASTEXITCODE } elseif (-not $ok) { exit 1 }`;
     const args = win
-      ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)]
+      ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(POWERSHELL_WRAPPER)]
       : ["-c", command];
-    const child = spawn(win ? "powershell.exe" : "/bin/sh", args, {
+    const child = spawn(win ? (PWSH ? "pwsh.exe" : "powershell.exe") : "/bin/sh", args, {
       cwd,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -46,7 +61,8 @@ module.exports = function createShell({ toolEnv }) {
         NO_COLOR: "1",
         PYTHONIOENCODING: "utf-8",
         PYTHONUTF8: "1",
-        CI: "1"
+        CI: "1",
+        ...(win ? { YAN_COMMAND: command } : {})
       }
     });
     // 按字交出输出：一块一块各自解码，汉字恰好跨在两块之间就被劈成两个 �
@@ -95,8 +111,8 @@ module.exports = function createShell({ toolEnv }) {
         signal?.removeEventListener("abort", onAbort);
         resolve({
           exitCode: code ?? (timedOut ? 124 : signalName || aborted ? 1 : 0),
-          stdout: tail(stdout, WORK_OUTPUT_LIMIT),
-          stderr: tail(win ? decodeClixml(stderr) : stderr, WORK_OUTPUT_LIMIT),
+          stdout: shownOutput(stdout),
+          stderr: shownOutput(stderr, true),
           timedOut,
           aborted
         });
@@ -108,10 +124,13 @@ module.exports = function createShell({ toolEnv }) {
   const BACKGROUND_KEEP = 24,
     backgroundJobs = new Map();
   let backgroundSeq = 0;
+  // 编号在桥接重启后从 bg1 重数：另记一个带这次启动标记的 key，页面刷新后重新等上时按它认，不会等到别的指令上
+  const BOOT = Date.now().toString(36);
   function startBackground(command, workdir, boxed) {
     const child = spawnShell(command, workdir, { boxed }),
       job = {
         id: `bg${++backgroundSeq}`,
+        key: `${BOOT}-${backgroundSeq}`,
         command,
         child,
         exitCode: null,
@@ -140,6 +159,11 @@ module.exports = function createShell({ toolEnv }) {
     child.on("close", code => {
       job.exitCode = code ?? 1;
     });
+    // 结束了（或压根没起来）：等着它的页面据此叫醒模型（见 watchBackground）
+    job.ended = new Promise(resolve => {
+      child.once("close", resolve);
+      child.once("error", resolve);
+    });
     for (const [id, old] of backgroundJobs) if (backgroundJobs.size >= BACKGROUND_KEEP && old.exitCode !== null) backgroundJobs.delete(id);
     backgroundJobs.set(job.id, job);
     return job;
@@ -159,10 +183,11 @@ module.exports = function createShell({ toolEnv }) {
       err = fresh("err");
     return {
       id: job.id,
+      key: job.key,
       running: job.exitCode === null,
       exitCode: job.exitCode,
-      stdout: tail(out, WORK_OUTPUT_LIMIT),
-      stderr: tail(process.platform === "win32" ? decodeClixml(err) : err, WORK_OUTPUT_LIMIT),
+      stdout: shownOutput(out),
+      stderr: shownOutput(err, true),
       durationMs: Date.now() - job.started
     };
   }
@@ -190,7 +215,25 @@ module.exports = function createShell({ toolEnv }) {
         });
       });
     }
-    return await backgroundReport(job, waitMs);
+    const report = await backgroundReport(job, waitMs);
+    // 模型自己看到它结束了：不必再叫醒一回
+    if (!report.running) job.reported = true;
+    return report;
   }
-  return { WORK_SHELL, killTree, runShell, startBackground, backgroundReport, checkBackground };
+  // 等后台指令结束再回话：页面据此叫醒模型，模型挂上就能收尾去睡，不必轮询。结束只报一回——
+  // 几处页面都在等、或刷新后重新等上的，后来的接手，先前的作罢（superseded）；报过的不再报（reported）；
+  // 桥接重启过，旧编号已不在（lost）
+  // 模型自己用 check_command 看到它结束了的，也算报过（reported，带上退出码，页面只把签改成已结束）
+  async function watchBackground(id, key, signal) {
+    const job = backgroundJobs.get(String(id || ""));
+    if (!job || (key && job.key !== key)) return { id, lost: true };
+    if (job.reported) return { id, reported: true, exitCode: job.exitCode };
+    const ticket = (job.watchTicket = (job.watchTicket || 0) + 1);
+    await Promise.race([job.ended, new Promise(resolve => signal?.addEventListener("abort", resolve, { once: true }))]);
+    if (ticket !== job.watchTicket || signal?.aborted) return { id, superseded: true };
+    if (job.reported) return { id, reported: true, exitCode: job.exitCode };
+    job.reported = true;
+    return { ...(await backgroundReport(job, 0)), command: job.command };
+  }
+  return { WORK_SHELL, killTree, runShell, startBackground, backgroundReport, checkBackground, watchBackground };
 };

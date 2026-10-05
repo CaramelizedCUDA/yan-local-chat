@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-// 把 src/ 下的 .js 拼成 support.js、styles/ 下的 .css 拼成 app.css（零依赖，没有转译；子目录就地展开）。
-// 桥接在线时页面直接从 src/ 与 styles/ 即时拼接，改完刷新即生效；这里产出的文件供 file:// 直接打开与不带桥接的场景使用。
-// 用法：node build.js            也可 require 后调用 bundleScript() / bundleStyles()
+// 拼接规则：prompts/ 与 src/ 下的 .js 拼成页面请求的 /support.js、styles/ 下的 .css 拼成 /app.css（零依赖，没有转译；子目录就地展开）。
+// 内置提示词排在最前、闭包之外：各自往 window.YAN_PROMPTS 上挂一份，src/ 开头取用；加一份提示词只需放进目录。
+// 桥接按请求即时拼（server.js），改完刷新即生效；不落成文件——言离不开桥接，没有谁读一份落盘的产物，留着只会与源码对不上。
+// 单元测试（test/unit/harness.mjs）照同一份清单拼
 "use strict";
 const fs = require("fs");
 const path = require("path");
 
 const ROOT = __dirname;
 const SRC = path.join(ROOT, "src"),
+  PROMPTS = path.join(ROOT, "prompts"),
   STYLES = path.join(ROOT, "styles");
 const SCRIPT_HEAD = '(() => {\n  "use strict";\n',
   SCRIPT_TAIL = "})();\n";
@@ -25,57 +27,40 @@ function partsOf(dir, extension) {
       return entry.name.endsWith(extension) ? [file] : [];
     });
 }
-// 段名写相对路径：15-tools/10-web.js
-const partName = (root, file) => path.relative(root, file).replace(/\\/g, "/");
+// 段名写相对于仓库的路径：src/15-tools/10-web.js
+const partName = file => path.relative(ROOT, file).replace(/\\/g, "/");
 // 版本戳：文件名、大小、修改时间一起算，任何一段改了都会变
-function stampOf(root, files) {
+function stampOf(files) {
   return files
     .map(file => {
       const stat = fs.statSync(file);
-      return `${partName(root, file)}:${stat.size}:${Math.floor(stat.mtimeMs)}`;
+      return `${partName(file)}:${stat.size}:${Math.floor(stat.mtimeMs)}`;
     })
     .join("|");
 }
-function bundleScript() {
-  const files = partsOf(SRC, ".js");
-  const body = files
+// 逐段接起，每段前一行注释标出段名（open / close 是注释的两头）
+const joinParts = (files, open, close = "") =>
+  files
     .map(file => {
       const text = fs.readFileSync(file, "utf8");
-      return `  // ---- ${partName(SRC, file)} ----\n${text.endsWith("\n") ? text : text + "\n"}`;
+      return `${open} ---- ${partName(file)} ----${close}\n${text.endsWith("\n") ? text : text + "\n"}`;
     })
     .join("\n");
-  return { text: SCRIPT_HEAD + body + SCRIPT_TAIL, stamp: stampOf(SRC, files), files };
+function bundleScript() {
+  const prompts = partsOf(PROMPTS, ".js"),
+    sources = partsOf(SRC, ".js"),
+    files = [...prompts, ...sources];
+  return { text: `${joinParts(prompts, "//")}\n${SCRIPT_HEAD}${joinParts(sources, "  //")}${SCRIPT_TAIL}`, stamp: stampOf(files), files };
 }
 function bundleStyles() {
   const files = partsOf(STYLES, ".css");
-  const body = files
-    .map(file => {
-      const text = fs.readFileSync(file, "utf8");
-      return `/* ---- ${partName(STYLES, file)} ---- */\n${text.endsWith("\n") ? text : text + "\n"}`;
-    })
-    .join("\n");
-  return { text: body, stamp: stampOf(STYLES, files), files };
+  return { text: joinParts(files, "/*", " */"), stamp: stampOf(files), files };
 }
-function writeIfChanged(file, text) {
-  const current = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
-  if (current === text) return false;
-  fs.writeFileSync(file, text, "utf8");
-  return true;
-}
-function build({ quiet = false } = {}) {
-  const script = bundleScript(),
-    styles = bundleStyles();
-  const written = [];
-  if (script.files.length && writeIfChanged(path.join(ROOT, "support.js"), script.text)) written.push("support.js");
-  if (styles.files.length && writeIfChanged(path.join(ROOT, "app.css"), styles.text)) written.push("app.css");
-  if (!quiet)
-    console.log(
-      written.length
-        ? `已产出 ${written.join("、")}（${script.files.length} 段脚本，${styles.files.length} 段样式）`
-        : "support.js 与 app.css 已是最新"
-    );
-  return written;
-}
-
-module.exports = { bundleScript, bundleStyles, build, scriptParts: () => partsOf(SRC, ".js"), SCRIPT_HEAD, SCRIPT_TAIL };
-if (require.main === module) build();
+module.exports = {
+  bundleScript,
+  bundleStyles,
+  scriptParts: () => partsOf(SRC, ".js"),
+  promptParts: () => partsOf(PROMPTS, ".js"),
+  SCRIPT_HEAD,
+  SCRIPT_TAIL
+};

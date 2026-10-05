@@ -14,9 +14,8 @@ function setup(replies = []) {
     `setup: (request, run) => {
       document.documentElement.dataset.inkMotion = 'off';
       document.hidden = true;
-      saveStoreSoon = saveStore = renderSendButtons = renderHistory = refreshConnection =
+      saveStoreSoon = saveStore = renderSendButtons = renderHistory =
         setJobLabel = refreshSteps = markDirty = accountUsage = () => {};
-      archiveOnline = () => false;
       keepInWindow = mcpForTurn = maybeAutoCompact = maybeAutoTitle = async () => {};
       reserveTokens = () => () => {};
       restFor = async () => {};
@@ -38,7 +37,7 @@ function setup(replies = []) {
     async steps => {
       runs.push(...steps);
       for (const step of steps) step.status = "done";
-      return new Map(steps.map(step => [step.id, "工具已完成"]));
+      return { outcomes: new Map(steps.map(step => [step.id, "工具已完成"])), images: [] };
     }
   );
   return { ...f, requests, runs };

@@ -53,6 +53,41 @@ check(
     "PLAIN 第一问|PLAIN 第二问|PLAIN 第三问"
   )
 );
+check(
+  "the outline only reacts over its ticks: the hidden labels take no room",
+  (await evalJs(`document.querySelector("#outline").getBoundingClientRect().width`)) <= 30
+);
+// 一问一整行、上下相接：两道短横之间的空也落在某一问上；首句平时不接点按，指针上了条之后才接得住
+const labelHit = () =>
+  evalJs(
+    `(() => { const label = document.querySelector("#outline .outline-label"), r = label.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest(".outline-item") === label.closest(".outline-item"); })()`
+  );
+check(
+  "the space between two ticks still belongs to a question",
+  await evalJs(
+    `(() => { const [a, b] = [...document.querySelectorAll("#outline .outline-tick")], ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(); return !!document.elementFromPoint(ra.right - 2, (ra.bottom + rb.top) / 2)?.closest(".outline-item"); })()`
+  )
+);
+check("a hidden label takes no click", !(await labelHit()));
+const tick = await evalJs(
+  `(r => ({ x: r.right - 2, y: r.top + r.height / 2 }))(document.querySelector("#outline .outline-tick").getBoundingClientRect())`
+);
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: tick.x, y: tick.y });
+await sleep(250);
+await waitFor(`document.querySelector("#outline").matches(":hover")`, 3000).catch(() => {});
+await sleep(250);
+check("once the pointer is on the rail, a label is clickable", await labelHit());
+await shot("outline-hover.png");
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 600, y: 400 });
+// 从对话翻到卷宗：导航条跟着对话那一栏收起
+await evalJs(`document.querySelector("#openLibrary").click(); true`);
+await sleep(200);
+check(
+  "the outline does not follow into the archive page",
+  await evalJs(`getComputedStyle(document.querySelector("#outline")).display === "none"`)
+);
+await evalJs(`document.querySelector("#openLibrary").click(); true`);
+await sleep(300);
 await sleep(300);
 check(
   "last question active when scrolled to bottom",

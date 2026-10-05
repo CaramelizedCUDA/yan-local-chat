@@ -19,6 +19,9 @@ const element = () => ({
   dataset: {},
   style: { setProperty: noop, removeProperty: noop },
   addEventListener: noop,
+  setAttribute: noop,
+  removeAttribute: noop,
+  getAttribute: () => null,
   querySelector: () => null,
   querySelectorAll: () => [],
   textContent: "",
@@ -38,6 +41,7 @@ const stubs = {
   localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
   matchMedia: media,
   navigator: { onLine: true },
+  location: { protocol: "http:", hostname: "127.0.0.1" },
   innerWidth: 1200,
   innerHeight: 800,
   requestAnimationFrame: noop,
@@ -45,9 +49,10 @@ const stubs = {
   indexedDB: { open: () => ({}) },
   performance: globalThis.performance,
   crypto: globalThis.crypto,
-  setTimeout,
+  // 页面代码自己排的定时器（存盘的退避重试之类）不拖住测试进程：测完就退
+  setTimeout: (...args) => setTimeout(...args).unref(),
   clearTimeout,
-  setInterval,
+  setInterval: (...args) => setInterval(...args).unref(),
   clearInterval,
   console
 };

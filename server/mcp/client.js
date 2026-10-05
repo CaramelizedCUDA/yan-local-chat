@@ -61,9 +61,11 @@ class McpClient {
     this.toolsChanged = false;
     return tools;
   }
-  /** 调一件工具；signal 断了就告诉服务端取消 */
+  /** 调一件工具；signal 断了就告诉服务端取消。等连接、重拉工具时已经停了的，不再发出（abort 事件只响一次，事后挂上的听不到） */
   async call(tool, args, { timeout = CALL_MS, signal } = {}) {
+    if (signal?.aborted) throw Error("已停止");
     if (this.toolsChanged) this.tools = await this.listTools();
+    if (signal?.aborted) throw Error("已停止");
     const id = nextId++;
     const onAbort = () => {
       this.settle(id, Error("已停止"));

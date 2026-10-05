@@ -1,26 +1,6 @@
 // 言 · 附件卡片、引用与划选提示
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
-const icons = {
-  copy: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><rect x="5.2" y="5.2" width="7.4" height="7.4" rx="1.5"/><path d="M10.5 3.4H4.9a1.5 1.5 0 0 0-1.5 1.5v5.6"/></svg>`,
-  edit: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M3.3 12.7l.6-3 6.8-6.8 2.4 2.4-6.8 6.8-3 .6z"/><path d="M9.8 3.8l2.4 2.4"/></svg>`,
-  regenerate: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13 3.2v2.6h-2.6"/></svg>`,
-  resume: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3.2v9.6L12 8 4 3.2z"/></svg>`,
-  retry: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"><path d="M8 3v5l3 1.8"/><circle cx="8" cy="8" r="5.2"/></svg>`,
-  note: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"><path d="M3.5 4h6M3.5 8h6M3.5 12h6"/><path d="M12.6 6.4v3.2"/><path d="M11 8h3.2"/></svg>`
-};
-function actionIcon(action, title, icon) {
-  return `<button class="message-action" data-action="${action}" title="${title}" aria-label="${title}">${icon}</button>`;
-}
-function fileTypeLabel(file) {
-  const match = String(file.name || "").match(/\.([^.]+)$/),
-    extension = match?.[1]?.replace(/[^a-z0-9]/gi, "").toUpperCase();
-  if (extension) return extension.slice(0, 7);
-  const subtype = String(file.mime || "")
-    .split("/")[1]
-    ?.split(/[;+]/)[0]
-    ?.toUpperCase();
-  return (subtype || "FILE").slice(0, 7);
-}
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+// 回复与问句下的几枚小画：笔意（src/03-brush.js），不再是等宽线稿
 function formatFileSize(value) {
   const bytes = Number(value || 0);
   return bytes < 1024
@@ -29,14 +9,15 @@ function formatFileSize(value) {
       ? `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`
       : `${(bytes / 1048576).toFixed(1)} MB`;
 }
-function kindGlyph(kind) {
-  return { image: "画", text: "文", audio: "音", video: "影" }[kind] || "卷";
-}
-function attachmentCard(file, index, sent = false) {
-  const type = fileTypeLabel(file),
-    title = `${file.name} · ${formatFileSize(file.size)}`;
-  const thumb = file.kind === "image" && file.id ? `<img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt="">` : "";
-  const body = `${thumb}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-mark" aria-hidden="true">${kindGlyph(displayKind(file))}</span><span class="attachment-type">${escapeHtml(type)}</span>`;
+// 一件附件是一条「件条」：与卷宗同一张件图（图片换成它自己的缩略），名字，大小。见 设计稿/27 三·甲
+// drop：改问编辑框里的一件，× 是从这一问里去掉它（不删原件，旧版本还用着）
+function attachmentCard(file, index, sent = false, drop = false) {
+  const title = `${file.name} · ${formatFileSize(file.size)}`;
+  const figure =
+    file.kind === "image" && file.id
+      ? `<span class="fi fi-thumb" aria-hidden="true"><img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt=""></span>`
+      : fileFigure(file.name);
+  const body = `${figure}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-size">${formatFileSize(file.size)}</span>`;
   const save = file.id
     ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="收入卷宗" aria-label="收入卷宗">藏</button>`
     : "";
@@ -45,19 +26,26 @@ function attachmentCard(file, index, sent = false) {
   const view =
     file.id && file.kind === "image"
       ? `data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
-      : file.id && previewKind(file.name) !== "none"
+      : file.id && fileKind(file.name).view
         ? `data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
         : "";
   if (sent && file.id) {
     const action = view || `data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
     return `<div class="attachment-card sent" role="button" tabindex="0" data-kind="${file.kind}" ${action}>${body}${save}</div>`;
   }
-  return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${index !== null ? `<button class="attachment-tool attachment-remove" data-remove-attachment="${index}" title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
+  const remove = drop
+    ? `data-action="drop-attachment" data-file="${escapeHtml(file.id)}"`
+    : index !== null
+      ? `data-remove-attachment="${index}"`
+      : "";
+  return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${remove ? `<button class="attachment-tool attachment-remove" ${remove} title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
 }
+// 随引文的那幅画面画在引文里，不进附件栏（序号仍按 pendingAttachments 算，移除时对得上）
 function renderAttachments() {
-  const html = pendingAttachments.map((file, index) => attachmentCard(file, index)).join("");
+  const listed = pendingAttachments.map((file, index) => ({ file, index })).filter(({ file }) => !quoteImageOf(file, pendingQuote));
+  const html = listed.map(({ file, index }) => attachmentCard(file, index)).join("");
   [$("#attachments"), $("#welcomeAttachments")].forEach(el => {
-    el.classList.toggle("hidden", !pendingAttachments.length);
+    el.classList.toggle("hidden", !listed.length);
     el.innerHTML = html;
     void loadThumbnails(el);
   });
@@ -65,13 +53,34 @@ function renderAttachments() {
   scheduleContextGauge(); // 案上的附件也是下一问要送出的，计数随之变
 }
 // 引用追问：在回复或自己的话里划选一段，浮出「引用」；点了就作为引文带进输入框，随下一问送出
+// 游目里圈点的也走这一路（见 src/26-stage/），欢迎页上同样有一个引文框
 function renderQuote() {
-  const box = $("#composerQuote");
-  if (!box) return;
-  box.classList.toggle("hidden", !pendingQuote);
-  box.querySelector(".composer-quote-text").textContent = pendingQuote?.text || "";
+  // 引文撤了、换了：随先前那条引文的画面跟着撤（附件栏里不列它，留下就成了看不见的附件）
+  const stale = pendingAttachments.filter(file => file.quoted && !quoteImageOf(file, pendingQuote));
+  if (stale.length) {
+    pendingAttachments = pendingAttachments.filter(file => !stale.includes(file));
+    void deleteAttachments(stale.map(file => file.id));
+    renderAttachments();
+  }
+  for (const box of [$("#composerQuote"), $("#welcomeQuote")]) {
+    if (!box) continue;
+    box.classList.toggle("hidden", !pendingQuote);
+    box.querySelector(".composer-quote-text").textContent = pendingQuote?.text || "";
+    const shot = box.querySelector(".composer-quote-shot");
+    shot.innerHTML = pendingQuote?.image ? quoteShotHtml(pendingQuote.image, pendingQuote.text) : "";
+    void loadThumbnails(shot);
+  }
+  stageQuoteChanged();
   renderSendButtons();
   scheduleContextGauge();
+}
+/** @param {Attachment} file @param {Quote|null|undefined} quote */
+function quoteImageOf(file, quote) {
+  return !!quote?.image && file.id === quote.image;
+}
+// 引文里的那幅画面：与行迹里工具交回的画面同一张折角小纸，点开进图片查看器
+function quoteShotHtml(id, text) {
+  return `<span class="fi fi-thumb quote-shot" role="button" tabindex="0" data-open-image="${escapeHtml(id)}" title="查看画面 · ${escapeHtml(text || "")}"><img data-thumb="${escapeHtml(id)}" alt=""></span>`;
 }
 // 划选的这段在正文里是第几次出现：同一条回复里同样的词可能出现不止一次，重画后单靠 indexOf 会落到第一处。
 // 数的是划选起点之前出现过几回，空白全去掉再数——与 markAnchor 里的找法一致
@@ -196,3 +205,33 @@ function bindAttachmentEvents() {
     }
   });
 }
+// 图片缩略图：原件在 IndexedDB，渲染后异步补上 src；缓存最近 40 张
+async function loadThumbnails(root) {
+  for (const img of root.querySelectorAll("img[data-thumb]:not([src])")) {
+    const id = img.dataset.thumb;
+    try {
+      let url = thumbCache.get(id);
+      if (!url) {
+        const file = await getAttachment(id);
+        if (!file || file.kind !== "image") continue;
+        url = file.data;
+        thumbCache.set(id, url);
+        if (thumbCache.size > 40) thumbCache.delete(thumbCache.keys().next().value);
+      }
+      img.src = url;
+      img.closest(".attachment-card")?.classList.add("has-thumb");
+    } catch {}
+  }
+}
+const thumbCache = new Map();
+// 输入框空着时，Esc 去掉挂着的引文
+defineLayer({
+  name: "quote",
+  rank: 30,
+  open: () => !!pendingQuote && document.activeElement === $("#chatInput") && !$("#chatInput").value,
+  close: () => {
+    pendingQuote = null;
+    renderQuote();
+    persistDraft();
+  }
+});

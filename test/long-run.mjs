@@ -10,13 +10,19 @@ const seed = () =>
   evalJs(
     `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 4, settings: { name: "测", theme: "light", inkMotion: "off", mode: "work", activeProfileId: "p1", pendingWorkdir: ${JSON.stringify(WORK)}, autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, maxTokens: 8192, quota: "", usedTokens: 0, systemPrompt: "" }], conversations: [], library: [], drafts: {} })); true`
   );
-const run = async text => {
+// done：等到最后一条回复写出这个记号才算完——帮手的回报另起一答，派活的那一答早就收尾了
+const run = async (text, done = "") => {
   await evalJs(
     `document.querySelector("#welcomeInput").value = ${JSON.stringify(text)}; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
   );
   const last = `__yanState().conversations.find(c => c.messages[0]?.content === ${JSON.stringify(text)})?.messages.at(-1)`;
-  await waitFor(`["complete", "error", "interrupted"].includes(${last}?.status)`, 60000);
-  return evalJs(`(m => ({ status: m.status, content: m.content, error: m.error || "", steps: (m.steps || []).map(s => s.name + ":" + s.status + ":" + (s.result || "")) }))(${last})`);
+  await waitFor(
+    `["complete", "error", "interrupted"].includes(${last}?.status) && ${last}.content.includes(${JSON.stringify(done)})`,
+    60000
+  );
+  return evalJs(
+    `(m => ({ status: m.status, content: m.content, error: m.error || "", steps: (m.steps || []).map(s => s.name + ":" + s.status + ":" + (s.result || "")) }))(${last})`
+  );
 };
 
 // 帮手：没填窗口。请求超过假接口的上限就回 context_length_exceeded，页面压掉较早的往来再发，帮手读完十二个文件照常回报
@@ -25,10 +31,14 @@ await sleep(600);
 await seed();
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
-const sub = await run("LONGRUN-SUB 读十二个大文件");
+const sub = await run("LONGRUN-SUB 读十二个大文件", "LONGRUN-SUB done");
 let s = await stats();
 check("the helper hit the context limit at least once", (s.overflows.LONGSUB || 0) >= 1, JSON.stringify(s));
-check("each overflow was answered with a fold", (s.folds.LONGSUB || 0) >= (s.overflows.LONGSUB || 0) && s.folds.LONGSUB >= 1, JSON.stringify(s));
+check(
+  "each overflow was answered with a fold",
+  (s.folds.LONGSUB || 0) >= (s.overflows.LONGSUB || 0) && s.folds.LONGSUB >= 1,
+  JSON.stringify(s)
+);
 check(
   "the helper finished and reported after folding — task kept, work note in place of the old rounds",
   sub.status === "complete" && /LONGSUB done\|note:yes\|folded:yes\|task:yes/.test(sub.content),
@@ -49,7 +59,11 @@ check(
   main.status === "complete" && /LONGMAIN done\|note:yes\|folded:yes\|task:yes/.test(main.content),
   JSON.stringify(main).slice(0, 400)
 );
-check("every read step stays on the page after folding", main.steps.filter(x => x.startsWith("read_file:done")).length === 12, main.steps.join(","));
+check(
+  "every read step stays on the page after folding",
+  main.steps.filter(x => x.startsWith("read_file:done")).length === 12,
+  main.steps.join(",")
+);
 
 // 前文放不下：放不下的不是这一答的工具往来，而是此前的对话本身。主答把这一问之前的压成摘要（落成分隔，下一问也用得上）再发一回
 const askHere = async text => {
@@ -57,7 +71,10 @@ const askHere = async text => {
     `document.querySelector("#chatInput").value = ${JSON.stringify(text)}; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
   );
   const conv = `__yanState().conversations.find(c => c.messages.some(m => m.content === ${JSON.stringify(text)}))`;
-  await waitFor(`(c => c?.messages.at(-1).role === "assistant" && ["complete", "error", "interrupted"].includes(c.messages.at(-1).status))(${conv})`, 60000);
+  await waitFor(
+    `(c => c?.messages.at(-1).role === "assistant" && ["complete", "error", "interrupted"].includes(c.messages.at(-1).status))(${conv})`,
+    60000
+  );
   return evalJs(
     `(c => ({ reply: c.messages.at(-1).content + (c.messages.at(-1).error || ""), status: c.messages.at(-1).status, roles: c.messages.map(m => m.role).join(",") }))(${conv})`
   );
@@ -75,13 +92,25 @@ await stuff(2, 9000, "h");
 const head = await askHere("LONGHEAD 再问一句");
 s = await stats();
 check("without a window, the overflow was met once", s.overflows.LONGHEAD === 1, JSON.stringify(s.overflows));
-check("the earlier talk was folded into a summary and the question answered", head.status === "complete" && /LONGHEAD ok|summary:yes/.test(head.reply), JSON.stringify(head));
+check(
+  "the earlier talk was folded into a summary and the question answered",
+  head.status === "complete" && /LONGHEAD ok|summary:yes/.test(head.reply),
+  JSON.stringify(head)
+);
 check("the summary divider sits right before this question", head.roles.endsWith("context,user,assistant"), head.roles);
 // 填了窗口（20k）：送出前估到七成半就先压前文，不撞「放不下」
 await evalJs(`__yanState().profiles[0].contextWindow = 20000; true`);
 await stuff(2, 4500, "w");
 const win = await askHere("LHWIN 又问一句");
 s = await stats();
-check("with a window, the earlier talk was folded before sending", !s.overflows.LHWIN && win.status === "complete" && /LHWIN ok|summary:yes/.test(win.reply), JSON.stringify({ win, o: s.overflows }));
-check("a second divider, again right before the question", win.roles.split(",").filter(r => r === "context").length === 2 && win.roles.endsWith("context,user,assistant"), win.roles);
+check(
+  "with a window, the earlier talk was folded before sending",
+  !s.overflows.LHWIN && win.status === "complete" && /LHWIN ok|summary:yes/.test(win.reply),
+  JSON.stringify({ win, o: s.overflows })
+);
+check(
+  "a second divider, again right before the question",
+  win.roles.split(",").filter(r => r === "context").length === 2 && win.roles.endsWith("context,user,assistant"),
+  win.roles
+);
 close();

@@ -22,7 +22,7 @@
   margin: 0 auto 8px;
   padding: 4px 6px;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--radius-l);
   background: color-mix(in srgb, var(--paper-2) 45%, var(--paper));
   color: var(--ink-3);
   font: 11px var(--title);
@@ -36,7 +36,7 @@
   gap: 8px;
   min-width: 0;
   padding: 3px 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   color: inherit;
   font: inherit;
   letter-spacing: inherit;
@@ -44,6 +44,28 @@
 .work-changes:hover,
 .work-helpers:hover {
   background: color-mix(in srgb, var(--paper-3) 55%, transparent);
+}
+/* 改动合计是短的、要看全；挤的时候让右边帮手的说明收成省略号 */
+.work-changes {
+  flex: none;
+  white-space: nowrap;
+}
+/* 作答途中不寻常的状态（网络重试、整理上下文）：一点朱色呼吸，与帮手的金点同一路 */
+.work-notice {
+  flex: none;
+  padding: 3px 6px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.work-notice:before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin: 0 7px 2px 0;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.1s ease-in-out infinite;
 }
 .work-changes .change-count {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -106,7 +128,7 @@
 .approval-bar {
   padding: 10px 12px 9px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 13px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: 0 8px 30px rgba(58, 45, 29, 0.08);
   animation: rise 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -136,7 +158,7 @@
   padding: 7px 10px;
   max-height: 120px;
   overflow: auto;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   background: color-mix(in srgb, var(--ink) 4%, transparent);
   color: var(--ink);
   font:
@@ -158,24 +180,38 @@
 }
 .approval-actions {
   display: flex;
-  gap: 6px;
+  align-items: center;
   margin-top: 8px;
 }
-.approval-actions button {
-  padding: 4px 12px;
-  border: 1px solid var(--line);
-  border-radius: 99px;
+/* 「运行 · 跳过 · 径行」只留字，字间一道短丝栏，「运行」着朱加重——与输入框上方「目录」那一排同式；行迹里请示步骤上的同一组共用。
+   落选的（见 设计稿/33）：白底胶囊（与「开合不用胶囊」相左）；3px 方角纸签、「运行」顶上一道朱（三枚并排成一排小框，比字重） */
+.approval-actions button:not(.ask-arrow),
+.tool-approve button {
+  padding: 3px 11px;
   color: var(--ink-2);
-  font-size: 11.5px;
-  background: var(--paper);
+  font: 11.5px var(--title);
+  letter-spacing: 0.1em;
+  transition: color 0.15s;
 }
-.approval-actions button:hover {
+.approval-actions button:not(.ask-arrow):first-child,
+.tool-approve button:first-child {
+  padding-left: 1px;
+}
+.approval-actions button:not(.ask-arrow) + button,
+.tool-approve button + button {
+  background: linear-gradient(var(--line), var(--line)) left center / 1px 11px no-repeat;
+}
+.approval-actions button:not(.ask-arrow):hover,
+.tool-approve button:hover {
   color: var(--ink);
-  background: var(--paper-2);
 }
-.approval-actions button[data-approve="run"] {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+.approval-actions button[data-approve="run"],
+.tool-approve button[data-approve="run"] {
   color: var(--accent);
+  font-weight: 600;
+}
+.tool-approve button {
+  font-size: 11px;
 }
 .ask-form {
   display: flex;
@@ -194,7 +230,7 @@
   margin-right: 7px;
   padding: 0 5px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   color: var(--accent);
   font: 10px/16px var(--title);
   letter-spacing: 0.06em;
@@ -205,7 +241,7 @@
   display: inline-block;
   margin-left: 8px;
   padding: 0 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
   font: 10px/16px var(--title);
@@ -225,7 +261,7 @@
   max-width: 100%;
   padding: 6px 11px 6px 9px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   background: var(--paper);
   color: var(--ink-2);
   text-align: left;
@@ -255,7 +291,7 @@
     box-shadow 0.16s;
 }
 .ask-q[data-multi="true"] .ask-tick {
-  border-radius: 3px;
+  border-radius: var(--radius-s);
 }
 .ask-opt:hover .ask-tick {
   border-color: var(--ink-3);
@@ -317,7 +353,7 @@
   border-bottom-color: color-mix(in srgb, var(--accent) 55%, var(--line));
 }
 .ask-nav {
-  align-items: center;
+  gap: 6px;
 }
 .ask-spacer {
   flex: 1;
@@ -326,10 +362,16 @@
   width: 30px;
   height: 30px;
   padding: 0;
+  border: 1px solid var(--line);
   border-radius: 50%;
+  background: var(--paper);
   font-size: 17px;
   line-height: 1;
   color: var(--ink-2);
+}
+.approval-actions .ask-arrow:hover {
+  color: var(--ink);
+  background: var(--paper-2);
 }
 .approval-actions .ask-arrow:disabled {
   opacity: 0.28;
@@ -417,27 +459,119 @@
     Consolas,
     monospace;
   color: var(--ink-2);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink-3) 32%, transparent) transparent;
 }
-.change-files div {
-  display: flex;
-  gap: 10px;
+/* 一件一行，点开看这件在这一答里的改动（摊在预览浮层里，见 changeDiffHtml）。
+   靠近时不铺整块灰：左缘抽出一道胭脂细线（与「改」印同色），路径往右让半步，墨色转浓；数字各占定宽、右对齐，上下成列 */
+.change-files > button {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: 12px;
+  width: 100%;
+  padding: 0 8px 0 11px;
+  border-radius: var(--radius-s);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition:
+    color 0.18s,
+    background-color 0.18s;
+}
+.change-files > button:before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--rouge);
+  transform: scaleY(0);
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.change-files > button:hover,
+.change-files > button:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--paper-2) 55%, transparent);
+  color: var(--ink);
+}
+.change-files > button:hover:before,
+.change-files > button:focus-visible:before {
+  transform: scaleY(1);
+}
+.change-files > button:active .path {
+  transform: translateX(2px);
+  transition-duration: 0.06s;
 }
 .change-files .path {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.change-files > button:hover .path,
+.change-files > button:focus-visible .path {
+  transform: translateX(3px);
+}
+/* 目录淡、文件名浓：一眼先落在改的是哪一件 */
+.change-files .dir {
+  color: var(--ink-3);
+  transition: color 0.18s;
+}
+.change-files > button:hover .dir {
+  color: var(--ink-2);
 }
 .change-files em {
-  margin-left: 6px;
+  margin-left: 8px;
   color: var(--ink-3);
+  font: 10.5px var(--title);
   font-style: normal;
-  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.change-files .ins,
+.change-files .del {
+  min-width: 4ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* 为零的不着色：只有真增真删才见红绿 */
+.change-files .ins.zero,
+.change-files .del.zero {
+  color: var(--ink-3);
+  opacity: 0.5;
+}
+/* 点开时清单轻轻浮起、各行依次落定；生成中清单整段重画不重放（只有点开那一下带 .opening） */
+.change-files.opening {
+  animation: changeFilesRise 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.change-files.opening > button {
+  animation: changeFileIn 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+@keyframes changeFilesRise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes changeFileIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .change-files.opening,
+  .change-files.opening > button {
+    animation: none;
+  }
 }
 .helper-bar .change-files {
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   background: var(--paper);
 }
 .tool-stack.is-work .tool-stack-body {
@@ -558,8 +692,6 @@
   margin: 2px 0 6px 7px;
   color: var(--ink-2);
   font-family: var(--title);
-  font-size: 14px;
-  line-height: 1.75;
 }
 .trail-note > *:first-child {
   margin-top: 0;
@@ -568,7 +700,7 @@
   margin-bottom: 0;
 }
 .trail-note p {
-  margin: 0 0 6px;
+  margin: 0 0 0.6em;
 }
 .trail-note pre {
   font-size: 11px;
@@ -578,9 +710,9 @@
 }
 .tool-step.foldable > .tool-step-head:hover {
   background: color-mix(in srgb, var(--ink) 3%, transparent);
-  border-radius: 6px;
+  border-radius: var(--radius-m);
 }
-.tool-step.folded > :not(.tool-step-head) {
+.tool-step.folded > :not(.tool-step-head, .tool-shots) {
   display: none;
 }
 .tool-more {
@@ -598,7 +730,7 @@
   width: min(100%, var(--read));
   margin: 0 auto;
   border: 1px solid var(--line);
-  border-radius: 17px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: 0 8px 30px rgba(58, 45, 29, 0.08);
   padding: 11px 13px 9px;
@@ -633,7 +765,7 @@
   align-items: center;
   gap: 5px;
   padding: 5px 7px;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font-size: 11.5px;
 }
@@ -650,7 +782,7 @@
   width: min(400px, 100%);
   padding: 26px 26px 20px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: var(--shadow);
   animation: rise 0.2s ease-out;
@@ -779,12 +911,9 @@
   width: min(100%, var(--read));
   margin: 0 auto;
 }
-.hint {
-  margin-top: 6px;
-  text-align: center;
-  color: var(--ink-3);
-  opacity: 0.7;
-  font-size: 10px;
+/* 底栏只剩右下角的计数（绝对定位），给它留出一行 */
+.composer-foot:has(.context-gauge:not(.hidden)) {
+  height: 20px;
 }
 /* 右下角的上下文计数：下一问约送出多少，随输入与生成实时翻动；重了转印色；点开有压缩 / 另起一纸 */
 .context-gauge {
@@ -795,7 +924,7 @@
   align-items: baseline;
   gap: 3px;
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 10px var(--title);
   letter-spacing: 0.1em;
@@ -853,7 +982,7 @@
   margin-top: 10px;
   padding: 4px 6px 6px;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   background: color-mix(in srgb, var(--accent-soft) 22%, var(--paper));
 }
 .deliver-head {
@@ -876,7 +1005,7 @@
   gap: 10px;
   min-height: 38px;
   padding: 0 4px 0 7px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   transition: background 0.15s;
 }
 .deliver-file + .deliver-file {
@@ -884,17 +1013,6 @@
 }
 .deliver-file:hover {
   background: color-mix(in srgb, var(--paper) 70%, transparent);
-}
-.deliver-type {
-  flex: none;
-  min-width: 34px;
-  padding: 1px 5px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: 3px;
-  color: var(--accent);
-  font: 9px/15px var(--title);
-  letter-spacing: 0.08em;
-  text-align: center;
 }
 .deliver-name {
   min-width: 0;
@@ -917,26 +1035,22 @@
 }
 .deliver-btn {
   flex: none;
-  padding: 3px 9px;
-  border: 1px solid transparent;
-  border-radius: 99px;
+  padding: 4px 10px;
   color: var(--ink-3);
   font: 11px var(--title);
   letter-spacing: 0.1em;
-  transition:
-    border-color 0.15s,
-    color 0.15s;
+  transition: color 0.15s;
 }
 .deliver-btn + .deliver-btn {
   margin-left: -8px;
 }
+/* 悬停只变朱字、不描框——与请示条那一组同是只用字 */
 .deliver-btn:hover {
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
   color: var(--accent);
 }
 /* 卷宗里已删掉的成品：条目留着，名字变淡，右侧一句「已移出卷宗」代替按钮 */
 .deliver-file.missing .deliver-name,
-.deliver-file.missing .deliver-type,
+.deliver-file.missing .fi,
 .deliver-file.missing small {
   opacity: 0.45;
 }
@@ -970,7 +1084,7 @@ textarea::placeholder,
   margin-left: 4px;
   padding: 3px 8px 3px 4px;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   color: var(--ink-2);
   font: 12px var(--title);
   transition:
@@ -988,7 +1102,7 @@ textarea::placeholder,
   width: 15px;
   height: 15px;
   border: 1px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-s);
   color: var(--accent);
   font: 9px var(--title);
 }

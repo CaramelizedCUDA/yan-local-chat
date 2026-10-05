@@ -62,7 +62,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   height: 30px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   transition: 0.16s;
 }
@@ -92,7 +92,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   width: 100%;
   height: 36px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   color: var(--ink);
   font-size: 13.5px;
   text-align: left;
@@ -168,7 +168,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   min-width: 0;
   padding: 6px 9px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   outline: 0;
   background: var(--paper-3);
   font-size: 12px;
@@ -216,7 +216,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   margin: 0;
   padding: 5px 9px 5px 7px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: none;
   text-align: left;
   letter-spacing: 0.06em;
@@ -233,7 +233,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   width: 17px;
   height: 17px;
   border: 1px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-s);
   color: var(--accent);
   font: 10px var(--title);
   transform: rotate(-3deg);
@@ -295,7 +295,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 }
 /* 拖着一段对话经过某组：组首铺一层淡朱、描一道朱边，松手即移入；被拖的那条淡下去 */
 .history-repo-group.drop-into > .history-repo-head {
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
@@ -328,11 +328,15 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .history-repo-group.collapsed .history-repo-items {
   padding-top: 0;
 }
+/* 收起的组里有正开着的那段：组首衬上与当前条同一层底色，收起了也看得出自己在这组里 */
+.history-repo-group.holds-current > .history-repo-head .history-repo {
+  background: var(--paper-3);
+}
 .history-item {
   position: relative;
   display: flex;
   align-items: center;
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   margin: 1px 0;
 }
 .history-item:after {
@@ -350,9 +354,19 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .history-item:hover:after {
   display: none;
 }
-.history-item.active,
 .history-item:hover {
   background: var(--paper-3);
+}
+/* 正开着的那段：底比悬停深一档，标题加重——与悬停分得开，一眼认得出（2026-10-01 用户嫌原先与悬停同一层浅底「几乎认不出」）。
+   落选的：左缘再加一笔墨竖——组里紧挨着组的那道朱线，看着成了双线 */
+.history-item.active {
+  background: color-mix(in srgb, var(--ink) 9%, var(--paper-3));
+}
+.history-item.active .history-open {
+  font-weight: 600;
+}
+.history-item.active .history-tools {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 9%, var(--paper-3)) 10px);
 }
 .history-open {
   min-width: 0;
@@ -389,7 +403,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   height: 23px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 11px var(--title);
 }
@@ -405,7 +419,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   width: 100%;
   padding: 7px 9px;
   border: 1px solid var(--ink-3);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   outline: 0;
   background: var(--paper);
   font-size: 13px;
@@ -420,7 +434,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   display: flex;
   align-items: center;
   padding: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   transition:
     width 0.25s ease,
     background 0.16s;
@@ -475,7 +489,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   background: var(--grain), var(--wash), var(--paper);
   border: 1px solid var(--line);
   border-right: 0;
-  border-radius: 16px 0 0 16px;
+  border-radius: var(--radius-l) 0 0 var(--radius-l);
   overflow: hidden;
 }
 .main:before {
@@ -549,17 +563,22 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font: 10px var(--title);
   letter-spacing: 0.14em;
 }
-/* 翻在一段摊开的行迹中间时，顶栏右侧浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
-   贴着对话那一列的右缘，窗窄时让开右边的状态。落选的：书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
+/* 翻在一段摊开的行迹中间时，顶栏正中浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
+   对着对话那一列的中线；它浮出时，左边的书眉让到中线以左，长题名不压到它底下。
+   落选的：贴对话列的右缘（离正在读的地方远，眼睛要横跨过去找）；书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
+.topbar:has(.trail-fold-head.shown) .running-head {
+  right: calc(50% + 64px);
+}
 .trail-fold-head {
   position: absolute;
   top: 50%;
-  right: max(calc((100% - var(--read)) / 2), 300px);
+  left: 50%;
+  translate: -50% 0;
   display: inline-flex;
   align-items: center;
   gap: 7px;
   padding: 3px 7px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 11px var(--title);
   letter-spacing: 0.1em;
@@ -590,14 +609,13 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   font-size: 13px;
 }
 .model-trigger:hover {
   background: var(--paper-2);
 }
-.model-dot,
-.status-dot {
+.model-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
@@ -611,7 +629,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   padding: 6px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-l);
   box-shadow: var(--shadow);
   z-index: 20;
   transform-origin: bottom right;
@@ -701,7 +719,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   display: block;
   text-align: left;
   padding: 9px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
 }
 .model-option:hover {
   background: var(--paper-2);
@@ -726,11 +744,19 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   color: var(--ink-3);
   font-size: 11px;
 }
-/* 顶栏右侧三件同一套笔墨：宋体小字、疏排、墨色三分；件与件之间一道细竖 */
+/* 顶栏右侧两件（明暗、余墨）同一套笔墨，件与件之间一道细竖 */
 .top-actions {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+/* 右缘内侧自页顶垂下的游目一笔、听音一缕：顶栏右的两件给它们让出位置 */
+.main:has(#stagePin:not(.hidden)) .top-actions,
+.main:has(#listenPendant:not(.hidden)) .top-actions {
+  margin-right: 30px;
+}
+.main:has(#stagePin:not(.hidden)):has(#listenPendant:not(.hidden)) .top-actions {
+  margin-right: 60px;
 }
 .top-sep {
   width: 1px;
@@ -738,200 +764,109 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   margin: 0 6px;
   background: color-mix(in srgb, var(--line) 85%, transparent);
 }
-/* 砚：亮色时是一方空砚上悬着一滴墨（点它落墨）；暗色时砚里蓄满了墨，只余一点纸光（点它天光） */
+/* 明暗：一笔圆相，半边染墨（昼夜各半）；换明暗时这一染转过半圈，悬停先转一点示意。
+   落选的：空砚悬一滴墨、暗时蓄满（几何圆线稿，与笔意小画不是一套）；通用的 ◐（见 设计稿/27 三） */
 .theme-toggle {
   width: 30px;
   height: 30px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
-  color: var(--ink-3);
-  transition:
-    background 0.16s,
-    color 0.16s;
+  border-radius: var(--radius-m);
+  transition: background 0.16s;
 }
 .theme-toggle:hover {
   background: var(--paper-2);
-  color: var(--ink-2);
 }
-.theme-toggle svg {
-  width: 18px;
-  height: 18px;
-  overflow: visible;
+.theme-toggle .brush {
+  width: 20px;
+  height: 20px;
 }
-.yan-rim {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1;
-}
-.yan-pool {
-  fill: var(--ink);
+.theme-toggle .brush .theme-wash {
+  fill: color-mix(in srgb, var(--ink) 32%, transparent);
   transform-origin: 10px 10px;
-  transform: scale(0);
-  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.yan-drop {
-  fill: var(--ink);
-  transform-origin: 12.4px 7.4px;
-  transition:
-    fill 0.3s,
-    transform 0.3s;
+.theme-toggle[data-theme="dark"] .theme-wash {
+  transform: rotate(180deg);
 }
-.theme-toggle[data-theme="dark"] .yan-pool {
-  transform: scale(1);
+.theme-toggle:hover .theme-wash {
+  transform: rotate(24deg);
 }
-.theme-toggle[data-theme="dark"] .yan-drop {
-  fill: var(--paper);
-  transform: scale(0.75);
+.theme-toggle[data-theme="dark"]:hover .theme-wash {
+  transform: rotate(204deg);
 }
-.theme-toggle:hover .yan-drop {
-  animation: dropWobble 1.1s ease-in-out infinite;
-}
-@keyframes dropWobble {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(1.2px) scale(1.06, 0.94);
-  }
-}
-.theme-toggle[data-theme="dark"]:hover .yan-drop {
-  animation: none;
-  transform: scale(0.95);
-}
+/* 余墨：一笔墨色短横（画法见 src/07-render.js 的 quotaInk），数目与上限在靠近时浮出的纸签上（方角顶朱，同浮签一式）。
+   用尽时那一笔转朱。落选的：「余墨」二字 + 朱色渐变一笔 + 等宽数目常显（设计稿/30） */
 .quota {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 8px;
-  border-radius: 9px;
-  color: var(--ink-3);
-  font: 10px var(--title);
-  letter-spacing: 0.08em;
-  transition: 0.18s;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 30px;
+  border-radius: var(--radius-m);
+  transition: background 0.16s;
 }
 .quota:hover {
   background: var(--paper-2);
-  color: var(--ink-2);
 }
-.quota-label {
-  white-space: nowrap;
-}
-.quota-text {
-  min-width: 22px;
-  text-align: right;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  letter-spacing: 0;
-}
-.quota.dry {
-  color: var(--danger);
-}
-.connection {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 4px;
-  color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.14em;
-  transition: color 0.2s;
-}
-/* 静时只是一点未按的印泥；忙时朱色呼吸；断时转赤 */
-.connection .status-dot {
-  width: 6px;
-  height: 6px;
-  box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
-  background: transparent;
-  transition:
-    background 0.25s,
-    border-color 0.25s;
-}
-.connection[data-state="idle"] {
-  color: color-mix(in srgb, var(--ink-3) 80%, transparent);
-}
-.connection[data-state="busy"] {
-  color: var(--ink-2);
-}
-.connection[data-state="busy"] .status-dot {
-  background: var(--accent);
-  border-color: var(--accent);
-  animation: pulse 1.1s ease-in-out infinite;
-}
-.connection[data-state="error"] {
-  color: var(--danger);
-}
-.connection[data-state="error"] .status-dot {
-  background: var(--danger);
-  border-color: var(--danger);
-}
-/* 余墨：一笔细细的墨痕，随用量从笔尾往回收；底下是一道极淡的虚痕当刻度。与左边的印泥点、砚台同一分量，不抢正文的戏 */
-.quota {
-  gap: 8px;
-  padding: 5px 7px 6px;
-}
-.quota-label {
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-}
-.quota-text {
-  min-width: 26px;
-  color: var(--ink-2);
-  font: 10px var(--title);
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
-}
-.ink-gauge {
-  position: relative;
-  display: block;
-  width: 54px;
-  height: 20px;
-  margin: 0 1px;
-}
-.ink-gauge svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  padding-top: 4px;
+.quota-ink {
+  width: 26px;
+  height: 14px;
   overflow: visible;
 }
-.ink-ghost {
-  fill: color-mix(in srgb, var(--ink-3) 13%, transparent);
+.quota.dry .quota-ink .ghost {
+  fill: color-mix(in srgb, var(--danger) 45%, transparent);
 }
-.ink-fill {
-  fill: url(#inkGrad);
-  transition: width 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+.quota-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  gap: 3px;
+  padding: 7px 12px 8px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius-s);
+  background: var(--paper);
+  box-shadow: 0 6px 18px rgba(61, 49, 32, 0.12);
+  color: var(--ink);
+  font: 12.5px var(--title);
+  text-align: left;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition:
+    opacity 0.16s,
+    transform 0.16s,
+    visibility 0s 0.16s;
+  pointer-events: none;
 }
-.ink-grad-a {
-  stop-color: color-mix(in srgb, var(--accent) 80%, var(--ink));
-  stop-opacity: 0.92;
+.quota:hover .quota-tip,
+.quota:focus-visible .quota-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 0.16s 0.12s,
+    transform 0.16s 0.12s;
 }
-.ink-grad-b {
-  stop-color: var(--accent);
-  stop-opacity: 0.8;
+.quota-label {
+  margin-right: 6px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
 }
-.ink-grad-c {
-  stop-color: var(--accent);
-  stop-opacity: 0.22;
+.quota-tip b {
+  font-weight: 500;
 }
-.ink-streak {
-  display: none;
+.quota-tip small {
+  color: var(--ink-3);
+  font-size: 11px;
 }
-.quota.dry .ink-ghost {
-  fill: color-mix(in srgb, var(--danger) 28%, transparent);
-}
-.quota.empty .ink-ghost {
-  fill: none;
-  stroke: var(--ink-3);
-  stroke-width: 0.5;
-  stroke-dasharray: 2 1.6;
-  opacity: 0.75;
-}
-.quota.empty .quota-text {
+.quota.dry .quota-tip b {
   color: var(--danger);
 }
-/* 分组（「集」）组首里改名时的输入框：紧凑些，与组名同一行 */
 .history-repo .group-rename {
   flex: 1;
   min-width: 0;

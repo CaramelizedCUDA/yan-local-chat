@@ -1,5 +1,9 @@
 // 言 · 整体渲染：顶栏、模型菜单、历史、对话与消息
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+let lastRenderedConvId = null,
+  convergeTimer = null;
+const nodeSig = new WeakMap();
+let lastVizThemeKey = "";
 function render(shouldScroll = false) {
   rememberPlace();
   const c = currentConversation(),
@@ -51,9 +55,26 @@ function renderHeader() {
   renderQuota();
   renderModelMenu();
   renderLibraryCount();
-  refreshConnection();
 }
-// 余墨：设了上限时显示还剩多少、墨池随之见底；没设（不限）时墨池常满，改报已耗多少
+// 余墨：顶栏上只一笔墨色短横，随用量从笔尾往回收（笔尾三缕飞白），底下一道淡痕是全长；数目靠近才浮出（见 设计稿/30 甲）。
+// 设了上限时报还剩多少，没设（不限）时墨常满、改报已耗多少。落选的：「余墨」二字 + 一笔朱色渐变 + 等宽数目常显（功能最少，占位最多）
+function quotaInk(ratio) {
+  const length = 22 * ratio,
+    ghost = brushStroke([2, 8, 12, 6.6, 22, 7.8], 3.4, { tone: "ghost", tail: 0.3 });
+  if (length < 1.5) return ghost;
+  const body = brushStroke([2, 8, length * 0.5, 6.8, length * 0.78, 7.6], 3.6, { tail: 0.7 }),
+    hairs = [-1.1, 0, 1.15]
+      .map((d, i) =>
+        brushStroke([length * 0.7, 7.6 + d, length * 0.86, 7.4 + d * 1.2, length + [2, 0, 3][i], 7.5 + d * 1.5], 0.8, { tail: 0, head: 1 })
+      )
+      .join("");
+  return ghost + body + hairs;
+}
+// 浮签是一句话，数目用亿、万；别处（上下文、每答耗墨）仍是 k / m / e，与设置里填上限的写法一致
+function quotaAmount(n) {
+  const compact = (amount, unit) => `${Number(amount.toFixed(amount >= 10 ? 0 : 1))} ${unit}`;
+  return n >= 100000000 ? compact(n / 100000000, "亿") : n >= 10000 ? compact(n / 10000, "万") : String(Math.round(n));
+}
 function renderQuota() {
   const p = activeProfile(),
     cap = p ? parseTokenLimit(p.quota) : null,
@@ -61,19 +82,16 @@ function renderQuota() {
   const remaining = cap ? Math.max(0, cap - used) : 0,
     ratio = !p ? 0 : cap ? remaining / cap : 1,
     status = $("#quotaStatus");
-  const percent = Math.min(100, Math.round(ratio * 100));
-  $("#quotaFill").style.width = `${percent}%`;
-  status.style.setProperty("--ink-level", `${percent}%`);
+  $("#quotaInk").innerHTML = quotaInk(ratio);
   status.querySelector(".quota-label").textContent = p && cap === null ? "耗墨" : "余墨";
-  status.title = !p
-    ? "尚未接入模型"
-    : cap === null
-      ? `不限用量，已耗 ${formatTokens(used)}`
-      : `余墨 ${formatTokens(remaining)} / ${formatTokens(cap)}`;
-  $("#quotaText").textContent = !p ? "—" : cap === null ? formatTokens(used) : formatTokens(remaining);
+  $("#quotaText").textContent = !p ? "" : quotaAmount(cap === null ? used : remaining);
+  $("#quotaNote").textContent = !p ? "尚未接入模型" : cap === null ? "不设上限" : `上限 ${quotaAmount(cap)}`;
   status.classList.toggle("dry", !!cap && remaining === 0);
   status.classList.toggle("empty", !p);
-  status.setAttribute("aria-label", status.title);
+  status.setAttribute(
+    "aria-label",
+    !p ? "尚未接入模型" : cap === null ? `不限用量，已耗 ${formatTokens(used)}` : `余墨 ${formatTokens(remaining)} / ${formatTokens(cap)}`
+  );
 }
 function renderModelTriggers() {
   const p = activeProfile(),
@@ -114,12 +132,12 @@ function renderModelMenu() {
   $("#modelMenu").innerHTML = all.length
     ? all
         .map(p => {
-          const active = p.id === store.settings.activeProfileId;
+          const active = p.id === activeProfile()?.id;
           // 只列显示名：模型原名与接口地址长短不一，行高参差；要看去模型设置
           return `<button class="model-option${active ? " active" : ""}" data-profile="${escapeHtml(p.id)}"${active ? ' aria-current="true"' : ""} title="${escapeHtml(p.model)}"><strong><span class="model-dot"></span><span class="model-option-name">${escapeHtml(p.name)}</span></strong></button>`;
         })
         .join("")
-    : `<button class="model-option" id="configureFirst"><strong>接入模型</strong><small>任何 OpenAI 兼容接口</small></button>`;
+    : `<button class="model-option" id="configureFirst"><strong>接入模型</strong></button>`;
   const c = currentConversation(),
     profile = activeProfile(),
     level = (c ? c.reasoning : profile?.reasoning) || "",
@@ -129,7 +147,7 @@ function renderModelMenu() {
   if (all.length)
     $("#modelMenu").insertAdjacentHTML(
       "beforeend",
-      `${presetMenuHtml()}<div class="menu-section"><div class="menu-section-title"><span>思考深度</span><span title="每个模型分别记住所选档位；默认不带字段，由接口决定。各模型所认的档位可在高级配置中填写">当前模型</span></div>${choices.length > 1 ? `<div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div>` : `<div class="menu-section-note">此模型不认思考档位</div>`}</div><button class="model-option model-manage" data-manage>模型设置</button>`
+      `${presetMenuHtml()}<div class="menu-section"><div class="menu-section-title"><span>思考深度</span><span>当前模型</span></div>${choices.length > 1 ? `<div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div>` : `<div class="menu-section-note">此模型不认思考档位</div>`}</div><button class="model-option model-manage" data-manage>模型设置</button>`
     );
   $("#configureFirst")?.addEventListener("click", () => openSettings("models"));
   $("#modelMenu [data-manage]")?.addEventListener("click", e => {
@@ -148,7 +166,8 @@ function renderHistory() {
   // 一条时间线：绑了目录的对话归在各自的「工」组里，组按组内最近动过的那条排（一条有动静，整组靠前），组内按时间；
   // 自立的分组（「集」）同样按组内最近动过的那条排，空组按立组的时间，与「工」组同一排法；没绑目录的对话按自己的时间散在其间；置顶另列。
   // 落选的：分组在置顶之下自成一段（组一多，刚写的对话被压到下面，且与置顶之间没有界线，看着像置顶的一部分）。
-  // 组可收起，收起时只露出当前打开的那条；查找时不收，也不列没有命中的组
+  // 组可收起，收起即整组收起（连同正开着的那条）；正开着的那条在组里时，组首标出「在此」，收起了也知道自己在哪。
+  // 落选：收起时单留当前那条——看着像只收了别的几条，怪。查找时不收，也不列没有命中的组
   const collapsed = new Set(store.settings.collapsedRepos || []),
     pinned = sorted.filter(c => c.pinned && !groupOf(c)),
     repos = new Map(),
@@ -193,13 +212,15 @@ function renderHistory() {
   const item = c => {
     if (renamingId === c.id)
       return `<div class="history-item active" data-conversation="${escapeHtml(c.id)}"><input class="history-rename" value="${escapeHtml(typed && renamingDirty ? typed.value : c.title)}" maxlength="60" aria-label="重命名对话"></div>`;
+    // 这一答写完了、帮手还在后台做，也算在忙；帮手的请示没有哪一答替它挂「等待确认」，按请示本身认
     const job = requestJob(c.id),
-      running = !!job,
-      waiting = job?.label === "等待确认";
+      running = !!job || crewRunning(c.id),
+      waiting = job?.label === "等待确认" || [...pendingApprovals.values()].some(entry => entry.conversationId === c.id),
+      runningTip = job ? "后台生成中" : "帮手在后台做";
     const state = waiting
       ? `<span class="history-state waiting" title="有指令等待确认" aria-label="有指令等待确认">问</span>`
       : running
-        ? `<span class="history-state running" title="后台生成中" aria-label="后台生成中"></span>`
+        ? `<span class="history-state running" title="${runningTip}" aria-label="${runningTip}"></span>`
         : c.unread
           ? `<span class="history-state unread" title="有新回复" aria-label="有新回复"></span>`
           : c.pinned && groupOf(c)
@@ -210,9 +231,10 @@ function renderHistory() {
   const repoHtml = node => {
     const name = node.dir.split(/[\\/]/).filter(Boolean).pop() || node.dir || "未定目录",
       fold = collapsed.has(node.dir) && !query,
-      shown = fold ? node.items.filter(c => c.id === currentId) : node.items,
-      running = node.items.filter(c => c.id !== currentId && requestJob(c.id)).length;
-    return `<div class="history-repo-group${fold ? " collapsed" : ""}" data-repo="${escapeHtml(node.dir)}"><div class="history-repo-head"><button type="button" class="history-repo" data-repo-toggle="${escapeHtml(node.dir)}" title="${escapeHtml(node.dir)}\n${fold ? "展开" : "收起"}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">工</span><span class="history-repo-name">${escapeHtml(name)}</span><small>${node.items.length}${fold && running ? ` · ${running} 生成中` : ""}</small><span class="repo-caret" aria-hidden="true">›</span></button><button type="button" class="history-tool repo-new" data-history-workdir="${escapeHtml(node.dir)}" title="在此目录新建">＋</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
+      shown = fold ? [] : node.items,
+      here = fold && node.items.some(c => c.id === currentId),
+      running = node.items.filter(c => requestJob(c.id)).length;
+    return `<div class="history-repo-group${fold ? " collapsed" : ""}${here ? " holds-current" : ""}" data-repo="${escapeHtml(node.dir)}"><div class="history-repo-head"><button type="button" class="history-repo" data-repo-toggle="${escapeHtml(node.dir)}" title="${escapeHtml(node.dir)}\n${fold ? "展开" : "收起"}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">工</span><span class="history-repo-name">${escapeHtml(name)}</span><small>${node.items.length}${fold && running ? ` · ${running} 生成中` : ""}</small><span class="repo-caret" aria-hidden="true">›</span></button><button type="button" class="history-tool repo-new" data-history-workdir="${escapeHtml(node.dir)}" title="在此目录新建">＋</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
   };
   // 分组：画法同「工」组，印文是「集」；组首右侧「＋」在此组另起一段、「⋯」改名、打开组的设置或解散；改名时组名换成输入框。
   // 对话可拖到组上移入、拖到组外移出（见 24-groups.js）
@@ -221,12 +243,13 @@ function renderHistory() {
       key = `group:${group.id}`,
       fold = collapsed.has(key) && !query,
       items = [...node.items].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned)),
-      shown = fold ? items.filter(c => c.id === currentId) : items,
+      shown = fold ? [] : items,
+      here = fold && items.some(c => c.id === currentId),
       renaming = renamingGroupId === group.id;
     const name = renaming
       ? `<input class="history-rename group-rename" value="${escapeHtml(group.name)}" maxlength="40" aria-label="分组改名">`
       : `<span class="history-repo-name">${escapeHtml(group.name)}</span>`;
-    return `<div class="history-repo-group is-set${fold ? " collapsed" : ""}" data-group="${escapeHtml(group.id)}"><div class="history-repo-head"><div role="button" tabindex="0" class="history-repo" data-group-toggle="${escapeHtml(group.id)}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">集</span>${name}<small>${node.items.length}</small><span class="repo-caret" aria-hidden="true">›</span></div><button type="button" class="history-tool repo-new" data-group-new="${escapeHtml(group.id)}" title="在此组新建">＋</button><button type="button" class="history-tool repo-new repo-more" data-group-menu="${escapeHtml(group.id)}" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
+    return `<div class="history-repo-group is-set${fold ? " collapsed" : ""}${here ? " holds-current" : ""}" data-group="${escapeHtml(group.id)}"><div class="history-repo-head"><div role="button" tabindex="0" class="history-repo" data-group-toggle="${escapeHtml(group.id)}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">集</span>${name}<small>${node.items.length}</small><span class="repo-caret" aria-hidden="true">›</span></div><button type="button" class="history-tool repo-new" data-group-new="${escapeHtml(group.id)}" title="在此组新建">＋</button><button type="button" class="history-tool repo-new repo-more" data-group-menu="${escapeHtml(group.id)}" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
   };
   renderingHistory = true;
   try {
@@ -277,7 +300,7 @@ function restoreScrollPosition(snapshot) {
 /** @param {Conversation} c */
 function renderChatMeta(c) {
   $("#chatMeta").innerHTML =
-    `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user").length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? ` · <button type="button" class="chat-meta-path" data-workdir-bind title="工作目录">${escapeHtml(c.workdir || "")}</button>` : c.ended ? "" : ` · <button type="button" class="chat-meta-bind" data-workdir-bind title="绑定工作目录，此后指令与改动落于其中">绑定目录</button>`}${c.messages.some(m => m.role === "assistant" && m.status === "complete") ? ` · <button type="button" class="chat-meta-bind" data-export-md title="${archiveOnline() ? "以 Markdown 存入卷宗" : "以 Markdown 下载"}">${archiveOnline() ? "存入卷宗" : "存为 Markdown"}</button>` : ""}`;
+    `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? ` · <button type="button" class="chat-meta-path" data-workdir-bind title="工作目录">${escapeHtml(c.workdir || "")}</button>` : ` · <button type="button" class="chat-meta-bind" data-workdir-bind title="绑定工作目录，此后指令与改动落于其中">绑定目录</button>`}${c.messages.some(m => m.role === "assistant" && m.status === "complete") ? ` · <button type="button" class="chat-meta-bind" data-export-md title="以 Markdown 存入卷宗">存入卷宗</button>` : ""}`;
   renderRunningHead();
   requestAnimationFrame(syncRunningHead);
 }
@@ -289,7 +312,7 @@ function renderRunningHead() {
     const notes = visibleThreads(c).length;
     head.querySelector(".running-head-title").textContent = c.title;
     head.querySelector(".running-head-meta").textContent =
-      `${chineseNumber(c.messages.filter(m => m.role === "user").length, true)}问${notes ? ` · 旁注 ${notes}` : ""}`;
+      `${chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true)}问${notes ? ` · 旁注 ${notes}` : ""}`;
   }
   syncRunningHead();
 }
@@ -384,7 +407,6 @@ function restorePlace() {
     currentId = lastConversationId;
     const c = currentConversation();
     c.unread = false;
-    if (c.profileId) selectProfile(c.profileId, false);
   }
 }
 // 压缩过的前文在页面上折起（记录都在，只是不占地方）；最近一次压缩的分隔上有「展开前文 / 收起前文」
@@ -405,12 +427,12 @@ function foldCompacted(c) {
   }
 }
 // 消息列表按 id 增量同步：没变的节点原样留下（图表、沙箱、展开状态都不动），只插入、替换或移除有变化的那几条。
-// 正在流式生成的那条由 readSse 就地更新，这里一律不碰。
+// 回复就地重画（见 07-paint.js，画法是幂等的，正在写的那条也一样画）；用户消息、分隔与提示签名一变整条换。
 // 只有会改变呈现的字段才算变化；展开/收起这类界面状态用户已经在页面上操作过了，不必因此重画
 const UI_STATE_FIELDS = new Set(["toolsOpen", "toolsTouched", "reasoningOpen", "reasoningTouched", "showCompacted"]);
 /** @param {Message} message */
 function messageSig(message, branch) {
-  return `${branch ? `${branch.at}/${branch.total}|` : ""}${editingMessageId === message.id ? "e|" : ""}${noteCounts.get(message.id) || 0}|${JSON.stringify(message, (key, value) => (UI_STATE_FIELDS.has(key) ? undefined : value))}`;
+  return `${branch ? `${branch.at}/${branch.total}|` : ""}${editingMessageId === message.id ? `e${editingDropped.size}|` : ""}${noteCounts.get(message.id) || 0}|${JSON.stringify(message, (key, value) => (UI_STATE_FIELDS.has(key) ? undefined : value))}`;
 }
 /** @param {Conversation} c */
 function syncMessages(c, converged) {
@@ -439,25 +461,25 @@ function syncNodes(host, items, converged) {
   for (const item of items) {
     const node = existing.get(item.key);
     existing.delete(item.key);
+    const sig = item.html ?? messageSig(item.message, item.branch),
+      reply = item.message?.role === "assistant";
     let next = node;
-    // 正在流式写的那条由逐帧的那一路刷，这里不动；别处在写、这边跟着看的，没有那一路，照常按新内容重画
-    const streaming = node && item.message?.status === "streaming" && node.dataset.status === "streaming" && !runningElsewhere();
-    if (!streaming) {
-      const sig = item.html ?? messageSig(item.message, item.branch);
-      if (!node || nodeSig.get(node) !== sig) {
-        template.innerHTML = item.html ?? renderMessage(item.message, item.branch, item.side);
-        next = template.content.firstElementChild;
-        nodeSig.set(next, sig);
-        added.push(next);
-        if (!node && !converged) next.classList.add("is-new");
-      } else node.classList.remove("is-new");
-    }
+    if (!node || (!reply && nodeSig.get(node) !== sig)) {
+      template.innerHTML = item.html ?? (reply ? assistantShellHtml(item.message) : renderMessage(item.message, item.branch, item.side));
+      next = template.content.firstElementChild;
+      added.push(next);
+      if (!node && !converged) next.classList.add("is-new");
+    } else node.classList.remove("is-new");
     if (node && next !== node) {
       if (node === cursor) cursor = cursor.nextElementSibling;
       node.remove();
     }
     if (next === cursor) cursor = cursor.nextElementSibling;
     else host.insertBefore(next, cursor);
+    // 先挂上再画：交互内容、开合动效都要在页上才量得准
+    if (reply && (next !== node || item.message.status === "streaming" || nodeSig.get(next) !== sig))
+      paintAssistant(next, item.message, { side: !!item.side, branch: item.branch });
+    nodeSig.set(next, sig);
   }
   // 游标之后全是没被点到名的旧节点（删掉的消息、重生成时截掉的尾巴、旧的收尾提示）
   while (cursor) {
@@ -477,31 +499,48 @@ function noteMarkHtml(message) {
     ? `<button class="note-mark" type="button" data-note-mark title="查看这条消息的旁注">注${count > 1 ? ` ${count}` : ""}</button>`
     : "";
 }
+// 用户消息与上下文分隔的整条 HTML；回复另有画法（见 07-paint.js）
 /** @param {Message} message */
+// 帮手的回报（或后台指令结束）另起的一问：不是用户的话，画成一道细线——谁回来了，点名字开它的那一趟（后台指令则回到挂它的那一步）
+/** @param {Message} message */
+function relayHtml(message, branch = null) {
+  const items = message.relay || [],
+    names = items
+      .map(item =>
+        item.kind === "bg"
+          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="回到所在一步">后台 ${escapeHtml(item.title)} 已结束${item.ok ? "" : ` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
+          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="查看经过">帮手「${escapeHtml(item.title)}」${item.ok ? "回报" : "未完成"}</button>`
+      )
+      .join(`<span class="relay-sep" aria-hidden="true">·</span>`),
+    seal = items.every(item => item.kind === "bg") ? "候" : "遣";
+  return `<article class="message relay" data-message="${escapeHtml(message.id)}"><div class="relay-line"><span class="seal sub-seal" aria-hidden="true">${seal}</span>${names}</div>${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
+}
 function renderMessage(message, branch = null, side = false) {
   if (message.role === "context")
     return message.summary
       ? `<div class="context-divider has-summary" data-message="${escapeHtml(message.id)}"><details class="context-summary"><summary>前文已压成摘要 · ${escapeHtml(chineseNumber(message.compacted || 0, true))}条</summary><div class="context-summary-body">${renderMarkdown(message.summary)}</div></details><button type="button" class="context-toggle" data-toggle-compacted>展开前文</button></div>`
       : `<div class="context-divider" data-message="${escapeHtml(message.id)}"><span>上下文由此重新开始</span></div>`;
+  if (message.role === "user" && message.relay) return relayHtml(message, branch);
   if (message.role === "user") {
-    if (editingMessageId === message.id)
-      return `<article class="message user" data-message="${escapeHtml(message.id)}"><div class="message-editor"><textarea class="message-edit-input">${escapeHtml(message.content)}</textarea><div class="edit-actions"><button class="message-action" data-action="cancel-edit">取消</button><button class="message-action edit-save" data-action="save-edit">保存并重答</button></div></div></article>`;
-    const files = message.attachments?.length
-      ? `<div class="sent-attachments">${message.attachments.map(file => attachmentCard(file, null, true)).join("")}</div>`
+    if (editingMessageId === message.id) {
+      // 改问时附件也摆出来，可以去掉（如模型吃不下的图）；旁注里的改问不动附件，不摆
+      const kept = side
+        ? []
+        : (message.attachments || []).filter(file => file.id && !quoteImageOf(file, message.quote) && !editingDropped.has(file.id));
+      return `<article class="message user" data-message="${escapeHtml(message.id)}">${kept.length ? `<div class="sent-attachments">${kept.map(file => attachmentCard(file, null, false, true)).join("")}</div>` : ""}<div class="message-editor"><textarea class="message-edit-input">${escapeHtml(message.content)}</textarea><div class="edit-actions"><button class="message-action" data-action="cancel-edit">取消</button><button class="message-action edit-save" data-action="save-edit">保存并重答</button></div></div></article>`;
+    }
+    // 随引文的画面画在引文里（字在上、图在下，随问句靠右），不在件条里再列一回
+    const listed = (message.attachments || []).filter(file => !quoteImageOf(file, message.quote)),
+      shot = message.quote?.image && message.attachments?.some(file => quoteImageOf(file, message.quote));
+    const files = listed.length
+      ? `<div class="sent-attachments">${listed.map(file => attachmentCard(file, null, true)).join("")}</div>`
       : "";
     const quote = message.quote?.text
-      ? `<div class="user-quote" data-quote-source="${escapeHtml(message.quote.messageId || "")}" title="回到出处">${escapeHtml(message.quote.text)}</div>`
+      ? `<div class="user-quote${shot ? " has-shot" : ""}" data-quote-source="${escapeHtml(message.quote.messageId || "")}"${message.quote.url ? ` data-quote-url="${escapeHtml(message.quote.url)}"` : ""} title="回到出处">${shot ? `<span class="user-quote-text">${escapeHtml(message.quote.text)}</span>${quoteShotHtml(message.quote.image, message.quote.text)}` : escapeHtml(message.quote.text)}</div>`
       : "";
-    return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", "复制消息", icons.copy)}${actionIcon("edit", "编辑消息", icons.edit)}</div></article>`;
+    return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", "复制消息")}${actionIcon("edit", "编辑消息")}</div></article>`;
   }
-  // 旁注里的答：复制、重新生成（不分叉，直接换掉）；出错或停止了也能重来
-  const actions = side
-    ? message.status === "streaming"
-      ? ""
-      : `${message.content ? actionIcon("copy", "复制回复", icons.copy) : ""}${actionIcon("regenerate", message.status === "complete" ? "重新生成" : "重试", icons.regenerate)}`
-    : assistantActionsHtml(message) + branchNavHtml(branch);
-  message = inlineThinkView(message);
-  return `<article class="message assistant" data-message="${escapeHtml(message.id)}" data-status="${escapeHtml(message.status || "complete")}"><div class="message-meta"><span class="meta-seal" aria-hidden="true">言</span><span>${escapeHtml(message.modelName || "模型")} · ${formatTime(message.timestamp)}</span>${side ? "" : noteMarkHtml(message)}</div><div class="assistant-block">${trailWork(message) ? stepsHtml(message) + reasoningHtml(message) : reasoningHtml(message) + stepsHtml(message)}${assistantMainHtml(message)}${deliverablesHtml(message)}${changeSummaryHtml(message)}${sourceCardsHtml(message)}</div>${actions ? `<div class="message-actions${branch ? " has-branch" : ""}">${actions}</div>` : ""}</article>`;
+  return assistantShellHtml(message);
 }
 // 正文开头带 <think>…</think> 的旧消息（导入或此前的版本）：渲染时按思考 + 正文拆开看，不改动存下的原文
 const INLINE_THINK = /^\s*<think>([\s\S]*?)<\/think>\s*/;
@@ -525,117 +564,40 @@ function assistantNoteHtml(message) {
   return message.status === "error"
     ? `<div class="message-error">${escapeHtml(message.error || "请求失败")}</div>`
     : message.status === "interrupted"
-      ? `<div class="resume-note">连接中断，已生成的内容均已保留，可由此续写。</div>`
+      ? `<div class="resume-note">${message.error ? `${escapeHtml(message.error.replace(/[。.\s]+$/, ""))}。` : "连接中断，"}已生成的内容均已保留，可由此续写。</div>`
       : "";
-}
-/** @param {Message} message */
-function assistantMainHtml(message) {
-  const base = trailBase(message),
-    text = base
-      ? String(message.content || "")
-          .slice(base)
-          .trim()
-      : message.content;
-  if (!message.content && message.status === "streaming") return `<div class="thinking">正在凝神</div>`;
-  if (!message.content && message.status === "stopped") return `<div class="thinking">搁笔于此</div>`;
-  let rendered = "";
-  if (text) {
-    const previous = suppressViz;
-    suppressViz = message.status === "streaming";
-    try {
-      rendered = renderMarkdown(text);
-    } finally {
-      suppressViz = previous;
-    }
-  }
-  return `${text ? `<div class="markdown" data-cut="${base}" data-base="${base}">${rendered}</div>` : ""}${assistantNoteHtml(message)}`;
 }
 /** @param {Message} message */
 function assistantActionsHtml(message) {
   return message.status === "streaming"
     ? ""
     : message.status === "error"
-      ? actionIcon("retry", "重试", icons.retry)
+      ? actionIcon("retry", "重试")
       : message.status === "interrupted"
-        ? `${message.content ? actionIcon("copy", "复制已生成内容", icons.copy) : ""}${actionIcon("resume", "继续生成", icons.resume)}${actionIcon("retry", "从头重试", icons.retry)}`
-        : `${actionIcon("copy", "复制回复", icons.copy)}${actionIcon("regenerate", "重新生成", icons.regenerate)}${actionIcon("note", "旁注", icons.note)}${messageCostHtml(message)}`;
+        ? `${message.content ? actionIcon("copy", "复制已生成内容") : ""}${actionIcon("resume", "继续生成")}${actionIcon("retry", "从头重试")}`
+        : `${actionIcon("copy", "复制回复")}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", "继续生成") : ""}${actionIcon("regenerate", "重新生成")}${actionIcon("note", "旁注")}${messageCostHtml(message)}`;
 }
 // 这一答耗了多少墨：各轮请求的用量之和（含帮手），接口报了用量就用实数，没报则按字数估；当前上下文有多大另看右下角
 /** @param {Message} message */
 function messageCostHtml(message) {
   const n = Number(message.tokenCount) || 0;
   if (!n) return "";
-  const heavy = n >= CONTEXT_HEAVY;
-  return `<span class="message-cost${heavy ? " heavy" : ""}" title="这一答共耗约 ${formatTokens(n)} token${message.tokenEstimated ? "（估算）" : ""}${heavy ? "；上下文已重，可压缩前文" : ""}">耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}</span>`;
+  const heavy = n >= CONTEXT_HEAVY,
+    prompt = Number(message.usage?.prompt_tokens) || 0,
+    cached = Number(message.usage?.cached_tokens) || 0,
+    hit = prompt && cached ? `；提示里 ${Math.round((cached / prompt) * 100)}% 读自缓存` : "";
+  return `<span class="message-cost${heavy ? " heavy" : ""}" title="这一答共耗约 ${formatTokens(n)} token${message.tokenEstimated ? "（估算）" : ""}${hit}${heavy ? "；上下文已重，可压缩前文" : ""}">耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}</span>`;
 }
-// 流式结束只就地收尾这一条消息：不重建整段对话，图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下
+// 一答收尾：就地画成定稿的样子（图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下）；这条不在页上就整段重画
 /**
  * @param {Conversation} conversation
  * @param {Message} assistant
  */
-function finalizeAssistant(conversation, assistant, leadTrim = 0) {
-  const article = document.querySelector(`#messages [data-message="${CSS.escape(assistant.id)}"]`),
-    block = article?.querySelector(".assistant-block");
-  if (!block || conversation.ended) return renderConversation(followBottom);
-  // 步骤可能收尾时全撤了（只排着补言、没递出去就停了）：行迹整块撤掉
-  if (assistant.steps?.length) refreshSteps(assistant);
-  else block.querySelector(":scope > .tool-stack")?.remove();
-  if (assistant.deliverables?.length && !block.querySelector(":scope > .deliver-bar"))
-    (block.querySelector(":scope > .change-bar") || block.querySelector(":scope > .markdown") || block).insertAdjacentHTML(
-      "afterend",
-      deliverablesHtml(assistant)
-    );
-  block.querySelector(".thinking")?.remove();
-  const reasoning = block.querySelector(":scope > .reasoning"),
-    thought = String(assistant.reasoning || "").slice(trailReasoningBase(assistant));
-  if (reasoning && thought.trim()) {
-    reasoning.querySelector(".reasoning-body").textContent = thought;
-    reasoning.dataset.state = "done";
-    // 做完就收，与行迹同一个定例：流式期间读者往上翻着看时没收成的，这里补上；用户亲手开合过的不动
-    if (!assistant.reasoningTouched) settleDetails(reasoning, false, null, true);
-  } else if (reasoning) reasoning.remove();
-  else if (thought.trim()) {
-    const stack = block.querySelector(":scope > .tool-stack");
-    if (stack) stack.insertAdjacentHTML("afterend", reasoningHtml(assistant, thought));
-    else block.insertAdjacentHTML("afterbegin", reasoningHtml(assistant, thought));
-  }
-  block.querySelectorAll(".message-error, .resume-note, .source-stack").forEach(node => node.remove());
-  block.querySelector(".tool-stack.is-work .trail-group.trail-live")?.remove();
-  block.querySelectorAll(".trail-drafting").forEach(node => node.remove());
-  const markdown = block.querySelector(":scope > .markdown");
-  if (!assistant.content) {
-    markdown?.remove();
-    block.insertAdjacentHTML("beforeend", assistantMainHtml(assistant));
-  } else if (markdown?.querySelector(".md-tail")) {
-    // 已渲染的稳定段保持不动，只把尾段按最终文本重绘一次——此时交互内容才真正挂载
-    const cut = Math.max(trailBase(assistant), Math.min(Number(markdown.dataset.cut || 0) - leadTrim, assistant.content.length)),
-      tail = markdown.querySelector(".md-tail");
-    markdown.dataset.cut = String(cut);
-    tail.innerHTML = renderMarkdown(assistant.content.slice(cut));
-    renderEnhancements(tail);
-    block.insertAdjacentHTML("beforeend", assistantNoteHtml(assistant));
-  } else {
-    markdown?.remove();
-    block.insertAdjacentHTML("beforeend", assistantMainHtml(assistant));
-    renderEnhancements(block);
-  }
-  // 改动条生成中就已实时累加，这里只挪到收尾正文之后（原节点搬家，展开状态不丢）再对一次数；来源卡片压在最底
-  const bar = block.querySelector(":scope > .change-bar");
-  if (bar) {
-    bar.classList.remove("is-new");
-    block.append(bar);
-  }
-  syncChangeBar(block, assistant);
-  block.insertAdjacentHTML("beforeend", sourceCardsHtml(assistant));
-  block.querySelectorAll(".message-error, .resume-note, .source-stack").forEach(node => node.classList.add("is-new"));
-  const branch = branchAt(conversation, conversation.messages.indexOf(assistant));
-  article.querySelector(".message-actions")?.remove();
-  const actions = assistantActionsHtml(assistant) + branchNavHtml(branch);
-  if (actions) article.insertAdjacentHTML("beforeend", `<div class="message-actions${branch ? " has-branch" : ""}">${actions}</div>`);
-  article.dataset.status = assistant.status;
-  if (assistant.status === "complete") article.querySelector(".meta-seal")?.classList.add("stamped");
-  nodeSig.set(article, messageSig(assistant, branch));
-  decorateNoteAnchors(article);
+function finalizeAssistant(conversation, assistant) {
+  const article = document.querySelector(`#messages [data-message="${CSS.escape(assistant.id)}"]`);
+  if (!article) return renderConversation(followBottom);
+  paintAssistant(/** @type {HTMLElement} */ (article), assistant);
+  nodeSig.set(article, messageSig(assistant, branchFor(assistant)));
   $("#chatScroll").classList.remove("generating");
   renderHelperBar();
   if (followBottom) requestAnimationFrame(scrollBottom);
@@ -729,12 +691,18 @@ function bindScrollEvents() {
     trail.querySelector(":scope > summary").click();
     scrollChatTo(trail);
   });
-  // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧
-  if (typeof ResizeObserver === "function")
-    new ResizeObserver(() => {
+  // 跟着的时候，内容不论因何长高（工具输出、图表成图、图片载入、块的开合）都贴着底：不只靠流式的每一帧。
+  // 「回到最新」也跟着尺寸重算：下方的行迹、思绪一收短，人没动、没有滚动事件，已到底了按钮却还挂着；
+  // 输入框长高变矮改的是视口，一并看着
+  if (typeof ResizeObserver === "function") {
+    const sizes = new ResizeObserver(() => {
       if (followBottom && view === "chat" && currentId) scrollBottom();
+      syncJumpBottom();
       syncChatScrollGrabber();
-    }).observe($("#messages"));
+    });
+    sizes.observe($("#messages"));
+    sizes.observe($("#chatScroll"));
+  }
   $("#chatScroll").addEventListener(
     "wheel",
     e => {
@@ -812,3 +780,22 @@ function bindScrollEvents() {
     el.scrollTo({ top: el.scrollHeight, behavior: reducedMotion.matches ? "instant" : "smooth" });
   };
 }
+function scrollBottom() {
+  const el = $("#chatScroll");
+  if (!el) return;
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 1) {
+    autoScrolling = false;
+    return;
+  }
+  autoScrolling = true;
+  el.scrollTop = el.scrollHeight;
+  requestAnimationFrame(() => {
+    autoScrolling = false;
+  });
+}
+defineLayer({
+  name: "model-menu",
+  rank: 85,
+  open: () => isShown("#modelMenu") && !$("#modelMenu").classList.contains("leaving"),
+  close: closeModelMenu
+});

@@ -1,15 +1,17 @@
+/* 附件：一件一条「件条」——件图（与卷宗同画法，图片是它自己的缩略）、名字、大小，方角发丝边。
+   落选的：112px 方卡垫一个淡大字（音 / 影 / 卷）配等宽类型小标——单个解释性的字与等宽字都不合纸墨（见 设计稿/27 三） */
 .attachment-list,
 .sent-attachments {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
   max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: thin;
 }
 .composer .attachment-list {
+  max-height: 96px;
   margin: 0 0 10px;
-  padding: 1px 2px 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .sent-attachments {
   justify-content: flex-end;
@@ -17,134 +19,70 @@
   margin: 0 0 10px;
 }
 .attachment-card {
-  position: relative;
-  flex: 0 0 112px;
-  width: 112px;
-  height: 112px;
-  overflow: hidden;
-  padding: 0;
-  border: 1px solid color-mix(in srgb, var(--line) 86%, var(--ink-3));
-  border-radius: 13px;
-  background: linear-gradient(145deg, var(--paper), color-mix(in srgb, var(--paper-2) 74%, var(--paper)));
-  box-shadow: 0 2px 7px rgba(55, 45, 31, 0.05);
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 260px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--paper);
+  color: var(--ink);
+  font: 12.5px var(--title);
   text-align: left;
-  transition:
-    border-color 0.16s,
-    transform 0.16s,
-    box-shadow 0.16s;
-}
-.attachment-card:before {
-  content: "";
-  position: absolute;
-  left: 10px;
-  top: 12px;
-  width: 1px;
-  height: 16px;
-  background: var(--accent);
-  opacity: 0.5;
+  transition: border-color 0.16s;
 }
 .attachment-card[role="button"] {
   cursor: pointer;
 }
-.attachment-card[role="button"]:hover {
-  border-color: var(--ink-3);
-  box-shadow: 0 5px 15px rgba(55, 45, 31, 0.08);
-  transform: translateY(-1px);
+.attachment-card[role="button"]:hover,
+.attachment-card:focus-within {
+  border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
+}
+.attachment-card .fi-thumb {
+  width: 26px;
+  height: 28px;
 }
 .attachment-name {
-  position: absolute;
-  z-index: 2;
-  left: 12px;
-  right: 10px;
-  top: 13px;
-  display: -webkit-box;
+  min-width: 0;
   overflow: hidden;
-  padding-left: 8px;
-  color: var(--ink);
-  font: 12px/1.45 var(--body);
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.attachment-mark {
-  position: absolute;
-  left: 11px;
-  bottom: 8px;
-  color: var(--accent);
-  font: 26px/1 var(--title);
-  opacity: 0.1;
-  transform: rotate(-5deg);
-}
-.attachment-type {
-  position: absolute;
-  right: 9px;
-  bottom: 8px;
-  padding: 3px 6px;
-  border-radius: 5px;
-  background: var(--paper-3);
-  color: var(--ink-2);
-  font:
-    9px ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    monospace;
-  letter-spacing: 0.04em;
-}
-.attachment-thumb {
-  display: none;
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.attachment-card.has-thumb .attachment-thumb {
-  display: block;
-}
-.attachment-card.has-thumb:before,
-.attachment-card.has-thumb .attachment-mark,
-.attachment-card.has-thumb .attachment-type {
-  display: none;
-}
-.attachment-card.has-thumb .attachment-name {
-  top: auto;
-  left: 7px;
-  right: 7px;
-  bottom: 7px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--paper) 84%, transparent);
-  font-size: 10.5px;
-  -webkit-line-clamp: 2;
-  backdrop-filter: blur(3px);
-}
-.attachment-tool {
-  position: absolute;
-  z-index: 3;
-  right: 6px;
-  top: 6px;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--paper) 90%, transparent);
+.attachment-size {
+  flex: none;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font-size: 10.5px;
+}
+/* 藏、移除：位置常留着，免得条子忽长忽短 */
+.attachment-tool {
+  flex: none;
+  width: 18px;
+  height: 22px;
+  margin-left: -3px;
+  color: var(--ink-3);
+  font: 11.5px var(--title);
   opacity: 0;
+  transition: opacity 0.16s;
+}
+.attachment-tool + .attachment-tool {
+  margin-left: -6px;
 }
 .attachment-card:hover .attachment-tool,
 .attachment-card:focus-within .attachment-tool {
   opacity: 1;
 }
-.attachment-tool:hover {
-  background: var(--paper-3);
-  color: var(--ink);
+.attachment-save:hover {
+  color: var(--accent);
 }
-.attachment-remove:hover {
+/* 案上的移除常显（淡），只有「藏」靠近才出来 */
+.attachment-card .attachment-remove {
+  opacity: 0.55;
+}
+.attachment-card .attachment-remove:hover {
+  opacity: 1;
   color: var(--danger);
-}
-.attachment-card.pending .attachment-save {
-  right: 30px;
 }
 .drop-veil {
   position: fixed;
@@ -153,7 +91,7 @@
   display: grid;
   place-items: center;
   border: 1px dashed color-mix(in srgb, var(--accent) 58%, var(--line));
-  border-radius: 18px;
+  border-radius: var(--radius-l);
   background: color-mix(in srgb, var(--paper) 88%, transparent);
   backdrop-filter: blur(5px);
   pointer-events: none;
@@ -165,7 +103,7 @@
   gap: 14px;
   padding: 17px 22px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: var(--shadow);
 }
@@ -199,166 +137,102 @@
   width: min(100%, 960px);
   margin: 0 auto;
 }
-.library-page h1 {
-  margin: 18px 0 8px;
-  font: 500 30px var(--title);
-  letter-spacing: 0.05em;
+/* 卷宗与分组的页头：笔意图标、标题、一行事实，右边一排字作动作，下压一道墨线。
+   落选：一方印 + 英文眉题 + 组件工具栏——后台模板的骨架换了字体（见 设计稿/15-卷宗分组气质） */
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ink-3);
 }
-.library-lead {
-  margin: 0 0 22px;
+.page-head .brush {
+  width: 26px;
+  height: 26px;
+  margin-bottom: 5px;
+}
+.page-head h1 {
+  margin: 0;
+  font: 500 26px/1.2 var(--title);
+  letter-spacing: 0.12em;
+}
+.page-facts {
+  margin: 0 0 5px 4px;
+  color: var(--ink-3);
+  font: 12px var(--title);
+  white-space: nowrap;
+}
+.page-acts {
+  display: flex;
+  margin: 0 0 3px auto;
+}
+.page-acts button {
+  padding: 3px 10px;
   color: var(--ink-2);
-  font-family: var(--title);
-  line-height: 1.8;
+  font: 13px var(--title);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
 }
-.library-count {
-  margin-left: 8px;
-  color: var(--ink-3);
-  font-size: 12px;
+.page-acts button + button {
+  border-left: 1px solid var(--line);
 }
-.library-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 22px;
-}
-.library-tools .field {
-  flex: 1;
-  min-width: 150px;
-  width: auto;
-}
-.library-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 14px;
-}
-.library-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: var(--paper);
-  transition:
-    border-color 0.16s,
-    transform 0.16s,
-    box-shadow 0.16s;
-}
-.library-card:hover {
-  border-color: var(--ink-3);
-  box-shadow: 0 6px 18px rgba(55, 45, 31, 0.08);
-  transform: translateY(-1px);
-}
-.library-preview {
-  position: relative;
-  height: 110px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(145deg, var(--paper-2), color-mix(in srgb, var(--paper-3) 60%, var(--paper-2)));
-}
-.library-thumb {
-  display: none;
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.library-card.has-thumb .library-thumb {
-  display: block;
-}
-.library-card.has-thumb .library-glyph {
-  display: none;
-}
-.library-glyph {
+.page-acts button:first-child {
   color: var(--accent);
-  font: 34px var(--title);
-  opacity: 0.35;
-  transform: rotate(-5deg);
 }
-.library-preview .attachment-type {
-  right: 8px;
-  bottom: 8px;
-}
-.library-body {
-  padding: 10px 12px 6px;
-}
-.library-body strong {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12.5px;
-  font-weight: 500;
-}
-.library-body small {
-  display: block;
-  margin-top: 3px;
-  color: var(--ink-3);
-  font-size: 10px;
-}
-.library-actions {
-  display: flex;
-  gap: 2px;
-  padding: 2px 8px 8px;
-  opacity: 0;
-  transition: 0.16s;
-}
-.library-card:hover .library-actions,
-.library-card:focus-within .library-actions {
-  opacity: 1;
-}
-.library-actions button {
-  padding: 4px 7px;
-  border-radius: 6px;
-  color: var(--ink-3);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.library-actions button:hover {
-  background: var(--paper-2);
+.page-acts button:hover {
   color: var(--ink);
 }
-/* 夹与件同格：夹是一叠纸，点开即入；卡片拖到夹上时夹描一道朱边（见 设计稿/11-卷宗多级，
-   另两式：左侧目录树太像文件管理器；夹作目录行与分组页同式，但夹多时把文件推得太远） */
-.library-folder {
-  cursor: pointer;
+.page-acts .danger:hover {
+  color: var(--danger);
 }
-.library-folder .library-preview {
-  background: var(--paper-2);
+.page-sub {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 40px;
+  padding-top: 8px;
+  margin-bottom: 10px;
 }
-.library-sheets {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 58px;
-  height: 70px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--paper);
-  box-shadow:
-    5px -5px 0 -1px var(--paper),
-    5px -5px 0 0 var(--line),
-    10px -10px 0 -1px var(--paper),
-    10px -10px 0 0 var(--line);
+/* 分类：字加一道朱线，不用胶囊分段 */
+.library-kinds {
+  display: flex;
+  gap: 4px;
 }
-.library-sheets span {
-  color: var(--accent);
-  font: 22px var(--title);
-  opacity: 0.55;
+.library-kinds button {
+  padding: 2px 4px;
+  color: var(--ink-3);
+  font: 12.5px var(--title);
 }
-.library-card.drop-over,
-.library-crumbs button.drop-over {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+.library-kinds button:hover,
+.library-kinds button.active {
+  color: var(--ink);
+}
+.library-kinds button.active {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+/* 查找：一道底线 */
+.page-find {
+  width: 200px;
+  margin-left: auto;
+  padding: 3px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  outline: 0;
+  background: none;
+  color: var(--ink);
+  font: 12.5px var(--title);
+}
+.page-find:focus {
+  border-bottom-color: var(--ink-3);
+}
+.page-find::placeholder {
+  color: var(--ink-3);
 }
 .library-crumbs {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 2px;
-  margin: -6px 0 14px;
   color: var(--ink-3);
   font: 13px var(--title);
   letter-spacing: 0.06em;
@@ -366,7 +240,7 @@
 .library-crumbs button {
   padding: 2px 6px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-s);
   color: var(--ink-3);
 }
 .library-crumbs button:hover {
@@ -380,94 +254,283 @@
 .library-crumbs .sep {
   opacity: 0.5;
 }
-.library-lead code {
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--paper-2);
-  font-size: 11.5px;
+
+/* 簿录（包边）：一行一条，条间留一线空，列间一道淡朱丝栏。件条右上折一角，夹条左缘包一道布边、行首一只小函。
+   落选（设计稿/16-卷宗簿录长条）：只把印换成小图——太安静；夹条包整截书脊、或整条布面——夹多时一片深色压页。
+   更早的云盘卡片（圆角、渐变块、悬停上浮、满格淡朱大字）被嫌「普通」 */
+.strips {
+  --cols: 32px minmax(0, 1fr) 110px 176px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.strip-cols,
+.strip {
+  display: grid;
+  grid-template-columns: var(--cols);
+  align-items: center;
+}
+.strip-cols {
+  min-height: 22px;
+  color: var(--ink-3);
+  font: 11px var(--title);
+  letter-spacing: 0.14em;
+}
+.strip-cols > span {
+  padding: 0 12px;
+}
+.strip-cols > span:first-child {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.strip-back {
+  width: 20px;
+  height: 20px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  color: var(--ink-2);
+  font: 16px/1 var(--title);
+}
+.strip-back:hover {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+.strip {
+  position: relative;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-3);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.strip:hover,
+.strip:focus-visible {
+  border-color: var(--ink-3);
+  outline: 0;
+}
+.strip > span {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+.strip > span:first-child {
+  justify-content: center;
+  padding: 0;
+}
+.strip > span + span + span {
+  border-left: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.strip .ell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.strip-name {
+  gap: 10px;
+}
+.strip-name strong {
+  overflow: hidden;
+  color: var(--ink);
+  font: 400 13.5px var(--title);
+  text-overflow: ellipsis;
+}
+.strip-name small {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+.strip.dir .strip-name strong {
+  font-weight: 600;
+}
+.strip.file {
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+}
+.strip.file:after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -1px;
+  width: 10px;
+  height: 10px;
+  background: linear-gradient(225deg, transparent 50%, var(--ink-3) 50% 58%, var(--paper-3) 58%);
+}
+.strip.dir {
+  border-left: 5px solid var(--cloth);
+}
+/* 条尾：平时是日期，悬停或键盘停在条上时让位给几样动作 */
+.strip-acts {
+  display: none;
+  gap: 12px;
+}
+.strip-acts button {
+  padding: 2px 0;
+  color: var(--ink-2);
+  font: 12px var(--title);
+}
+.strip-acts button:hover {
+  color: var(--ink);
+}
+.strip-acts .danger,
+.strip-acts .danger:hover {
+  color: var(--danger);
+}
+.strip:hover .strip-acts,
+.strip:focus-within .strip-acts {
+  display: flex;
+}
+.strip:hover .strip-when,
+.strip:focus-within .strip-when {
+  display: none;
+}
+.strip-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  border-bottom: 1px solid var(--accent);
+  outline: 0;
+  background: none;
+  color: var(--ink);
+  font: 13.5px var(--title);
+}
+.strip.drop-over,
+.strip-back.drop-over,
+.library-crumbs button.drop-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* 件图（画法见 src/13-files/10-archive.js 的 fileFigure）：折角小纸，记号着各类的专色，纸面淡染；夹是布面小函贴一条空白题签 */
+.fi {
+  --fc: var(--ink-3);
+  display: block;
+  flex: none;
+  width: 18px;
+  height: 22px;
+  overflow: visible;
+}
+.fi .body {
+  fill: color-mix(in srgb, var(--fc) 9%, var(--paper));
+  stroke: color-mix(in srgb, var(--fc) 70%, var(--ink-3));
+  stroke-width: 0.9;
+}
+.fi .fold {
+  fill: color-mix(in srgb, var(--fc) 22%, var(--paper-3));
+  stroke: color-mix(in srgb, var(--fc) 70%, var(--ink-3));
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+}
+.fi .m {
+  fill: none;
+  stroke: var(--fc);
+  stroke-width: 0.9;
+  stroke-linecap: round;
+}
+.fi .m.bold {
+  stroke-width: 1.8;
+}
+.fi .f {
+  fill: var(--fc);
+}
+.fi .case {
+  fill: var(--cloth);
+}
+.fi .slip {
+  fill: var(--slip);
+}
+.fi[data-figure="text"] {
+  --fc: var(--ink-2);
+}
+.fi[data-figure="code"] {
+  --fc: var(--code-blue);
+}
+.fi[data-figure="table"] {
+  --fc: var(--reach);
+}
+.fi[data-figure="doc"] {
+  --fc: var(--accent);
+}
+.fi[data-figure="slides"] {
+  --fc: var(--gold);
+}
+.fi[data-figure="html"] {
+  --fc: var(--code-green);
+}
+.fi[data-figure="audio"] {
+  --fc: var(--keep);
+}
+.fi[data-figure="video"] {
+  --fc: var(--rouge);
+}
+/* 图就是它自己：缩略剪成同一张折角纸 */
+.fi-thumb {
+  position: relative;
+  overflow: hidden;
+  background: var(--paper-3);
+  clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 0 100%);
+}
+.fi-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.fi-thumb:after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 5px;
+  height: 5px;
+  background: linear-gradient(225deg, transparent 50%, var(--paper-3) 50%);
+}
+
+.library-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 16px 0 0;
+  color: var(--ink-3);
+  font-size: 11px;
 }
 .library-scratch {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: 10px;
-  color: var(--ink-3);
-  font-size: 12px;
 }
 .library-scratch button {
-  padding: 1px 7px;
-  border: 1px solid var(--line);
-  border-radius: 99px;
   color: var(--ink-3);
   font-size: 11px;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 .library-scratch button:hover {
-  border-color: var(--accent);
   color: var(--accent);
 }
-.library-section {
-  grid-column: 1/-1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 10px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--line);
-  color: var(--ink-3);
-  font: 11px var(--title);
-  letter-spacing: 0.1em;
-}
-.library-section .outline-btn {
-  padding: 4px 10px;
-  font-size: 11px;
-}
 .library-empty {
-  grid-column: 1/-1;
   padding: 60px 10px;
   text-align: center;
   color: var(--ink-3);
   font: 12px/1.9 var(--title);
 }
-/* 分组页：列表如目录页（「集」印、组名、引线、提要），一组的详情是几行设置加组里的对话 */
-.group-toc {
-  margin-top: 4px;
+
+/* 分组页：与卷宗同一本簿。列表一组一条（组名 · 段 · 预设 · 目录 · 日期）；一组的详情是两行设置加组里的对话 */
+.group-strips {
+  --cols: 32px minmax(0, 1fr) 54px 120px 170px 120px;
 }
-.group-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 12px 4px;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
-  text-align: left;
-  transition: background-color 0.16s;
+.group-members {
+  --cols: 32px minmax(0, 1fr) 176px;
 }
-.group-row:hover {
-  background: color-mix(in srgb, var(--paper-3) 45%, transparent);
-}
-.group-row-name {
-  flex: none;
-  max-width: 50%;
-  overflow: hidden;
-  color: var(--ink);
-  font: 600 14.5px var(--title);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.group-row-gist {
-  flex: none;
-  max-width: 45%;
-  overflow: hidden;
-  color: var(--ink-3);
-  font-size: 12px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-/* 组内置顶：与侧栏同一个折角，折在这一行的右上角 */
-.group-member {
-  position: relative;
-}
+/* 组内置顶：与侧栏同一个墨色折角，折在这一条的右上角 */
 .group-pin {
   position: absolute;
   top: 0;
@@ -478,65 +541,27 @@
   border-width: 0 9px 9px 0;
   border-color: transparent color-mix(in srgb, var(--ink-3) 80%, transparent) transparent transparent;
 }
-/* 悬停一行，右端的日期让位给「移出」 */
-.group-member-out {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  padding: 3px 8px;
-  border-radius: 7px;
-  color: var(--ink-3);
-  font-size: 12px;
-  opacity: 0;
-  transform: translateY(-50%);
-  transition: opacity 0.15s;
-}
-.group-member-out:hover {
-  background: var(--paper-3);
-  color: var(--danger);
-}
-.group-member:hover .group-member-out,
-.group-member-out:focus-visible {
-  opacity: 1;
-}
-.group-member:hover .group-row-gist {
-  visibility: hidden;
-}
-.group-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 18px 0 8px;
-}
-.group-title .repo-seal {
-  width: 26px;
-  height: 26px;
-  font-size: 14px;
-}
+/* 组名即标题，就地可改：悬停、聚焦时露一道虚线 */
 .group-name-field {
-  flex: 1;
-  min-width: 0;
-  padding: 2px 4px;
+  field-sizing: content;
+  min-width: 3em;
+  max-width: 50%;
+  padding: 0 2px;
   border: 0;
   border-bottom: 1px dashed transparent;
   outline: 0;
   background: none;
   color: var(--ink);
-  font: 500 30px var(--title);
-  letter-spacing: 0.05em;
+  font: 500 26px/1.2 var(--title);
+  letter-spacing: 0.12em;
 }
 .group-name-field:hover,
 .group-name-field:focus {
   border-bottom-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .group-settings {
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
 .group-settings .setting-row:first-child {
   border-top: 0;
-}
-.group-actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
 }

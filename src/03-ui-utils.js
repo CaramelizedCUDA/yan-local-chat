@@ -1,7 +1,22 @@
 // 言 · 小工具：转义、时间、提示、确认框、按需加载、动效开合
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+function safeWebUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return /^https?:$/.test(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+function safeHost(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "未填写地址";
+  }
 }
 function formatTime(value) {
   return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -28,16 +43,13 @@ function dayBucket(value) {
   const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(value).setHours(0, 0, 0, 0)) / 86400000);
   return days <= 0 ? "今天" : days < 7 ? "过去七天" : "更早";
 }
+let toastTimer = null;
 function toast(message, ms = 2200) {
   const el = $("#toast");
   el.textContent = message;
   showNow(el);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => hideWithFade(el), ms);
-}
-function setConnection(state, text) {
-  $("#connection").dataset.state = state;
-  $("#connectionText").textContent = text;
 }
 // 把正文里的某条消息滚到视口：只滚 #chatScroll 自己，不用 scrollIntoView——它会连带滚动外层容器（页面整体跟着偏一截，尤其在 VS Code 预览与移动端）
 function scrollChatTo(article, block = "start", margin = 12) {
@@ -49,29 +61,6 @@ function scrollChatTo(article, block = "start", margin = 12) {
         ? host.scrollTop + offset - Math.max(0, (host.clientHeight - article.offsetHeight) / 2)
         : host.scrollTop + offset - margin;
   host.scrollTo({ top: Math.max(0, target), behavior: reducedMotion.matches ? "instant" : "smooth" });
-}
-function requestJob(id = currentId) {
-  return id ? requestJobs.get(id) || null : null;
-}
-function conversationRunning(id = currentId) {
-  return !!requestJob(id);
-}
-/** @param {Conversation} conversation */
-function setJobLabel(conversation, job, label) {
-  job.label = label;
-  if (requestJobs.get(conversation.id) === job && currentId === conversation.id && view === "chat") setConnection("busy", label);
-}
-function refreshConnection() {
-  const job = requestJob();
-  if (job) return setConnection("busy", job.label || "生成中");
-  if (runningElsewhere()) return setConnection("busy", "另一处作答中");
-  if (navigator.onLine === false) return setConnection("error", "连接中断");
-  const conversation = currentConversation(),
-    last = [...(conversation?.messages || [])].reverse().find(message => message.role === "assistant");
-  if (last?.status === "error") return setConnection("error", "请求失败");
-  if (last?.status === "interrupted") return setConnection("error", "连接中断");
-  if (last?.status === "stopped") return setConnection("idle", "已停止");
-  setConnection("idle", conversation?.ended ? "额度已尽" : "就绪");
 }
 function grow(el) {
   el.style.height = "auto";
@@ -93,6 +82,106 @@ function growEditor(el) {
 function isMobile() {
   return innerWidth <= 760;
 }
+// ---------- 浮层：盖在正文上的一层层（查看器、全屏的作品、差遣窗、小菜单、设置、确认框、旁注……） ----------
+// Esc 收最上面开着的那一层。各层在自己那一段登记：叫什么、多高（rank，越大越在上）、开着没有、怎么收；Esc 一层也不认得。
+// 层次是定好的高低，不是开的先后：图片查看器总盖在卷宗预览上，收小菜单不连带底下的旁注。加一种浮层只需登记一层
+/** @typedef {{ name: string, rank: number, open: () => boolean, close: () => void }} Layer */
+/** @type {Layer[]} */
+const LAYERS = [];
+/** @param {Layer} layer */
+function defineLayer(layer) {
+  LAYERS.push(layer);
+  LAYERS.sort((a, b) => b.rank - a.rank);
+}
+// 收最上面那一层；一层都没开着回 false
+function closeTopLayer() {
+  const top = LAYERS.find(layer => layer.open());
+  top?.close();
+  return !!top;
+}
+// 带 hidden 类开合的那几层：在页上、且没藏着
+function isShown(selector) {
+  const el = $(selector);
+  return !!el && !el.classList.contains("hidden");
+}
+// ---------- 浮着的小菜单与弹层：挂在 body 上、按锚点定位，点别处、Esc、锚点所在容器滚动都收 ----------
+function closeChipPop() {
+  document.querySelectorAll(".chip-pop").forEach(pop => pop.remove());
+}
+function openChipPop(anchor, host, html) {
+  closeChipPop();
+  const pop = document.createElement("div");
+  pop.className = "chip-pop";
+  pop.innerHTML = html;
+  pop.style.left = `${anchor.offsetLeft}px`;
+  host.append(pop);
+  return pop;
+}
+// 浮层菜单：挂在 body 上、按锚点定位（fixed），不受侧栏与输入区的滚动、overflow 裁剪；贴近锚点，上下空间不够就翻向另一侧。
+// 与目录签的弹层同一套 .chip-pop 外观与关闭逻辑：点别处、Esc、锚点所在容器滚动都收
+function openFloatingPop(anchor, html, { align = "left", menu = true } = {}) {
+  closeChipPop();
+  const pop = document.createElement("div");
+  pop.className = `chip-pop floating${menu ? " chip-menu" : ""}`;
+  pop.innerHTML = html;
+  pop.addEventListener("click", event => event.stopPropagation());
+  document.body.append(pop);
+  const rect = anchor.getBoundingClientRect(),
+    gap = 6,
+    edge = 10;
+  const width = pop.offsetWidth,
+    height = pop.offsetHeight;
+  const below = innerHeight - rect.bottom - gap,
+    up = below < height + edge && rect.top - gap > below;
+  pop.classList.toggle("drop-up", up);
+  const top = up ? rect.top - gap - height : rect.bottom + gap;
+  let left = align === "right" ? rect.right - width : rect.left;
+  left = Math.max(edge, Math.min(left, innerWidth - width - edge));
+  pop.style.top = `${Math.max(edge, top)}px`;
+  pop.style.left = `${left}px`;
+  const scroller = anchor.closest("#history, #chatScroll, .composer-area, #settingsContent");
+  scroller?.addEventListener("scroll", closeChipPop, { once: true, passive: true });
+  return pop;
+}
+// 一张菜单：一列项，按钮与点了做什么出自同一份，不必先拼一串按钮、再写一串 if 认是哪个。一项是
+//   { id, label, note?, noteClass?, danger?, active?, disabled?, keep?, run(button, pop) }——点了先收菜单再 run（keep 的不收：
+//   就地换字的开关、在菜单里接着选的）。字符串原样插进去（分隔线、自带控件的一行，它们的点按由 onClick 接）；假值略去。
+// kind 与 key 认「同一处的同一张」：开着时再点一下即收，回 null
+/**
+ * @typedef {{ id: string, label: string, note?: string, noteClass?: string, danger?: boolean, active?: boolean, disabled?: boolean, keep?: boolean, run: (button: HTMLElement, pop: HTMLElement) => void }} MenuItem
+ * @param {Element} anchor
+ * @param {(MenuItem|string|false|null|undefined)[]} items
+ * @param {{ align?: "left"|"right", kind?: string, key?: string, className?: string, onClick?: (event: MouseEvent) => void }} [options]
+ */
+function openMenu(anchor, items, { align = "right", kind = "", key = "", className = "", onClick = null } = {}) {
+  const same = kind && `.chip-pop[data-kind="${kind}"]${key ? `[data-for="${CSS.escape(key)}"]` : ""}`;
+  if (same && document.querySelector(same)) {
+    closeChipPop();
+    return null;
+  }
+  const list = /** @type {(MenuItem|string)[]} */ (items.filter(Boolean));
+  const html = list
+    .map((item, i) => {
+      if (typeof item === "string") return item;
+      const classes = [item.danger && "danger", item.active && "active"].filter(Boolean).join(" ");
+      return `<button type="button" data-menu="${escapeHtml(item.id)}" data-menu-index="${i}"${classes ? ` class="${classes}"` : ""}${item.disabled ? " disabled" : ""}><span>${escapeHtml(item.label)}</span>${item.note ? `<small${item.noteClass ? ` class="${item.noteClass}"` : ""}>${escapeHtml(item.note)}</small>` : ""}</button>`;
+    })
+    .join("");
+  const pop = openFloatingPop(anchor, html, { align });
+  if (kind) pop.dataset.kind = kind;
+  if (key) pop.dataset.for = key;
+  if (className) pop.classList.add(...className.split(/\s+/));
+  pop.addEventListener("click", event => {
+    const button = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (event.target).closest("[data-menu-index]"));
+    if (!button) return onClick?.(event);
+    const item = /** @type {MenuItem} */ (list[Number(button.dataset.menuIndex)]);
+    if (!item.keep) closeChipPop();
+    item.run(button, pop);
+  });
+  return pop;
+}
+// 浮着的小菜单（附件签、历史条目的「⋯」、目录签的弹层）：Esc 只收它，别连带把底下的旁注面板也关了
+defineLayer({ name: "pop", rank: 90, open: () => !!document.querySelector(".chip-pop"), close: closeChipPop });
 // 同风格的确认弹层，替代浏览器自带的 confirm()
 let confirmResolve = null;
 let confirmReturnFocus = null;
@@ -121,6 +210,7 @@ function settleConfirm(value) {
   if (confirmReturnFocus?.isConnected) confirmReturnFocus.focus();
   confirmReturnFocus = null;
 }
+defineLayer({ name: "confirm", rank: 70, open: () => !!confirmResolve, close: () => settleConfirm(false) });
 function trapModalFocus(event, modal) {
   const focusable = [
     ...modal.querySelectorAll(

@@ -6,7 +6,7 @@ await sleep(800);
 const profile = (id, model) =>
   `{ id: ${JSON.stringify(id)}, source: "custom", name: ${JSON.stringify(id)}, model: ${JSON.stringify(model)}, baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, maxTokens: 8192, quota: "100k", usedTokens: 0, systemPrompt: "" }`;
 await evalJs(
-  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", mode: "chat", activeProfileId: "p1", autoTitle: false, reasoning: "max" }, profiles: [${profile("p1", "fake")}, ${profile("p2", "fake-three")}, ${profile("p3", "fake-plain")}, ${profile("p4", "fake-mute")}, ${profile("p5", "fake-old").replace("systemPrompt", 'reasoningLevels: "low, medium", systemPrompt')}], conversations: [], library: [], drafts: {} })); true`
+  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", mode: "chat", activeProfileId: "p1", autoTitle: false }, profiles: [${profile("p1", "fake").replace("systemPrompt", 'reasoning: "max", systemPrompt')}, ${profile("p2", "fake-three")}, ${profile("p3", "fake-plain")}, ${profile("p4", "fake-mute")}, ${profile("p5", "fake-old").replace("systemPrompt", 'reasoningLevels: "low, medium", systemPrompt')}], conversations: [], library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);

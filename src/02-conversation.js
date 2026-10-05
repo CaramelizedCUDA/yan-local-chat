@@ -1,10 +1,15 @@
 // 言 · 对话数据：分叉、模型、草稿
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 分叉：c.messages 始终是当前走的那条路；编辑或重答时被换下来的尾巴整段收进 c.forks（记下它接在哪条消息之后），随时可以切回来。
 // 同一位置的几个版本 = 当前这条 + 接在同一位置的 forks，按首条消息的时间排序
 /** @param {Conversation} c */
 function allMessages(c) {
   return [...(c.messages || []), ...(c.forks || []).flatMap(fork => fork.messages || [])];
+}
+// 再加上旁注里的往来：数附件、找消息这类要一网打尽的用它
+/** @param {Conversation} c */
+function everyMessage(c) {
+  return [...allMessages(c), ...(c.threads || []).flatMap(thread => thread.messages || [])];
 }
 /** @param {Conversation} c */
 function forkTail(c, index) {
@@ -78,8 +83,17 @@ function branchNavHtml(branch) {
 function profiles() {
   return store.profiles;
 }
+// 此刻在用的模型：打开的对话用它自己记的；还没发出的新对话用欢迎页上挑的，没挑就照预设带的，再照默认。
+// 默认模型（settings.activeProfileId）只是新对话的起手，不随打开哪段、换了什么而变
 function activeProfile() {
-  return profiles().find(p => p.id === store.settings.activeProfileId) || profiles()[0] || null;
+  const c = currentConversation(),
+    byId = id => (id && profiles().find(p => p.id === id)) || null;
+  return (
+    (c ? byId(c.profileId) : byId(pendingProfileId) || byId(presetOf(null)?.profileId)) ||
+    byId(store.settings.activeProfileId) ||
+    profiles()[0] ||
+    null
+  );
 }
 function currentConversation() {
   return store.conversations.find(c => c.id === currentId) || null;
@@ -105,7 +119,8 @@ function restoreDraft() {
   if (view !== "chat") return;
   const draft = draftRecord();
   pendingAttachments = draft.attachments.map(file => ({ ...file }));
-  pendingQuote = currentConversation() ? draft.quote : null;
+  // 欢迎页也有引文框（游目圈点可引进新对话），草稿里有就照样放回
+  pendingQuote = draft.quote;
   renderQuote();
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
   if (!input) return;
@@ -115,10 +130,4 @@ function restoreDraft() {
 function clearDraft(id = currentId) {
   store.drafts ||= {};
   delete store.drafts[draftKey(id)];
-}
-function draftAttachmentIds() {
-  return Object.values(store.drafts || {})
-    .flatMap(value => (Array.isArray(value?.attachments) ? value.attachments : []))
-    .map(file => file?.id)
-    .filter(Boolean);
 }

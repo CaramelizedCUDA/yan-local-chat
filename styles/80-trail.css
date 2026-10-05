@@ -10,7 +10,7 @@
   align-items: center;
   gap: 5px;
   padding: 0 5px 0 1px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: color-mix(in srgb, var(--ink-3) 90%, transparent);
   font:
     9.5px ui-monospace,
@@ -65,7 +65,7 @@
   align-items: center;
   gap: 7px;
   padding: 0 5px 0 1px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   cursor: pointer;
   list-style: none;
   color: color-mix(in srgb, var(--ink-3) 90%, transparent);
@@ -117,9 +117,7 @@
   gap: 2px;
 }
 .tool-step {
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
+  border-radius: var(--radius-m);
   font-size: 11.5px;
 }
 .tool-step-head {
@@ -131,9 +129,6 @@
 }
 .tool-label {
   min-width: 36px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
   color: var(--accent);
   font-size: 9px;
   text-align: left;
@@ -165,6 +160,29 @@
 .tool-state.done {
   color: var(--code-green);
 }
+/* 补言待寄时转圈左边的折箭头：点了不等落点，即刻递上 */
+.note-now {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  margin-right: 2px;
+  border-radius: var(--radius-s);
+  color: var(--ink-3);
+  font:
+    13px/1 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.note-now:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--paper-3) 55%, transparent);
+}
 .tool-state.failed {
   color: var(--danger);
 }
@@ -192,63 +210,80 @@
   overflow: visible;
   font-size: 10.5px;
 }
+/* 工具交回的画面：一步几幅并排，折起时也露着（小纸的样子见 30-chat.css 的 .tool-shot） */
+.tool-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 9px 8px 50px;
+}
 /* 计算：代码在上、输出在下，两块之间只留一线 */
 .tool-code {
   margin-bottom: 4px;
   color: var(--ink-3);
 }
-/* 计划卡：不是一步动作，是模型一路改着的一张单子，所以给它一张纸——纸的底色，不是专色，与差遣那枚金签不抢；
-   没有这层底，几行清单悬在行迹里就成了散页。一行一项 */
+/* 计划卡：模型一路改着的一张单子。不再铺一张纸（分组靠线不靠块，铺底的块在行迹里像一张贴上去的散页），
+   清单左侧一道淡墨竖痕把它隔出来——行迹里没有横线，试过的三线框突兀；竖痕与听音那一缕同一语汇。
+   题头的事由用读的字、大一号（原是淡灰小字，常认不出是计划）。旧的几张只留题头一行（见 markStalePlans），
+   右侧那排小记号就是进度。落选：铺底的纸（现状）、专色（赭石离朱太近、花青是又一种色）、三线（见 设计稿/40–42） */
 .tool-step-plan {
   margin: 4px 0;
-  padding-bottom: 6px;
-  border-radius: 9px;
-  background: var(--paper-2);
+  padding-bottom: 2px;
+}
+.tool-step-plan > .tool-step-head .tool-title {
+  color: var(--ink-2);
+  font-family: var(--title);
+  font-size: 13.5px;
+}
+.tool-step-plan.plan-old > .tool-step-head .tool-title {
+  color: var(--ink-3);
+}
+.tool-step-plan.plan-old > .plan-list {
+  display: none;
 }
 .plan-list {
-  margin: 0 9px 8px 50px;
-  padding: 0;
+  margin: 2px 9px 8px 52px;
+  padding: 0 0 0 10px;
+  border-left: 1.5px solid color-mix(in srgb, var(--ink) 12%, transparent);
   list-style: none;
-  font-size: 11.5px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.85;
 }
 .plan-item {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--ink-2);
+  align-items: center;
+  gap: 9px;
+  color: var(--ink-3);
 }
 .plan-mark {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 1.85em;
+}
+.plan-svg {
   width: 12px;
-  text-align: center;
-  color: var(--ink-3);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  height: 11px;
 }
-.plan-item[data-plan="done"] .plan-mark {
-  color: var(--code-green);
+.plan-svg[data-plan="pending"] circle {
+  fill: color-mix(in srgb, var(--ink) 42%, var(--paper));
 }
-.plan-item[data-plan="done"] .plan-text,
-.plan-item[data-plan="skipped"] .plan-text {
-  color: var(--ink-3);
+.plan-item[data-plan="doing"] {
+  color: var(--ink);
+  font-weight: 600;
 }
 .plan-item[data-plan="skipped"] .plan-text {
   text-decoration: line-through;
 }
-.plan-item[data-plan="doing"] .plan-text {
-  color: var(--ink);
+.plan-row {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: -2px;
 }
-.plan-item[data-plan="doing"] .plan-mark:before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  vertical-align: middle;
-}
-:root[data-ink-motion="on"] .tool-step-plan[data-status="running"] .plan-item[data-plan="doing"] .plan-mark:before,
-:root[data-ink-motion="on"] .tool-stack[data-state="streaming"] .plan-item[data-plan="doing"] .plan-mark:before {
+:root[data-ink-motion="on"] .tool-step-plan[data-status="running"] .plan-svg[data-plan="doing"] circle,
+:root[data-ink-motion="on"] .tool-stack[data-state="streaming"] .tool-step-plan:not(.plan-old) .plan-svg[data-plan="doing"] circle {
   animation: pulse 1.4s ease-in-out infinite;
 }
 /* 算一段 JS 用的隐形沙箱页 */
@@ -268,7 +303,7 @@
   min-width: 0;
   overflow: hidden;
   border-left: 2px solid color-mix(in srgb, var(--gold) 60%, transparent);
-  border-radius: 0 9px 9px 0;
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
   background: color-mix(in srgb, var(--gold) 7%, transparent);
 }
 .tool-step-delegate[data-status="running"] {
@@ -281,7 +316,7 @@
 /* 整枚签可点：点一下在右侧开面板看帮手做了什么 */
 .tool-step-delegate > .tool-step-head {
   cursor: pointer;
-  border-radius: 0 7px 7px 0;
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
 }
 .tool-step-delegate > .tool-step-head:hover {
   background: color-mix(in srgb, var(--gold) 10%, transparent);
@@ -325,6 +360,14 @@
 .tool-step-note > .tool-step-head .tool-title {
   color: var(--ink-2);
 }
+/* 印与标签排成一行（与差遣的签同一个写法）：默认的标签宽只够两个字，一印两字会折成上下两行 */
+.tool-step-note > .tool-step-head .tool-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 52px;
+  white-space: nowrap;
+}
 .tool-note-files {
   margin-top: 4px;
   color: var(--ink-3);
@@ -347,6 +390,11 @@
 }
 .sub-timeline .trail-group {
   padding: 2px 0 3px;
+}
+/* 末尾还在进行的那一轮（正想着、正说着）贴着上一组，不另起一组的间距；有了步骤就转成一组 */
+.sub-timeline .trail-group.sub-tail {
+  margin-top: 0;
+  padding: 0;
 }
 .sub-timeline .trail-note {
   margin: 2px 0 4px 4px;
@@ -398,6 +446,7 @@
 .trail-note table,
 .sub-report table {
   display: block;
+  width: fit-content; /* 三线表的上下两道只与表同宽 */
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
@@ -408,8 +457,7 @@
 .trail-note td,
 .sub-report th,
 .sub-report td {
-  padding: 4px 8px;
-  border: 1px solid var(--line);
+  padding: 4px 14px 4px 2px;
   text-align: left;
   vertical-align: top;
 }
@@ -436,7 +484,7 @@
 .trail-note code,
 .sub-report code {
   padding: 0.1em 0.35em;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   background: var(--paper-2);
   overflow-wrap: anywhere;
 }
@@ -497,18 +545,18 @@
 .tool-step[data-tool="edit_file"],
 .tool-step[data-tool="run_command"] {
   border-left: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
-  border-radius: 0 9px 9px 0;
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
   padding-left: 7px;
 }
 .tool-step[data-tool="download_file"] {
   border-left: 2px solid color-mix(in srgb, var(--reach) 68%, transparent);
-  border-radius: 0 9px 9px 0;
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
   padding-left: 7px;
 }
 .tool-step[data-tool="remember"],
 .tool-step[data-tool="forget"] {
   border-left: 2px solid color-mix(in srgb, var(--keep) 68%, transparent);
-  border-radius: 0 9px 9px 0;
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
   padding-left: 7px;
 }
 /* 只读的指令没有后果，不挂线，标签也归于墨灰 */
@@ -516,6 +564,74 @@
   border-left-color: transparent;
 }
 .tool-step[data-tool="run_command"].is-read-only .tool-label {
+  color: var(--ink-3);
+}
+
+/* 续派、传话的签：同一名帮手又有了新的一趟、新递去的话，标一枚「已更新」。小字金色，不加框——签本身已是金的，
+   再框一道就成了签上贴签。传话的签在任务名之后接着那句话，淡一档 */
+.helper-fresh {
+  flex: none;
+  margin-left: 6px;
+  color: var(--gold);
+  font: 10px/1 var(--title);
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+.helper-said {
+  margin-left: 8px;
+  color: var(--ink-3);
+  font-family: inherit;
+}
+/* 主模型递给帮手的话落在帮手的时间线里、作答途中回来的回报落在主行迹里：与补言同形，印用金（朱留给人自己说话）。
+   回报那一步可点，点开即那名帮手或挂那条后台指令的那一步 */
+.tool-step-relay > .tool-step-head {
+  cursor: pointer;
+}
+.tool-step-relay > .tool-step-head .tool-label,
+.tool-step-relay > .tool-step-head .tool-title {
+  color: var(--gold);
+}
+.tool-step-note[data-tool="relay_note"] .note-seal,
+.tool-step-note[data-tool="helper_note"] .note-seal {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* ---------- 回报另起的一问：一道细线 ----------
+   帮手做完时这段对话没在作答，回报就另起一答。它不是用户说的话，不画成气泡，只是一道细线中间点名，
+   与「前文已压成摘要」的分隔同一个写法；名字是金的，点开是那一趟的经过 */
+.message.relay {
+  margin: 4px 0 22px;
+}
+.relay-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font: 11px var(--title);
+  letter-spacing: 0.06em;
+}
+.relay-line:before,
+.relay-line:after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: color-mix(in srgb, var(--gold) 28%, var(--line));
+}
+.relay-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.relay-name:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.relay-sep {
   color: var(--ink-3);
 }
 
@@ -577,7 +693,7 @@
   z-index: 88;
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--gold) 7%, color-mix(in srgb, var(--paper) 93%, transparent));
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
   backdrop-filter: blur(12px);
   animation: fadeIn 0.18s ease;
 }
@@ -625,7 +741,7 @@
 }
 .helper-nav-count {
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   color: var(--ink-3);
   font: 11px var(--title);
   font-variant-numeric: tabular-nums;
@@ -653,7 +769,7 @@
   gap: 10px;
   margin: 0 auto;
   padding: 7px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   color: var(--ink-2);
   font-size: 12px;
   text-align: left;
@@ -694,14 +810,17 @@
   overflow: auto;
   padding: 24px;
 }
-/* 中间那张纸 */
+/* 中间那张纸：「代人行事」的金落在纸顶一道线上，不铺两侧——
+   原先两侧铺 7% 的金，暗色里混进深底成了一片棕（色只上笔画，不上面）。落选的：只留印与纸边（认不出是差遣的窗）；
+   两侧深一档的纸（见 设计稿/35） */
 .helper-sheet {
   width: min(100%, 940px);
   align-self: flex-start;
   height: fit-content;
   padding: 24px 30px 28px;
   border: 1px solid color-mix(in srgb, var(--gold) 22%, var(--line));
-  border-radius: 10px;
+  border-top: 2px solid color-mix(in srgb, var(--gold) 70%, transparent);
+  border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: 0 10px 40px rgba(35, 30, 22, 0.08);
 }
@@ -765,7 +884,7 @@
   gap: 7px;
   margin: 0 0 6px -1px;
   padding: 2px 6px 2px 1px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 10.5px var(--title);
   letter-spacing: 0.1em;
@@ -806,7 +925,7 @@
   align-items: center;
   gap: 7px;
   padding: 3px 7px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 10.5px var(--title);
   letter-spacing: 0.1em;

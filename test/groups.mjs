@@ -30,7 +30,7 @@ check(
 );
 await evalJs(`document.querySelector('.chip-pop [data-menu="group"]').click(); true`);
 await sleep(150);
-await evalJs(`document.querySelector('.chip-pop [data-move="__new"]').click(); true`);
+await evalJs(`document.querySelector('.chip-pop [data-menu="new"]').click(); true`);
 await sleep(150);
 await evalJs(
   `(i => { i.value = "读书"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); return true })(document.querySelector("#history .group-rename"))`
@@ -74,7 +74,7 @@ await sleep(200);
 check(
   "the 分组 entry opens a page listing the groups",
   await evalJs(
-    `!document.querySelector("#groups").classList.contains("hidden") && document.querySelectorAll("#groups .group-row").length === 1 && document.querySelector("#openGroups").classList.contains("active")`
+    `!document.querySelector("#groups").classList.contains("hidden") && document.querySelectorAll("#groups .strip[data-group-page]").length === 1 && document.querySelector("#openGroups").classList.contains("active")`
   )
 );
 await shot("groups-list.png");
@@ -163,9 +163,9 @@ await evalJs(`document.querySelector('#history [data-group-menu="${groupId}"]').
 await sleep(150);
 check(
   "the group head ⋯ offers rename, settings and dissolve",
-  await evalJs(`[...document.querySelectorAll(".chip-pop [data-group-act]")].map(b => b.textContent).join() === "改名,设置,解散"`)
+  await evalJs(`[...document.querySelectorAll(".chip-pop [data-menu]")].map(b => b.textContent).join() === "改名,设置,解散"`)
 );
-await evalJs(`document.querySelector('.chip-pop [data-group-act="settings"]').click(); true`);
+await evalJs(`document.querySelector('.chip-pop [data-menu="settings"]').click(); true`);
 await sleep(200);
 check(
   "⋯ → 设置 opens that group's page",
@@ -190,7 +190,7 @@ await sleep(200);
 await evalJs(`document.querySelector("#confirmOk").click(); true`);
 await sleep(200);
 const after = await evalJs(
-  `(s => ({ groups: s.settings.groups.length, count: s.conversations.length, grouped: s.conversations.filter(c => c.groupId).length, sets: document.querySelectorAll("#history .is-set").length, back: document.querySelectorAll("#groups .group-row").length }))(__yanState())`
+  `(s => ({ groups: s.settings.groups.length, count: s.conversations.length, grouped: s.conversations.filter(c => c.groupId).length, sets: document.querySelectorAll("#history .is-set").length, back: document.querySelectorAll("#groups .strip[data-group-page]").length }))(__yanState())`
 );
 check(
   "dissolving a group keeps its conversations",

@@ -173,12 +173,12 @@ await evalJs(
 );
 await sleep(300);
 const place = await evalJs(
-  `(() => { const f = document.querySelector("#trailFold").getBoundingClientRect(), col = document.querySelector("#messages").getBoundingClientRect(); return { right: Math.round(f.right), col: Math.round(col.right), title: document.querySelector("#runningHead .running-head-title").textContent }; })()`
+  `(() => { const f = document.querySelector("#trailFold").getBoundingClientRect(), col = document.querySelector("#messages").getBoundingClientRect(), head = document.querySelector("#runningHead").getBoundingClientRect(); return { mid: Math.round((f.left + f.right) / 2), col: Math.round((col.left + col.right) / 2), left: Math.round(f.left), head: Math.round(head.right), title: document.querySelector("#runningHead .running-head-title").textContent }; })()`
 );
 check(
-  "inside a long open trail a fold button floats at the column's right edge, the title left as is",
-  // 贴着对话列的右缘；窗窄时让开右边的状态，往里收一截
-  (await foldShown()) && place.right <= place.col + 4 && place.right > place.col - 160 && place.title === "行迹收起",
+  "inside a long open trail a fold button floats at the middle of the column, the title left as is but kept clear of it",
+  // 对着对话列的中线；左边的书眉让到它左边，长题名不压到它底下
+  (await foldShown()) && Math.abs(place.mid - place.col) <= 30 && place.head <= place.left && place.title === "行迹收起",
   JSON.stringify(place)
 );
 await shot("trail-running-head.png");

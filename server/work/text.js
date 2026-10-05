@@ -1,4 +1,4 @@
-// 言 · 桥接 · 执事的文字：文本文件的编码认读与写回、PowerShell 的编码指令与 CLIXML 报错还原、截尾、数行。纯函数
+// 言 · 桥接 · 执事的文字：文本文件的编码认读与写回、PowerShell 的编码指令与 CLIXML 报错还原、截尾、数行、对不上时找最像的一段。纯函数
 "use strict";
 const { decodeEntities } = require("../web.js");
 
@@ -53,4 +53,63 @@ function countLines(text) {
   return value.split(/\r?\n/).length - (/\r?\n$/.test(value) ? 1 : 0);
 }
 
-module.exports = { tail, encodePowerShell, decodeClixml, decodeText, encodeText, countLines };
+// 覆盖写一份文件时，前后两版按行比出各增删几行：先去掉首尾相同的行，中段求最长公共子序列（只留两行表，省内存）；
+// 中段太大（两边行数之积过千六百万）就不细比，中段整算一删一增
+function lineDiffCounts(oldText, newText) {
+  const lines = text =>
+      text
+        ? String(text)
+            .replace(/\r?\n$/, "")
+            .split(/\r?\n/)
+        : [],
+    a = lines(oldText),
+    b = lines(newText);
+  let start = 0,
+    endA = a.length,
+    endB = b.length;
+  while (start < endA && start < endB && a[start] === b[start]) start++;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) endA--, endB--;
+  const m = endA - start,
+    n = endB - start;
+  if (!m || !n || m * n > 16e6) return { added: n, removed: m };
+  let prev = new Uint32Array(n + 1),
+    row = new Uint32Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    const line = a[start + i - 1];
+    for (let j = 1; j <= n; j++) row[j] = line === b[start + j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], row[j - 1]);
+    [prev, row] = [row, prev];
+  }
+  return { added: n - prev[n], removed: m - prev[n] };
+}
+
+// edit_file 的 old 对不上时：文件里最像它的那一段，照现在的样子带行号交回。
+// 拿 old 的每一行（去掉首尾空白）到文件里找同样的行，各自推出「old 若从这里开始」的起点，起点得票最多的那段即是；
+// 太短的行（}、else:、空行）满文件都是，不投票，除非 old 里只有这种行。票太少（多行的 old 只对上一行）的不算像，宁可不给
+function nearestPassage(source, oldText, { context = 1, maxLines = 60 } = {}) {
+  const lines = String(source).split(/\r?\n/),
+    want = String(oldText).split(/\r?\n/),
+    keyed = want.map((line, k) => ({ k, text: line.trim() })).filter(item => item.text);
+  if (!keyed.length) return "";
+  const strong = keyed.filter(item => item.text.length >= 8),
+    voters = strong.length ? strong : keyed;
+  const at = new Map();
+  lines.forEach((line, i) => {
+    const text = line.trim();
+    if (text) at.set(text, [...(at.get(text) || []), i]);
+  });
+  const votes = new Map();
+  for (const { k, text } of voters) for (const i of at.get(text) || []) votes.set(i - k, (votes.get(i - k) || 0) + 1);
+  let best = null,
+    score = 0;
+  for (const [start, count] of votes) if (count > score || (count === score && start < best)) [best, score] = [start, count];
+  if (best === null || score < Math.min(2, voters.length)) return "";
+  const from = Math.max(0, best - context),
+    to = Math.min(lines.length, best + want.length + context, from + maxLines),
+    width = String(to).length;
+  return lines
+    .slice(from, to)
+    .map((line, i) => `${String(from + i + 1).padStart(width)}│${line}`)
+    .join("\n");
+}
+
+module.exports = { tail, encodePowerShell, decodeClixml, decodeText, encodeText, countLines, lineDiffCounts, nearestPassage };

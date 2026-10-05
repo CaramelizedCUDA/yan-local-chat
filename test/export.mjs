@@ -80,7 +80,7 @@ check("duplicate export links to its own renamed assets", second.includes(encode
 await evalJs(`document.querySelector('#openLibrary').click(); true`);
 await waitFor(`!!document.querySelector('[data-path="${files[0]}"]')`, 5000).catch(() => {});
 const opened = await evalJs(
-  `(() => { const card = [...document.querySelectorAll('.library-card')].find(c=>c.textContent.includes(${JSON.stringify(files[0])})); const b=card?.querySelector('[data-library-action="view"]'); b?.click(); return !!b; })()`
+  `(() => { const card = [...document.querySelectorAll('#libraryGrid .strip')].find(c=>c.textContent.includes(${JSON.stringify(files[0])})); const b=card?.querySelector('[data-library-action="view"]'); b?.click(); return !!b; })()`
 );
 check("exported HTML has an archive preview action", opened);
 await sleep(800);
@@ -164,12 +164,6 @@ for (const [index, name] of files.entries()) {
       await frameEval(index === 1 ? `!!document.querySelector('canvas')` : `!!document.querySelector('.mermaid svg')`)
     );
 }
-// 用相同 ZIP 路径保留一份供标准解压器核验，包内文件名与链接都是 UTF-8。
-const zip = load(["exportZip"]).exportZip([
-  { name: "导出回归.md", text: md },
-  ...files.map(name => ({ name, text: readFileSync(`${ARCHIVE}/${name}`, "utf8") }))
-]);
-writeFileSync(`${TMP}/导出回归.zip`, Buffer.from(await zip.arrayBuffer()));
 frameSocket?.close();
 await send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 close();

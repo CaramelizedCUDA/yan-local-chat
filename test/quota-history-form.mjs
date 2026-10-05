@@ -148,17 +148,17 @@ check(
     `(g => !g.classList.contains("collapsed") && g.querySelectorAll(".history-open").length === 2)(document.querySelector("#history .history-repo-group"))`
   )
 );
-// 打开组内的对话再收起：收起的组里仍露出当前这条
+// 打开组内的对话再收起：整组收起（连同当前这条），组首标出当前所在
 await evalJs(`document.querySelector('#history [data-conversation="w2"] .history-open').click(); true`);
 await sleep(300);
 await evalJs(`document.querySelector("#history .history-repo").click(); true`);
 await sleep(200);
 await shot("history.png");
 check(
-  "a collapsed group still shows the open conversation",
-  (await evalJs(
-    `[...document.querySelector("#history .history-repo-group.collapsed").querySelectorAll(".history-open")].map(b => b.textContent).join(",")`
-  )) === "言 乙"
+  "a collapsed group hides every conversation, the open one too, and marks that it holds it",
+  await evalJs(
+    `(g => !g.querySelector(".history-open") && g.classList.contains("holds-current"))(document.querySelector("#history .history-repo-group.collapsed"))`
+  )
 );
 await evalJs(`document.querySelector("#history .history-repo").click(); true`);
 await sleep(200);
@@ -231,6 +231,15 @@ await evalJs(
 );
 await waitFor(
   `!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelectorAll("#approvalBar .ask-q").length === 2`
+);
+// 表单等着作答时切权限档位（问 → 审 → 径 → 问）：放行的是指令的请示，表单不能被当成「未作答」打发掉
+await evalJs(`for (let i = 0; i < 3; i++) document.querySelector("#workAuto").click(); true`);
+await sleep(300);
+check(
+  "switching the command policy leaves a pending form waiting",
+  await evalJs(
+    `!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelectorAll("#approvalBar .ask-q").length === 2 && document.querySelector("#workAuto").textContent === "问而后行"`
+  )
 );
 check(
   "form pops above the composer, one question per page",
@@ -345,7 +354,7 @@ check(
 );
 check(
   "supplement was handed to the model after the tool result, marked as said mid-reply; trail step now 已递",
-  askText.includes("|note:［用户在你作答途中补充的话］补一句：ASK 顺便看看卷宗") &&
+  askText.includes("|note:［作答途中用户补充的话，仍是这一答］补一句：ASK 顺便看看卷宗") &&
     (await evalJs(
       `(s => s.dataset.status === "done" && s.querySelector(".tool-meta").textContent === "已递")(document.querySelector('#messages .tool-step-note'))`
     )),

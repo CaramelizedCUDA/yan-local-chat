@@ -43,21 +43,29 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* 提示：一排可点的字，淡朱丝栏相隔，悬停时下边一道朱。落选的：描边胶囊一排（见 设计稿/27 三） */
 .suggestions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 15px;
+  align-items: center;
+  row-gap: 6px;
+  margin-top: 16px;
 }
 .suggestion {
-  padding: 7px 13px;
-  border: 1px solid var(--line);
-  border-radius: 99px;
-  color: var(--ink-2);
-  font-size: 12.5px;
+  padding: 2px 14px;
+  color: var(--ink-3);
+  font: 13px var(--title);
+  letter-spacing: 0.04em;
+}
+.suggestion:first-child {
+  padding-left: 2px;
+}
+.suggestion + .suggestion {
+  border-left: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .suggestion:hover {
-  border-color: var(--ink-3);
   color: var(--ink);
-  background: var(--paper-2);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 5px;
 }

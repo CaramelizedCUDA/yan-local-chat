@@ -197,6 +197,8 @@ const sideCount = () => evalJs(`document.querySelectorAll("#sideMessages .messag
 await evalJs(
   `[...document.querySelectorAll('#sideMessages .message.assistant')].at(-1).querySelector('[data-action="regenerate"]').click(); true`
 );
+// 重答先向桥接认领，旧答换下要等一会儿
+await sleep(300);
 await waitFor(`[...document.querySelectorAll('#sideMessages .message.assistant')].at(-1)?.dataset.status === "complete"`);
 check(
   "side reply can be regenerated in place (still 2 messages, n counts the same context)",
@@ -211,6 +213,7 @@ check("side question opens an editor", await evalJs(`!!document.querySelector('#
 await evalJs(
   `document.querySelector('#sideMessages .message-edit-input').value = "SIDE edited"; document.querySelector('#sideMessages [data-action="save-edit"]').click(); true`
 );
+await sleep(300);
 await waitFor(`[...document.querySelectorAll('#sideMessages .message.assistant')].at(-1)?.dataset.status === "complete"`);
 check(
   "edited side question is re-asked, reply replaced",
@@ -380,5 +383,17 @@ check(
   "note on the second occurrence lands on the second occurrence after re-render",
   twice.mark === "StructRAG" && twice.before.includes("StructRAG") && twice.occurrence === 1,
   JSON.stringify(twice)
+);
+// 旁注与主答同一个轮次循环：上游写到一半掐线，稍候接着写完，而不是整条报错
+await evalJs(`document.querySelector("#sideInput").value = "STREAMCUT 旁注"; document.querySelector("#sideSend").click(); true`);
+await waitFor(
+  `(m => m && m.role === "assistant" && m.status !== "streaming")(__yanState().conversations[0].threads.at(-1).messages.at(-1))`,
+  20000
+).catch(() => {});
+const cut = await evalJs(`(m => ({ status: m.status, content: m.content }))(__yanState().conversations[0].threads.at(-1).messages.at(-1))`);
+check(
+  "a side note cut mid-stream resumes and finishes",
+  cut.status === "complete" && cut.content === "写到一半接着写完。",
+  JSON.stringify(cut)
 );
 close();

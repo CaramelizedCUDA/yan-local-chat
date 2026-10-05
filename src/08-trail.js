@@ -1,5 +1,5 @@
 // 言 · 行迹与时间线：步骤卡、思绪、出处
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function toolStackLabel() {
   return "行迹";
 }
@@ -14,11 +14,11 @@ function toolStackMeta(steps = []) {
     : `${steps.length} 步${reused ? ` · ${reused} 复用` : ""}${skipped ? ` · ${skipped} 跳过` : ""}${failed ? ` · ${failed} 失败` : ""}`;
 }
 // 等待确认是阻塞式的提问，无论用户之前有没有收起，都把折叠区展开，别让生成静静停在看不见的地方
-// 执事对话里的行迹是一条时间线：模型边做边说的话与各步穿插排列，做的时候摊开看过程，做完自动收起，只留最后的总结在外；对谈里仍是折起的注脚
-// 看的是消息自己记的执事标记；更早的数据没记这一位，退回按当前对话的模式判断
+// 用了工具的答（行与言都是）画成一条时间线：模型边做边说的话与各步穿插排列，做的时候摊开看过程，做完整条收起，只留最后的总结在外——
+// 过程话不再以正文的样子混在结论里。只有旁注那一栏地方窄，仍是折起的注脚
 /** @param {Message} message */
 function trailWork(message) {
-  return !!message.steps?.length && (message.work ?? isWork(currentConversation()));
+  return !!message.steps?.length && !(currentConversation()?.threads || []).some(thread => thread.messages?.includes(message));
 }
 /** @param {Message} message */
 function trailBase(message) {
@@ -49,99 +49,6 @@ function trailGroups(message) {
 function trailReasoningBase(message) {
   return trailWork(message) ? Math.max(0, ...message.steps.map(step => Number(step.rat) || 0)) : 0;
 }
-/** @param {Message|SubAgent} message */
-function trailReasoningHtml(message, group) {
-  const text = String(message.reasoning || "")
-    .slice(group.rfrom, group.rat)
-    .trim();
-  return text
-    ? `<details class="reasoning trail-reasoning" data-state="done"><summary>思绪</summary><div class="reasoning-body">${escapeHtml(text)}</div></details>`
-    : "";
-}
-// 一组没有夹着正文、只是「想一阵 → 调工具 → 再想」时，后半段思绪仍属于同一组。
-// 沿用组里原来的那枚签，重新切回 live；否则旧签一直打勾，下面又短暂冒出一枚新签，看起来像没有继续思考。
-/** @param {Element} block @param {Message} message @param {string} visible */
-function reusableTrailReasoning(block, message, visible) {
-  if (!trailWork(message) || message.status !== "streaming") return null;
-  const groups = trailGroups(message),
-    active = block.querySelector('.tool-stack.is-work .trail-group > .reasoning[data-round-live="true"]');
-  const group = active ? groups.find(item => active.parentElement?.dataset.at === String(item.at)) : groups.at(-1);
-  if (!group) return null;
-  const details =
-    active ||
-    [...block.querySelectorAll(".tool-stack.is-work .tool-stack-body > .trail-group")]
-      .find(host => host.dataset.at === String(group.at))
-      ?.querySelector(":scope > .reasoning");
-  if (!details) return null;
-  if (!active) {
-    if (
-      String(visible || "")
-        .slice(group.at)
-        .trim()
-    )
-      return null;
-    if (
-      !String(message.reasoning || "")
-        .slice(group.rat)
-        .trim()
-    )
-      return null;
-    details.dataset.roundLive = "true";
-    // 生成中切去别处再回来时，整页渲染会先把尾段思绪画在行迹之后；既然能归回上一组，就撤掉那份临时副本。
-    block.querySelector(":scope > .reasoning")?.remove();
-  }
-  return {
-    details,
-    text: String(message.reasoning || "")
-      .slice(group.rfrom)
-      .trim()
-  };
-}
-/** @param {Element} host @param {Message} message @param {ReturnType<typeof trailGroups>[number]} group */
-function syncTrailGroupReasoning(host, message, group) {
-  const text = String(message.reasoning || "")
-      .slice(group.rfrom, group.rat)
-      .trim(),
-    details = host.querySelector(":scope > .reasoning");
-  if (!text) return details?.remove();
-  if (!details) return host.insertAdjacentHTML("afterbegin", trailReasoningHtml(message, group));
-  const body = details.querySelector(".reasoning-body");
-  if (body.textContent !== text) body.textContent = text;
-  details.dataset.state = "done";
-  delete details.dataset.roundLive;
-  if (details.open && !details.dataset.touched) settleDetails(details, false);
-}
-/** @param {Message|SubAgent} message */
-function trailNoteHtml(message, group) {
-  const text = String(message.content || "")
-    .slice(group.from, group.at)
-    .trim();
-  return text ? `<div class="trail-note">${renderMarkdown(text)}</div>` : "";
-}
-/** @param {Message} assistant */
-function paintDrafting(host, assistant) {
-  const drafting = (assistant.toolCalls || []).filter(call => call.name);
-  let line = host.querySelector(":scope > .trail-drafting");
-  if (!drafting.length) {
-    line?.remove();
-    return;
-  }
-  const label = drafting
-    .map(call => {
-      const path = call.arguments.match(/"(?:path|command|query|url|title)"\s*:\s*"((?:[^"\\]|\\.){1,80})/)?.[1];
-      return `${toolLabel(call.name)}${path ? ` ${path}` : ""}`;
-    })
-    .join("、");
-  const chars = drafting.reduce((sum, call) => sum + call.arguments.length, 0);
-  if (!line) {
-    host.insertAdjacentHTML(
-      "beforeend",
-      `<div class="trail-drafting"><span class="tool-state spinning" aria-hidden="true"></span><span class="trail-drafting-text"></span></div>`
-    );
-    line = host.querySelector(":scope > .trail-drafting");
-  }
-  rollText(line.querySelector(".trail-drafting-text"), `正在拟 ${label}${chars > 200 ? ` · ${chars} 字` : ""}`);
-}
 function rollText(el, text) {
   const prev = el.dataset.rollText ?? el.textContent;
   if (prev === text) return;
@@ -161,28 +68,6 @@ function rollText(el, text) {
   setTimeout(() => {
     if (el.dataset.rollText === text) el.textContent = text;
   }, 380);
-}
-/** @param {Message} message */
-function trailLiveHost(block, message) {
-  if (!trailWork(message) || message.status !== "streaming") return null;
-  const body = block.querySelector(".tool-stack.is-work .tool-stack-body");
-  if (!body) return null;
-  let live = body.querySelector(":scope > .trail-group.trail-live");
-  if (!live) {
-    body.insertAdjacentHTML("beforeend", `<div class="trail-group trail-live"><div class="trail-note"></div></div>`);
-    live = body.lastElementChild;
-  }
-  return live.querySelector(".trail-note");
-}
-/**
- * @param {Message|SubAgent} message
- * @param {boolean} [fold] 帮手时间线：这一轮的各步折进一个「n 步」里，只留思绪与说的话在外
- */
-function trailGroupHtml(message, group, fold = false) {
-  const steps = fold
-    ? subStepsHtml(/** @type {SubAgent} */ (message), group)
-    : `<div class="tool-steps">${group.steps.map(stepHtml).join("")}</div>`;
-  return `<div class="trail-group" data-at="${group.at}">${trailReasoningHtml(message, group)}${trailNoteHtml(message, group)}${steps}</div>`;
 }
 // 帮手时间线里一轮的各步折成一行：一轮里几十次检索摊开要占几屏，帮手说的话与回报就被顶得看不见了。
 // 与主行迹同一套开合：这一轮还在跑时摊开，跑完收起，用户亲手开合过的不动。标题行是各工具的计数，点开才看各步
@@ -204,10 +89,11 @@ function subStepsMeta(sub, steps) {
     skipped = steps.filter(step => step.status === "skipped").length;
   return `${steps.length} 步${skipped ? ` · ${skipped} 跳过` : ""}${failed ? ` · ${failed} 失败` : ""}`;
 }
+// 折叠行的外壳：标题、计数与各步由 syncSubSteps 与 syncStepList 填
 /** @param {SubAgent} sub */
-function subStepsHtml(sub, group) {
-  const running = subStepsRunning(sub, group.steps);
-  return `<details class="tool-stack sub-steps"${running ? " open" : ""} data-state="${running ? "streaming" : "complete"}"><summary><span class="tool-stack-label">${escapeHtml(subStepsLabel(group.steps))}</span><span class="tool-stack-meta">${escapeHtml(subStepsMeta(sub, group.steps))}</span></summary><div class="tool-stack-body"><div class="tool-steps">${group.steps.map(stepHtml).join("")}</div></div></details>`;
+function subStepsShell(sub, steps) {
+  const running = subStepsRunning(sub, steps);
+  return `<details class="tool-stack sub-steps"${running ? " open" : ""} data-state="${running ? "streaming" : "complete"}"><summary><span class="tool-stack-label"></span><span class="tool-stack-meta"></span></summary><div class="tool-stack-body"><div class="tool-steps"></div></div></details>`;
 }
 // 一轮的折叠行就地更新：标题与计数跟着步骤走；这一轮跑完就收起（用户亲手开合过的不动）
 /** @param {SubAgent} sub */
@@ -222,24 +108,35 @@ function syncSubSteps(details, sub, steps) {
   if (running) settleDetails(details, true);
   else settleDetails(details, false, null, true);
 }
+// 用时：不足一秒不写，一分以上带分
+function spentText(ms) {
+  const seconds = Math.round((Number(ms) || 0) / 1000);
+  return !seconds ? "" : seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分${seconds % 60 ? ` ${seconds % 60} 秒` : ""}`;
+}
 /** @param {Message} message */
 function trailLabel(message) {
   if (!trailWork(message)) return toolStackLabel();
-  if (message.status === "streaming") return "工作中";
-  const ms = Number(message.durationMs) || 0,
-    seconds = Math.round(ms / 1000);
-  const spent = !seconds
-    ? ""
-    : seconds < 60
-      ? `${seconds} 秒`
-      : `${Math.floor(seconds / 60)} 分${seconds % 60 ? ` ${seconds % 60} 秒` : ""}`;
-  return message.status === "complete" ? (spent ? `工作了 ${spent}` : "工作记录") : message.status === "stopped" ? "已搁笔" : "已中断";
+  if (message.status === "streaming") {
+    const live = message.startedAt ? spentText(Date.now() - message.startedAt) : "";
+    return live ? `工作中 · ${live}` : "工作中";
+  }
+  const spent = spentText(message.durationMs);
+  if (message.status === "complete") return spent ? `工作了 ${spent}` : "工作记录";
+  // 停下、断了的也记着做了多久：续写时接着这个数走
+  return `${message.status === "stopped" ? "已搁笔" : "已中断"}${spent ? ` · ${spent}` : ""}`;
+}
+// 作答途中每秒一跳：只换行迹题头那一行字，不重画整答
+/** @param {Message} message */
+function tickTrailClock(message) {
+  const label = document.querySelector(`[data-message="${CSS.escape(message.id)}"] .tool-stack.is-work > summary > .tool-stack-label`);
+  if (label) label.textContent = trailLabel(message);
 }
 /** @param {Message} message */
 function trailMeta(message) {
   const base = toolStackMeta(message.steps);
   if (!trailWork(message)) return base;
-  const helpers = message.status === "streaming" ? runningDelegates(message) : [];
+  // 帮手不随这一答收尾：这一答写完了、它还在后台做，收起的行迹题头上也看得见
+  const helpers = runningDelegates(message);
   if (helpers.length > 1)
     return `${helpers.length} 名帮手 · ${helpers.reduce((sum, h) => sum + (h.sub?.steps.length || 0), 0)} 步 · 进行中`;
   if (helpers.length) return `帮手「${String(helpers[0].title || "").slice(0, 20)}」· ${helpers[0].sub?.steps.length || 0} 步 · 进行中`;
@@ -249,22 +146,6 @@ function trailMeta(message) {
       .map(step => step.change.path)
   ).size;
   return changed ? `${base} · 改 ${changed} 个文件` : base;
-}
-/** @param {Message} message */
-function stepsHtml(message) {
-  if (!message.steps?.length) return "";
-  const work = trailWork(message),
-    pending = message.steps.some(step => step.status === "pending"),
-    running = message.status === "streaming" && message.steps.some(step => step.status === "running" || pending);
-  const open =
-    pending ||
-    (message.toolsTouched ? !!message.toolsOpen : message.status === "streaming" && (work || running || message.steps.length > 0));
-  const body = work
-    ? trailGroups(message)
-        .map(group => trailGroupHtml(message, group))
-        .join("")
-    : `<div class="tool-steps">${message.steps.map(stepHtml).join("")}</div>`;
-  return `<details class="tool-stack${work ? " is-work" : ""}"${open ? " open" : ""} data-state="${escapeHtml(message.status || "complete")}"><summary><span class="tool-stack-label">${escapeHtml(trailLabel(message))}</span><span class="tool-stack-meta">${escapeHtml(trailMeta(message))}</span></summary><div class="tool-stack-body">${body}</div></details>`;
 }
 // 一步的卡片：工具自己登记了画法（指令、文件、请示、差遣、计划、补言）就照它画，其余（检索、翻阅、计算、调接口、翻记忆）用下面通用的一种
 /** @param {Step} step */
@@ -313,165 +194,74 @@ function plainStepHtml(step, title) {
   const status = step.status || "done",
     foldable = !!body,
     folded = foldable && (step.expanded === undefined ? true : !step.expanded);
-  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? "展开" : "收起"}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "工具执行失败") : ""}">${status === "running" ? "查阅中" : status === "error" ? escapeHtml(step.result || "失败") : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div>${body}</div>`;
+  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? "展开" : "收起"}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "工具执行失败") : ""}">${status === "running" ? "查阅中" : status === "error" ? escapeHtml(step.result || "失败") : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div>${stepShotsHtml(step)}${body}</div>`;
 }
-// 帮手自己的一条小时间线——每轮的思绪、说的话、各步，与主行迹同一套画法；进行中时最新的思绪与话跟着流。
-// 它画在右侧的差遣面板里（不在行迹里：差遣是并行的活，线性的时间线盛不下）；首次画整段，此后由 syncDelegateTrail 就地更新
+// 工具交回的画面（游目截图之类）：折起时也露着——画面就是这一步的结果；点开进图片查看器
+/** @param {Step} step */
+function stepShotsHtml(step) {
+  const shots = (step.attachments || []).filter(file => file.kind === "image" && file.id);
+  return shots.length
+    ? `<div class="tool-shots">${shots.map(file => `<span class="fi fi-thumb tool-shot" role="button" tabindex="0" data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(file.name)}"><img data-thumb="${escapeHtml(file.id)}" alt=""></span>`).join("")}</div>`
+    : "";
+}
+// 一次差遣此刻的样子：帮手（它自己的一条时间线画在右侧的差遣面板里，见 paintHelperTrail——差遣是并行的活，线性的行迹盛不下）、
+// 在不在做、回报、签上那一句计数
 /** @param {Step} step */
 function delegateSubState(step) {
   const sub = step.sub,
     status = step.status || "done",
     steps = sub?.steps || [],
     live = status === "running";
-  const base = Math.max(0, ...steps.map(s => Number(s.at) || 0)),
-    rbase = Math.max(0, ...steps.map(s => Number(s.rat) || 0));
   return {
     sub,
     status,
     steps,
     live,
-    thought: String(sub?.reasoning || "")
-      .slice(rbase)
-      .trim(),
-    said: (live ? String(sub?.content || "").slice(base) : "").trim(),
     report: live ? "" : String(sub?.report || "").trim(),
-    meta: live ? (steps.length ? `${steps.length} 步 · 进行中` : "领命中") : String(step.result || "")
+    meta: [
+      ...(live
+        ? [
+            steps.length ? `${steps.length} 步` : "领命中",
+            (sub?.startedAt && spentText(Date.now() - sub.startedAt)) || (steps.length ? "进行中" : "")
+          ]
+        : [String(step.result || "")]),
+      sub?.effort ? `思考${reasoningLabel(sub.effort)}` : ""
+    ]
+      .filter(Boolean)
+      .join(" · ")
   };
 }
-function delegateTailThoughtHtml(thought, state) {
-  return thought
-    ? `<details class="reasoning trail-reasoning" data-state="${state}"${state === "live" ? " open" : ""}><summary>思绪</summary><div class="reasoning-body">${escapeHtml(thought)}</div></details>`
-    : "";
-}
-/** @param {Step} step */
-function delegateTrailHtml(step) {
-  const { sub, steps, live, thought, said, report } = delegateSubState(step);
-  if (!sub) return "";
-  const groups = trailGroups(sub)
-    .map(group => trailGroupHtml(sub, group, true))
-    .join("");
-  // 最后一轮：进行中时思绪跟着流（有话了就收起）、话按最新文本画；做完后这轮思绪收进折叠区，话即回报，留在外面
-  const tail = `<div class="sub-tail">${delegateTailThoughtHtml(thought, live && !said ? "live" : "done")}${
-    live && said
-      ? `<div class="trail-note sub-said" data-text="${escapeHtml(said)}">${renderMarkdown(said)}</div>`
-      : live && !thought && !steps.length
-        ? `<div class="sub-idle">帮手正在凝神</div>`
-        : ""
-  }</div>`;
-  // 面板开着默认摊开（这一栏就是为了看过程而开的）；题头一行可整条收起，只看回报（见 syncSubFold）
-  return `<div class="sub-trail"${live ? ' data-live="true"' : ""}><div class="sub-timeline">${groups}${tail}</div>${report ? `<div class="sub-report">${renderMarkdown(report)}</div>` : ""}</div>`;
-}
-// 帮手时间线就地更新（面板里那一条）。帮手每 350ms 刷一次，若整段换新：已画出的步骤输出会重新起入场动画
-// （列目录的结果闪一下又空一片）、用户收起的思绪又被摊开。这里只动变了的部分：新出的分组与步骤、最后一轮的思绪与话、回报
-/** @param {Step} step */
-function syncDelegateTrail(trail, step, seen) {
-  const { sub, steps, live, thought, said, report } = delegateSubState(step);
-  if (!trail || !sub) return;
-  if (live) trail.dataset.live = "true";
-  else delete trail.dataset.live;
-  let timeline = trail.querySelector(":scope > .sub-timeline");
-  if (!timeline) {
-    trail.insertAdjacentHTML("afterbegin", `<div class="sub-timeline"><div class="sub-tail"></div></div>`);
-    timeline = trail.querySelector(":scope > .sub-timeline");
-  }
-  let tail = timeline.querySelector(":scope > .sub-tail");
-  if (!tail) {
-    timeline.insertAdjacentHTML("beforeend", `<div class="sub-tail"></div>`);
-    tail = timeline.lastElementChild;
-  }
-  for (const group of trailGroups(sub)) {
-    let host = timeline.querySelector(`:scope > .trail-group[data-at="${group.at}"]`);
-    if (!host) {
-      tail.insertAdjacentHTML("beforebegin", trailGroupHtml(sub, group, true));
-      host = tail.previousElementSibling;
-      const note = host.querySelector(".trail-note");
-      if (note) renderEnhancements(note);
-    } else {
-      // 同一轮后来的步骤会把分组的思绪边界再往后推一点
-      const body = host.querySelector(":scope > .reasoning .reasoning-body"),
-        text = String(sub.reasoning || "")
-          .slice(group.rfrom, group.rat)
-          .trim();
-      if (body && body.textContent !== text) body.textContent = text;
-      else if (!body && text) host.insertAdjacentHTML("afterbegin", trailReasoningHtml(sub, group));
-    }
-    const fold = host.querySelector(":scope > .sub-steps");
-    for (const s of group.steps) syncStep(fold.querySelector(".tool-steps"), s, seen);
-    syncSubSteps(fold, sub, group.steps);
-  }
-  const state = live && !said ? "live" : "done";
-  let thoughtEl = tail.querySelector(":scope > .reasoning");
-  if (!thought) thoughtEl?.remove();
-  else if (!thoughtEl) tail.insertAdjacentHTML("afterbegin", delegateTailThoughtHtml(thought, state));
-  else {
-    const body = thoughtEl.querySelector(".reasoning-body");
-    if (body.textContent !== thought) {
-      body.textContent = thought;
-      if (thoughtEl.dataset.state === "live") body.scrollTop = body.scrollHeight;
-    }
-    if (thoughtEl.dataset.state !== state) {
-      thoughtEl.dataset.state = state;
-      if (state === "done" && thoughtEl.open && !thoughtEl.dataset.touched) settleDetails(thoughtEl, false);
-    }
-  }
-  let saidEl = tail.querySelector(":scope > .sub-said");
-  if (!(live && said)) saidEl?.remove();
-  else {
-    if (!saidEl) {
-      tail.insertAdjacentHTML("beforeend", `<div class="trail-note sub-said"></div>`);
-      saidEl = tail.lastElementChild;
-    }
-    if (saidEl.dataset.text !== said) {
-      saidEl.dataset.text = said;
-      saidEl.innerHTML = renderMarkdown(said);
-      renderEnhancements(saidEl);
-    }
-  }
-  const idle = live && !thought && !said && !steps.length,
-    idleEl = tail.querySelector(":scope > .sub-idle");
-  if (!idle) idleEl?.remove();
-  else if (!idleEl) tail.insertAdjacentHTML("beforeend", `<div class="sub-idle">帮手正在凝神</div>`);
-  const reportEl = trail.querySelector(":scope > .sub-report");
-  if (!report) reportEl?.remove();
-  else if (!reportEl) {
-    trail.insertAdjacentHTML("beforeend", `<div class="sub-report">${renderMarkdown(report)}</div>`);
-    renderEnhancements(trail.lastElementChild);
-  }
-}
 // 步骤按 id 就地更新：没变的节点一律不动（转圈不重启、已展开的结果不跳）；新步骤淡入上移，结果首次出现或状态翻转时只让那一条轻浮。
-// 主行迹与帮手的时间线都走这里；差遣卡片本身不整张换，交给 syncDelegateCard
+// 主行迹与帮手的时间线都走这里；差遣卡片本身不整张换，交给 syncDelegateCard。animate 为假（整条刚画出来）时只记台账，不起动效
 /** @param {Step} step */
-function syncStep(list, step, seen) {
+function syncStep(list, step, seen, animate = true) {
   if (!list) return;
   const html = stepHtml(step),
     hasBody = /class="tool-(results|note|output|approve)"/.test(html),
     prev = seen.get(step.id);
   let el = list.querySelector(`:scope > [data-step-id="${CSS.escape(step.id)}"]`);
-  if (!el) {
+  const added = !el;
+  if (added) {
     list.insertAdjacentHTML("beforeend", html);
     el = list.lastElementChild;
-  } else if (TOOLS.get(step.name)?.sync) TOOLS.get(step.name).sync(el, step, prev);
-  else if (prev && prev.html !== html) {
+  } else if (!TOOLS.get(step.name)?.sync?.(el, step, prev) && prev?.html !== html) {
     el.insertAdjacentHTML("afterend", html);
     const next = el.nextElementSibling;
     el.remove();
     el = next;
   }
-  if (!prev) el.classList.add("is-new");
-  else {
+  if (el.querySelector("img[data-thumb]:not([src])")) void loadThumbnails(el);
+  if (animate && added) el.classList.add("is-new");
+  else if (animate && prev) {
     if (hasBody && !prev.hasBody) el.classList.add("body-new");
     if (prev.status !== step.status) el.classList.add("status-new");
   }
   seen.set(step.id, { html, hasBody, status: step.status });
 }
-// 正在工作的帮手（当前对话里进行中的差遣步骤，可能同时有几名）
+// 这一答里还在做的帮手（差遣与续派的那几趟，可能同时有几名）
 /** @param {Message} message */
 function runningDelegates(message) {
-  return (message?.steps || []).filter(step => step.name === "delegate" && step.status === "running");
-}
-/** @param {Message} message */
-function runningDelegate(message) {
-  return runningDelegates(message)[0] || null;
+  return (message?.steps || []).filter(step => step.sub && step.status === "running");
 }
 // 帮手正在做的一句话：最新一步，或最新说的话的第一行
 /** @param {Step} step */
@@ -489,17 +279,20 @@ function delegateDoing(step) {
       .find(Boolean);
   return said ? said.slice(0, 80) : sub?.reasoning ? "正在凝神" : "领命中";
 }
-// 工作条：一答生成期间附在输入框上方——左边这一答的改动合计（帮手改的也算进来，点开浮出清单），右边在做的帮手（点开差遣面板）。
-// 两样都没有就不挂；写完了改动落到回复之下，条子撤掉（见 设计稿/12-改动条与行迹 二·乙）
+// 工作条：附在输入框上方——左边正在写的这一答的改动合计（帮手改的也算进来，点开浮出清单），右边这段对话后台在做的帮手（点开差遣面板）。
+// 帮手不随一答收尾，答写完了它还在做，条子就还挂着它。两样都没有就不挂；写完了改动落到回复之下（见 设计稿/12-改动条与行迹 二·乙）
 let workFilesOpen = false;
 function renderHelperBar() {
   const bar = $("#helperBar");
   if (!bar) return;
   const c = currentConversation(),
     message = c && view === "chat" ? [...c.messages].reverse().find(m => m.role === "assistant" && m.status === "streaming") : null,
-    helpers = message ? runningDelegates(message) : [],
-    stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 };
-  if (!helpers.length && !stats.files.length) {
+    helpers = c && view === "chat" ? (crews.get(c.id) || []).map(box => box.step) : [],
+    stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 },
+    // 等待确认有请示条，不在这里重说
+    label = c && requestJob(c.id)?.label,
+    notice = label && label !== "等待确认" ? label : "";
+  if (!helpers.length && !stats.files.length && !notice) {
     workFilesOpen = false;
     bar.dataset.sig = "";
     if (!bar.classList.contains("hidden")) hideWithFade(bar);
@@ -518,7 +311,7 @@ function renderHelperBar() {
     helper = helpers.length
       ? `<button type="button" class="work-helpers" data-helper="${escapeHtml(helpers[0].id)}" title="打开差遣面板"><span class="seal helper-seal" aria-hidden="true">帮</span><span class="work-helpers-text">${escapeHtml(who)}</span><span class="work-helpers-go" aria-hidden="true">›</span></button>`
       : "",
-    html = `${changes}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
+    html = `${changes}${notice ? `<span class="work-notice" role="status">${escapeHtml(notice)}</span>` : ""}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
   // 帮手每 350ms 刷一次，没变就不动，免得清单里的滚动位置被重画冲掉
   if (bar.dataset.sig !== html) {
     bar.dataset.sig = html;
@@ -532,14 +325,11 @@ function renderHelperBar() {
 // 行迹里只留一枚签（带回报，做事时呼吸），要看帮手具体做了什么才点开——细看是另一种动作，值得整个屏幕：
 // 那条时间线里有 diff、有命令输出、有嵌套步骤，挤在窄栏里必然难看。
 // 瞥一眼不必开窗：签自己在呼吸，输入框上方还有帮手条。几名帮手用 ‹ n/m › 翻，翻不动了就点中间的计数出列表
-let helperStepId = null; // 窗里正看着的那次差遣
+let helperStepId = null; // 窗里正看着的那一趟差遣（或续派）
 const helperSeen = new Map(); // 窗里步骤的就地更新台账（与行迹各记各的，互不干扰）
-/** 当前对话里所有的差遣，按发生先后 */
+/** 当前对话里帮手的每一趟，按发生先后 */
 function allDelegateSteps() {
-  const out = [];
-  for (const message of currentConversation()?.messages || [])
-    for (const step of message.steps || []) if (step.name === "delegate") out.push(step);
-  return out;
+  return helperRuns(currentConversation());
 }
 function helperStepById(id) {
   return allDelegateSteps().find(step => step.id === id) || null;
@@ -548,7 +338,8 @@ function helperPanelOpen() {
   const panel = $("#helperModal");
   return !!panel && !panel.classList.contains("hidden") && !panel.classList.contains("leaving");
 }
-function openHelperPanel(stepId) {
+// noteId：传话的签点开时，直接翻到递去的那句话（它所在那一轮的步骤摊开）
+function openHelperPanel(stepId, noteId = "") {
   const step = helperStepById(stepId);
   if (!step) return;
   if (helperStepId !== step.id) helperSeen.clear();
@@ -559,6 +350,16 @@ function openHelperPanel(stepId) {
   // 换一名帮手是换一张纸，从头看起；不然上一张滚到多深，这张就从多深打开
   const stage = $("#helperScroll");
   if (stage) stage.scrollTop = 0;
+  const note = noteId && $("#helperPanelBody").querySelector(`[data-step-id="${CSS.escape(noteId)}"]`);
+  if (!note) return;
+  const stack = note.closest("details.sub-steps");
+  if (stack) {
+    stack.dataset.touched = "1";
+    setProcessDetails(stack, true);
+  }
+  helperFolded.delete(step.id);
+  syncSubFold($("#helperPanelBody > .sub-trail"), step);
+  requestAnimationFrame(() => note.scrollIntoView({ block: "center" }));
 }
 function closeHelperPanel() {
   helperStepId = null;
@@ -585,22 +386,14 @@ function renderHelperList() {
     })
     .join("");
 }
-/** @param {boolean} fresh 首次打开或换了一次差遣：整段重画；否则就地更新 */
 // 帮手行迹的收起：时间线上方一行题头（折角 · 行迹 · 几轮 · 几步，与主行迹题头同一枚折角，点它开合），收起的记在这里，翻到别的帮手再翻回来仍是收着的。
 // 题头滚出面板顶上时，面板顶栏右侧浮出同一枚「收起行迹」，与主对话的书眉一个意思
 const helperFolded = new Set();
 /** @param {Step} step */
 function syncSubFold(trail, step) {
   const { sub, steps, live } = delegateSubState(step);
-  if (!trail || !sub) return;
-  let head = trail.querySelector(":scope > .sub-fold");
-  if (!head) {
-    trail.insertAdjacentHTML(
-      "afterbegin",
-      `<button type="button" class="sub-fold"><span class="sub-fold-label">行迹</span><span class="sub-fold-meta"></span></button>`
-    );
-    head = trail.querySelector(":scope > .sub-fold");
-  }
+  const head = trail?.querySelector(":scope > .sub-fold");
+  if (!head || !sub) return;
   const folded = helperFolded.has(step.id),
     rounds = trailGroups(sub).length,
     meta = live ? `${steps.length} 步 · 进行中` : `${rounds} 轮 · ${steps.length} 步`;
@@ -640,6 +433,7 @@ function syncHelperFoldHead() {
       timeline.getBoundingClientRect().bottom > top + 60;
   button.classList.toggle("shown", show);
 }
+/** @param {boolean} fresh 首次打开或换了一次差遣：从空白画起；否则就地更新 */
 function renderHelperPanel(fresh = false) {
   if (!helperPanelOpen()) return;
   const step = helperStepById(helperStepId);
@@ -674,20 +468,16 @@ function renderHelperPanel(fresh = false) {
   }
   const host = $("#helperPanelBody");
   if (!host) return;
+  // 帮手就是一条回复：与主答的行迹同一支笔（见 paintTimeline）。帮手每 350ms 刷一次，只动变了的部分——
+  // 已画出的步骤输出不重起入场动画、用户收起的思绪不被摊开
   let trail = host.querySelector(":scope > .sub-trail");
-  if (fresh || !trail) {
+  const blank = fresh || !trail;
+  if (blank) {
     helperSeen.clear();
-    host.innerHTML = delegateTrailHtml(step) || `<div class="sub-trail"><div class="sub-timeline"></div></div>`;
-    trail = host.querySelector(":scope > .sub-trail");
-    trail?.querySelectorAll(".trail-note, .sub-report").forEach(node => renderEnhancements(node));
-    // 首次画完把台账补齐，免得下一轮把已画出的步骤当新的又闪一次
-    if (sub)
-      for (const group of trailGroups(sub))
-        for (const s of group.steps) helperSeen.set(s.id, { html: stepHtml(s), hasBody: false, status: s.status });
-    return syncSubFold(trail, step);
+    host.innerHTML = `<div class="sub-trail"></div>`;
+    trail = host.firstElementChild;
   }
-  syncDelegateTrail(trail, step, helperSeen);
-  syncSubFold(trail, step);
+  paintHelperTrail(trail, step, !blank);
 }
 
 function stepStateHtml(status) {
@@ -704,7 +494,9 @@ function stepStateHtml(status) {
 // 步骤输出的露出规矩：默认摊开的只有两种——目录清单（露前 10 行）与红绿对比（两侧各 10 行），底下一行「展开全部」；
 // 指令输出、读取、搜索这些有明确的行数、往往又长，默认折起，标题行上有结果与行数，点标题行才看；报错的也折起。
 // 步骤上记两位：expanded（折起 / 摊开，未记则按上面的定）与 full（全部 / 前 10 行），重画不丢
-const STEP_SHOW_LINES = 10;
+const STEP_SHOW_LINES = 10,
+  // 并排的红绿一行抵原先上下两行，先看的行数翻倍
+  DIFF_SHOW_ROWS = 20;
 function clampLines(text, full) {
   const lines = String(text || "").split("\n"),
     clipped = !full && lines.length > STEP_SHOW_LINES;
@@ -721,11 +513,10 @@ function workStepHtml(step, title) {
   if (status === "pending")
     body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre>${sandboxWhyHtml(step)}<div class="tool-approve"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="径行：此对话中后续指令不再询问">径行</button></div>`;
   else if (step.diff) {
-    const del = clampLines(step.diff.old, step.full),
-      ins = clampLines(step.diff.new, step.full);
-    body = `<div class="tool-diff"><pre class="tool-output diff-del">${escapeHtml(del.text)}</pre><pre class="tool-output diff-ins">${escapeHtml(ins.text)}</pre></div>`;
-    if (del.clipped || ins.clipped) more = `展开全部 · −${del.total} +${ins.total} 行`;
-    else if (step.full && Math.max(del.total, ins.total) > STEP_SHOW_LINES) more = `只看前 ${STEP_SHOW_LINES} 行`;
+    const diff = splitDiffHtml(step.diff.old, step.diff.new, { limit: step.full ? Infinity : DIFF_SHOW_ROWS, wrap: !!step.full });
+    body = `<div class="tool-diff">${diff.html}</div>`;
+    if (diff.clipped) more = `展开全部 · −${diff.removed} +${diff.added} 行`;
+    else if (step.full && diff.rows > DIFF_SHOW_ROWS) more = `只看前 ${DIFF_SHOW_ROWS} 行`;
   } else if (step.output) {
     const out = clampLines(step.output, step.full);
     body = `<pre class="tool-output">${escapeHtml(out.text)}</pre>`;
@@ -738,117 +529,12 @@ function workStepHtml(step, title) {
     folded = foldable && (step.expanded === undefined ? !openByDefault : !step.expanded);
   return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}${step.readOnly ? " is-read-only" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? "展开输出" : "收起输出"}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title${command ? " tool-cmd" : ""}" title="${escapeHtml(title)}">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "执行失败") : ""}">${meta}</span>${stepStateHtml(status)}</div>${body}</div>`;
 }
+// 步骤有了变动（入册、跑完、请示、帮手有进展）：照这一答此刻的样子重画，工作条与差遣面板跟着更新
 /** @param {Message} assistant */
 function refreshSteps(assistant) {
-  const block = document.querySelector(`[data-message="${assistant.id}"] .assistant-block`);
-  if (!block) return;
-  block.querySelectorAll(".trail-drafting").forEach(node => node.remove());
-  let stack = block.querySelector(".tool-stack");
-  if (!stack) {
-    const anchor = block.querySelector(".reasoning");
-    if (anchor) anchor.insertAdjacentHTML("afterend", stepsHtml(assistant));
-    else block.insertAdjacentHTML("afterbegin", stepsHtml(assistant));
-    stack = block.querySelector(".tool-stack");
-    stack?.classList.add("is-new");
-  }
-  if (stack) {
-    stack.querySelector(".tool-stack-label").textContent = trailLabel(assistant);
-    rollText(stack.querySelector(".tool-stack-meta"), trailMeta(assistant));
-    stack.dataset.state = assistant.status || "complete";
-    const work = trailWork(assistant),
-      bodyHost = stack.querySelector(".tool-stack-body"),
-      groups = work ? trailGroups(assistant) : [];
-    if (work)
-      for (const group of groups) {
-        const existing = [...bodyHost.querySelectorAll(":scope > .trail-group")].find(
-          host => !host.classList.contains("trail-live") && host.dataset.at === String(group.at)
-        );
-        if (existing) {
-          syncTrailGroupReasoning(existing, assistant, group);
-          continue;
-        }
-        // 正在承接这一轮话的「进行中」分组就地转正：话按最终文本重画一遍（流式可能还差几个字），再挂上步骤容器
-        const live = bodyHost.querySelector(":scope > .trail-group.trail-live");
-        if (live) {
-          live.classList.remove("trail-live");
-          live.dataset.at = String(group.at);
-          live.innerHTML = `${trailReasoningHtml(assistant, group)}${trailNoteHtml(assistant, group)}<div class="tool-steps"></div>`;
-        } else
-          bodyHost.insertAdjacentHTML(
-            "beforeend",
-            `<div class="trail-group" data-at="${group.at}">${trailReasoningHtml(assistant, group)}${trailNoteHtml(assistant, group)}<div class="tool-steps"></div></div>`
-          );
-        const note = (live || bodyHost.lastElementChild).querySelector(".trail-note");
-        if (note) renderEnhancements(note);
-      }
-    // 分组是按 at 定位的，而 at 会变：一答收尾时裁掉正文开头的空行，所有步骤的 at 都往前挪一截（见 streamReply 的 leadTrim）。
-    // 键一变就当成新分组重画一份，旧的那份连同里面画好的步骤还留在页上——同一次差遣便出现两遍。落单的分组撤掉
-    if (work) {
-      const alive = new Set(groups.map(group => String(group.at)));
-      for (const el of bodyHost.querySelectorAll(":scope > .trail-group"))
-        if (!el.classList.contains("trail-live") && !alive.has(el.dataset.at)) el.remove();
-    }
-    if (work && assistant.status !== "streaming") bodyHost.querySelector(":scope > .trail-group.trail-live")?.remove();
-    // 时间线消息里，行迹之前的顶层思绪是第一轮留下的旧块（那段思绪已收进第一个分组），撤掉；最后一轮的思绪收尾时画在行迹之后
-    if (work) {
-      const stale = block.querySelector(":scope > .reasoning");
-      if (stale && stale.compareDocumentPosition(stack) & Node.DOCUMENT_POSITION_FOLLOWING) stale.remove();
-    }
-    // 这一轮说的话已收进分组，正文区从下一轮起笔：还画着旧起点的正文块撤掉，下一帧从新的起点重画
-    if (work) {
-      const main = block.querySelector(":scope > .markdown");
-      if (main && Number(main.dataset.base ?? main.dataset.cut ?? 0) < trailBase(assistant)) {
-        main.remove();
-        block.querySelector(":scope > .thinking")?.remove();
-      }
-    }
-    let seen = knownStepIds.get(assistant.id);
-    if (!seen) {
-      seen = new Map();
-      knownStepIds.set(assistant.id, seen);
-      if (knownStepIds.size > 32) {
-        for (const key of knownStepIds.keys())
-          if (key !== assistant.id) {
-            knownStepIds.delete(key);
-            break;
-          }
-      }
-    }
-    for (const step of assistant.steps || [])
-      syncStep(
-        work ? bodyHost.querySelector(`.trail-group[data-at="${Number(step.at) || 0}"] > .tool-steps`) : stack.querySelector(".tool-steps"),
-        step,
-        seen
-      );
-    // 没递出去就撤下的补言（收尾时另作新一问、或停了放回案上）：页上那一步也撤
-    const ids = new Set((assistant.steps || []).map(step => step.id));
-    for (const el of stack.querySelectorAll(".tool-step-note[data-step-id]")) if (!ids.has(el.dataset.stepId)) el.remove();
-    renderHelperBar();
-    renderHelperPanel();
-    // 一答只开一次、收一次：第一步起就摊开，整答写完才收（言里模型说话的间隙也不收）；请示时必开
-    const pending = assistant.steps.some(step => step.status === "pending");
-    if (assistant.status === "streaming") {
-      if (pending || !assistant.toolsTouched) settleDetails(stack, true);
-    } else
-      settleDetails(
-        stack,
-        false,
-        () => {
-          assistant.toolsOpen = false;
-          assistant.toolsTouched = false;
-        },
-        true
-      );
-  }
-  syncChangeBar(block, assistant);
-  if (!assistant.content && assistant.status === "streaming" && !block.querySelector(".thinking"))
-    insertAboveChangeBar(block, `<div class="thinking">正在凝神</div>`);
-}
-// 回复末尾挂着改动条时，新起笔的正文 / 凝神占位都插到它上面，改动条始终压底
-function insertAboveChangeBar(block, html) {
-  const bar = block.querySelector(":scope > .change-bar");
-  if (bar) bar.insertAdjacentHTML("beforebegin", html);
-  else block.insertAdjacentHTML("beforeend", html);
+  paintMessage(assistant);
+  renderHelperBar();
+  renderHelperPanel();
 }
 // 思绪块带状态：进行中一点呼吸的朱色，写完打一个勾；时间线消息只画最后一轮的思绪，前几轮的各在自己的分组里
 // 思绪是否还在写：按「轮」看而不是按整答看——最后一次工具调用之后又来了新思绪、而这一轮的正文尚未起笔，就是在写。
@@ -857,7 +543,7 @@ function insertAboveChangeBar(block, html) {
 function reasoningLive(message) {
   if (message.status !== "streaming") return false;
   // 补言不是一轮：它落下时模型可能正想到一半，块上的勾不能因它先打上
-  const last = (message.steps || []).filter(step => step.name !== "user_note").at(-1),
+  const last = (message.steps || []).filter(step => step.name !== "user_note" && step.name !== "relay_note").at(-1),
     at = Number(last?.at) || 0,
     rat = Number(last?.rat) || 0;
   return (
@@ -868,14 +554,6 @@ function reasoningLive(message) {
       .slice(at)
       .trim()
   );
-}
-/** @param {Message} message */
-function reasoningHtml(message, text = null) {
-  text = text ?? (trailWork(message) ? String(message.reasoning || "").slice(trailReasoningBase(message)) : message.reasoning);
-  if (!text?.trim()) return "";
-  const live = reasoningLive(message),
-    open = message.reasoningTouched ? !!message.reasoningOpen : live;
-  return `<details class="reasoning"${open ? " open" : ""} data-state="${live ? "live" : "done"}"><summary>思绪</summary><div class="reasoning-body">${escapeHtml(text)}</div></details>`;
 }
 /** @param {Message} message */
 function sourceCardsHtml(message) {
@@ -922,6 +600,11 @@ function bindTrailEvents() {
       event.stopPropagation();
       return approveFrom(button);
     }
+    if (event.target.closest("[data-note-now]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      return sendSupplementNow();
+    }
     // 差遣的签不在此列：点它是去右侧开面板，不是折叠（见下面的 openHelperPanel）
     const head = event.target.closest(".tool-step.foldable > .tool-step-head");
     if (!head || event.target.closest("a, button")) return;
@@ -961,6 +644,7 @@ function bindTrailEvents() {
       el.className = next.className;
       el.innerHTML = next.innerHTML;
     });
+    void loadThumbnails(el);
   });
   // 出处也是一块可开合的，与思绪、行迹同一种开合
   $("#messages").addEventListener("click", event => {
@@ -979,11 +663,19 @@ function bindTrailEvents() {
     true
   );
   $("#messages").addEventListener("click", event => {
+    // 改动清单里点一件：看它在这一答里的改动
+    const file = event.target.closest("[data-change-path]");
+    if (file) {
+      const id = file.closest("[data-message]")?.dataset.message,
+        message = allMessages(currentConversation()).find(m => m.id === id);
+      return message && openChangeDiff(message, file.dataset.changePath, file);
+    }
     const summary = event.target.closest(".change-summary");
     if (!summary) return;
     const files = summary.parentElement.querySelector(".change-files"),
-      open = files.classList.toggle("hidden");
-    summary.setAttribute("aria-expanded", String(!open));
+      closed = files.classList.toggle("hidden");
+    files.classList.toggle("opening", !closed);
+    summary.setAttribute("aria-expanded", String(!closed));
   });
   // 思绪与行迹的开合：正文、旁注面板与差遣面板同一套——用户亲手开合的记在消息上，流式期间的自动开合就不再替他动
   const onProcessToggle = event => {
@@ -1027,22 +719,40 @@ function bindHelperEvents() {
   $("#helperBar").addEventListener("click", event => {
     if (event.target.closest(".work-changes")) {
       workFilesOpen = !workFilesOpen;
-      return renderHelperBar();
+      renderHelperBar();
+      if (workFilesOpen) $("#helperBar .work-files")?.classList.add("opening");
+      return;
     }
+    const file = event.target.closest("[data-change-path]"),
+      message =
+        file && [...(currentConversation()?.messages || [])].reverse().find(m => m.role === "assistant" && m.status === "streaming");
+    if (message) return openChangeDiff(message, file.dataset.changePath, file);
     const id = event.target.closest(".work-helpers")?.dataset.helper;
     if (id) openHelperPanel(id);
   });
-  // 行迹里的那枚签：点它（或敲回车 / 空格）同样开面板
+  // 行迹里的那枚签：点它（或敲回车 / 空格）同样开面板。传话、叫停的签开的是它说到的那名帮手；回报那道细线上点名字也开
+  const openFromCard = card => openHelperPanel(card.dataset.ref || card.dataset.stepId || "", card.dataset.note || "");
   $("#messages").addEventListener("click", event => {
+    const relay = event.target.closest("[data-relay-step]");
+    if (relay) return openHelperPanel(relay.dataset.relayStep || "");
+    // 后台指令结束的那一项：回到行迹里挂它的那一步（行迹折着就摊开）
+    const reveal = event.target.closest("[data-relay-reveal]");
+    if (reveal) {
+      const card = document.querySelector(`#messages .tool-step[data-step-id="${CSS.escape(reveal.dataset.relayReveal || "")}"]`),
+        stack = card?.closest(".tool-stack");
+      if (stack && !stack.open) setProcessDetails(stack, true);
+      if (card) scrollChatTo(card, "center");
+      return;
+    }
     const head = event.target.closest(".tool-step-delegate > .tool-step-head");
-    if (head) openHelperPanel(head.parentElement.dataset.stepId || "");
+    if (head) openFromCard(head.parentElement);
   });
   $("#messages").addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const head = event.target.closest?.(".tool-step-delegate > .tool-step-head");
     if (!head) return;
     event.preventDefault();
-    openHelperPanel(head.parentElement.dataset.stepId || "");
+    openFromCard(head.parentElement);
   });
   // 合起即回到行迹里那一步——原先「合」与「行迹」两个按钮做的本是同一件事
   $("#helperClose").onclick = () => {
@@ -1080,3 +790,11 @@ function bindHelperEvents() {
     if (id) openHelperPanel(id);
   });
 }
+// 差遣那扇窗盖在正文上，Esc 先收它；窗里摊开的帮手清单又在窗上
+defineLayer({
+  name: "helper-list",
+  rank: 105,
+  open: () => helperPanelOpen() && isShown("#helperList"),
+  close: () => $("#helperList").classList.add("hidden")
+});
+defineLayer({ name: "helper", rank: 100, open: helperPanelOpen, close: closeHelperPanel });

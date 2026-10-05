@@ -1,5 +1,7 @@
 // 言 · 本地存储 · 配置：配置.json 的读写与三方合并（几个浏览器共用一份）
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+let configSaveTimer = null,
+  configSyncedAt = 0;
 // ---------- 配置.json ----------
 // 改动后一秒内写一次（含 API Key：这是自己机器上的文件，几个浏览器共用一套模型配置靠的就是它；导出的备份仍不含）。
 // 几个浏览器共用一份，靠的是「基准」：记着上次与磁盘对齐时的那一份（configBase，连同它在磁盘上的时间戳 configSyncedAt）。
@@ -31,7 +33,6 @@ function restoreConfigBase() {
   } catch {}
 }
 function scheduleConfigSave() {
-  if (apiBase === null) return;
   clearTimeout(configSaveTimer);
   configSaveTimer = setTimeout(saveConfigNow, 1000);
 }
@@ -39,7 +40,6 @@ function scheduleConfigSave() {
 function saveConfigNow({ force = false } = {}) {
   clearTimeout(configSaveTimer);
   configSaveTimer = null;
-  if (apiBase === null) return;
   // 上一次还在路上：等它回来再写这一次，免得两次互相比时间戳
   if (configSaving && !unloading) {
     configSaveAgain = true;
@@ -66,7 +66,12 @@ function saveConfigNow({ force = false } = {}) {
     })
     .catch(error => {
       if (unloading) return;
-      if (!configSaveFailures) toast(`配置尚未写入存储目录，稍后重试：${String(error.message || error).slice(0, 60)}`);
+      if (!configSaveFailures)
+        toast(
+          bridgeTimedOut(error)
+            ? "本机桥接响应超时，配置仍在本页，稍后自动重试"
+            : `配置尚未写入存储目录，稍后重试：${String(error.message || error).slice(0, 60)}`
+        );
       configSaveFailures += 1;
       clearTimeout(configSaveTimer);
       configSaveTimer = setTimeout(saveConfigNow, Math.min(5000 * 2 ** Math.min(configSaveFailures - 1, 4), 60000));
@@ -157,7 +162,6 @@ function mergeConfig3(base, mine, theirs) {
     version: theirs.version ?? mine.version,
     settings,
     profiles: byId(base.profiles, mine.profiles, theirs.profiles, mergeProfile),
-    library: byId(base.library, mine.library, theirs.library),
     memory: {
       enabled: same(mine.memory?.enabled, base.memory?.enabled) ? theirs.memory?.enabled : mine.memory?.enabled,
       items: byId(base.memory?.items, mine.memory?.items, theirs.memory?.items)
@@ -171,7 +175,6 @@ function adoptConfig(config, savedAt, base = "") {
   const meta = normalizeStoreData({ ...config, conversations: [] });
   store.settings = meta.settings;
   store.profiles = meta.profiles;
-  store.library = meta.library;
   store.memory = meta.memory;
   store.drafts = meta.drafts;
   if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
@@ -200,7 +203,6 @@ function mergeConfig(config) {
     mcpServers: { ...(store.settings.mcpServers || {}), ...(disk.settings.mcpServers || {}) }
   };
   store.profiles = union(disk.profiles, store.profiles);
-  store.library = union(disk.library, store.library);
   store.memory = { enabled: disk.memory.enabled, items: union(disk.memory.items, store.memory.items) };
   store.drafts = { ...store.drafts, ...disk.drafts };
   if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
@@ -215,11 +217,9 @@ function mergeUnbasedConfig(config, savedAt) {
   if (JSON.stringify(metaOf()) !== disk) saveConfigNow();
 }
 const STORE_ROOT_KEY = "yan-store-root";
-// 与 配置.json 对一次：开页接上桥接时、桥接断了又接上时、页面从后台切回来时。
-// 存储根头一回立起来：先把旧的对话与卷宗拷进来（旧处留着）。然后看两边谁新：
+// 与 配置.json 对一次：开页接上桥接时、桥接断了又接上时、页面从后台切回来时。看两边谁新：
 // 全新的浏览器取磁盘那份；灌进来的（没带版本标记的旧记录）以浏览器为准；这台浏览器头一回碰上这个根就合并；其余按时间戳，新的为准
 async function syncConfigWithDisk() {
-  if (apiBase === null) return;
   const info = bootstrap.store || {};
   let met = "";
   try {
@@ -228,19 +228,7 @@ async function syncConfigWithDisk() {
   // 桥接落在一个全新的根上，这台浏览器上回用的却是别处：多半是记位置的条子没了，说一声，免得以为数据丢了
   const strayed = info.fresh && met && met.toLowerCase() !== String(info.root || "").toLowerCase();
   try {
-    // 根头一回立起来，或这台浏览器还记着旧版自己的对话 / 卷宗目录（另一个浏览器先立了根）：把旧的拷进来，只补缺的、不覆盖
-    if (info.fresh || store.settings.chatsDir || store.settings.archiveDir) {
-      const moved = await bridge(
-        "/api/store/adopt",
-        { chatsDir: store.settings.chatsDir || "", archiveDir: store.settings.archiveDir || "" },
-        AbortSignal.timeout(600000)
-      );
-      info.fresh = false;
-      if (moved.chats || moved.archive) toast(`旧的对话与卷宗已拷进 ${pathTail(info.root || "")}；旧处原样留着`);
-    }
     const disk = await bridge("/api/store/config/load", {}, AbortSignal.timeout(20000));
-    delete store.settings.chatsDir;
-    delete store.settings.archiveDir;
     restoreConfigBase();
     if (!disk.config) {
       writeMeta({ disk: false });
@@ -259,7 +247,7 @@ async function syncConfigWithDisk() {
 }
 // 从后台切回来：另一个浏览器可能改过配置，与磁盘上的对一对（这边有没写下去的改动也不丢，见 reconcileConfig）
 async function refreshConfigFromDisk() {
-  if (apiBase === null || configSaving) return;
+  if (configSaving) return;
   try {
     const disk = await bridge("/api/store/config/load", {}, AbortSignal.timeout(8000));
     if (disk.config && !configSaving) reconcileConfig(disk.config, Number(disk.savedAt) || 0);

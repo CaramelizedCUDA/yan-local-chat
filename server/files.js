@@ -3,7 +3,7 @@
 // 一件附件两份文件：原件本身「<id>.<扩展名>」（文本就是文本，图片就是图片，双击能开）与「<id>.json」（名字、类型、大小、抽出的正文）。
 // 页面按 id 存取，交出去的还是它原先在 IndexedDB 里的样子：{ id, kind, name, mime, size, data, extractedText… }，data 是文本或 data: URL
 "use strict";
-const { sendJson, jsonRoute, errorText, writeAtomic, sendFile } = require("./http.js");
+const { sendJson, jsonRoute, errorText, writeAtomic, sendFile, openWithSystem } = require("./http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -53,8 +53,10 @@ module.exports = function createFiles({ filesHome }) {
         if (!data.startsWith("data:") || comma < 0) throw Error("附件原件格式无效");
         bytes = Buffer.from(data.slice(comma + 1), /;base64/i.test(data.slice(0, comma)) ? "base64" : "utf8");
       }
+      // 原件本身是 .json 的，与元数据同名会被元数据盖掉：另取「<id>.raw.json」（id 里没有点，不与别件相混）
       const { data: _data, ...rest } = record,
-        file = `${id}${extensionOf(record.name)}`;
+        extension = extensionOf(record.name),
+        file = `${id}${extension === ".json" ? ".raw" : ""}${extension}`;
       // 同一 id 换了扩展名（极少见）：旧的原件不留
       const previous = rawFileOf(dir, id, readMeta(dir, id));
       writeAtomic(path.join(dir, file), bytes);
@@ -96,6 +98,18 @@ module.exports = function createFiles({ filesHome }) {
       if (!res.headersSent) sendJson(res, 404, { error: errorText(error, 200) });
     }
   }
+  // 以本机程序打开附件原件（原件落盘时带着原扩展名，系统认得该用什么开）
+  const handleOpen = jsonRoute(
+    async body => {
+      const id = checkId(body.id),
+        dir = home(),
+        raw = rawFileOf(dir, id, readMeta(dir, id));
+      if (!raw) throw Error("附件原件不在存储目录里");
+      openWithSystem(path.join(dir, raw));
+      return { opened: id };
+    },
+    error => errorText(error, 200)
+  );
   // 只问在不在：迁入时用，不必把原件整个读回来
   const handleHas = jsonRoute(
     async body => {
@@ -138,7 +152,7 @@ module.exports = function createFiles({ filesHome }) {
           if (stat.mtimeMs < cutoff) fs.rmSync(path.join(dir, name), { force: true });
           continue;
         }
-        const id = name.replace(/\.[^.]*$/, "");
+        const id = name.split(".")[0];
         if (!ID.test(id) || keep.has(id)) continue;
         const stat = fs.statSync(path.join(dir, name));
         if (stat.mtimeMs >= cutoff) continue;
@@ -156,6 +170,7 @@ module.exports = function createFiles({ filesHome }) {
       "POST /api/files/get": handleGet,
       "GET /api/files/raw": handleRaw,
       "POST /api/files/has": handleHas,
+      "POST /api/files/open": handleOpen,
       "POST /api/files/delete": handleDelete,
       "POST /api/files/clean": handleClean
     }

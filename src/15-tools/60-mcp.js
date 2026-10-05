@@ -11,16 +11,23 @@ const MCP_INLINE_LIMIT = 12000;
 /** @type {{ key: string, loading: Promise<void>|null, servers: Record<string, McpServerState>, lazy: string[], retryAt: number, waitWarned: boolean }} */
 const mcp = { key: "", loading: null, servers: {}, lazy: [], retryAt: 0, waitWarned: false };
 
-/** 设置里的全部配置：{ 名字: { command, args, cwd, env } 或 { url, headers, type }，另可带 disabled / autoApprove / timeout / load } */
-function mcpConfigs() {
+/** 设置里的全部配置：{ 名字: { command, args, cwd, env } 或 { url, headers, type }，另可带 disabled / autoApprove / timeout / load / note } */
+// 游目自己的浏览器在 MCP 里的名字（设置 → 游目里开着才有，见 src/26-stage/40-settings.js）
+const STAGE_SERVER = "游目";
+// 人在设置 → MCP 里接的
+function mcpUserConfigs() {
   return store.settings.mcpServers;
+}
+// 运行时认的：人接的，加上游目自己的浏览器（设置 → 游目里开着时，名叫「游目」，见 src/26-stage/40-settings.js）
+function mcpConfigs() {
+  const builtin = stageBuiltinConfig();
+  return builtin ? { ...store.settings.mcpServers, [STAGE_SERVER]: builtin } : store.settings.mcpServers;
 }
 function mcpActiveConfigs() {
   return Object.fromEntries(Object.entries(mcpConfigs()).filter(([, config]) => !config.disabled));
 }
 // 配置变了（或还没拉过）就去桥接那头拉一遍；发请求前先等它，头一问就带得上。restart 里的服务断开重连
 function mcpReady(restart = []) {
-  if (apiBase === null) return Promise.resolve();
   const servers = mcpActiveConfigs(),
     key = JSON.stringify(servers);
   if (key === mcp.key && !restart.length && (mcp.loading || !mcp.retryAt || Date.now() < mcp.retryAt))
@@ -77,9 +84,17 @@ function registerMcpTools() {
     if (!state.ok) continue;
     const load = mcpConfigs()[server]?.load;
     if (load === "lazy" || (load !== "inline" && JSON.stringify(state.tools).length > MCP_INLINE_LIMIT)) mcp.lazy.push(server);
-    else for (const spec of state.tools) defineTool(mcpInlineTool(server, spec));
+    else
+      for (const spec of uniqueBy(state.tools, spec => spec.name)) {
+        const tool = mcpInlineTool(server, spec);
+        // 名字只留得下字母数字：read.file 与 readfile 会撞成同一个，后来的添个尾巴，不把先来的盖掉（不撞的名字照旧，旧行迹认得出）
+        if (TOOLS.has(tool.name)) tool.name = `${tool.name.slice(0, 57)}_${nameHash(`${server}:${spec.name}`)}`;
+        defineTool(tool);
+      }
   }
   if (mcp.lazy.length) MCP_LAZY_TOOLS.forEach(defineTool);
+  // 接没接浏览器类的服务，定顶栏那枚看台小屏挂不挂
+  stageSync();
 }
 /** @param {McpToolSpec} spec */
 function mcpReadOnly(spec) {
@@ -98,7 +113,6 @@ function mcpInlineTool(server, spec) {
     mcp: true,
     server,
     schema: { description: spec.description || spec.title || spec.name, parameters: spec.inputSchema },
-    offer: ctx => ctx.bridge,
     lookup: readOnly,
     parallel: readOnly,
     sideEffect: !readOnly,
@@ -109,8 +123,17 @@ function mcpInlineTool(server, spec) {
 }
 function mcpFunctionName(server, tool) {
   const clean = text => text.replace(/[^A-Za-z0-9_-]/g, "");
-  const name = `mcp__${clean(server) || `s${hashText(server).slice(0, 6)}`}__${clean(tool) || hashText(tool).slice(0, 6)}`;
-  return name.length <= 64 ? name : `${name.slice(0, 57)}_${hashText(name).slice(0, 6)}`;
+  const name = `mcp__${clean(server) || `s${nameHash(server)}`}__${clean(tool) || `t${nameHash(tool)}`}`;
+  return name.length <= 64 ? name : `${name.slice(0, 57)}_${nameHash(name)}`;
+}
+// 名字里用的短指纹：接口只认字母数字与 _-，hashText 带着「长度:」的前缀，只取后面的十六进制
+function nameHash(text) {
+  return hashText(text).split(":")[1].slice(0, 6);
+}
+// 服务把同一件工具列了两回（分页拉取重了之类）：只登记一回
+function uniqueBy(list, key) {
+  const seen = new Set();
+  return list.filter(item => !seen.has(key(item)) && !!seen.add(key(item)));
 }
 
 /** @type {Tool[]} 按需给的两件：目录写在 mcp_describe 的说明里 */
@@ -119,7 +142,7 @@ const MCP_LAZY_TOOLS = [
     name: "mcp_describe",
     label: "MCP",
     mcp: true,
-    offer: ctx => ctx.bridge && mcpLazyServers(ctx.preset).length > 0,
+    offer: ctx => mcpLazyServers(ctx.preset).length > 0,
     vars: ctx => ({ directory: mcpDirectory(ctx.preset) }),
     parallel: true,
     cache: true,
@@ -143,7 +166,7 @@ const MCP_LAZY_TOOLS = [
     name: "mcp_call",
     label: "MCP",
     mcp: true,
-    offer: ctx => ctx.bridge && mcpLazyServers(ctx.preset).length > 0,
+    offer: ctx => mcpLazyServers(ctx.preset).length > 0,
     sideEffect: true,
     approval: mcpApprovalHtml,
     digest: true,
@@ -215,16 +238,65 @@ async function runMcpTool(step, server, tool, args, ctx) {
   step.title ||= spec.title || tool;
   step.code = JSON.stringify(args, null, 2);
   const ask = !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
-  if (ask && !(await askApproval(step, ctx, "执行中"))) {
+  if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
-    return { ok: false, content: prompt("mcp.skipped"), display: "已跳过" };
+    return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
   }
-  const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal);
+  const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal).finally(
+    stageWatch(tool, args)
+  );
   // 服务说工具变了：下一问前重拉
   if (data.toolsChanged) mcp.key = "";
-  const text = mcpResultText(data.result);
+  const { names, images } = await mcpResultImages(step, data.result),
+    text = mcpResultText(data.result, names) + stageResultNote(tool, args, data.result);
   step.output = trimOutput(text);
-  return { ok: !data.result.isError, content: text, display: data.result.isError ? "出错" : `${text.length} 字` };
+  return {
+    ok: !data.result.isError,
+    content: text,
+    display: data.result.isError ? "出错" : images.length ? `${images.length} 幅画面` : `${text.length} 字`,
+    ...(images.length ? { images } : {})
+  };
+}
+// 浏览器类的结果：下载存到了哪，记进游目的下载签；执事若把视口定死了，补一句——不然它下回测完照样拿 setViewportSize「还原」，游目上下留白
+/** @param {string} tool @param {Record<string, any>} args */
+function stageResultNote(tool, args, result) {
+  if (!/^browser_/.test(tool)) return "";
+  const said = (result.content || []).map((/** @type {any} */ item) => (item.type === "text" ? item.text : "")).join("\n");
+  for (const [, name, path] of said.matchAll(/- Downloaded file (.+?) to "(.+?)"/g)) stageNoteDownload(name, path);
+  const pins = tool === "browser_resize" || (tool === "browser_run_code_unsafe" && /setViewportSize\s*\(/.test(String(args.code || "")));
+  return pins && !result.isError ? `\n\n${prompt("mcp.stagePinned")}` : "";
+}
+// 结果里的图（游目截的画面之类）：原件照附件存，挂在这一步上，步骤卡里画缩略、点开即看；data: 地址交回轮次循环，随工具结果给模型看（见 attachToolImages）。
+// 名字取服务自己报的文件名（Playwright 截图会说存成了 page-….png，模型多半照它写）；回复里引这个名字，正文就画出这幅（见 renderReplyShots）
+/** @param {Step} step */
+async function mcpResultImages(step, result) {
+  const images = (result.content || []).filter(item => item.type === "image" && item.data),
+    said = (result.content || [])
+      .filter(item => item.type === "text")
+      .map(item => item.text)
+      .join("\n")
+      .match(/[^\\/\s'"`(]+\.(?:png|jpe?g|webp|gif)\b/i)?.[0];
+  const stored = await Promise.all(
+    images.map(async (item, i) => {
+      const mime = String(item.mimeType || "image/png"),
+        data = `data:${mime};base64,${item.data}`,
+        meta = {
+          id: uid(),
+          kind: /** @type {const} */ ("image"),
+          name:
+            images.length === 1 && said
+              ? said
+              : `画面-${step.id.slice(-6)}${images.length > 1 ? `-${i + 1}` : ""}.${mime.split("/")[1]?.replace("jpeg", "jpg") || "png"}`,
+          mime,
+          size: Math.round(item.data.length * 0.75),
+          modifiedAt: Date.now()
+        };
+      await putAttachment({ ...meta, data }).catch(() => {});
+      return { meta, data };
+    })
+  );
+  if (stored.length) step.attachments = stored.map(item => item.meta);
+  return { names: stored.map(item => item.meta.name), images: stored.map(item => item.data) };
 }
 // 请示条：哪个服务的哪件工具、带什么参数；按钮与指令的请示同一套（径行即此对话此后不再问）
 /** @param {Step} step */
@@ -233,32 +305,44 @@ function mcpApprovalHtml(step) {
   return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">问</span><span class="approval-title">MCP 请示 · ${escapeHtml(where)}</span><span class="approval-hint" title="输入框留空时，Enter 即运行">Enter 运行</span></div><pre class="approval-cmd">${escapeHtml(step.code || "{}")}</pre><div class="approval-actions"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="径行：此对话中后续调用不再询问">径行</button></div>`;
 }
 // 结果的几种内容合成一段文字：文本照录；图片、音频、资源只写一行说明（不把 base64 塞给模型）；只有结构化结果的给 JSON
-function mcpResultText(result) {
+function mcpResultText(result, names = []) {
+  let shot = 0;
   const parts = (result.content || []).map(item =>
     item.type === "text"
       ? item.text
-      : item.type === "image" || item.type === "audio"
-        ? `[${item.type === "image" ? "图片" : "音频"} ${item.mimeType}，约 ${formatFileSize(Math.round(item.data.length * 0.75))}，未随结果转交]`
-        : item.type === "resource_link"
-          ? `[资源 ${item.name || ""} ${item.uri}]`
-          : item.type === "resource"
-            ? (item.resource.text ?? `[资源 ${item.resource.uri}（${item.resource.mimeType || "二进制"}）]`)
-            : JSON.stringify(item)
+      : item.type === "image"
+        ? `[图片「${names[shot++] || item.mimeType}」，附在工具结果之后；回复里写 ![](${names[shot - 1] || "文件名"}) 即给用户看]`
+        : item.type === "audio"
+          ? `[音频 ${item.mimeType}，约 ${formatFileSize(Math.round(item.data.length * 0.75))}，未随结果转交]`
+          : item.type === "resource_link"
+            ? `[资源 ${item.name || ""} ${item.uri}]`
+            : item.type === "resource"
+              ? (item.resource.text ?? `[资源 ${item.resource.uri}（${item.resource.mimeType || "二进制"}）]`)
+              : JSON.stringify(item)
   );
   if (!parts.length && result.structuredContent) parts.push(JSON.stringify(result.structuredContent, null, 2));
   return parts.join("\n\n") || "（无输出）";
 }
-// 系统提示里 mcp.hint 那一段的值：交给模型的工具里有哪几个服务的，就附上那几个服务自带的用法；一个都没有就不带这段
+// 系统提示里 mcp.hint 那一段的值：交给模型的工具里有哪几个服务的，就附上那几个服务的用法——用户在配置里写的 note 在前
+//（模型无从自知的约定，如「我说打开浏览器即指这个」），服务握手时自带的 instructions 在后；一个都没有就不带这段
 /** @param {Set<string>} names @param {Preset|null} preset */
 function mcpHintVars(names, preset) {
-  const lazy = names.has("mcp_call") ? mcpLazyServers(preset) : [];
+  const lazy = names.has("mcp_call") ? mcpLazyServers(preset) : [],
+    configs = mcpConfigs(),
+    usage = (server, state) =>
+      [
+        String(configs[server]?.note || "").trim(),
+        String(state.instructions || "")
+          .trim()
+          .slice(0, 1500)
+      ]
+        .filter(Boolean)
+        .join("\n");
   const servers = Object.entries(mcp.servers).filter(
     ([server, state]) =>
       state.ok &&
-      state.instructions &&
-      (mcp.lazy.includes(server) ? lazy.includes(server) : state.tools.some(tool => names.has(mcpFunctionName(server, tool.name))))
+      usage(server, state) &&
+      (mcp.lazy.includes(server) ? lazy.includes(server) : [...TOOLS.values()].some(tool => tool.server === server && names.has(tool.name)))
   );
-  return servers.length
-    ? { servers: servers.map(([server, state]) => `【${server}】${state.instructions.trim().slice(0, 1500)}`).join("\n") }
-    : null;
+  return servers.length ? { servers: servers.map(([server, state]) => `【${server}】${usage(server, state)}`).join("\n") } : null;
 }

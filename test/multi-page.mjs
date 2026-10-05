@@ -41,7 +41,7 @@ await evalJs(`document.querySelector('[data-conversation="multi-1"] .history-ope
 await sleep(300);
 check(
   "the status shows it is being answered elsewhere",
-  (await evalJs(`document.querySelector("#connectionText").textContent`)) === "另一处作答中"
+  (await evalJs(`document.querySelector("#chatSend").title`)) === "另一个页面正在这段对话里作答，这里跟着看"
 );
 await evalJs(
   `(i => { i.value = "这边插一句"; i.dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); })(document.querySelector("#chatInput")); true`
@@ -50,7 +50,7 @@ await sleep(300);
 check(
   "sending here is held off with an explanation, and the words stay in the box",
   (await evalJs(`__yanState().conversations.find(c => c.id === "multi-1").messages.length`)) === 2 &&
-    (await evalJs(`document.querySelector("#toast").textContent`)).includes("另一个页面") &&
+    (await evalJs(`document.querySelector("#toast").textContent`)).includes("另一页面") &&
     (await evalJs(`document.querySelector("#chatInput").value`)) === "这边插一句"
 );
 // 那一处接着写：这边跟得上
@@ -73,5 +73,8 @@ check(
 );
 await waitFor(`__yanState().conversations.find(c => c.id === "multi-2")?.messages[1]?.status === "interrupted"`, 8000).catch(() => {});
 check("an answer the other page left unfinished is settled as interrupted once it lets go", (await status("multi-2")) === "interrupted");
-check("and sending here works again", (await evalJs(`document.querySelector("#connectionText").textContent`)) !== "另一处作答中");
+check(
+  "and sending here works again",
+  (await evalJs(`document.querySelector("#chatSend").title`)) !== "另一个页面正在这段对话里作答，这里跟着看"
+);
 await close();

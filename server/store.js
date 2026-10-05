@@ -2,7 +2,7 @@
 //   对话/      一段对话一个 JSON 文件（见 server/chats.js）
 //   卷宗/      模型写出的成品与用户收进来的文件（见 server/work/archive.js）
 //   附件/      对话里附件的原件，一件一个原件加一份元数据（见 server/files.js）
-//   配置.json  设置、模型配置（含 API Key）、记忆、浏览器内卷宗与草稿——几个浏览器共用这一份，不再各存一套
+//   配置.json  设置、模型配置（含 API Key）、记忆与草稿——几个浏览器共用这一份，不再各存一套
 // 在设置里换了位置，整份拷到新处，%APPDATA%\言\位置.json 写明搬去了哪（旧数据原样留着，确认无误后可自行删去）。
 // 条子不放在 ~/.yan 里：旧处是叫人自行删去的，条子若在里头，删了旧数据也就删了条子，下次开又回到默认处。
 // 测试用 YAN_HOME 直接指定根目录，不读也不写位置条子
@@ -16,12 +16,7 @@ const os = require("node:os");
 module.exports = function createStore() {
   const HOME_ROOT = path.join(os.homedir(), ".yan"),
     POINTER = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "言", "位置.json"),
-    // 旧版把条子放在默认根里；读到了就搬到 POINTER 去
-    LEGACY_POINTER = path.join(HOME_ROOT, "位置.json"),
-    CONFIG_FILE = "配置.json",
-    // 旧版的默认位置：~/言/对话 与 ~/言/卷宗。头一回开新版时从这里（以及页面报来的自定义目录）拷进来
-    LEGACY_CHATS = path.join(os.homedir(), "言", "对话"),
-    LEGACY_ARCHIVE = path.join(os.homedir(), "言", "卷宗");
+    CONFIG_FILE = "配置.json";
   const expand = value => String(value || "").replace(/^~(?=$|[\\/])/, os.homedir());
   // 把现存祖先的链接也算进去，避免选到旧根内部的 junction 后递归拷贝自身。
   function physicalPath(value) {
@@ -48,21 +43,13 @@ module.exports = function createStore() {
     }
   }
   function writePointer(target) {
-    fs.rmSync(LEGACY_POINTER, { force: true });
     if (target.toLowerCase() === HOME_ROOT.toLowerCase()) return fs.rmSync(POINTER, { force: true });
     fs.mkdirSync(path.dirname(POINTER), { recursive: true });
     writeAtomic(POINTER, JSON.stringify({ 言: "位置", root: target }, null, 1));
   }
   function initialRoot() {
     if (process.env.YAN_HOME) return path.resolve(expand(process.env.YAN_HOME));
-    const pointed = readPointer(POINTER);
-    if (pointed) return pointed;
-    const legacy = readPointer(LEGACY_POINTER);
-    if (legacy)
-      try {
-        writePointer(legacy);
-      } catch {}
-    return legacy || HOME_ROOT;
+    return readPointer(POINTER) || HOME_ROOT;
   }
   let root = initialRoot();
   const paths = () => ({
@@ -93,7 +80,7 @@ module.exports = function createStore() {
       .sort();
     for (const name of backups.slice(0, -168)) fs.unlinkSync(path.join(dir, name));
   }
-  // 给 bootstrap：页面据此知道对话与卷宗在哪、这是不是一个还没立起来的新根（要从旧处迁入）
+  // 给 bootstrap：页面据此知道对话与卷宗在哪、这是不是一个还没立起来的新根（这台浏览器上回若用的是别处，页面会说一声）
   function describe() {
     const p = paths();
     return { ...p, parent: path.dirname(root), fresh: !fs.existsSync(p.config) };
@@ -157,23 +144,6 @@ module.exports = function createStore() {
     walk(from, to, true);
     return count;
   }
-  // 头一回：旧的对话与卷宗拷进新根（拷贝，不是搬移——旧处原样留着）。页面报来它记着的自定义目录，桥接自己知道旧的默认位置
-  const handleAdopt = jsonRoute(
-    async body => {
-      const p = paths();
-      ensureRoot();
-      const custom = value => (value && path.isAbsolute(expand(value)) ? path.resolve(expand(value)) : "");
-      // 指定了 YAN_HOME（测试）时不碰旧的默认位置：那是真用户的数据
-      const legacy = process.env.YAN_HOME ? [] : [LEGACY_CHATS, LEGACY_ARCHIVE];
-      let chats = 0,
-        archive = 0;
-      for (const from of new Set([custom(body.chatsDir), legacy[0]].filter(Boolean)))
-        chats += copyInto(from, p.chats, new Set(["设置.json"]));
-      for (const from of new Set([custom(body.archiveDir), legacy[1]].filter(Boolean))) archive += copyInto(from, p.archive);
-      return { chats, archive, root };
-    },
-    error => `旧数据未能迁入：${errorText(error, 200)}`
-  );
   // 换位置：parent 下的 .yan 就是新根。那里已有言的数据（另一台机器拷来的、先前搬过去的）就直接用它；
   // 否则把整份拷过去。旧处原样留着（可自行删去），%APPDATA%\言\位置.json 记下新根，桥接重启后也认得
   const handleMove = jsonRoute(
@@ -204,7 +174,6 @@ module.exports = function createStore() {
     routes: {
       "POST /api/store/config/load": handleConfigLoad,
       "POST /api/store/config/save": handleConfigSave,
-      "POST /api/store/adopt": handleAdopt,
       "POST /api/store/move": handleMove
     }
   };

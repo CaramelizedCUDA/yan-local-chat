@@ -95,6 +95,17 @@ check(
     `!document.querySelector(".message.assistant .change-files").classList.contains("hidden") && document.querySelector(".message.assistant .change-files .path").textContent === "src/a.js"`
   )
 );
+// 点清单里的一件：预览浮层里摊开这件在这一答里的改动（改文件那步的红绿两段），没有下载键
+await evalJs(`document.querySelector('.message.assistant .change-files [data-change-path="src/a.js"]').click(); true`);
+await sleep(150);
+await shot("change-diff.png");
+check(
+  "clicking a changed file shows its diff in the viewer",
+  await evalJs(
+    `(v => !v.classList.contains("hidden") && v.querySelector("#fileViewerName").textContent.startsWith("src/a.js") && v.querySelector(".split-diff .d")?.textContent.includes("return 1") && v.querySelector(".split-diff .i")?.textContent.includes("return 2") && document.querySelector("#fileViewerDownload").classList.contains("hidden"))(document.querySelector("#fileViewer"))`
+  )
+);
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
 check(
   "read-only command ran without approval",
   steps[3].label === "运行" && steps[3].status === "done" && steps[3].meta.includes("只读免确认") && steps[3].out.includes("return 2")
@@ -173,4 +184,39 @@ check(
   )
 );
 await waitFor(`[...document.querySelectorAll('.message.assistant')].at(-1)?.dataset.status === "complete"`, 15000);
+// 覆盖写：原有的件只算真改的行，点开见红绿；这一答新建又重写的件只增不删，点开只见定稿
+await evalJs(
+  `document.querySelector("#chatInput").value = "覆写"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
+);
+await waitFor(
+  `[...document.querySelectorAll('.message.assistant')].at(-1)?.dataset.status === "complete" && !![...document.querySelectorAll('.message.assistant')].at(-1).querySelector('.change-files')`,
+  15000
+);
+const rows = await evalJs(
+  `[...[...document.querySelectorAll('.message.assistant')].at(-1).querySelectorAll('.change-files > button')].map(b => b.dataset.changePath + " " + b.querySelector('.ins').textContent + " " + b.querySelector('.del').textContent)`
+);
+check(
+  "an overwrite counts only the lines it really changed; a file made here only adds",
+  rows.join("|") === "src/a.js +2 −1|src/c.js +3 −0",
+  JSON.stringify(rows)
+);
+await evalJs(`[...document.querySelectorAll('.message.assistant')].at(-1).querySelector('[data-change-path="src/a.js"]').click(); true`);
+await sleep(150);
+await shot("change-overwrite.png");
+check(
+  "opening the overwritten file shows the removed line in red and the added ones in green",
+  await evalJs(
+    `(v => v.querySelector(".split-diff .d")?.textContent === "  return 2;" && [...v.querySelectorAll(".split-diff .i")].map(s => s.textContent).join("|") === "  return 3;|f();")(document.querySelector("#fileViewer"))`
+  )
+);
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+await evalJs(`[...document.querySelectorAll('.message.assistant')].at(-1).querySelector('[data-change-path="src/c.js"]').click(); true`);
+await sleep(150);
+check(
+  "a file made in this answer opens on its final version only",
+  await evalJs(
+    `(v => !v.querySelector(".diff-del, .split-diff .d") && v.querySelector(".split-diff .i")?.textContent.startsWith("定稿一") && !v.textContent.includes("草稿"))(document.querySelector("#fileViewer"))`
+  )
+);
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
 close();

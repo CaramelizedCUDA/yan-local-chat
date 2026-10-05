@@ -15,9 +15,7 @@
   },
 
   http_request: {
-    description:
-      "向接口发一个 HTTP 请求（GET / POST / PUT / PATCH / DELETE / HEAD），返回状态码、响应头与正文（过长截断）。读网页用 fetch_page；这件用于调 API、看原始响应，本机 127.0.0.1 亦可，别的内网地址不可。",
-    brief: "向接口发 HTTP 请求（调 API、看原始响应），返回状态码、响应头与正文；读网页用 fetch_page。",
+    description: "向接口发 HTTP 请求（调 API、看原始响应），返回状态码、响应头与正文；读网页用 fetch_page。",
     parameters: {
       type: "object",
       properties: {
@@ -30,11 +28,10 @@
     }
   },
 
-  // 计算：在浏览器里的隔离沙箱（沙箱 iframe 里的 Worker）跑，没有网络、文件与页面；直连没桥接时也有
+  // 计算：在浏览器里的隔离沙箱（沙箱 iframe 里的 Worker）跑，没有网络、文件与页面
   run_js: {
     description:
-      "在隔离的 JS 沙箱里跑一段代码：算术统计、单位换算、日期（new Date() 即当前时刻）、正则、JSON 与文本变换、排序去重——心算易错的都交给它。只有标准 JS，无网络、文件与页面。单个表达式直接写；多条语句用 return 交回，console.log 亦一并返回。",
-    brief: "在隔离的 JS 沙箱里跑一段代码（算术、日期、正则、JSON 变换），返回 return 的值与 console 输出；心算易错的交给它。",
+      "在隔离的 JS 沙箱里跑一段代码（算术统计、日期、正则、JSON 与文本变换），返回 return 的值与 console 输出；心算易错的交给它。无网络与文件。",
     parameters: {
       type: "object",
       properties: {
@@ -46,14 +43,13 @@
   },
 
   download_file: {
-    description:
-      "把网上的文件下载到工作目录（图片、PDF、压缩包、数据文件……最大 64 MB）。path 相对工作目录；给目录或省略则按网址里的文件名存。本机 127.0.0.1 可，别的内网地址不可。",
-    brief: "把网上的文件下载进卷宗（最大 64 MB）；path 省略则按网址里的文件名存。",
+    description: "把网上的文件下载到工作目录（最大 64 MB）。",
+    brief: "把网上的文件下载进卷宗（最大 64 MB）。",
     parameters: {
       type: "object",
       properties: {
         url: { type: "string" },
-        path: { type: "string", description: "相对工作目录；省略则按网址里的文件名" }
+        path: { type: "string", description: "相对工作目录；给目录或省略则按网址里的文件名存" }
       },
       required: ["url"]
     }
@@ -62,7 +58,7 @@
   // 计划：行里给用户看的任务清单，每次给完整清单；只给主模型
   update_plan: {
     description:
-      "任务不止三五步时先把计划列给用户看，过程中随时更新；每次给完整清单（非增量），不多于十条。状态：pending / doing（同时至多一项）/ done / skipped（text 里说明为何）。一两步的小事不必用。",
+      "任务不止三五步时可把计划列给用户看，随做随更新；每次给完整清单，不多于十条。doing 同时至多一项，skipped 在 text 里说明为何。",
     parameters: {
       type: "object",
       properties: {
@@ -83,16 +79,17 @@
   },
 
   run_command: {
-    description: "在工作目录执行一条非交互式指令（不等输入、不开编辑器或图形界面），返回退出码、stdout 与 stderr。",
+    description: "在工作目录执行一条非交互式指令，返回退出码、stdout 与 stderr。",
     brief: "在卷宗目录执行一条非交互式指令（生成文件、检查本机），返回退出码与输出。",
     parameters: {
       type: "object",
       properties: {
         command: { type: "string", description: "要执行的指令" },
-        timeout: { type: "number", description: "超时秒数，默认 120，不设上限；耗时长的指令记得给足" },
+        timeout: { type: "number", description: "超时秒数，默认 120，不设上限" },
         background: {
           type: "boolean",
-          description: "开发服务器、监听构建这类不会自己结束的放后台：先回几秒输出与编号，之后用 check_command"
+          description:
+            "要跑一阵的（开发服务器、长任务）放后台：先回几秒输出与编号，结束时结果作为一条消息送到。要过一阵再做的事，也可挂一条先等待的后台指令"
         }
       },
       required: ["command"]
@@ -100,7 +97,8 @@
   },
 
   check_command: {
-    description: "看后台指令（run_command 的 background）：取上次之后的新输出，可先等几秒；stop 为 true 则结束它。",
+    description: "看后台指令（run_command 的 background）上次之后的新输出；stop 为 true 则结束它。",
+    brief: "看后台指令的新输出；stop 为 true 则结束它。",
     parameters: {
       type: "object",
       properties: {
@@ -123,8 +121,7 @@
   },
 
   edit_file: {
-    description:
-      "精确替换文件中的一段：old 须与文件逐字一致（含缩进）且只出现一次，从 read_file 的结果复制（去掉行号）。本段对话里没读过的文件不能编辑。",
+    description: "精确替换文件中的一段：old 须与文件逐字一致（含缩进）且只出现一次，从 read_file 的结果复制（去掉行号）。",
     parameters: {
       type: "object",
       properties: {
@@ -152,7 +149,7 @@
   },
 
   list_files: {
-    description: "列文件树：目录以 / 结尾，文件后跟字节数，链接以 @ 结尾（不跟进）。给 pattern 时按 glob 找文件。",
+    description: "列文件树：目录以 / 结尾，文件后跟字节数。给 pattern 时按 glob 找文件。",
     brief: "列卷宗里的文件（目录以 / 结尾，文件后跟字节数）；给 pattern 时按 glob 找。",
     parameters: {
       type: "object",
@@ -170,7 +167,7 @@
       type: "object",
       properties: {
         query: { type: "string", description: "正则（默认不区分大小写）" },
-        path: { type: "string", description: "只在此子目录里找" },
+        path: { type: "string", description: "只在此子目录或文件里找" },
         glob: { type: "string", description: "只找匹配的文件，如 *.py" },
         literal: { type: "boolean", description: "按原文而非正则匹配" },
         limit: { type: "number", description: "最多返回几条，默认 60，最大 200" }
@@ -181,23 +178,43 @@
 
   delegate: {
     description:
-      "差遣一名帮手独立完成一件自成一段的子任务，做完回报。宜于量大、独立、或会读进大量与主线无关内容的活：通读一批文件并归纳、多路检索比对、在不熟的模块里排查、按已定方案实现互不相干的一部分、改后独立复查；一两步的事直接做。帮手的目录与工具同你（请示用户、记与忘除外），但看不到这段对话：task 里写全背景、目标、边界、完成标准与回报内容。活能拆成互不相干的几块时，同一轮差遣多名并行（所改文件互不重叠），差遣前一句话说拆法。",
+      "差遣一名帮手独立完成一件自成一段的子任务，做完回报。宜于量大、独立、或会读进大量与主线无关内容的活（通读归纳、多路检索比对、排查不熟的模块、按已定方案实现一部分、改后复查）；一两步的事直接做。帮手的目录与工具同你（请示用户、记与忘除外），但看不到这段对话，task 须写全。能拆成互不相干的几块时，可同一轮差遣多名并行（所改文件互不重叠）。",
     brief:
-      "把一件自成一段的大活（通读一批资料并归纳、多路检索比对、生成一份复杂文件）交给帮手另起一段对话独立做完后回报。帮手看不到这段对话：task 里写全背景、目标、边界与回报内容。一两步的事直接做。",
+      "把一件自成一段的大活（通读一批资料并归纳、多路检索比对、生成一份复杂文件）交给帮手独立做完后回报；一两步的事直接做。帮手看不到这段对话，task 须写全。",
     parameters: {
       type: "object",
       properties: {
         title: { type: "string", description: "四到十个字的任务名，用于显示" },
-        task: { type: "string", description: "给帮手的完整任务说明：背景、要做什么、不该动什么、完成的标准、回报要包含什么" }
+        task: { type: "string", description: "给帮手的完整任务说明：背景、要做什么、不该动什么、完成的标准、回报要包含什么" },
+        effort: {
+          type: "string",
+          enum: ["low", "medium", "high", "max"],
+          description:
+            "帮手的思考强度，按活的难易定：照章办事（通读归纳、批量检索、按已定方案改）取最低档，要权衡取舍的取居中，难查的毛病、方案设计与复查取最高档；省略同你此刻"
+        }
       },
       required: ["title", "task"]
+    }
+  },
+
+  helper: {
+    description:
+      "给帮手递话。正做着的，话在它说到落点时读到（补充、改向）；已收工的即续派，它带着先前的经过接着做，同样回报。stop 叫停正做着的，它已做的随后送到。",
+    parameters: {
+      type: "object",
+      properties: {
+        helper: { type: "string", description: "差遣时起的任务名" },
+        message: { type: "string", description: "要递的话或续派的活" },
+        stop: { type: "boolean", description: "true 即叫停" }
+      },
+      required: ["helper"]
     }
   },
 
   // 请示：下一步取决于用户的选择时弹一张小表单；对谈与执事都提供，在浏览器里完成
   ask_user: {
     description:
-      "拿不准便先弹一张小表单请用户选，再动手——范围、风格、交付形式、方案取舍、缺关键信息、需求有歧义；答案显然者不问。1–8 题（常 1–3），每题 2–4 个短选项，可并存者 multi: true；用户亦可自填。得到答复后照做，不复述。",
+      "拿不准时可弹一张小表单请用户选（范围、风格、方案取舍、缺关键信息、需求有歧义），答案显然的不必问。1–8 题，常 1–3；用户亦可自填。",
     parameters: {
       type: "object",
       properties: {
@@ -226,14 +243,15 @@
   // 录（记忆）：五件都在浏览器里完成，不经桥接；记忆启用时提供
   remember: {
     description:
-      "记一句长期有效的信息进跨对话的记忆（偏好、身份、约定、日后还会用到的结论）：一句话、脱离本次对话也看得懂；临时细节不记；已有相近条目给 replaces 合并。",
+      "记一条长期有效的信息进跨对话的记忆（偏好、身份、约定、日后还会用到的结论）：一条一事、脱离本次对话也看得懂；临时细节不记；已有相近条目给 replaces 合并。",
     parameters: {
       type: "object",
       properties: {
-        text: { type: "string", description: "一句话，不超过 200 字" },
+        category: { type: "string", description: "所属分类，先沿用已有的类，都不合再起新类；名字简短，如「偏好」「言的开发」" },
+        text: { type: "string", description: "条目正文，写全，不超过 2000 字" },
         replaces: { type: "string", description: "要合并更新的已有条目 id（见 recall 的结果）" }
       },
-      required: ["text"]
+      required: ["category", "text"]
     }
   },
 
@@ -243,8 +261,15 @@
   },
 
   recall: {
-    description: "查看记忆：给 query 按关键词筛（空格分隔、须同时命中），不给则返回全部。用户提到此前谈过的事、或问题依赖过往偏好时用。",
-    parameters: { type: "object", properties: { query: { type: "string", description: "关键词，可省略" } } }
+    description:
+      "查看记忆：都不给则列出各类（几条、最近一条的开头）；给 category 列出那一类的全部条目；给 query 跨类按关键词筛（空格分隔、须同时命中）。用户提到此前谈过的事、或问题依赖过往偏好时用。",
+    parameters: {
+      type: "object",
+      properties: {
+        category: { type: "string", description: "分类名，可省略" },
+        query: { type: "string", description: "关键词，可省略" }
+      }
+    }
   },
 
   search_conversations: {
@@ -273,15 +298,15 @@
   },
 
   read_document: {
-    description: "读对话附件或卷宗里的文档，全文或片段。可读文档：{{docs}}。长文档按页码或关键词只取片段。",
+    description:
+      "读对话附件或卷宗里的文档（PDF、Office、文本），全文或片段；长文档按页码或关键词只取片段。{{docs}}卷宗里有什么不清楚时，name 留空即列出。",
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string", description: "文件名，可部分匹配" },
+        name: { type: "string", description: "文件名或卷宗里的路径，可部分匹配；留空即列出可读的文档" },
         page: { type: "integer", description: "只读取该页（PDF / PPTX）" },
         query: { type: "string", description: "只返回包含该关键词的段落" }
-      },
-      required: ["name"]
+      }
     }
   },
 

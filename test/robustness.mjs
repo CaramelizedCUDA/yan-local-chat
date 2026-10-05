@@ -73,11 +73,11 @@ check(
   streamCut.status === "complete" && streamCut.text === "写到一半接着写完。",
   JSON.stringify(streamCut)
 );
-// ---- 开口前上游忙（503）：等一等再试，状态栏说一声第几次重试，第三回接通照常作答
+// ---- 开口前上游忙（503）：等一等再试，输入框上方的工作条说一声第几次重试，第三回接通照常作答
 await evalJs(
   `document.querySelector("#chatInput").value = "FLAKY503 试试"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
-const retryLabel = await waitFor(`/网络不稳 · 第 \\d 次重试/.test(document.querySelector("#connectionText").textContent)`, 5000).then(
+const retryLabel = await waitFor(`/网络不稳 · 第 \\d 次重试/.test(document.querySelector("#helperBar .work-notice")?.textContent || "")`, 5000).then(
   () => true,
   () => false
 );

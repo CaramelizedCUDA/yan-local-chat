@@ -30,7 +30,22 @@ defineTool({
     };
   }
 });
-// 计划卡：一行一项，○ 待做、▶ 正在做（朱色呼吸点）、✓ 做完、– 不做了；标题行是正在做的那一项或「n/m」
+// 计划卡：一行一项，记号是笔意（与 03-brush.js 的图标同一支笔，不用 ✓ ● ○ 字形）——做完一笔勾、正在做一粒朱点（呼吸）、
+// 未做一粒淡墨点、不做了一短横。题头是正在做的那一项或「全部完成」，右侧一排同样的小记号代替「n/m」：
+// 旧的几张只留这一行（见 markStalePlans），行迹里只有计划长这样，一扫就认得（见 设计稿/40–42）
+/** @param {string} status */
+function planMarkHtml(status) {
+  const kind = PLAN_STATUSES.has(status) ? status : "pending",
+    ink =
+      kind === "done"
+        ? brushStroke([1.4, 6, 2.9, 7.6, 4.3, 9.3, 6.8, 5, 10.8, 1.4], 1.6, { tail: 0, head: 0.85, tone: "ink2" })
+        : kind === "doing"
+          ? brushDot(6, 5.6, 2.2, "zhu")
+          : kind === "skipped"
+            ? brushStroke([3.2, 5.8, 6, 5.4, 8.8, 5.7], 1.3, { tone: "ink2", tail: 0.5 })
+            : brushDot(6, 5.6, 1.4, "ink2");
+  return `<svg class="brush plan-svg" data-plan="${kind}" viewBox="0 0 12 11" aria-hidden="true">${ink}</svg>`;
+}
 /** @param {Step} step */
 function planStepHtml(step) {
   const status = step.status || "done",
@@ -39,9 +54,20 @@ function planStepHtml(step) {
   const rows = items
     .map(
       item =>
-        `<li class="plan-item" data-plan="${escapeHtml(item.status)}"><span class="plan-mark" aria-hidden="true">${{ done: "✓", doing: "", skipped: "–" }[item.status] ?? "○"}</span><span class="plan-text">${escapeHtml(item.text)}</span></li>`
+        `<li class="plan-item" data-plan="${escapeHtml(item.status)}"><span class="plan-mark">${planMarkHtml(item.status)}</span><span class="plan-text">${escapeHtml(item.text)}</span></li>`
     )
     .join("");
-  const meta = status === "error" ? escapeHtml(step.result || "失败") : `${done}/${items.length}`;
-  return `<div class="tool-step tool-step-plan" data-tool="update_plan" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"><span class="tool-label">计划</span><span class="tool-title" title="${escapeHtml(step.title || "")}">${escapeHtml(step.title || "")}</span><span class="tool-meta">${meta}</span>${stepStateHtml(status)}</div>${items.length ? `<ol class="plan-list">${rows}</ol>` : ""}</div>`;
+  const meta =
+    status === "error"
+      ? escapeHtml(step.result || "失败")
+      : `<span class="plan-row" role="img" aria-label="${done}/${items.length}">${items.map(item => planMarkHtml(item.status)).join("")}</span>`;
+  // 做完不再挂 ✓：那一排记号已说了进度
+  return `<div class="tool-step tool-step-plan" data-tool="update_plan" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"><span class="tool-label">计划</span><span class="tool-title" title="${escapeHtml(step.title || "")}">${escapeHtml(step.title || "")}</span><span class="tool-meta">${meta}</span>${status === "done" ? "" : stepStateHtml(status)}</div>${items.length ? `<ol class="plan-list">${rows}</ol>` : ""}</div>`;
+}
+// 一条行迹里只有最新那张计划摊开整单，更早的只留题头一行（一答里改四回计划，就是四张一模一样的清单）。
+// 计划散在各组里，不是兄弟节点，CSS 认不出哪张最新；每回画行迹时点一遍，步骤重画了也随之补上
+/** @param {Element} root */
+function markStalePlans(root) {
+  const plans = root.querySelectorAll(".tool-step-plan");
+  plans.forEach((plan, i) => plan.classList.toggle("plan-old", i < plans.length - 1));
 }

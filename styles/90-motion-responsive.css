@@ -154,7 +154,7 @@ html.theme-fade * {
   display: grid;
   place-items: center;
   border: 1px solid var(--accent);
-  border-radius: 2.5px;
+  border-radius: var(--radius-s);
   color: var(--accent);
   font: 500 9px/1 var(--title);
   letter-spacing: 0;
@@ -171,7 +171,7 @@ html.theme-fade * {
   position: absolute;
   inset: -1px;
   border: 1px solid var(--accent);
-  border-radius: 3.5px;
+  border-radius: var(--radius-s);
   pointer-events: none;
 }
 .message[data-status="streaming"] .meta-seal:after {
@@ -304,14 +304,17 @@ button:focus:not(:focus-visible) {
   margin-top: 4px;
   padding-top: 9px;
   border-top: 1px solid var(--line);
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 var(--radius-m) var(--radius-m);
   color: var(--ink-3);
   font-size: 12px;
 }
 .model-manage:hover {
   color: var(--ink);
 }
-/* 右侧的问题导航条：一问一道短横，当前一问加长转印色；悬停整条时露出各问的首句，点一下回到那一问 */
+/* 右侧的问题导航条：一问一道短横，当前一问加长转印色；悬停整条时露出各问的首句，点一下回到那一问。
+   首句浮在短横左边、不占位：早先它透明着仍占 150px，整条的感应区往左撑出一大截，读正文时手一过就触发。
+   所以平时只有短横这一列感应；指针已在条上、首句浮出之后，首句才接得住点按（读正文时手一过仍不触发）。
+   一问的感应是一整行、上下相接（间距算进行里）：短横只有一两像素高，早先行间留空，点得准才回得去 */
 .outline {
   position: absolute;
   right: 20px;
@@ -320,20 +323,25 @@ button:focus:not(:focus-visible) {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 7px;
   max-height: 72vh;
   padding: 8px 0;
   transform: translateY(-50%);
 }
-.outline.dense {
-  gap: 3px;
+/* 翻到卷宗、分组页时对话那一栏收起，属于它的导航条与滚动把手一并不露（与书眉同一条规矩），不靠切页时记得去藏 */
+.main:has(#chat.hidden) :is(.outline, .chat-scroll-grabber) {
+  display: none;
 }
 .outline-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 1px 0;
+  justify-content: flex-end;
+  width: 26px;
+  padding: 6px 0;
   color: var(--ink-3);
+}
+.outline.dense .outline-item {
+  padding: 2.5px 0;
 }
 .outline-tick {
   width: 12px;
@@ -353,9 +361,14 @@ button:focus:not(:focus-visible) {
   background: var(--accent);
 }
 .outline-label {
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  display: flex;
+  align-items: center;
+  max-width: 158px;
+  padding-right: 8px; /* 首句与它那一行同高、右边 8px 也算它的：从首句挪到短横、挪到邻行，中途不落空，也不压到邻行 */
   white-space: nowrap;
   opacity: 0;
   transform: translateX(6px);
@@ -371,30 +384,47 @@ button:focus:not(:focus-visible) {
   opacity: 1;
   transform: none;
 }
-.outline-item.active .outline-label {
+.outline:hover .outline-label {
+  pointer-events: auto;
+}
+.outline-label > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.outline-item.active .outline-label,
+.outline-item:hover .outline-label {
   color: var(--ink);
 }
 .outline.dense .outline-label {
   font-size: 10px;
 }
+/* 「回到最新」：一枚圆钮，只一枚 ↓（四字收进 title），顶上一弧朱。
+   落选的：方角纸签（与「引用 | 旁注」同式，用户嫌不如圆的好看，2026-10-01）；白底胶囊（99px 圆角，被嫌脱节）。见 设计稿/26 二 */
 .jump-bottom {
   position: absolute;
   left: 50%;
   bottom: calc(var(--composer-h, 145px) + 14px);
   z-index: 7;
   transform: translateX(-50%);
-  padding: 6px 13px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 99px;
+  border-top-color: var(--accent);
+  border-radius: 50%;
   background: var(--paper);
   color: var(--ink-2);
-  font-size: 11.5px;
-  box-shadow: 0 6px 22px rgba(61, 49, 32, 0.12);
+  font-size: 14px;
+  line-height: 1;
+  box-shadow: 0 3px 10px rgba(61, 49, 32, 0.1);
   animation: rise 0.2s ease-out;
 }
 .jump-bottom:hover {
-  color: var(--ink);
-  background: var(--paper-2);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .sidebar-scrim {
   position: fixed;
@@ -510,14 +540,6 @@ button:focus:not(:focus-visible) {
   .chat-scroll-grabber {
     display: none;
   }
-  /* 窄窗里居中的快捷键提示会与右下角的上下文计数撞在一起；窄了就只留计数 */
-  .hint {
-    display: none;
-  }
-  /* 提示藏了，底栏就没了高度，靠它定位的计数会掉到窗口外半截；给它留出一行 */
-  .composer-foot:has(.context-gauge:not(.hidden)) {
-    height: 20px;
-  }
   .outline {
     display: none;
   }
@@ -565,9 +587,6 @@ button:focus:not(:focus-visible) {
   .library-page {
     padding: 26px 16px 50px;
   }
-  .library-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  }
   .modal {
     padding: 0;
   }
@@ -595,19 +614,6 @@ button:focus:not(:focus-visible) {
   }
   .profile-full {
     grid-column: auto;
-  }
-  .connection span:last-child {
-    display: none;
-  }
-  .quota {
-    gap: 5px;
-    padding: 4px;
-  }
-  .quota-label {
-    display: none;
-  }
-  .ink-gauge {
-    width: 48px;
   }
   .user-bubble,
   .message-editor {

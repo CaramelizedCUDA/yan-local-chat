@@ -75,7 +75,7 @@
   z-index: 1;
   padding: 2px 4px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: color-mix(in srgb, var(--paper) 90%, transparent);
   opacity: 0;
   transition: opacity 0.18s ease;
@@ -91,9 +91,29 @@
   display: flex;
   gap: 2px;
 }
-/* 出错、看源码、全屏时工具条与标签常显，回到有框的样子 */
+/* 工具条上是笔意小画：只用墨、随按钮字色，与回复下的复制、重答同一套 */
+.html-app .code-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+}
+.html-app .code-icon .brush {
+  width: 15px;
+  height: 15px;
+}
+.html-app .code-icon .brush .ink {
+  fill: currentColor;
+}
+.html-app .code-icon .brush .ink2 {
+  fill: color-mix(in srgb, currentColor 75%, transparent);
+}
+.html-app .code-icon .brush .wash {
+  fill: color-mix(in srgb, currentColor 14%, transparent);
+}
+/* 出错、全屏时工具条与标签常显，回到有框的样子 */
 .html-app-error .code-head,
-.html-app:has(.html-app-source:not(.hidden)) .code-head,
 .work-expanded.html-app .code-head {
   position: static;
   opacity: 1;
@@ -102,7 +122,6 @@
   background: var(--paper-2);
 }
 .html-app-error .code-head .code-lang,
-.html-app:has(.html-app-source:not(.hidden)) .code-head .code-lang,
 .work-expanded.html-app .code-head .code-lang {
   display: inline;
 }
@@ -132,21 +151,13 @@
 :root[data-theme="dark"] .html-app-stage iframe {
   color-scheme: dark;
 }
+/* 源码只是存着，供复制、下载与重来时读，不显示 */
 .html-app-source {
-  max-height: 520px;
-  margin: 0;
-  padding: 14px 16px;
-  overflow: auto;
-  background: var(--paper-2);
-  font:
-    85%/1.65 ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    monospace;
+  display: none;
 }
 .html-app-error {
   border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--line));
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   overflow: hidden;
 }
 .work-expanded {
@@ -156,7 +167,7 @@
   display: flex !important;
   flex-direction: column !important;
   margin: 0 !important;
-  border-radius: 14px !important;
+  border-radius: var(--radius-l) !important;
   background: var(--paper) !important;
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.35) !important;
 }
@@ -164,10 +175,6 @@
   flex: 1;
   height: auto !important;
   min-height: 0;
-}
-.work-expanded .html-app-source {
-  flex: 1;
-  max-height: none;
 }
 .resume-note {
   margin-top: 12px;
@@ -231,7 +238,7 @@
   gap: 9px;
   padding: 9px 10px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   background: var(--paper-2);
   color: inherit !important;
   text-decoration: none !important;
@@ -326,7 +333,7 @@ button.source-local {
 }
 .image-viewer-actions button {
   padding: 6px 9px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font-size: 11px;
 }
@@ -354,7 +361,7 @@ button.source-local {
   max-width: 100%;
   max-height: calc(100dvh - 106px);
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   box-shadow: 0 16px 55px rgba(35, 30, 22, 0.18);
 }
 .image-viewer-stage.actual {
@@ -405,7 +412,7 @@ button.source-local {
 }
 .file-viewer-actions button {
   padding: 6px 11px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 11.5px var(--title);
   letter-spacing: 0.08em;
@@ -433,14 +440,14 @@ button.source-local {
   max-width: 100%;
   max-height: calc(100dvh - 110px);
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   box-shadow: 0 16px 55px rgba(35, 30, 22, 0.18);
 }
 .file-viewer-frame {
   width: min(100%, 1000px);
   height: calc(100dvh - 110px);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: var(--paper);
 }
 /* 音视频：视频与图同样居中托一层影；音频只是一条播放器，放在纸面正中 */
@@ -453,7 +460,7 @@ button.source-local {
 .file-viewer-media video {
   max-width: 100%;
   max-height: calc(100dvh - 110px);
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   background: #000;
   box-shadow: 0 16px 55px rgba(35, 30, 22, 0.18);
 }
@@ -466,15 +473,12 @@ button.source-local {
   height: fit-content;
   padding: 26px 30px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-l);
   background: var(--paper);
   color: var(--ink);
   font-size: 14px;
   line-height: 1.85;
   box-shadow: 0 10px 40px rgba(35, 30, 22, 0.08);
-}
-.file-viewer-extracted p {
-  margin: 0 0 0.9em;
 }
 .file-viewer-code {
   margin: 0;
@@ -500,19 +504,108 @@ button.source-local {
 }
 .file-viewer-table th,
 .file-viewer-table td {
-  padding: 5px 10px;
-  border: 1px solid var(--line);
+  padding: 5px 16px 5px 2px;
   text-align: left;
   vertical-align: top;
 }
-.file-viewer-table th {
-  background: var(--paper-2);
-  font-weight: 600;
+/* 一件文件在这一答里的改动：各步一段红绿，前面一行小注说是哪一步 */
+.change-diff .file-viewer-note:first-child {
+  margin-top: 0;
+}
+.change-diff .tool-diff {
+  margin: 6px 0 4px;
+}
+.change-diff .tool-output {
+  max-height: none;
+}
+/* 一件文件的改动是并排的两栏：纸面放宽、留白收窄，两边各有一行代码的地方 */
+.file-viewer-text.change-diff {
+  width: min(100%, 1560px);
+  padding: 18px 22px;
 }
 .file-viewer-note {
   margin: 12px 0 0;
   color: var(--ink-3);
   font-size: 11px;
+}
+/* 文档按结构抽出后（见 13-files/30-extract.js 的 docxMarkdown 等）：一行小注在前，「以本机程序打开」看原样 */
+.file-viewer-text > .file-viewer-note:first-child,
+.file-viewer-slides > .file-viewer-note:first-child {
+  margin: 0 0 14px;
+}
+.viewer-open-link {
+  padding: 0;
+  color: var(--ink-3);
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.viewer-open-link:hover {
+  color: var(--accent);
+}
+.file-viewer-empty .outline-btn + .outline-btn {
+  margin-left: 8px;
+}
+/* 表格文件：纸放宽，一张表一页，表名作页签（字加一道朱线，同卷宗的分类）；表宽了横着滚 */
+.file-viewer-wide {
+  width: min(100%, 1200px);
+}
+.viewer-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 12px;
+}
+.viewer-tabs button {
+  padding: 2px 0;
+  color: var(--ink-3);
+  font: 12.5px var(--title);
+}
+.viewer-tabs button:hover,
+.viewer-tabs button.active {
+  color: var(--ink);
+}
+.viewer-tabs button.active {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.viewer-sheet {
+  overflow-x: auto;
+  font-size: 12.5px;
+}
+.viewer-sheet table {
+  margin: 0;
+  white-space: nowrap;
+}
+/* 长的格子（商品名、备注）折行，不把后面的列挤出屏外 */
+.viewer-sheet td {
+  max-width: 22em;
+  white-space: normal;
+}
+/* 演示文件：一页一张 16:9 的卡，两张一排 */
+.file-viewer-slides {
+  width: min(100%, 980px);
+  align-self: flex-start;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 14px;
+}
+.file-viewer-slides > .file-viewer-note {
+  grid-column: 1 / -1;
+}
+.viewer-slide {
+  aspect-ratio: 16 / 9;
+  overflow: auto;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--paper);
+  box-shadow: 0 6px 22px rgba(35, 30, 22, 0.06);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.viewer-slide h2 {
+  margin: 0 0 8px;
+  font: 600 14px var(--title);
 }
 .file-viewer-empty {
   margin: auto;

@@ -6,7 +6,7 @@
 //   close()        主动收掉
 // stdio：本机起一个进程，逐行一条 JSON；http：可流式的 HTTP（每次 POST，回的是 JSON 或一段事件流）；sse：旧式 HTTP+SSE（先 GET 一条事件流拿到投递地址）
 "use strict";
-const { spawn, execFileSync } = require("node:child_process");
+const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -85,8 +85,18 @@ class StdioTransport {
     // 服务可能又起了子进程：Windows 上连同整棵进程树一起结束
     if (process.platform === "win32") {
       try {
-        execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
-      } catch {}
+        const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true
+        });
+        killer.on("error", () => child.kill());
+        killer.on("close", code => {
+          if (code !== 0 && child.exitCode === null) child.kill();
+        });
+        killer.unref();
+      } catch {
+        child.kill();
+      }
     } else child.kill();
   }
 }
@@ -158,6 +168,8 @@ class HttpTransport {
   async send(message) {
     const abort = new AbortController();
     this.aborts.add(abort);
+    // 回复走事件流时 send 先返回、流还在读：这次请求的掐断开关要留到流读完，close() 才掐得到它
+    let streaming = false;
     try {
       const response = await fetch(this.url, {
         method: "POST",
@@ -175,14 +187,21 @@ class HttpTransport {
       if (!response.ok) throw Object.assign(await httpError(response), { status: response.status });
       if (response.status === 202 || !response.body) return;
       const type = response.headers.get("content-type") || "";
-      if (type.includes("text/event-stream"))
+      if (type.includes("text/event-stream")) {
         // 回复在事件流里，读完为止；不等它读完，send 先返回，别的请求照常发
+        streaming = true;
         void readEvents(response, (event, data) => {
           if (event === "message") this.deliver(data);
-        }).catch(() => {});
-      else this.deliver(await response.text());
+        })
+          .catch(error => {
+            // 自己 close() 掐的不算；流半路断了，告诉等这条回复的那一问，别让它干等到超时（已经回过的，上层认不出这个 id，自然不理）
+            if (!abort.signal.aborted && message.id !== undefined)
+              this.onmessage({ jsonrpc: "2.0", id: message.id, error: { message: `事件流中断：${error?.message || error}` } });
+          })
+          .finally(() => this.aborts.delete(abort));
+      } else this.deliver(await response.text());
     } finally {
-      this.aborts.delete(abort);
+      if (!streaming) this.aborts.delete(abort);
     }
   }
   deliver(text) {

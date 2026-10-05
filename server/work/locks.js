@@ -9,9 +9,28 @@ class RwLock {
     this.writer = false;
     this.queue = [];
   }
-  acquire(exclusive) {
-    return new Promise(resolve => {
-      this.queue.push({ exclusive, resolve });
+  // signal：请求那头停了（页面点停止、断线）——还在排队就出队，排到时已停就随手还锁；两种都以「已停止」落空，不再去动文件
+  acquire(exclusive, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) return reject(stopped());
+      const onAbort = () => {
+        const at = this.queue.indexOf(entry);
+        if (at < 0) return;
+        this.queue.splice(at, 1);
+        reject(stopped());
+        this.pump();
+      };
+      const entry = {
+        exclusive,
+        resolve: release => {
+          signal?.removeEventListener("abort", onAbort);
+          if (!signal?.aborted) return resolve(release);
+          release();
+          reject(stopped());
+        }
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.queue.push(entry);
       this.pump();
     });
   }
@@ -33,6 +52,7 @@ class RwLock {
     }
   }
 }
+const stopped = () => Object.assign(Error("已停止"), { stopped: true });
 module.exports = function createLocks() {
   const dirLocks = new Map(),
     pathLocks = new Map();
@@ -48,10 +68,18 @@ module.exports = function createLocks() {
     return lock;
   }
   // 写一个文件：目录共享锁 + 该路径独占锁；返回一次性的释放函数
-  async function lockFile(workdir, file) {
-    const releaseDir = await lockOf(dirLocks, lockKey(workdir)).acquire(false);
-    const key = lockKey(file),
-      releasePath = await lockOf(pathLocks, key).acquire(true);
+  async function lockFile(workdir, file, signal) {
+    const releaseDir = await lockOf(dirLocks, lockKey(workdir)).acquire(false, signal);
+    const key = lockKey(file);
+    let releasePath;
+    try {
+      releasePath = await lockOf(pathLocks, key).acquire(true, signal);
+    } catch (error) {
+      releaseDir();
+      const lock = pathLocks.get(key);
+      if (lock && !lock.writer && !lock.readers && !lock.queue.length) pathLocks.delete(key);
+      throw error;
+    }
     return () => {
       releasePath();
       releaseDir();
@@ -59,8 +87,8 @@ module.exports = function createLocks() {
       if (lock && !lock.writer && !lock.readers && !lock.queue.length) pathLocks.delete(key);
     };
   }
-  function lockWorkdir(workdir) {
-    return lockOf(dirLocks, lockKey(workdir)).acquire(true);
+  function lockWorkdir(workdir, signal) {
+    return lockOf(dirLocks, lockKey(workdir)).acquire(true, signal);
   }
   return { lockFile, lockWorkdir };
 };

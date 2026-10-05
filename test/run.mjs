@@ -34,18 +34,19 @@ if (!browser) {
 // 语法先过一遍
 const jsFiles = [
   "server.js",
-  "support.js",
   "theme-boot.js",
   "preview-runtime.js",
   "build.js",
   ...readdirSync(path.join(ROOT, "prompts"))
     .filter(f => f.endsWith(".js"))
     .map(f => `prompts/${f}`),
+  // 源码逐个查、连同子目录（src/15-tools、server/work……）：上面的 support.js 是提交里的产物，未必跟得上源码
   ...["src", "server"].flatMap(dir =>
     existsSync(path.join(ROOT, dir))
-      ? readdirSync(path.join(ROOT, dir))
+      ? readdirSync(path.join(ROOT, dir), { recursive: true })
+          .map(String)
           .filter(f => f.endsWith(".js"))
-          .map(f => `${dir}/${f}`)
+          .map(f => `${dir}/${f.split(path.sep).join("/")}`)
       : []
   )
 ].filter(f => existsSync(path.join(ROOT, f)));
@@ -122,8 +123,10 @@ const runSpec = (file, env = {}) =>
         child.kill();
       } catch {}
     }, 180000);
-    child.on("close", code => {
+    child.on("close", (exit, signal) => {
       clearTimeout(timer);
+      // 超时被杀的退出码是 null、只有 signal：照样算没跑完
+      const code = exit ?? signal;
       const lines = out.split(/\r?\n/),
         p = lines.filter(l => l.startsWith("PASS")).length,
         f = lines.filter(l => l.startsWith("FAIL")).length;
@@ -172,7 +175,16 @@ try {
     // 存储根指到临时目录，别把测试的对话、卷宗与配置写进用户的 ~/.yan
     start(process.execPath, ["server.js"], {
       cwd: ROOT,
-      env: { ...process.env, YAN_PORT: String(BRIDGE_PORT), YAN_HOME: path.join(TMP, ".yan") }
+      env: {
+        ...process.env,
+        YAN_PORT: String(BRIDGE_PORT),
+        YAN_HOME: path.join(TMP, ".yan"),
+        // ChatGPT 订阅的授权端与接口指到假服务（见 fake-llm.mjs）
+        YAN_CHATGPT_AUTH: "http://127.0.0.1:8798/chatgpt-auth",
+        // 游目「用系统浏览器打开」：测试里不真去开系统浏览器
+        YAN_NO_EXTERNAL: "1",
+        YAN_CHATGPT_API: "http://127.0.0.1:8798/chatgpt/v1"
+      }
     });
     start(process.execPath, [path.join(HERE, "fake-llm.mjs")], { cwd: ROOT });
     await waitPort(BRIDGE_PORT);
@@ -186,7 +198,11 @@ try {
       "--no-sandbox",
       "--no-first-run",
       "--no-default-browser-check",
+      // Edge 起来后会为兼容层自己重启一回：重启出的进程不再是这里的子进程，收尾的 taskkill /T 够不着，占着调试口留到下一回（playwright 也带这一项）
+      "--edge-skip-compat-layer-relaunch",
       `--remote-debugging-port=${DEBUG_PORT}`,
+      // 看台（test/stage.mjs）从言的页面直连这个调试口，得放行言的来源
+      `--remote-allow-origins=http://127.0.0.1:${BRIDGE_PORT}`,
       `--user-data-dir=${profile}`,
       "about:blank"
     ]);

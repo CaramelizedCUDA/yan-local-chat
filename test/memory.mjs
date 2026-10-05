@@ -55,7 +55,10 @@ check(
   mem.items.length === 1 && mem.items[0].text === "用户偏好 PowerShell 而非 bash，且要求中文交流" && !!mem.items[0].source?.conversationId,
   JSON.stringify(mem.items)
 );
-check("recall returns the merged item", /▸ \[m[a-z0-9]+\] \d{4}-\d{2}-\d{2}｜用户偏好 PowerShell/.test(text), text);
+check("recall returns the merged item with its category", /▸ \[m[a-z0-9]+\] \d{4}-\d{2}-\d{2}｜偏好｜用户偏好 PowerShell/.test(text), text);
+check("an overlong item is sent back, not cut", text.includes("超过 2000 字") && (await memory()).items.length === 1, text);
+check("recall with no arguments lists the categories", text.includes("▸ 偏好（1 条，最近"), text);
+check("the item is filed under its category", (await memory()).items[0].category === "偏好");
 check(
   "search_conversations finds the old talk, not the current one",
   text.includes("「旧谈一则」共 2 条") && !text.includes("MEMORY go"),
@@ -70,7 +73,7 @@ check(
   text
 );
 const labels = await evalJs(`[...document.querySelectorAll('#messages .tool-step .tool-label')].map(n => n.textContent).join("|")`);
-check("step cards labeled in the house style", labels === "记入|记入|翻记忆|查旧谈|翻旧谈", labels);
+check("step cards labeled in the house style", labels === "记入|记入|翻记忆|查旧谈|翻旧谈|记入|翻记忆", labels);
 check("no approval was asked", await evalJs(`!document.querySelector('#messages .tool-step[data-status="pending"]')`));
 // 出处：翻过的记忆与旧谈列在回复底部，点开各归其处
 const sources = await evalJs(
@@ -118,10 +121,24 @@ await sleep(200);
 check(
   "memory tab renders with seal and count",
   await evalJs(
-    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && h.querySelector(".about-version")?.textContent === "1 / 200 条" && h.querySelectorAll(".memory-item").length === 1)(document.querySelector("#settingsContent"))`
+    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && h.querySelector(".settings-meta")?.textContent === "1 / 324 条 · 1 类" && h.querySelectorAll(".memory-cat[data-memory-cat]").length === 1 && h.querySelector(".memory-cat.active") && h.querySelectorAll(".memory-item").length === 1 && !h.querySelector(".memory-item textarea"))(document.querySelector("#settingsContent"))`
   )
 );
-check("item shows source conversation", await evalJs(`!!document.querySelector('#settingsContent [data-memory-open]')`));
+await evalJs(`document.querySelector('#settingsContent [data-memory-cat="偏好"]').click(); true`);
+await sleep(150);
+check("opening a category lists its items", await evalJs(`document.querySelectorAll("#settingsContent .memory-item").length === 1`));
+// 条目平时一行摘要，点开才摊开全文、露出来源与小画；点「改」才换成输入框
+await evalJs(`document.querySelector("#settingsContent .memory-row").click(); true`);
+await sleep(100);
+check(
+  "an item opens in place and shows its source conversation",
+  await evalJs(
+    `!!document.querySelector('#settingsContent .memory-item.open .memory-body') && !!document.querySelector('#settingsContent [data-memory-open]')`
+  )
+);
+await shot("memory-settings.png");
+await evalJs(`document.querySelector("#settingsContent [data-memory-edit]").click(); true`);
+await sleep(100);
 await evalJs(
   `(a => { a.value = "改过的记忆"; a.dispatchEvent(new Event("input")); })(document.querySelector("#settingsContent .memory-text")); true`
 );
@@ -137,6 +154,49 @@ check("hand-written item added", (await memory()).items.length === 2 && (await m
 await evalJs(`document.querySelector('#settingsContent .memory-item [data-memory-delete]').click(); true`);
 await sleep(200);
 check("delete removes one", (await memory()).items.length === 1);
+// 归入别类：摊开一条，点那枚小画弹出各类，另起一类即就地写名、回车落定
+await evalJs(`document.querySelector("#settingsContent .memory-row").click(); true`);
+await sleep(100);
+await evalJs(`document.querySelector("#settingsContent [data-memory-move]").click(); true`);
+await sleep(150);
+check(
+  "the category menu is the app's own pop, above the settings window",
+  await evalJs(
+    `(p => !!p && getComputedStyle(p).zIndex === "60" && !!p.querySelector('[data-menu="new"]'))(document.querySelector(".chip-pop.floating"))`
+  )
+);
+await evalJs(`document.querySelector('.chip-pop.floating [data-menu="new"]').click(); true`);
+await sleep(100);
+await evalJs(
+  `(i => { i.value = "工作"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })(document.querySelector("#settingsContent input.memory-move")); true`
+);
+await sleep(200);
+check(
+  "an item can be filed under another category; the emptied one goes away",
+  (await memory()).items[0].category === "工作" &&
+    (await evalJs(
+      `[...document.querySelectorAll("#settingsContent .memory-cat span")].map(n => n.textContent).join() === "工作" && document.querySelectorAll("#settingsContent .memory-item").length === 1`
+    ))
+);
+// 另起一类：写名回车即在新类里手记第一条；第一条没写就离开，这一类随之消失
+await evalJs(`document.querySelector("#newMemoryCat").click(); true`);
+await evalJs(
+  `(i => { i.value = "新类"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })(document.querySelector("#settingsContent input.memory-cat-new")); true`
+);
+await sleep(150);
+check(
+  "a new category opens with its first item being written",
+  await evalJs(
+    `document.querySelector("#settingsContent .memory-cat.active span")?.textContent === "新类" && !!document.activeElement?.matches(".memory-text")`
+  )
+);
+await evalJs(`document.activeElement.blur(); true`);
+await sleep(150);
+check(
+  "leaving its first item empty drops the new category",
+  (await memory()).items.length === 1 &&
+    (await evalJs(`![...document.querySelectorAll("#settingsContent .memory-cat span")].some(n => n.textContent === "新类")`))
+);
 await evalJs(`document.querySelector("#closeSettings").click(); true`);
 await sleep(300);
 // 同一轮里重复 recall 不复用缓存
@@ -144,9 +204,10 @@ await sendMain("MEMORY-TWICE", 2);
 const twice = await lastText();
 check(
   "second recall in the same turn sees the new entry",
-  twice.includes("没有相关条目 ▸ 已记入") && /▸ \[m[a-z0-9]+\] \d{4}-\d{2}-\d{2}｜twice 关键词的记忆/.test(twice),
+  twice.includes("没有相关条目 ▸ 已记入") && /▸ \[m[a-z0-9]+\] \d{4}-\d{2}-\d{2}｜杂记｜twice 关键词的记忆/.test(twice),
   twice
 );
+check("the system prompt names the categories", twice.includes("TWICE|cats:yes"), twice);
 check(
   "no memory step was served from cache",
   await evalJs(

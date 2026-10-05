@@ -3,7 +3,6 @@ defineTool({
   name: "search_web",
   group: "web",
   label: "检索",
-  offer: ctx => ctx.bridge,
   lookup: true,
   parallel: true,
   cache: args => ({ ...args, query: args.query.trim().replace(/\s+/g, " ").toLowerCase() }),
@@ -33,7 +32,6 @@ defineTool({
   name: "fetch_page",
   group: "web",
   label: "翻阅网页",
-  offer: ctx => ctx.bridge,
   lookup: true,
   parallel: true,
   // 同一页的不同锚点是同一页
@@ -54,7 +52,6 @@ defineTool({
   name: "http_request",
   group: "web",
   label: "调接口",
-  offer: ctx => ctx.bridge,
   sideEffect: true,
   cache: args => (/^\s*(GET|HEAD)?\s*$/i.test(args.method || "") ? args : null),
   async run(step, args, { signal }) {

@@ -26,7 +26,7 @@ const seed = {
     mcpServers: {
       local: { command: process.execPath, args: [FAKE] },
       big: { command: process.execPath, args: [FAKE, "--many"] },
-      web: { url: `http://127.0.0.1:${HTTP_PORT}/mcp` }
+      web: { url: `http://127.0.0.1:${HTTP_PORT}/mcp`, note: "USER-NOTE-WEB" }
     }
   },
   profiles: [
@@ -66,6 +66,7 @@ await waitFor(`${lastAssistant}?.dataset.status === "complete"`, 60000);
 
 const reply = await evalJs(`${lastAssistant}.textContent`);
 check("the server's own instructions ride along in the system prompt", /hint:true/.test(reply), reply.slice(0, 300));
+check("the user's note for a server rides along too, under that server", /note:true/.test(reply), reply.slice(0, 300));
 check(
   "small servers are handed over tool by tool; the big one only as a directory",
   /inline:mcp__local__echo,mcp__local__write_note,mcp__web__echo,mcp__web__write_note\|/.test(reply) &&

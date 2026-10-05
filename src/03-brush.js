@@ -7,7 +7,7 @@
  * 一笔。points 是 x0 y0 cx cy x1 y1 [cx cy x2 y2 …]；width 最粗处；tail 收笔处的粗细比（0 出锋，0.6 以上是顿笔收住）
  * @param {number[]} points
  * @param {number} width
- * @param {{ tail?: number, head?: number, tone?: "ink"|"ink2"|"zhu" }} [options]
+ * @param {{ tail?: number, head?: number, tone?: "ink"|"ink2"|"zhu"|"ghost" }} [options]
  */
 function brushStroke(points, width, { tail = 0, head = 0.78, tone = "ink" } = {}) {
   const samples = [];
@@ -141,8 +141,78 @@ const BRUSH_ICONS = {
     brushStroke([8, 9, 11, 8.7, 14, 8.8], 1.1, { tone: "ink2" }) +
     brushStroke([8, 11.3, 10.2, 11.1, 12.4, 11.2], 1.1, { tone: "ink2" }) +
     brushSeal(15, 9.3, 1.9),
-  // 关于：一笔圆相，旁落一方小印
-  about: () => brushArc(9.6, 9.8, 6.4, 200, 505, 2.2, { tail: 0.15 }) + brushSeal(14.8, 14.8, 2.2)
+  // 看台的几件小工具，只用墨、不落朱（朱留给「正在操作」）。后退：一笔自右向左的横，左端一撇一捺作头；前进反之
+  back: () =>
+    brushStroke([16, 10.2, 10, 9.6, 4.2, 10], 1.7, { tail: 0.2 }) +
+    brushStroke([8.6, 5.6, 6, 7.6, 4.2, 10], 1.3, { tail: 0.3 }) +
+    brushStroke([4.4, 10.2, 6.4, 12.4, 8.8, 14.2], 1.2),
+  forward: () =>
+    brushStroke([4, 10, 10, 9.6, 15.8, 10.2], 1.7, { tail: 0.2 }) +
+    brushStroke([11.4, 5.6, 14, 7.6, 15.8, 10], 1.3, { tail: 0.3 }) +
+    brushStroke([15.6, 10.2, 13.6, 12.4, 11.2, 14.2], 1.2),
+  // 下载：一笔竖落下来、两笔收成箭头（与前进、后退同一笔法），底下一道淡墨是落到的那张纸
+  download: () =>
+    brushStroke([10, 2.8, 10.2, 7.6, 10, 12.6], 1.7, { tail: 0.3 }) +
+    brushStroke([6.2, 9, 8.2, 10.8, 10, 12.8], 1.3, { tail: 0.3 }) +
+    brushStroke([13.8, 9, 11.8, 10.8, 10, 12.8], 1.2) +
+    brushStroke([3.6, 16.4, 10, 15.9, 16.4, 16.3], 1.3, { tone: "ink2", tail: 0.4 }),
+  // 重载：一笔圆相留一口，口上一点
+  reload: () => brushArc(10, 10.4, 5.6, -60, 230, 1.6, { tail: 0.15 }) + brushDot(13.4, 4.6, 1.1),
+  // 收藏：一条书签带——顶上一笔横，两侧两笔竖，底下剪成燕尾，带面染一层淡墨（五角星是别家的记号）
+  mark: () =>
+    `<path class="wash" d="M6.2 3.4H13.8V16.4L10 13.4L6.2 16.4Z"/>` +
+    brushStroke([5.6, 3.3, 10, 2.9, 14.4, 3.4], 1.6, { tail: 0.5 }) +
+    brushStroke([6.2, 3.6, 6.4, 10, 6.2, 16.4], 1.3, { tail: 0.4 }) +
+    brushStroke([13.8, 3.6, 13.6, 10, 13.8, 16.4], 1.3, { tail: 0.4 }) +
+    brushStroke([6.4, 16.2, 8.2, 14.6, 10, 13.4], 1, { tail: 0.3 }) +
+    brushStroke([10, 13.4, 11.8, 14.6, 13.6, 16.2], 1, { tail: 0.2 }),
+  // 阔（铺满整页）：一笔斜画两头各出一角，往右上、左下撑开；中间一层淡墨是纸
+  wide: () =>
+    `<rect class="wash" x="6.6" y="6.6" width="6.8" height="6.8"/>` +
+    brushStroke([9, 11, 12, 8, 15.4, 4.6], 1.5, { tail: 0.5 }) +
+    brushStroke([11.2, 4.2, 13.6, 4.1, 16, 4.2], 1.3, { tail: 0.4 }) +
+    brushStroke([15.9, 4.1, 16, 6.5, 15.8, 8.8], 1.3, { tail: 0.3 }) +
+    brushStroke([11, 9, 8, 12, 4.6, 15.4], 1.5, { tail: 0.5 }) +
+    brushStroke([4.1, 11.2, 4, 13.6, 4.2, 16], 1.3, { tail: 0.4 }) +
+    brushStroke([4.2, 15.9, 6.5, 16, 8.8, 15.8], 1.3, { tail: 0.3 }),
+  // 游目：两道远山一淡一浓，天边一点朱日——游目骋怀，极目所见
+  stage: () =>
+    brushStroke([7.4, 11.4, 10.8, 5.4, 14.2, 8.8, 16.2, 7.2, 18.4, 9.8], 1.2, { tone: "ink2", tail: 0.3 }) +
+    brushStroke([1.8, 15.8, 5.2, 8.2, 8.6, 12.6, 11.6, 9.6, 18, 15.4], 1.6, { tail: 0.3 }) +
+    brushStroke([2.4, 17.6, 10, 17.2, 17.6, 17.6], 1, { tone: "ink2", tail: 0.4 }) +
+    brushDot(5.2, 4.6, 1.6, "zhu"),
+  // 添（记忆的「手记一条」）：一笔横、一笔竖，写成一个「十」，竖笔收处一点朱
+  add: () =>
+    brushStroke([3.6, 10.2, 10, 9.6, 16.4, 10], 2, { tail: 0.4 }) +
+    brushStroke([10.2, 3.6, 9.9, 10, 10.1, 16.2], 2, { tail: 0.5 }) +
+    brushDot(14.6, 15, 1.2, "zhu"),
+  // 删：两行淡墨字，一笔浓墨斜着划去
+  strike: () =>
+    brushStroke([3.4, 7.6, 8, 7.3, 12.6, 7.7], 1.3, { tone: "ink2", tail: 0.4 }) +
+    brushStroke([3.4, 12.4, 7, 12.1, 10.6, 12.5], 1.3, { tone: "ink2", tail: 0.4 }) +
+    brushStroke([2.6, 15.6, 10, 10.4, 17.2, 4.4], 2, { tail: 0.2 }),
+  // 行间小画（回复下的复制、旁注，问句上的改，侧栏的查找）：只用墨、不落朱，颜色随按钮走（见 styles/30-chat.css）。
+  // 重答、重试与「重载」同一笔圆相，续写与「前进」同一笔，不另画。见 设计稿/26 一
+  // 复制：两张纸叠着——后一张只露左上两笔淡墨，前一张一片淡染、左与上各一笔
+  copy: () =>
+    brushStroke([3.2, 12.4, 3.3, 7.6, 3.2, 3.2], 1.2, { tone: "ink2", tail: 0.5 }) +
+    brushStroke([3.2, 3.1, 7.6, 2.9, 12, 3.2], 1.2, { tone: "ink2", tail: 0.5 }) +
+    `<rect class="wash" x="7" y="6.6" width="10" height="10.6" rx=".4"/>` +
+    brushStroke([7, 6.6, 7.2, 12, 7, 17.2], 1.6, { tail: 0.5 }) +
+    brushStroke([7, 6.5, 12, 6.2, 17, 6.6], 1.6, { tail: 0.4 }),
+  // 旁注：左边三行字，右边一道夹批的竖笔
+  note: () =>
+    [5, 10, 15].map(y => brushStroke([2.8, y + 0.2, 6.4, y - 0.2, 10.2, y + 0.1], 1.3, { tone: "ink2", tail: 0.3 })).join("") +
+    brushStroke([14.6, 3.6, 14.9, 10, 14.5, 16.6], 2, { tail: 0.2 }),
+  // 改：一支笔落在纸上，笔下一道淡墨（个性化那支笔去了朱）
+  edit: () =>
+    brushStroke([16.4, 3, 12.4, 7.2, 8.4, 11.4], 1.3, { tail: 0.7 }) +
+    brushStroke([8.8, 11, 5.8, 13.4, 3.6, 16.4], 3.2) +
+    brushStroke([8.4, 16.8, 12.6, 16.2, 17, 16.6], 1.2, { tone: "ink2" }),
+  // 查找：一笔圆相作镜，一笔顿下作柄
+  search: () => brushArc(8.4, 8.4, 5, 120, 450, 1.6, { tail: 0.3 }) + brushStroke([12.2, 12.2, 14.2, 14.4, 16.8, 16.8], 2.3, { tail: 0.6 }),
+  // 明暗：一笔圆相，里头半边染墨——昼夜各半；换明暗时这一染转过半圈（见 styles/10-layout.css）
+  theme: () => `<path class="wash theme-wash" d="M10 3.6A6.4 6.4 0 0 1 10 16.4Z"/>` + brushArc(10, 10, 6.4, 200, 520, 1.7, { tail: 0.15 })
 };
 /** @param {string} name @param {string} [className] */
 function brushIcon(name, className = "") {

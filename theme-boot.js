@@ -1,4 +1,13 @@
-// 在样式解析前把主题、印色、字体与阅读宽度写到 <html> 上，避免暗色用户开页先看到一屏米白；正式逻辑仍在 support.js 的 applyAppearance
+// 在样式解析前把主题、印色与字体写到 <html> 上，避免暗色用户开页先看到一屏米白；正式逻辑仍在 support.js 的 applyAppearance
+// 直接双击 index.html（file://）打开的：页面脚本与样式都由桥接现拼，这里拿不到，也接不上桥接（它不认来源为 null 的页面）。
+// 只挂「等候本机桥接」一页，自带几行样式，指明去哪儿打开
+if (location.protocol === "file:") {
+  document.documentElement.dataset.bridge = "waiting";
+  const style = document.createElement("style");
+  style.textContent =
+    'body>:not(#bridgeGate){display:none!important}body{margin:0}#bridgeGate{position:fixed;inset:0;display:grid;place-content:center;justify-items:center;gap:10px;background:#fbfaf6;color:#292724;font-family:"Noto Serif SC","Songti SC","STSong",serif;letter-spacing:.06em;text-align:center}#bridgeGate .seal{display:inline-grid;place-items:center;width:34px;height:34px;border:1px solid #9b5540;color:#9b5540;font-size:18px;transform:rotate(-3deg)}#bridgeGate h1{margin:8px 0 0;font-weight:500;font-size:22px}#bridgeGate p{margin:0;opacity:.6;font-size:13px}@media(prefers-color-scheme:dark){#bridgeGate{background:#201f1c;color:#e6e1d6}}';
+  document.head.append(style);
+}
 (() => {
   try {
     const settings = JSON.parse(localStorage.getItem("yan-chat-v1") || "{}").settings || {},
@@ -10,7 +19,6 @@
     html.dataset.theme = dark ? "dark" : "light";
     html.dataset.inkMotion = motionOff ? "off" : "on";
     if (settings.accent) html.style.setProperty("--accent", settings.accent);
-    if (settings.width) html.style.setProperty("--read", `${Number(settings.width) || 760}px`);
     // 与 support.js 里的 FONT_STACKS 同一份表：--title 是读的字，--body 是界面的字
     const sans = '"Noto Sans SC","Microsoft YaHei UI",system-ui,sans-serif',
       serif = '"Noto Serif SC","Songti SC","STSong",serif',

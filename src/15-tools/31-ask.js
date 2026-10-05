@@ -39,7 +39,7 @@ defineTool({
       .map(q => q.header || q.question)
       .join(" · ")
       .slice(0, 80);
-    const answers = await askApproval(step, ctx, "生成中");
+    const answers = await askApproval(step, ctx);
     if (!Array.isArray(answers)) {
       step.skipped = true;
       return { ok: false, content: "用户没有作答。请按你的最佳判断继续，并在正文里说明你做了什么假设。", display: "未作答" };

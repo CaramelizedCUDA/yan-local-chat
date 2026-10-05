@@ -1,20 +1,51 @@
 // 言 · 本地存储 · 对话：一段一个文件落进对话目录，脏标记、落盘、巡检与读回
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
-// 对话目录可用：桥接在线、桥接报了目录、上次读它没出错
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+const CHAT_DISK_INTERVAL = 1200, // 静止时同一段对话连续落盘的最短间隔（毫秒）
+  CHAT_STREAM_DISK_INTERVAL = 3000; // 流式生成时少改几遍整份 JSON；收尾会恢复上面的短间隔
+// 对话的存取状态：目录是否可用、正在合、指纹与时间戳、待写与在写、没删成的（见 01-store/10-state-db.js 开头的说明）
+let chatsBroken = false,
+  chatsSyncing = false,
+  // 这一回开页后对话已从目录读全过：之后才敢按「没人用」清附件原件
+  chatsLoaded = false,
+  freshBrowser = false,
+  // 开页时浏览器里是一份没带版本标记的记录（更老的版本，或测试灌进来的）：与 配置.json 对齐时以它为准
+  localSeeded = false,
+  chatSaveWarned = false,
+  unloading = false;
+const dirtyChatIds = new Set(),
+  chatHashes = new Map(),
+  chatStamps = new Map(),
+  // 每段对话上次与目录对齐时目录里那份的时间戳：写的时候带去，目录里那份若更新，桥接就不写（见 mergeConversation）
+  chatDiskStamps = new Map(),
+  // 上次读到的目录原文；并发编辑时以它为共同起点逐字段合并
+  chatBases = new Map(),
+  pendingChatWrites = new Map(),
+  activeChatWrites = new Map(),
+  chatWritePromises = new Map(),
+  deletedChatIds = new Set(),
+  chatDiskWrites = new Map(),
+  pendingChatDeletes = new Set();
+let saveTimer = null;
+// 对话目录可用：桥接报了目录、上次读它没出错
 function chatsOnline() {
-  return apiBase !== null && !!chatsDir() && !chatsBroken;
+  return !!chatsDir() && !chatsBroken;
 }
 function chatsDir() {
-  if (apiBase === null) return "";
   return bootstrap.work?.chats || "";
 }
 // 标记这段对话有改动（改名、置顶、后台一答收尾这些不在「当前对话」上的改动要亲手标；当前这段与正在生成的自动算在内）
 function markDirty(id) {
   if (id) dirtyChatIds.add(id);
 }
-// 这边正在写它：作答、拟题、压缩中
+// 这边正在写它：作答、旁注、后台帮手、拟题、压缩中——这些都拿着对象本身在写，同步时不能把它换掉
 function busyHere(id) {
-  return conversationRunning(id) || titlingIds.has(id) || compactingIds.has(id);
+  return (
+    conversationRunning(id) ||
+    crews.has(id) ||
+    titlingIds.has(id) ||
+    compactingIds.has(id) ||
+    [...requestJobs.values()].some(job => job.conversationId === id)
+  );
 }
 function conversationsToSave() {
   const ids = new Set(dirtyChatIds);
@@ -219,9 +250,10 @@ function mergeConversation(c, theirs, base = null) {
       const own = new Map(ours.map(item => [item.id, item])),
         before = new Map((Array.isArray(old) ? old : []).map(item => [item.id, item])),
         seen = new Set(other.map(item => item.id));
+      // 这边独有的接上；起点上就有、这边没动过、对方拿掉了的（重答时收进分支的旧答）是对方删的，不再接回来
       return [
         ...other.map(item => (own.has(item.id) ? merge(own.get(item.id), item, before.get(item.id)) : item)),
-        ...ours.filter(item => !seen.has(item.id))
+        ...ours.filter(item => !seen.has(item.id) && !(before.has(item.id) && same(item, before.get(item.id))))
       ];
     }
     if (ours && other && typeof ours === "object" && typeof other === "object" && !Array.isArray(ours) && !Array.isArray(other)) {
@@ -242,10 +274,18 @@ function mergeConversation(c, theirs, base = null) {
       for (const key of Object.keys(theirs))
         if (!["messages", "forks", "threads", "unread"].includes(key) && same(c[key], base[key])) c[key] = theirs[key];
     for (const key of ["messages", "forks", "threads"]) {
-      const seen = new Set(c[key].map(item => item.id));
-      const added = theirs[key].filter(item => !seen.has(item.id));
-      if (key === "messages") c.messages.push(...added);
-      else c[key].push(...added);
+      const own = new Map(c[key].map(item => [item.id, item]));
+      for (const item of theirs[key]) {
+        const mine = own.get(item.id);
+        if (!mine) c[key].push(item);
+        // 两边都有的旁注：对方在里头新写的往来照常并进来；这边正写着的那条留在原位不动
+        else if (key === "threads" && !requestJobs.has(`side:${item.id}`))
+          c.threads[c.threads.indexOf(mine)] = merge(
+            mine,
+            item,
+            base?.threads?.find(thread => thread.id === item.id)
+          );
+      }
     }
     return c;
   }
@@ -387,7 +427,7 @@ async function hydrateStore() {
 // 与对话目录合一次：开页接上桥接时、桥接中途断了又接上时都来一遍。
 // 目录里没有的推过去，目录里更新的换进来（正在生成的、改了还没存的不换），两边一样的把表里的暂存清掉；先前没删成的补删
 async function syncChatsWithDisk() {
-  if (apiBase === null || !chatsDir() || chatsSyncing) return;
+  if (!chatsDir() || chatsSyncing) return;
   chatsSyncing = true;
   try {
     const data = await bridge("/api/chats/load", { root: chatsDir() }, AbortSignal.timeout(120000));

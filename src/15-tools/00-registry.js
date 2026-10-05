@@ -1,5 +1,6 @@
 // 言 · 工具注册表：一件工具一份登记，写明给谁用、什么性质、怎么执行、行迹怎么画、带给下一问怎么说
-// 本目录各段与 src/ 下其余各段一样，由桥接（或 node build.js）按路径顺序拼进同一个闭包；无需模块系统。
+// 本目录各段与 src/ 下其余各段一样，由桥接按路径顺序拼进同一个闭包；无需模块系统。
+const MIN_TOOL_STATUS_MS = 240;
 // 说给模型听的话（description 与参数）不在登记里，在 prompts/tools.js，按工具名对上；日后外来的工具（接口卡、MCP）自带 schema。
 // 交给模型的工具定义、执行、行迹卡片、摘要、出处都从这张表派生：加一件工具，只需在本目录加一份登记、在 prompts/tools.js 加一段说明
 /**
@@ -7,17 +8,18 @@
  * @property {Conversation} conversation
  * @property {Message} assistant 页面上的那一答（帮手的步骤也画在它的行迹里）
  * @property {AbortSignal} signal
+ * @property {Set<string>} [offered] 这一轮交给模型的工具名：不在其中的一律不执行
  *
  * @typedef {Object} OfferContext 此处给不给某件工具，看这几样
  * @property {Conversation} conversation
  * @property {boolean} work 执事（绑了工作目录，且不是旁注）
- * @property {boolean} bridge 本机桥接在线
  * @property {boolean} files 有可落脚的目录（工作目录或卷宗）
  * @property {Array<Record<string, any>>} docs 可读的文档
  * @property {string[]} offered 登记在前、此处已经给出的工具
  * @property {Preset|null} preset 这段对话用的预设：只给它挑中的几组与几个 MCP 服务
+ * @property {Profile|null} profile 这一答用的模型：参数里有随模型而定的（帮手的思考档位）
  *
- * @typedef {{ ok: boolean, content: string, display: string }} ToolOutcome content 回给模型，display 写在标题行右侧
+ * @typedef {{ ok: boolean, content: string, display: string, background?: boolean, images?: string[] }} ToolOutcome content 回给模型，display 写在标题行右侧；background：活在后台接着做，步骤由它自己收尾；images：交回的图（data: 地址），随工具结果给模型看
  * @typedef {{ url?: string, title?: string, read?: boolean, talk?: string, date?: string, memory?: string }} Source 答末「出处」的一条：网页、旧谈或记忆
  *
  * @typedef {Object} Tool
@@ -29,6 +31,7 @@
  * @property {boolean} [mainOnly] 只给主模型，帮手拿不到
  * @property {boolean} [lookup] 旁注（只查不改）也给
  * @property {(ctx: OfferContext) => Record<string, any>} [vars] 说明里 {{名字}} 的值
+ * @property {(parameters: Record<string, any>, ctx: OfferContext) => Record<string, any>} [params] 参数随处境改写（如枚举只列此模型认的几档）
  * @property {{ description: string, brief?: string, parameters: Record<string, any> }} [schema] 自带的说明与参数；不写则取 prompts/tools.js
  * @property {boolean} [parallel] 可与相邻的同类一起跑
  * @property {boolean} [sideEffect] 有副作用：参数 JSON 残缺就不执行
@@ -36,7 +39,7 @@
  * @property {true | ((args: Record<string, any>) => Record<string, any> | null)} [cache] 同一答里同样的参数直接复用结果；函数给出规范化后的参数，给 null 即这次不复用
  * @property {(step: Step, args: Record<string, any>, ctx: ToolContext) => ToolOutcome | Promise<ToolOutcome>} [run]
  * @property {(step: Step, title: string) => string} [html] 行迹卡片；不写用通用的一种
- * @property {(el: Element, step: Step, prev: { status: string } | undefined) => void} [sync] 卡片就地更新（不写则变了就整张换）
+ * @property {(el: Element, step: Step, prev: { status: string } | undefined) => boolean} [sync] 卡片就地更新，返回真即已画好；不写或返回假则变了就整张换
  * @property {(step: Step) => string} [approval] 请示条的内容
  * @property {true | ((step: Step) => string)} [digest] 带给下一问的一行；true 用通用写法，不写即不带
  * @property {(step: Step) => Source[]} [sources] 答末「出处」里列的条目
@@ -66,17 +69,17 @@ function toolSpec(name) {
 }
 // 此处交给模型的工具。sub：帮手的一套（只给主模型的除外）；lookup：旁注的一套，只查不改。
 // 言（对谈）里带 brief 的用短说明：对谈的每一问都背着这份定义，越轻越好
-/** @param {Conversation} conversation */
-function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
+/** @param {Conversation} conversation @param {{ sub?: boolean, lookup?: boolean, profile?: Profile|null }} [o] */
+function toolDefinitions(conversation, { sub = false, lookup = false, profile = null } = {}) {
   /** @type {OfferContext} */
   const ctx = {
     conversation,
     work: isWork(conversation) && !lookup,
-    bridge: apiBase !== null,
     files: !!workRoot(conversation),
     docs: availableDocuments(conversation),
     offered: [],
-    preset: presetOf(conversation)
+    preset: presetOf(conversation),
+    profile
   };
   const tools = [];
   for (const tool of TOOLS.values()) {
@@ -92,7 +95,10 @@ function toolDefinitions(conversation, { sub = false, lookup = false } = {}) {
       text = !ctx.work && spec.brief ? spec.brief : spec.description,
       // 外来工具自带的说明原样给，不当模板填（里头的 {{…}} 是人家的字）
       description = tool.schema ? text : fillTemplate(text, tool.vars?.(ctx));
-    tools.push({ type: "function", function: { name: tool.name, description, parameters: spec.parameters } });
+    tools.push({
+      type: "function",
+      function: { name: tool.name, description, parameters: tool.params ? tool.params(spec.parameters, ctx) : spec.parameters }
+    });
     ctx.offered.push(tool.name);
   }
   return tools.length ? tools : null;
@@ -113,9 +119,11 @@ function presetAllows(preset, tool) {
 async function runTool(step, ctx) {
   const tool = TOOLS.get(step.name);
   if (!tool?.run) return { ok: false, content: `未知工具 ${step.name}`, display: "未知工具" };
-  // 帮手没拿到的工具，它也可能照着名字调
-  if (step.scope && tool.mainOnly)
-    return { ok: false, content: `${step.name} 只有主模型可用；需要它做的事写进回报里，由主模型决定。`, display: "帮手无权" };
+  // 没交给它的工具，它也可能照着名字调（旁注只查不改、预设只挑了几组、帮手拿不到只给主模型的）：给哪些就只认哪些
+  if (ctx.offered && !ctx.offered.has(step.name))
+    return step.scope && tool.mainOnly
+      ? { ok: false, content: `${step.name} 只有主模型可用；需要它做的事写进回报里，由主模型决定。`, display: "帮手无权" }
+      : { ok: false, content: `此处没有提供 ${step.name}，只能用这一轮给出的工具。`, display: "此处未提供" };
   const parsed = parseToolArguments(step.arguments);
   if (!parsed.ok)
     return {
@@ -174,17 +182,20 @@ function toolPresentation(step) {
     results: step.results ? structuredClone(step.results) : null
   };
 }
-// 把一批工具调用跑完，返回各步回给模型的结果。相邻的可并发的一起跑（读、搜、翻网页、翻记忆彼此无关）；会改状态或要请示的按原顺序逐个来。
+// 把一批工具调用跑完，返回各步回给模型的结果，连同各步交回的图。相邻的可并发的一起跑（读、搜、翻网页、翻记忆彼此无关）；会改状态或要请示的按原顺序逐个来。
 // 主模型、帮手与旁注共用这一段：assistant 是页面上那条消息（帮手的步骤也画在它的行迹里）
 /**
  * @param {Step[]} steps
  * @param {Conversation} conversation
  * @param {Message} assistant
  */
-async function runSteps(steps, conversation, assistant, signal, toolCache) {
+async function runSteps(steps, conversation, assistant, signal, toolCache, offered) {
   const outcomes = new Map(),
-    ctx = { conversation, assistant, signal };
+    images = [],
+    ctx = { conversation, assistant, signal, offered };
   const runOne = async step => {
+    // 一批里前一件跑着时按了停：后面排着的不再动手（写记忆、起请示都算动手）
+    signal.throwIfAborted();
     const started = performance.now(),
       key = toolCacheKey(step),
       cached = key ? toolCache.get(key) : null;
@@ -201,9 +212,11 @@ async function runSteps(steps, conversation, assistant, signal, toolCache) {
     }
     const remaining = MIN_TOOL_STATUS_MS - (performance.now() - started);
     if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
-    step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
+    // 在后台接着做的（差遣）：这一步仍是进行中，做完由它自己收尾；先记一句「后台进行中」，下一问的行迹摘要里模型才知道它还没回来
+    if (!outcome.background) step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
     step.result = outcome.display;
     outcomes.set(step.id, String(outcome.content).slice(0, 60000));
+    if (outcome.images) images.push(...outcome.images);
     refreshSteps(assistant);
     saveStore();
   };
@@ -214,18 +227,27 @@ async function runSteps(steps, conversation, assistant, signal, toolCache) {
     await Promise.all(steps.slice(i, j).map(runOne));
     i = j;
   }
-  return outcomes;
+  return { outcomes, images };
 }
-// 生成结束（停止、出错或中断）时，还在转圈或等待确认的步骤一并收束，不留下永远转圈的卡片
+// 生成结束（停止、出错或中断）时，还在转圈或等待确认的步骤一并收束，不留下永远转圈的卡片。
+// 后台还在做的帮手不归这一答管：它不随这一答收尾，做完自己收这一步（见 90-delegate.js）
 /** @param {Message} assistant */
 function settleSteps(assistant, note) {
-  for (const step of allSteps(assistant))
+  const live = new Set([...crews.values()].flat().map(box => box.step));
+  for (const step of assistant.steps || []) {
+    if (live.has(step)) continue;
+    settleStepList([step, ...(step.sub?.steps || [])], note);
+    if (step.sub?.status === "streaming") step.sub.status = "stopped";
+  }
+}
+/** @param {Step[]} steps */
+function settleStepList(steps, note) {
+  for (const step of steps)
     if (step.status === "running" || step.status === "pending") {
       pendingApprovals.delete(step.id);
       step.status = step.status === "pending" ? "skipped" : "error";
       step.result = note;
     }
-  for (const step of assistant.steps || []) if (step.sub?.status === "streaming") step.sub.status = "stopped";
 }
 // 一答里的全部步骤，含帮手在差遣卡片里跑的那些（只嵌一层：帮手不再差遣）
 /** @param {{ steps?: Step[] }} message 消息或帮手 */

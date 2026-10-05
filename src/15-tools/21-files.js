@@ -1,5 +1,6 @@
 // 言 · 文件：读、写、改、列、搜、下载。绑了目录落在工作目录（执事的六件），没绑落在卷宗（言只带产出所需的读、写、列与指令）。
 // 路径与沙箱在桥接那头管（server/work/）；这里只管呈现与「改之前先读过」这条规矩
+const WRITTEN_KEEP_CHARS = 4000;
 defineTool({
   name: "write_file",
   group: "work",
@@ -12,9 +13,23 @@ defineTool({
   async run(step, args, { conversation, signal }) {
     const data = await bridge("/api/work/write", { ...workScope(conversation), path: args.path, content: args.content }, signal);
     step.title = data.path;
-    markSeen(conversation, data.path, step);
+    step.root = workRoot(conversation);
     step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
-    step.change = { path: data.path, added: data.lines, removed: data.existed ? data.previousLines : 0, created: !data.existed };
+    // 覆盖时的增删由桥接按前后两版逐行比出（旧桥接只给原有行数，退回整删整增）；lines 是写后这件的行数，新建的件按它算净增
+    step.change = {
+      path: data.path,
+      added: data.added ?? data.lines,
+      removed: data.removed ?? (data.existed ? data.previousLines : 0),
+      created: !data.existed,
+      lines: data.lines
+    };
+    // 写下的内容与覆盖掉的原文各留一份给改动清单点开看（见 changeDiffHtml）；太长只留开头，免得对话记录跟着胖
+    const keep = text =>
+      text.length > WRITTEN_KEEP_CHARS
+        ? `${text.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${text.length - WRITTEN_KEEP_CHARS} 字未留存）`
+        : text;
+    step.written = keep(String(args.content));
+    if (data.previous) step.previous = String(data.previous);
     return {
       ok: true,
       content: `已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? "，覆盖了原文件" : ""}）`,
@@ -34,7 +49,7 @@ defineTool({
   digest: true,
   async run(step, args, { conversation, signal }) {
     step.title = args.path;
-    if (!workSeen.get(seenKey(conversation, step))?.has(seenPath(conversation, args.path)))
+    if (!seenBefore(conversation, step, args.path))
       return { ok: false, content: prompt("work.unread", { path: args.path }), display: "需先读取" };
     const data = await bridge(
       "/api/work/edit",
@@ -42,9 +57,10 @@ defineTool({
       signal
     );
     step.title = data.path;
+    step.root = workRoot(conversation);
     step.diff = { old: args.old.slice(0, 1500), new: args.new.slice(0, 1500) };
     const counts = diffCounts(args.old, args.new);
-    step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced };
+    step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced, lines: data.lines };
     return {
       ok: true,
       content: `已修改 ${data.path}：第 ${data.line} 行起替换 ${data.replaced} 处，文件现为 ${data.lines} 行`,
@@ -69,7 +85,7 @@ defineTool({
       signal
     );
     step.title = data.path;
-    markSeen(conversation, data.path, step);
+    step.root = workRoot(conversation);
     const encoding =
       data.encoding === "utf-8"
         ? ""
@@ -134,12 +150,14 @@ defineTool({
     );
     const lines = data.matches.map(match => `${match.file}:${match.line}: ${match.text}`);
     step.output = trimOutput(lines.join("\n"));
-    step.note = lines.length ? "" : "无匹配";
+    // 桥接替模型圆过的（正则写不成，按字面搜了）：说在结果前头
+    step.note = data.note || (lines.length ? "" : "无匹配");
+    const found = lines.length
+      ? `${lines.join("\n")}${data.truncated ? "\n…（结果已截断，请缩小范围或加 glob）" : ""}`
+      : `未找到匹配「${args.query}」的内容（扫描了 ${data.scanned} 个文件）`;
     return {
       ok: true,
-      content: lines.length
-        ? `${lines.join("\n")}${data.truncated ? "\n…（结果已截断，请缩小范围或加 glob）" : ""}`
-        : `未找到匹配「${args.query}」的内容（扫描了 ${data.scanned} 个文件）`,
+      content: data.note ? `（${data.note}）\n${found}` : found,
       display: `${lines.length} 处 · ${data.files} 文件`
     };
   }
@@ -171,25 +189,30 @@ defineTool({
 });
 
 // 本段对话里读过或写过的文件才允许 edit_file：模型必须对着真实内容改，而不是凭记忆猜。
-// 帮手另记一份（按步骤上的 scope 分开）：主模型没亲眼读过帮手改过的文件，要改就得再读一遍，帮手亦然
-const workSeen = new Map();
-// 键里带上目录：对话中途换了目录，之前读过的文件不算数
+// 「读过」不另记一张表，就看这段对话里做完的读、写、改：刷新页面也不丢，与模型自己的历史一致。
+// 帮手各算各的（按步骤上的 scope 分开）：主模型没亲眼读过帮手改过的文件，要改就得再读一遍，帮手亦然；
+// 对话中途换了目录，之前那个目录里读过的不算数（步骤记着它落在哪个目录，早先没记的照算）
+const SEEING_TOOLS = new Set(["read_file", "write_file", "edit_file"]);
 /**
  * @param {Conversation} conversation
- * @param {Step} step
+ * @param {Step} step 正要改的这一步
  */
-function seenKey(conversation, step) {
-  const base = `${conversation.id}@${workRoot(conversation)}`;
-  return step?.scope ? `${base}/${step.scope}` : base;
-}
-/**
- * @param {Conversation} conversation
- * @param {Step} step
- */
-function markSeen(conversation, file, step = null) {
-  const key = seenKey(conversation, step);
-  if (!workSeen.has(key)) workSeen.set(key, new Set());
-  workSeen.get(key).add(seenPath(conversation, file));
+function seenBefore(conversation, step, file) {
+  const root = workRoot(conversation),
+    wanted = seenPath(conversation, file);
+  // 账本每一问都附着全文（见 ledgerNote），主模型不必再读一遍才能改
+  if (!step.scope && ledgers.get(conversation.id) && wanted === seenPath(conversation, LEDGER_PATH)) return true;
+  return conversation.messages.some(message =>
+    allSteps(message).some(
+      seen =>
+        seen !== step &&
+        SEEING_TOOLS.has(seen.name) &&
+        seen.status === "done" &&
+        (seen.scope || "") === (step.scope || "") &&
+        (!seen.root || seen.root === root) &&
+        seenPath(conversation, seen.title) === wanted
+    )
+  );
 }
 // 「读过没有」按同一个文件认：读时写相对路径、改时写完整路径，或 Windows 上大小写不同，都是同一个文件
 /** @param {Conversation} conversation */
@@ -230,17 +253,42 @@ async function ensureWorkReady(conversation) {
     toast("当前模型已关闭本机工具，请在模型高级配置中开启");
     return false;
   }
-  if (apiBase === null && !(await ensureLocalBridge())) {
-    toast("执事需要本机桥接，请先运行 start.cmd");
-    return false;
-  }
   try {
     const prepared = await bridge("/api/work/prepare", { workdir: conversation.workdir }, AbortSignal.timeout(8000));
     if (prepared.created) toast("工作目录不存在，已新建");
     conversation.workdir = prepared.workdir;
   } catch (error) {
-    toast(`工作目录不可用：${String(error.message || error)}`);
+    toast(bridgeTimedOut(error) ? "本机桥接响应超时，消息未发送，文字仍在输入框" : `工作目录不可用：${String(error.message || error)}`);
     return false;
   }
   return true;
+}
+// 账本：跨多答的长活，任务活在目录里、不活在哪一段对话里——目录下 .yan/账本.md 由主模型自己立、自己维护，
+// 只记对这件工程持续有约束的（目标与达标标准、约束与取舍、计划与进展、走不通的路），旧的随手淘汰。
+// 每一答开工时读一回，附在这一问的开头（见 ledgerNote）：压缩了、被回报叫醒另起一答、换一段对话接着做，看到的都是同一份。
+// 附在问上而不进系统提示：账本改了也不冲掉前面的缓存。没有这个文件就什么都不附
+const LEDGER_PATH = ".yan/账本.md",
+  LEDGER_CHARS = 3000, // 过了就请它取舍
+  LEDGER_SHOWN = 12000; // 附上去的至多这么多：手写进来的一大篇不能把每一问都撑胖
+/** @type {Map<string, string>} 最近读到的账本，按对话：每一答开工时读，差遣帮手时再现读一回 */
+const ledgers = new Map();
+/** @param {Conversation} conversation */
+async function loadLedger(conversation, signal) {
+  if (!isWork(conversation)) return void ledgers.delete(conversation.id);
+  const data = await bridge("/api/work/read", { ...workScope(conversation), path: LEDGER_PATH, limit: 2000 }, signal).catch(() => null);
+  const text = String(data?.text || "")
+    .replace(/^ *\d+\| /gm, "")
+    .trim();
+  if (text) ledgers.set(conversation.id, text);
+  else ledgers.delete(conversation.id);
+}
+// 冠在这一问开头的一段；帮手的是只读的一份（账本只由主对话写，星形）
+/** @param {Conversation} conversation @param {"main"|"sub"} role */
+function ledgerNote(conversation, role = "main") {
+  const text = ledgers.get(conversation.id);
+  if (!text) return "";
+  const shown = text.length > LEDGER_SHOWN ? `${text.slice(0, LEDGER_SHOWN)}\n…（其后 ${text.length - LEDGER_SHOWN} 字未附）` : text,
+    full =
+      role === "main" && text.length > LEDGER_CHARS ? `\n${prompt("work.ledgerFull", { chars: text.length, limit: LEDGER_CHARS })}` : "";
+  return `${prompt(role === "main" ? "work.ledgerHead" : "work.ledgerSub", { path: LEDGER_PATH, text: shown })}${full}\n\n`;
 }

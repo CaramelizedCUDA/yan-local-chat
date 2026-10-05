@@ -34,18 +34,53 @@ for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 250));
   }
 }
+// 总线：外站开不了事件流；本机别的端口的页面能开，但借总线转进去的请求照旧按它自己的来源过门禁，碰不到执事接口
+const openBus = (page, origin) =>
+  new Promise(resolve => {
+    const events = [];
+    const request = http.get(`${BASE}/api/bus?page=${page}`, { headers: { Origin: origin } }, response => {
+      let buffer = "";
+      response.setEncoding("utf8");
+      response.on("data", chunk => {
+        buffer += chunk;
+        for (let at; (at = buffer.indexOf("\n\n")) >= 0; buffer = buffer.slice(at + 2)) {
+          const line = buffer.slice(0, at);
+          if (line.startsWith("data: ")) events.push(JSON.parse(line.slice(6)));
+        }
+      });
+      resolve({ status: response.statusCode, events, close: () => request.destroy() });
+    });
+    request.on("error", () => resolve({ status: 0, events: [], close: () => {} }));
+  });
+{
+  const foreign = await openBus("foreign-page-1", "https://evil.example");
+  check("foreign origin cannot open the bus", foreign.status === 403, String(foreign.status));
+  foreign.close();
+  const other = "http://localhost:5173",
+    bus = await openBus("other-port-page", other);
+  check("another local port may open the bus", bus.status === 200, String(bus.status));
+  const sent = await post(
+    "/api/bus/send",
+    { page: "other-port-page", id: "w1", path: "/api/work/prepare", body: JSON.stringify({ workdir: WORK }) },
+    { Origin: other }
+  );
+  await new Promise(r => setTimeout(r, 300));
+  const head = bus.events.find(event => event.id === "w1" && event.t === "head");
+  check(
+    "bus keeps the work gate of the original origin",
+    sent.status === 202 && head?.status === 403,
+    JSON.stringify({ sent: sent.status, head })
+  );
+  const nested = await post("/api/bus/send", { page: "other-port-page", id: "w2", path: "/api/bus/send", body: "{}" }, { Origin: other });
+  check("bus cannot be sent into itself", nested.status === 400, String(nested.status));
+  const unknown = await post("/api/bus/send", { page: "no-such-page-1", id: "w3", path: "/api/bootstrap", body: "{}" });
+  check("sending to a page without a stream is refused", unknown.status === 409, String(unknown.status));
+  bus.close();
+}
 const win = process.platform === "win32",
   workdir = WORK.split("/").join(win ? "\\" : "/");
 // 静态服务只给页面资源：仓库源码、测试与 .git 即使同在服务根目录，也不能被其他本地网页读走。
-for (const publicPath of [
-  "/",
-  "/support.js",
-  "/app.css",
-  "/theme-boot.js",
-  "/preview.html",
-  "/prompts/assistant.js",
-  "/vendor/marked.umd.js"
-]) {
+for (const publicPath of ["/", "/support.js", "/app.css", "/theme-boot.js", "/preview.html", "/vendor/marked.umd.js"]) {
   const response = await fetch(BASE + publicPath, { headers: { Origin: "http://127.0.0.1:9999" } });
   check(`public static asset ${publicPath} is served`, response.status === 200, String(response.status));
   await response.body?.cancel();
@@ -56,6 +91,8 @@ for (const privatePath of [
   "/server/store.js",
   "/test/bridge-security.mjs",
   "/prompts/README.md",
+  // 提示词拼进了 /support.js，不再单独给
+  "/prompts/assistant.js",
   "/.git/config",
   "/package.json",
   "/vendor%5c..%5cserver.js"
@@ -183,6 +220,16 @@ check(
   f.status === 200 && /^text\/plain/.test(f.headers.get("content-type") || "") && f.headers.get("content-security-policy") === "sandbox",
   `${f.status} ${f.headers.get("content-type")}`
 );
+await post("/api/archive/put", {
+  name: "图.svg",
+  data: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4="
+});
+f = await fetch(`${BASE}/api/archive/file?path=${encodeURIComponent("图.svg")}`);
+check(
+  "archive svg is served as an image, still in a sandbox",
+  f.status === 200 && f.headers.get("content-type") === "image/svg+xml" && f.headers.get("content-security-policy") === "sandbox",
+  `${f.status} ${f.headers.get("content-type")}`
+);
 f = await fetch(`${BASE}/api/archive/file?path=../link-outside/secret.txt`);
 check("archive file refuses ..", f.status === 404);
 f = await fetch(`${BASE}/api/archive/file?path=escaped.txt`, { headers: { Origin: "https://evil.example" } });
@@ -197,6 +244,32 @@ r = await post("/api/archive/remove", { path: "../link-outside/secret.txt" });
 check("archive remove refuses ..", r.status === 400 && existsSync(`${OUTSIDE}/secret.txt`), `${r.status} ${r.data?.error}`);
 r = await post("/api/archive/remove", { path: "escaped.txt" });
 check("archive remove deletes inside", r.status === 200 && !existsSync(`${ARCHIVE}/escaped.txt`), `${r.status} ${r.data?.error}`);
+// 夹与件一样挪、改名、删；但根本身不能动，夹不能挪进自己，名字不能带出一段路径
+r = await post("/api/archive/remove", { path: "." });
+check("archive remove refuses the root itself", r.status === 400 && existsSync(ARCHIVE), `${r.status} ${r.data?.error}`);
+r = await post("/api/archive/mkdir", { name: "../跑出去" });
+check("archive mkdir keeps the name to one segment", r.status === 200 && r.data.path === "跑出去" && r.data.dir, JSON.stringify(r.data));
+r = await post("/api/archive/mkdir", { dir: "跑出去", name: "里层" });
+r = await post("/api/archive/move", { path: "跑出去", dir: "跑出去/里层" });
+check("archive move refuses a folder into itself", r.status === 400, `${r.status} ${r.data?.error}`);
+r = await post("/api/archive/move", { path: "跑出去", name: "外层" });
+check("archive rename renames a folder", r.status === 200 && existsSync(`${ARCHIVE}/外层/里层`), `${r.status} ${r.data?.error}`);
+// 以本机程序打开：可执行的一类不开（对它们「打开」就是运行）；不存在的也不开
+await post("/api/archive/put", { name: "run.bat", data: "data:text/plain;base64,ZWNobyBoaQ==" });
+r = await post("/api/archive/open", { path: "run.bat" });
+check(
+  "opening with the local program refuses executables",
+  r.status === 400 && /可执行/.test(r.data?.error),
+  `${r.status} ${r.data?.error}`
+);
+r = await post("/api/archive/open", { path: "没有这件.docx" });
+check("opening with the local program needs the file to exist", r.status === 400, `${r.status} ${r.data?.error}`);
+r = await post("/api/archive/remove", { path: "外层" });
+check(
+  "archive remove deletes a folder with its contents",
+  r.status === 200 && !existsSync(`${ARCHIVE}/外层`),
+  `${r.status} ${r.data?.error}`
+);
 r = await post("/api/archive/list", { root: win ? "C:\\" : "/" });
 check("archive root refuses a whole disk", r.status === 400, `${r.status} ${r.data?.error}`);
 r = await post("/api/archive/list", { root: "relative/dir" });

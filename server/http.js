@@ -2,6 +2,8 @@
 // 纯工具，不持状态；server.js 与 server/ 下各模块直接 require
 "use strict";
 const fs = require("node:fs");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
 
 function sendJson(res, status, data) {
   const body = JSON.stringify(data);
@@ -43,6 +45,16 @@ function errorText(error, limit = 500) {
 }
 // 接口的常见形状：读请求体，办完回 200 与结果；中途抛错就回 400，那句话由 describe 定（各模块的前缀、截断长度不同）。
 // handle(body, req, res) 返回的值即响应；自己写了响应（别的状态码、流）就返回 undefined
+// 对方在响应写出之前走了（页面点停止、断线；走总线时是 BusResponse 被 destroy）：接口据此放弃还没开始的事，如排队等锁
+function requestSignal(res) {
+  const abort = new AbortController();
+  if (res.destroyed && !res.writableEnded) abort.abort();
+  else
+    res.on("close", () => {
+      if (!res.writableEnded) abort.abort();
+    });
+  return abort.signal;
+}
 function jsonRoute(handle, describe = errorText) {
   return async (req, res) => {
     try {
@@ -57,12 +69,30 @@ function jsonRoute(handle, describe = errorText) {
 // 先写临时文件再改名：写到一半断电、进程被杀，正本也不会只剩半截
 function writeAtomic(file, data) {
   const temp = `${file}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`;
-  fs.writeFileSync(temp, data, typeof data === "string" ? "utf8" : undefined);
-  fs.renameSync(temp, file);
+  try {
+    fs.writeFileSync(temp, data, typeof data === "string" ? "utf8" : undefined);
+    // Windows 上目标文件被索引器或杀毒程序短暂打开时，替换可能报 EPERM / EBUSY。
+    // 等几个很短的间隔再试同一份临时文件；永久错误仍原样交给调用方。
+    const wait = new Int32Array(new SharedArrayBuffer(4));
+    for (let attempt = 0; ; attempt++)
+      try {
+        fs.renameSync(temp, file);
+        break;
+      } catch (error) {
+        if (attempt >= 3 || !["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
+        Atomics.wait(wait, 0, 0, 15 * 2 ** attempt);
+      }
+  } catch (error) {
+    try {
+      fs.rmSync(temp, { force: true });
+    } catch {}
+    throw error;
+  }
 }
 
-// 交给页面看的文件（卷宗、附件原件）：类型按扩展名定。网页、SVG、脚本一律当纯文本——文件是模型写的或随手拖进来的，
-// 若以本站源头当网页打开，脚本便能读到页面的 localStorage；再加 CSP: sandbox 兜底
+// 交给页面看的文件（卷宗、附件原件）：类型按扩展名定。网页、脚本一律当纯文本——文件是模型写的或随手拖进来的，
+// 若以本站源头当网页打开，脚本便能读到页面的 localStorage；再加 CSP: sandbox 兜底。
+// SVG 按图送（卷宗的缩略图、预览要画得出来）：放进 <img> 里脚本本就不跑，直接打开时 CSP: sandbox 也不许它跑
 const FILE_MIME = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -93,6 +123,7 @@ const FILE_MIME = {
   aac: "audio/aac",
   flac: "audio/flac",
   weba: "audio/webm",
+  svg: "image/svg+xml",
   mp4: "video/mp4",
   m4v: "video/mp4",
   webm: "video/webm",
@@ -105,7 +136,7 @@ function fileMime(name) {
     .split(".")
     .pop()
     .toLowerCase();
-  if (["html", "htm", "svg", "xml", "js", "mjs", "cjs"].includes(extension)) return "text/plain; charset=utf-8";
+  if (["html", "htm", "xml", "js", "mjs", "cjs"].includes(extension)) return "text/plain; charset=utf-8";
   return FILE_MIME[extension] || "application/octet-stream";
 }
 // 送出一件文件：带 Range（音视频拖进度条只取那一段），?download 时让浏览器另存
@@ -141,4 +172,32 @@ async function sendFile(req, res, file, { name, download = false }) {
   fs.createReadStream(file, { start, end }).pipe(res);
 }
 
-module.exports = { sendJson, readJson, jsonRoute, errorText, writeAtomic, fileMime, sendFile };
+// 交给 Windows 的默认程序打开一件文件（预览认不得、或只抽得出结构时，看原样）。
+// 可执行的一类不开：对它们「打开」就是运行，而文件常是模型写的或随手拖进来的
+const RUNNABLE = new Set([
+  "exe",
+  "com",
+  "bat",
+  "cmd",
+  "msi",
+  "ps1",
+  "vbs",
+  "vbe",
+  "js",
+  "jse",
+  "wsf",
+  "wsh",
+  "hta",
+  "scr",
+  "pif",
+  "lnk",
+  "cpl",
+  "reg",
+  "jar"
+]);
+function openWithSystem(file) {
+  if (RUNNABLE.has(path.extname(file).slice(1).toLowerCase())) throw Error("可执行的文件不在此打开，请到资源管理器里自行处理");
+  if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) throw Error("文件不存在");
+  spawn("explorer.exe", [file], { detached: true, stdio: "ignore" }).unref();
+}
+module.exports = { sendJson, readJson, jsonRoute, requestSignal, errorText, writeAtomic, fileMime, sendFile, openWithSystem };

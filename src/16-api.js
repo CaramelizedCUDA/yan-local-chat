@@ -1,5 +1,5 @@
 // 言 · 接口：用量估算、请求、SSE 读取、错误说明
-// 本文件是 support.js 的一段，由桥接（或 node build.js）按文件名顺序拼进同一个闭包；无需模块系统
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function estimateText(text) {
   const chinese = (text.match(/[㐀-鿿]/g) || []).length;
   return chinese + Math.ceil((text.length - chinese) / 4);
@@ -7,12 +7,19 @@ function estimateText(text) {
 // 上下文过重的门槛：每一答的用量标注超过它就转为印色提醒
 const CONTEXT_HEAVY = 24000;
 const SSE_IDLE_MS = 300000;
+// Anthropic 的 max_tokens 没填时的值：今日的 Claude 都认得下这个数；OpenAI 兼容接口根本不传这个字段
+const DEFAULT_MAX_TOKENS = 32000;
+const REVEAL_RATE = 0.16,
+  FRESH_MS = 640; // 每帧写出积压字数的比例；新字渐显持续时间
 function estimateTokens(messages) {
   let score = 0;
   for (const message of messages) {
     score += 4;
     // 工具调用的参数也随请求送出（写文件时整份内容都在这里），不算就会把长活的上下文估得太轻
     for (const call of message.tool_calls || []) score += 8 + estimateText(String(call.function?.arguments || ""));
+    // 随工具调用送回的思考（见 thoughtEcho）也占窗口
+    score += estimateText(String(message.reasoning_content || ""));
+    for (const block of message.thinking_blocks || []) score += estimateText(String(block.thinking || ""));
     if (typeof message.content === "string") {
       score += estimateText(message.content);
       continue;
@@ -60,6 +67,13 @@ function reserveTokens(profile, amount) {
     else reservedTokens.delete(profile.id);
   };
 }
+// 记下花掉的墨。记在此刻表里的那一份上：请求开工时拿住的模型对象，作答途中可能已被配置同步整份换掉，记在旧的上就丢了
+/** @param {Profile} profile @returns {Profile} 记上账的那一份 */
+function spendTokens(profile, amount) {
+  const live = profiles().find(p => p.id === profile.id) || profile;
+  live.usedTokens = Math.max(0, Number(live.usedTokens || 0)) + amount;
+  return live;
+}
 /** @param {Profile} profile */
 function quotaExhausted(profile) {
   const cap = parseTokenLimit(profile?.quota);
@@ -82,7 +96,7 @@ function formatTokens(value) {
         ? compact(n / 1000, "k")
         : String(n);
 }
-// 思考强度：OpenAI 系接口走 reasoning_effort；DashScope 兼容模式走 enable_thinking / thinking_budget。留空则不带字段，由接口自己定。
+// 思考强度：一律以 reasoning_effort 送到桥接，各家怎么换算（Anthropic 的 effort 与预算、DashScope 的 thinking_budget）由桥接定（见 server/model/）。留空则不带字段，由接口自己定。
 // 各家接受的档位不一样（有的只有 low / medium / xhigh，有的多一个 minimal 或 max）：模型配置里可填「思考档位」，
 // 没填就按四档（低 / 中 / 高 / 最高）列；只认三档的接口拒绝某个档位时，从它的报错里读出它认的那几档记到模型上，
 // 把这一问换成最接近的一档重发一次，此后菜单只列它认的。菜单上没有「关」：愿意接 Key 的人不至于连思考都不愿开，
@@ -130,13 +144,6 @@ function nearestReasoning(profile, level) {
 }
 /** @param {Profile} profile */
 function reasoningFields(profile, level) {
-  level = normalizeReasoning(level);
-  if (!level) return {};
-  if (/dashscope|aliyuncs/i.test(profile.baseUrl || ""))
-    return {
-      enable_thinking: true,
-      thinking_budget: { minimal: 1024, low: 2048, medium: 8192, high: 32768, xhigh: 65536, max: 81920 }[level] || 8192
-    };
   const effort = nearestReasoning(profile, level);
   return effort ? { reasoning_effort: effort } : {};
 }
@@ -170,7 +177,7 @@ function learnReasoningLevels(profile, message, sent) {
 // 报错说它压根不认识 reasoning_effort，记成 none（菜单上只剩「默认」）；接口照单全收（中转站常常忽略这个字段）就按通用四档列。
 // 鉴权、网络之类别的错不算探过，下次再探。探过的记在 reasoningProbed 上——记的是「接口 + 地址 + 模型」三样合成的键，
 // 换了模型、换了地址或接口类型都得重探；探测发出去之后模型被换了（探着 A 的时候切到 B），回来的结果作废，不往 B 上写。
-// Anthropic 与 DashScope 的档位是换算成预算送的，没有可探的枚举，直接算探过。回值是探到的几档，没探成给 null
+// 档位有定表的接口（Anthropic、DashScope、ChatGPT 订阅）由桥接照表回同样的报错，不必另走一路。回值是探到的几档，没探成给 null
 /** @param {Profile} profile 探的是这个模型此刻的身份 */
 function reasoningProbeKey(profile) {
   return `${anthropicLike(profile) ? "anthropic" : "openai"}|${String(profile?.baseUrl || "").trim()}|${String(profile?.model || "").trim()}`;
@@ -201,12 +208,6 @@ function reasoningManual(profile) {
 async function probeReasoningLevels(profile, force = false) {
   if (!profile?.model || (!force && reasoningProbed(profile))) return null;
   const key = reasoningProbeKey(profile);
-  if (anthropicLike(profile) || /dashscope|aliyuncs/i.test(profile.baseUrl || "")) {
-    profile.reasoningLevels = "";
-    profile.reasoningProbed = key;
-    saveStoreSoon();
-    return profileReasoningLevels(profile);
-  }
   const controller = new AbortController(),
     timer = setTimeout(() => controller.abort(), 20000);
   try {
@@ -240,31 +241,13 @@ async function probeReasoningLevels(profile, force = false) {
     controller.abort();
   }
 }
-// 接口没接下请求时回的那句话。各家的样子不一：OpenAI 系 { error: { message } }、桥接 { error: "…" }、旧版 vLLM { message }、
-// FastAPI 写的自建服务 { detail }（参数校验错是一串对象，整串交出去，思考档位的报错才读得出它认哪几档）；不是 JSON 的取原文开头
-async function describeResponseError(response) {
-  const raw = await response.text().catch(() => "");
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    return raw.trim().slice(0, 300) || `请求失败（${response.status}）`;
-  }
-  const error = data?.error,
-    detail = data?.detail;
-  return (
-    (typeof error === "string" ? error : error?.message) ||
-    (typeof data?.message === "string" ? data.message : "") ||
-    (typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : "") ||
-    `请求失败（${response.status}）`
-  );
-}
 /** @param {Profile} profile */
 async function requestChat(profile, messages, signal, overrides = {}) {
+  // 温度与输出上限同一条规矩：模型设置里留空就不传，由接口定——有的接口（OpenAI 的推理模型）只认默认值，传了反倒 400
   const parameters = {
     messages,
     systemPrompt: overrides.systemPrompt ?? "",
-    temperature: Number(overrides.temperature ?? profile.temperature ?? 0.7),
+    temperature: Number.isFinite(profile.temperature) ? profile.temperature : undefined,
     // 输出上限：拟题、压缩、探档位这几处自己给；平时 OpenAI 兼容接口不传（服务端的默认就是模型的上限，
     // 手写一个反而常常把长回答截断），Anthropic 必填、按模型设置或默认值
     maxTokens:
@@ -279,70 +262,25 @@ async function requestChat(profile, messages, signal, overrides = {}) {
     // probe 是探档位时故意送的、不存在的一档，原样送出去让接口报错（见 probeReasoningLevels）
     ...(overrides.reasoning === "probe" ? { reasoning_effort: "probe" } : reasoningFields(profile, overrides.reasoning))
   };
-  if (apiBase !== null)
-    return fetch(`${apiBase}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }),
-      signal
-    });
-  const payload = {
-    model: profile.model,
-    messages: parameters.systemPrompt ? [{ role: "system", content: parameters.systemPrompt }, ...messages] : messages,
-    stream: true,
-    stream_options: { include_usage: true },
-    temperature: parameters.temperature,
-    ...(parameters.maxTokens ? { max_tokens: parameters.maxTokens } : {}),
-    ...extras
-  };
-  // 直连 Anthropic：请求换成 Messages API 的，回来的事件流换回 OpenAI 风格，后面的读法不变
-  if (anthropicLike(profile)) {
-    const upstream = await fetch(anthropicEndpoint(profile.baseUrl), {
-      method: "POST",
-      headers: anthropicHeaders(profile.apiKey, true),
-      body: JSON.stringify(anthropicRequest(payload)),
-      signal
-    });
-    if (!upstream.ok || !upstream.body) return upstream;
-    return new Response(upstream.body.pipeThrough(anthropicToOpenAiStream(profile.model)), {
-      status: 200,
-      headers: { "Content-Type": "text/event-stream; charset=utf-8" }
-    });
-  }
-  payload.messages = payload.messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m));
-  return fetch(completionEndpoint(profile.baseUrl), {
-    method: "POST",
-    headers: directHeaders(profile),
-    body: JSON.stringify(payload),
-    signal
-  });
-}
-// 直连时列模型的地址与请求头：Anthropic 与 OpenAI 兼容的各一套
-/** @param {Profile} profile */
-function directModelsRequest(profile) {
-  return anthropicLike(profile)
-    ? { url: anthropicEndpoint(profile.baseUrl, "/v1/models"), headers: anthropicHeaders(profile.apiKey, true) }
-    : { url: modelsEndpoint(profile.baseUrl), headers: directHeaders(profile) };
-}
-function completionEndpoint(baseUrl) {
-  const url = String(baseUrl || "")
-    .trim()
-    .replace(/\/$/, "");
-  if (!/^https?:\/\//i.test(url)) throw Error("Base URL 只支持 http 或 https");
-  return /\/chat\/completions$/i.test(url) ? url : `${url}/chat/completions`;
-}
-function modelsEndpoint(baseUrl) {
-  const url = new URL(String(baseUrl || "").trim());
-  url.pathname = `${url.pathname.replace(/\/chat\/completions\/?$/i, "").replace(/\/$/, "")}/models`;
-  return url.href;
-}
-/** @param {Profile} profile */
-function directHeaders(profile) {
-  return { "Content-Type": "application/json; charset=utf-8", ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {}) };
+  return bridgeFetch("/api/chat", JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }), signal);
 }
 /** @param {Profile} profile */
 function profileForRequest(profile) {
-  return { source: "custom", baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profile.api || "" };
+  return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profileApi(profile) };
+}
+// 接口类型：设置里选的为准；旧配置没写的按地址认（anthropic.com）。桥接照它挑这一家的登记，不再自己认
+/** @param {Profile} profile @returns {"openai"|"anthropic"|"chatgpt"} */
+function profileApi(profile) {
+  const api = String(profile?.api || "").toLowerCase();
+  if (api === "anthropic" || api === "chatgpt") return api;
+  return !api && /anthropic\.com/i.test(String(profile?.baseUrl || "")) ? "anthropic" : "openai";
+}
+const anthropicLike = profile => profileApi(profile) === "anthropic";
+// 提示里有多少走了缓存，各家记法不一（OpenAI 系与桥接换过的 Anthropic、ChatGPT 订阅在 prompt_tokens_details，DeepSeek 叫 prompt_cache_hit_tokens），
+// 归成一个 cached_tokens，一答累加，耗墨的浮签上标出几成走了缓存
+function withCached(usage) {
+  const cached = Number(usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0) || 0;
+  return { ...usage, cached_tokens: cached };
 }
 /** @param {Message} assistant 主消息、帮手，或拟题 / 压缩用的临时消息 */
 async function readSse(response, assistant, { onFrame = null } = {}) {
@@ -362,10 +300,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     if (closed) return;
     const target = assistant.content.length,
       at = performance.now();
-    const block = document.querySelector(`[data-message="${assistant.id}"] .assistant-block`);
-    if (!block) {
+    if (!document.querySelector(`[data-message="${CSS.escape(assistant.id)}"]`)) {
       shown = target;
       freshGroups = [];
+      inkReveal.delete(assistant.id);
       return;
     }
     if (paced) {
@@ -376,70 +314,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
         freshGroups.unshift({ at, count: step });
       }
       freshGroups = freshGroups.filter(group => at - group.at < FRESH_MS);
+      inkReveal.set(assistant.id, { shown, fresh: freshGroups.map(group => ({ count: group.count, age: at - group.at })) });
     }
-    const visible = paced ? assistant.content.slice(0, shown) : assistant.content;
-    const base = trailBase(assistant),
-      reusedReasoning = reusableTrailReasoning(block, assistant, visible),
-      // 还只有思绪时直接沿用上一组，不先在下面造一枚重复的签；正文起笔才需要新的进行中容器。
-      host = reusedReasoning && !visible.slice(base).trim() ? null : trailLiveHost(block, assistant) || block,
-      rbase = trailReasoningBase(assistant),
-      thought = reusedReasoning?.text ?? String(assistant.reasoning || "").slice(rbase);
-    if (thought.trim()) {
-      let details = reusedReasoning?.details || host?.querySelector(":scope > .reasoning");
-      if (!details) {
-        host.insertAdjacentHTML("afterbegin", reasoningHtml(assistant, thought));
-        details = host.querySelector(":scope > .reasoning");
-        details.classList.add("is-new");
-      }
-      const body = details.querySelector(".reasoning-body");
-      body.textContent = thought;
-      // 按轮判断在写与否；新一轮的思绪来了就再摊开，正文起笔即收——与行迹一样：运行中打开，运行完关闭
-      const live = reasoningLive({ ...assistant, content: visible });
-      details.dataset.state = live ? "live" : "done";
-      if (details.open && body._follow !== false) body.scrollTop = body.scrollHeight; // 软跟踪：没往上翻就跟着最新一行走
-      if (!(reusedReasoning ? details.dataset.touched : assistant.reasoningTouched)) {
-        if (!live && details.open) settleDetails(details, false);
-        else if (live && !details.open) settleDetails(details, true);
-      }
-    }
-    if (!visible) {
-      if (!block.querySelector(".thinking")) insertAboveChangeBar(block, `<div class="thinking">正在凝神</div>`);
-    } else if (!visible.slice(base).trim()) {
-      /* 新一轮尚未起笔 */
-    } else {
-      let markdown = host.querySelector(":scope > .markdown");
-      if (!markdown?.querySelector(".md-tail")) {
-        block.querySelector(".thinking")?.remove();
-        markdown?.remove();
-        insertAboveChangeBar(
-          host,
-          `<div class="markdown" data-cut="${base}" data-base="${base}"><div class="md-stable"></div><div class="md-tail"></div></div>`
-        );
-        markdown = host.querySelector(":scope > .markdown");
-      }
-      // 已经收尾的段落只渲染一次追加进 md-stable，每帧只重绘最后一段，长回复不会越来越卡；已渲染位置记在 data-cut 上，跨工具轮次也不会重复
-      let renderedCut = Number(markdown.dataset.cut || 0);
-      const cut = stableCut(visible);
-      if (cut > renderedCut) {
-        const stable = markdown.querySelector(".md-stable");
-        stable.insertAdjacentHTML("beforeend", renderMarkdown(visible.slice(renderedCut, cut)));
-        renderedCut = cut;
-        markdown.dataset.cut = String(cut);
-        renderEnhancements(stable);
-      }
-      const tail = markdown.querySelector(".md-tail");
-      suppressViz = true;
-      try {
-        paintTail(tail, renderMarkdown(visible.slice(renderedCut)));
-      } finally {
-        suppressViz = false;
-      }
-      decorateTail(
-        tail,
-        freshGroups.map(group => ({ count: group.count, age: at - group.at }))
-      );
-    }
-    paintDrafting(host || block, assistant);
+    // 画法与整页重画是同一支笔（见 07-paint.js）：这里只报写到了哪，步骤没动
+    paintMessage(assistant, { steps: false });
     if (onFrame) onFrame();
     else if (followBottom) scrollBottom();
     else syncJumpBottom();
@@ -498,7 +376,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     think.held = "";
     think.mode = "body";
   };
-  // 直连时流静默太久没人管（桥接那头 Node 自带五分钟的读超时）：五分钟一个字节都没有就当断了，按中断处理、可续写
+  // 流静默太久（桥接那头 Node 自带五分钟的读超时）：五分钟一个字节都没有就当断了，按中断处理、可续写
   const readChunk = () =>
     new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -519,6 +397,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   } catch (error) {
     flushThink();
     closed = true;
+    inkReveal.delete(assistant.id);
     // 半途出错（流里的报错事件）：把还开着的连接收掉，别让桥接那头替一个没人读的流继续转发
     reader.cancel().catch(() => {});
     throw error;
@@ -574,7 +453,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
             }
             refresh();
           }
-          if (json.usage) assistant.usage = json.usage;
+          if (json.usage) assistant.usage = withCached(json.usage);
         } catch {}
         if (failure) throw Error(failure);
       }
@@ -587,38 +466,8 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     await new Promise(resolve => setTimeout(resolve, 16));
     if (document.hidden) shown = assistant.content.length;
   }
+  inkReveal.delete(assistant.id);
   closed = true; // 之后迟到的帧一律作废：后台标签页里 rAF 会攒到切回来才跑，那时收尾已把图表画好，再用 suppressViz 重绘会把它们打回占位
-}
-// 把尾段末尾最近写出的字按帧分组包进 .ink-fresh（用负 animation-delay 对齐各自的年龄，重绘也不会重放），并在最后一个字后放一支光标
-function decorateTail(tail, groups) {
-  if (tail.querySelector(".viz-pending")) return;
-  const nodes = [];
-  const walker = document.createTreeWalker(tail, NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) if (walker.currentNode.data.trim()) nodes.push(walker.currentNode);
-  let node = nodes.pop();
-  if (!node) return;
-  const cursor = document.createElement("span");
-  cursor.className = "ink-cursor";
-  node.after(cursor);
-  for (const group of groups) {
-    let need = group.count;
-    while (need > 0 && node) {
-      const text = node.data,
-        take = Math.min(need, text.length),
-        span = document.createElement("span");
-      span.className = "ink-fresh";
-      span.style.animationDelay = `-${Math.round(group.age)}ms`;
-      span.textContent = text.slice(text.length - take);
-      node.data = text.slice(0, text.length - take);
-      node.after(span);
-      need -= take;
-      if (!node.data) {
-        node.remove();
-        node = nodes.pop();
-      }
-    }
-    if (!node) break;
-  }
 }
 function normalizeContent(content) {
   if (typeof content === "string") return content;
@@ -630,21 +479,6 @@ function extractContent(data) {
 }
 function friendlyError(message) {
   if (/Failed to fetch|NetworkError|Load failed/i.test(message))
-    return apiBase === null
-      ? "浏览器无法直连该接口，通常是接口未开放 CORS。请运行 start.cmd 或 VS Code 任务「言：启动模型桥接」后重试。"
-      : "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
+    return "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
   return String(message).slice(0, 500);
-}
-function scrollBottom() {
-  const el = $("#chatScroll");
-  if (!el) return;
-  if (el.scrollHeight - el.scrollTop - el.clientHeight < 1) {
-    autoScrolling = false;
-    return;
-  }
-  autoScrolling = true;
-  el.scrollTop = el.scrollHeight;
-  requestAnimationFrame(() => {
-    autoScrolling = false;
-  });
 }

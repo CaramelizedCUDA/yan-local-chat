@@ -24,7 +24,7 @@
   width: auto;
   margin: 18px var(--side-gutter) 0;
   padding: 11px 16px 11px 17px;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
   font-size: 13px;
   background: var(--paper-2);
 }
@@ -41,7 +41,7 @@
   background: none;
 }
 .side-panel.wide .side-composer .composer {
-  border-radius: 17px;
+  border-radius: var(--radius-l);
   padding: 11px 13px 9px;
   box-shadow: 0 8px 30px rgba(58, 45, 29, 0.08);
 }
@@ -87,7 +87,7 @@
   width: 100%;
   margin: 0;
   padding: 10px 14px 10px 15px;
-  border-left: 2px solid var(--accent);
+  border-left: 1px solid var(--accent);
   text-align: left;
   color: var(--ink-2);
   font-size: 12px;
@@ -96,14 +96,10 @@
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  background: color-mix(in srgb, var(--paper) 55%, transparent);
-  transition:
-    color 0.16s,
-    background 0.16s;
+  transition: color 0.16s;
 }
 .side-anchor:hover {
   color: var(--ink);
-  background: var(--paper);
 }
 .side-anchor.lost {
   border-left-color: var(--ink-3);
@@ -119,7 +115,22 @@
   scrollbar-color: color-mix(in srgb, var(--ink-3) 28%, transparent) transparent;
 }
 .side-messages .message {
-  margin-bottom: 22px;
+  margin-bottom: 16px;
+}
+/* 面板本就是旁注：答不再挂「言 模型 · 时间」一行；问句的复制 / 编辑同正文，浮在问句下方不占位（见 30-chat.css），问与答贴近 */
+.side-messages > .message.assistant > .message-meta {
+  display: none;
+}
+.side-messages > .message.user {
+  position: relative;
+  margin-bottom: 24px;
+}
+.side-messages > .message.user > .message-actions {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin: 0 -5px 0 0;
+  padding-top: 3px;
 }
 .side-messages .markdown {
   font-size: 13px;
@@ -133,6 +144,14 @@
 .side-messages .message-actions {
   opacity: 0.5;
 }
+.side-messages > .message.user > .message-actions {
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+.side-messages > .message.user:hover > .message-actions,
+.side-messages > .message.user:focus-within > .message-actions {
+  opacity: 0.5;
+}
 /* 目录页：不列范围、不设输入；目录钮只在看某一条时出现 */
 .side-panel[data-mode="index"] .side-composer,
 .side-panel[data-mode="index"] .side-back,
@@ -140,7 +159,8 @@
 .side-panel[data-mode="index"] #sideRemove {
   display: none;
 }
-/* 页头右边：阔 / 窄、删是两枚小字印，与左边的「注」同一种印；收起的 × 隔一道细竖线另立，与顶栏状态之间的分隔同一写法 */
+/* 页头右边：「阔」「删」只用字、丝栏相隔（与请示条「运行 · 跳过」同一写法）；收起的 × 隔一道细竖线另立。
+   左边的「注」印留着，是这一栏唯一的印。早先两枚字也各框成小印，连同正文序号、「注 n」、目录一列朱印，满屏是框（设计稿/37 现状） */
 .side-tools {
   display: flex;
   align-items: center;
@@ -148,38 +168,38 @@
   margin-left: 6px;
 }
 .side-tools .icon-btn {
-  width: 24px;
+  width: auto;
   height: 24px;
-  border: 1px solid color-mix(in srgb, var(--ink-3) 35%, var(--line));
-  border-radius: 4px;
-  color: var(--ink-2);
+  padding: 0 5px;
+  color: var(--ink-3);
   font: 12px/1 var(--title);
-  transition:
-    color 0.16s,
-    border-color 0.16s,
-    background 0.16s,
-    transform 0.25s cubic-bezier(0.22, 0.72, 0.2, 1);
+  transition: color 0.16s;
 }
-.side-tools .icon-btn:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  color: var(--accent);
-  transform: rotate(-4deg);
-}
+.side-tools .icon-btn:hover,
 .side-tools #sideExpand[aria-pressed="true"] {
-  border-color: var(--accent);
   color: var(--accent);
+}
+.side-tools #sideRemove {
+  position: relative;
+  margin-left: 6px;
+}
+.side-tools #sideRemove::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 6px;
+  bottom: 6px;
+  border-left: 1px solid var(--line);
 }
 .side-tools #sideRemove:hover {
-  border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
   color: var(--danger);
 }
 .side-tools #sideClose {
   position: relative;
+  width: 24px;
+  padding: 0;
   margin-left: 7px;
-  border-color: transparent;
-  border-radius: 7px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font-size: 16px;
 }
@@ -192,10 +212,8 @@
   border-left: 1px solid var(--line);
 }
 .side-tools #sideClose:hover {
-  border-color: transparent;
   background: var(--paper-3);
   color: var(--ink);
-  transform: none;
 }
 /* 回目录立在页头最左，隔一道细竖线再是印与题，与右端 × 前那道线左右对称：回去是导航，不与输入挤在一行。
    比过两种：题下小字换成「‹ 回目录」（入口只剩 9.5px 的小字，不好找）；所注一段之上一行路标（多占一行，窄栏里挤） */
@@ -206,7 +224,7 @@
   gap: 3px;
   margin: 0 -2px 0 -4px;
   padding: 3px 7px 3px 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   font: 10.5px var(--title);
   letter-spacing: 0.08em;
@@ -264,24 +282,18 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 9px 4px 7px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: 6px;
-  color: var(--accent);
+  padding: 4px 2px;
+  color: var(--ink-2);
   font: 11px var(--title);
   letter-spacing: 0.08em;
-  transition:
-    color 0.16s,
-    background 0.16s,
-    border-color 0.16s;
+  transition: color 0.16s;
 }
 .side-index-new span {
   font-size: 12px;
   line-height: 1;
 }
 .side-index-new:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--accent);
 }
 .side-index-item {
   position: relative;
@@ -289,7 +301,7 @@
   gap: 10px;
   width: 100%;
   padding: 9px 10px 9px 4px;
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   text-align: left;
   color: var(--ink-2);
   transition:
@@ -300,9 +312,9 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 32px;
+  left: 4px;
   right: 10px;
-  border-top: 1px dotted var(--line);
+  border-top: 1px solid var(--line);
 }
 .side-index-item:hover {
   background: color-mix(in srgb, var(--paper-3) 55%, transparent);
@@ -312,27 +324,18 @@
 .side-index-item:hover + .side-index-item::after {
   opacity: 0;
 }
-/* 序号是一方小印：从哪条回复进来的，那几条的印是实的，其余是空的——各条一个样子，只差虚实 */
+/* 序号只是墨色小字，从哪条回复进来的那几条着朱：朱只落在眼下这一条。
+   早先每条一方小印、实空分虚实，一列朱印太满；比过〔1〕的朱批写法与每条一张顶朱签条，都不如这样安静（设计稿/37） */
 .side-index-num {
   flex: none;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  border-radius: 3px;
-  color: var(--accent);
-  font: 10px/1 var(--title);
-  transform: rotate(-3deg);
-  transition:
-    background 0.16s,
-    color 0.16s;
+  width: 14px;
+  margin-top: 1px;
+  color: var(--ink-3);
+  font: 11px/1.65 var(--title);
+  transition: color 0.16s;
 }
 .side-index-item.here .side-index-num {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--paper);
+  color: var(--accent);
 }
 .side-index-item.here {
   color: var(--ink);
@@ -380,7 +383,7 @@
   padding: 13px 12px 13px 4px;
 }
 .side-panel.wide .side-index-item + .side-index-item::after {
-  left: 38px;
+  left: 4px;
 }
 .side-panel.wide .side-index-copy strong {
   font-size: 14.5px;
@@ -390,10 +393,9 @@
   font-size: 10.5px;
 }
 .side-panel.wide .side-index-num {
-  width: 20px;
-  height: 20px;
+  width: 18px;
   margin-top: 3px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .side-panel.wide .side-index-foot {
   margin-top: 40px;
@@ -412,7 +414,7 @@
 }
 .side-composer .composer {
   width: 100%;
-  border-radius: 14px;
+  border-radius: var(--radius-l);
   padding: 9px 11px 7px;
   box-shadow: 0 6px 22px rgba(58, 45, 29, 0.06);
 }
@@ -424,67 +426,51 @@
   max-width: 170px;
   font-size: 11.5px;
 }
+/* 正文里的落点一律墨色、不框：所注的一段一道淡墨线，序号是墨色小字，元信息行的「注 n」只是字；
+   正打开的那一条线与序号着朱。比过圈点（字下朱点，一片朱点抢眼）与顶朱小签（方寸之间签不成签），见设计稿/37 */
 mark.note-anchor {
   background: none;
   color: inherit;
-  text-decoration: underline dotted color-mix(in srgb, var(--accent) 70%, transparent);
+  text-decoration: underline solid color-mix(in srgb, var(--ink-3) 45%, transparent);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
   cursor: pointer;
   transition: text-decoration-color 0.16s;
 }
 mark.note-anchor:hover {
-  text-decoration-style: solid;
+  text-decoration-color: var(--ink-3);
 }
 mark.note-anchor.active {
-  text-decoration: underline solid var(--accent);
-  text-decoration-thickness: 1px;
+  text-decoration-color: var(--accent);
 }
 sup.note-ref {
   display: inline-block;
   margin: 0 1px 0 2px;
-  padding: 0 3px;
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line));
-  border-radius: 3px;
-  background: var(--paper);
-  color: var(--accent);
-  font: 9px/12px var(--title);
-  line-height: 12px;
+  padding: 0 1px;
+  color: var(--ink-3);
+  font: 9.5px/12px var(--title);
   vertical-align: super;
   cursor: pointer;
   user-select: none;
   letter-spacing: 0;
-  transition:
-    background 0.16s,
-    color 0.16s;
+  transition: color 0.16s;
 }
 sup.note-ref:hover,
 sup.note-ref.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--paper);
+  color: var(--accent);
 }
 .note-mark {
   display: inline-flex;
   align-items: center;
   margin-left: 8px;
-  padding: 0 6px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 3px;
-  background: var(--paper);
-  color: var(--accent);
+  color: var(--ink-3);
   font: 10px/15px var(--title);
   letter-spacing: 0.06em;
   white-space: nowrap;
-  transform: rotate(-2deg);
-  opacity: 0.85;
-  transition:
-    opacity 0.16s,
-    transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: color 0.16s;
 }
 .note-mark:hover {
-  opacity: 1;
-  transform: rotate(0);
+  color: var(--accent);
 }
 .message.user .note-mark {
   margin: 0 6px 6px 0;
