@@ -53,8 +53,10 @@ module.exports = function createFiles({ filesHome }) {
         if (!data.startsWith("data:") || comma < 0) throw Error("附件原件格式无效");
         bytes = Buffer.from(data.slice(comma + 1), /;base64/i.test(data.slice(0, comma)) ? "base64" : "utf8");
       }
+      // 原件本身是 .json 的，与元数据同名会被元数据盖掉：另取「<id>.raw.json」（id 里没有点，不与别件相混）
       const { data: _data, ...rest } = record,
-        file = `${id}${extensionOf(record.name)}`;
+        extension = extensionOf(record.name),
+        file = `${id}${extension === ".json" ? ".raw" : ""}${extension}`;
       // 同一 id 换了扩展名（极少见）：旧的原件不留
       const previous = rawFileOf(dir, id, readMeta(dir, id));
       writeAtomic(path.join(dir, file), bytes);
@@ -150,7 +152,7 @@ module.exports = function createFiles({ filesHome }) {
           if (stat.mtimeMs < cutoff) fs.rmSync(path.join(dir, name), { force: true });
           continue;
         }
-        const id = name.replace(/\.[^.]*$/, "");
+        const id = name.split(".")[0];
         if (!ID.test(id) || keep.has(id)) continue;
         const stat = fs.statSync(path.join(dir, name));
         if (stat.mtimeMs >= cutoff) continue;

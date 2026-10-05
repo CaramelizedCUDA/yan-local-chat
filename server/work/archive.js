@@ -111,13 +111,20 @@ module.exports = function createArchive({ archiveHome }) {
     if (!stat?.isDirectory()) throw Error(`卷宗里没有这一层：${rel}`);
     return dir;
   }
-  // 同名文件不覆盖，另取「名 (2).扩展名」
-  function freeName(dir, name) {
+  // 同名不覆盖，另取「名 (2).扩展名」。占名与落笔是同一下：make 遇已有的就以 EEXIST 失败（wx 写、mkdir），换下一个名字再来——
+  // 两次同时收入同名文件，先查后写会挑中同一个名字互盖
+  async function placeFree(dir, name, make) {
     const extension = path.extname(name),
       stem = name.slice(0, name.length - extension.length);
-    let target = path.join(dir, name);
-    for (let n = 2; fs.existsSync(target); n++) target = path.join(dir, `${stem} (${n})${extension}`);
-    return target;
+    for (let n = 1; ; n++) {
+      const target = path.join(dir, n === 1 ? name : `${stem} (${n})${extension}`);
+      try {
+        await make(target);
+        return target;
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
+    }
   }
   async function describeItem(root, target) {
     const stat = await fs.promises.stat(target);
@@ -139,8 +146,9 @@ module.exports = function createArchive({ archiveHome }) {
       if (!data.startsWith("data:") || comma < 0) throw Error("文件内容格式无效");
       const bytes = Buffer.from(data.slice(comma + 1), /;base64/i.test(data.slice(0, comma)) ? "base64" : "utf8");
       if (bytes.length > ARCHIVE_FILE_LIMIT) throw Error(`单个文件不超过 ${ARCHIVE_FILE_LIMIT / 1048576} MB`);
-      const target = freeName(await archiveDirOf(root, body.dir), name);
-      await fs.promises.writeFile(target, bytes).catch(error => {
+      const target = await placeFree(await archiveDirOf(root, body.dir), name, to =>
+        fs.promises.writeFile(to, bytes, { flag: "wx" })
+      ).catch(error => {
         throw Error(describeFsError(error, name));
       });
       sendJson(res, 200, await describeItem(root, target));
@@ -187,15 +195,15 @@ module.exports = function createArchive({ archiveHome }) {
     if (stat.isDirectory() && pathIsInside(from, dir)) throw Error("夹不能挪进它自己里头");
     const renaming = body.name !== undefined,
       name = renaming ? cleanName(body.name) : path.basename(from);
-    let to = path.join(dir, name);
-    if (to === from) return describeItem(root, from);
-    // 只改大小写（Windows 上视作同一个）：照改
-    const sameFile = to.toLowerCase() === from.toLowerCase();
-    if (!sameFile && fs.existsSync(to)) {
-      if (renaming) throw Error(`这一层已有「${name}」`);
-      to = freeName(dir, name);
-    }
-    await fs.promises.rename(from, to).catch(error => {
+    const wanted = path.join(dir, name);
+    if (wanted === from) return describeItem(root, from);
+    // 只改大小写（Windows 上视作同一个）：照改。rename 遇同名文件会盖掉，占名只能先看一眼
+    const sameFile = wanted.toLowerCase() === from.toLowerCase();
+    if (renaming && !sameFile && fs.existsSync(wanted)) throw Error(`这一层已有「${name}」`);
+    const to = await placeFree(dir, name, async to => {
+      if (!sameFile && fs.existsSync(to)) throw Object.assign(Error(), { code: "EEXIST" });
+      await fs.promises.rename(from, to);
+    }).catch(error => {
       throw Error(describeFsError(error, String(body.path)));
     });
     return describeItem(root, to);
@@ -212,10 +220,11 @@ module.exports = function createArchive({ archiveHome }) {
   // 新建夹：落在 dir 那一层；同名已有就另取「新建夹 (2)」
   const handleArchiveMkdir = jsonRoute(async body => {
     const root = await archiveRoot(body.root),
-      target = freeName(await archiveDirOf(root, body.dir), cleanName(body.name || "新建夹"));
-    await fs.promises.mkdir(target).catch(error => {
-      throw Error(describeFsError(error, String(body.name || "")));
-    });
+      target = await placeFree(await archiveDirOf(root, body.dir), cleanName(body.name || "新建夹"), to => fs.promises.mkdir(to)).catch(
+        error => {
+          throw Error(describeFsError(error, String(body.name || "")));
+        }
+      );
     return describeItem(root, target);
   }, failed);
   // 以本机程序打开：预览认不得的、或只看得到结构的，交给系统的默认程序看原样
