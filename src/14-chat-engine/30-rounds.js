@@ -46,6 +46,8 @@ async function runRounds(target, history, run) {
     tally.roundOpen = false;
   };
   for (;;) {
+    // 开工前等着的那几步（装历史、起 MCP、断线稍候）里已按了停：中止在先，后面挂上的监听再也等不到，当场作罢
+    signal.throwIfAborted();
     target.toolCalls = null;
     target.usage = null;
     const roundStart = (tally.roundStart = target.content.length),

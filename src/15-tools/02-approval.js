@@ -7,6 +7,7 @@ const pendingApprovals = new Map();
  * @param {ToolContext} ctx
  */
 async function askApproval(step, { conversation, assistant, signal }) {
+  signal.throwIfAborted();
   const job = requestJob(conversation.id);
   step.status = "pending";
   if (job) setJobLabel(conversation, job, "等待确认");

@@ -358,7 +358,8 @@ async function deleteConversation(id) {
   // 那一处还在写，删了它也会写回来
   if (runningElsewhere(id)) return toast("此对话正在另一页面作答，暂不能删除");
   if (!(await askConfirm({ title: "删除这段对话？", body: `「${removed.title}」将连同其附件一起移除，无法撤销。`, ok: "删除" }))) return;
-  if (conversationRunning(id)) stopGeneration(id);
+  // 主答写完了、帮手还在后台做的，也一并停下
+  stopGeneration(id);
   for (const [key, job] of requestJobs)
     if (job.conversationId === id) {
       job.controller.abort();
@@ -368,7 +369,7 @@ async function deleteConversation(id) {
   const draftFiles = draftRecord(id).attachments.map(file => file.id);
   clearDraft(id);
   void cleanScratch(removed);
-  void deleteAttachments([...attachmentIds(allMessages(removed)), ...draftFiles]);
+  void deleteAttachments([...attachmentIds(everyMessage(removed)), ...draftFiles]);
   store.conversations = store.conversations.filter(c => c.id !== id);
   void deleteConversationStorage(id);
   if (currentId === id) {

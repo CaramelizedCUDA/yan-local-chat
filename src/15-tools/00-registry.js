@@ -194,6 +194,8 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
     images = [],
     ctx = { conversation, assistant, signal, offered };
   const runOne = async step => {
+    // 一批里前一件跑着时按了停：后面排着的不再动手（写记忆、起请示都算动手）
+    signal.throwIfAborted();
     const started = performance.now(),
       key = toolCacheKey(step),
       cached = key ? toolCache.get(key) : null;

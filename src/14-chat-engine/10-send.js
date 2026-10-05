@@ -22,8 +22,8 @@ async function prepareTurn(c) {
     toast("此对话正在另一页面作答，稍后再发");
     return false;
   }
-  // 等的这一会儿，后台回报可能已在这段里另起了一答
-  return !conversationRunning(c.id);
+  // 等的这一会儿，后台回报可能已在这段里另起了一答，这段也可能已被删掉
+  return !conversationRunning(c.id) && store.conversations.includes(c);
 }
 async function sendOrStop() {
   if (sendPreparing) return;
@@ -80,7 +80,8 @@ async function sendOrStop() {
       if (!(await ensureWorkReady(c))) return;
       fresh = true;
     }
-    // 还在点发送的那个输入框前：照常收走案上的东西；已换走了：发的是当时那份，那份草稿撤掉，眼前这段的输入框不动，也不把人拉回来
+    // 还在点发送的那个输入框前：照常收走案上的东西；已换走了：发的是当时那份，那份草稿里减去发出的、等待时接着写的留着，
+    // 眼前这段的输入框不动，也不把人拉回来
     const stayed = draftKey() === sendingDraftKey;
     if (fresh) {
       delete store.settings.pendingGroupId;
@@ -92,7 +93,10 @@ async function sendOrStop() {
     if (stayed) user = takeComposer(input, sendingDraftKey, snapshot);
     else {
       user = composerMessage(snapshot);
-      if (store.drafts) delete store.drafts[sendingDraftKey];
+      const rest = composerRest(normalizeDraft(store.drafts?.[sendingDraftKey]), snapshot);
+      store.drafts ||= {};
+      if (rest.text || rest.attachments.length || rest.quote) store.drafts[sendingDraftKey] = { ...rest, updatedAt: now() };
+      else delete store.drafts[sendingDraftKey];
     }
     return startTurn(c, user, profile);
   } finally {
@@ -108,27 +112,37 @@ function composerSnapshot(input) {
 function composerMessage({ content, attachments, quote }) {
   return { id: uid(), role: "user", content, timestamp: now(), attachments, ...(quote ? { quote } : {}) };
 }
+// 案上（或已换走时存下的草稿）减去发出去的那份：等待开工的工夫里接着写的、又置入的留着。草稿里的附件、引文是副本，按 id、按文认
+/** @param {Draft} draft */
+function composerRest({ text, attachments, quote = null }, snapshot) {
+  const typed = text.trim(),
+    sent = new Set(snapshot.attachments.map(file => file.id));
+  return {
+    text: typed.startsWith(snapshot.content) ? typed.slice(snapshot.content.length).trim() : typed,
+    attachments: attachments.filter(file => !sent.has(file.id)),
+    quote: quote && quote.text === snapshot.quote?.text ? null : quote
+  };
+}
 // 把案上的东西（话、附件、引文）收成一条用户消息，输入框与草稿随之清空。
 // snapshot：点发送那一刻拍下的；等待开工的工夫里接着写的、又置入的不在其中，留在案上
 /** @returns {Message} */
 function takeComposer(input, key = draftKey(), snapshot = composerSnapshot(input)) {
   const user = composerMessage(snapshot),
-    typed = input.value.trim(),
-    rest = typed.startsWith(snapshot.content) ? typed.slice(snapshot.content.length).trim() : typed;
-  input.value = rest;
+    rest = composerRest({ text: input.value, attachments: pendingAttachments, quote: pendingQuote }, snapshot);
+  input.value = rest.text;
   input.style.height = "auto";
-  pendingAttachments = pendingAttachments.filter(file => !snapshot.attachments.includes(file));
-  if (pendingQuote === snapshot.quote) pendingQuote = null;
+  pendingAttachments = rest.attachments;
+  pendingQuote = rest.quote;
   delete store.drafts[key];
   // 新对话在点发送后才有 id：留下的那点草稿记到它名下
-  if (rest || pendingAttachments.length || pendingQuote)
+  if (rest.text || pendingAttachments.length || pendingQuote)
     store.drafts[draftKey()] = {
-      text: rest,
+      text: rest.text,
       attachments: pendingAttachments.map(file => ({ ...file })),
       quote: pendingQuote,
       updatedAt: now()
     };
-  if (rest) grow(input);
+  if (rest.text) grow(input);
   renderAttachments();
   renderQuote();
   return user;
