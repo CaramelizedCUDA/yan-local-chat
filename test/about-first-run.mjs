@@ -1,4 +1,4 @@
-// 作品感检查：首次使用引导、关于页、类替代内联样式
+// 作品感检查：首次使用引导、文档页（版本与致谢）、各栏题头、类替代内联样式
 import { readFileSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK, TMP } from "./lib.mjs";
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -26,17 +26,27 @@ check(
     `!document.querySelector("#settingsModal").classList.contains("hidden") && document.querySelector(".tab-btn.active").dataset.tab === "models"`
   )
 );
-await evalJs(`document.querySelector('.tab-btn[data-tab="about"]').click(); true`);
-const about = await evalJs(
-  `(h => ({ version: h.querySelector(".about-version")?.textContent, sections: [...h.querySelectorAll(".about-section h3")].map(n => n.textContent), credits: h.querySelectorAll(".about-credits li").length, kbd: h.querySelectorAll(".kbd").length }))(document.querySelector("#settingsContent"))`
+// 「关于」已并进文档：目录题后是版本，末一篇是致谢
+check("no about tab", await evalJs(`!document.querySelector('.tab-btn[data-tab="about"]')`));
+const heads = await evalJs(
+  `[...document.querySelectorAll(".tab-btn")].map(b => (b.click(), (h => [b.dataset.tab, !!h?.querySelector(".settings-mark"), h?.querySelector("h2")?.textContent || "", h?.querySelector(".settings-lead")?.textContent || ""])(document.querySelector("#settingsContent .settings-head"))))`
 );
 check(
-  "about tab renders",
-  about.version?.startsWith(`v${VERSION}`) &&
-    about.sections.join() === "数据与边界,键与操作,开源致谢" &&
-    about.credits === 7 &&
-    about.kbd >= 3,
-  JSON.stringify(about)
+  "every tab has a head with icon, title and lead",
+  heads.length === 10 && heads.every(([, mark, title, lead]) => mark && title && lead),
+  JSON.stringify(heads)
+);
+await evalJs(`document.querySelector('.tab-btn[data-tab="guide"]').click(); true`);
+const guide = await evalJs(
+  `(h => ({ version: h.querySelector(".settings-meta")?.textContent, last: [...h.querySelectorAll(".guide-row .guide-title")].pop()?.textContent }))(document.querySelector("#settingsContent"))`
+);
+check("guide head shows version, credits close the toc", guide.version === `v${VERSION}` && guide.last === "致谢", JSON.stringify(guide));
+await evalJs(`document.querySelector('.guide-row[data-guide="credits"]').click(); true`);
+check(
+  "credits topic lists the vendored libraries",
+  await evalJs(
+    `["marked", "DOMPurify", "highlight.js", "KaTeX", "Mermaid", "Apache ECharts", "PDF.js"].every(n => document.querySelector("#guidePage").textContent.includes(n))`
+  )
 );
 check(
   "nav foot has no version, no inline style",

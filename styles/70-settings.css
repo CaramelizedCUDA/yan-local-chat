@@ -44,43 +44,6 @@
   color: var(--ink-3);
   font: 11px/1.7 var(--title);
 }
-.about-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin: 0 0 6px;
-}
-.about-head h2 {
-  margin: 0;
-}
-.about-version {
-  color: var(--ink-3);
-  font:
-    11px ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    monospace;
-  letter-spacing: 0.04em;
-}
-.about-ethos {
-  margin: 0 0 26px;
-  color: var(--ink-2);
-  font: 13.5px/1.9 var(--title);
-  letter-spacing: 0.04em;
-}
-.about-section {
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
-}
-.about-section h3 {
-  margin: 0 0 10px;
-  color: var(--ink-3);
-  font: 10px var(--title);
-  letter-spacing: 0.16em;
-}
-.memory-head {
-  align-items: center;
-}
 /* 记忆分栏（设计稿/49 甲）：左一列类目，右边选着那一类的条目。条目平时只读、一条一行摘要，点开就地摊开全文，
    「改」才换输入框。落选：先列分类、点进去再列条目（一层套一层，回来只靠一枚小「‹ 记忆」）；条目常开输入框、
    长的半截淡出（像没画完），条下重写类名（碎字） */
@@ -310,71 +273,6 @@ input.memory-cat-new {
   gap: 10px;
   margin-top: 14px;
 }
-.about-list {
-  margin: 0;
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 7px 16px;
-  font-size: 12px;
-}
-.about-list dt {
-  color: var(--ink-2);
-  white-space: nowrap;
-}
-.about-list dd {
-  margin: 0;
-  color: var(--ink-3);
-  line-height: 1.6;
-}
-.about-list dd a {
-  color: var(--accent);
-  text-decoration: none;
-}
-.about-list dd a:hover {
-  text-decoration: underline;
-}
-.kbd {
-  display: inline-block;
-  min-width: 18px;
-  padding: 1px 5px;
-  border: 1px solid var(--line);
-  border-bottom-width: 2px;
-  border-radius: var(--radius-s);
-  background: var(--paper);
-  color: var(--ink-2);
-  font:
-    10.5px ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    monospace;
-  text-align: center;
-  vertical-align: 1px;
-}
-.about-credits {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 6px 18px;
-  font-size: 12px;
-}
-.about-credits li {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--ink-2);
-}
-.about-credits small {
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-.about-note {
-  margin: 10px 0 0;
-  color: var(--ink-3);
-  font-size: 11px;
-  line-height: 1.6;
-}
 .welcome-notice {
   width: min(100%, var(--read));
   margin: 12px auto 0;
@@ -543,10 +441,26 @@ input.memory-cat-new {
    条目前一粒朱菱形，一页五六粒，朱用泛了（朱留给要人注意的）。见 设计稿/26 四。
    更早落选的：整块套朱色版框（框占宽度、内容挤）；一条设置一张纸条（歪斜的纸条一多就乱）；右下角垫一个极淡的大字（会被控件压住，单个的字也不好看） */
 .settings-head {
+  display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 4px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--ink-3);
+}
+.settings-head h2 {
+  margin: 0;
+}
+/* 题后一行事实（记忆的条数、文档的版本） */
+.settings-meta {
+  color: var(--ink-3);
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  letter-spacing: 0.04em;
 }
 .settings-lead {
   margin: 0 0 10px;

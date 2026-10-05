@@ -1,17 +1,18 @@
-// 设置的各栏：画法与接事件成对登记，左侧栏目钮（index.html 的 .tab-btn）照 data-tab 认。换一栏只画、只接这一栏；
-// 各栏自己的面板写在各自领域里（记忆在 11-memory，游目在 26-stage/40-settings），这里只登记。加一栏只需加一行与一枚栏目钮
+// 设置的各栏：画法、接事件、题下一句导语成组登记，左侧栏目钮（index.html 的 .tab-btn）照 data-tab 认。换一栏只画、只接这一栏；
+// 各栏自己的面板写在各自领域里（记忆在 11-memory，游目在 26-stage/40-settings），这里只登记。加一栏只需加一行与一枚栏目钮。
+// 导语是题记，只管气韵，不讲这一栏怎么用（用法进 设置 → 文档）
+/** @type {Record<string, [() => string, (() => void) | null, string]>} */
 const SETTINGS_TABS = {
-  general: [generalSettingsHtml, bindGeneralSettings],
-  appearance: [appearanceSettingsHtml],
-  models: [modelsSettingsHtml, bindModelSettings],
-  presets: [presetsSettingsHtml, bindPresetEvents],
-  tools: [toolsSettingsHtml, bindToolSettings],
-  env: [envSettingsHtml, bindEnvEvents],
-  mcp: [mcpSettingsHtml, bindMcpEvents],
-  stage: [stageSettingsHtml, bindStageSettings],
-  memory: [memorySettingsHtml, bindMemoryEvents],
-  guide: [guideSettingsHtml, bindGuideEvents],
-  about: [aboutSettingsHtml]
+  general: [generalSettingsHtml, bindGeneralSettings, "凡事豫则立，不豫则废。"],
+  appearance: [appearanceSettingsHtml, null, "文质彬彬，然后君子。"],
+  models: [modelsSettingsHtml, bindModelSettings, "君子生非异也，善假于物也。"],
+  presets: [presetsSettingsHtml, bindPresetEvents, "画竹，必先得成竹于胸中。"],
+  tools: [toolsSettingsHtml, bindToolSettings, "工欲善其事，必先利其器。"],
+  env: [envSettingsHtml, bindEnvEvents, "万事俱备，只欠东风。"],
+  mcp: [mcpSettingsHtml, bindMcpEvents, "他山之石，可以攻玉。"],
+  stage: [stageSettingsHtml, bindStageSettings, "游目骋怀，足以极视听之娱。"],
+  memory: [memorySettingsHtml, bindMemoryEvents, "温故而知新。"],
+  guide: [guideSettingsHtml, bindGuideEvents, "清简为骨，纸墨为意。"]
 };
 let settingsTab = "general";
 let settingsReturnFocus = null;
@@ -38,23 +39,24 @@ function closeSettings() {
 }
 function renderSettings() {
   if (!SETTINGS_TABS[settingsTab]) settingsTab = "general";
-  const [html, bind] = SETTINGS_TABS[settingsTab];
+  const [html, bind, lead] = SETTINGS_TABS[settingsTab];
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === settingsTab));
   const host = $("#settingsContent");
   const tabChanged = host.dataset.tab !== settingsTab;
   host.dataset.tab = settingsTab;
   host.innerHTML = html();
-  // 每栏题头：这一栏的笔意图标、标题（导语跟在题下），压一道墨线（记忆页自带）；文档里翻开的一篇有自己的书口，关于页的题目是「言」本身，都不加
+  // 每栏题头：这一栏的笔意图标、标题，题下导语，压一道墨线。记忆、文档目录题后另有一行事实，自己画好题头；
+  // 文档里翻开的一篇有自己的书口，不加
   const title = host.querySelector("h2");
-  if (BRUSH_ICONS[settingsTab] && title && !title.previousElementSibling && !title.parentElement.classList.contains("about-head")) {
-    const head = document.createElement("div"),
-      lead = title.nextElementSibling?.classList.contains("settings-lead") ? title.nextElementSibling : null;
-    head.className = "about-head memory-head settings-head";
+  let head = host.querySelector(".settings-head");
+  if (!head && title && !title.previousElementSibling) {
+    head = document.createElement("div");
+    head.className = "settings-head";
     head.innerHTML = brushIcon(settingsTab, "settings-mark");
     title.before(head);
     head.append(title);
-    if (lead) head.append(lead);
   }
+  if (head) head.insertAdjacentHTML("beforeend", `<p class="settings-lead">${lead}</p>`);
   // 栏里的内容整片换过，挂在里头的事件随旧节点撤了；只有挂在容器本身上的要撤（游目那栏用它接点按）
   host.onclick = null;
   bindSettingRows();
@@ -88,7 +90,7 @@ function bindSettingsShell() {
     if (file) await importData(file);
   };
 }
-// 言 · 设置 · 外壳：各栏的登记、开合与画法；通用、工具、个性化、关于这几栏
+// 言 · 设置 · 外壳：各栏的登记、开合与画法；通用、工具、个性化这几栏
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 存储位置：对话、卷宗、配置（含模型配置）都在这一个 .yan 目录里，几个浏览器共用；换位置时整份拷过去，旧处留着
 function storageSettingsHtml() {
@@ -102,11 +104,11 @@ function generalSettingsHtml() {
 // 工具：沙箱、三档指令权限、可及范围、卷宗可读、轮次上限——模型能动手的边界都在这一栏
 function toolsSettingsHtml() {
   const policy = normalizeCommandPolicy(store.settings.commandPolicyDefault);
-  return `<h2>工具</h2><div class="setting-row"><div class="setting-copy"><strong>沙箱</strong><small>改动不出目录，不碰机密，不动系统</small></div><div class="segmented"><button data-setting="sandbox" data-value="true" class="${store.settings.sandbox !== false ? "active" : ""}">开</button><button data-setting="sandbox" data-value="false" class="${store.settings.sandbox === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>指令权限</strong><small>新对话的默认档位</small></div><div class="segmented"><button data-setting="commandPolicyDefault" data-value="ask" class="${policy === "ask" ? "active" : ""}">问而后行</button><button data-setting="commandPolicyDefault" data-value="review" class="${policy === "review" ? "active" : ""}">审而后行</button><button data-setting="commandPolicyDefault" data-value="auto" class="${policy === "auto" ? "active" : ""}">径行</button></div></div><div class="setting-row"><div class="setting-copy"><strong>文件工具可及范围</strong><small>问而后行开着沙箱时一律目录内</small></div><div class="segmented"><button data-setting="toolReach" data-value="anywhere" class="${store.settings.toolReach !== "inside" ? "active" : ""}">全盘</button><button data-setting="toolReach" data-value="inside" class="${store.settings.toolReach === "inside" ? "active" : ""}">目录内</button></div></div><div class="setting-row"><div class="setting-copy"><strong>卷宗对模型可读</strong><small>模型可翻阅卷宗里的文档</small></div><div class="segmented"><button data-setting="archiveRead" data-value="true" class="${store.settings.archiveRead !== false ? "active" : ""}">开</button><button data-setting="archiveRead" data-value="false" class="${store.settings.archiveRead === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>工具轮次上限</strong><small>留空不限</small></div><div class="setting-actions"><label class="setting-inline">一答<input id="settingToolRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(toolRoundLimit())}"></label><label class="setting-inline">帮手<input id="settingSubRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(subRoundLimit())}"></label></div></div><div class="setting-row"><div class="setting-copy"><strong>联网检索</strong><small id="searchStatus">经本机桥接</small></div><button id="testSearch" class="outline-btn" type="button">测试联网</button></div>`;
+  return `<h2>工具</h2><div class="setting-row"><div class="setting-copy"><strong>沙箱</strong><small>改动不出目录，不碰机密，不动系统</small></div><div class="segmented"><button data-setting="sandbox" data-value="true" class="${store.settings.sandbox !== false ? "active" : ""}">开</button><button data-setting="sandbox" data-value="false" class="${store.settings.sandbox === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>指令权限</strong><small>新对话的默认档位</small></div><div class="segmented"><button data-setting="commandPolicyDefault" data-value="ask" class="${policy === "ask" ? "active" : ""}">问而后行</button><button data-setting="commandPolicyDefault" data-value="review" class="${policy === "review" ? "active" : ""}">审而后行</button><button data-setting="commandPolicyDefault" data-value="auto" class="${policy === "auto" ? "active" : ""}">径行</button></div></div><div class="setting-row"><div class="setting-copy"><strong>文件工具可及范围</strong><small>沙箱下问而后行，恒限目录内</small></div><div class="segmented"><button data-setting="toolReach" data-value="anywhere" class="${store.settings.toolReach !== "inside" ? "active" : ""}">全盘</button><button data-setting="toolReach" data-value="inside" class="${store.settings.toolReach === "inside" ? "active" : ""}">目录内</button></div></div><div class="setting-row"><div class="setting-copy"><strong>卷宗对模型可读</strong><small>模型可翻阅卷宗里的文档</small></div><div class="segmented"><button data-setting="archiveRead" data-value="true" class="${store.settings.archiveRead !== false ? "active" : ""}">开</button><button data-setting="archiveRead" data-value="false" class="${store.settings.archiveRead === false ? "active" : ""}">关</button></div></div><div class="setting-row"><div class="setting-copy"><strong>工具轮次上限</strong><small>留空不限</small></div><div class="setting-actions"><label class="setting-inline">一答<input id="settingToolRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(toolRoundLimit())}"></label><label class="setting-inline">帮手<input id="settingSubRounds" class="field field-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="不限" value="${roundLimitText(subRoundLimit())}"></label></div></div><div class="setting-row"><div class="setting-copy"><strong>联网检索</strong><small id="searchStatus">经本机桥接</small></div><button id="testSearch" class="outline-btn" type="button">测试联网</button></div>`;
 }
 function appearanceSettingsHtml() {
   const s = store.settings;
-  return `<h2>个性化</h2><p class="settings-lead">清简为骨，纸墨为意。</p>${segmentRow(
+  return `<h2>个性化</h2>${segmentRow(
     "主题",
     "随系统或固定明暗",
     "theme",
@@ -127,54 +129,6 @@ function appearanceSettingsHtml() {
     ],
     s.inkMotion || "on"
   )}${fontRow(s.font)}<div class="setting-row"><div class="setting-copy"><strong>印色</strong><small>界面中的点睛之色</small></div><div class="segmented">${["#9b5540", "#536d62", "#5c6386", "#75644f"].map(v => `<button data-setting="accent" data-value="${v}" class="${s.accent === v ? "active" : ""}" style="color:${v}">●</button>`).join("")}</div></div>`;
-}
-// 关于：身份、边界、键与手势、开源致谢。随项目本地分发的库与许可见 vendor/
-const CREDITS = [
-  ["marked", "18.0.13", "MIT"],
-  ["DOMPurify", "3.4.15", "Apache-2.0"],
-  ["highlight.js", "11.12.0", "BSD-3-Clause"],
-  ["KaTeX", "0.18.7", "MIT"],
-  ["Mermaid", "11.17.2", "MIT"],
-  ["Apache ECharts", "5.6.1", "Apache-2.0"],
-  ["PDF.js", "3.11.174", "Apache-2.0"]
-];
-const kbd = keys =>
-  keys
-    .split("+")
-    .map(key => `<span class="kbd">${escapeHtml(key)}</span>`)
-    .join(" + ");
-function aboutSettingsHtml() {
-  const version = bootstrap.version || APP_VERSION;
-  const rows = list => `<dl class="about-list">${list.map(([term, detail]) => `<dt>${term}</dt><dd>${detail}</dd>`).join("")}</dl>`;
-  return (
-    `<div class="about-head"><h2>言</h2><span class="about-version">v${escapeHtml(version)}</span></div><p class="about-ethos">清简为骨，纸墨为意。<br>长问慢答，尽付纸墨；言毕，即行。</p>` +
-    `<div class="about-section"><h3>数据与边界</h3>${rows([
-      [
-        "存放",
-        "一切落在本机的存储位置（默认 ~/.yan，可在通用设置更换）：对话/ 一段一个文件，卷宗/ 是成品与收进来的文件，附件/ 是附件原件，配置.json 是设置、模型配置（含 API Key）、记忆与草稿；复制整个目录即备份。不经任何云端"
-      ],
-      ["桥接", "本机进程，仅监听 127.0.0.1：转发模型请求，代行指令与文件，守着后台指令；联网检索与读取网页时拒绝访问本机与内网地址"],
-      [
-        "执事",
-        "指令在你的机器上、以你的权限执行，只读指令直接执行，其余默认逐条确认；文件工具能否越出工作目录由设置 → 工具的「可及范围」定（默认全盘，问而后行开着沙箱时只在目录内）"
-      ],
-      [
-        "沙箱",
-        "指令与文件工具默认套着：路径不出目录、机密文件不碰、动系统与直接外联的指令拒绝、机密环境变量不给指令，在桥接那头守。是静态筛查，不是进程隔离——脚本里的代码仍以你的权限运行；设置 → 工具可关"
-      ],
-      ["记忆", "模型在对谈中记下的一句句话，只存于本机；何时记、何时看由它判断，不随每次请求发送，可在「记忆」页查改或关闭"],
-      ["备份", "导出的备份不含 API Key；可选择是否带上附件原件"]
-    ])}</div>` +
-    `<div class="about-section"><h3>键与操作</h3>${rows([
-      [kbd("Enter"), "发送；" + kbd("Shift+Enter") + " 换行"],
-      [kbd("Esc"), "关闭弹层、取消编辑、去掉引文、退出全屏"],
-      ["划选正文", "浮出「引用 · 旁注」：引用随下一问送出；旁注于右侧另开一线，读得到正文，却不入正文"],
-      ["拖入 · 粘贴", "文件拖入页面或粘贴图片，即置于案上；在卷宗页拖入则收入卷宗"],
-      ["双击侧栏标题", "重命名对话；亦可直接修改页面上方的标题"],
-      ["消息旁 ‹ ›", "在同一位置的不同版本之间切换"]
-    ])}</div>` +
-    `<div class="about-section"><h3>开源致谢</h3><ul class="about-credits">${CREDITS.map(([name, ver, license]) => `<li><span>${escapeHtml(name)}</span><small>${escapeHtml(ver)} · ${escapeHtml(license)}</small></li>`).join("")}</ul><p class="about-note">以上库全部随项目本地分发，不加载任何在线资源；许可全文见 vendor 目录。运行环境仅需 Node.js 18 或更高版本，无需安装依赖。</p></div>`
-  );
 }
 // 字体一行：每个钮用自己那种字写自己的名字，一眼看出气质
 function fontRow(active = "mixed") {
@@ -227,7 +181,7 @@ function bindGeneralSettings() {
       archiveEntries = null;
       await refreshArchive();
       renderSettings();
-      toast(`存储已换到 ${pathTail(data.root)}；${data.adopted ? "用的是那里原有的数据" : "旧处原样留着"}`);
+      toast(`存储已迁至 ${pathTail(data.root)}；${data.adopted ? "沿用该处原有数据" : "旧处原样保留"}`);
     };
   };
   storeInput?.addEventListener("change", e => commitStore(e.target.value));
@@ -299,7 +253,7 @@ function bindToolSettings() {
     status.textContent = "检索中…";
     try {
       const data = await bridge("/api/search", { query: "OpenAI", count: 1 }, AbortSignal.timeout(20000));
-      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已连上，但这回没有结果";
+      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已接通，暂无结果";
     } catch (error) {
       status.textContent = friendlyError(error.message).slice(0, 60);
     }
