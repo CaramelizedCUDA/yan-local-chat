@@ -49,12 +49,14 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       lastUserId = source.filter(m => m.role === "user").at(-1)?.id;
       const head = summaryMessages(contextIndex >= 0 ? conversation.messages[contextIndex] : null);
       head.push(...(await historyForApi(source, lastUserId, budget)));
-      // 账本冠在这一问的开头（之前的问不带，免得一份账本背上几十遍）
+      // 这一问的首段往后各问里一字不差，标作缓存点：下一问时连它在内的整段历史都从缓存读（桥接只给 Claude 留着这个标，别家去掉）。
+      // 账本只附在这一问（之前的问不带，免得一份账本背上几十遍），所以接在后面另起一段——冠在开头，这一问每问都变，缓存只接得到上一答之前
       const ask = head.findLast(entry => entry.role === "user"),
         ledger = ledgerNote(conversation);
-      if (ask && ledger) {
-        if (typeof ask.content === "string") ask.content = `${ledger}${ask.content}`;
-        else ask.content[0].text = `${ledger}${ask.content[0].text}`;
+      if (ask) {
+        if (typeof ask.content === "string") ask.content = [{ type: "text", text: ask.content }];
+        ask.content[0].cache_control = { type: "ephemeral" };
+        if (ledger) ask.content.push({ type: "text", text: ledger.trimEnd() });
       }
       // 续写只递已写的话，做过的步骤也得让它知道（另发一句「继续」时上一答的行迹本就随着去），不然从头再做一遍
       if (resumeFrom) {

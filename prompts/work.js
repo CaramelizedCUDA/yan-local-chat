@@ -18,9 +18,9 @@
     "要检查电脑可用 run_command 直查。要交付文件（表格、文档、PDF、图片）时再动文件工具：脚本与中间文件放草稿目录 {{scratch}}/（已建好，用户看不见），成品放卷宗根目录。{{shellNote}}"
   ],
 
-  // 账本（见 src/15-tools/21-files.js 的 ledgerNote）：ledger 只给主答的执事；ledgerHead / ledgerSub / ledgerFull 冠在问的开头，不是系统提示
+  // 账本（见 src/15-tools/21-files.js 的 ledgerNote）：ledger 只给主答的执事；ledgerHead / ledgerFull 接在这一问之后、ledgerSub 冠在帮手领的活前面，不是系统提示
   ledger:
-    "跨多答的长活在 .yan/账本.md 立一份账本，此后每一问开头都附着它：只记对这件工程持续有约束的（目标与达标标准、定下的约束与取舍、计划与进展、走不通的路），过时的删、相近的并，不记流水账。",
+    "跨多答的长活在 .yan/账本.md 立一份账本，此后每一问都附着它：只记对这件工程持续有约束的（目标与达标标准、定下的约束与取舍、计划与进展、走不通的路），过时的删、相近的并，不记流水账。",
   ledgerHead: "［账本 {{path}}］\n{{text}}",
   ledgerSub: "［主对话的账本 {{path}}，只读］\n{{text}}",
   ledgerFull: "［账本已 {{chars}} 字，过了 {{limit}} 字：删去过时的、并掉相近的］",

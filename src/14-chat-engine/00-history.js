@@ -115,21 +115,24 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
   if (message.role === "assistant") return { role: "assistant", content: message.content };
   if (message.role !== "user" || !message.attachments?.length)
     return { role: message.role, content: message.role === "user" ? quotedText(message) : message.content };
-  /** @type {Array<Record<string, any>>} 多段内容：首段文字，其后图片与文件原件 */
+  // 多段内容：首段只是用户的话，附件的文字（最新一问是全文，往后是摘要与占位）另起一段，其后图片与文件原件。
+  // 首段在这一问与往后各问里一字不差，缓存才接得过这一问（见 streamReply 标的缓存点）
+  /** @type {Array<Record<string, any>>} */
   const content = [{ type: "text", text: quotedText(message) || "请查看附件。" }];
+  let notes = "";
   for (const metadata of message.attachments) {
     // 早先消息里的图片只留一行占位，用不着原件：不必每问都把它从存储目录整份取回来
     if (!latest && metadata.kind === "image") {
-      content[0].text += `\n\n[图片：${metadata.name}，${formatFileSize(metadata.size)}，已在此前发送]`;
+      notes += `\n\n[图片：${metadata.name}，${formatFileSize(metadata.size)}，已在此前发送]`;
       continue;
     }
     const file = metadata.data !== undefined ? metadata : await getAttachment(metadata.id);
     if (!file) {
-      content[0].text += `\n\n[附件 ${metadata.name} 的原件已找不到]`;
+      notes += `\n\n[附件 ${metadata.name} 的原件已找不到]`;
       continue;
     }
     if (file.kind === "text") {
-      content[0].text += latest
+      notes += latest
         ? tooLongToInline(file.data, budget)
           ? `\n\n[附件 ${file.name}：文本 ${String(file.data).length} 字，过长未随消息附上；需要时用 read_document 按页或关键词读取]`
           : `\n\n--- 附件：${file.name} ---\n${file.data}`
@@ -137,7 +140,7 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
       continue;
     }
     if (file.kind !== "image" && file.extractedText) {
-      content[0].text += latest
+      notes += latest
         ? tooLongToInline(file.extractedText, budget)
           ? `\n\n[附件 ${file.name}：本机提取文本 ${String(file.extractedText).length} 字，过长未随消息附上；需要时用 read_document 按页或关键词读取]`
           : `\n\n--- 附件：${file.name}（本机提取）---\n${file.extractedText}`
@@ -145,11 +148,12 @@ async function messageForApi(message, latest, budget = inlineTextBudget()) {
       continue;
     }
     if (!latest) {
-      content[0].text += `\n\n[${file.kind === "image" ? "图片" : "文件"}：${file.name}，${formatFileSize(file.size)}，已在此前发送]`;
+      notes += `\n\n[${file.kind === "image" ? "图片" : "文件"}：${file.name}，${formatFileSize(file.size)}，已在此前发送]`;
       continue;
     }
     if (file.kind === "image") content.push({ type: "image_url", image_url: { url: file.data, detail: "auto" } });
     else content.push({ type: "file", file: { filename: file.name, file_data: String(file.data).replace(/^data:[^,]*,/, "") } });
   }
+  if (notes) content.splice(1, 0, { type: "text", text: notes.trimStart() });
   return { role: "user", content };
 }
