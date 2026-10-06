@@ -269,13 +269,14 @@ function bindViewerEvents() {
     }
     if (e.target === $("#fileViewer") || e.target === $("#fileViewerStage")) closeFileViewer();
   });
-  // 媒体的 error 不冒泡，在捕获阶段接：浏览器放不了这种编码，就别留一个转不动的播放器
+  // 媒体的 error 不冒泡，在捕获阶段接：浏览器放不了这种编码，就别留一个转不动的播放器。
+  // 封装认不得的（扩展名写作 mp4 的 TS 之类），桥接已借环境里的 ffmpeg 换过壳（见 server/video.js）；到这里的是编码本身放不了，或没装「音视频」
   $("#fileViewerStage").addEventListener(
     "error",
     e => {
       if (!e.target.matches?.("audio, video")) return;
       e.target.closest(".file-viewer-media").outerHTML =
-        `<div class="file-viewer-empty">浏览器不支持此编码，可下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
+        `<div class="file-viewer-empty">此视频浏览器放不了，可交本机程序打开<br>${VIEWER_OPEN_BUTTON}<button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
     },
     true
   );

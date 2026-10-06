@@ -126,13 +126,19 @@ function handleBootstrap(req, res) {
 const STORE = require("./server/store.js")();
 // 沙箱环境：存储根里的 环境/，桥接起的进程（指令、MCP 服务）都接上它
 const ENV = require("./server/env/index.js")({ envHome: () => STORE.paths().env });
+// 视频换壳：浏览器认不得的封装（如扩展名写作 mp4 的 MPEG-TS），预览时借环境里的 ffmpeg 原样换进 MP4（见 server/video.js）
+const VIDEO = require("./server/video.js")({
+  cacheHome: () => path.join(STORE.paths().env, "cache", "视频"),
+  ffmpeg: () => ENV.toolPath("ffmpeg")
+});
 const WORK = require("./server/work/index.js")({
   archiveHome: () => STORE.paths().archive,
   workHome: () => STORE.paths().work,
-  toolEnv: ENV.apply
+  toolEnv: ENV.apply,
+  playable: VIDEO.playable
 });
 const CHATS = require("./server/chats.js")({ chatsHome: () => STORE.paths().chats });
-const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files });
+const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable });
 const STAGE_LIB = require("./server/stage.js");
 // MCP：按设置里的配置起、连外部的 MCP 服务，把它们的工具交给页面
 const MCP = require("./server/mcp/index.js")({

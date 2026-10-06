@@ -15,7 +15,7 @@ const {
   assertNoEscapingLink
 } = require("./paths.js");
 
-module.exports = function createArchive({ archiveHome }) {
+module.exports = function createArchive({ archiveHome, playable }) {
   const failed = error => errorText(error, 300);
   // ---- 卷宗目录：页面上的卷宗即这一目录的视图。列出全部文件与子目录（页面逐层看、查找时平铺），收入 / 取出 / 挪动 / 移出都限定在目录内 ----
   const ARCHIVE_LIST_LIMIT = 3000,
@@ -163,7 +163,9 @@ module.exports = function createArchive({ archiveHome }) {
       const root = await archiveRoot(query.get("root")),
         file = archivePath(root, query.get("path"));
       await assertNoEscapingLink(root, file);
-      await sendFile(req, res, file, { name: path.basename(file), download: !!query.get("download") });
+      const name = path.basename(file),
+        download = !!query.get("download");
+      await sendFile(req, res, download ? file : await playable(req, file, name), { name, download });
     } catch (error) {
       sendJson(res, 404, { error: failed(error) });
     }

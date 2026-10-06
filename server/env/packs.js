@@ -59,7 +59,7 @@ module.exports = [
     id: "media",
     name: "音视频",
     tag: "Python",
-    note: "ffmpeg 与音频处理",
+    note: "ffmpeg 与音频处理；卷宗里封装不合的视频（如实为 TS 的 mp4）预览时也借它换壳来放",
     pip: ["imageio-ffmpeg", "pydub"],
     links: { ffmpeg: "py/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-*.exe" }
   },
