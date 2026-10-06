@@ -120,7 +120,7 @@ module.exports = function createShell({ toolEnv }) {
     });
   }
   // ---- 后台指令：开发服务器、监听构建这类不会自己结束的，放到后台跑，先回头几秒的输出与一个编号，之后用 check_command 取新输出或结束它。
-  // 后台指令不拿目录锁（它一直跑着，锁住了别的指令就都得排队）；桥接退出时一并收掉。只记最近的若干个，跑完的旧账先清
+  // 桥接退出时一并收掉。只记最近的若干个，跑完的旧账先清
   const BACKGROUND_KEEP = 24,
     backgroundJobs = new Map();
   let backgroundSeq = 0;

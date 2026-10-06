@@ -33,7 +33,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     PREVIOUS_KEEP_CHARS = 4000;
   const resolveWorkdir = raw => paths.resolveWorkdir(raw, workHome);
   const { WORK_SHELL, runShell, startBackground, backgroundReport, checkBackground, watchBackground } = createShell({ toolEnv }),
-    { lockFile, lockWorkdir } = createLocks();
+    { lockFile } = createLocks();
   // 沙箱分两档：问而后行（或没说档位的请求）用严的；审而后行、径行用宽的——文件工具在宽档里不设防，指令只守系统本身（见 server/sandbox.js）
   const looseTier = body => body.permission === "review" || body.permission === "auto";
   const strictBox = body => body.sandbox === true && !looseTier(body);
@@ -128,17 +128,10 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
       // 封顶在 2³¹−1 毫秒（约 24 天）只因 setTimeout 超过它会溢出、当作 1 毫秒——模型给个大数，指令就被当场杀掉
       const timeoutMs = clampNumber(Number(body.timeout) * 1000, 120000, 1000, 2147483647);
       console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ ${command.slice(0, 120)}`);
-      // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉
-      // 排队等目录锁时停了也算：不再起这条指令
+      // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉。指令不拿目录锁，见 locks.js
       const signal = requestSignal(res);
       const started = Date.now(),
-        release = await lockWorkdir(workdir, signal);
-      let result;
-      try {
         result = await runShell(command, workdir, timeoutMs, signal, { boxed });
-      } finally {
-        release();
-      }
       if (result.aborted) console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })}   已中止：${command.slice(0, 80)}`);
       if (!res.writableEnded && !res.destroyed) sendJson(res, 200, { ...result, durationMs: Date.now() - started });
     } catch (error) {
@@ -172,7 +165,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     if (file === workdir) throw Error("请给出文件名");
     const content = String(body.content ?? "");
     if (Buffer.byteLength(content) > 32 * 1024 * 1024) throw Error("单个文件不超过 32 MB");
-    const release = await lockFile(workdir, file, signal);
+    const release = await lockFile(file, signal);
     try {
       const existing = await fs.promises.stat(file).catch(() => null);
       if (existing?.isDirectory()) throw Error(`${body.path} 是目录，不能作为文件写入`);
@@ -292,7 +285,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     if (file === workdir) throw Error("请给出文件名");
     if (!oldText) throw Error("old 不能为空；新建文件请用 write_file");
     if (oldText === newText) throw Error("old 与 new 相同，无需修改");
-    const release = await lockFile(workdir, file, signal);
+    const release = await lockFile(file, signal);
     try {
       const stat = await fs.promises.stat(file).catch(() => null);
       if (!stat) throw Error(`文件不存在：${body.path}${await missingHint(workdir, file, strictBox(body))}`);
@@ -484,7 +477,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     }
     const { buffer, truncated } = await readLimitedBytes(response, DOWNLOAD_LIMIT);
     if (truncated) throw Error(`文件超过 ${DOWNLOAD_LIMIT / 1048576} MB`);
-    const release = await lockFile(workdir, target, signal);
+    const release = await lockFile(target, signal);
     try {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       const extension = path.extname(target),
