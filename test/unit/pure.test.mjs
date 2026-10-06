@@ -324,7 +324,7 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
       {
         role: "user",
         content: [
-          { type: "text", text: "看看" },
+          { type: "text", text: "看看", cache_control: { type: "ephemeral" } },
           { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } }
         ]
       },
@@ -338,8 +338,15 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
       { role: "user", content: "补一句" }
     ]
   });
-  // 提示缓存：系统提示末尾一处，整段对话最后一块一处
+  // 提示缓存：系统提示末尾一处、页面标的这一问首段一处、上一次请求的末尾一处、整段对话最后一块一处，共四处
   assert.deepEqual(body.system, [{ type: "text", text: "你是言", cache_control: { type: "ephemeral" } }]);
+  assert.deepEqual(body.messages[0].content[0], { type: "text", text: "看看", cache_control: { type: "ephemeral" } });
+  assert.deepEqual(body.messages[0].content[1].cache_control, { type: "ephemeral" });
+  assert.equal(
+    body.messages[1].content.some(b => b.cache_control),
+    false
+  );
+  assert.equal(JSON.stringify(body).split('"cache_control"').length - 1, 4);
   assert.deepEqual(body.messages.at(-1).content.at(-1), { type: "text", text: "补一句", cache_control: { type: "ephemeral" } });
   assert.equal(body.thinking.budget_tokens, 8192);
   assert.equal(body.max_tokens, 8192 + 4096);
@@ -350,7 +357,7 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
     input_schema: { type: "object", properties: { path: { type: "string" } } }
   });
   assert.equal(body.messages.length, 3);
-  assert.deepEqual(body.messages[0].content[1], { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } });
+  assert.deepEqual(body.messages[0].content[1].source, { type: "base64", media_type: "image/png", data: "AAAA" });
   assert.deepEqual(
     body.messages[1].content.map(b => b.type),
     ["thinking", "text", "tool_use"]
