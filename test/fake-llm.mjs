@@ -1463,7 +1463,7 @@ http
       const result = String(toolResults.at(-1).content);
       return sse(res, [
         delta({ content: `指令结果：${result.includes("你好，世界") ? "成功" : result.includes("没有同意") ? "被跳过" : "其他"}` }),
-        delta({ content: `｜工具数 ${payload.tools ? payload.tools.length : 0}` }),
+        delta({ content: `｜工具数 ${payload.tools ? payload.tools.length : 0}${payload.tool_choice === "none" ? "｜禁调" : ""}` }),
         delta({}, { usage: { total_tokens: 30 } })
       ]);
     });

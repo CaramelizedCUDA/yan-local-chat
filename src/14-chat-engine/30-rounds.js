@@ -124,7 +124,8 @@ async function runRounds(target, history, run) {
       for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(target.usage[key] || 0);
     }
     const calls = (target.toolCalls || []).filter(call => call.name);
-    if (!calls.length || !overrides.tools) {
+    // 轮次到顶后模型仍要调工具（有的中转不认 tool_choice）：不再受理，就此收尾
+    if (!calls.length || !overrides.tools || overrides.toolChoice === "none") {
       // 说完了就收尾，帮手还在后台也不等：回报到了另起一答（见 mailReport），等着的时候没有谁醒着。
       // 只剩用户的补言也照旧收尾，补言由 settleSupplements 作下一问送出。这一轮说着时已到的回报（或递给帮手的话）才当场递上接着做
       if (!inbox?.queue.some(item => item.report !== undefined)) break;
@@ -134,12 +135,13 @@ async function runRounds(target, history, run) {
       target.content = paragraphBreak(target.content);
       continue;
     }
-    // 轮次到顶：不再受理这一批调用，收回工具，让模型就已有结果收尾
+    // 轮次到顶：不再受理这一批调用，让模型就已有结果收尾。工具定义照旧带着、只禁它再调（tool_choice: none）：
+    // 历史里已有工具往来，整份撤掉工具 Anthropic 会拒，前缀一变缓存也接不上
     if (++rounds > run.roundLimit) {
       const said = target.content.slice(roundStart).trim();
       if (said) history.push({ role: "assistant", content: said });
       history.push({ role: "user", content: prompt("assistant.roundLimit") });
-      overrides.tools = null;
+      overrides.toolChoice = "none";
       target.content = paragraphBreak(target.content);
       continue;
     }
@@ -218,8 +220,9 @@ function attachToolImages(history, images, profile) {
   toolImageMessages.add(message);
   history.push(message);
 }
-/** 请求被拒时去掉附上的图：有图可去才算数 @param {Profile} profile */
-function dropToolImages(history, profile) {
+/** 请求被拒、报错说起图时去掉附上的图：有图可去才算数。别的 4xx（思考签名、参数）不能算到「看不了图」头上，不然这一页再不给它附图 @param {Profile} profile */
+function dropToolImages(history, profile, message) {
+  if (!/image|vision|multi-?modal|图/i.test(message)) return false;
   const carried = history.filter(message => toolImageMessages.has(message));
   for (const message of carried) {
     toolImageMessages.delete(message);
@@ -269,7 +272,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       response.status >= 400 &&
       response.status < 500 &&
       response.status !== 429 &&
-      (dropThoughtEcho(history, profile, message) || dropToolImages(history, profile))
+      (dropThoughtEcho(history, profile, message) || dropToolImages(history, profile, message))
     )
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     throw Error(message);

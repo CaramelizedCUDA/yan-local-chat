@@ -18,6 +18,15 @@ function modelsUrl(baseUrl) {
   return url;
 }
 
+// 没抽出文字的附件原件：PDF 照 OpenAI 的写法补上 data: 前缀；别的格式（压缩包、音视频、扫描件之外的二进制）兼容接口一概不收，
+// 原样送去整问被拒，换成一句说明（与 anthropic.js、chatgpt.js 同一个办法）
+function filePart(part) {
+  if (part?.type !== "file") return part;
+  const name = String(part.file?.filename || "");
+  if (/\.pdf$/i.test(name) && part.file?.file_data)
+    return { type: "file", file: { filename: name, file_data: `data:application/pdf;base64,${part.file.file_data}` } };
+  return { type: "text", text: `[附件 ${name || "文件"}：此接口不接受该格式的原件]` };
+}
 module.exports = {
   url: config => endpoint(config.baseUrl),
   modelsUrl: config => modelsUrl(config.baseUrl),
@@ -27,7 +36,15 @@ module.exports = {
   }),
   levels: config => (DASHSCOPE.test(config.baseUrl) ? ["low", "medium", "high", "max"] : null),
   request(payload, config) {
-    const body = { ...payload, messages: payload.messages.map(m => (m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m)) };
+    const body = {
+      ...payload,
+      messages: payload.messages.map(m => {
+        const next = m.thinking_blocks ? { ...m, thinking_blocks: undefined } : m;
+        return Array.isArray(next.content) && next.content.some(part => part?.type === "file")
+          ? { ...next, content: next.content.map(filePart) }
+          : next;
+      })
+    };
     body.messages = claudeModel(config.model) ? markOpenAiCache(body.messages) : stripCacheMarks(body.messages);
     if (body.reasoning_effort && DASHSCOPE.test(config.baseUrl)) {
       body.enable_thinking = true;

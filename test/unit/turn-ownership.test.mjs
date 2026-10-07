@@ -81,9 +81,10 @@ test("附件读到一半换了对话：读好的归点选时那一段的草稿�
   f.open("B");
   f.placeAttachment("A", { id: "x2" });
   assert.deepEqual(f.pending(), []);
+  // 读好一件随即记进草稿（读着后面的时候页面重画也不丢），所以 A 的草稿里先前那件也在
   assert.deepEqual(
     f.drafts().A.attachments.map(file => file.id),
-    ["x2"]
+    ["x1", "x2"]
   );
 });
 
@@ -119,9 +120,11 @@ test("工具交回的图随工具结果附上：一答里只留最新一批，�
   attachToolImages(history, ["data:image/png;base64,BBB"], profile);
   assert.equal(typeof first.content, "string");
   assert.equal(history.at(-1).content[1].image_url.url, "data:image/png;base64,BBB");
-  assert.equal(dropToolImages(history, profile), true);
+  // 别的 4xx（思考签名之类）不算看不了图
+  assert.equal(dropToolImages(history, profile, "messages.3: invalid thinking signature"), false);
+  assert.equal(dropToolImages(history, profile, "This model does not support image input"), true);
   assert.equal(typeof history.at(-1).content, "string");
-  assert.equal(dropToolImages(history, profile), false);
+  assert.equal(dropToolImages(history, profile, "image input not supported"), false);
   const before = history.length;
   attachToolImages(history, ["data:image/png;base64,CCC"], profile);
   assert.equal(history.length, before);

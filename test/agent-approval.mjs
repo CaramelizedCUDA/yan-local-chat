@@ -45,6 +45,8 @@ check(
     `!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelector("#approvalBar .approval-cmd").textContent === "Write-Output '你好，世界'" && document.querySelector("#approvalBar").dataset.stepId === document.querySelector('.tool-step[data-status="pending"]').dataset.stepId`
   )
 );
+// 请示条入场时输入区还在长高；留白由 ResizeObserver 在下一帧跟上，等它站定再量
+await sleep(500);
 check(
   "jump-to-latest button clears the taller composer area",
   await evalJs(
@@ -184,7 +186,8 @@ const last = await evalJs(
   `(a => ({ steps: a.querySelectorAll(".tool-step").length, text: a.querySelector(".markdown").textContent.slice(-60) }))([...document.querySelectorAll('.message.assistant')].at(-1))`
 );
 check("round cap from settings stops the loop at 12", last.steps === 12, JSON.stringify(last));
-check("final round sent without tools", last.text.includes("工具数 0"), last.text);
+// 工具定义照带（撤掉了 Anthropic 会拒），只禁再调
+check("final round keeps the tools but forbids calling them", /工具数 [1-9][0-9]*｜禁调/.test(last.text), last.text);
 const folds = await evalJs(
   `(a => ({ folded: a.querySelectorAll(".tool-step.folded").length, foldable: a.querySelectorAll(".tool-step.foldable").length, lines: (a.querySelector(".tool-step .tool-output")?.textContent || "").split("\\n").length }))([...document.querySelectorAll('.message.assistant')].at(-1))`
 );

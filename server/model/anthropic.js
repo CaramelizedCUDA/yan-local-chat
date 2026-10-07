@@ -132,6 +132,7 @@ function anthropicRequest(payload) {
       description: tool.function?.description || "",
       input_schema: tool.function?.parameters || { type: "object", properties: {} }
     }));
+  if (body.tools && payload.tool_choice === "none") body.tool_choice = { type: "none" };
   return body;
 }
 // Messages API 的事件流 → OpenAI 风格的 SSE 分块（data: {...}\n\n，末尾 [DONE]）。
