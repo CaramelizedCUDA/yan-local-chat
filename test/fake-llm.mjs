@@ -166,7 +166,13 @@ http
       const payload = JSON.parse(body || "{}");
       calls += 1;
       if (req.url.endsWith("/v1/messages")) return anthropicMessages(payload, res);
-      const msgs = payload.messages || [],
+      // 这一问总是分段送来（首段标着缓存点、账本另起一段）：只有文字的并回一串，各分支照旧当字符串读；带图带件的仍是分段
+      const raw = payload.messages || [],
+        msgs = raw.map(m =>
+          m.role === "user" && Array.isArray(m.content) && m.content.every(part => part.type === "text")
+            ? { ...m, content: m.content.map(part => part.text).join("\n\n") }
+            : m
+        ),
         toolResults = msgs.filter(m => m.role === "tool");
       const lastUser = [...msgs].reverse().find(m => m.role === "user")?.content || "";
       // MCPSHOT：连截两幅（两轮各一次 snap），第三轮报回请求里看到的图——几条带图、最新那条是不是紧跟工具结果、旧的是否换成了字
@@ -234,12 +240,14 @@ http
       // 长活：轮内压缩的请求（开头是 fold 提示）回一份笔记；其余按任务里的记号分派
       const firstUser = String(msgs.find(m => m.role === "user")?.content || ""),
         longKey = ["LONGSUB", "LONGMAIN"].find(k => firstUser.includes(k) && !firstUser.includes("LONGRUN"));
-      // LEDGER：账本只冠在这一问开头、系统提示里有立账本那句；第一问不读就改账本（附着全文即算读过），第二问看到的是改后的那份
+      // LEDGER：账本只接在这一问之后另起一段（首段是问本身；缓存标记桥接只给 Claude 留着，这里看不到，由单元测试管）、系统提示里有立账本那句；第一问不读就改账本（附着全文即算读过），第二问看到的是改后的那份
       if (firstUser.includes("LEDGER")) {
         const sys = String(msgs[0]?.role === "system" ? msgs[0].content : ""),
           users = msgs.filter(m => m.role === "user").map(m => String(m.content)),
           last = users.at(-1),
-          marks = `head:${last.startsWith("［账本 .yan/账本.md］") ? "yes" : "no"}|once:${users.slice(0, -1).some(u => u.includes("［账本")) ? "no" : "yes"}|sys:${sys.includes(".yan/账本.md") ? "yes" : "no"}`;
+          ask = raw.findLast(m => m.role === "user")?.content,
+          after = Array.isArray(ask) && !ask[0].text.includes("［账本") && ask.at(-1).text.startsWith("［账本 .yan/账本.md］"),
+          marks = `tail:${after ? "yes" : "no"}|once:${users.slice(0, -1).some(u => u.includes("［账本")) ? "no" : "yes"}|sys:${sys.includes(".yan/账本.md") ? "yes" : "no"}`;
         if (users.length === 1 && !toolResults.length)
           return sse(res, [
             delta({
@@ -1455,7 +1463,7 @@ http
       const result = String(toolResults.at(-1).content);
       return sse(res, [
         delta({ content: `指令结果：${result.includes("你好，世界") ? "成功" : result.includes("没有同意") ? "被跳过" : "其他"}` }),
-        delta({ content: `｜工具数 ${payload.tools ? payload.tools.length : 0}` }),
+        delta({ content: `｜工具数 ${payload.tools ? payload.tools.length : 0}${payload.tool_choice === "none" ? "｜禁调" : ""}` }),
         delta({}, { usage: { total_tokens: 30 } })
       ]);
     });

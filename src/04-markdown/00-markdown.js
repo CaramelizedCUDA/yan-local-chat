@@ -228,6 +228,18 @@ function renderMarkdown(source = "") {
     return plain();
   }
 }
+// 这段文字末尾是否还在代码围栏里：按 CommonMark 记开围栏的字符与长度，同字符、不短于它、后面没别的字的一行才算合上。
+// 只数围栏行的奇偶不行：````markdown 里嵌着 ```bash 时，内层那两行会把里外颠倒
+function inOpenFence(text) {
+  let open = null;
+  for (const line of text.split("\n")) {
+    const fence = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (!fence) continue;
+    if (!open) open = { mark: fence[1][0], length: fence[1].length };
+    else if (fence[1][0] === open.mark && fence[1].length >= open.length && !fence[2].trim()) open = null;
+  }
+  return !!open;
+}
 // 流式渲染的分段点：最后一个空行，且它前面没有未闭合的代码围栏、后面不是列表 / 缩进 / 表格的延续
 function stableCut(content) {
   const listy = line => /^\s*(?:[-*+]|\d+[.)])\s/.test(line) || /^\s+\S/.test(line);
@@ -236,7 +248,7 @@ function stableCut(content) {
     const before = content.slice(0, cut),
       prevLine = before.slice(before.lastIndexOf("\n") + 1),
       nextLine = content.slice(cut + 2).split("\n")[0];
-    const inFence = (before.match(/^ {0,3}(?:`{3,}|~{3,})/gm) || []).length % 2 === 1;
+    const inFence = inOpenFence(before);
     const continues =
       /^\s+\S/.test(nextLine) || (listy(nextLine) && listy(prevLine)) || (/^\s*\|/.test(nextLine) && prevLine.includes("|"));
     if (!inFence && !continues) break;

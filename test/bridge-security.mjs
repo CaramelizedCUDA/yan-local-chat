@@ -374,6 +374,22 @@ const edits = await Promise.all([
     `${edits.map(e => e.status).join(",")} ${JSON.stringify(readFileSync(`${WORK}/race.txt`, "utf8"))}`
   );
 }
+// ---- 指令不拿目录锁：一条长指令跑着，同一目录的写入与别的指令照常进行（对谈都落在卷宗，锁整目录会让所有对话排成一队）
+{
+  const long = post("/api/work/run", { workdir, command: win ? "Start-Sleep -Seconds 4" : "sleep 4" }),
+    t0 = Date.now();
+  await new Promise(r => setTimeout(r, 300));
+  const [wrote, ran] = await Promise.all([
+    post("/api/work/write", { workdir, path: "beside.txt", content: "x" }),
+    post("/api/work/run", { workdir, command: "echo hi" })
+  ]);
+  check(
+    "a running command does not hold up writes or other commands in the same dir",
+    wrote.status === 200 && ran.status === 200 && Date.now() - t0 < 3500,
+    `${wrote.status},${ran.status} ${Date.now() - t0}ms`
+  );
+  await long;
+}
 // ---- 沙箱（sandbox: true）：路径不出目录、机密文件不碰、指令先筛、机密环境变量不给指令；不带 sandbox 的请求照旧
 writeFileSync(`${WORK}/.env`, "API_KEY=inside-secret\n");
 writeFileSync(`${WORK}/plain.txt`, "API_KEY mention in a plain file\n");

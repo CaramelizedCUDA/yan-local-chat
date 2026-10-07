@@ -153,14 +153,15 @@ function takeComposer(input, key = draftKey(), snapshot = composerSnapshot(input
  * @param {Message} user
  * @param {Profile} profile
  */
-async function startTurn(c, user, profile) {
+async function startTurn(c, user, profile, { follow = true } = {}) {
   /** @type {Message} */
   const assistant = { id: uid(), role: "assistant", content: "", timestamp: now(), status: "streaming", modelName: profile.name };
   c.messages.push(user, assistant);
   c.updatedAt = now();
   c.profileId = profile.id;
   saveStore();
-  if (currentId === c.id) render(true);
+  // 亲手发的问滚到底；回报唤起的、补言另起的不是这一刻发的，正往上翻着读的人不拽下去
+  if (currentId === c.id) render(follow || followBottom);
   else renderHistory();
   // 头一问一发出就拟题，与作答并行：侧栏里立刻是个像样的名字，不用等一答写完；没拟成的，那一答收尾时再试
   if (c.messages.filter(m => m.role === "user").length === 1) void maybeAutoTitle(c, profile);
@@ -302,7 +303,7 @@ function settleSupplements(conversation, assistant, job, profile) {
       attachments: users.flatMap(u => u.attachments || []),
       ...(quote ? { quote } : {})
     };
-    setTimeout(() => void startTurn(conversation, user, profile), 0);
+    setTimeout(() => void startTurn(conversation, user, profile, { follow: false }), 0);
     return mail();
   }
   const key = draftKey(conversation.id),
@@ -319,8 +320,9 @@ function settleSupplements(conversation, assistant, job, profile) {
   mail();
 }
 function titleFrom(text, attachments) {
-  const value = (text || `关于 ${attachments[0]?.name || "附件"}`).replace(/\s+/g, " ").trim();
-  return value.slice(0, 28) + (value.length > 28 ? "…" : "");
+  // 按码点截：截在 emoji 中间会留下半个字
+  const chars = [...(text || `关于 ${attachments[0]?.name || "附件"}`).replace(/\s+/g, " ").trim()];
+  return chars.slice(0, 28).join("") + (chars.length > 28 ? "…" : "");
 }
 // 停止：这一答连同这段对话后台的帮手一起停（帮手停了不回报，也就不再叫醒谁）
 function stopGeneration(id = currentId) {

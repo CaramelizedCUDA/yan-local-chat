@@ -101,7 +101,8 @@ module.exports = function createMcp({ version, toolEnv, prepare = config => conf
       const body = await readJson(req);
       const client = await ensure(body.server, body.config).ready;
       const result = await client.call(body.tool, body.arguments || {}, {
-        timeout: Number(body.timeout) > 0 ? Number(body.timeout) * 1000 : undefined,
+        // setTimeout 超过 2^31-1 毫秒会溢出成立刻到时：封顶
+        timeout: Number(body.timeout) > 0 ? Math.min(Number(body.timeout) * 1000, 2 ** 31 - 1) : undefined,
         signal
       });
       await attachLinkedImages(result, body.config);

@@ -7,6 +7,8 @@ let chatsBroken = false,
   chatsSyncing = false,
   // 这一回开页后对话已从目录读全过：之后才敢按「没人用」清附件原件
   chatsLoaded = false,
+  // 目录里有对话文件读不出（坏了、被同步盘或杀软占着）：它引用的附件不在留用单上，这时不清原件
+  chatsSkipped = 0,
   freshBrowser = false,
   // 开页时浏览器里是一份没带版本标记的记录（更老的版本，或测试灌进来的）：与 配置.json 对齐时以它为准
   localSeeded = false,
@@ -424,6 +426,11 @@ async function hydrateStore() {
     persistence?.catch?.(() => {});
   } catch {}
 }
+// 桥接断了又接上（重启、闪断），或开页那一回目录没读成：配置与对话目录各再对一次。开页那一回还没对过的不算（boot 自己来）
+function resyncWithDisk() {
+  if (!chatsLoaded && !chatsBroken) return;
+  void syncConfigWithDisk().then(syncChatsWithDisk);
+}
 // 与对话目录合一次：开页接上桥接时、桥接中途断了又接上时都来一遍。
 // 目录里没有的推过去，目录里更新的换进来（正在生成的、改了还没存的不换），两边一样的把表里的暂存清掉；先前没删成的补删
 async function syncChatsWithDisk() {
@@ -433,6 +440,7 @@ async function syncChatsWithDisk() {
     const data = await bridge("/api/chats/load", { root: chatsDir() }, AbortSignal.timeout(120000));
     chatsBroken = false;
     chatsLoaded = true;
+    chatsSkipped = Number(data.skipped) || 0;
     for (const id of [...pendingChatDeletes]) {
       // 当前页刚删、却还有旧保存正在收尾的，由 deleteConversationStorage 等完后亲自再删；这里抢先删会留下 save-after-delete 的窗口。
       if (deletedChatIds.has(id)) continue;
@@ -511,8 +519,9 @@ async function syncChatsWithDisk() {
     // 对话读全了：浏览器里暂存的附件原件推进目录，没人用的清掉
     void settleAttachmentStore();
   } catch (error) {
+    // 巡检里重试也没读成的不再说一遍
+    if (!chatsBroken) toast(`对话目录不可用，先存在浏览器里：${String(error.message || error).slice(0, 60)}`);
     chatsBroken = true;
-    toast(`对话目录不可用，先存在浏览器里：${String(error.message || error).slice(0, 60)}`);
   } finally {
     chatsSyncing = false;
   }

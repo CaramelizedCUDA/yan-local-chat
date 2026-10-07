@@ -32,7 +32,12 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
   // 用量在 finally 里结算：停止、断网、工具链中途出错，前面几轮已经花掉的墨也得记上，不能只在整答顺利收尾时记账
   const tally = newTally(),
-    stepsBefore = (assistant.steps || []).length;
+    stepsBefore = (assistant.steps || []).length,
+    // 续写时上一截还在后台做的帮手：它若在这一截里做完，墨由这一截记（它见这一答在作答就不自己记）
+    helpersBefore = new Set((assistant.steps || []).filter(step => step.sub?.status === "streaming")),
+    // 续写前已耗的墨：这一截的用量另算，收尾时加回去，浮签上仍是这一答的总数
+    prior = resume ? { usage: assistant.usage, tokens: Number(assistant.tokenCount) || 0, estimated: !!assistant.tokenEstimated } : null;
+  if (prior) delete assistant.tokenCount;
   /** @type {Array<Record<string, any>>} 送给接口的消息列表 */
   let history = [];
   let releaseQuota = () => {};
@@ -42,19 +47,24 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     let lastUserId = "";
     // 这一问之前的历史：上次压缩的摘要、此后的往来、续写时已写的那截。开头装一次；作答途中压了前文（compactHead）再装一次
     const buildHead = async () => {
-      const contextIndex = conversation.messages.map(m => m.role).lastIndexOf("context");
-      const source = conversation.messages
+      // 只取这一答之前的：在中间某一答上点「继续生成」时，它后面的问答不能混进来
+      const at = conversation.messages.findIndex(m => m.id === assistant.id),
+        before = at < 0 ? conversation.messages : conversation.messages.slice(0, at),
+        contextIndex = before.map(m => m.role).lastIndexOf("context");
+      const source = before
         .slice(contextIndex + 1)
         .filter(m => m.id !== assistant.id && m.status !== "error" && ["user", "assistant"].includes(m.role));
       lastUserId = source.filter(m => m.role === "user").at(-1)?.id;
-      const head = summaryMessages(contextIndex >= 0 ? conversation.messages[contextIndex] : null);
+      const head = summaryMessages(contextIndex >= 0 ? before[contextIndex] : null);
       head.push(...(await historyForApi(source, lastUserId, budget)));
-      // 账本冠在这一问的开头（之前的问不带，免得一份账本背上几十遍）
+      // 这一问的首段往后各问里一字不差，标作缓存点：下一问时连它在内的整段历史都从缓存读（桥接只给 Claude 留着这个标，别家去掉）。
+      // 账本只附在这一问（之前的问不带，免得一份账本背上几十遍），所以接在后面另起一段——冠在开头，这一问每问都变，缓存只接得到上一答之前
       const ask = head.findLast(entry => entry.role === "user"),
         ledger = ledgerNote(conversation);
-      if (ask && ledger) {
-        if (typeof ask.content === "string") ask.content = `${ledger}${ask.content}`;
-        else ask.content[0].text = `${ledger}${ask.content[0].text}`;
+      if (ask) {
+        if (typeof ask.content === "string") ask.content = [{ type: "text", text: ask.content }];
+        ask.content[0].cache_control = { type: "ephemeral" };
+        if (ledger) ask.content.push({ type: "text", text: ledger.trimEnd() });
       }
       // 续写只递已写的话，做过的步骤也得让它知道（另发一句「继续」时上一答的行迹本就随着去），不然从头再做一遍
       if (resumeFrom) {
@@ -139,8 +149,10 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     delete assistant.startedAt;
     // 帮手（差遣）自己跑的几轮也是这一答花的墨：这一次新起的步骤里已做完的帮手用量一并计入（续写时此前的已经记过）；
     // 还在后台做的，做完再记回这一答（见 chargeHelper）
-    for (const step of (assistant.steps || []).slice(stepsBefore))
-      if (step.sub?.usage && step.sub.status !== "streaming") {
+    // 记过的（帮手收工时自己记回、或上一截已算）打了 charged，不再计
+    for (const [i, step] of (assistant.steps || []).entries())
+      if ((i >= stepsBefore || helpersBefore.has(step)) && step.sub?.usage && step.sub.status !== "streaming" && !step.sub.charged) {
+        step.sub.charged = true;
         tally.usageKnown = true;
         for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(step.sub.usage[key] || 0);
       }
@@ -152,6 +164,17 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       roundStart: tally.roundStart,
       steered: tally.steered
     });
+    if (prior) {
+      if (prior.usage) {
+        const sum = { ...prior.usage };
+        for (const [key, value] of Object.entries(assistant.usage || {})) sum[key] = Number(sum[key] || 0) + Number(value || 0);
+        assistant.usage = sum;
+      }
+      if (prior.tokens) {
+        assistant.tokenCount = prior.tokens + (Number(assistant.tokenCount) || 0);
+        assistant.tokenEstimated = prior.estimated || !!assistant.tokenEstimated;
+      }
+    }
     if (requestJobs.get(conversation.id) === job) requestJobs.delete(conversation.id);
     settleSupplements(conversation, assistant, job, profile);
     if (currentId !== conversation.id || view !== "chat") conversation.unread = true;

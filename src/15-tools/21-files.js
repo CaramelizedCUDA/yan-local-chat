@@ -265,7 +265,7 @@ async function ensureWorkReady(conversation) {
 }
 // 账本：跨多答的长活，任务活在目录里、不活在哪一段对话里——目录下 .yan/账本.md 由主模型自己立、自己维护，
 // 只记对这件工程持续有约束的（目标与达标标准、约束与取舍、计划与进展、走不通的路），旧的随手淘汰。
-// 每一答开工时读一回，附在这一问的开头（见 ledgerNote）：压缩了、被回报叫醒另起一答、换一段对话接着做，看到的都是同一份。
+// 每一答开工时读一回，附在这一问之后（见 ledgerNote 与 streamReply）：压缩了、被回报叫醒另起一答、换一段对话接着做，看到的都是同一份。
 // 附在问上而不进系统提示：账本改了也不冲掉前面的缓存。没有这个文件就什么都不附
 const LEDGER_PATH = ".yan/账本.md",
   LEDGER_CHARS = 3000, // 过了就请它取舍
@@ -282,7 +282,7 @@ async function loadLedger(conversation, signal) {
   if (text) ledgers.set(conversation.id, text);
   else ledgers.delete(conversation.id);
 }
-// 冠在这一问开头的一段；帮手的是只读的一份（账本只由主对话写，星形）
+// 附在这一问之后的一段；帮手的是只读的一份（账本只由主对话写，星形）
 /** @param {Conversation} conversation @param {"main"|"sub"} role */
 function ledgerNote(conversation, role = "main") {
   const text = ledgers.get(conversation.id);

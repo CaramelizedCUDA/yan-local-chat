@@ -76,7 +76,7 @@ function resolveTarget(workdir, raw, roam) {
   if (
     path
       .normalize(text)
-      .replace(/(?<=.)[\/]+$/, "")
+      .replace(/(?<=.)[\\/]+$/, "")
       .toLowerCase() !== target.toLowerCase()
   )
     throw Error(`目录之外的路径必须是完整的绝对路径${process.platform === "win32" ? "（须带盘符）" : ""}：${raw}`);

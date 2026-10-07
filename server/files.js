@@ -7,7 +7,7 @@ const { sendJson, jsonRoute, errorText, writeAtomic, sendFile, openWithSystem } 
 const fs = require("node:fs");
 const path = require("node:path");
 
-module.exports = function createFiles({ filesHome }) {
+module.exports = function createFiles({ filesHome, playable }) {
   const ID = /^[A-Za-z0-9_-]{1,80}$/,
     // 清理只动放了一天以上的：别的标签页刚置入、草稿还没来得及写进配置的那件，不能因为「没人引用」被当场删掉
     CLEAN_GRACE_MS = 24 * 60 * 60 * 1000;
@@ -93,7 +93,10 @@ module.exports = function createFiles({ filesHome }) {
         meta = readMeta(dir, id),
         raw = meta && rawFileOf(dir, id, meta);
       if (!raw) return sendJson(res, 404, { error: "附件原件不在存储目录里" });
-      await sendFile(req, res, path.join(dir, raw), { name: meta.name || raw, download: !!query.get("download") });
+      const file = path.join(dir, raw),
+        name = meta.name || raw,
+        download = !!query.get("download");
+      await sendFile(req, res, download ? file : await playable(req, file, name), { name, download });
     } catch (error) {
       if (!res.headersSent) sendJson(res, 404, { error: errorText(error, 200) });
     }

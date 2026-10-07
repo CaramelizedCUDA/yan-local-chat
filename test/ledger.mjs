@@ -1,4 +1,4 @@
-// 账本：目录下 .yan/账本.md 每一答开工时读一回，冠在这一问开头（之前的问不带）；附着全文即算读过，主模型可径直改；下一问看到的是改后的那份
+// 账本：目录下 .yan/账本.md 每一答开工时读一回，接在这一问之后（之前的问不带）；附着全文即算读过，主模型可径直改；下一问看到的是改后的那份
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK } from "./lib.mjs";
 const { send, evalJs, waitFor, close } = await connect();
@@ -19,7 +19,11 @@ try {
   );
   await waitFor(`${reply(0)}.startsWith("LEDGER|")`, 30000);
   const first = await evalJs(reply(0));
-  check("the ledger heads this question and the system prompt names it", /head:yes\|once:yes\|sys:yes/.test(first), first);
+  check(
+    "the ledger follows this question as its own part and the system prompt names it",
+    /tail:yes\|once:yes\|sys:yes/.test(first),
+    first
+  );
   check("the main model edits the ledger without reading it first", first.includes("edit:yes"), first);
   check("the edit landed in the file", readFileSync(WORK + "/.yan/账本.md", "utf8").includes("达标线 0.95"));
   await evalJs(
@@ -27,7 +31,7 @@ try {
   );
   await waitFor(`${reply(1)}.startsWith("LEDGER|")`, 30000);
   const second = await evalJs(reply(1));
-  check("next question carries the edited ledger, and only once", /head:yes\|once:yes/.test(second) && second.includes("now:0.95"), second);
+  check("next question carries the edited ledger, and only once", /tail:yes\|once:yes/.test(second) && second.includes("now:0.95"), second);
 } finally {
   // 工作目录各用例共用：别让账本冠到后面用例的问上
   rmSync(WORK + "/.yan", { recursive: true, force: true });

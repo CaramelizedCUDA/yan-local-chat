@@ -586,6 +586,8 @@ check("closing the stage brings the pin back", true);
 // 入口平时只是一笔朱竖，指针靠近才浮出「游目」两字
 const nameShown = () => evalJs(`Number(getComputedStyle(document.querySelector(".stage-pin-text")).opacity)`);
 check("only the stroke shows at rest", (await nameShown()) === 0);
+// 面板刚收起时那一笔还在往右缘归位：等它站定再量，不然指针移到的是它半路上的位置
+await waitFor(`document.querySelector("#stagePin").getBoundingClientRect().right > innerWidth - 60`, 3000).catch(() => {});
 const pin = await evalJs(
   `(r => ({ x: r.right - 6, y: r.top + r.height / 2 }))(document.querySelector("#stagePin").getBoundingClientRect())`
 );

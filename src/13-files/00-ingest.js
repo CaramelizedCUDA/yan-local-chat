@@ -48,7 +48,11 @@ async function addFiles(fileList) {
 }
 // 读好的一件放上案：案上（pendingAttachments）此刻若已换成别段的草稿，就记进原来那段的草稿里，回去时还在
 function placeAttachment(key, file) {
-  if (draftKey() === key) return void pendingAttachments.push(file);
+  if (draftKey() === key) {
+    pendingAttachments.push(file);
+    // 随即记进草稿：一次拖进好几件，读着后面的时候页面若重画（restoreDraft 照草稿摆案），读好的几件不至于丢
+    return void persistDraft();
+  }
   const draft = draftRecord(key);
   store.drafts ||= {};
   store.drafts[key] = { ...draft, attachments: [...draft.attachments, file], updatedAt: now() };
@@ -56,7 +60,11 @@ function placeAttachment(key, file) {
 }
 async function ingestFile(file) {
   /** @type {Attachment["kind"]} */
-  const kind = file.type.startsWith("image/") ? "image" : isTextFile(file) ? "text" : "file",
+  const kind = file.type.startsWith("image/")
+      ? "image"
+      : isTextFile(file) || (fileKind(file.name) === OTHER_FILE && (await sniffText(file)))
+        ? "text"
+        : "file",
     id = uid();
   const data = await readFile(file, kind === "text" ? "text" : "data");
   const metadata = {

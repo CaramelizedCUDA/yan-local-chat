@@ -15,7 +15,7 @@ const {
   assertNoEscapingLink
 } = require("./paths.js");
 
-module.exports = function createArchive({ archiveHome }) {
+module.exports = function createArchive({ archiveHome, playable }) {
   const failed = error => errorText(error, 300);
   // ---- 卷宗目录：页面上的卷宗即这一目录的视图。列出全部文件与子目录（页面逐层看、查找时平铺），收入 / 取出 / 挪动 / 移出都限定在目录内 ----
   const ARCHIVE_LIST_LIMIT = 3000,
@@ -140,7 +140,8 @@ module.exports = function createArchive({ archiveHome }) {
     try {
       const body = await readJson(req, 400 * 1024 * 1024),
         root = await archiveRoot(body.root),
-        name = path.basename(String(body.name || "").trim()) || "未命名文件";
+        // 点开头的（.gitignore、标题是「.NET 8」的导出）列卷宗时当隐藏项跳过，收进来就再也看不见、删不掉：去掉首尾的点与空格，与改名同一个规矩
+        name = path.basename(String(body.name || "").trim()).replace(/^[. ]+|[. ]+$/g, "") || "未命名文件";
       const data = String(body.data || ""),
         comma = data.indexOf(",");
       if (!data.startsWith("data:") || comma < 0) throw Error("文件内容格式无效");
@@ -163,7 +164,9 @@ module.exports = function createArchive({ archiveHome }) {
       const root = await archiveRoot(query.get("root")),
         file = archivePath(root, query.get("path"));
       await assertNoEscapingLink(root, file);
-      await sendFile(req, res, file, { name: path.basename(file), download: !!query.get("download") });
+      const name = path.basename(file),
+        download = !!query.get("download");
+      await sendFile(req, res, download ? file : await playable(req, file, name), { name, download });
     } catch (error) {
       sendJson(res, 404, { error: failed(error) });
     }

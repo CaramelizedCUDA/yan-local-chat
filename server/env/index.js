@@ -264,6 +264,17 @@ module.exports = function createEnv({ envHome }) {
     say(`${name} → ${[found, ...fixed].join(" ")}`);
   }
 
+  // 环境里某件工具的程序本身（照 link 立的入口读回路径）；没装、或入口不是这种形状的返回 ""。
+  // 桥接自己要调它时用：.cmd 入口得经 cmd 才起得来，直接起 exe 省一层
+  function toolPath(name) {
+    try {
+      const found = /^@"([^"]+)"/.exec(fs.readFileSync(path.join(dirs().bin, `${name}.cmd`), "utf8"))?.[1] || "";
+      return found && fs.existsSync(found) ? found : "";
+    } catch {
+      return "";
+    }
+  }
+
   async function handleStatus(req, res) {
     await readJson(req).catch(() => ({}));
     sendJson(res, 200, status());
@@ -291,6 +302,7 @@ module.exports = function createEnv({ envHome }) {
   }
   return {
     apply,
+    toolPath,
     routes: { "POST /api/env/status": handleStatus, "POST /api/env/prepare": handlePrepare, "POST /api/env/clear": handleClear }
   };
 };

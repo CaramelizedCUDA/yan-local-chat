@@ -51,10 +51,20 @@ function toast(message, ms = 2200) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => hideWithFade(el), ms);
 }
-// 把正文里的某条消息滚到视口：只滚 #chatScroll 自己，不用 scrollIntoView——它会连带滚动外层容器（页面整体跟着偏一截，尤其在 VS Code 预览与移动端）
+// 把正文里的某条消息滚到视口：只滚 #chatScroll 自己，不用 scrollIntoView——它会连带滚动外层容器（页面整体跟着偏一截，尤其在 VS Code 预览与移动端）。
+// 要去看别处就不再贴底：生成中落墨的下一帧会把平滑滚动拽回底部，只抖一下
 function scrollChatTo(article, block = "start", margin = 12) {
   const host = $("#chatScroll");
   if (!host || !article) return;
+  followBottom = false;
+  autoScrolling = false;
+  // 落在压缩后折起的前文里（display: none，量不出位置）：先展开前文
+  const c = currentConversation();
+  if (c && article.closest("#messages > .compacted")) {
+    c.showCompacted = true;
+    foldCompacted(c);
+    renderOutline();
+  }
   const offset = article.getBoundingClientRect().top - host.getBoundingClientRect().top,
     target =
       block === "center"

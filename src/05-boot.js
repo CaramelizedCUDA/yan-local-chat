@@ -62,7 +62,11 @@ async function boot() {
   restorePlace();
   render();
   // 低频的全量巡检：哪段改了没标到也兜得住；页面藏起来时也巡一趟（手机切走常常就不回来了）
-  setInterval(sweepConversations, 45000);
+  setInterval(() => {
+    sweepConversations();
+    // 开页时对话目录没读成（桥接闪断、目录大到超时）：巡检时再试，不然整个会话都只存进浏览器
+    if (chatsBroken) resyncWithDisk();
+  }, 45000);
   // 报到：这边在作答什么、别处在作答什么（作答的一处三秒存一次盘，跟着看的一处也三秒读一次）
   setInterval(() => void syncLeases(), 3000);
   document.addEventListener("visibilitychange", () => {

@@ -361,7 +361,8 @@ $("#history").addEventListener(
   "blur",
   event => {
     const input = /** @type {HTMLInputElement} */ (event.target);
-    if (input.classList?.contains("group-rename") && renamingGroupId) commitGroupRename(input.value);
+    // 侧栏重画时旧输入框被移走也会失焦：那不是改完了（重画已把敲的字接到新框里）
+    if (input.classList?.contains("group-rename") && renamingGroupId && !renderingHistory) commitGroupRename(input.value);
   },
   true
 );

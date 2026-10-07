@@ -56,6 +56,12 @@ function helperRuns(conversation) {
 /** 同一名帮手的几趟认同一个 helper（头一趟的 id）；旧对话里没记的就是它自己 @param {Step} step */
 const helperKey = step => step.sub?.helper || step.sub?.id || "";
 /** @param {string} id */
+// 这段对话里由这几条消息派出、还在做的帮手
+/** @param {Conversation} c @param {Message[]} messages */
+function crewOf(c, messages) {
+  const ids = new Set(messages.map(message => message.id));
+  return (crews.get(c.id) || []).filter(box => ids.has(box.host?.id));
+}
 function stopCrew(id) {
   for (const box of crews.get(id) || []) {
     box.halted = true;
@@ -251,7 +257,7 @@ function wakeWithReports(conversation, items) {
     relay: items.map(relayOf)
   };
   const profile = profiles().find(p => p.id === items[0].profile?.id) || activeProfile();
-  if (profile && !quotaBlocked(profile)) return void startTurn(conversation, user, profile);
+  if (profile && !quotaBlocked(profile)) return void startTurn(conversation, user, profile, { follow: false });
   // 没有可用的模型或余墨已尽：回报先记下，等用户换了模型再问
   conversation.messages.push(user);
   conversation.updatedAt = now();
@@ -327,6 +333,8 @@ async function runDelegate(step, args, ctx, profile, past) {
   // 领命时附上主对话的账本（只读）：目标与约束它也得知道，开头提过的一条小约束才不会在分出去的活里丢了。
   // 领命这一刻现读：「先定下约束、再派活」最常见，开工时读的那份往往是旧的，甚至还没有
   await loadLedger(conversation, ctx.signal);
+  // 读账本这一会儿里按了「止」：它把中止吞了，这里补上——帮手还没登记，过了这里 stopCrew 就找不到它
+  ctx.signal?.throwIfAborted();
   const lead = past ? stepsDigest(past.sub, "上一答的行迹") : "";
   const history = [
     ...(past ? helperHistory(conversation, past) : []),
@@ -413,7 +421,11 @@ async function runDelegate(step, args, ctx, profile, past) {
     sub.durationMs = Math.round(performance.now() - started);
     delete sub.startedAt;
     // 派它的那一答还在作答：墨由那一答收尾时一并算；已收尾了（只剩等待就收尾）就在这里记回去
-    if (requestJob(conversation.id)?.assistantId !== assistant.id) chargeHelper(assistant, sub.usage, profile);
+    // 按「止」时主答的 job 已先撤下、它的收尾也会来算这名帮手：谁先记谁打 charged，另一边跳过
+    if (!sub.charged && requestJob(conversation.id)?.assistantId !== assistant.id) {
+      sub.charged = true;
+      chargeHelper(assistant, sub.usage, profile);
+    }
     // 回报是最后一段话；裁掉开头的空行，偏移跟着前移
     const lead = trimReply(sub);
     sub.report = sub.content.slice(Math.max(0, tally.replyStart - lead)).trim();

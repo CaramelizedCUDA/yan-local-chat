@@ -69,6 +69,15 @@ module.exports = function createShell({ toolEnv }) {
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     runningShells.add(child);
+    // 外壳退了、它起的孙进程（start /b 起的服务、会常驻的工具）还攥着输出管道：close 要等它们都退才来，指令一直挂着，
+    // 超时与停止也收不到（外壳已不在，killTree 无从下手）。外壳退后稍等片刻，管道还没合上就松手，按外壳的退出收尾
+    child.once("exit", () => {
+      const timer = setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+      }, 1500);
+      child.once("close", () => clearTimeout(timer));
+    });
     child.on("close", () => runningShells.delete(child));
     child.on("error", () => runningShells.delete(child));
     return child;
@@ -120,7 +129,7 @@ module.exports = function createShell({ toolEnv }) {
     });
   }
   // ---- 后台指令：开发服务器、监听构建这类不会自己结束的，放到后台跑，先回头几秒的输出与一个编号，之后用 check_command 取新输出或结束它。
-  // 后台指令不拿目录锁（它一直跑着，锁住了别的指令就都得排队）；桥接退出时一并收掉。只记最近的若干个，跑完的旧账先清
+  // 桥接退出时一并收掉。只记最近的若干个，跑完的旧账先清
   const BACKGROUND_KEEP = 24,
     backgroundJobs = new Map();
   let backgroundSeq = 0;

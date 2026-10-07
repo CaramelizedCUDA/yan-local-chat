@@ -57,13 +57,16 @@ module.exports = function createChats({ chatsHome }) {
   function codeOf(id) {
     return crypto.createHash("sha1").update(String(id)).digest("hex").slice(0, 10);
   }
+  // 按码点截、去掉落单的代理项：标题被页面按 UTF-16 截在 emoji 中间时，半个字落到盘上成了 U+FFFD，
+  // 读回的文件名与这里算的对不上，「旧名的文件不留」就把刚写的那份删了
   function safeTitle(title) {
     const text = String(title || "")
+      .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
       .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
       .replace(/\s+/g, " ")
       .trim()
       .replace(/[. ]+$/, "");
-    return (text || "对话").slice(0, 40);
+    return [...(text || "对话")].slice(0, 40).join("");
   }
   function fileNameFor(id, title) {
     return `${safeTitle(title)}·${codeOf(id)}.json`;

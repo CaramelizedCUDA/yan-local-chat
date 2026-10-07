@@ -119,10 +119,15 @@ function mcpFormConfig(form, previous) {
       .split("\n")
       .map(line => line.trim())
       .filter(Boolean);
+  // 一行漏了分隔符：indexOf 得 -1，会存成截掉末字的怪键（GITHUB_TOKEN → {"GITHUB_TOKE": "GITHUB_TOKEN"}），连上了报的错也看不懂；当场说
   const pairs = (key, sep) =>
     Object.fromEntries(
       lines(key)
-        .map(line => [line.slice(0, line.indexOf(sep)).trim(), line.slice(line.indexOf(sep) + 1).trim()])
+        .map((line, i) => {
+          const at = line.indexOf(sep);
+          if (at < 0) throw Error(`${key === "env" ? "环境变量" : "请求头"}第 ${i + 1} 行缺「${sep}」：${line}`);
+          return [line.slice(0, at).trim(), line.slice(at + 1).trim()];
+        })
         .filter(([k]) => k)
     );
   const { command, args, cwd, env, url, headers, type, transport, timeout, load, autoApprove, note, ...rest } = previous || {};

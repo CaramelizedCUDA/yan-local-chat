@@ -34,7 +34,9 @@ function anthropicUserBlocks(content) {
   for (const part of content) {
     if (!part || typeof part !== "object") continue;
     if (part.type === "text") {
-      if (part.text) blocks.push({ type: "text", text: String(part.text) });
+      // 页面标的缓存点（这一问的首段）原样带过去
+      if (part.text)
+        blocks.push({ type: "text", text: String(part.text), ...(part.cache_control ? { cache_control: { type: "ephemeral" } } : {}) });
     } else if (part.type === "image_url") {
       const url = String(part.image_url?.url || ""),
         data = url.match(/^data:([^;,]+);base64,(.*)$/s);
@@ -99,11 +101,16 @@ function anthropicRequest(payload) {
     generation = anthropicGeneration(payload.model),
     maxTokens = Math.max(16, Number(payload.max_tokens) || 32000);
   const body = { model: payload.model, max_tokens: maxTokens, messages, stream: true };
-  // 提示缓存：系统提示末尾一处（工具定义连同系统提示，最稳的一段），整段对话最后一块一处（下一轮开口时此前的往来都从缓存读）。
-  // 太短的前缀不缓存也不报错；思考块上不能放标记，往前找
+  // 提示缓存：系统提示末尾一处（工具定义连同系统提示，最稳的一段）；这一问的首段一处（页面标的，见上，跨答从这里接）；
+  // 上一次请求的末尾、这一次的末尾各一处——Anthropic 只从断点往回找约 20 块，一轮并行调了十来件工具，光凭这一次的末尾就找不着上一轮了。
+  // 一共四处，正是上限。太短的前缀不缓存也不报错；思考块上不能放标记，往前找
   if (system.length) body.system = [{ type: "text", text: system.join("\n\n"), cache_control: { type: "ephemeral" } }];
-  const tail = [...messages.at(-1).content].reverse().find(block => block.type !== "thinking" && block.type !== "redacted_thinking");
-  if (tail) tail.cache_control = { type: "ephemeral" };
+  const markTail = message => {
+    const block = [...(message?.content || [])].reverse().find(block => block.type !== "thinking" && block.type !== "redacted_thinking");
+    if (block) block.cache_control = { type: "ephemeral" };
+  };
+  markTail(messages[messages.findLastIndex(message => message.role === "assistant") - 1]);
+  markTail(messages.at(-1));
   if (generation.adaptive) {
     if (level || generation.thinksByDefault)
       body.thinking = { type: "adaptive", ...(generation.noSampling ? { display: "summarized" } : {}) };
@@ -125,6 +132,7 @@ function anthropicRequest(payload) {
       description: tool.function?.description || "",
       input_schema: tool.function?.parameters || { type: "object", properties: {} }
     }));
+  if (body.tools && payload.tool_choice === "none") body.tool_choice = { type: "none" };
   return body;
 }
 // Messages API 的事件流 → OpenAI 风格的 SSE 分块（data: {...}\n\n，末尾 [DONE]）。
@@ -218,7 +226,7 @@ function anthropicToOpenAiStream(model = "") {
   });
 }
 // 经 OpenAI 兼容的中转用 Claude：缓存同样要显式标，不标就一分不省（实测原价重发）。中转认 OpenAI 内容段上的 cache_control、照转给 Claude，
-// 标法与上面相同——系统提示一处、最后一条一处；一答之内第二轮起此前的往来从缓存读，跨答到上一问为止也接得上。别家模型不加，免得严格的接口不认这个字段
+// 标法与上面相同——系统提示、这一问的首段（页面标好的，原样留着）、上一次请求的末尾、最后一条。别家模型不加，页面标的也去掉（stripCacheMarks），免得严格的接口不认这个字段
 function claudeModel(model) {
   return /claude/i.test(String(model || ""));
 }
@@ -230,8 +238,16 @@ function markOpenAiCache(messages) {
     if (parts.length) parts[parts.length - 1].cache_control = { type: "ephemeral" };
     return { ...message, content: parts };
   };
-  const last = messages.length - 1;
-  return messages.map((message, i) => (i === last || (i === 0 && message.role === "system") ? mark(message) : message));
+  const last = messages.length - 1,
+    previous = messages.findLastIndex(message => message.role === "assistant") - 1;
+  return messages.map((message, i) => (i === last || i === previous || (i === 0 && message.role === "system") ? mark(message) : message));
+}
+function stripCacheMarks(messages) {
+  return messages.map(message =>
+    Array.isArray(message.content) && message.content.some(part => part?.cache_control)
+      ? { ...message, content: message.content.map(({ cache_control, ...part }) => part) }
+      : message
+  );
 }
 module.exports = {
   anthropicEndpoint,
@@ -239,6 +255,7 @@ module.exports = {
   anthropicToOpenAiStream,
   claudeModel,
   markOpenAiCache,
+  stripCacheMarks,
   provider: {
     url: config => anthropicEndpoint(config.baseUrl),
     modelsUrl: config => anthropicEndpoint(config.baseUrl, "/v1/models"),

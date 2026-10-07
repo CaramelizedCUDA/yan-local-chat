@@ -16,7 +16,7 @@ const createLocks = require("./locks.js");
 const createArchive = require("./archive.js");
 const writeTextAtomic = require("./atomic.js");
 
-module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
+module.exports = function createWork({ archiveHome, workHome, toolEnv, playable }) {
   // ---- 执事模式：给模型一个工作目录，能跑指令、读写文件 ----
   // 只做四件事：跑一条指令、写文件、读文件、列目录。路径默认限定在工作目录之内（页面放开后绝对路径可指向目录之外）；指令在工作目录里用本机 shell 执行。
   // 不做进程隔离——这是用户自己的机器，页面上每条指令都看得见，并按问而后行 / 审而后行 / 径行三档处理。
@@ -33,7 +33,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     PREVIOUS_KEEP_CHARS = 4000;
   const resolveWorkdir = raw => paths.resolveWorkdir(raw, workHome);
   const { WORK_SHELL, runShell, startBackground, backgroundReport, checkBackground, watchBackground } = createShell({ toolEnv }),
-    { lockFile, lockWorkdir } = createLocks();
+    { lockFile } = createLocks();
   // 沙箱分两档：问而后行（或没说档位的请求）用严的；审而后行、径行用宽的——文件工具在宽档里不设防，指令只守系统本身（见 server/sandbox.js）
   const looseTier = body => body.permission === "review" || body.permission === "auto";
   const strictBox = body => body.sandbox === true && !looseTier(body);
@@ -128,17 +128,10 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
       // 封顶在 2³¹−1 毫秒（约 24 天）只因 setTimeout 超过它会溢出、当作 1 毫秒——模型给个大数，指令就被当场杀掉
       const timeoutMs = clampNumber(Number(body.timeout) * 1000, 120000, 1000, 2147483647);
       console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ ${command.slice(0, 120)}`);
-      // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉
-      // 排队等目录锁时停了也算：不再起这条指令
+      // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉。指令不拿目录锁，见 locks.js
       const signal = requestSignal(res);
       const started = Date.now(),
-        release = await lockWorkdir(workdir, signal);
-      let result;
-      try {
         result = await runShell(command, workdir, timeoutMs, signal, { boxed });
-      } finally {
-        release();
-      }
       if (result.aborted) console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })}   已中止：${command.slice(0, 80)}`);
       if (!res.writableEnded && !res.destroyed) sendJson(res, 200, { ...result, durationMs: Date.now() - started });
     } catch (error) {
@@ -172,7 +165,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     if (file === workdir) throw Error("请给出文件名");
     const content = String(body.content ?? "");
     if (Buffer.byteLength(content) > 32 * 1024 * 1024) throw Error("单个文件不超过 32 MB");
-    const release = await lockFile(workdir, file, signal);
+    const release = await lockFile(file, signal);
     try {
       const existing = await fs.promises.stat(file).catch(() => null);
       if (existing?.isDirectory()) throw Error(`${body.path} 是目录，不能作为文件写入`);
@@ -292,16 +285,20 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     if (file === workdir) throw Error("请给出文件名");
     if (!oldText) throw Error("old 不能为空；新建文件请用 write_file");
     if (oldText === newText) throw Error("old 与 new 相同，无需修改");
-    const release = await lockFile(workdir, file, signal);
+    const release = await lockFile(file, signal);
     try {
       const stat = await fs.promises.stat(file).catch(() => null);
       if (!stat) throw Error(`文件不存在：${body.path}${await missingHint(workdir, file, strictBox(body))}`);
       if (stat.isDirectory()) throw Error(`${body.path} 是目录`);
       if (stat.size > 8 * 1024 * 1024) throw Error("文件超过 8 MB，不予编辑");
-      const decoded = decodeText(await fs.promises.readFile(file));
+      const raw = await fs.promises.readFile(file),
+        decoded = decodeText(raw);
       if (!decoded) throw Error("二进制文件，不予编辑");
       if (decoded.encoding === "gbk")
         throw Error("文件是 GBK 编码，edit_file 只改 UTF-8 / UTF-16 的文件；请用 write_file 整体重写（会存成 UTF-8），或用指令转码后再改");
+      // 大半是 UTF-8、夹着几行 GBK 的（中文 Windows 上的老脚本、老源码）读时也认作 UTF-8；整份写回会把没改的那几行毁掉
+      if (!encodeText(decoded.text, decoded.encoding).equals(raw))
+        throw Error("文件里夹着不是 UTF-8 的字节（多半是几行 GBK），整份写回会把它们毁掉；请用指令转码后再改，或用 write_file 整体重写");
       const source = decoded.text,
         crlf = source.includes("\r\n") && !oldText.includes("\r\n");
       const needle = crlf ? oldText.replace(/\r?\n/g, "\r\n") : oldText,
@@ -484,7 +481,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
     }
     const { buffer, truncated } = await readLimitedBytes(response, DOWNLOAD_LIMIT);
     if (truncated) throw Error(`文件超过 ${DOWNLOAD_LIMIT / 1048576} MB`);
-    const release = await lockFile(workdir, target, signal);
+    const release = await lockFile(target, signal);
     try {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       const extension = path.extname(target),
@@ -523,7 +520,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv }) {
       "POST /api/work/edit": handleWorkEdit,
       "POST /api/work/search": handleWorkSearch,
       "POST /api/work/download": handleWorkDownload,
-      ...createArchive({ archiveHome })
+      ...createArchive({ archiveHome, playable })
     }
   };
 };

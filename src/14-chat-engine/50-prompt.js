@@ -8,9 +8,10 @@ const PROMPT_VARS = {
   "work.hint": ctx => workVars(ctx.conversation),
   "work.archive": ctx => workVars(ctx.conversation),
   "work.env": () => envVars(),
+  // 不报条数：记一条就变，系统提示一变，整段对话的缓存都作废
   "memory.hint": () => {
     const names = memoryCategories().map(cat => cat.name);
-    return { count: store.memory.items.length, categories: names.length ? `，分作${names.map(name => `「${name}」`).join("")}` : "" };
+    return { categories: names.length ? `，分作${names.map(name => `「${name}」`).join("")}` : "" };
   },
   "mcp.hint": ctx => mcpHintVars(ctx.tools, ctx.preset),
   "side.passage": ctx => (ctx.anchor ? {} : null),

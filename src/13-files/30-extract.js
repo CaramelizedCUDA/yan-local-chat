@@ -1,12 +1,33 @@
 // 言 · 文件 · 文档抽取：PDF 与 Office / ODF 文档抽成文字与 Markdown
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function readFile(file, mode) {
+  if (mode !== "data") return file.arrayBuffer().then(decodeTextBytes);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
-    mode === "data" ? reader.readAsDataURL(file) : reader.readAsText(file);
+    reader.readAsDataURL(file);
   });
+}
+// 文字按 UTF-8 读，读不通再按 GB18030（中文 Excel 另存的 CSV、旧记事本存的 txt 多是 GBK，按 UTF-8 读满屏乱码）
+/** @param {ArrayBuffer|Uint8Array} bytes */
+function decodeTextBytes(bytes) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("gb18030").decode(bytes);
+  }
+}
+// 扩展名不在表里、浏览器也没报类型的（.vue、.kt、Dockerfile、.env……）：看开头 64KB，没有 NUL、按 UTF-8 或 GBK 解得通的当文字
+async function sniffText(file) {
+  const head = new Uint8Array(await file.slice(0, 65536).arrayBuffer());
+  if (head.includes(0)) return false;
+  for (const label of ["utf-8", "gb18030"])
+    try {
+      new TextDecoder(label, { fatal: true }).decode(head, { stream: true });
+      return true;
+    } catch {}
+  return false;
 }
 function bytesFromDataUrl(value) {
   const encoded = String(value).slice(String(value).indexOf(",") + 1),

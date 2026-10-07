@@ -193,8 +193,14 @@ function renderLibrary() {
   document
     .querySelectorAll("[data-library-kind]")
     .forEach(button => button.classList.toggle("active", button.dataset.libraryKind === libraryKind));
+  // 只接回正改着的那一件的字：上一件改完失焦、桥接还没回话时它的输入框还在页上，紧接着点了另一件的改名，不能把上一件的新名带过去
   const draft = /** @type {HTMLInputElement|null} */ ($("#libraryGrid .strip-rename")),
-    kept = draft && { value: draft.value, start: draft.selectionStart, end: draft.selectionEnd, focused: document.activeElement === draft };
+    kept = draft?.closest("[data-library-item]")?.getAttribute("data-library-item") === libraryRenaming && {
+      value: draft.value,
+      start: draft.selectionStart,
+      end: draft.selectionEnd,
+      focused: document.activeElement === draft
+    };
   // 簿头「名目」左边一枚 ‹ 回上一层（在根上不显）；它也接得住拖来的条子
   const back =
     browsing && libraryDir

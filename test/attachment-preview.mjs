@@ -202,9 +202,9 @@ await waitFor(
 );
 await sleep(300);
 check(
-  "a video the browser cannot decode turns into a download hint",
+  "a video the browser cannot decode turns into open-locally and download",
   await evalJs(
-    `!document.querySelector("#fileViewerStage video") && document.querySelector("#fileViewerStage").textContent.includes("不支持此编码")`
+    `!document.querySelector("#fileViewerStage video") && document.querySelector("#fileViewerStage").textContent.includes("浏览器放不了") && !!document.querySelector("#fileViewerStage [data-viewer-open]")`
   )
 );
 await close();

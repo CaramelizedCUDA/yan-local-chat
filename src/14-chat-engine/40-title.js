@@ -49,14 +49,16 @@ async function maybeAutoTitle(conversation, profile) {
     const spent = Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]);
     spendTokens(profile, spent);
     renderQuota();
-    const title =
+    const line =
       temp.content
         .split("\n")
         .map(line => line.trim())
         .find(Boolean)
-        ?.replace(/^[\s"'“”‘’《》「」【】#*]+|[\s"'“”‘’《》「」【】。！？!?.、,，]+$/g, "")
-        .slice(0, 24) || "";
+        ?.replace(/^[\s"'“”‘’《》「」【】#*]+|[\s"'“”‘’《》「」【】。！？!?.、,，]+$/g, "") || "";
+    const title = [...line].slice(0, 24).join("");
     if (!title || renamedByHand(conversation)) return;
+    // 拟题的这一会儿里第一问改过了：拟的是旧问题的题，不写；收尾处按新的再拟
+    if (conversation.messages.find(m => m.role === "user")?.id !== first.id) return void titleRetries.add(conversation.id);
     conversation.title = title;
     conversation.titleAuto = true;
     conversation.titled = true;

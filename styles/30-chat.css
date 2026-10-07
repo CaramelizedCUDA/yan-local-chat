@@ -1100,7 +1100,8 @@ html.work-mode .chat-scroll-grabber {
 :is(.markdown, .trail-note, .sub-report, .file-viewer-table) :is(th, td):last-child {
   padding-right: 2px;
 }
-.markdown .math-block {
+/* 不挂在 .markdown 下：行迹里的话、帮手回报、前文摘要也走 renderMarkdown 却不带 .markdown，长公式在那里得一样横向滚动 */
+.math-block {
   overflow-x: auto;
   margin: 1em 0;
   padding: 2px 0;

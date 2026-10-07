@@ -15,6 +15,13 @@ function everyMessage(c) {
 function forkTail(c, index) {
   const tail = c.messages.slice(index);
   if (!tail.length) return null;
+  // 收起来的那几答派出的帮手还在后台做：回报已无处可落（落到新的这一版里就张冠李戴），一并停下，停了不回报
+  const orphans = crewOf(c, tail);
+  for (const box of orphans) {
+    box.halted = true;
+    box.controller.abort();
+  }
+  if (orphans.length) toast("旧答派出的帮手已停下");
   c.messages = c.messages.slice(0, index);
   // 只剩一条报错或空白的消息就不值得留作版本
   if (tail.length === 1 && !tail[0].content && !tail[0].steps?.length) {
@@ -56,6 +63,8 @@ function switchBranch(c, index, step) {
   const fork = c.forks.find(item => item.id === target.forkId),
     tail = c.messages.slice(index),
     parentId = c.messages[index - 1]?.id ?? null;
+  // 眼前这一版的帮手还在做：切走了它的回报会落进别的版本里
+  if (crewOf(c, tail).length) return toast("这一版派出的帮手还在做，做完再切");
   const anchor = document.querySelector(`#messages [data-message="${CSS.escape(c.messages[index].id)}"]`),
     host = $("#chatScroll"),
     keepTop = anchor ? anchor.getBoundingClientRect().top - host.getBoundingClientRect().top : null;
