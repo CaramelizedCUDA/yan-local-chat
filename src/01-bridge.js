@@ -64,9 +64,16 @@ function busConnect() {
     busTried = true;
     for (const resolve of busWaiters.splice(0)) resolve(open);
   };
-  busSource.onopen = () => settle(true);
+  let dropped = false;
+  busSource.onopen = () => {
+    settle(true);
+    // 断过又接上：断着的那会儿存的只进了浏览器，与目录再对一次（见 resyncWithDisk）
+    if (dropped) resyncWithDisk();
+    dropped = false;
+  };
   // 流断了（桥接重启、关了）：在途的一律按连不上结束，与直接 fetch 时掐线一样；EventSource 自己会重连
   busSource.onerror = () => {
+    dropped = true;
     for (const job of [...busJobs.values()]) job.fail(new TypeError("Failed to fetch"));
     settle(false);
   };

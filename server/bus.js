@@ -76,7 +76,11 @@ module.exports = function createBus({ dispatch }) {
     if (!/^[\w-]{8,80}$/.test(page)) return sendJson(res, 400, { error: "缺少页面标识" });
     // 同一页重连：旧流上的请求随旧流作废
     closePage(page);
-    res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no"
+    });
     res.write(": open\n\n");
     const entry = { res, jobs: new Map() };
     pages.set(page, entry);
@@ -97,7 +101,8 @@ module.exports = function createBus({ dispatch }) {
   }
 
   async function send(req, res) {
-    const { page, id, path, body } = await readJson(req),
+    // 上限跟着最大的那条接口走：卷宗收件自己认 400MB（256MB 的文件编成 data URL 再套一层），默认的 128MB 在总线这层就先拒了
+    const { page, id, path, body } = await readJson(req, 450 * 1024 * 1024),
       entry = pages.get(page);
     if (!entry) return sendJson(res, 409, { error: "总线未接通" });
     if (typeof id !== "string" || !id || typeof path !== "string" || !path.startsWith("/api/") || path.startsWith("/api/bus"))

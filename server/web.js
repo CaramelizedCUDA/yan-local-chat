@@ -6,10 +6,12 @@ const net = require("node:net");
 const { jsonRoute } = require("./http.js");
 
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+// 超出 Unicode 范围的实体（&#99999999;）fromCodePoint 会抛错，整页就读不成：换成替换符
+const codePoint = n => (n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "�");
 function decodeEntities(value) {
   return String(value)
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, n) => codePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => codePoint(parseInt(h, 16)))
     .replace(
       /&(amp|lt|gt|quot|apos|nbsp|ensp|emsp|thinsp|hellip|mdash|ndash|middot|laquo|raquo|ldquo|rdquo|lsquo|rsquo|copy);/g,
       (_, e) =>

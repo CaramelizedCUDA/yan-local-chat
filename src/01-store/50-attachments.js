@@ -147,7 +147,8 @@ async function settleAttachmentStore() {
         await fileStoreRequest("readwrite", db => db.delete(id)).catch(() => {});
       }
     }
-    if (chatsLoaded) await bridge("/api/files/clean", { keep: [...attachmentKeepIds()] }, AbortSignal.timeout(60000)).catch(() => {});
+    if (chatsLoaded && !chatsSkipped)
+      await bridge("/api/files/clean", { keep: [...attachmentKeepIds()] }, AbortSignal.timeout(60000)).catch(() => {});
   } catch {
   } finally {
     attachmentsSettling = false;

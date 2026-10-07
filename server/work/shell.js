@@ -69,6 +69,15 @@ module.exports = function createShell({ toolEnv }) {
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     runningShells.add(child);
+    // 外壳退了、它起的孙进程（start /b 起的服务、会常驻的工具）还攥着输出管道：close 要等它们都退才来，指令一直挂着，
+    // 超时与停止也收不到（外壳已不在，killTree 无从下手）。外壳退后稍等片刻，管道还没合上就松手，按外壳的退出收尾
+    child.once("exit", () => {
+      const timer = setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+      }, 1500);
+      child.once("close", () => clearTimeout(timer));
+    });
     child.on("close", () => runningShells.delete(child));
     child.on("error", () => runningShells.delete(child));
     return child;

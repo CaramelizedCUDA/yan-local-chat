@@ -291,10 +291,14 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       if (!stat) throw Error(`文件不存在：${body.path}${await missingHint(workdir, file, strictBox(body))}`);
       if (stat.isDirectory()) throw Error(`${body.path} 是目录`);
       if (stat.size > 8 * 1024 * 1024) throw Error("文件超过 8 MB，不予编辑");
-      const decoded = decodeText(await fs.promises.readFile(file));
+      const raw = await fs.promises.readFile(file),
+        decoded = decodeText(raw);
       if (!decoded) throw Error("二进制文件，不予编辑");
       if (decoded.encoding === "gbk")
         throw Error("文件是 GBK 编码，edit_file 只改 UTF-8 / UTF-16 的文件；请用 write_file 整体重写（会存成 UTF-8），或用指令转码后再改");
+      // 大半是 UTF-8、夹着几行 GBK 的（中文 Windows 上的老脚本、老源码）读时也认作 UTF-8；整份写回会把没改的那几行毁掉
+      if (!encodeText(decoded.text, decoded.encoding).equals(raw))
+        throw Error("文件里夹着不是 UTF-8 的字节（多半是几行 GBK），整份写回会把它们毁掉；请用指令转码后再改，或用 write_file 整体重写");
       const source = decoded.text,
         crlf = source.includes("\r\n") && !oldText.includes("\r\n");
       const needle = crlf ? oldText.replace(/\r?\n/g, "\r\n") : oldText,
