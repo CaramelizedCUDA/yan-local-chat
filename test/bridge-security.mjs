@@ -374,21 +374,29 @@ const edits = await Promise.all([
     `${edits.map(e => e.status).join(",")} ${JSON.stringify(readFileSync(`${WORK}/race.txt`, "utf8"))}`
   );
 }
-// ---- 指令不拿目录锁：一条长指令跑着，同一目录的写入与别的指令照常进行（对谈都落在卷宗，锁整目录会让所有对话排成一队）
+// ---- 前台指令独占目录锁：同目录的写入与另一条前台指令等它完成，避免改同一文件时互相覆盖。
 {
-  const long = post("/api/work/run", { workdir, command: win ? "Start-Sleep -Seconds 4" : "sleep 4" }),
-    t0 = Date.now();
+  const long = post("/api/work/run", {
+    workdir,
+    command: win ? "Set-Content lock-running.txt ready; Start-Sleep -Seconds 4" : "printf ready > lock-running.txt; sleep 4"
+  });
+  // 先确认长指令真的开始，再检查排队；PowerShell 冷启动时间不计入等待断言。
+  const deadline = Date.now() + 10000;
+  while (!existsSync(`${WORK}/lock-running.txt`) && Date.now() < deadline) await new Promise(r => setTimeout(r, 50));
+  check("foreground command starts before queue checks", existsSync(`${WORK}/lock-running.txt`));
+  let wroteEarly = false,
+    ranEarly = false;
+  const writing = post("/api/work/write", { workdir, path: "beside.txt", content: "x" }).then(r => ((wroteEarly = true), r)),
+    running = post("/api/work/run", { workdir, command: "echo hi" }).then(r => ((ranEarly = true), r));
   await new Promise(r => setTimeout(r, 300));
-  const [wrote, ran] = await Promise.all([
-    post("/api/work/write", { workdir, path: "beside.txt", content: "x" }),
-    post("/api/work/run", { workdir, command: "echo hi" })
-  ]);
+  check("a foreground command queues writes and other foreground commands in the same dir", !wroteEarly && !ranEarly);
+  const finished = await long,
+    [wrote, ran] = await Promise.all([writing, running]);
   check(
-    "a running command does not hold up writes or other commands in the same dir",
-    wrote.status === 200 && ran.status === 200 && Date.now() - t0 < 3500,
-    `${wrote.status},${ran.status} ${Date.now() - t0}ms`
+    "queued writes and foreground commands complete after the directory lock is released",
+    finished.status === 200 && finished.data?.exitCode === 0 && wrote.status === 200 && ran.status === 200 && ran.data?.exitCode === 0,
+    `${finished.status},${wrote.status},${ran.status}`
   );
-  await long;
 }
 // ---- 沙箱（sandbox: true）：路径不出目录、机密文件不碰、指令先筛、机密环境变量不给指令；不带 sandbox 的请求照旧
 writeFileSync(`${WORK}/.env`, "API_KEY=inside-secret\n");

@@ -9,41 +9,66 @@ const { McpClient } = require("../../server/mcp/client.js");
 
 test("排队等文件锁时停下：出队落空，锁放开后也不会再拿到", async () => {
   const { lockFile } = createLocks();
-  const first = await lockFile("D:/w/a.txt");
+  const first = await lockFile("D:/w", "D:/w/a.txt");
   const stop = new AbortController();
   let granted = false;
-  const queued = lockFile("D:/w/a.txt", stop.signal).then(release => ((granted = true), release));
+  const queued = lockFile("D:/w", "D:/w/a.txt", stop.signal).then(release => ((granted = true), release));
   stop.abort();
   await assert.rejects(queued, /已停止/);
   first();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(granted, false);
   // 锁没有被落空的那一位占住：后来的照常拿到
-  const next = await lockFile("D:/w/a.txt");
+  const next = await lockFile("D:/w", "D:/w/a.txt");
   next();
 });
 
-test("已经停了的请求拿不到锁，锁也不被占着", async () => {
-  const { lockFile } = createLocks();
+test("已经停了的请求拿不到锁，目录锁也不被占着", async () => {
+  const { lockFile, lockWorkdir } = createLocks();
   const stop = new AbortController();
   stop.abort();
-  await assert.rejects(lockFile("D:/w/a.txt", stop.signal), /已停止/);
-  const release = await lockFile("D:/w/a.txt");
+  await assert.rejects(lockFile("D:/w", "D:/w/a.txt", stop.signal), /已停止/);
+  await assert.rejects(lockWorkdir("D:/w", stop.signal), /已停止/);
+  const release = await lockWorkdir("D:/w");
   release();
 });
 
 test("同一文件按先后排队，不同文件各走各的", async () => {
   const { lockFile } = createLocks();
-  const a = await lockFile("D:/w/a.txt");
+  const a = await lockFile("D:/w", "D:/w/a.txt");
   // Windows 上路径不分大小写：同一个文件
   let second = false;
-  const queued = lockFile("D:/W/A.txt").then(release => ((second = true), release));
-  const other = await lockFile("D:/w/b.txt");
+  const queued = lockFile("D:/w", "D:/W/A.txt").then(release => ((second = true), release));
+  const other = await lockFile("D:/w", "D:/w/b.txt");
   other();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(second, process.platform !== "win32");
   a();
   (await queued)();
+});
+
+test("等前台指令跑完时停下：指令收尾后不再写", async () => {
+  const { lockFile, lockWorkdir } = createLocks();
+  const command = await lockWorkdir("D:/w");
+  const stop = new AbortController();
+  const queued = lockFile("D:/w", "D:/w/a.txt", stop.signal);
+  stop.abort();
+  await assert.rejects(queued, /已停止/);
+  command();
+  const next = await lockFile("D:/w", "D:/w/a.txt");
+  next();
+});
+
+test("前台指令等文件写完时停下：放锁后也不启动", async () => {
+  const { lockFile, lockWorkdir } = createLocks();
+  const writing = await lockFile("D:/w", "D:/w/a.txt");
+  const stop = new AbortController();
+  const queued = lockWorkdir("D:/w", stop.signal);
+  stop.abort();
+  await assert.rejects(queued, /已停止/);
+  writing();
+  const next = await lockWorkdir("D:/w");
+  next();
 });
 
 function fakeClient() {
