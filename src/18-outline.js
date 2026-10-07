@@ -157,7 +157,6 @@ function syncOutline() {
 function jumpToOutline(id) {
   const article = document.querySelector(`#messages [data-message="${CSS.escape(id)}"]`);
   if (!article) return;
-  followBottom = false;
   // 点了哪一问就标哪一问，平滑滚动的途中不让滚动事件把它改掉
   const rail = $("#outline");
   rail?.querySelectorAll(".outline-item.active").forEach(item => item.classList.remove("active"));

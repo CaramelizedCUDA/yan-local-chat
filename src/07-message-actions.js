@@ -20,15 +20,20 @@ const MESSAGE_ACTIONS = {
   note: { brush: "note", busy: true, run: ({ message }) => openSideIndex(message.id) },
   "branch-prev": { run: ({ c, index }) => switchBranch(c, index, -1) },
   "branch-next": { run: ({ c, index }) => switchBranch(c, index, 1) },
+  // 摘件、取消改问不动对话本身，作答途中也放行（拦下了，点 × 会冒到件条上打开查看器）
   "drop-attachment": {
-    run: ({ button, event }) => {
+    busy: true,
+    run: ({ c, index, message, button, event }) => {
       // 只摘掉这一枚件条、不重画：重画会把编辑框里改到一半的字冲回原文。也别让点击再冒到件条上打开查看器
       event.stopPropagation();
       editingDropped.add(button.dataset.file);
-      const card = button.closest(".attachment-card"),
+      const article = button.closest("[data-message]"),
+        card = button.closest(".attachment-card"),
         list = card?.parentElement;
       card?.remove();
       if (list && !list.children.length) list.remove();
+      // 签名里记着摘了几件：页上这条跟着记上，不然下一次重画见签名不同，照原文重建编辑框
+      if (article) nodeSig.set(article, messageSig(message, branchAt(c, index)));
     }
   },
   edit: {
@@ -47,6 +52,7 @@ const MESSAGE_ACTIONS = {
     }
   },
   "cancel-edit": {
+    busy: true,
     run: () => {
       editingMessageId = null;
       renderConversation(false);

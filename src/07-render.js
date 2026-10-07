@@ -204,11 +204,12 @@ function renderHistory() {
   for (const label of ["今天", "过去七天", "更早"]) buckets.set(label, []);
   for (const node of nodes) buckets.get(dayBucket(node.at)).push(node);
   // 正改着名时侧栏也可能重画（别的对话拟好了题、后台一答收尾）：改到一半的字与光标得留住，不能被原标题冲掉
+  // 改组名同理
   const editing = $("#history .history-rename"),
-    typed =
-      editing && renamingId && editing.closest("[data-conversation]")?.dataset.conversation === renamingId
-        ? { value: editing.value, start: editing.selectionStart, end: editing.selectionEnd }
-        : null;
+    mine = editing?.classList.contains("group-rename")
+      ? !!renamingGroupId && editing.closest("[data-group]")?.dataset.group === renamingGroupId
+      : !!editing && !!renamingId && editing.closest("[data-conversation]")?.dataset.conversation === renamingId,
+    typed = mine ? { value: editing.value, start: editing.selectionStart, end: editing.selectionEnd } : null;
   const item = c => {
     if (renamingId === c.id)
       return `<div class="history-item active" data-conversation="${escapeHtml(c.id)}"><input class="history-rename" value="${escapeHtml(typed && renamingDirty ? typed.value : c.title)}" maxlength="60" aria-label="重命名对话"></div>`;
@@ -247,7 +248,7 @@ function renderHistory() {
       here = fold && items.some(c => c.id === currentId),
       renaming = renamingGroupId === group.id;
     const name = renaming
-      ? `<input class="history-rename group-rename" value="${escapeHtml(group.name)}" maxlength="40" aria-label="分组改名">`
+      ? `<input class="history-rename group-rename" value="${escapeHtml(typed ? typed.value : group.name)}" maxlength="40" aria-label="分组改名">`
       : `<span class="history-repo-name">${escapeHtml(group.name)}</span>`;
     return `<div class="history-repo-group is-set${fold ? " collapsed" : ""}${here ? " holds-current" : ""}" data-group="${escapeHtml(group.id)}"><div class="history-repo-head"><div role="button" tabindex="0" class="history-repo" data-group-toggle="${escapeHtml(group.id)}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">集</span>${name}<small>${node.items.length}</small><span class="repo-caret" aria-hidden="true">›</span></div><button type="button" class="history-tool repo-new" data-group-new="${escapeHtml(group.id)}" title="在此组新建">＋</button><button type="button" class="history-tool repo-new repo-more" data-group-menu="${escapeHtml(group.id)}" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
   };
@@ -288,10 +289,11 @@ function rememberScrollPosition() {
   const snapshot = scrollSnapshot();
   if (snapshot && currentId) scrollPositions.set(currentId, snapshot);
 }
-function restoreScrollPosition(snapshot) {
+// follow：连同跟随与否一起恢复。下一帧补的那一回只校位置——这一帧里别处（翻版本、点出处）刚改过跟随，不能被旧快照改回去
+function restoreScrollPosition(snapshot, { follow = true } = {}) {
   const host = $("#chatScroll");
   if (!host || !snapshot) return;
-  followBottom = !!snapshot.follow;
+  if (follow) followBottom = !!snapshot.follow;
   const anchor = snapshot.anchorId ? host.querySelector(`[data-message="${CSS.escape(snapshot.anchorId)}"]`) : null;
   if (anchor) host.scrollTop += anchor.getBoundingClientRect().top - host.getBoundingClientRect().top - snapshot.anchorOffset;
   else host.scrollTop = Math.min(snapshot.top, Math.max(0, host.scrollHeight - host.clientHeight));
@@ -338,7 +340,9 @@ function syncRunningHead() {
 }
 function renderConversation(shouldScroll = false) {
   const c = currentConversation();
-  if (!c) return;
+  // 人在卷宗、分组页时（后台压缩收尾、关改问之类直接调到这里）：对话区藏着，量不出滚动位置，按「没有快照」走会把跟随置真；
+  // 回到对话页时 render 会重画
+  if (!c || view !== "chat") return;
   const snapshot = c.id === lastRenderedConvId ? scrollSnapshot() : scrollPositions.get(c.id);
   // 同一段对话原地重画（换主题、压缩收尾）时，正改着的标题不动
   if (c.id !== lastRenderedConvId || document.activeElement !== $("#chatTitle")) $("#chatTitle").textContent = c.title;
@@ -372,7 +376,7 @@ function renderConversation(shouldScroll = false) {
     requestAnimationFrame(scrollBottom);
   } else {
     restoreScrollPosition(snapshot);
-    requestAnimationFrame(() => restoreScrollPosition(snapshot));
+    requestAnimationFrame(() => restoreScrollPosition(snapshot, { follow: false }));
   }
   // 主题、朱色或字体变了：留在原地的交互内容就地换色，不必重画整段
   const themeKey = vizThemeKey();
@@ -668,14 +672,16 @@ function bindModelMenuEvents() {
 // 正文的滚动：跟随到底、回到最新、右侧加宽的滚动条命中层
 function bindScrollEvents() {
   // 跟随的规矩：往下滚到离底不远就算到底、开始跟随（生成中内容一直在长，硬要滚到最后一像素常常追不上）；
-  // 往上滚离底超过阈值才算离开。内容自己长高、缩短引起的滚动不算用户的意思
+  // 往上滚离底超过阈值才算离开。内容自己长高、缩短引起的滚动不算用户的意思。
+  // 往上走的那一下不论离底多近都不重新跟随：平滑滚动与触控板的头一步只挪几像素，若当它「到底」，下一帧就被拽回底部
   let lastScrollTop = 0;
   $("#chatScroll").addEventListener("scroll", () => {
     const el = $("#chatScroll"),
       gap = el.scrollHeight - el.scrollTop - el.clientHeight,
-      down = el.scrollTop > lastScrollTop;
+      down = el.scrollTop > lastScrollTop,
+      up = el.scrollTop < lastScrollTop;
     lastScrollTop = el.scrollTop;
-    if (gap < 8 || (down && gap < FOLLOW_THRESHOLD)) {
+    if ((!up && gap < 8) || (down && gap < FOLLOW_THRESHOLD)) {
       followBottom = true;
       autoScrolling = false;
     } else if (!down && !autoScrolling && gap > FOLLOW_THRESHOLD) followBottom = false;
@@ -683,7 +689,11 @@ function bindScrollEvents() {
     syncOutline();
     syncRunningHead();
   });
-  $("#runningHead").addEventListener("click", () => $("#chatScroll").scrollTo({ top: 0, behavior: "smooth" }));
+  $("#runningHead").addEventListener("click", () => {
+    followBottom = false;
+    autoScrolling = false;
+    $("#chatScroll").scrollTo({ top: 0, behavior: reducedMotion.matches ? "instant" : "smooth" });
+  });
   $("#trailFold").addEventListener("click", () => {
     const trail = $("#trailFold")._trail;
     if (!trail?.isConnected) return;

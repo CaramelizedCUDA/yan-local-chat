@@ -135,7 +135,6 @@ function bindComposerEvents() {
     const source =
       block.dataset.quoteSource && document.querySelector(`#messages [data-message="${CSS.escape(block.dataset.quoteSource)}"]`);
     if (!source) return toast("出处已不在当前页面");
-    followBottom = false;
     scrollChatTo(source, "center");
     source.classList.remove("flash");
     void source.offsetWidth;

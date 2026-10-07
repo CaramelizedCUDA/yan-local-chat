@@ -353,7 +353,6 @@ function setupSidePanel() {
     if (!thread) return;
     const source = document.querySelector(`#messages [data-message="${CSS.escape(thread.anchor.messageId)}"]`);
     if (!source) return toast("所注段落不在当前版本中");
-    followBottom = false;
     scrollChatTo(source, "center");
     source.classList.remove("flash");
     void source.offsetWidth;

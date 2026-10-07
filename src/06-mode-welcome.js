@@ -337,9 +337,10 @@ function openConversation(id) {
     persistDraft();
     rememberScrollPosition();
     pendingAttachments = [];
+    // 改到一半的问只在真换了对话时作罢：在侧栏点一下正开着的这段，不冲掉它
+    editingMessageId = null;
   }
   currentId = id;
-  editingMessageId = null;
   view = "chat";
   const c = currentConversation();
   if (c) {
