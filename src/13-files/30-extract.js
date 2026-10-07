@@ -9,9 +9,13 @@ function readFile(file, mode) {
     reader.readAsDataURL(file);
   });
 }
-// 文字按 UTF-8 读，读不通再按 GB18030（中文 Excel 另存的 CSV、旧记事本存的 txt 多是 GBK，按 UTF-8 读满屏乱码）
+// 先认 UTF-16 的 BOM；其余文字按 UTF-8 读，读不通再按 GB18030（中文 Excel 另存的 CSV、旧记事本存的 txt 多是 GBK）。
 /** @param {ArrayBuffer|Uint8Array} bytes */
 function decodeTextBytes(bytes) {
+  // Windows PowerShell 与记事本写出的 UTF-16 附件有明确字节序标记，不应落到 GBK 解码；无 BOM 时不猜 UTF-16。
+  const head = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (head[0] === 0xff && head[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes);
+  if (head[0] === 0xfe && head[1] === 0xff) return new TextDecoder("utf-16be").decode(bytes);
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {

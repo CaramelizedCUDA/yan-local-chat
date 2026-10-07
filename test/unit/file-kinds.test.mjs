@@ -4,6 +4,19 @@ import assert from "node:assert/strict";
 import { load } from "./harness.mjs";
 
 const { fileKind, isTextFile, FILE_KINDS } = load(["fileKind", "isTextFile", "FILE_KINDS"]);
+const { decodeTextBytes } = load(["decodeTextBytes"]);
+
+test("文字附件：UTF-16 按 BOM 字节序读取，UTF-8 与 GBK 继续可读", () => {
+  const text = "中文\nA";
+  const littleEndian = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
+  const bigEndian = Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(text, "utf16le").swap16()]);
+  // ArrayBuffer 与有偏移的 Uint8Array 都是实际附件读取会交来的字节形式。
+  assert.equal(decodeTextBytes(littleEndian.buffer.slice(littleEndian.byteOffset, littleEndian.byteOffset + littleEndian.byteLength)), text);
+  assert.equal(decodeTextBytes(bigEndian), text);
+  assert.equal(decodeTextBytes(Buffer.from(text, "utf8")), text);
+  assert.equal(decodeTextBytes(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, "utf8")])), text);
+  assert.equal(decodeTextBytes(Uint8Array.from([0xd6, 0xd0, 0xce, 0xc4, 0x0a, 0x41])), text);
+});
 
 test("一个扩展名只归一种", () => {
   const seen = new Map();
