@@ -271,4 +271,5 @@ function bindHtmlAppEvents() {
     if (data.state === "ready" && followBottom) requestAnimationFrame(scrollBottom);
   });
 }
-defineLayer({ name: "work-expanded", rank: 110, open: () => !!document.querySelector(".work-expanded"), close: () => closeExpandedWork() });
+// 全屏的作品可能摊在文件预览（120）里：Esc 先收全屏，再关预览
+defineLayer({ name: "work-expanded", rank: 125, open: () => !!document.querySelector(".work-expanded"), close: () => closeExpandedWork() });

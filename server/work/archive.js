@@ -140,7 +140,8 @@ module.exports = function createArchive({ archiveHome, playable }) {
     try {
       const body = await readJson(req, 400 * 1024 * 1024),
         root = await archiveRoot(body.root),
-        name = path.basename(String(body.name || "").trim()) || "未命名文件";
+        // 点开头的（.gitignore、标题是「.NET 8」的导出）列卷宗时当隐藏项跳过，收进来就再也看不见、删不掉：去掉首尾的点与空格，与改名同一个规矩
+        name = path.basename(String(body.name || "").trim()).replace(/^[. ]+|[. ]+$/g, "") || "未命名文件";
       const data = String(body.data || ""),
         comma = data.indexOf(",");
       if (!data.startsWith("data:") || comma < 0) throw Error("文件内容格式无效");

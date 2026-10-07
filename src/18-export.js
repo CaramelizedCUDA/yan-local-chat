@@ -73,10 +73,17 @@ function conversationMarkdown(c) {
 /** @param {Conversation} c */
 async function exportConversationMarkdown(c) {
   if (!c) return;
-  const name = `${String(c.title || "对话")
-      .replace(/[\\/:*?"<>|]/g, " ")
-      .trim()
-      .slice(0, 60)}.md`,
+  // 去掉首尾的点：点开头的文件在卷宗里当隐藏项不列；标题全是非法字符的落成「对话」
+  const name = `${
+      [
+        ...String(c.title || "")
+          .replace(/[\\/:*?"<>|]/g, " ")
+          .replace(/^[. ]+|[. ]+$/g, "")
+      ]
+        .slice(0, 60)
+        .join("")
+        .trim() || "对话"
+    }.md`,
     original = conversationMarkdown(c);
   try {
     const sources = markdownVisuals(original),

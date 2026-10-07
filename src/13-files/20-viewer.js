@@ -26,7 +26,12 @@ function urlReader(url) {
     if (!response.ok) throw Error("取回失败");
     return response;
   };
-  return { url: () => url, text: async () => (await fetched()).text(), blob: async () => (await fetched()).blob(), extracted: "" };
+  return {
+    url: () => url,
+    text: async () => decodeTextBytes(await (await fetched()).arrayBuffer()),
+    blob: async () => (await fetched()).blob(),
+    extracted: ""
+  };
 }
 async function viewerReader(source) {
   if (source.path) return urlReader(archiveFileUrl(source.path));
@@ -213,6 +218,8 @@ function closeFileViewer(stop = false) {
   revokeViewerUrls();
   $("#fileViewer")?.classList.add("hidden");
   $("#fileViewerStage").innerHTML = "";
+  // 预览里全屏着的作品随预览一起没了：页上的 work-mode 也得撤，不然对话区滚不动
+  if (!document.querySelector(".work-expanded")) closeExpandedWork();
   if (target?.isConnected) target.focus();
 }
 // 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起

@@ -105,6 +105,9 @@ test("stableCut：在最后一个空行切，不切进未闭合的代码围栏�
   assert.equal(f.stableCut("a\n\n```js\nx\n\ny"), 1);
   assert.equal(f.stableCut("- a\n\n- b"), 0);
   assert.equal(f.stableCut("abc"), 0);
+  // ````markdown 里嵌着 ```bash：内层的围栏行不算把外层合上
+  assert.equal(f.stableCut("````md\n```bash\nx\n\ny\n```\n\nz"), 0);
+  assert.equal(f.stableCut("````md\n```bash\nx\n```\n````\n\nz"), 25);
 });
 test("diffCounts：新建全算增、删除全算减、其余按最长公共子序列", () => {
   assert.deepEqual(f.diffCounts("", "a\nb"), { added: 2, removed: 0 });
