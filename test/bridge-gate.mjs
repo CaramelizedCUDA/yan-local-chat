@@ -14,7 +14,7 @@ const gate = await evalJs(
 );
 check(
   "a page that cannot reach the bridge waits on the gate and says how to start it",
-  gate.waiting === "waiting" && gate.shown && gate.text.includes("start.cmd") && gate.text.includes("127.0.0.1:8787"),
+  gate.waiting === "waiting" && gate.shown && gate.text.includes("start.cmd") && gate.text.includes("127.0.0.1:18787"),
   JSON.stringify(gate)
 );
 await shot("bridge-gate.png");

@@ -23,7 +23,8 @@ const WEB = require("./server/web.js");
 
 const ROOT = __dirname;
 const HOST = "127.0.0.1";
-const PORT = Number(process.env.YAN_PORT || 8787);
+// 默认使用本机的 18787；其他机器仍可通过 YAN_PORT 指定端口。
+const PORT = Number(process.env.YAN_PORT || 18787);
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",

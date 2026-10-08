@@ -304,7 +304,8 @@ test("screenLoose：审而后行与径行的沙箱只守系统——联网、目
 });
 
 test("三档筛查都不放指令调言的本机桥接：它的接口不经请示与沙箱，调它就绕过了整套门禁", () => {
-  const port = Number(process.env.YAN_PORT || 8787);
+  // 默认值与正式桥接保持一致，才能测到实际监听端口的拦截。
+  const port = Number(process.env.YAN_PORT || 18787);
   for (const command of [
     `curl -X POST http://127.0.0.1:${port}/api/work/run -d "{}"`,
     `Invoke-RestMethod http://localhost:${port}/api/store`,

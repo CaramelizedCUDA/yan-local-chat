@@ -2,7 +2,8 @@
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 言离不开本机桥接（模型转发、存储、工具都在它那头）：页面与桥接说话只经这一段——接上（connectBridge）、
 // 长请求走总线（bridgeFetch，交回与 fetch 一样的 Response）、短请求要 JSON（bridge）、读桥接回的报错（describeResponseError）
-const LOCAL_BRIDGE = "http://127.0.0.1:8787";
+// 默认桥接地址与 server.js 保持一致，供 VS Code Webview 与等待提示使用。
+const LOCAL_BRIDGE = "http://127.0.0.1:18787";
 // 桥接的引导信息（版本、存储根、目录、平台、shell）；notice 是页面自己写的桥接状态提示，在设置 → 模型顶部显示
 let bootstrap = { notice: "" };
 /** @type {string|null} 桥接的地址：桥接自己开的页面是 ""（同源），别处打开的（VS Code Webview）是 LOCAL_BRIDGE */
