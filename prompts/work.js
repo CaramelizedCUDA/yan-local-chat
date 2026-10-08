@@ -18,12 +18,13 @@
     "要检查电脑可用 run_command 直查。要交付文件（表格、文档、PDF、图片）时再动文件工具：脚本与中间文件放草稿目录 {{scratch}}/（已建好，用户看不见），成品放卷宗根目录。{{shellNote}}"
   ],
 
-  // 账本（见 src/15-tools/21-files.js 的 ledgerNote）：ledger 只给主答的执事；ledgerHead / ledgerFull 接在这一问之后、ledgerSub 冠在帮手领的活前面，不是系统提示
+  // 账本（见 src/15-tools/21-files.js 的 ledgerNote）：ledger 只给主答的执事；ledgerHead / ledgerCut 接在这一问之后、ledgerSub 冠在帮手领的活前面，不是系统提示。
+  // 记多少不设限，每一问附多少随模型窗口：附不下时 ledgerCut 说明只附了开头
   ledger:
-    "跨多答的长活在 .yan/账本.md 立一份账本，此后每一问都附着它：只记对这件工程持续有约束的（目标与达标标准、定下的约束与取舍、计划与进展、走不通的路），过时的删、相近的并，不记流水账。",
+    "跨多答的长活在 .yan/账本.md 立一份账本，此后每一问都附着它：只记对这件工程持续有约束的（目标与达标标准、定下的约束与取舍、计划与进展、走不通的路），过时的删、相近的并，不记流水账。细的记录（实验数据、长清单、调研所得）另写在 .yan/ 下的文件里，账本里留一行指向它。",
   ledgerHead: "［账本 {{path}}］\n{{text}}",
   ledgerSub: "［主对话的账本 {{path}}，只读］\n{{text}}",
-  ledgerFull: "［账本已 {{chars}} 字，过了 {{limit}} 字：删去过时的、并掉相近的］",
+  ledgerCut: "［账本共 {{lines}} 行，此处只附了开头 {{shown}} 行，其后要看用 read_file；常要看的宜挪到前面］",
 
   // 成品怎么交到用户手上：只给主答——帮手的话是回报给主模型的，页面不替它列成品
   deliver: "答末页面自会列出成品供预览下载，说文件名即可，链接由页面给出。",
@@ -39,11 +40,10 @@
   // 沙箱环境备好时接在后面（{{kits}} 是装了什么）：python、pip、npm 已指向它，缺的装进它，不必动系统
   env: "此机另备一套开发环境：{{kits}}。python、pip、uv、npm 与所列工具链都指向它，缺的库直接 pip / npm i -g / go get / cargo 装进来，不动系统。",
 
-  // 后台指令：bgStarted 是挂上时回给模型的话（结束会叫醒它）；bgStartedQuiet 给帮手（它收工后没人可叫醒）；
-  // bgDone 是结束时送给模型的一条消息（正作答就进这一答，没在作答就另起一答），不是系统提示
+  // 后台指令：bgStarted 是挂上时回给模型的话（结束会叫醒开它的那一个：主模型，或帮手自己）；
+  // bgDone 是结束时送给它的一条消息（正作答就进这一答，没在作答就另起一答、帮手则睡醒接着做），不是系统提示
   bgStarted:
     "后台指令 {{id}} 已开始（头 {{seconds}} 秒的输出如下）。它结束时结果会作为一条消息送到，不必轮询；要看中途输出或提前结束，用 check_command。",
-  bgStartedQuiet: "后台指令 {{id}} 已开始（头 {{seconds}} 秒的输出如下），用 check_command 取新输出或结束它。",
   bgDone:
     "后台指令 {{id}}（{{command}}）已结束，退出码 {{exitCode}}，共 {{duration}}。新的输出：\n--- stdout ---\n{{stdout}}\n--- stderr ---\n{{stderr}}",
 

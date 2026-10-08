@@ -203,6 +203,16 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // 断着时回来的回报（relay-hold）：报回请求里有没有那几份回报原文、各在第几条 user 里
+      if (msgs.some(m => m.role === "user" && typeof m.content === "string" && m.content.includes("RELAYHOLD"))) {
+        const users = msgs.filter(m => m.role === "user").map(m => String(typeof m.content === "string" ? m.content : ""));
+        return sse(res, [
+          delta({
+            content: `RELAYHOLD|kept:${users.some(u => u.includes("REPORT-KEPT"))}|dropped:${users.some(u => u.includes("REPORT-GONE"))}|empty:${users.some(u => !u.trim())}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // 多任务压力用例：占着流连接，直到测试结束或请求取消。
       if (typeof lastUser === "string" && lastUser.includes("HOLDSTREAM")) {
         res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -241,6 +251,34 @@ http
       const firstUser = String(msgs.find(m => m.role === "user")?.content || ""),
         longKey = ["LONGSUB", "LONGMAIN"].find(k => firstUser.includes(k) && !firstUser.includes("LONGRUN"));
       // LEDGER：账本只接在这一问之后另起一段（首段是问本身；缓存标记桥接只给 Claude 留着，这里看不到，由单元测试管）、系统提示里有立账本那句；第一问不读就改账本（附着全文即算读过），第二问看到的是改后的那份
+      // LEDGERBIG：账本远超这台模型每一问能附的量——只附开头、写明共几行，末尾不附；附的是截过的，不读就改应被挡下
+      if (firstUser.includes("LEDGERBIG")) {
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_lb0",
+                  type: "function",
+                  function: { name: "edit_file", arguments: JSON.stringify({ path: ".yan/账本.md", old: "TOPMARK", new: "TOPMARK2" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        const ask = msgs
+            .filter(m => m.role === "user")
+            .map(m => String(m.content))
+            .join("\n"),
+          marks = [
+            `cut:${/账本共 402 行，此处只附了开头 \d+ 行/.test(ask) ? "yes" : "no"}`,
+            `head:${ask.includes("TOPMARK") ? "yes" : "no"}`,
+            `tail:${ask.includes("TAILMARK") ? "yes" : "no"}`,
+            `edit:${String(toolResults[0].content).startsWith("已修改") ? "yes" : "no"}`
+          ].join("|");
+        return sse(res, [delta({ content: `LEDGERBIG|${marks}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
       if (firstUser.includes("LEDGER")) {
         const sys = String(msgs[0]?.role === "system" ? msgs[0].content : ""),
           users = msgs.filter(m => m.role === "user").map(m => String(m.content)),
@@ -358,6 +396,56 @@ http
               .map(content => ({ content }))
           ),
         firstTurn = msgs.filter(m => m.role === "user").length === 1;
+      // HBG-SUB（帮手）：挂一条约 4 秒的后台指令就收工（只剩等待：先交进展、睡下）；指令结束的消息到了，醒来据它的输出交差
+      if (firstUser.includes("HBG-SUB")) {
+        const woke = msgs.some(m => m.role === "user" && String(m.content).includes("BG-OUT-42"));
+        if (woke)
+          return sse(res, [
+            delta({ content: `HBG-SUB done|saw:BG-OUT-42|tools:${toolResults.length}` }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_hbg0",
+                  type: "function",
+                  function: {
+                    name: "run_command",
+                    arguments: JSON.stringify({ command: "Start-Sleep -Seconds 4; Write-Output 'BG-OUT-42'", background: true })
+                  }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [delta({ content: "HBG-SUB 等后台跑完" }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
+      // HELPERBG（主模型）：派一名帮手就收尾；之后每到一份回报醒一回，报出至今收到的几份各是进展（wait）还是交差（done）
+      if (firstUser.includes("HELPERBG")) {
+        if (firstTurn && !toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_hbgm",
+                  type: "function",
+                  function: {
+                    name: "delegate",
+                    arguments: JSON.stringify({ title: "后台活", task: "HBG-SUB：后台跑一条指令，等它跑完再回报。" })
+                  }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (firstTurn) return sse(res, [delta({ content: "派出去了。" }), delta({}, { usage: { total_tokens: 5 } })]);
+        const kinds = helperReports.map(r => (r.content.includes("暂告一段") ? "wait" : r.content.includes("HBG-SUB done") ? "done" : "?"));
+        return sse(res, [delta({ content: `HELPERBG got|${kinds.join(",")}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
       if (firstUser.includes("LONGRUN-SUB")) {
         if (firstTurn && !toolResults.length)
           return sse(res, [
@@ -597,6 +685,33 @@ http
         if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
         return sse(res, [delta({ content: `BGWORK done｜reports:${helperReports.length}` }), delta({}, { usage: { total_tokens: 5 } })]);
       }
+      // RELAYWAKE：派一名慢帮手（约 3 秒）后这一答断了（接口报错）；回报到了，断着的那一答自己续上、回报递进去，据此收尾
+      if (firstUser.includes("RELAYWAKE")) {
+        if (helperReports.length)
+          return sse(res, [
+            delta({
+              content: `RELAYWAKE done｜reports:${helperReports.length}｜resumed:${msgs.some(m => m.role === "assistant" && String(m.content).includes("派一名慢帮手"))}`
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (!toolResults.length)
+          return sse(res, [
+            delta({ content: "派一名慢帮手。" }),
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_rw0",
+                  type: "function",
+                  function: { name: "delegate", arguments: JSON.stringify({ title: "慢活", task: "SLOWSUB：慢慢做完回报。" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: { message: "bad request (fake)" } }));
+      }
       // BGLONG：主模型差一名长活帮手（约 12 秒），说「等回报」；回报到了收尾
       if (firstUser.includes("BGLONG")) {
         if (firstTurn && !toolResults.length)
@@ -650,7 +765,7 @@ http
         );
       // 带附件的一问是分段内容：正文在第一段
       const lastText = Array.isArray(lastUser) ? String(lastUser.find(part => part.type === "text")?.text || "") : lastUser;
-      if (typeof lastUser === "string" && lastUser.includes("这件事用几个字称呼")) {
+      if (typeof lastUser === "string" && lastUser.includes("靠一个称呼认出这段对话")) {
         // TITLEFAIL：头一次拟题时装作网络出错，页面不该就此把这段对话标成「已拟题」
         if (lastUser.includes("TITLEFAIL") && !titleFailed) {
           titleFailed = true;

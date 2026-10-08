@@ -43,6 +43,7 @@
  * @property {string} [report] 最后一轮说的话，即交回主模型的回报
  * @property {number} [durationMs]
  * @property {number} [startedAt] 正在做时的起始时刻（毫秒），题头据此走用时；收工即删
+ * @property {boolean} [waiting] 交过进展、睡着等自己挂的后台指令（醒来即删）
  * @property {Break[]} [breaks]
  * @property {ToolCall[]|null} [toolCalls]
  */
@@ -145,6 +146,7 @@
  * @property {boolean} [titled]
  * @property {number} [titleTries]
  * @property {boolean} [showCompacted]
+ * @property {{ report: string, relay: { step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number } }[]} [heldReports] 上一答断着时回来的回报，下一答开工时递上
  */
 /**
  * @typedef {Object} Profile 一份模型配置

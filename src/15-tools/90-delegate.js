@@ -2,6 +2,7 @@
 // 同一轮派出的几名帮手同时开工（parallel），活是主模型分的，不重叠靠它分派时留意（工具说明里有交代）。
 // 帮手在后台做，不随派它的那一答收尾：主答只剩等待就收尾，回报到了另起一答（见 mailReport）——等着的时候没有谁醒着。
 // 收了工的帮手还能续派，带着它先前的经过接着做（见 tellHelper）。行迹里只留一枚签，帮手自己的那条时间线开在差遣面板里（见 08-trail.js）
+// 帮手与主答守同一句话：只剩等待就睡，信到了就醒——手上只剩自己挂的后台指令时先交一份进展、睡下，指令结束的消息寄给它自己（见 mailHelper）
 defineTool({
   name: "delegate",
   group: "delegate",
@@ -126,6 +127,8 @@ function tellHelper(step, args, ctx) {
     step.noteId = note.id;
     box.queue.push({ report: prompt("delegate.note", { text }), note });
     if (box.reading) watchSteer(box, sub);
+    // 睡着等后台的：叫醒它读这句
+    box.wake?.();
     refreshSteps(box.host);
     return { ok: true, content: prompt("delegate.noted", { title: box.title }), display: "已递" };
   }
@@ -161,12 +164,21 @@ function delegateInBackground(step, args, ctx) {
 function launchHelper(step, args, ctx, past = null) {
   const { conversation, assistant } = ctx,
     profile = requestJob(conversation.id)?.profile || activeProfile();
-  void runDelegate(step, args, ctx, profile, past)
+  // 进展：帮手只剩等后台、睡下之前交的那一份。这一步仍在做，回报照常寄
+  const progress = outcome =>
+    mailReport(conversation, {
+      report: outcome.content,
+      step,
+      profile,
+      relay: { step: step.id, title: String(step.title || ""), ok: true }
+    });
+  void runDelegate(step, args, ctx, profile, past, progress)
     .then(
       outcome => {
         step.status = outcome.ok ? "done" : "error";
         step.result = outcome.display;
-        mailReport(conversation, { report: outcome.content, step, profile });
+        // 交过进展后没再做什么就收工了（等的后台随桥接重启而止）：进展已是最后的话，不再重报
+        if (!outcome.quiet) mailReport(conversation, { report: outcome.content, step, profile });
       },
       error => {
         step.status = "error";
@@ -203,6 +215,8 @@ function launchHelper(step, args, ctx, past = null) {
 const mailbags = new Map();
 /** @param {Conversation} conversation */
 function mailReport(conversation, item) {
+  // 帮手开的后台指令，结束时叫醒的是帮手自己（见 mailHelper），不是主对话
+  if (item.step?.scope) return void mailHelper(conversation, item.step.scope, item);
   const job = requestJob(conversation.id);
   if (job) return void deliverInline(conversation, job, item);
   const bag = mailbags.get(conversation.id);
@@ -242,22 +256,81 @@ function deliverInline(conversation, job, item) {
   }
   job.queue.push(item);
 }
+// 寄给帮手的（它自己开的后台指令结束了）：与寄给主答同一个样子——它自己的时间线里落一小步「回报」，信进它的收件口，
+// 正做着就在回合边界递上，睡着就叫醒它。它已收工（做完、叫停、页面刷新过），信就不送了，那一步的签照旧改成已结束
+/** @param {Conversation} conversation @param {string} scope 帮手的 sub.id */
+function mailHelper(conversation, scope, item) {
+  const box = (crews.get(conversation.id) || []).find(entry => entry.sub.id === scope);
+  if (!box) return;
+  const relay = relayOf(item);
+  /** @type {Step} */
+  const note = {
+    id: `relay_${uid().slice(0, 8)}`,
+    name: "relay_note",
+    arguments: "{}",
+    status: "running",
+    title: relay.title,
+    relay,
+    at: box.sub.content.length,
+    rat: String(box.sub.reasoning || "").length
+  };
+  box.sub.steps.push(note);
+  box.queue.push({ ...item, note });
+  box.wake?.();
+  refreshSteps(box.host);
+}
+// 帮手手上还在跑的后台指令：收工时有它们，帮手就睡下等
+/** @param {SubAgent} sub */
+function helperWaits(sub) {
+  return sub.steps.filter(step => step.bg?.state === "running");
+}
+// 睡到有信来（或等的后台都了结了）：不发请求、没有谁醒着；叫停、停止照样打断
+function sleepUntilMail(box) {
+  const signal = box.controller.signal;
+  return new Promise((resolve, reject) => {
+    const stop = () => {
+      box.wake = null;
+      reject(Object.assign(Error("已停止"), { name: "AbortError" }));
+    };
+    if (signal.aborted) return stop();
+    signal.addEventListener("abort", stop, { once: true });
+    box.wake = () => {
+      box.wake = null;
+      signal.removeEventListener("abort", stop);
+      resolve(null);
+    };
+  });
+}
 /** @param {Conversation} conversation */
 function wakeWithReports(conversation, items) {
   if (!items.length || !store.conversations.includes(conversation)) return;
   // 攒着的这一会儿里有人开了一答（用户发了话、上一答收尾时补言另起了一问）：交给它
   const job = requestJob(conversation.id);
   if (job) return void items.forEach(item => deliverInline(conversation, job, item));
+  const profile = profiles().find(p => p.id === items[0].profile?.id) || activeProfile(),
+    ready = profile && !quotaBlocked(profile);
+  // 上一答断着（断网中断、报错）：另起一答会在断处底下留一截，续上那一答时它就成了残留，主线也从此分成两头。
+  // 回报先记在这段对话上，下一答开工时递上（见 takeHeldReports）；中断的那一答就此续上，还断着就原样记着，等下一回
+  const last = conversation.messages.at(-1);
+  if (last?.role === "assistant" && (last.status === "interrupted" || last.status === "error")) {
+    (conversation.heldReports ||= []).push(...items.map(item => ({ report: item.report, relay: relayOf(item) })));
+    markDirty(conversation.id);
+    saveStore();
+    if (last.status === "interrupted" && ready) void resumeAnswer(conversation, last, profile);
+    return;
+  }
   /** @type {Message} */
   const user = {
     id: uid(),
     role: "user",
-    content: items.map(item => item.report).join("\n\n"),
+    content: items
+      .map(item => item.report)
+      .filter(Boolean)
+      .join("\n\n"),
     timestamp: now(),
     relay: items.map(relayOf)
   };
-  const profile = profiles().find(p => p.id === items[0].profile?.id) || activeProfile();
-  if (profile && !quotaBlocked(profile)) return void startTurn(conversation, user, profile, { follow: false });
+  if (ready) return void startTurn(conversation, user, profile, { follow: false });
   // 没有可用的模型或余墨已尽：回报先记下，等用户换了模型再问
   conversation.messages.push(user);
   conversation.updatedAt = now();
@@ -266,6 +339,43 @@ function wakeWithReports(conversation, items) {
   if (currentId === conversation.id && view === "chat") renderConversation();
   else renderHistory();
   toast(profile ? "余墨已尽，帮手的回报先记下了" : "没有可用的模型，帮手的回报先记下了");
+}
+// 断着时记下的回报交给开工的这一答：行迹里落一步「回报」，随后当即递上。派它的那一步已不在眼前这条路上的（重答把那一答收成了版本）不递，
+// 免得张冠李戴。返回交出去的几项，这一答一个字没等到就又断了，原样还回去
+/** @param {Conversation} conversation @returns {Array<{ report: string, relay: any, note?: Step }>} */
+function takeHeldReports(conversation, job) {
+  const held = conversation.heldReports || [];
+  delete conversation.heldReports;
+  const onPath = new Set(conversation.messages.flatMap(message => (message.steps || []).map(step => step.id)));
+  return held
+    .filter(item => onPath.has(item.relay.step))
+    .map(item => {
+      deliverInline(conversation, job, item);
+      return job.queue.at(-1);
+    });
+}
+/** @param {Conversation} conversation @param {Message} host */
+function returnHeldReports(conversation, host, taken) {
+  if (!taken.length) return;
+  const notes = new Set(taken.map(item => item.note?.id));
+  host.steps = (host.steps || []).filter(step => !notes.has(step.id));
+  if (!host.steps.length) delete host.steps;
+  conversation.heldReports = [...taken.map(({ report, relay }) => ({ report, relay })), ...(conversation.heldReports || [])];
+}
+// 续写一答时，它底下只有回报另起、又没写出东西就断了或停了的几答（断网时帮手回报的常见残留）：收回来，回报交给续上的这一答
+/** @param {Conversation} conversation @param {Message} message */
+function foldRelayTail(conversation, message) {
+  const at = conversation.messages.indexOf(message),
+    tail = conversation.messages.slice(at + 1),
+    ids = new Set([message.id, ...tail.map(m => m.id)]);
+  const empty = m =>
+    m.role === "user" ? !!m.relay?.length : m.role === "assistant" && m.status !== "streaming" && !m.content.trim() && !m.steps?.length;
+  if (at < 0 || !tail.length || !tail.every(empty) || (conversation.forks || []).some(fork => ids.has(fork.parentId))) return;
+  conversation.messages = conversation.messages.slice(0, at + 1);
+  const folded = tail
+    .filter(m => m.role === "user")
+    .flatMap(m => (m.relay || []).map((relay, i) => ({ report: i ? "" : m.content, relay })));
+  conversation.heldReports = [...folded, ...(conversation.heldReports || [])];
 }
 // 派它的那一答收尾时它还没做完，墨没算进去：做完了记回那一答
 /** @param {Message} assistant @param {Profile|null} profile */
@@ -306,8 +416,9 @@ function subChangedPaths(step) {
  * @param {ToolContext} ctx
  * @param {Profile|null} profile
  * @param {Step|null} past 续派时它的上一趟
+ * @param {(outcome: { ok: boolean, content: string, display: string }) => void} progress 只剩等后台、睡下之前交一份进展
  */
-async function runDelegate(step, args, ctx, profile, past) {
+async function runDelegate(step, args, ctx, profile, past, progress) {
   const { conversation, assistant } = ctx;
   const task = String(args.task).trim();
   if (!profile) return { ok: false, content: "没有可用的模型", display: "无模型" };
@@ -338,7 +449,7 @@ async function runDelegate(step, args, ctx, profile, past) {
   const lead = past ? stepsDigest(past.sub, "上一答的行迹") : "";
   const history = [
     ...(past ? helperHistory(conversation, past) : []),
-    { role: "user", content: `${ledgerNote(conversation, "sub")}${lead ? `${lead}\n\n` : ""}${task}` }
+    { role: "user", content: `${ledgerNote(conversation, "sub", profile)}${lead ? `${lead}\n\n` : ""}${task}` }
   ];
   const overrides = {
     systemPrompt: systemPrompt(conversation, tools, { role: "sub" }),
@@ -361,6 +472,9 @@ async function runDelegate(step, args, ctx, profile, past) {
     roundStart: 0,
     steerTimer: 0,
     halted: false,
+    // 睡着等后台时由 sleepUntilMail 挂上：来信（mailHelper、传话）或等的指令了结（settleBackground）即叫醒
+    /** @type {(() => void)|null} */
+    wake: null,
     sub,
     step,
     host: assistant,
@@ -379,20 +493,43 @@ async function runDelegate(step, args, ctx, profile, past) {
     refreshSteps(assistant);
   };
   const ticker = setInterval(paint, 350);
-  let failure = "";
+  let failure = "",
+    quiet = false;
   try {
-    // 与主答同一个轮次循环；步骤记在帮手身上、画在派它的那一答的差遣卡里
-    await runRounds(sub, history, {
-      profile,
-      conversation,
-      host: assistant,
-      signal: box.controller.signal,
-      inbox: box,
-      overrides,
-      tally,
-      roundLimit: subRoundLimit(),
-      scope: sub.id
-    });
+    for (;;) {
+      // 与主答同一个轮次循环；步骤记在帮手身上、画在派它的那一答的差遣卡里
+      await runRounds(sub, history, {
+        profile,
+        conversation,
+        host: assistant,
+        signal: box.controller.signal,
+        inbox: box,
+        overrides,
+        tally,
+        roundLimit: subRoundLimit(),
+        scope: sub.id
+      });
+      // 只剩等待就睡，信到了就醒——与主答同一句话：手上还有后台指令在跑，先把此刻的话作为进展交给主对话（主模型不干等，
+      // 也不会被一条忘了停的开发服务器挂住），随即睡下；等的指令结束（或主对话递来话）就醒来接着做，做完再交一次差。
+      // 醒来没有信（等的那几条随桥接重启而止）便就此收工：进展已是它最后的话，不再重报
+      if (!box.queue.length) {
+        if (!helperWaits(sub).length) break;
+        progress(waitingOutcome(step, sub, tally, overrides));
+        sub.waiting = true;
+        refreshSteps(assistant);
+        try {
+          while (!box.queue.length && helperWaits(sub).length) await sleepUntilMail(box);
+        } finally {
+          delete sub.waiting;
+        }
+        if (!box.queue.length) {
+          quiet = true;
+          break;
+        }
+      }
+      await deliverSupplements(box, history, undefined, assistant);
+      sub.content = paragraphBreak(sub.content);
+    }
     sub.status = "complete";
   } catch (error) {
     if (error.name === "AbortError") {
@@ -431,11 +568,7 @@ async function runDelegate(step, args, ctx, profile, past) {
     sub.report = sub.content.slice(Math.max(0, tally.replyStart - lead)).trim();
     paint();
   }
-  const changed = subChangedPaths(step),
-    stats = changeStats({ steps: [step] }),
-    changedNote = changed.length ? `，改了 ${changed.length} 个文件：${changed.join("、")}（+${stats.added} −${stats.removed}）` : "",
-    seconds = Math.round(sub.durationMs / 1000),
-    display = `${sub.steps.length} 步${changed.length ? ` · 改 ${changed.length} 个文件` : ""}${overrides.folds ? ` · 压缩 ${overrides.folds} 回` : ""} · ${seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分`}`;
+  const { changedNote, display } = helperSummary(step, sub, overrides, sub.durationMs);
   if (sub.status !== "complete")
     return {
       ok: false,
@@ -468,7 +601,38 @@ async function runDelegate(step, args, ctx, profile, past) {
       changed: changedNote,
       report: sub.report.slice(0, 16000)
     }),
-    display
+    display,
+    ...(quiet ? { quiet } : {})
+  };
+}
+// 签上与回报里那一句计数：几步、改了哪些文件、压缩几回、用时
+/** @param {Step} step @param {SubAgent} sub @param {number} ms */
+function helperSummary(step, sub, overrides, ms) {
+  const changed = subChangedPaths(step),
+    stats = changeStats({ steps: [step] }),
+    seconds = Math.round(ms / 1000);
+  return {
+    changedNote: changed.length ? `，改了 ${changed.length} 个文件：${changed.join("、")}（+${stats.added} −${stats.removed}）` : "",
+    display: `${sub.steps.length} 步${changed.length ? ` · 改 ${changed.length} 个文件` : ""}${overrides.folds ? ` · 压缩 ${overrides.folds} 回` : ""} · ${seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分`}`
+  };
+}
+// 睡下之前交的进展：此刻说的话，连同在等哪几条后台指令；主模型读了知道它还在、结束后会再回报
+/** @param {Step} step @param {SubAgent} sub */
+function waitingOutcome(step, sub, tally, overrides) {
+  const { changedNote, display } = helperSummary(step, sub, overrides, Date.now() - Number(sub.startedAt || Date.now())),
+    ids = helperWaits(sub)
+      .map(s => s.bg?.id)
+      .join("、");
+  return {
+    ok: true,
+    content: prompt("delegate.waiting", {
+      title: step.title,
+      steps: sub.steps.length,
+      changed: changedNote,
+      ids,
+      report: sub.content.slice(tally.replyStart).trim().slice(0, 16000) || "（未留话）"
+    }),
+    display: `${display} · 等后台`
   };
 }
 // 行迹里只留一枚签：差遣是并行的活，塞进线性的时间线会把后面的东西一直往下顶。
