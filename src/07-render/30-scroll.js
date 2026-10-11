@@ -20,7 +20,9 @@ function bindScrollEvents() {
     syncOutline();
     syncRunningHead();
   });
-  $("#runningHead").addEventListener("click", () => {
+  // 书眉里那一枚意另有去处（点开卡片，见 19-intent/40-card.js）
+  $("#runningHead").addEventListener("click", event => {
+    if (event.target.closest("[data-intent-open]")) return;
     followBottom = false;
     autoScrolling = false;
     $("#chatScroll").scrollTo({ top: 0, behavior: reducedMotion.matches ? "instant" : "smooth" });

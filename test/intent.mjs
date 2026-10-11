@@ -67,11 +67,21 @@ try {
     gate
   );
 
-  // 意的卡片：改动条顶端置顶一行「意」，点开在预览浮层里画出卡片；点图上一项，图下展开；根的说法只在卡片里改
+  // 意的卡片：题下一行（目录之后）与书眉常显一枚「意」，点开在预览浮层里画出卡片；点图上一项，图下展开；根的说法只在卡片里改
   const lastMessage = `[...document.querySelectorAll('#messages .message.assistant')].at(-1)`,
-    bar = await evalJs(`${lastMessage}?.querySelector('.change-bar .change-intent')?.textContent || ""`);
-  check("the change bar pins one line for the intent at its top", /^意已立 1 \/ 2 · 甲/.test(bar), bar);
-  await evalJs(`${lastMessage}.querySelector('.change-intent').click(); true`);
+    glance = await evalJs(
+      `({ meta: document.querySelector('#chatMeta .intent-glance')?.textContent || "", head: document.querySelector('#runningHead .intent-glance')?.textContent || "", marks: [...document.querySelectorAll('#chatMeta .intent-glance .intent-mk')].map(m => m.dataset.mark).join(","), bar: !!${lastMessage}?.querySelector('.change-bar .change-intent'), files: ${lastMessage}?.querySelector('.change-bar .change-summary')?.textContent || "" })`
+    );
+  check(
+    "the intent stays in sight under the title and in the running head, with one mark per item; the change bar is left to the files",
+    glance.meta === "意已立 1 / 2" &&
+      glance.head === "意1/2" &&
+      glance.marks === "holds,open" &&
+      !glance.bar &&
+      /改动 2 个文件/.test(glance.files),
+    JSON.stringify(glance)
+  );
+  await evalJs(`document.querySelector('#chatMeta .intent-glance').click(); true`);
   await waitFor(`!!document.querySelector('#fileViewerStage .intent-card .intent-svg')`, 10000);
   const card = await evalJs(
     `(c => ({ name: document.querySelector('#fileViewerName').textContent, root: c.querySelector('.intent-root-claim')?.textContent, updated: c.querySelector('.intent-updated')?.textContent, states: [...c.querySelectorAll('.intent-node')].map(g => g.dataset.intentNode + ':' + g.dataset.state).sort().join(',') }))(document.querySelector('#fileViewerStage .intent-card'))`
@@ -259,7 +269,7 @@ try {
       ]
     })
   );
-  await evalJs(`${lastMessage}.querySelector('.change-intent').click(); true`);
+  await evalJs(`document.querySelector('#chatMeta .intent-glance').click(); true`);
   await waitFor(
     `!!document.querySelector('#fileViewerStage .intent-card .intent-svg') && document.querySelectorAll('#fileViewerStage .intent-node').length > 4`,
     10000
@@ -315,7 +325,7 @@ try {
     return true;
   })()`);
   const releaseIntent = () => evalJs(`Response.prototype.json = window.__intentDelay.original; window.__intentDelay.release(); true`);
-  const openCard = () => evalJs(`${lastMessage}.querySelector('.change-intent').click(); true`);
+  const openCard = () => evalJs(`document.querySelector('#chatMeta .intent-glance').click(); true`);
   const setClaim = claim => {
     const data = JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8"));
     data.nodes["上线"].claim = claim;

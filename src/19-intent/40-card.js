@@ -1,4 +1,4 @@
-// 言 · 意 · 卡片（见 设计稿/55 甲 · 一张纸、56）：意属于任务，不画在对话里。改动条顶端那一行「意」、行迹里「意」那一步点开，
+// 言 · 意 · 卡片（见 设计稿/55 甲 · 一张纸、56、58 甲 · 疏排、60 二·甲 · 簿录）：意属于任务，不画在对话里。题下一行与书眉里那一枚（50-glance.js）、行迹里「意」那一步点开，
 // 都在预览浮层里铺开这一张：题头（更新于何时、已立几项、借了几条假定），各根（根的说法只在这里改），一张图（前提在左、根在右，
 // 摆法见 30-layout.js），图下「待察」——待复核的缘由、前提未立的、假定的出处；最末留痕。点图上一项，图下展开它的验收、凭据与缘由。
 // 由程序照 .yan/意.json 画，与文件一字不差，不请模型另画；展开的因果（支撑、缘由、哪条凭据变了）也是程序从图与指纹推出的，不经模型。
@@ -116,9 +116,15 @@ function intentDetailHtml(intent, now, id) {
   const node = intent.nodes[id];
   if (!node) return "";
   const view = intentView(intent, id, now),
+    // 前提、支撑写成带记号的名字，一眼看出连着的各项立没立住
     chips = ids =>
       ids.length
-        ? `<span class="intent-chips">${ids.map(k => `<button type="button" data-intent-node="${escapeHtml(k)}">${escapeHtml(k)}</button>`).join("")}</span>`
+        ? `<span class="intent-links">${ids
+            .map(
+              k =>
+                `<button type="button" class="intent-link" data-intent-node="${escapeHtml(k)}">${intent.nodes[k] ? intentMark(intentView(intent, k, now)) : ""}${escapeHtml(k)}</button>`
+            )
+            .join("")}</span>`
         : `<span class="intent-none">无</span>`,
     rows = [
       ["验收", escapeHtml(node.check)],
@@ -145,7 +151,7 @@ function intentNotesHtml(intent, now) {
     } else if (view === "assumed") rows.push([view, id, `出处：${node.note || ""}`]);
   }
   if (!rows.length) return "";
-  return `<div class="intent-sec">待察</div><ul class="intent-notes">${rows
+  return `<div class="intent-sec">待察 <span class="n">${rows.length}</span></div><ul class="intent-notes">${rows
     .map(
       ([view, id, why, quiet]) =>
         `<li>${intentMark(view)}<span><button type="button" class="intent-note-id" data-intent-node="${escapeHtml(id)}">${escapeHtml(id)}</button><span class="intent-note-why${quiet ? " quiet" : ""}">${escapeHtml(why)}</span></span></li>`
@@ -184,7 +190,7 @@ function intentCardHtml(intent, now, { selected = "", editing = "", error = "" }
     selected ? intentDetailHtml(intent, now, selected) : ""
   }${intentNotesHtml(intent, now)}${
     log.length
-      ? `<details class="intent-log"><summary>留痕 · ${intent.log.length}</summary><ul>${log
+      ? `<details class="intent-log"><summary>留痕 <span class="n">${intent.log.length}</span></summary><ul>${log
           .map(entry => `<li><time>${escapeHtml(intentTime(entry.at))}</time><span>${escapeHtml(entry.text)}</span></li>`)
           .join("")}</ul></details>`
       : ""
@@ -230,6 +236,7 @@ async function openIntentCard(conversation, trigger = null) {
         ...(await intentPrints(conversation, intentSealedAnchors(intent), undefined, "round"))
       };
     if (revision !== viewerRevision) return;
+    noteIntentGlance(conversation, intent, now);
     intentCard = { conversation, intent, now, selected: "", editing: "", error: "", revision };
     paintIntentCard();
   } catch (error) {
@@ -266,11 +273,12 @@ async function saveIntentRoot(id, claim) {
   paintIntentCard();
 }
 function bindIntentEvents() {
-  // 改动条顶端那一行、行迹里「意」那一步：点开卡片
-  $("#messages").addEventListener("click", event => {
-    const open = event.target.closest("[data-intent-open]");
-    if (open) void openIntentCard(currentConversation(), open);
-  });
+  // 题下一行与书眉里那一枚、行迹里「意」那一步：点开卡片
+  for (const area of [$("#messages"), $("#chatMeta"), $("#runningHead")])
+    area.addEventListener("click", event => {
+      const open = event.target.closest("[data-intent-open]");
+      if (open) void openIntentCard(currentConversation(), open);
+    });
   $("#messages").addEventListener("keydown", event => {
     const open = event.target.closest?.("div[data-intent-open]");
     if (!open || (event.key !== "Enter" && event.key !== " ")) return;

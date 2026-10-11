@@ -34,11 +34,16 @@ function restoreScrollPosition(snapshot, { follow = true } = {}) {
 /** @param {Conversation} c */
 function renderChatMeta(c) {
   $("#chatMeta").innerHTML =
-    `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? ` · <button type="button" class="chat-meta-path" data-workdir-bind title="工作目录">${escapeHtml(c.workdir || "")}</button>` : ` · <button type="button" class="chat-meta-bind" data-workdir-bind title="绑定工作目录，此后指令与改动落于其中">绑定目录</button>`}${c.messages.some(m => m.role === "assistant" && m.status === "complete") ? ` · <button type="button" class="chat-meta-bind" data-export-md title="以 Markdown 存入卷宗">存入卷宗</button>` : ""}`;
+    `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? ` · <button type="button" class="chat-meta-path" data-workdir-bind title="工作目录">${escapeHtml(c.workdir || "")}</button>${intentGlance(c)}` : ` · <button type="button" class="chat-meta-bind" data-workdir-bind title="绑定工作目录，此后指令与改动落于其中">绑定目录</button>`}${c.messages.some(m => m.role === "assistant" && m.status === "complete") ? ` · <button type="button" class="chat-meta-bind" data-export-md title="以 Markdown 存入卷宗">存入卷宗</button>` : ""}`;
   renderRunningHead();
   requestAnimationFrame(syncRunningHead);
 }
-// 书眉：标题滚出视口后才显出题名与问数。字随 renderChatMeta 与改标题刷新（renderRunningHead），滚动时只切显隐（syncRunningHead）
+// 意属于目录，跟在目录之后（见 19-intent/50-glance.js）
+function intentGlance(c) {
+  const html = intentGlanceHtml(c);
+  return html ? ` · ${html}` : "";
+}
+// 书眉：标题滚出视口后才显出题名与问数（工作目录立了意的，再带一枚意）。字随 renderChatMeta 与改标题刷新（renderRunningHead），滚动时只切显隐（syncRunningHead）
 function renderRunningHead() {
   const c = currentConversation(),
     head = $("#runningHead");
@@ -47,6 +52,7 @@ function renderRunningHead() {
     head.querySelector(".running-head-title").textContent = c.title;
     head.querySelector(".running-head-meta").textContent =
       `${chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true)}问${notes ? ` · 旁注 ${notes}` : ""}`;
+    head.querySelector(".running-head-intent").innerHTML = intentGlanceHtml(c, true);
   }
   syncRunningHead();
 }

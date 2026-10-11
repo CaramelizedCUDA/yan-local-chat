@@ -84,6 +84,9 @@ input[type="number"]::-webkit-outer-spin-button {
   /* 胭脂：改动的印。花鸟里点花瓣的紫红，比朱冷一档——回复之下与输入框上方那枚「改」印专用，
      与「成」的朱印挨着也分得开（见 设计稿/14-改印候选与收起写法；落选：朱砂同「成」、雌黄近泥金、赭石太沉、花青撞黛） */
   --rouge: #963a50;
+  /* 石青：意的印。意是整个目录的骨架，常显在题下与书眉；比黛亮、比花青清，与已立的青绿勾隔开一档
+     （见 设计稿/60 一·甲；落选：青碧近已立的勾、天水碧缩到书眉那么小就淡成墨） */
+  --qing: #2c7a92;
   /* 函套的布面与题签：卷宗与分组里的夹、组画成一只小函，夹条左缘包一道这色的布边 */
   --cloth: color-mix(in srgb, var(--keep) 78%, var(--ink));
   --slip: #f6f1e4;
@@ -241,6 +244,7 @@ input[type="number"]::-webkit-outer-spin-button {
   --keep: #8fa6b4;
   --reach: #8fb3a0;
   --rouge: #d07d92;
+  --qing: #74b9cd;
   --cloth: color-mix(in srgb, var(--keep) 34%, var(--paper-3));
   --slip: #d8d1c1;
   --code-green: #8fb3a3;

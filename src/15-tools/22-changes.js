@@ -280,17 +280,9 @@ function openChangeDiff(message, path, trigger) {
 }
 /** @param {Message} message */
 function changeSummaryInner(message, open) {
-  const stats = changeStats(message),
-    intent = changeIntentHtml(message);
-  if (!stats.files.length) return intent;
-  return `${intent}<button type="button" class="change-summary" aria-expanded="${open}"><span class="seal change-seal" aria-hidden="true">改</span><span class="change-title">改动 ${stats.files.length} 个文件</span><span class="change-count">${changeCountHtml(stats)}${changeSpark(stats.added, stats.removed)}</span></button>${changeFilesHtml(stats, open)}`;
-}
-// 这一答动过意：改动条顶端置顶一行，常显不折；点开是意的卡片（见 19-intent/40-card.js）。写的是此刻最后一次改完的立住几项
-/** @param {Message} message */
-function changeIntentHtml(message) {
-  const step = (message.steps || []).findLast(item => item.name === "update_intent" && item.status === "done");
-  if (!step) return "";
-  return `<button type="button" class="change-intent" data-intent-open title="打开意"><span class="seal change-seal" aria-hidden="true">意</span><span class="change-title">${escapeHtml(step.title || "")}</span></button>`;
+  const stats = changeStats(message);
+  if (!stats.files.length) return "";
+  return `<button type="button" class="change-summary" aria-expanded="${open}"><span class="seal change-seal" aria-hidden="true">改</span><span class="change-title">改动 ${stats.files.length} 个文件</span><span class="change-count">${changeCountHtml(stats)}${changeSpark(stats.added, stats.removed)}</span></button>${changeFilesHtml(stats, open)}`;
 }
 // 成品：言里这一答在卷宗根目录新出或改过的文件。一件一行：件图、文件名、大小，右侧「看」（悬浮预览）与「下载」
 // 卷宗里已经删掉的成品：条目留着（这一答确实出过这件），但标成「已移出卷宗」，不再给看与下载的按钮

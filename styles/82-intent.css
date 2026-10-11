@@ -1,26 +1,70 @@
-/* 意（见 src/19-intent/40-card.js 与 设计稿/55 甲 · 一张纸）：改动条顶端置顶的一行、行迹里那一步，点开都是预览浮层里这一张卡片。
+/* 意（见 src/19-intent/40-card.js、50-glance.js 与 设计稿/55 甲、58 甲、59 乙、60）：题下一行与书眉常显一枚，行迹里那一步，点开都是预览浮层里这一张卡片。
    记号是符号：已立青绿勾、假定泥金勾、存疑泥金问号、待复核朱圈、已弃灰叉；朱只给待复核。线从前提出、到结论止，立住的实、借来的泥金虚、
    凭据变了的朱虚、弃了的点线 */
-.change-intent {
-  display: flex;
+
+/* 记号：同一支笔写的小符号，别跟着笔意图标撑到 20px（图里、名字前、待察里都是这一号） */
+.intent-mk {
+  width: 12px;
+  height: 11px;
+}
+
+/* 常显的一枚：石青「意」印、已立几项、一排记号；字随所在那一行（题下的小题字、书眉的小字） */
+.intent-glance {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 2px 0;
-  color: var(--ink-2);
-  font: 11.5px var(--title);
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  text-align: left;
-}
-.change-intent:hover {
-  color: var(--ink);
-}
-.change-intent .change-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  gap: 6px;
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: var(--radius-s);
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
   white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+.intent-glance:hover,
+.intent-glance:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink-2);
+}
+.intent-glance b {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.intent-seal {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-color: color-mix(in srgb, var(--qing) 60%, transparent);
+  background: color-mix(in srgb, var(--qing) 7%, transparent);
+  color: var(--qing);
+  font-size: 9px;
+}
+.intent-glance-run {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+}
+.intent-glance-run .intent-mk {
+  width: 10px;
+  height: 9px;
+}
+.intent-glance-run i {
+  margin-left: 4px;
+  color: var(--ink-3);
+  font: normal 10px var(--body);
+}
+.running-head-intent .intent-glance {
+  flex: none;
+  color: var(--ink-3);
+  font: 10.5px var(--body);
+  letter-spacing: 0.02em;
+}
+.running-head-intent .intent-glance b {
+  color: var(--ink-2);
 }
 .tool-step-intent > .tool-step-head[data-intent-open] {
   cursor: pointer;
@@ -37,7 +81,7 @@
 .intent-card {
   width: min(860px, 100%);
   margin: 0 auto;
-  padding: 18px 22px 22px;
+  padding: 40px 26px;
   color: var(--ink-2);
   font-size: 12.5px;
   line-height: 1.75;
@@ -77,7 +121,7 @@
 .intent-root {
   display: grid;
   gap: 4px;
-  margin: 12px 0 2px;
+  margin: 20px 0 0;
 }
 .intent-root-line {
   display: flex;
@@ -153,25 +197,34 @@
   color: var(--accent);
   font-size: 12px;
 }
-.intent-sec {
-  color: var(--ink-3);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
+/* 节题：待察、留痕同一种——字、条数、一道线 */
+.intent-sec,
+.intent-log summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 14px 0 4px;
+  gap: 10px;
+  margin: 34px 0 10px;
+  color: var(--ink-2);
+  font: 600 12.5px var(--title);
+  letter-spacing: 0.12em;
 }
-.intent-sec::after {
+.intent-sec::after,
+.intent-log summary::after {
   content: "";
   flex: 1;
   height: 1px;
-  background: var(--line);
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+.intent-sec .n,
+.intent-log summary .n {
+  color: var(--ink-3);
+  font: 400 11px var(--body);
+  letter-spacing: 0;
 }
 
 /* 图：字在列里、线在列间、汇点在记号前（摆法见 src/19-intent/30-layout.js） */
 .intent-graph {
-  margin: 8px 0 2px;
+  margin: 30px 0 26px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
@@ -260,36 +313,43 @@
   font-size: 10.5px;
 }
 
-/* 点中一项：图下展开 */
-.intent-detail {
-  margin: 4px 0 6px;
-  padding: 6px 0 4px 12px;
-  border-left: 1.5px solid color-mix(in srgb, var(--ink) 12%, transparent);
-}
+/* 点中一项：图下展开（设计稿/60 二·甲 · 簿录）。不框不竖线：题一行（记号、名、态），说法，再一行一键、行间淡朱丝栏；
+   前提、支撑写成带记号的名字。落选：两栏（窄了右栏挤）、铺一张笺（又是一块）；原先的左竖线、并排的小键名、小框嫌挤、一色 */
 .intent-detail-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
+}
+.intent-detail-head > .intent-mk {
+  width: 14px;
+  height: 13px;
 }
 .intent-detail-id {
   color: var(--ink);
-  font: 600 14px var(--title);
+  font: 600 16px var(--title);
+  letter-spacing: 0.02em;
 }
 .intent-detail-state {
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: 11.5px;
 }
-.intent-detail-state[data-state="stale"],
-.intent-detail-state[data-state="doing"] {
+.intent-detail-state[data-state="holds"] {
+  color: var(--code-green);
+}
+.intent-detail-state[data-state="stale"] {
   color: var(--accent);
 }
-.intent-detail-state[data-state="assumed"] {
+.intent-detail-state[data-state="assumed"],
+.intent-detail-state[data-state="premised"] {
   color: var(--gold);
 }
-.intent-detail-claim {
-  margin: 4px 0 8px;
+.intent-detail-state[data-state="doing"] {
   color: var(--ink);
-  font: 14px/1.7 var(--title);
+}
+.intent-detail-claim {
+  margin: 8px 0 16px;
+  color: var(--ink);
+  font: 14px/1.85 var(--title);
 }
 .intent-when {
   margin-right: 6px;
@@ -301,38 +361,54 @@
 }
 .intent-kv {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: 4px 10px;
+  grid-template-columns: 52px minmax(0, 1fr);
+  --rule: color-mix(in srgb, var(--accent) 14%, var(--line));
 }
-.intent-kv .k {
-  padding-top: 1px;
+.intent-kv > span {
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.75;
+}
+.intent-kv > span:nth-last-child(-n + 2) {
+  border-bottom: 1px solid var(--rule);
+}
+.intent-kv > .k {
+  padding-top: 9px;
   color: var(--ink-3);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
+  font: 11.5px var(--title);
+  letter-spacing: 0.12em;
 }
-.intent-kv .k.zhu {
+.intent-kv > .k.zhu {
   color: var(--accent);
 }
-.intent-kv .k.gold {
+.intent-kv > .k.gold {
   color: var(--gold);
 }
-.intent-chips,
+.intent-links,
 .intent-anchors {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px 6px;
-  margin-right: 6px;
+  gap: 4px 14px;
+  margin-right: 10px;
 }
-.intent-chips button {
-  padding: 0 6px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-s);
-  color: var(--ink-2);
-  font-size: 11px;
-  line-height: 1.7;
-}
-.intent-chips button:hover {
+.intent-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--ink);
+  font: 13px var(--title);
+}
+.intent-link:hover,
+.intent-link:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+.intent-link .intent-mk {
+  flex: none;
 }
 .intent-anchor {
   padding: 0 5px;
@@ -359,68 +435,63 @@
   color: var(--ink-3);
 }
 
-/* 要看的、留痕 */
+/* 待察、留痕：记号、名、缘由各成一列 */
 .intent-notes {
   display: grid;
-  gap: 2px;
-  margin: 2px 0 0;
+  gap: 6px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 .intent-notes li {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  gap: 6px;
+  grid-template-columns: 18px 112px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+.intent-notes li > span {
+  display: contents;
 }
 .intent-notes .intent-mk {
-  margin-top: 5px;
+  align-self: center;
 }
 .intent-note-id {
-  margin-right: 8px;
   color: var(--ink);
-  font: 12.5px/1.75 var(--title);
+  font: 13px/1.75 var(--title);
+  text-align: left;
 }
 .intent-note-id:hover {
   text-decoration: underline;
   text-decoration-color: var(--line);
+}
+.intent-note-why {
+  color: var(--ink-2);
+  font-size: 12.5px;
 }
 .intent-note-why.quiet {
   color: var(--ink-3);
 }
 .intent-log {
   color: var(--ink-3);
-  font-size: 12px;
 }
 .intent-log summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 14px 0 4px;
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
   list-style: none;
   cursor: pointer;
 }
 .intent-log summary::-webkit-details-marker {
   display: none;
 }
-.intent-log summary::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
 .intent-log ul {
   display: grid;
-  gap: 2px;
-  margin: 4px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 .intent-log li {
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  padding: 3px 0;
 }
 .intent-log time {
   padding-top: 2px;
@@ -432,4 +503,5 @@
 }
 .intent-log li span {
   color: var(--ink-2);
+  font-size: 12.5px;
 }

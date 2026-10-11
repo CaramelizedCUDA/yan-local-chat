@@ -23,8 +23,10 @@ async function intentPrints(conversation, keys, signal, cadence = "answer") {
 async function loadIntent(conversation, signal) {
   if (!isWork(conversation)) return void intents.delete(conversation.id);
   try {
-    const { intent } = await readIntent(conversation, signal);
-    intents.set(conversation.id, { intent, now: await intentPrints(conversation, intentSealedAnchors(intent), signal) });
+    const { intent } = await readIntent(conversation, signal),
+      now = await intentPrints(conversation, intentSealedAnchors(intent), signal);
+    intents.set(conversation.id, { intent, now });
+    noteIntentGlance(conversation, intent, now);
   } catch (error) {
     if (error.name === "AbortError") throw error;
     intents.delete(conversation.id);
@@ -111,9 +113,10 @@ async function intentGate(conversation, assistant, watch, signal) {
   saveStoreSoon();
   return { role: "user", content: report };
 }
-/** 这一答里改过意：记下改完的那份，往后几轮据它比（作答途中压了前文要重装时，附的也是它） @param {Conversation} conversation @param {Intent} intent @param {IntentPrints} now */
+/** 这一答里改过意：记下改完的那份，往后几轮据它比（作答途中压了前文要重装时，附的也是它）；题下与书眉跟着换 @param {Conversation} conversation @param {Intent} intent @param {IntentPrints} now */
 function keepIntent(conversation, intent, now) {
   intents.set(conversation.id, { intent, now });
+  noteIntentGlance(conversation, intent, now);
 }
 /** 附在这一问之后的一段；意里一项都没有就不附 @param {Conversation} conversation */
 function intentNote(conversation) {
