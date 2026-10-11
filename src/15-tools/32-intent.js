@@ -57,3 +57,10 @@ defineTool({
     return { ok: true, content: `${intentText(next, now, { path: INTENT_FILE })}${unread}`, display: `${standing}/${live}` };
   }
 });
+// 收尾前对照意递的那句话（见 19-intent/10-store.js 的 intentGate）：不是工具，记作行迹里它递上的那一步；往后重装这一答照原处插回
+defineTool({
+  name: "intent_gate",
+  label: "意",
+  offer: false,
+  replay: replayReport
+});

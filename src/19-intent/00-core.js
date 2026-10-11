@@ -334,9 +334,9 @@ function intentTally(intent, now = {}) {
 }
 /**
  * 根在前、前提在后；立住了的只留一行，没立住的写验收与缘由，没立住的根附上用户的原话
- * @param {Intent} intent @param {IntentPrints} [now] @param {{ path?: string }} [options]
+ * @param {Intent} intent @param {IntentPrints} [now] @param {{ path?: string, asks?: boolean }} [options] asks：立住了的根也附原话（收尾前对照用）
  */
-function intentText(intent, now = {}, { path = ".yan/意.json" } = {}) {
+function intentText(intent, now = {}, { path = ".yan/意.json", asks = false } = {}) {
   const order = intentOrder(intent)
       .reverse()
       .filter(id => intent.nodes[id].state !== "dropped"),
@@ -352,12 +352,12 @@ function intentText(intent, now = {}, { path = ".yan/意.json" } = {}) {
       premises = liveNeeds(intent, node),
       borrowed = roots.has(id) && established ? intentBorrowed(intent, id).filter(b => b !== id) : [],
       head = `- [${tag}] ${id}${roots.has(id) ? "（根）" : ""}：${node.claim}${node.when ? `（情形：${node.when}）` : ""}${premises.length ? `（前提：${premises.join("、")}${node.any ? "，任一即可" : ""}）` : ""}${borrowed.length ? `（借假定：${borrowed.join("、")}）` : ""}`;
-    if (state === "assumed") return `${head}\n  出处：${node.note || ""}`;
-    if (established) return head;
+    const ask = node.root?.ask ? [`  原话：${node.root.ask.slice(0, asks ? 600 : 200)}`] : [];
+    if (state === "assumed") return [head, `  出处：${node.note || ""}`, ...(asks ? ask : [])].join("\n");
+    if (established) return [head, ...(asks ? ask : [])].join("\n");
     const more = [`  验收：${node.check}`];
     if (state === "stale") more.push(`  缘由：${intentStaleWhy(intent, id, now)}`);
-    if (node.root?.ask) more.push(`  原话：${node.root.ask.slice(0, 200)}`);
-    return [head, ...more].join("\n");
+    return [head, ...more, ...ask].join("\n");
   });
   return `［意 ${path}］立住 ${standing} / ${live}${dropped ? `，另有 ${dropped} 项已弃` : ""}\n${lines.join("\n")}`;
 }

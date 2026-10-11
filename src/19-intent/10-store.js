@@ -33,7 +33,7 @@ async function loadIntent(conversation, signal) {
 /** 一答之内的回归簿记：上一回看到的待复核几项、各项被打回几回 @param {Conversation} conversation */
 function intentWatch(conversation) {
   const held = intents.get(conversation.id);
-  return { stale: new Set(held ? intentStaleIds(held.intent, held.now) : []), bounces: new Map() };
+  return { stale: new Set(held ? intentStaleIds(held.intent, held.now) : []), bounces: new Map(), gated: false };
 }
 /**
  * 一轮工具做完：重取便宜的那几种凭据（文件、目录；探针只在每答开工与标成立时跑）的指纹，新转待复核的写成一段接在这一轮的工具结果后
@@ -50,6 +50,66 @@ async function intentRound(conversation, watch, signal) {
   watch.stale = stale;
   for (const id of fresh) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
   return intentRoundText(held.intent, held.now, fresh, watch.bounces);
+}
+// 收尾前对照：这一答动过意（改过它，或它所挂的凭据在这一答里变过），模型说完要收尾时拦一次——只一次，拦完即放。
+// 摆出此刻的意（重读一回，探针也跑）、这一答里转待复核过的、改了而无凭据罩着的文件，请它对照各根的原话自己判：能收就收，未尽的接着做。
+// 不替它验、不复验、不再拦：要不要派帮手核对由它定。递的话记作行迹里的一步，往后重装这一答照原处插回（replay）
+const INTENT_UNOWNED_SHOWN = 8;
+/** @param {Message} assistant 这一答改过的文件（帮手改的也算） */
+function changedPaths(assistant) {
+  return (assistant.steps || [])
+    .flatMap(step => [step, ...(step.sub?.steps || [])])
+    .filter(step => step.change && step.status === "done")
+    .map(step => step.change.path);
+}
+/**
+ * @param {Conversation} conversation @param {Message} assistant @param {ReturnType<typeof intentWatch>} watch @param {AbortSignal} [signal]
+ * @returns {Promise<Record<string, any>|null>} 递给模型的那一条；null 即放它收尾
+ */
+async function intentGate(conversation, assistant, watch, signal) {
+  if (watch.gated) return null;
+  const touched = (assistant.steps || []).some(step => step.name === "update_intent" && step.status === "done") || watch.bounces.size > 0;
+  if (!touched || !intents.has(conversation.id)) return null;
+  watch.gated = true;
+  // 别的对话这一答期间也可能改过：重读一回，以文件为准
+  let intent = intents.get(conversation.id).intent;
+  try {
+    intent = (await readIntent(conversation, signal)).intent;
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+  }
+  if (!Object.keys(intent.nodes).length) return null;
+  const now = await intentPrints(conversation, intentSealedAnchors(intent), signal);
+  keepIntent(conversation, intent, now);
+  const unowned = intentUnowned(intent, changedPaths(assistant)),
+    report = [
+      prompt("work.intentGate", { intent: intentText(intent, now, { path: INTENT_FILE, asks: true }) }),
+      watch.bounces.size && prompt("work.intentGateBounced", { list: [...watch.bounces].map(([id, n]) => `${id} ${n} 回`).join("、") }),
+      unowned.length &&
+        prompt("work.intentGateUnowned", {
+          list: `${unowned.slice(0, INTENT_UNOWNED_SHOWN).join("、")}${unowned.length > INTENT_UNOWNED_SHOWN ? ` 等 ${unowned.length} 个` : ""}`
+        }),
+      prompt("work.intentGateAsk")
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    { live, standing } = intentTally(intent, now);
+  /** @type {Step} */
+  const step = {
+    id: `gate_${uid().slice(0, 8)}`,
+    name: "intent_gate",
+    arguments: "{}",
+    status: "done",
+    title: "收尾前对照意",
+    result: `立住 ${standing} / ${live}`,
+    at: String(assistant.content || "").length,
+    rat: String(assistant.reasoning || "").length,
+    report
+  };
+  (assistant.steps ||= []).push(step);
+  refreshSteps(assistant);
+  saveStoreSoon();
+  return { role: "user", content: report };
 }
 /** 这一答里改过意：记下改完的那份，往后几轮据它比（作答途中压了前文要重装时，附的也是它） @param {Conversation} conversation @param {Intent} intent @param {IntentPrints} now */
 function keepIntent(conversation, intent, now) {

@@ -841,6 +841,9 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // 收尾前对照意：递来的那句话原样回显，就此收尾（只拦一回，回显之后不该再来）
+      if (typeof lastUser === "string" && lastUser.startsWith("［收尾前对照意］"))
+        return sse(res, [delta({ content: `GATE|${lastUser}` }), delta({}, { usage: { total_tokens: 5 } })]);
       // INTENTC：两项同依托 api/user.js，标成立后改它、再标成立、再改……第三回改完该说相持；末轮回显各工具结果。
       // 须排在 INTENTA、INTENTB 前：同一目录的意里记着它们的原话，随这一问附着
       if (typeof lastUser === "string" && lastUser.includes("INTENTC")) {
@@ -897,6 +900,7 @@ http
             delta({
               tool_calls: [
                 call(0, "write_file", { path: "src/a.js", content: "v1" }),
+                call(2, "write_file", { path: "notes.txt", content: "随手记" }),
                 call(1, "update_intent", {
                   nodes: [
                     { id: "上线", claim: "可在公网访问", check: "外网打得开", needs: ["甲"], root: true },
@@ -907,7 +911,7 @@ http
             }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
-        if (n === 2)
+        if (n === 3)
           return sse(res, [
             delta({
               tool_calls: [

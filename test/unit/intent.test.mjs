@@ -16,6 +16,7 @@ const f = load([
   "intentRoots",
   "intentSealedAnchors",
   "parseAnchor",
+  "intentUnowned",
   "intentTally",
   "intentText",
   "intentStaleIds",
@@ -241,4 +242,22 @@ test("照旧写 files 的也认作文件凭据；这一回取不到指纹的凭�
   intent = f.applyIntentOps(intent, [{ id: "甲", state: "done" }], { prints: { "file:a.js": "1" } });
   assert.deepEqual(Object.keys(intent.nodes["甲"].seal.prints), ["file:a.js"]);
   assert.equal(f.intentState(intent, "甲", { "cmd:npm ls": "whatever" }), "done");
+});
+
+test("无主改动：改过而没有哪一项的凭据罩着的；文件、目录各自罩得住，弃了的不算，.yan 下不算", () => {
+  const intent = change(empty(), [
+    { id: "甲", claim: "x", check: "y", anchors: ["src/a.js", "dir:lib"] },
+    { id: "乙", claim: "x", check: "y", anchors: ["docs/old.md"], state: "dropped" }
+  ]);
+  assert.deepEqual(f.intentUnowned(intent, ["src/a.js", "lib/deep/b.js", "libx/c.js", "docs/old.md", ".yan/账本.md", "src/a.js"]), [
+    "libx/c.js",
+    "docs/old.md"
+  ]);
+});
+
+test("收尾前对照用的写法：立住了的根也附原话", () => {
+  let intent = change(empty(), [{ id: "根", claim: "R", check: "r", root: true }], { ask: "做完这件事" });
+  intent = change(intent, [{ id: "根", state: "done" }]);
+  assert.ok(!f.intentText(intent).includes("原话"));
+  assert.ok(f.intentText(intent, {}, { asks: true }).endsWith("- [成立] 根（根）：R\n  原话：做完这件事"));
 });

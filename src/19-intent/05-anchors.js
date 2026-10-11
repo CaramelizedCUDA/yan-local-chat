@@ -41,6 +41,19 @@ function parseAnchor(raw, workdir = "") {
     value = ANCHOR_KINDS.get(kind).normalize(given, workdir || "");
   return value ? { key: `${kind}:${value}` } : { problem: `凭据「${text.slice(0, 80)}」写不对：${ANCHOR_KINDS.get(kind).problem}` };
 }
+/**
+ * 无主改动：改过的文件里，没有哪一项（没弃的）的凭据罩着的——回归罩不到的盲区，也是副作用常藏的地方。.yan/ 下是言自己的簿记，不算
+ * @param {Intent} intent @param {string[]} paths 改过的文件（目录内相对，或目录外的完整路径）
+ */
+function intentUnowned(intent, paths) {
+  const anchors = Object.values(intent.nodes)
+    .filter(node => node.state !== "dropped")
+    .flatMap(node => node.anchors)
+    .map(anchorParts);
+  return [...new Set(paths.map(path => intentPath(path)))].filter(
+    path => path && !path.startsWith(".yan/") && !anchors.some(([kind, value]) => ANCHOR_KINDS.get(kind)?.covers?.(value, path))
+  );
+}
 /** 依种类分派，取一组凭据此刻的指纹 @param {Conversation} conversation @param {string[]} keys @param {AbortSignal} [signal] @param {"round"|"answer"} [cadence] 只取每轮都取的那几种 */
 async function anchorPrints(conversation, keys, signal, cadence = "answer") {
   const groups = new Map();

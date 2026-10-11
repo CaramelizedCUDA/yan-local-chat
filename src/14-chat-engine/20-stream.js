@@ -128,7 +128,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       inbox: job,
       budget,
       onStatus: label => setJobLabel(conversation, job, label),
-      afterRound: () => intentRound(conversation, watch, job.controller.signal)
+      afterRound: () => intentRound(conversation, watch, job.controller.signal),
+      beforeEnd: () => intentGate(conversation, assistant, watch, job.controller.signal)
     });
     trimReply(assistant);
     if (!assistant.content)

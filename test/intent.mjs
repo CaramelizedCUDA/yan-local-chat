@@ -51,6 +51,21 @@ try {
     steps.length === 3 && steps[0].startsWith("立住 0 / 2 · 上线、甲|done"),
     JSON.stringify(steps)
   );
+  // 收尾前对照：这一答动过意，说完要收尾时拦一回——此刻的意（立住了的根也附原话）、无主改动、请它对照原话自判；只一回
+  const gate = first.slice(first.indexOf("GATE|")),
+    gates = await evalJs(
+      `(__yanState().conversations.find(c => c.messages[0]?.content === "INTENTA 立意").messages.at(-1).steps || []).filter(s => s.name === "intent_gate").length`
+    );
+  check(
+    "before finishing, the answer is stopped once with the intent, the root's own words and the unowned change",
+    first.split("GATE|").length === 2 &&
+      gates === 1 &&
+      /^GATE\|［收尾前对照意］\n［意 \.yan\/意\.json］立住 1 \/ 2/.test(gate) &&
+      /原话：INTENTA 立意/.test(gate) &&
+      /本答改了、意里没有凭据罩着的：notes\.txt\n/.test(gate) &&
+      /对照各根的原话，看这一答能否就此收尾/.test(gate),
+    gate
+  );
 
   // 在言之外改了那个文件：下一问开工时重取指纹，附着的意里它转待复核，并写明缘由
   writeFileSync(`${dir}/src/a.js`, "v2");
@@ -66,6 +81,7 @@ try {
       /原话：INTENTA 立意/.test(second),
     second
   );
+  check("an answer that neither touched the intent nor changed its anchors is not stopped", !second.includes("GATE|"), second);
 
   // 唯一的写者：拿旧版本去写被退回，交回此刻的那份
   const read = await post("/api/work/intent", { workdir }),
@@ -83,7 +99,13 @@ try {
   );
   const third = `((__yanState().conversations.find(c => c.messages[0]?.content === "INTENTC 相持")?.messages || []).filter(m => m.role === "assistant" && m.status === "complete")[0]?.content || "")`;
   await waitFor(`${third}.startsWith("INTENTC|")`, 30000);
-  const rounds = (await evalJs(third)).slice("INTENTC|".length).split(" ▸ ");
+  const thirdText = await evalJs(third),
+    rounds = thirdText.slice("INTENTC|".length, thirdText.indexOf("GATE|")).trim().split(" ▸ ");
+  check(
+    "the stop before finishing also says which items turned back during this answer, and how often",
+    /本答内转待复核过：登录 3 回、隐私 3 回/.test(thirdText.slice(thirdText.indexOf("GATE|"))),
+    thirdText.slice(thirdText.indexOf("GATE|"))
+  );
   check(
     "after the first edit both items turn back, told right after that round's tool result",
     rounds[3]?.includes("［意］此轮之后转待复核：登录（标成立后又变了：api/user.js）、隐私（标成立后又变了：api/user.js）") &&

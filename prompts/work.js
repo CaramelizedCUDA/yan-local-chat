@@ -26,6 +26,12 @@
   ledgerSub: "［主对话的账本 {{path}}，只读］\n{{text}}",
   ledgerCut: "［账本共 {{lines}} 行，此处只附了开头 {{shown}} 行，其后要看用 read_file；常要看的宜挪到前面］",
 
+  // 意的收尾前对照（见 src/19-intent/10-store.js 的 intentGate）：这一答动过意、说完要收尾时递一回，作为一条用户消息进历史，不是系统提示
+  intentGate: "［收尾前对照意］\n{{intent}}",
+  intentGateBounced: "本答内转待复核过：{{list}}",
+  intentGateUnowned: "本答改了、意里没有凭据罩着的：{{list}}",
+  intentGateAsk: "对照各根的原话，看这一答能否就此收尾：未尽的可接着做；卡在要用户定夺的事上，说明即可收尾。",
+
   // 成品怎么交到用户手上：只给主答——帮手的话是回报给主模型的，页面不替它列成品
   deliver: "答末页面自会列出成品供预览下载，说文件名即可，链接由页面给出。",
 

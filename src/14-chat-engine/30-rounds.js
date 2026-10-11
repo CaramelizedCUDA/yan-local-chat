@@ -22,9 +22,11 @@ function newTally() {
  * @param {Array<Record<string, any>>} history 送给接口的消息，就地追加
  * @param {{ profile: Profile, conversation: Conversation, host: Message, signal: AbortSignal, overrides: Record<string, any>,
  *   tally: ReturnType<typeof newTally>, roundLimit: number, scope?: string, inbox?: any, budget?: number,
- *   onFrame?: (() => void)|null, onStatus?: (label?: string) => void, afterRound?: () => Promise<string> }} run
+ *   onFrame?: (() => void)|null, onStatus?: (label?: string) => void, afterRound?: () => Promise<string>,
+ *   beforeEnd?: () => Promise<Record<string, any>|null> }} run
  *   host：步骤画在哪条消息上（帮手的步骤画在主答的差遣卡里）；scope：步骤记上属于哪名帮手；onStatus：网络重试这类状态；
- *   afterRound：一轮工具做完、要接在工具结果后让它知道的话（主答的意，见 19-intent/10-store.js 的 intentRound）
+ *   afterRound：一轮工具做完、要接在工具结果后让它知道的话（主答的意，见 19-intent/10-store.js 的 intentRound）；
+ *   beforeEnd：模型说完要收尾时，递回一条消息即接着做，给 null 即收尾（主答的意，见 intentGate）
  */
 async function runRounds(target, history, run) {
   const { profile, conversation, host, signal, overrides, tally, inbox = null } = run,
@@ -128,7 +130,16 @@ async function runRounds(target, history, run) {
     if (!calls.length || !overrides.tools || overrides.toolChoice === "none") {
       // 说完了就收尾，帮手还在后台也不等：回报到了另起一答（见 mailReport），等着的时候没有谁醒着。
       // 只剩用户的补言也照旧收尾，补言由 settleSupplements 作下一问送出。这一轮说着时已到的回报（或递给帮手的话）才当场递上接着做
-      if (!inbox?.queue.some(item => item.report !== undefined)) break;
+      if (!inbox?.queue.some(item => item.report !== undefined)) {
+        // 收尾前要它再看一眼的（主答的意，见 19-intent/10-store.js 的 intentGate）：递回一句话即接着这一答写，不另起。轮次到顶的不拦
+        const entry = run.beforeEnd && overrides.tools && overrides.toolChoice !== "none" ? await run.beforeEnd() : null;
+        if (!entry) break;
+        const said = target.content.slice(roundStart).trim();
+        if (said) history.push({ role: "assistant", content: said });
+        history.push(entry);
+        target.content = paragraphBreak(target.content);
+        continue;
+      }
       const said = target.content.slice(roundStart).trim();
       if (said) history.push({ role: "assistant", content: said });
       await deliverSupplements(inbox, history, run.budget, host, { target });
