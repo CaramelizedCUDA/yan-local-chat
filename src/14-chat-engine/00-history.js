@@ -23,9 +23,12 @@ function quotedText(message) {
 // （「后台进行中」→ 几步几秒、改了哪些文件），照现写的话前文中间改了一处，那里往后的提示缓存全断；它们的结果另有回报送到。
 // 步数变了（续写又做了几步）才重写
 /** @param {Message|SubAgent} message */
+// 帮手、后台指令后来被停、中断了也重写：不会再有回报送到，不改的话此后每问都告诉模型「后台进行中」
 function settledDigest(message) {
-  const steps = (message.steps || []).length;
-  if (message.trailDigest?.steps !== steps) message.trailDigest = { steps, text: stepsDigest(message, "上一答的行迹") };
+  const steps = (message.steps || []).length,
+    broken = (message.steps || []).filter(step => step.status === "error" || step.status === "skipped").length;
+  if (message.trailDigest?.steps !== steps || (message.trailDigest.broken || 0) !== broken)
+    message.trailDigest = { steps, broken, text: stepsDigest(message, "上一答的行迹") };
   return message.trailDigest.text;
 }
 /** @param {{ steps?: Step[] }} message 一答；帮手的一趟也一样：续派时它上一趟的行迹冠在新的活前面 */

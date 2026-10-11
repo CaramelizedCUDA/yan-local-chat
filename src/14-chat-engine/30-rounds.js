@@ -351,6 +351,8 @@ async function readReply(profile, history, signal, overrides, target, retried = 
     });
   const data = await response.json(),
     message = data?.choices?.[0]?.message;
+  // 回 200 却是一份报错（有的中转站这样回）：把它说的原因交出去，不报成「模型未返回正文」
+  if (data?.error && !data.choices) throw Error((typeof data.error === "string" ? data.error : data.error.message) || "接口返回了错误");
   target.content += extractContent(data);
   // 与流式一致：有的接口把思考放在 reasoning 而不是 reasoning_content
   target.reasoning = normalizeContent(message?.reasoning_content ?? message?.reasoning) || target.reasoning;
@@ -379,8 +381,8 @@ function noteBreak(target, why, auto = false) {
 // 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」
 const RETRY_DELAYS = [1000, 2000, 4000, 8000];
 const retryableStatus = status => status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
-/** 等 ms 毫秒（断网就等到网回来）；中途停止即抛 AbortError */
-function restFor(ms, signal) {
+/** 等 ms 毫秒（断网就等到网回来；local：本机模型不靠外网，不等）；中途停止即抛 AbortError */
+function restFor(ms, signal, local = false) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(Object.assign(Error("已停止"), { name: "AbortError" }));
     const done = () => {
@@ -396,17 +398,28 @@ function restFor(ms, signal) {
       done();
       reject(Object.assign(Error("已停止"), { name: "AbortError" }));
     };
-    const timer = setTimeout(() => (navigator.onLine ? wake() : addEventListener("online", wake, { once: true })), ms);
+    const timer = setTimeout(() => (navigator.onLine || local ? wake() : addEventListener("online", wake, { once: true })), ms);
     signal?.addEventListener("abort", stop, { once: true });
   });
 }
+// 429 里说的是额度用完了（不是限流）：等多久也不会好，当场交回真正的原因。按分钟计的配额（Gemini 也叫 quota）仍是限流，照等
+const QUOTA_GONE = /insufficient_quota|quota|billing|balance|credit|余额|欠费|额度/i,
+  RATE_ONLY = /per.?minute|\brpm\b|\btpm\b|rate.?limit|每分钟/i;
 /** @param {Profile} profile */
 async function requestPatiently(profile, history, signal, overrides) {
+  const local = /^https?:\/\/(localhost|127\.|\[::1\]|0\.0\.0\.0|192\.168\.|10\.)/i.test(String(profile.baseUrl || ""));
   for (let attempt = 0; ; attempt++) {
     let wait = RETRY_DELAYS[attempt];
     try {
       const response = await requestChat(profile, history, signal, overrides);
       if (response.ok || !retryableStatus(response.status) || wait === undefined) return response;
+      if (response.status === 429) {
+        const said = await response
+          .clone()
+          .text()
+          .catch(() => "");
+        if (QUOTA_GONE.test(said) && !RATE_ONLY.test(said)) return response;
+      }
       const after = Number(response.headers.get("retry-after"));
       if (after > 0) wait = Math.min(after * 1000, 60000);
       response.body?.cancel().catch(() => {});
@@ -414,7 +427,7 @@ async function requestPatiently(profile, history, signal, overrides) {
       if (error.name === "AbortError" || wait === undefined) throw error;
     }
     overrides.onRetry?.(attempt + 1);
-    await restFor(wait, signal);
+    await restFor(wait, signal, local);
   }
 }
 // opened：接口至少接下过一次请求（没接下的——400、连不上——不花墨）；partialRound：最后一轮开了头却没等到它的 usage（停止、断网），

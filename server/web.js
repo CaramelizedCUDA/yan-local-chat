@@ -44,20 +44,29 @@ function stripTags(value) {
     .replace(/\s+/g, " ")
     .trim();
 }
+// 网页转文字：脚本、样式、表单控件去掉（整页包在 <form> 里的站点，form 本身不能删）；有 <article> / <main> 就只取它，
+// 连同它自己的标题与作者（页头页脚、导航是在它之外才删）；<pre> 里的缩进原样留着，代码才用得了
 function htmlToText(html) {
   let text = String(html)
-    .replace(/<(script|style|noscript|svg|nav|header|footer|iframe|template|form)\b[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<(script|style|noscript|svg|iframe|template|select|textarea|button)\b[\s\S]*?<\/\1>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ");
   const main = text.match(/<(article|main)\b[^>]*>([\s\S]*?)<\/\1>/i);
   if (main && main[2].length > 500) text = main[2];
+  else text = text.replace(/<(nav|header|footer)\b[\s\S]*?<\/\1>/gi, " ");
+  const pres = [];
   text = text
-    .replace(/<\/(p|div|li|h\d|tr|section|blockquote|pre|dd|dt)>/gi, "\n")
+    .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_, body) => {
+      pres.push(decodeEntities(body.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "")).replace(/^\n|\s+$/g, ""));
+      return `\n\u0000${pres.length - 1}\u0000\n`;
+    })
+    .replace(/<\/(p|div|li|h\d|tr|section|blockquote|dd|dt)>/gi, "\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, " ");
   return decodeEntities(text)
     .replace(/[ \t\u00a0]+/g, " ")
     .replace(/\s*\n\s*/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
+    .replace(/\u0000(\d+)\u0000/g, (_, i) => pres[Number(i)])
     .trim();
 }
 // URL.hostname 里的 IPv6 字面量带方括号（[::1]），net.isIP 不认，先剥掉
@@ -420,7 +429,8 @@ const handleSearch = jsonRoute(async body => {
       errors.push(error.message);
     }
   }
-  if (!results.length && errors.length === 2) throw Error(`搜索引擎暂时不可用：${errors[0]}`);
+  // 一家零条（Bing 被拦时回的是验证页，也是零条）、另一家连不上：说不准是真没有，按报错交回，模型才不当「查无此事」
+  if (!results.length && errors.length) throw Error(`搜索引擎暂时不可用：${errors.join("；")}`);
   return { query, results };
 });
 const handleFetch = jsonRoute(async body => {

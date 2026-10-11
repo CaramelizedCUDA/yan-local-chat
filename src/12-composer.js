@@ -85,8 +85,12 @@ function bindComposerEvents() {
     input.addEventListener("keydown", e => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        // 按住不放的那几下不算：请示条一换位，没读过的下一条就被连着批了
+        if (e.repeat) return;
         const waiting = input.id === "chatInput" && !input.value.trim() ? pendingApprovalHere() : null;
         if (waiting) return approveByEnter(waiting);
+        // 案上空着时 Enter 不当「止」：误按一下就掐掉长活、叫停帮手。停只认点那方印
+        if (!composerHasContent()) return;
         sendOrStop();
       }
     });

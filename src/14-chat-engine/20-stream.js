@@ -58,9 +58,14 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       const at = conversation.messages.findIndex(m => m.id === assistant.id),
         before = at < 0 ? conversation.messages : conversation.messages.slice(0, at),
         contextIndex = before.map(m => m.role).lastIndexOf("context");
-      const source = before
-        .slice(contextIndex + 1)
-        .filter(m => m.id !== assistant.id && m.status !== "error" && ["user", "assistant"].includes(m.role));
+      const source = before.slice(contextIndex + 1).filter(
+        m =>
+          m.id !== assistant.id &&
+          m.status !== "error" &&
+          ["user", "assistant"].includes(m.role) &&
+          // 刚发出就停下、一个字一步都没有的空答：不进历史（有的兼容接口拒收空的 assistant）
+          !(m.role === "assistant" && !String(m.content || "").trim() && !m.steps?.length)
+      );
       lastUserId = source.filter(m => m.role === "user").at(-1)?.id;
       const head = summaryMessages(contextIndex >= 0 ? before[contextIndex] : null);
       head.push(...(await historyForApi(source, lastUserId, budget)));
