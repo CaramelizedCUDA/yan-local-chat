@@ -1,4 +1,4 @@
-// 言 · 意 · 读写与附着。每一答开工时读一回，连同已成立各项依托文件此刻的指纹，附在这一问之后——与账本同一个位置、同一个道理
+// 言 · 意 · 读写与附着。每一答开工时读一回，连同已成立、已假定各项凭据此刻的指纹（取法见 05-anchors.js），附在这一问之后——与账本同一个位置、同一个道理
 // （见 15-tools/21-files.js 的 ledgerNote）：附在问上而不进系统提示，意改了也不冲掉前面的缓存；这一答里再改，改完的那份由工具结果交回。
 // 写只经桥接（/api/work/intent），带上读到的版本：别处刚写过就照新的那份重算再写
 const INTENT_FILE = ".yan/意.json";
@@ -9,18 +9,22 @@ async function readIntent(conversation, signal) {
   const data = await bridge("/api/work/intent", workScope(conversation), signal);
   return { intent: asIntent(data.data), version: String(data.version || "") };
 }
-/** 这几个文件此刻的指纹 @param {Conversation} conversation @param {string[]} paths @param {AbortSignal} [signal] @returns {Promise<IntentPrints>} */
-async function intentPrints(conversation, paths, signal) {
-  if (!paths.length) return {};
-  const data = await bridge("/api/work/prints", { ...workScope(conversation), paths }, signal);
-  return data.prints || {};
+/** 这几条凭据此刻的指纹；取不到就当这回不知道，不据它判 @param {Conversation} conversation @param {string[]} keys @param {AbortSignal} [signal] @param {"round"|"answer"} [cadence] */
+async function intentPrints(conversation, keys, signal, cadence = "answer") {
+  if (!keys.length) return {};
+  try {
+    return await anchorPrints(conversation, keys, signal, cadence);
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    return {};
+  }
 }
 /** 这一答开工时读一回；读不到（没绑目录、桥接不在、文件坏了）就不附 @param {Conversation} conversation @param {AbortSignal} [signal] */
 async function loadIntent(conversation, signal) {
   if (!isWork(conversation)) return void intents.delete(conversation.id);
   try {
     const { intent } = await readIntent(conversation, signal);
-    intents.set(conversation.id, { intent, now: await intentPrints(conversation, intentSealedFiles(intent), signal) });
+    intents.set(conversation.id, { intent, now: await intentPrints(conversation, intentSealedAnchors(intent), signal) });
   } catch (error) {
     if (error.name === "AbortError") throw error;
     intents.delete(conversation.id);
@@ -32,20 +36,15 @@ function intentWatch(conversation) {
   return { stale: new Set(held ? intentStaleIds(held.intent, held.now) : []), bounces: new Map() };
 }
 /**
- * 一轮工具做完：重取已成立各项依托文件的指纹，新转待复核的写成一段接在这一轮的工具结果后（见 runRounds 的 afterRound）。
- * 谁改的都算——这一轮的指令、后台的帮手、用户在别处手改；取不到指纹就这回不说
+ * 一轮工具做完：重取便宜的那几种凭据（文件、目录；探针只在每答开工与标成立时跑）的指纹，新转待复核的写成一段接在这一轮的工具结果后
+ * （见 runRounds 的 afterRound）。谁改的都算——这一轮的指令、后台的帮手、用户在别处手改；取不到指纹就这回不说
  * @param {Conversation} conversation @param {ReturnType<typeof intentWatch>} watch @param {AbortSignal} [signal]
  */
 async function intentRound(conversation, watch, signal) {
   const held = intents.get(conversation.id),
-    files = held ? intentSealedFiles(held.intent) : [];
-  if (!held || !files.length) return "";
-  try {
-    held.now = { ...held.now, ...(await intentPrints(conversation, files, signal)) };
-  } catch (error) {
-    if (error.name === "AbortError") throw error;
-    return "";
-  }
+    keys = held ? intentSealedAnchors(held.intent) : [];
+  if (!held || !keys.length) return "";
+  held.now = { ...held.now, ...(await intentPrints(conversation, keys, signal, "round")) };
   const stale = new Set(intentStaleIds(held.intent, held.now)),
     fresh = [...stale].filter(id => !watch.stale.has(id));
   watch.stale = stale;

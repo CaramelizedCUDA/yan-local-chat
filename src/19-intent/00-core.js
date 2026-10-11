@@ -3,9 +3,11 @@
 // 程序只给形式约束与可见性，成立与否由模型自己判：
 //   结构——前提要在、不成环，不合的整批不收；根的说法立后不由模型改（立根时记下用户那一问的原话，日后拿它比）；
 //   传播——前提没立住，上面的就不算立住；
-//   回归——一项标成立时记下凭据（自己与各前提的说法版本、依托文件的内容指纹），此后说法改了、文件被谁改了，它就转待复核。
-//     只是标记、不驱动什么：由数据算出，算一回就停，不会自己转起来；复核后再标成立，即换一份凭据。
+//   回归——一项标成立时记下凭据（自己与各前提的说法版本、所依托凭据的指纹：文件、目录、探针，见 05-anchors.js），
+//     此后说法改了、凭据变了，它就转待复核。只是标记、不驱动什么：由数据算出，算一回就停，不会自己转起来；复核后再标成立，即换一份凭据。
 // 降级有合法的写法：借外部结论、不自己做的标「假定」（note 写出处），算立住，但往上记着借了几条——降在哪、降多少看得见。
+// 假定也可挂凭据：所借的变了（接口改版、依赖升级），它同样转待复核。
+// 节点不分类型：事件、功能、文件都是一句要成立的结论，粒度由模型拆到有凭据可挂为止，混着也无妨。
 // 本文件只放纯函数：理顺模型交来的改动、判状态、写成给模型读的字。读写与附着见 10-store.js，工具登记见 15-tools/32-intent.js
 /**
  * @typedef {"open"|"doing"|"done"|"assumed"|"dropped"} IntentMark 模型标的
@@ -16,17 +18,17 @@
  * @property {string[]} needs 前提
  * @property {boolean} [any] 前提里一项立住即可（几条路线择一）
  * @property {string} [when] 只在这一情形下须成立
- * @property {string[]} files 依托的文件（目录内相对、正斜杠，见 intentPath）
+ * @property {string[]} anchors 凭据，「种类:值」（见 05-anchors.js）：变了即待复核
  * @property {IntentMark} state
  * @property {string} [note] 假定的出处、备注
  * @property {number} rev 说法的版本：claim、check、when 改一回加一
- * @property {IntentSeal} [seal] 标成立那一刻的凭据
+ * @property {IntentSeal} [seal] 标成立（或假定）那一刻记下的：说法版本、前提版本、各凭据的指纹
  * @property {{ ask: string, at: string }} [root] 根：立时用户那一问的原话
  * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null> }} IntentSeal
  * @typedef {{ at: string, conversation: string, text: string }} IntentLog 改意、弃、假定的留痕
  * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[] }} Intent
- * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, files?: string[], state?: IntentMark, note?: string, root?: boolean }} IntentOp
- * @typedef {Record<string, string|null>} IntentPrints 文件此刻的内容指纹；不在其中的即不知道，不据它判
+ * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean }} IntentOp
+ * @typedef {Record<string, string|null>} IntentPrints 各凭据此刻的指纹，按「种类:值」；不在其中的即不知道，不据它判
  */
 const INTENT_LIMIT = 60,
   INTENT_LOG_LIMIT = 200,
@@ -43,7 +45,9 @@ const INTENT_LIMIT = 60,
     assume: "assumed",
     skipped: "dropped",
     drop: "dropped"
-  };
+  },
+  // 记凭据的两种：成立的、假定的
+  SEALED = new Set(["done", "assumed"]);
 /** 读到的 JSON 理成一份意：缺的补上，认不得的项丢掉 @returns {Intent} */
 function asIntent(raw) {
   const nodes = raw && typeof raw.nodes === "object" && !Array.isArray(raw.nodes) ? raw.nodes : {},
@@ -56,7 +60,7 @@ function asIntent(raw) {
       claim: String(node.claim || ""),
       check: String(node.check || ""),
       needs: Array.isArray(node.needs) ? node.needs.map(String) : [],
-      files: Array.isArray(node.files) ? node.files.map(String) : [],
+      anchors: Array.isArray(node.anchors) ? node.anchors.map(String) : [],
       state: INTENT_MARKS.has(node.state) ? node.state : "open",
       rev: Number(node.rev) || 1
     };
@@ -130,21 +134,23 @@ function intentCycle(intent) {
 function intentStaleWhy(intent, id, now = {}) {
   const node = intent.nodes[id],
     seal = node?.seal;
-  if (!node || node.state !== "done" || !seal) return "";
+  if (!node || !SEALED.has(node.state) || !seal) return "";
   if (seal.rev !== node.rev) return "说法改了";
-  for (const need of liveNeeds(intent, node)) {
-    if (!(need in seal.premises)) return `前提 ${need} 是后来加的`;
-    if (seal.premises[need] !== intent.nodes[need].rev) return `前提 ${need} 的说法改了`;
-  }
-  const touched = Object.keys(seal.prints).filter(path => path in now && now[path] !== seal.prints[path]);
+  // 假定不靠前提，只看它自己的说法与凭据
+  if (node.state === "done")
+    for (const need of liveNeeds(intent, node)) {
+      if (!(need in seal.premises)) return `前提 ${need} 是后来加的`;
+      if (seal.premises[need] !== intent.nodes[need].rev) return `前提 ${need} 的说法改了`;
+    }
+  const touched = Object.keys(seal.prints).filter(key => key in now && now[key] !== seal.prints[key]);
   return touched.length
-    ? `标成立后又改了 ${touched.slice(0, 4).join("、")}${touched.length > 4 ? ` 等 ${touched.length} 个文件` : ""}`
+    ? `标${node.state === "done" ? "成立" : "假定"}后又变了：${touched.slice(0, 4).map(anchorLabel).join("、")}${touched.length > 4 ? ` 等 ${touched.length} 条` : ""}`
     : "";
 }
 /** @param {Intent} intent @param {string} id @param {IntentPrints} [now] @returns {IntentState} */
 function intentState(intent, id, now = {}) {
   const node = intent.nodes[id];
-  return node.state === "done" && intentStaleWhy(intent, id, now) ? "stale" : node.state;
+  return SEALED.has(node.state) && intentStaleWhy(intent, id, now) ? "stale" : node.state;
 }
 // 「立住」：自己成立（或是假定）、凭据作数，前提也都立住了（any 的有一项立住即可）。弃了的前提不算在内
 /** @param {Intent} intent @param {string} id @param {IntentPrints} [now] */
@@ -175,12 +181,12 @@ function intentBorrowed(intent, id) {
   }
   return [...out];
 }
-/** 已成立各项依托的文件：读意时据此取一回此刻的指纹 @param {Intent} intent */
-function intentSealedFiles(intent) {
+/** 已成立、已假定各项记过指纹的凭据：读意时据此取一回此刻的 @param {Intent} intent */
+function intentSealedAnchors(intent) {
   return [
     ...new Set(
       Object.values(intent.nodes)
-        .filter(node => node.state === "done" && node.seal)
+        .filter(node => SEALED.has(node.state) && node.seal)
         .flatMap(node => Object.keys(node.seal.prints))
     )
   ];
@@ -189,7 +195,7 @@ function intentSealedFiles(intent) {
 /**
  * @param {Intent} intent 此刻的意
  * @param {any} raw 模型给的 nodes
- * @param {string|null} [workdir] files 里的路径据此写成相对的
+ * @param {string|null} [workdir] 凭据里的路径据此写成相对的
  * @returns {{ ops: IntentOp[], problems: string[] }}
  */
 function normalizeIntentOps(intent, raw, workdir = "") {
@@ -224,8 +230,13 @@ function normalizeIntentOps(intent, raw, workdir = "") {
       if (item[key] !== undefined) op[key] = clip(item[key], n);
     if (item.any !== undefined) op.any = item.any === true || item.any === "true";
     if (item.needs !== undefined) op.needs = [...new Set(list(item.needs).map(n => clip(n, 40)))].filter(n => n && n !== id);
-    if (item.files !== undefined)
-      op.files = [...new Set(list(item.files).map(f => intentPath(clip(f, 300), workdir)))].filter(Boolean).slice(0, 20);
+    // 凭据：带前缀的是那一种，裸的是文件。模型照旧写 files 的也认
+    const anchors = item.anchors !== undefined ? item.anchors : item.files;
+    if (anchors !== undefined) {
+      const parsed = list(anchors).map(raw => parseAnchor(clip(raw, 400), workdir));
+      for (const one of parsed) if ("problem" in one) problems.push(`${id} 的${one.problem}`);
+      op.anchors = [...new Set(parsed.flatMap(one => ("key" in one ? [one.key] : [])))].slice(0, 20);
+    }
     if (item.state !== undefined) {
       const state = String(item.state).trim().toLowerCase(),
         mark = INTENT_MARKS.has(state) ? state : INTENT_MARK_ALIASES[state];
@@ -261,10 +272,10 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     problems.push(`意里的项不宜多于 ${INTENT_LIMIT} 项（此刻 ${live}）：一项是值得单独判的结论，不是每一步动作；细的并进上一级`);
   return { ops, problems };
 }
-/** 这一批里标成立的各项依托的文件：写之前取一回指纹作凭据 @param {Intent} intent @param {IntentOp[]} ops */
+/** 这一批里标成立、标假定的各项挂的凭据：写之前取一回指纹记下 @param {Intent} intent @param {IntentOp[]} ops */
 function intentSealing(intent, ops) {
   const trial = applyIntentOps(intent, ops);
-  return [...new Set(ops.filter(op => op.state === "done").flatMap(op => trial.nodes[op.id]?.files || []))];
+  return [...new Set(ops.filter(op => SEALED.has(op.state || "")).flatMap(op => trial.nodes[op.id]?.anchors || []))];
 }
 /**
  * 把一批改动折上去，得一份新的（不动原来那份）。先改说法与结构，最后才给标成立的各项记凭据：同一批里前提改了说法，记的是改后的
@@ -281,14 +292,14 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
     let node = next.nodes[op.id];
     if (!node) {
       if (!op.claim) continue;
-      node = next.nodes[op.id] = { claim: "", check: "", needs: [], files: [], state: "open", rev: 0 };
+      node = next.nodes[op.id] = { claim: "", check: "", needs: [], anchors: [], state: "open", rev: 0 };
       if (op.root) node.root = { ask: String(ask).slice(0, 2000), at };
     }
     const before = `${node.claim}\u0001${node.check}\u0001${node.when || ""}`;
     for (const key of /** @type {const} */ (["claim", "check", "when", "note"])) if (op[key] !== undefined) node[key] = op[key];
     if (op.any !== undefined) node.any = op.any;
     if (op.needs) node.needs = op.needs;
-    if (op.files) node.files = op.files;
+    if (op.anchors) node.anchors = op.anchors;
     if (`${node.claim}\u0001${node.check}\u0001${node.when || ""}` !== before) {
       if (node.rev) log(`改意 ${op.id}：${node.claim}`);
       node.rev += 1;
@@ -299,15 +310,16 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
       if (node.state === "dropped") log(`复立 ${op.id}`);
     }
     if (op.state) node.state = op.state;
-    if (node.state !== "done") delete node.seal;
+    if (!SEALED.has(node.state)) delete node.seal;
   }
   for (const op of ops) {
     const node = next.nodes[op.id];
-    if (op.state !== "done" || !node) continue;
+    if (!SEALED.has(op.state || "") || !node) continue;
+    // 取不到指纹的凭据（探针这回没跑）不记：日后也不据它判
     node.seal = {
       rev: node.rev,
-      premises: Object.fromEntries(liveNeeds(next, node).map(need => [need, next.nodes[need].rev])),
-      prints: Object.fromEntries(node.files.filter(path => path in prints).map(path => [path, prints[path]]))
+      premises: op.state === "done" ? Object.fromEntries(liveNeeds(next, node).map(need => [need, next.nodes[need].rev])) : {},
+      prints: Object.fromEntries(node.anchors.filter(key => key in prints).map(key => [key, prints[key]]))
     };
   }
   next.log = next.log.slice(-INTENT_LOG_LIMIT);
@@ -366,12 +378,12 @@ function intentRoundText(intent, now, fresh, bounces) {
   for (const id of fresh) {
     const times = bounces.get(id) || 0;
     if (times < INTENT_STALEMATE) continue;
-    const files = intent.nodes[id].files,
+    const mine = intent.nodes[id].anchors,
       partners = Object.keys(intent.nodes)
-        .filter(other => other !== id && bounces.get(other) && intent.nodes[other].files.some(path => files.includes(path)))
+        .filter(other => other !== id && bounces.get(other) && intent.nodes[other].anchors.some(key => mine.includes(key)))
         .map(other => {
-          const shared = intent.nodes[other].files.filter(path => files.includes(path));
-          return `同依托 ${shared.slice(0, 3).join("、")} 的 ${other} 被打回 ${bounces.get(other)} 回`;
+          const shared = intent.nodes[other].anchors.filter(key => mine.includes(key));
+          return `同依托 ${shared.slice(0, 3).map(anchorLabel).join("、")} 的 ${other} 被打回 ${bounces.get(other)} 回`;
         });
     lines.push(`相持：${id} 本答内第 ${times} 回转待复核${partners.length ? `；${partners.join("；")}` : ""}`);
   }

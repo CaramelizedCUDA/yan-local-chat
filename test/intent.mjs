@@ -29,13 +29,16 @@ try {
     saved = JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8"));
   check(
     "the intent is written into the workdir: the root keeps the user's own words, the premise's file is made relative",
-    saved.nodes["上线"]?.root?.ask === "INTENTA 立意" && JSON.stringify(saved.nodes["甲"]?.files) === '["src/a.js"]',
+    saved.nodes["上线"]?.root?.ask === "INTENTA 立意" &&
+      JSON.stringify(saved.nodes["甲"]?.anchors) === '["file:src/a.js","dir:src","cmd:node --version"]',
     JSON.stringify(saved)
   );
   check(
-    "marking done seals the file's fingerprint; the root stands once its premise does",
+    "marking done seals a fingerprint for each anchor (file, folder, probe); the root stands once its premise does",
     saved.nodes["甲"]?.state === "done" &&
-      /^[0-9a-f]{40}$/.test(saved.nodes["甲"]?.seal?.prints?.["src/a.js"] || "") &&
+      /^[0-9a-f]{40}$/.test(saved.nodes["甲"]?.seal?.prints?.["file:src/a.js"] || "") &&
+      /^[0-9a-f]{40}$/.test(saved.nodes["甲"]?.seal?.prints?.["dir:src"] || "") &&
+      !!saved.nodes["甲"]?.seal?.prints?.["cmd:node --version"] &&
       /立住 1 \/ 2/.test(first),
     first
   );
@@ -59,7 +62,7 @@ try {
   check(
     "next question carries the intent after the question, with the changed file turning the premise back to be rechecked",
     /INTENTB 再看[\s\S]*［意 \.yan\/意\.json］立住 0 \/ 2/.test(second) &&
-      /\[待复核\] 甲：a\.js 写好[\s\S]*缘由：标成立后又改了 src\/a\.js/.test(second) &&
+      /\[待复核\] 甲：a\.js 写好[\s\S]*缘由：标成立后又变了：src\/a\.js、src\/$/m.test(second) &&
       /原话：INTENTA 立意/.test(second),
     second
   );
@@ -83,7 +86,7 @@ try {
   const rounds = (await evalJs(third)).slice("INTENTC|".length).split(" ▸ ");
   check(
     "after the first edit both items turn back, told right after that round's tool result",
-    rounds[3]?.includes("［意］此轮之后转待复核：登录（标成立后又改了 api/user.js）、隐私（标成立后又改了 api/user.js）") &&
+    rounds[3]?.includes("［意］此轮之后转待复核：登录（标成立后又变了：api/user.js）、隐私（标成立后又变了：api/user.js）") &&
       !/相持/.test(rounds[3]),
     rounds[3]
   );

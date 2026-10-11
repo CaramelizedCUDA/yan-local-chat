@@ -862,8 +862,8 @@ http
               call(0, "write_file", { path: "api/user.js", content: "v1" }),
               call(1, "update_intent", {
                 nodes: [
-                  { id: "登录", claim: "登录返回用户信息", check: "看返回", files: ["api/user.js"] },
-                  { id: "隐私", claim: "不泄露手机号", check: "看返回", files: ["api/user.js"] }
+                  { id: "登录", claim: "登录返回用户信息", check: "看返回", anchors: ["api/user.js"] },
+                  { id: "隐私", claim: "不泄露手机号", check: "看返回", anchors: ["api/user.js"] }
                 ]
               })
             ],
@@ -900,7 +900,7 @@ http
                 call(1, "update_intent", {
                   nodes: [
                     { id: "上线", claim: "可在公网访问", check: "外网打得开", needs: ["甲"], root: true },
-                    { id: "甲", claim: "a.js 写好", check: "内容是 v1", files: ["./src/a.js"] }
+                    { id: "甲", claim: "a.js 写好", check: "内容是 v1", anchors: ["./src/a.js", "dir:src/", "cmd:node --version"] }
                   ]
                 })
               ]
