@@ -46,7 +46,6 @@ function renderSendButtons() {
 function bindComposerEvents() {
   const welcomeInput = $("#welcomeInput"),
     restPlaceholder = welcomeInput.placeholder;
-  chatSuggestionsHtml = $("#welcome .suggestions").innerHTML;
   bindSuggestions = () =>
     document.querySelectorAll(".suggestion").forEach(button => {
       const prompt = button.dataset.prompt || button.textContent;

@@ -14,7 +14,7 @@ await sleep(1200);
 check(
   "suggestions are code-oriented",
   (await evalJs(`[...document.querySelectorAll("#welcome .suggestion")].map(b => b.textContent).join("|")`)) ===
-    "读懂这个项目|修一个问题|加一个功能|写一段脚本并运行"
+    "立意开工|接着上回|深查一事|上手试一遍"
 );
 await evalJs(
   `document.querySelector("#welcomeInput").value = "EDIT"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`

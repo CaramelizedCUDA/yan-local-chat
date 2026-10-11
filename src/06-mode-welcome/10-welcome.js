@@ -18,18 +18,15 @@ function renderWelcomeNotice() {
   el.innerHTML = `<span class="seal" aria-hidden="true">始</span><span>尚未接入模型。OpenAI 兼容与 Anthropic 接口皆可，配置只存于本机、不经云端。</span><button type="button" data-open-models>前往设置 →</button>`;
   el.querySelector("[data-open-models]").onclick = () => openSettings("models");
 }
-let chatSuggestionsHtml = "",
-  bindSuggestions = () => {},
-  suggestionsMode = "chat";
+let bindSuggestions = () => {},
+  suggestionsMode = "";
 function renderSuggestions(work) {
   const mode = work ? "work" : "chat";
-  if (mode === suggestionsMode || !chatSuggestionsHtml) return;
+  if (mode === suggestionsMode) return;
   suggestionsMode = mode;
-  $("#welcome .suggestions").innerHTML = work
-    ? WORK_SUGGESTIONS.map(
-        ([label, prompt]) => `<button class="suggestion" data-prompt="${escapeHtml(prompt)}">${escapeHtml(label)}</button>`
-      ).join("")
-    : chatSuggestionsHtml;
+  $("#welcome .suggestions").innerHTML = SUGGESTIONS[mode]
+    .map(([label, prompt]) => `<button class="suggestion" data-prompt="${escapeHtml(prompt)}">${escapeHtml(label)}</button>`)
+    .join("");
   bindSuggestions();
 }
 // 都是自拟：文白相杂，不借前人成句（成句一眼认得出，反倒像题词）；不必对仗，各按时辰
@@ -87,18 +84,39 @@ function greeting() {
     pool = GREETINGS[h < 6 ? "night" : h < 11 ? "morning" : h < 18 ? "day" : "evening"];
   return pool[Math.floor(greetingPick * pool.length)];
 }
-const WORK_SUGGESTIONS = [
-  [
-    "读懂这个项目",
-    "先通读工作目录中的项目：用 list_files 与 read_file 了解结构与入口，然后用几段话说明它的用途、运行方式与值得留意之处。不要改动任何文件。"
+// 提示词各领一件言已有的本事：言是正文里的图与推演，行是意、帮手、游目。点开即选中头一处（…），留给人填
+const SUGGESTIONS = {
+  chat: [
+    [
+      "图解概念",
+      "给我讲明白（一个概念）：先一句话说它是什么，再在正文里画一张示意，把各部分怎么连、怎么动画清楚，最后点出最容易误解的地方。"
+    ],
+    [
+      "动手推演",
+      "做一个能上手玩的小推演：（一个过程，如复利、排序算法、传染病扩散）\n\n画在正文里，参数可调、能播放暂停，旁边几句话提示我该看哪里、换个参数会怎样。"
+    ],
+    [
+      "数据成图",
+      "把下面的数据画成图，挑最能看出规律的画法；图后用两三句说出看到了什么，有异常值就指出来。\n\n（贴上数据或表格，也可附文件）"
+    ],
+    [
+      "对比几样",
+      "帮我比一比（要比的几样东西）：先查查新近的情况，列一张对比表，再画一张图看各自长短，最后按不同需要各给一个建议，附上出处。"
+    ]
   ],
-  [
-    "修一个问题",
-    "在工作目录中定位并修复下面的问题：先用 search_files 找到相关代码，read_file 读懂上下文，再用 edit_file 做最小改动，最后运行相关测试或复现步骤验证：\n\n（问题描述）"
-  ],
-  [
-    "加一个功能",
-    "在工作目录中实现下面的功能：先看清现有结构与约定，用两三行说明方案，然后落实到文件并运行验证，不要改动无关代码：\n\n（功能描述）"
-  ],
-  ["写一段脚本并运行", "编写一个脚本完成下述事项，置于工作目录中；写好后运行一遍并给出输出，若有报错则修正至可运行：\n\n（要做的事）"]
-];
+  work: [
+    [
+      "立意开工",
+      "我想在这个目录里做成：（要做成的事）\n\n先别改文件。通读项目摸清现状，有要我定的用 ask_user 问；然后立一份意：根是这件事做成的样子，往下拆成几项要成立的结论，各写明怎么算成立、凭据是哪些文件或指令。立好后几句话讲讲路线与最没底的一项，等我点头再动手。"
+    ],
+    ["接着上回", "接着这个目录里上回的活：先看意与账本，几句话说清做到哪了、哪些转了待复核、下一步做什么，然后接着做。"],
+    [
+      "深查一事",
+      "把这件事查透：（要查的问题）\n\n拆成几个互不相干的方向，各差一名帮手并行去查，要登录或靠脚本渲染的页面用游目的浏览器看。收回来交叉比对，说法相左的标出来。成稿存进目录：先结论，再分点列依据，每条附链接。"
+    ],
+    [
+      "上手试一遍",
+      "把这个项目跑起来，用游目的浏览器像用户那样用一遍：（要试的页面或流程）\n\n截图看排版，点主要的交互，留意控制台报错。问题先列出来，小的直接修，修完再试一遍对照。"
+    ]
+  ]
+};
