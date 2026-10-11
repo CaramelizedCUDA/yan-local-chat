@@ -293,6 +293,72 @@ try {
     writeFileSync(`${TMP}/intent-card-dark.png`, Buffer.from(shot.data, "base64"))
   );
   await evalJs(`document.documentElement.dataset.theme = "light"; document.querySelector('#fileViewerClose').click(); true`);
+
+  // 把真实响应暂扣：先打开的一张迟到，或保存途中另开了一张，旧结果都不能改眼前的卡片。
+  const delayIntent = async write =>
+    evalJs(`(() => {
+    const original = Response.prototype.json;
+    let release, held = false;
+    const gate = new Promise(resolve => release = resolve);
+    window.__intentDelay = { original, release, ready: false };
+    // 桥接可以直接 fetch，也可以把回包从总线交回；在读 JSON 这一步暂扣，两种都盖住。
+    Response.prototype.json = async function () {
+      const data = await original.call(this);
+      if (!held && typeof data?.version === "string" && data.data?.nodes &&
+          (!${write} || data.data.nodes["上线"]?.claim === "保存后的旧根")) {
+        held = true;
+        window.__intentDelay.ready = true;
+        await gate;
+      }
+      return data;
+    };
+    return true;
+  })()`);
+  const releaseIntent = () => evalJs(`Response.prototype.json = window.__intentDelay.original; window.__intentDelay.release(); true`);
+  const openCard = () => evalJs(`${lastMessage}.querySelector('.change-intent').click(); true`);
+  const setClaim = claim => {
+    const data = JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8"));
+    data.nodes["上线"].claim = claim;
+    writeFileSync(`${dir}/.yan/意.json`, JSON.stringify(data));
+  };
+  const rootSays = text =>
+    `document.querySelector('#fileViewerStage .intent-root[data-root="上线"] .intent-root-claim')?.textContent === ${JSON.stringify(text)}`;
+  await delayIntent(false);
+  await openCard();
+  await waitFor(`window.__intentDelay.ready`);
+  await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
+  setClaim("第二张卡片的根");
+  await openCard();
+  await waitFor(rootSays("第二张卡片的根"));
+  await releaseIntent();
+  await sleep(250);
+  check("an older card's late response does not replace the newly opened card", await evalJs(rootSays("第二张卡片的根")));
+
+  await delayIntent(true);
+  await evalJs(`document.querySelector('[data-intent-edit="上线"]').click(); true`);
+  await evalJs(
+    `document.querySelector('.intent-root-draft').value = "保存后的旧根"; document.querySelector('[data-intent-save="上线"]').click(); true`
+  );
+  await waitFor(`window.__intentDelay.ready`);
+  check(
+    "the delayed save has actually reached the original folder",
+    JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8")).nodes["上线"].claim === "保存后的旧根"
+  );
+  await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
+  setClaim("保存途中新开的卡片");
+  await openCard();
+  await waitFor(rootSays("保存途中新开的卡片"));
+  await releaseIntent();
+  await sleep(250);
+  check("a save finishing after another card opens leaves that card intact", await evalJs(rootSays("保存途中新开的卡片")));
+  await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
+  writeFileSync(`${dir}/.yan/意.json`, '{"nodes":null,"log":[null]}');
+  await openCard();
+  await waitFor(`document.querySelector('#fileViewerStage .file-viewer-empty')?.textContent === "此目录尚未立意"`);
+  check("a malformed empty intent still opens as an empty card", true);
 } finally {
+  await evalJs(
+    `if (window.__intentDelay) { Response.prototype.json = window.__intentDelay.original; window.__intentDelay.release(); } true`
+  ).catch(() => {});
   await close();
 }

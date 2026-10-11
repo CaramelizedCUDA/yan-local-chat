@@ -5,6 +5,7 @@
 // 自己上传的 CSV、PDF、Markdown 点开就该是看，而不是把刚发出去的东西再下载一遍。
 // viewerSource 记着当前看的是哪一件：{ path } 是卷宗，{ attachmentId } 是附件；viewerPath 仍留给卷宗那一路的下载
 let viewerPath = "",
+  viewerRevision = 0,
   viewerSource = null,
   viewerReturnFocus = null,
   viewerObjectUrls = [];
@@ -51,6 +52,7 @@ async function viewerReader(source) {
 }
 /** @param {string|{path?:string, attachmentId?:string}} target 卷宗路径，或 { attachmentId } */
 async function openFileViewer(target, name = "", trigger = null) {
+  viewerRevision++;
   const source = typeof target === "string" ? { path: target } : target;
   const viewer = $("#fileViewer");
   if (!viewer) return;
@@ -210,6 +212,7 @@ function splitDelimited(row, split) {
 }
 /** @param {boolean} [stop] 点的是 ×：摊着的若是正放的那一曲，一并停下；别的关法只收起，正放着的挂上顶栏接着放 */
 function closeFileViewer(stop = false) {
+  viewerRevision++;
   listenViewerClosed(stop);
   const target = viewerReturnFocus;
   viewerPath = "";
@@ -224,6 +227,7 @@ function closeFileViewer(stop = false) {
 }
 // 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起
 function showInFileViewer(title, html, trigger = null) {
+  viewerRevision++;
   viewerPath = "";
   viewerSource = null;
   viewerReturnFocus = trigger || document.activeElement;

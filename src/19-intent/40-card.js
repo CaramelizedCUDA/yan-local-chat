@@ -199,11 +199,11 @@ function intentTime(at) {
   return date.getFullYear() === new Date().getFullYear() ? day : `${date.getFullYear()}-${day}`;
 }
 // ---------- 打开与交互：读文件、取指纹（文件与目录现取；探针用这一答开工时取的，不为看一眼去跑指令）----------
-/** @type {{ conversation: Conversation, intent: Intent, now: IntentPrints, selected: string, editing: string, error: string }|null} */
+/** @type {{ conversation: Conversation, intent: Intent, now: IntentPrints, selected: string, editing: string, error: string, revision: number }|null} */
 let intentCard = null;
 function paintIntentCard() {
   const stage = $("#fileViewerStage");
-  if (!intentCard || !stage?.querySelector(".intent-card")) return;
+  if (!intentCard || intentCard.revision !== viewerRevision || !stage?.querySelector(".intent-card")) return;
   const { intent, now, selected, editing, error } = intentCard;
   stage.innerHTML = intentCardHtml(intent, now, { selected, editing, error });
   stage.querySelector(".intent-root-draft")?.focus();
@@ -221,15 +221,19 @@ async function openIntentCard(conversation, trigger = null) {
     `<div class="intent-card"><div class="file-viewer-empty">正在取出…</div></div>`,
     trigger
   );
+  const revision = viewerRevision;
+  intentCard = null;
   try {
     const { intent } = await readIntent(conversation),
       now = {
         ...(intents.get(conversation.id)?.now || {}),
         ...(await intentPrints(conversation, intentSealedAnchors(intent), undefined, "round"))
       };
-    intentCard = { conversation, intent, now, selected: "", editing: "", error: "" };
+    if (revision !== viewerRevision) return;
+    intentCard = { conversation, intent, now, selected: "", editing: "", error: "", revision };
     paintIntentCard();
   } catch (error) {
+    if (revision !== viewerRevision) return;
     const stage = $("#fileViewerStage");
     if (stage?.querySelector(".intent-card"))
       stage.innerHTML = `<div class="intent-card"><div class="file-viewer-empty">${escapeHtml(friendlyError(String(error.message || error)))}</div></div>`;
@@ -237,11 +241,12 @@ async function openIntentCard(conversation, trigger = null) {
 }
 // 根的说法只有用户能改：经桥接写回（带版本写，别处刚写过就照新的那份重来），改完这段对话往后附着的也是新的
 async function saveIntentRoot(id, claim) {
-  if (!intentCard) return;
-  const { conversation } = intentCard,
+  if (!intentCard || intentCard.revision !== viewerRevision) return;
+  const card = intentCard,
+    { conversation } = card,
     text = claim.trim();
   if (!text) {
-    intentCard.error = "说法不可为空";
+    card.error = "说法不可为空";
     return paintIntentCard();
   }
   try {
@@ -249,12 +254,14 @@ async function saveIntentRoot(id, claim) {
       intent.nodes[id] ? { next: reviseIntentRoot(intent, id, text, { at: new Date().toISOString(), conversation: conversation.id }) } : {}
     );
     if (!next) throw Error(`意中已无「${id}」`);
-    intentCard.intent = next;
-    intentCard.editing = "";
-    intentCard.error = "";
-    keepIntent(conversation, next, intentCard.now);
+    keepIntent(conversation, next, card.now);
+    if (intentCard !== card || card.revision !== viewerRevision) return;
+    card.intent = next;
+    card.editing = "";
+    card.error = "";
   } catch (error) {
-    intentCard.error = friendlyError(String(error.message || error));
+    if (intentCard !== card || card.revision !== viewerRevision) return;
+    card.error = friendlyError(String(error.message || error));
   }
   paintIntentCard();
 }
