@@ -5,6 +5,7 @@ const { sendJson, readJson, jsonRoute, requestSignal, errorText } = require("../
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { createHash } = require("node:crypto");
 const sandbox = require("../sandbox.js");
 const { fetchPublicResponse, readLimitedBytes } = require("../web.js");
 const paths = require("./paths.js");
@@ -501,6 +502,63 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       release();
     }
   }, failed);
+  // ---- 意：一件工程要成立的结论图，存在目录的 .yan/意.json，跨对话沿用（页面怎么折、怎么判见 src/19-intent/）。
+  // 桥接是唯一的写者：几段对话、几个页面同时改，写时带上读到的版本，对不上就把此刻的那份交回、由页面重算再写，不会互相覆盖
+  const INTENT_PATH = ".yan/意.json";
+  const textVersion = text => (text ? createHash("sha1").update(text).digest("hex") : "");
+  async function readIntent(file) {
+    const text = await fs.promises.readFile(file, "utf8").catch(error => {
+      if (error.code === "ENOENT") return "";
+      throw Error(describeFsError(error, INTENT_PATH));
+    });
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      throw Error(`${INTENT_PATH} 不是合法的 JSON，请先修好它`);
+    }
+    return { data, version: textVersion(text) };
+  }
+  const handleWorkIntent = jsonRoute(async (body, req, res) => {
+    const signal = requestSignal(res),
+      workdir = resolveWorkdir(body.workdir),
+      write = body.data !== undefined,
+      file = await targetOf(workdir, { ...body, path: INTENT_PATH }, { write });
+    if (!write) return readIntent(file);
+    const release = await lockFile(file, signal);
+    try {
+      const current = await readIntent(file);
+      if (current.version !== String(body.base || "")) return { conflict: true, ...current };
+      const text = `${JSON.stringify(body.data, null, 2)}\n`;
+      await fs.promises.mkdir(path.dirname(file), { recursive: true });
+      await writeTextAtomic(file, text).catch(error => {
+        throw Error(describeFsError(error, INTENT_PATH));
+      });
+      return { data: body.data, version: textVersion(text) };
+    } finally {
+      release();
+    }
+  }, failed);
+  // 一组文件此刻的内容指纹：意里一项标成立时记下它依托的文件，此后谁改了（指令、手改、别的对话）都比得出来。
+  // 不在的、读不了的给 null
+  const handleWorkPrints = jsonRoute(async body => {
+    const workdir = resolveWorkdir(body.workdir),
+      list = (Array.isArray(body.paths) ? body.paths : []).map(String).filter(Boolean).slice(0, 400),
+      prints = {};
+    await Promise.all(
+      list.map(async given => {
+        try {
+          const file = await targetOf(workdir, { ...body, path: given }),
+            hash = createHash("sha1");
+          for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+          prints[given] = hash.digest("hex");
+        } catch {
+          prints[given] = null;
+        }
+      })
+    );
+    return { prints };
+  }, failed);
 
   return {
     workHome,
@@ -520,6 +578,8 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       "POST /api/work/edit": handleWorkEdit,
       "POST /api/work/search": handleWorkSearch,
       "POST /api/work/download": handleWorkDownload,
+      "POST /api/work/intent": handleWorkIntent,
+      "POST /api/work/prints": handleWorkPrints,
       ...createArchive({ archiveHome, playable, lockFile })
     }
   };
