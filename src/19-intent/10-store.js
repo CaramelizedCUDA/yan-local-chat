@@ -26,6 +26,36 @@ async function loadIntent(conversation, signal) {
     intents.delete(conversation.id);
   }
 }
+/** 一答之内的回归簿记：上一回看到的待复核几项、各项被打回几回 @param {Conversation} conversation */
+function intentWatch(conversation) {
+  const held = intents.get(conversation.id);
+  return { stale: new Set(held ? intentStaleIds(held.intent, held.now) : []), bounces: new Map() };
+}
+/**
+ * 一轮工具做完：重取已成立各项依托文件的指纹，新转待复核的写成一段接在这一轮的工具结果后（见 runRounds 的 afterRound）。
+ * 谁改的都算——这一轮的指令、后台的帮手、用户在别处手改；取不到指纹就这回不说
+ * @param {Conversation} conversation @param {ReturnType<typeof intentWatch>} watch @param {AbortSignal} [signal]
+ */
+async function intentRound(conversation, watch, signal) {
+  const held = intents.get(conversation.id),
+    files = held ? intentSealedFiles(held.intent) : [];
+  if (!held || !files.length) return "";
+  try {
+    held.now = { ...held.now, ...(await intentPrints(conversation, files, signal)) };
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    return "";
+  }
+  const stale = new Set(intentStaleIds(held.intent, held.now)),
+    fresh = [...stale].filter(id => !watch.stale.has(id));
+  watch.stale = stale;
+  for (const id of fresh) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
+  return intentRoundText(held.intent, held.now, fresh, watch.bounces);
+}
+/** 这一答里改过意：记下改完的那份，往后几轮据它比（作答途中压了前文要重装时，附的也是它） @param {Conversation} conversation @param {Intent} intent @param {IntentPrints} now */
+function keepIntent(conversation, intent, now) {
+  intents.set(conversation.id, { intent, now });
+}
 /** 附在这一问之后的一段；意里一项都没有就不附 @param {Conversation} conversation */
 function intentNote(conversation) {
   const held = intents.get(conversation.id),

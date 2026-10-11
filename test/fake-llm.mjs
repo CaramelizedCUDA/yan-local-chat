@@ -841,6 +841,45 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // INTENTC：两项同依托 api/user.js，标成立后改它、再标成立、再改……第三回改完该说相持；末轮回显各工具结果。
+      // 须排在 INTENTA、INTENTB 前：同一目录的意里记着它们的原话，随这一问附着
+      if (typeof lastUser === "string" && lastUser.includes("INTENTC")) {
+        const n = toolResults.length,
+          call = (index, name, args) => ({
+            index,
+            id: `call_c${n}_${index}`,
+            type: "function",
+            function: { name, arguments: JSON.stringify(args) }
+          }),
+          both = {
+            nodes: [
+              { id: "登录", state: "done" },
+              { id: "隐私", state: "done" }
+            ]
+          },
+          rounds = {
+            0: [
+              call(0, "write_file", { path: "api/user.js", content: "v1" }),
+              call(1, "update_intent", {
+                nodes: [
+                  { id: "登录", claim: "登录返回用户信息", check: "看返回", files: ["api/user.js"] },
+                  { id: "隐私", claim: "不泄露手机号", check: "看返回", files: ["api/user.js"] }
+                ]
+              })
+            ],
+            2: [call(0, "update_intent", both)],
+            3: [call(0, "write_file", { path: "api/user.js", content: "v2" })],
+            4: [call(0, "update_intent", both)],
+            5: [call(0, "write_file", { path: "api/user.js", content: "v3" })],
+            6: [call(0, "update_intent", both)],
+            7: [call(0, "write_file", { path: "api/user.js", content: "v4" })]
+          };
+        if (rounds[n]) return sse(res, [delta({ tool_calls: rounds[n] }), delta({}, { usage: { total_tokens: 5 } })]);
+        return sse(res, [
+          delta({ content: `INTENTC|${toolResults.map(t => String(t.content)).join(" ▸ ")}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // INTENTB：第二问，把这一问附着的整段（意在其中）回显；须先认它——它附着的意里有第一问的原话 INTENTA
       if (typeof lastUser === "string" && lastUser.includes("INTENTB"))
         return sse(res, [delta({ content: `INTENTB|${lastUser}` }), delta({}, { usage: { total_tokens: 5 } })]);

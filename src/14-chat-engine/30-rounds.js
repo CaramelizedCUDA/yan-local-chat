@@ -22,8 +22,9 @@ function newTally() {
  * @param {Array<Record<string, any>>} history 送给接口的消息，就地追加
  * @param {{ profile: Profile, conversation: Conversation, host: Message, signal: AbortSignal, overrides: Record<string, any>,
  *   tally: ReturnType<typeof newTally>, roundLimit: number, scope?: string, inbox?: any, budget?: number,
- *   onFrame?: (() => void)|null, onStatus?: (label?: string) => void }} run
- *   host：步骤画在哪条消息上（帮手的步骤画在主答的差遣卡里）；scope：步骤记上属于哪名帮手；onStatus：网络重试这类状态
+ *   onFrame?: (() => void)|null, onStatus?: (label?: string) => void, afterRound?: () => Promise<string> }} run
+ *   host：步骤画在哪条消息上（帮手的步骤画在主答的差遣卡里）；scope：步骤记上属于哪名帮手；onStatus：网络重试这类状态；
+ *   afterRound：一轮工具做完、要接在工具结果后让它知道的话（主答的意，见 19-intent/10-store.js 的 intentRound）
  */
 async function runRounds(target, history, run) {
   const { profile, conversation, host, signal, overrides, tally, inbox = null } = run,
@@ -172,6 +173,9 @@ async function runRounds(target, history, run) {
     const offered = new Set(overrides.tools.map(tool => tool.function?.name)),
       { outcomes, images } = await runSteps(steps, conversation, host, signal, toolCache, offered);
     for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
+    // 一轮做完之后要让它知道的（意里新转待复核的几项）：接在这一轮末一条工具结果后
+    const after = run.afterRound ? await run.afterRound() : "";
+    if (after) history.at(-1).content = `${history.at(-1).content}\n\n${after}`;
     if (images.length) attachToolImages(history, images, profile);
     if (inbox) await deliverSupplements(inbox, history, run.budget, host, { target });
     target.content = paragraphBreak(target.content);

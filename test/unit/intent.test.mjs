@@ -16,7 +16,9 @@ const f = load([
   "intentRoots",
   "intentSealedFiles",
   "intentTally",
-  "intentText"
+  "intentText",
+  "intentStaleIds",
+  "intentRoundText"
 ]);
 
 // 照工具里的次序：理顺、取指纹、折上去
@@ -166,4 +168,35 @@ test("读到的 JSON 坏了几处：认得的照收，认不得的丢掉", () =>
   assert.deepEqual(Object.keys(intent.nodes), ["好"]);
   assert.deepEqual(intent.log, []);
   assert.equal(intent.nodes["好"].rev, 2);
+});
+
+test("一答之内：新转待复核的接在这一轮后；同一项第 3 回才说相持，并摆出同依托一个文件、也被打回的那一项", () => {
+  let intent = change(empty(), [
+    { id: "登录", claim: "登录返回用户信息", check: "c", files: ["api/user.js"] },
+    { id: "隐私", claim: "不泄露手机号", check: "c", files: ["api/user.js", "api/mask.js"] }
+  ]);
+  intent = change(
+    intent,
+    [
+      { id: "登录", state: "done" },
+      { id: "隐私", state: "done" }
+    ],
+    { prints: { "api/user.js": "v1", "api/mask.js": "m1" } }
+  );
+  const now = { "api/user.js": "v2", "api/mask.js": "m1" };
+  assert.deepEqual(f.intentStaleIds(intent, now), ["登录", "隐私"]);
+  const bounces = new Map([
+    ["登录", 1],
+    ["隐私", 1]
+  ]);
+  assert.equal(
+    f.intentRoundText(intent, now, ["登录", "隐私"], bounces),
+    "［意］此轮之后转待复核：登录（标成立后又改了 api/user.js）、隐私（标成立后又改了 api/user.js）"
+  );
+  assert.equal(f.intentRoundText(intent, now, [], bounces), "");
+  bounces.set("登录", 3).set("隐私", 2);
+  assert.match(
+    f.intentRoundText(intent, now, ["登录"], bounces),
+    /\n相持：登录 本答内第 3 回转待复核；同依托 api\/user\.js 的 隐私 被打回 2 回$/
+  );
 });

@@ -88,6 +88,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     };
     await Promise.all([loadLedger(conversation, job.controller.signal), loadIntent(conversation, job.controller.signal)]);
     history = await buildHead();
+    const watch = intentWatch(conversation);
     // 上一答断着时回来的回报（见 wakeWithReports）：开工即递上，模型续写时就知道帮手怎样了
     held = takeHeldReports(conversation, job);
     if (held.length) await deliverSupplements(job, history, budget, assistant);
@@ -126,7 +127,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       roundLimit: toolRoundLimit(),
       inbox: job,
       budget,
-      onStatus: label => setJobLabel(conversation, job, label)
+      onStatus: label => setJobLabel(conversation, job, label),
+      afterRound: () => intentRound(conversation, watch, job.controller.signal)
     });
     trimReply(assistant);
     if (!assistant.content)

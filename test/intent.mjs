@@ -73,6 +73,30 @@ try {
     stale.conflict === true && !!stale.data?.nodes?.["上线"] && !fresh.conflict && fresh.version === read.version,
     JSON.stringify({ stale: stale.conflict, fresh })
   );
+
+  // 另起一段对话、同一个目录：两项同依托 api/user.js，改一回两项都转待复核，接在那一轮的工具结果后；来回三回即相持，只提醒、不拦
+  await evalJs(
+    `document.querySelector("#newChat").click(); setTimeout(() => { document.querySelector("#welcomeInput").value = "INTENTC 相持"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); }, 300); true`
+  );
+  const third = `((__yanState().conversations.find(c => c.messages[0]?.content === "INTENTC 相持")?.messages || []).filter(m => m.role === "assistant" && m.status === "complete")[0]?.content || "")`;
+  await waitFor(`${third}.startsWith("INTENTC|")`, 30000);
+  const rounds = (await evalJs(third)).slice("INTENTC|".length).split(" ▸ ");
+  check(
+    "after the first edit both items turn back, told right after that round's tool result",
+    rounds[3]?.includes("［意］此轮之后转待复核：登录（标成立后又改了 api/user.js）、隐私（标成立后又改了 api/user.js）") &&
+      !/相持/.test(rounds[3]),
+    rounds[3]
+  );
+  check(
+    "the third time round it is called a stalemate, naming the other item on the same file; the answer still runs to its end",
+    /相持：登录 本答内第 3 回转待复核；同依托 api\/user\.js 的 隐私 被打回 3 回/.test(rounds[7] || "") && rounds.length === 8,
+    rounds[7]
+  );
+  check(
+    "the other conversation's intent is still there: one intent per folder",
+    !!JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8")).nodes["上线"],
+    ""
+  );
 } finally {
   await close();
 }

@@ -34,6 +34,7 @@ defineTool({
     const next = outcome.next,
       now = await intentPrints(conversation, intentSealedFiles(next), signal),
       { live, standing } = intentTally(next, now);
+    keepIntent(conversation, next, now);
     step.title = `立住 ${standing} / ${live} · ${outcome.ops.map(op => op.id).join("、")}`.slice(0, 80);
     return { ok: true, content: intentText(next, now, { path: INTENT_FILE }), display: `${standing}/${live}` };
   }

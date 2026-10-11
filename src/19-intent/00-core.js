@@ -349,3 +349,31 @@ function intentText(intent, now = {}, { path = ".yan/意.json" } = {}) {
   });
   return `［意 ${path}］立住 ${standing} / ${live}${dropped ? `，另有 ${dropped} 项已弃` : ""}\n${lines.join("\n")}`;
 }
+// ---------- 一答之内的回归：每轮工具做完重取指纹，新转待复核的当场告诉它；同一项来回被打回即相持，只提醒 ----------
+// 相持：修甲坏乙、修乙坏甲，每一步单看都对，合起来原地打转——程序不拦（兼顾两头的修法可能就在下一步），只把次数与牵连摆出来
+const INTENT_STALEMATE = 3;
+/** 此刻待复核的各项 @param {Intent} intent @param {IntentPrints} now */
+function intentStaleIds(intent, now) {
+  return Object.keys(intent.nodes).filter(id => intentState(intent, id, now) === "stale");
+}
+/**
+ * 这一轮之后新转待复核的几项，写成接在工具结果后的一段；没有即空
+ * @param {Intent} intent @param {IntentPrints} now @param {string[]} fresh 这一轮新转待复核的 @param {Map<string, number>} bounces 这一答里各项被打回几回（已含这一轮）
+ */
+function intentRoundText(intent, now, fresh, bounces) {
+  if (!fresh.length) return "";
+  const lines = [`［意］此轮之后转待复核：${fresh.map(id => `${id}（${intentStaleWhy(intent, id, now)}）`).join("、")}`];
+  for (const id of fresh) {
+    const times = bounces.get(id) || 0;
+    if (times < INTENT_STALEMATE) continue;
+    const files = intent.nodes[id].files,
+      partners = Object.keys(intent.nodes)
+        .filter(other => other !== id && bounces.get(other) && intent.nodes[other].files.some(path => files.includes(path)))
+        .map(other => {
+          const shared = intent.nodes[other].files.filter(path => files.includes(path));
+          return `同依托 ${shared.slice(0, 3).join("、")} 的 ${other} 被打回 ${bounces.get(other)} 回`;
+        });
+    lines.push(`相持：${id} 本答内第 ${times} 回转待复核${partners.length ? `；${partners.join("；")}` : ""}`);
+  }
+  return lines.join("\n");
+}
