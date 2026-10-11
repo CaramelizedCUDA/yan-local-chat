@@ -200,4 +200,19 @@ function openWithSystem(file) {
   if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) throw Error("文件不存在");
   spawn("explorer.exe", [file], { detached: true, stdio: "ignore" }).unref();
 }
-module.exports = { sendJson, readJson, jsonRoute, requestSignal, errorText, writeAtomic, fileMime, sendFile, openWithSystem };
+// 读盘上的 JSON 文本：带 UTF-8 BOM 的（PowerShell 5.1 的 -Encoding UTF8、旧记事本都会写）先去掉，不然 JSON.parse 认不得
+function parseJsonText(text) {
+  return JSON.parse(String(text).replace(/^\uFEFF/, ""));
+}
+module.exports = {
+  sendJson,
+  readJson,
+  jsonRoute,
+  requestSignal,
+  errorText,
+  writeAtomic,
+  fileMime,
+  sendFile,
+  openWithSystem,
+  parseJsonText
+};
