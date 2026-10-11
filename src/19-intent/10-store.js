@@ -101,7 +101,7 @@ async function intentGate(conversation, assistant, watch, signal) {
     arguments: "{}",
     status: "done",
     title: "收尾前对照意",
-    result: `立住 ${standing} / ${live}`,
+    result: `已立 ${standing} / ${live}`,
     at: String(assistant.content || "").length,
     rat: String(assistant.reasoning || "").length,
     report

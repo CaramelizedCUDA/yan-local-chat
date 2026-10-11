@@ -17,6 +17,7 @@ const f = load([
   "intentSealedAnchors",
   "parseAnchor",
   "intentUnowned",
+  "reviseIntentRoot",
   "intentTally",
   "intentText",
   "intentStaleIds",
@@ -82,7 +83,7 @@ test("回归：标成立后凭据变了，转待复核；没变的、不知道�
   assert.equal(f.intentState(intent, "解析", {}), "done", "没取到此刻的指纹：不据它判");
   assert.equal(f.intentState(intent, "解析", { "file:src/a.js": "v2" }), "stale");
   assert.equal(f.intentState(intent, "解析", { "file:src/a.js": null }), "stale", "文件没了也算改了");
-  assert.match(f.intentText(intent, { "file:src/a.js": "v2" }), /\[待复核\] 解析[\s\S]*缘由：标成立后又变了：src\/a\.js/);
+  assert.match(f.intentText(intent, { "file:src/a.js": "v2" }), /\[待复核\] 解析[\s\S]*缘由：凭据已变：src\/a\.js/);
   intent = change(intent, [{ id: "解析", state: "done" }], { prints: { "file:src/a.js": "v2" } });
   assert.equal(f.intentState(intent, "解析", { "file:src/a.js": "v2" }), "done");
 });
@@ -99,11 +100,11 @@ test("回归：前提改了说法、后加了前提、自己改了说法，已�
   ]);
   assert.ok(f.intentEstablished(intent, "根"));
   const revised = change(intent, [{ id: "甲", claim: "A（改）" }]);
-  assert.equal(f.intentStaleWhy(revised, "根"), "前提 甲 的说法改了");
-  assert.equal(f.intentStaleWhy(revised, "甲"), "说法改了");
+  assert.equal(f.intentStaleWhy(revised, "根"), "前提「甲」说法已改");
+  assert.equal(f.intentStaleWhy(revised, "甲"), "说法已改");
   assert.match(revised.log.at(-1).text, /^改意 甲：A（改）/);
   const added = change(intent, [{ id: "根", needs: ["甲", "乙"] }]);
-  assert.equal(f.intentStaleWhy(added, "根"), "前提 乙 是后来加的");
+  assert.equal(f.intentStaleWhy(added, "根"), "前提「乙」为后添");
   // 弃了的前提不算在内
   const dropped = change(added, [{ id: "乙", state: "dropped" }]);
   assert.equal(f.intentStaleWhy(dropped, "根"), "");
@@ -151,10 +152,10 @@ test("给模型读的字：根在前；立住的一行，没立住的带验收�
   assert.equal(
     text,
     [
-      "［意 .yan/意.json］立住 0 / 2",
+      "［意 .yan/意.json］已立 0 / 2",
       "- [未做] 上线（根）：可在公网访问（前提：部署）",
       "  验收：外网打得开",
-      "  原话：把这个项目上线",
+      "  原问：把这个项目上线",
       "- [未做] 部署：服务起在云上",
       "  验收：进程在跑"
     ].join("\n")
@@ -193,7 +194,7 @@ test("一答之内：新转待复核的接在这一轮后；同一项第 3 回�
   ]);
   assert.equal(
     f.intentRoundText(intent, now, ["登录", "隐私"], bounces),
-    "［意］此轮之后转待复核：登录（标成立后又变了：api/user.js）、隐私（标成立后又变了：api/user.js）"
+    "［意］此轮之后转待复核：登录（凭据已变：api/user.js）、隐私（凭据已变：api/user.js）"
   );
   assert.equal(f.intentRoundText(intent, now, [], bounces), "");
   bounces.set("登录", 3).set("隐私", 2);
@@ -231,7 +232,7 @@ test("假定也挂凭据：所借的变了，同样转待复核，不再算立�
   assert.ok(f.intentEstablished(intent, "上线", { "cmd:curl -s api/version": "v2" }));
   const now = { "cmd:curl -s api/version": "v3" };
   assert.equal(f.intentState(intent, "接口", now), "stale");
-  assert.equal(f.intentStaleWhy(intent, "接口", now), "标假定后又变了：探针「curl -s api/version」");
+  assert.equal(f.intentStaleWhy(intent, "接口", now), "凭据已变：探针「curl -s api/version」");
   assert.ok(!f.intentEstablished(intent, "上线", now));
 });
 
@@ -258,6 +259,14 @@ test("无主改动：改过而没有哪一项的凭据罩着的；文件、目�
 test("收尾前对照用的写法：立住了的根也附原话", () => {
   let intent = change(empty(), [{ id: "根", claim: "R", check: "r", root: true }], { ask: "做完这件事" });
   intent = change(intent, [{ id: "根", state: "done" }]);
-  assert.ok(!f.intentText(intent).includes("原话"));
-  assert.ok(f.intentText(intent, {}, { asks: true }).endsWith("- [成立] 根（根）：R\n  原话：做完这件事"));
+  assert.ok(!f.intentText(intent).includes("原问"));
+  assert.ok(f.intentText(intent, {}, { asks: true }).endsWith("- [成立] 根（根）：R\n  原问：做完这件事"));
+});
+
+test("写入记下更新时刻：模型改意、用户改写根都算；读回来照样在", () => {
+  let intent = f.applyIntentOps(empty(), [{ id: "甲", claim: "x", check: "y" }], { at: "2026-10-11T08:00:00Z" });
+  assert.equal(intent.updated, "2026-10-11T08:00:00Z");
+  intent = f.reviseIntentRoot(intent, "甲", "x2", { at: "2026-10-11T09:00:00Z" });
+  assert.equal(intent.updated, "2026-10-11T09:00:00Z");
+  assert.equal(f.asIntent(JSON.parse(JSON.stringify(intent))).updated, "2026-10-11T09:00:00Z");
 });

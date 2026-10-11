@@ -7,6 +7,7 @@ defineTool({
   offer: ctx => ctx.work,
   mainOnly: true,
   sideEffect: true,
+  html: step => intentStepHtml(step, "update_intent"),
   digest: step => `意 → ${step.title || ""}`,
   // 凭据的写法出自登记表（见 19-intent/05-anchors.js）：加一种凭据，这里的说明随之多一样
   params: parameters => {
@@ -53,7 +54,7 @@ defineTool({
         ? `\n\n这几条凭据此刻取不到指纹，未记下，日后也不据它判：${outcome.unread.map(anchorLabel).join("、")}（问而后行里探针只自动跑明确只读的指令）`
         : "";
     keepIntent(conversation, next, now);
-    step.title = `立住 ${standing} / ${live} · ${outcome.ops.map(op => op.id).join("、")}`.slice(0, 80);
+    step.title = `已立 ${standing} / ${live} · ${outcome.ops.map(op => op.id).join("、")}`.slice(0, 80);
     return { ok: true, content: `${intentText(next, now, { path: INTENT_FILE })}${unread}`, display: `${standing}/${live}` };
   }
 });
@@ -62,5 +63,13 @@ defineTool({
   name: "intent_gate",
   label: "意",
   offer: false,
+  html: step => intentStepHtml(step, "intent_gate"),
   replay: replayReport
 });
+// 行迹里「意」的那一步只一行，点开即意的卡片（见 19-intent/40-card.js）；改不成的照常一行报错，点不开
+/** @param {Step} step @param {string} name */
+function intentStepHtml(step, name) {
+  const status = step.status || "done",
+    open = status === "done";
+  return `<div class="tool-step tool-step-intent" data-tool="${name}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${open ? ` data-intent-open role="button" tabindex="0" title="打开意"` : ""}><span class="tool-label">意</span><span class="tool-title">${escapeHtml(step.title || "")}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "") : ""}">${escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div></div>`;
+}

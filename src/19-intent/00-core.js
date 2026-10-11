@@ -26,7 +26,7 @@
  * @property {{ ask: string, at: string }} [root] 根：立时用户那一问的原话
  * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null> }} IntentSeal
  * @typedef {{ at: string, conversation: string, text: string }} IntentLog 改意、弃、假定的留痕
- * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[] }} Intent
+ * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[], updated?: string }} Intent updated：最近一回写入的时刻——单拿出来看时，看得出旧不旧
  * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean }} IntentOp
  * @typedef {Record<string, string|null>} IntentPrints 各凭据此刻的指纹，按「种类:值」；不在其中的即不知道，不据它判
  */
@@ -52,7 +52,11 @@ const INTENT_LIMIT = 60,
 function asIntent(raw) {
   const nodes = raw && typeof raw.nodes === "object" && !Array.isArray(raw.nodes) ? raw.nodes : {},
     /** @type {Intent} */
-    intent = { nodes: {}, log: Array.isArray(raw?.log) ? raw.log.slice(-INTENT_LOG_LIMIT) : [] };
+    intent = {
+      nodes: {},
+      log: Array.isArray(raw?.log) ? raw.log.slice(-INTENT_LOG_LIMIT) : [],
+      ...(typeof raw?.updated === "string" ? { updated: raw.updated } : {})
+    };
   for (const [id, node] of Object.entries(nodes)) {
     if (!node || typeof node !== "object" || !INTENT_ID.test(id)) continue;
     intent.nodes[id] = {
@@ -60,7 +64,10 @@ function asIntent(raw) {
       claim: String(node.claim || ""),
       check: String(node.check || ""),
       needs: Array.isArray(node.needs) ? node.needs.map(String) : [],
-      anchors: Array.isArray(node.anchors) ? node.anchors.map(String) : [],
+      // 凭据不带登记过的前缀（手编的、写漏的）即文件
+      anchors: Array.isArray(node.anchors)
+        ? node.anchors.map(String).map(key => (ANCHOR_KINDS.has(anchorParts(key)[0]) ? key : `file:${key}`))
+        : [],
       state: INTENT_MARKS.has(node.state) ? node.state : "open",
       rev: Number(node.rev) || 1
     };
@@ -135,16 +142,16 @@ function intentStaleWhy(intent, id, now = {}) {
   const node = intent.nodes[id],
     seal = node?.seal;
   if (!node || !SEALED.has(node.state) || !seal) return "";
-  if (seal.rev !== node.rev) return "说法改了";
+  if (seal.rev !== node.rev) return "说法已改";
   // 假定不靠前提，只看它自己的说法与凭据
   if (node.state === "done")
     for (const need of liveNeeds(intent, node)) {
-      if (!(need in seal.premises)) return `前提 ${need} 是后来加的`;
-      if (seal.premises[need] !== intent.nodes[need].rev) return `前提 ${need} 的说法改了`;
+      if (!(need in seal.premises)) return `前提「${need}」为后添`;
+      if (seal.premises[need] !== intent.nodes[need].rev) return `前提「${need}」说法已改`;
     }
   const touched = Object.keys(seal.prints).filter(key => key in now && now[key] !== seal.prints[key]);
   return touched.length
-    ? `标${node.state === "done" ? "成立" : "假定"}后又变了：${touched.slice(0, 4).map(anchorLabel).join("、")}${touched.length > 4 ? ` 等 ${touched.length} 条` : ""}`
+    ? `凭据已变：${touched.slice(0, 4).map(anchorLabel).join("、")}${touched.length > 4 ? ` 等 ${touched.length} 条` : ""}`
     : "";
 }
 /** @param {Intent} intent @param {string} id @param {IntentPrints} [now] @returns {IntentState} */
@@ -323,6 +330,21 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
     };
   }
   next.log = next.log.slice(-INTENT_LOG_LIMIT);
+  if (at && ops.length) next.updated = at;
+  return next;
+}
+/**
+ * 用户改写根的说法（模型改不了，见 normalizeIntentOps）：版本加一，凭旧说法成立的随之转待复核，留一笔痕
+ * @param {Intent} intent @param {string} id @param {string} claim @param {{ at?: string, conversation?: string }} [context]
+ */
+function reviseIntentRoot(intent, id, claim, { at = "", conversation = "" } = {}) {
+  const next = structuredClone(intent),
+    node = next.nodes[id];
+  if (!node || node.claim === claim) return next;
+  node.claim = claim.slice(0, 300);
+  node.rev += 1;
+  next.log = [...next.log, { at, conversation, text: `用户改意 ${id}：${node.claim}` }].slice(-INTENT_LOG_LIMIT);
+  if (at) next.updated = at;
   return next;
 }
 // ---------- 写成给模型读的字：每一问附着的、改完回给它的，都经这里 ----------
@@ -352,14 +374,14 @@ function intentText(intent, now = {}, { path = ".yan/意.json", asks = false } =
       premises = liveNeeds(intent, node),
       borrowed = roots.has(id) && established ? intentBorrowed(intent, id).filter(b => b !== id) : [],
       head = `- [${tag}] ${id}${roots.has(id) ? "（根）" : ""}：${node.claim}${node.when ? `（情形：${node.when}）` : ""}${premises.length ? `（前提：${premises.join("、")}${node.any ? "，任一即可" : ""}）` : ""}${borrowed.length ? `（借假定：${borrowed.join("、")}）` : ""}`;
-    const ask = node.root?.ask ? [`  原话：${node.root.ask.slice(0, asks ? 600 : 200)}`] : [];
+    const ask = node.root?.ask ? [`  原问：${node.root.ask.slice(0, asks ? 600 : 200)}`] : [];
     if (state === "assumed") return [head, `  出处：${node.note || ""}`, ...(asks ? ask : [])].join("\n");
     if (established) return [head, ...(asks ? ask : [])].join("\n");
     const more = [`  验收：${node.check}`];
     if (state === "stale") more.push(`  缘由：${intentStaleWhy(intent, id, now)}`);
     return [head, ...more, ...ask].join("\n");
   });
-  return `［意 ${path}］立住 ${standing} / ${live}${dropped ? `，另有 ${dropped} 项已弃` : ""}\n${lines.join("\n")}`;
+  return `［意 ${path}］已立 ${standing} / ${live}${dropped ? `，另有 ${dropped} 项已弃` : ""}\n${lines.join("\n")}`;
 }
 // ---------- 一答之内的回归：每轮工具做完重取指纹，新转待复核的当场告诉它；同一项来回被打回即相持，只提醒 ----------
 // 相持：修甲坏乙、修乙坏甲，每一步单看都对，合起来原地打转——程序不拦（兼顾两头的修法可能就在下一步），只把次数与牵连摆出来

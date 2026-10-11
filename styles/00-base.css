@@ -122,6 +122,13 @@ input[type="number"]::-webkit-outer-spin-button {
 .brush .zhu {
   fill: var(--accent);
 }
+/* 泥金：借来的、存疑的；青绿：已立（意里的记号） */
+.brush .gold {
+  fill: var(--gold);
+}
+.brush .green {
+  fill: var(--code-green);
+}
 /* 全长的淡痕（余墨的底、圆相未走到的那一圈） */
 .brush .ghost {
   fill: color-mix(in srgb, var(--ink) 10%, transparent);

@@ -39,7 +39,7 @@ try {
       /^[0-9a-f]{40}$/.test(saved.nodes["甲"]?.seal?.prints?.["file:src/a.js"] || "") &&
       /^[0-9a-f]{40}$/.test(saved.nodes["甲"]?.seal?.prints?.["dir:src"] || "") &&
       !!saved.nodes["甲"]?.seal?.prints?.["cmd:node --version"] &&
-      /立住 1 \/ 2/.test(first),
+      /已立 1 \/ 2/.test(first),
     first
   );
   check("the model cannot reword the root", /是根，说法立后不由你改/.test(first) && saved.nodes["上线"].claim === "可在公网访问", first);
@@ -48,7 +48,7 @@ try {
   );
   check(
     "the trail keeps one line per change",
-    steps.length === 3 && steps[0].startsWith("立住 0 / 2 · 上线、甲|done"),
+    steps.length === 3 && steps[0].startsWith("已立 0 / 2 · 上线、甲|done"),
     JSON.stringify(steps)
   );
   // 收尾前对照：这一答动过意，说完要收尾时拦一回——此刻的意（立住了的根也附原话）、无主改动、请它对照原话自判；只一回
@@ -60,12 +60,60 @@ try {
     "before finishing, the answer is stopped once with the intent, the root's own words and the unowned change",
     first.split("GATE|").length === 2 &&
       gates === 1 &&
-      /^GATE\|［收尾前对照意］\n［意 \.yan\/意\.json］立住 1 \/ 2/.test(gate) &&
-      /原话：INTENTA 立意/.test(gate) &&
+      /^GATE\|［收尾前对照意］\n［意 \.yan\/意\.json］已立 1 \/ 2/.test(gate) &&
+      /原问：INTENTA 立意/.test(gate) &&
       /本答改了、意里没有凭据罩着的：notes\.txt\n/.test(gate) &&
-      /对照各根的原话，看这一答能否就此收尾/.test(gate),
+      /对照各根的原问，看这一答能否就此收尾/.test(gate),
     gate
   );
+
+  // 意的卡片：改动条顶端置顶一行「意」，点开在预览浮层里画出卡片；点图上一项，图下展开；根的说法只在卡片里改
+  const lastMessage = `[...document.querySelectorAll('#messages .message.assistant')].at(-1)`,
+    bar = await evalJs(`${lastMessage}?.querySelector('.change-bar .change-intent')?.textContent || ""`);
+  check("the change bar pins one line for the intent at its top", /^意已立 1 \/ 2 · 甲/.test(bar), bar);
+  await evalJs(`${lastMessage}.querySelector('.change-intent').click(); true`);
+  await waitFor(`!!document.querySelector('#fileViewerStage .intent-card .intent-svg')`, 10000);
+  const card = await evalJs(
+    `(c => ({ name: document.querySelector('#fileViewerName').textContent, root: c.querySelector('.intent-root-claim')?.textContent, updated: c.querySelector('.intent-updated')?.textContent, states: [...c.querySelectorAll('.intent-node')].map(g => g.dataset.intentNode + ':' + g.dataset.state).sort().join(',') }))(document.querySelector('#fileViewerStage .intent-card'))`
+  );
+  check(
+    "the card draws the intent of this folder: when it was last updated, the root, each item in its state",
+    card.name === "意 · intent-work" &&
+      card.root === "可在公网访问" &&
+      /^更新于 \d\d-\d\d \d\d:\d\d$/.test(card.updated || "") &&
+      card.states === "上线:open,甲:holds",
+    JSON.stringify(card)
+  );
+  await send("Page.captureScreenshot", { format: "png" }).then(shot =>
+    writeFileSync(`${TMP}/intent-card.png`, Buffer.from(shot.data, "base64"))
+  );
+  await evalJs(
+    `document.querySelector('#fileViewerStage g[data-intent-node="甲"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+  );
+  const detail = await evalJs(`document.querySelector('#fileViewerStage .intent-detail')?.textContent || ""`);
+  check(
+    "clicking an item opens its check and anchors under the graph",
+    /a\.js 写好/.test(detail) && /文件src\/a\.js/.test(detail) && /目录src\//.test(detail) && /探针node --version/.test(detail),
+    detail
+  );
+  await evalJs(`document.querySelector('#fileViewerStage [data-intent-edit="上线"]').click(); true`);
+  await evalJs(
+    `(t => { t.value = '可在公网与内网访问'; document.querySelector('#fileViewerStage [data-intent-save]').click(); return true; })(document.querySelector('#fileViewerStage .intent-root-draft'))`
+  );
+  await waitFor(`document.querySelector('#fileViewerStage .intent-root-claim')?.textContent === '可在公网与内网访问'`, 10000);
+  const revised = JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8"));
+  check(
+    "the user rewords the root on the card: written back through the bridge, its version goes up and the log says so",
+    revised.nodes["上线"].claim === "可在公网与内网访问" &&
+      revised.nodes["上线"].rev === 2 &&
+      /^用户改意 上线：/.test(revised.log.at(-1).text),
+    JSON.stringify(revised.nodes["上线"])
+  );
+  await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
+  await evalJs(`${lastMessage}.querySelector('[data-tool="update_intent"] [data-intent-open]').click(); true`);
+  await waitFor(`document.querySelector('#fileViewerStage .intent-root-claim')?.textContent === '可在公网与内网访问'`, 10000);
+  check("the intent step in the trail opens the same card", true);
+  await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
 
   // 在言之外改了那个文件：下一问开工时重取指纹，附着的意里它转待复核，并写明缘由
   writeFileSync(`${dir}/src/a.js`, "v2");
@@ -76,9 +124,9 @@ try {
   const second = await evalJs(reply(1));
   check(
     "next question carries the intent after the question, with the changed file turning the premise back to be rechecked",
-    /INTENTB 再看[\s\S]*［意 \.yan\/意\.json］立住 0 \/ 2/.test(second) &&
-      /\[待复核\] 甲：a\.js 写好[\s\S]*缘由：标成立后又变了：src\/a\.js、src\/$/m.test(second) &&
-      /原话：INTENTA 立意/.test(second),
+    /INTENTB 再看[\s\S]*［意 \.yan\/意\.json］已立 0 \/ 2/.test(second) &&
+      /\[待复核\] 甲：a\.js 写好[\s\S]*缘由：凭据已变：src\/a\.js、src\/$/m.test(second) &&
+      /原问：INTENTA 立意/.test(second),
     second
   );
   check("an answer that neither touched the intent nor changed its anchors is not stopped", !second.includes("GATE|"), second);
@@ -108,8 +156,7 @@ try {
   );
   check(
     "after the first edit both items turn back, told right after that round's tool result",
-    rounds[3]?.includes("［意］此轮之后转待复核：登录（标成立后又变了：api/user.js）、隐私（标成立后又变了：api/user.js）") &&
-      !/相持/.test(rounds[3]),
+    rounds[3]?.includes("［意］此轮之后转待复核：登录（凭据已变：api/user.js）、隐私（凭据已变：api/user.js）") && !/相持/.test(rounds[3]),
     rounds[3]
   );
   check(
@@ -122,6 +169,130 @@ try {
     !!JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8")).nodes["上线"],
     ""
   );
+
+  // 一份齐全的意（设计稿/55 的博客例子）：凭据变了的转待复核、牵连上面的成「前提未立」、借来的是假定、择一的结、弃了的岔路，卡片都画得出
+  const seal = (premises, prints = {}) => ({ rev: 1, premises, prints });
+  writeFileSync(
+    `${dir}/.yan/意.json`,
+    JSON.stringify({
+      nodes: {
+        上线: {
+          claim: "blog.example.com 能打开，首页与文章页正常",
+          check: "外网打开首页与任一篇文章",
+          needs: ["部署", "HTTPS", "首页", "文章页"],
+          anchors: [],
+          state: "open",
+          rev: 1,
+          root: { ask: "帮我把这个博客搭起来，部署到我那台服务器上，用 blog.example.com 能打开就行", at: "2026-10-11T14:00:00Z" }
+        },
+        部署: {
+          claim: "服务在服务器上常驻运行",
+          check: "systemctl 显示 active",
+          needs: ["构建"],
+          anchors: ["cmd:ssh blog systemctl is-active blog"],
+          state: "done",
+          rev: 1,
+          seal: seal({ 构建: 1 })
+        },
+        HTTPS: {
+          claim: "证书有效，http 跳到 https",
+          check: "curl -I 看 301 与证书期限",
+          needs: ["域名"],
+          anchors: [],
+          state: "open",
+          rev: 1
+        },
+        域名: {
+          claim: "域名解析到服务器",
+          check: "nslookup 得到服务器 IP",
+          needs: [],
+          anchors: ["cmd:nslookup blog.example.com"],
+          state: "assumed",
+          note: "用户说已在 DNS 面板配好",
+          rev: 1,
+          seal: seal({})
+        },
+        首页: {
+          claim: "首页列出最新十篇",
+          check: "放十二篇，只列十篇",
+          needs: ["构建"],
+          anchors: ["src/pages/index.astro"],
+          state: "doing",
+          rev: 2
+        },
+        文章页: {
+          claim: "文章页渲染 Markdown 与代码",
+          check: "一篇含表格、代码、图的文章",
+          needs: ["构建", "高亮"],
+          anchors: [],
+          state: "done",
+          rev: 1,
+          seal: seal({ 构建: 1, 高亮: 1 })
+        },
+        构建: {
+          claim: "站点能从源码构建出来",
+          check: "npm run build 无错",
+          needs: [],
+          anchors: ["dir:src", "package.json"],
+          state: "done",
+          rev: 1,
+          seal: seal({}, { "dir:src": "old", "file:package.json": "old" })
+        },
+        高亮: {
+          claim: "代码块有高亮",
+          check: "五种语言各一段",
+          needs: ["Shiki", "自写"],
+          any: true,
+          anchors: [],
+          state: "done",
+          rev: 1,
+          seal: seal({ Shiki: 1 })
+        },
+        Shiki: { claim: "沿用 Shiki 的配色", check: "同上", needs: [], anchors: [], state: "done", rev: 1, seal: seal({}) },
+        自写: { claim: "自写一套配色", check: "同上", needs: [], anchors: [], state: "dropped", rev: 1 }
+      },
+      updated: "2026-10-11T16:41:00Z",
+      log: [
+        { at: "2026-10-11T14:02:00Z", conversation: "", text: "假定 域名：用户说已在 DNS 面板配好" },
+        { at: "2026-10-11T15:20:00Z", conversation: "", text: "弃 自写" },
+        { at: "2026-10-11T16:41:00Z", conversation: "", text: "改意 首页：首页列出最新十篇" }
+      ]
+    })
+  );
+  await evalJs(`${lastMessage}.querySelector('.change-intent').click(); true`);
+  await waitFor(
+    `!!document.querySelector('#fileViewerStage .intent-card .intent-svg') && document.querySelectorAll('#fileViewerStage .intent-node').length > 4`,
+    10000
+  );
+  const rich = await evalJs(
+    `(c => ({ states: Object.fromEntries([...c.querySelectorAll('.intent-node')].map(g => [g.dataset.intentNode, g.dataset.state])), more: c.querySelector('.intent-node[data-intent-node="高亮"] .intent-more')?.textContent, notes: c.querySelector('.intent-notes')?.textContent || "", meta: c.querySelector('.intent-meta')?.textContent }))(document.querySelector('#fileViewerStage .intent-card'))`
+  );
+  check(
+    "a full intent: changed anchors make it stale and the items above it wait on their premise; the assumption is drawn as borrowed; a settled premise under a settled item folds into it as +1",
+    rich.states["构建"] === "stale" &&
+      rich.states["部署"] === "premised" &&
+      rich.states["文章页"] === "premised" &&
+      rich.states["域名"] === "assumed" &&
+      rich.states["首页"] === "doing" &&
+      rich.more === "+1" &&
+      /构建凭据已变：src\/、package\.json/.test(rich.notes) &&
+      /域名出处：用户说已在 DNS 面板配好/.test(rich.notes) &&
+      rich.meta === "已立 3 / 9假定 1",
+    JSON.stringify(rich)
+  );
+  // 截两张给人看：浅色与深色
+  await evalJs(
+    `document.querySelector('#fileViewerStage g[data-intent-node="构建"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+  );
+  await send("Page.captureScreenshot", { format: "png" }).then(shot =>
+    writeFileSync(`${TMP}/intent-card-light.png`, Buffer.from(shot.data, "base64"))
+  );
+  await evalJs(`document.documentElement.dataset.theme = "dark"; true`);
+  await sleep(200);
+  await send("Page.captureScreenshot", { format: "png" }).then(shot =>
+    writeFileSync(`${TMP}/intent-card-dark.png`, Buffer.from(shot.data, "base64"))
+  );
+  await evalJs(`document.documentElement.dataset.theme = "light"; document.querySelector('#fileViewerClose').click(); true`);
 } finally {
   await close();
 }

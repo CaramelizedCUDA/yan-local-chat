@@ -117,6 +117,7 @@ function bindEvents() {
   bindHistoryEvents();
   bindMessageActionEvents();
   bindTrailEvents();
+  bindIntentEvents();
   bindApprovalEvents();
   bindHelperEvents();
   setupChips();
