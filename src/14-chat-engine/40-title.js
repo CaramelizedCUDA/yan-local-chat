@@ -6,21 +6,6 @@ const titlingIds = new Set(),
   titleRetries = new Set();
 /** @param {Conversation} conversation 用户亲手改过题（拟题期间也可能改，收尾前得再看一眼） */
 const renamedByHand = conversation => conversation.titleAuto === false;
-// 用户亲手改过的题（连同那段的头一问）：口味就在这里，拿最近的几个作参照
-/** @param {Conversation} conversation */
-function handNamed(conversation) {
-  const list = store.conversations
-    .filter(c => c !== conversation && renamedByHand(c) && c.title)
-    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
-    .slice(0, 5)
-    .map(
-      c =>
-        `「${String(c.messages.find(m => m.role === "user")?.content || "")
-          .replace(/\s+/g, " ")
-          .slice(0, 40)}」→ ${c.title}`
-    );
-  return list.length ? `${prompt("assistant.titleNamed", { list: list.join("\n") })}\n\n` : "";
-}
 /**
  * @param {Conversation} conversation
  * @param {Profile} profile
@@ -41,9 +26,10 @@ async function maybeAutoTitle(conversation, profile) {
   titlingIds.add(conversation.id);
   conversation.titleTries = (conversation.titleTries || 0) + 1;
   try {
+    const firstId = first.id,
+      user = String(first.content || (first.attachments || []).map(a => a.name).join("、") || "（附件）");
     const ask = prompt("assistant.title", {
-      named: handNamed(conversation),
-      user: String(first.content || (first.attachments || []).map(a => a.name).join("、") || "（附件）").slice(0, 1200),
+      user: user.slice(0, 1200),
       assistant: reply ? `\n\n助手：${String(reply.content).slice(0, 1200)}` : ""
     });
     // 题目只有几个字，可它是与一答并行发出的：接口忙、模型慢起（会思考的先想再写）时三十秒常常不够，三次都超时就再也拟不上题。
@@ -73,8 +59,13 @@ async function maybeAutoTitle(conversation, profile) {
         ?.replace(/^[\s"'“”‘’《》「」【】#*]+|[\s"'“”‘’《》「」【】。！？!?.、,，]+$/g, "") || "";
     const title = [...line].slice(0, 24).join("");
     if (!title || renamedByHand(conversation)) return;
-    // 拟题的这一会儿里第一问改过了：拟的是旧问题的题，不写；收尾处按新的再拟
-    if (conversation.messages.find(m => m.role === "user")?.id !== first.id) return void titleRetries.add(conversation.id);
+    // 拟题的这一会儿里首问变了：拟的是旧内容的题，不写，按新的再拟（同步可能原地改同一个 id）。
+    const currentFirst = conversation.messages.find(m => m.role === "user");
+    if (
+      currentFirst?.id !== firstId ||
+      String(currentFirst.content || (currentFirst.attachments || []).map(a => a.name).join("、") || "（附件）") !== user
+    )
+      return void titleRetries.add(conversation.id);
     conversation.title = title;
     conversation.titleAuto = true;
     conversation.titled = true;
