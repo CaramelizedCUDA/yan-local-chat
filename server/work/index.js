@@ -540,7 +540,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
     }
   }, failed);
   // 一组文件、目录此刻的内容指纹：意里一项标成立时记下它的凭据，此后谁改了（指令、手改、别的对话）都比得出来。
-  // 目录是整片：底下各文件的相对路径与内容一并算进去，新增、删除、改动都会变（跳过 node_modules 这类）；文件多了只量大小与修改时刻。
+  // 目录是整片：空目录与各文件都算，跳过依赖目录和言自己的簿记、临时稿；文件多了只量大小与修改时刻，仍遍历完整目录。
   // 不在的、读不了的给 null
   const PRINT_DIR_FILES = 2000,
     PRINT_DIR_BYTES = 32 * 1024 * 1024;
@@ -550,19 +550,28 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
     return hash.digest("hex");
   };
   async function dirHash(dir) {
-    const files = [];
+    const files = [],
+      directories = [];
     const walk = async at => {
       const entries = await fs.promises.readdir(at, { withFileTypes: true });
       for (const entry of entries) {
-        if (files.length > PRINT_DIR_FILES) return;
         const full = path.join(at, entry.name);
-        if (entry.isDirectory() && !entry.isSymbolicLink() && !WORK_SKIP.has(entry.name)) await walk(full);
-        else if (entry.isFile()) files.push(full);
+        if (
+          entry.isDirectory() &&
+          !entry.isSymbolicLink() &&
+          !WORK_SKIP.has(entry.name) &&
+          entry.name !== ".yan" &&
+          entry.name !== SCRATCH_DIR
+        ) {
+          directories.push(relPath(dir, full));
+          await walk(full);
+        } else if (entry.isFile()) files.push(full);
       }
     };
     await walk(dir);
     files.sort();
     const hash = createHash("sha1");
+    for (const directory of directories.sort()) hash.update(`dir:${directory}\u0000\n`);
     let bytes = 0;
     for (const file of files) {
       const stat = await fs.promises.stat(file).catch(() => null);
