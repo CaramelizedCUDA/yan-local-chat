@@ -173,6 +173,44 @@ test("读到的 JSON 坏了几处：认得的照收，认不得的丢掉", () =>
   assert.equal(intent.nodes["好"].rev, 2);
 });
 
+test("读到空节点表、残缺凭据或坏留痕：仍能画卡片和给模型读", () => {
+  assert.deepEqual(f.asIntent({ nodes: null }).nodes, {});
+  const intent = f.asIntent({
+    nodes: { 甲: { claim: "A", check: "a", state: "done", seal: { rev: 1 }, needs: ["constructor"] } },
+    log: [null, 1, { at: "t", text: "改意" }]
+  });
+  assert.doesNotThrow(() => f.intentText(intent));
+  assert.deepEqual(intent.nodes["甲"].needs, []);
+  assert.equal(intent.log.length, 1);
+});
+
+test("节点和前提不把内置对象名当作已有的一项", () => {
+  const raw = JSON.parse('{"nodes":{"__proto__":{"claim":"x","check":"y"},"constructor":{"claim":"x","check":"y"}}}');
+  assert.deepEqual(Object.keys(f.asIntent(raw).nodes), []);
+  for (const id of ["__proto__", "constructor", "toString"]) assert.match(problems(empty(), [{ id, claim: "x", check: "y" }]).join(), /id/);
+  assert.match(problems(empty(), [{ id: "甲", claim: "x", check: "y", state: "constructor" }]).join(), /不认得/);
+  assert.match(problems(empty(), [{ id: "甲", claim: "x", check: "y", needs: ["constructor"] }]).join(), /前提 constructor 不存在/);
+});
+
+test("更换、添加或撤下凭据后须复核；同一批重新标成立才用新凭据", () => {
+  for (const state of ["done", "assumed"]) {
+    const original = change(empty(), [{ id: "甲", claim: "A", check: "a", anchors: ["a.js"], state, note: "借外部验收" }]);
+    for (const anchors of [["b.js"], ["a.js", "b.js"], []]) {
+      const revised = change(original, [{ id: "甲", anchors }]);
+      assert.equal(f.intentState(revised, "甲"), "stale");
+      assert.equal(f.intentEstablished(revised, "甲"), false);
+      assert.match(f.intentStaleWhy(revised, "甲"), /凭据已改/);
+      const sealed = change(revised, [{ id: "甲", state }]);
+      assert.equal(f.intentState(sealed, "甲"), state);
+    }
+    // 旧文件尚未记录凭据清单的也能在改动时补上旧清单。
+    delete original.nodes["甲"].seal.anchors;
+    assert.equal(f.intentState(change(original, [{ id: "甲", anchors: ["b.js"] }]), "甲"), "stale");
+  }
+  const original = change(empty(), [{ id: "甲", claim: "A", check: "a", anchors: ["a.js", "b.js"], state: "done" }]);
+  assert.equal(f.intentState(change(original, [{ id: "甲", anchors: ["b.js", "a.js"] }]), "甲"), "done");
+});
+
 test("一答之内：新转待复核的接在这一轮后；同一项第 3 回才说相持，并摆出同依托一个文件、也被打回的那一项", () => {
   let intent = change(empty(), [
     { id: "登录", claim: "登录返回用户信息", check: "c", anchors: ["api/user.js"] },

@@ -24,7 +24,7 @@
  * @property {number} rev 说法的版本：claim、check、when 改一回加一
  * @property {IntentSeal} [seal] 标成立（或假定）那一刻记下的：说法版本、前提版本、各凭据的指纹
  * @property {{ ask: string, at: string }} [root] 根：立时用户那一问的原话
- * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null> }} IntentSeal
+ * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null>, anchors?: string[] }} IntentSeal
  * @typedef {{ at: string, conversation: string, text: string }} IntentLog 改意、弃、假定的留痕
  * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[], updated?: string }} Intent updated：最近一回写入的时刻——单拿出来看时，看得出旧不旧
  * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean }} IntentOp
@@ -48,22 +48,29 @@ const INTENT_LIMIT = 60,
   },
   // 记凭据的两种：成立的、假定的
   SEALED = new Set(["done", "assumed"]);
+// 节点表按 id 取项：内置对象名不能误当成已存在的节点。
+const validIntentId = id => INTENT_ID.test(id) && !Object.hasOwn(Object.prototype, id);
 /** 读到的 JSON 理成一份意：缺的补上，认不得的项丢掉 @returns {Intent} */
 function asIntent(raw) {
-  const nodes = raw && typeof raw.nodes === "object" && !Array.isArray(raw.nodes) ? raw.nodes : {},
+  const nodes = raw?.nodes && typeof raw.nodes === "object" && !Array.isArray(raw.nodes) ? raw.nodes : {},
     /** @type {Intent} */
     intent = {
       nodes: {},
-      log: Array.isArray(raw?.log) ? raw.log.slice(-INTENT_LOG_LIMIT) : [],
+      log: Array.isArray(raw?.log)
+        ? raw.log
+            .filter(entry => entry && typeof entry === "object")
+            .slice(-INTENT_LOG_LIMIT)
+            .map(entry => ({ at: String(entry.at || ""), conversation: String(entry.conversation || ""), text: String(entry.text || "") }))
+        : [],
       ...(typeof raw?.updated === "string" ? { updated: raw.updated } : {})
     };
   for (const [id, node] of Object.entries(nodes)) {
-    if (!node || typeof node !== "object" || !INTENT_ID.test(id)) continue;
+    if (!node || typeof node !== "object" || !validIntentId(id)) continue;
     intent.nodes[id] = {
       ...node,
       claim: String(node.claim || ""),
       check: String(node.check || ""),
-      needs: Array.isArray(node.needs) ? node.needs.map(String) : [],
+      needs: Array.isArray(node.needs) ? node.needs.map(String).filter(validIntentId) : [],
       // 凭据不带登记过的前缀（手编的、写漏的）即文件
       anchors: Array.isArray(node.anchors)
         ? node.anchors.map(String).map(key => (ANCHOR_KINDS.has(anchorParts(key)[0]) ? key : `file:${key}`))
@@ -71,6 +78,15 @@ function asIntent(raw) {
       state: INTENT_MARKS.has(node.state) ? node.state : "open",
       rev: Number(node.rev) || 1
     };
+    if (node.seal !== undefined) {
+      const record = value => (value && typeof value === "object" && !Array.isArray(value) ? value : {});
+      intent.nodes[id].seal = {
+        rev: Number(node.seal?.rev) || 0,
+        premises: record(node.seal?.premises),
+        prints: record(node.seal?.prints),
+        ...(Array.isArray(node.seal?.anchors) ? { anchors: node.seal.anchors.map(String) } : {})
+      };
+    }
   }
   return intent;
 }
@@ -143,6 +159,8 @@ function intentStaleWhy(intent, id, now = {}) {
     seal = node?.seal;
   if (!node || !SEALED.has(node.state) || !seal) return "";
   if (seal.rev !== node.rev) return "说法已改";
+  if (seal.anchors && (seal.anchors.length !== node.anchors.length || seal.anchors.some(key => !node.anchors.includes(key))))
+    return "凭据已改";
   // 假定不靠前提，只看它自己的说法与凭据
   if (node.state === "done")
     for (const need of liveNeeds(intent, node)) {
@@ -221,7 +239,7 @@ function normalizeIntentOps(intent, raw, workdir = "") {
       continue;
     }
     const id = clip(item.id, 40);
-    if (!INTENT_ID.test(id)) {
+    if (!validIntentId(id)) {
       problems.push(`id「${id}」不合要求：1–24 个字母、数字、汉字或 _ . · -，不含空格`);
       continue;
     }
@@ -246,7 +264,7 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     }
     if (item.state !== undefined) {
       const state = String(item.state).trim().toLowerCase(),
-        mark = INTENT_MARKS.has(state) ? state : INTENT_MARK_ALIASES[state];
+        mark = INTENT_MARKS.has(state) ? state : Object.hasOwn(INTENT_MARK_ALIASES, state) ? INTENT_MARK_ALIASES[state] : undefined;
       if (!mark) problems.push(`${id} 的 state「${item.state}」不认得：只有 open / doing / done / assumed / dropped`);
       else op.state = /** @type {IntentMark} */ (mark);
     }
@@ -268,7 +286,7 @@ function normalizeIntentOps(intent, raw, workdir = "") {
   const trial = applyIntentOps(intent, ops);
   for (const op of ops)
     for (const need of op.needs || [])
-      if (!trial.nodes[need]) problems.push(`${op.id} 的前提 ${need} 不存在（新的前提与它同一批写上即可）`);
+      if (!Object.hasOwn(trial.nodes, need)) problems.push(`${op.id} 的前提 ${need} 不存在（新的前提与它同一批写上即可）`);
   const cycle = intentCycle(trial);
   if (cycle) problems.push(`前提成了环：${cycle.join(" → ")}`);
   for (const op of ops)
@@ -306,7 +324,11 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
     for (const key of /** @type {const} */ (["claim", "check", "when", "note"])) if (op[key] !== undefined) node[key] = op[key];
     if (op.any !== undefined) node.any = op.any;
     if (op.needs) node.needs = op.needs;
-    if (op.anchors) node.anchors = op.anchors;
+    if (op.anchors) {
+      // 旧版凭据没有清单：改之前补上原清单，换了凭据也须重新复核。
+      if (node.seal && !node.seal.anchors) node.seal.anchors = [...node.anchors];
+      node.anchors = op.anchors;
+    }
     if (`${node.claim}\u0001${node.check}\u0001${node.when || ""}` !== before) {
       if (node.rev) log(`改意 ${op.id}：${node.claim}`);
       node.rev += 1;
@@ -325,6 +347,7 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
     // 取不到指纹的凭据（探针这回没跑）不记：日后也不据它判
     node.seal = {
       rev: node.rev,
+      anchors: [...node.anchors],
       premises: op.state === "done" ? Object.fromEntries(liveNeeds(next, node).map(need => [need, next.nodes[need].rev])) : {},
       prints: Object.fromEntries(node.anchors.filter(key => key in prints).map(key => [key, prints[key]]))
     };
