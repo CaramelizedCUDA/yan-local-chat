@@ -104,6 +104,7 @@ html.work-mode .chat-scroll-grabber {
   background: var(--paper-2);
   white-space: pre-wrap;
   line-height: 1.7;
+  overflow-wrap: break-word;
 }
 .user-quote {
   max-width: 80%;
@@ -924,6 +925,11 @@ html.work-mode .chat-scroll-grabber {
   background: var(--accent);
   vertical-align: -2px;
   animation: blink 1s steps(1) infinite;
+}
+/* 不带空格的长串（Windows 路径、哈希、网址）放不下时就地折行，不撑出横向滚动。用 break-word 不用 anywhere：
+   anywhere 会把表格的最小宽度算成一个字宽，各列挤成竖条 */
+.markdown {
+  overflow-wrap: break-word;
 }
 .markdown p {
   margin: 0 0 1em;

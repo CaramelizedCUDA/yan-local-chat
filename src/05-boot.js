@@ -127,6 +127,14 @@ function bindEvents() {
   bindAttachmentEvents();
   bindStage();
   bindStageInk();
+  // 输入法组字中的按键（选词的 Enter、取消组字的 Esc）归输入法：在最外层先拦下，各处的快捷键都不必各自判一回
+  window.addEventListener(
+    "keydown",
+    e => {
+      if (e.isComposing || e.keyCode === 229) e.stopImmediatePropagation();
+    },
+    true
+  );
   // Esc 收最上面开着的那一层浮层（各层在自己那一段登记，见 03-ui-utils.js 的 LAYERS）
   window.addEventListener("keydown", e => {
     if (e.key === "Escape") closeTopLayer();

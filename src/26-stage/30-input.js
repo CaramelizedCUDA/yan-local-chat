@@ -354,7 +354,6 @@ function bindStage() {
   // 键盘：拦下来整个递进网页（包括 Esc、Ctrl+C / V——剪贴板本是同一台机器的），不让言自己的快捷键接走
   keys.addEventListener("keydown", e => {
     e.stopPropagation();
-    if (e.isComposing || e.keyCode === 229) return;
     e.preventDefault();
     if (stageShortcut(e)) return;
     const text = e.key === "Enter" ? "\r" : e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey ? e.key : "";

@@ -248,9 +248,21 @@ function sourceCardsHtml(message) {
   const all = [...list, ...local];
   return `<details class="source-stack"><summary><span>出处</span><small>${all.length} 条</small></summary><div class="source-grid">${all.map(card).join("")}</div></details>`;
 }
-// 行迹：步骤的开合与看全、思绪跟随滚动、改动摘要、思绪与行迹的开合（正文、旁注、差遣三处同一套）
+// 这段对话里编号为 id 的一步：主线、版本、旁注里的，连同帮手各自的步骤
+function stepInView(id) {
+  const c = currentConversation();
+  return (
+    (c &&
+      everyMessage(c)
+        .flatMap(m => allSteps(m))
+        .find(s => s.id === id)) ||
+    null
+  );
+}
+// 行迹：步骤的开合与看全、思绪跟随滚动、改动摘要、思绪与行迹的开合——正文、旁注、差遣面板三处画的是同一种卡，点法也同一套
 function bindTrailEvents() {
-  $("#messages").addEventListener("click", event => {
+  const panes = ["#messages", "#sideMessages", "#helperPanelBody"].map(selector => $(selector));
+  const onStepClick = event => {
     const button = event.target.closest("[data-approve]");
     if (button) {
       event.preventDefault();
@@ -262,33 +274,29 @@ function bindTrailEvents() {
       event.stopPropagation();
       return sendSupplementNow();
     }
-    // 差遣的签不在此列：点它是去右侧开面板，不是折叠（见下面的 openHelperPanel）
+    const more = event.target.closest("[data-step-more]");
+    if (more) return showStepInFull(more.closest(".tool-step"));
+    // 出处也是一块可开合的，与思绪、行迹同一种开合
+    const sources = event.target.closest(".source-stack > summary");
+    if (sources) {
+      event.preventDefault();
+      const details = sources.parentElement;
+      return setProcessDetails(details, details._motionAnimation ? !details._motionTarget : !details.open);
+    }
+    // 差遣的签不在此列：点它是去右侧开面板，不是折叠（见 openHelperPanel）
     const head = event.target.closest(".tool-step.foldable > .tool-step-head");
     if (!head || event.target.closest("a, button")) return;
     const el = head.parentElement,
-      c = currentConversation(),
-      step =
-        c &&
-        allMessages(c)
-          .flatMap(m => allSteps(m))
-          .find(s => s.id === el.dataset.stepId);
+      step = stepInView(el.dataset.stepId);
     // 指令输出默认折起，开合记在步骤上，重画不丢
     const wasFolded = el.classList.contains("folded");
     if (step) step.expanded = wasFolded;
     morphHeight(el, () => el.classList.toggle("folded", !wasFolded));
     head.title = wasFolded ? "收起输出" : "展开输出";
     saveStoreSoon();
-  });
-  $("#messages").addEventListener("click", event => {
-    const button = event.target.closest("[data-step-more]");
-    if (!button) return;
-    const el = button.closest(".tool-step"),
-      c = currentConversation(),
-      step =
-        c &&
-        allMessages(c)
-          .flatMap(m => allSteps(m))
-          .find(s => s.id === el?.dataset.stepId);
+  };
+  const showStepInFull = el => {
+    const step = stepInView(el?.dataset.stepId);
     if (!step) return;
     step.full = !step.full;
     step.expanded = true;
@@ -302,23 +310,18 @@ function bindTrailEvents() {
       el.innerHTML = next.innerHTML;
     });
     void loadThumbnails(el);
-  });
-  // 出处也是一块可开合的，与思绪、行迹同一种开合
-  $("#messages").addEventListener("click", event => {
-    const summary = event.target.closest(".source-stack > summary");
-    if (!summary) return;
-    event.preventDefault();
-    const details = summary.parentElement;
-    setProcessDetails(details, details._motionAnimation ? !details._motionTarget : !details.open);
-  });
-  $("#messages").addEventListener(
-    "scroll",
-    event => {
-      const body = event.target;
-      if (body?.classList?.contains("reasoning-body")) body._follow = body.scrollTop + body.clientHeight >= body.scrollHeight - 24;
-    },
-    true
-  );
+  };
+  for (const pane of panes) {
+    pane.addEventListener("click", onStepClick);
+    pane.addEventListener(
+      "scroll",
+      event => {
+        const body = event.target;
+        if (body?.classList?.contains("reasoning-body")) body._follow = body.scrollTop + body.clientHeight >= body.scrollHeight - 24;
+      },
+      true
+    );
+  }
   $("#messages").addEventListener("click", event => {
     // 改动清单里点一件：看它在这一答里的改动
     const file = event.target.closest("[data-change-path]");
@@ -359,7 +362,5 @@ function bindTrailEvents() {
     saveStoreSoon();
     setProcessDetails(details, nextOpen);
   };
-  $("#messages").addEventListener("click", onProcessToggle);
-  $("#sideMessages").addEventListener("click", onProcessToggle);
-  $("#helperPanelBody").addEventListener("click", onProcessToggle);
+  for (const pane of panes) pane.addEventListener("click", onProcessToggle);
 }

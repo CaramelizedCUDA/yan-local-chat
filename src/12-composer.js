@@ -83,7 +83,6 @@ function bindComposerEvents() {
       renderSendButtons();
     });
     input.addEventListener("keydown", e => {
-      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         const waiting = input.id === "chatInput" && !input.value.trim() ? pendingApprovalHere() : null;
@@ -93,7 +92,8 @@ function bindComposerEvents() {
     });
     input.addEventListener("paste", e => {
       const images = Array.from(e.clipboardData?.files || []).filter(file => file.type.startsWith("image/"));
-      if (!images.length) return;
+      // 从 Excel、Word 复制的一段：剪贴板里文字之外还捎着一张渲染图。有文字就照文字粘，那张图不要
+      if (!images.length || e.clipboardData?.getData("text/plain").trim()) return;
       e.preventDefault();
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "").slice(4);
       void addFiles(
