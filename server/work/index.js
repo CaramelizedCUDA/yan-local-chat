@@ -177,7 +177,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
         previous = existed ? await fs.promises.readFile(file).catch(() => null) : null;
       const previousText = previous ? decodeText(previous)?.text : "",
         previousLines = previousText ? countLines(previousText) : 0;
-      await writeTextAtomic(file, content).catch(error => {
+      await writeTextAtomic(file, content, signal).catch(error => {
         throw Error(describeFsError(error, String(body.path)));
       });
       // 覆盖时按行比出真增删，并捎回原文开头一段：页面上点开这件的改动，删去的那些才有红可看
@@ -319,7 +319,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       const result = replaceAll ? source.split(needle).join(replacement) : source.replace(needle, () => replacement);
       // 按原来的编码写回：UTF-16 的还是 UTF-16，带 BOM 的还带 BOM
       const output = encodeText(result, decoded.encoding);
-      await writeTextAtomic(file, output).catch(error => {
+      await writeTextAtomic(file, output, signal).catch(error => {
         throw Error(describeFsError(error, String(body.path)));
       });
       const line = source.slice(0, source.indexOf(needle)).split(/\r?\n/).length;
@@ -531,7 +531,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       if (current.version !== String(body.base || "")) return { conflict: true, ...current };
       const text = `${JSON.stringify(body.data, null, 2)}\n`;
       await fs.promises.mkdir(path.dirname(file), { recursive: true });
-      await writeTextAtomic(file, text).catch(error => {
+      await writeTextAtomic(file, text, signal).catch(error => {
         throw Error(describeFsError(error, INTENT_PATH));
       });
       return { data: body.data, version: textVersion(text) };

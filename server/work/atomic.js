@@ -4,7 +4,8 @@ const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 
 // 先写同目录临时文件，写成后才替换原件；保留原文件权限与目录内链接的落点。
-module.exports = async function writeTextAtomic(file, content) {
+module.exports = async function writeTextAtomic(file, content, signal) {
+  signal?.throwIfAborted();
   const link = await fs.promises.lstat(file).catch(error => {
     if (error.code !== "ENOENT") throw error;
     return null;
@@ -16,6 +17,7 @@ module.exports = async function writeTextAtomic(file, content) {
   });
   const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);
   try {
+    signal?.throwIfAborted();
     const handle = await fs.promises.open(temporary, "wx", original?.mode);
     try {
       await handle.writeFile(content);
@@ -24,6 +26,8 @@ module.exports = async function writeTextAtomic(file, content) {
       await handle.close();
     }
     if (original) await fs.promises.chmod(temporary, original.mode);
+    // 停止要盖住写临时文件与刷盘的等待，原件在最后一步才替换。
+    signal?.throwIfAborted();
     await fs.promises.rename(temporary, target);
   } finally {
     await fs.promises.rm(temporary, { force: true }).catch(() => {});
