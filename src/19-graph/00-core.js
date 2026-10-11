@@ -56,10 +56,23 @@ function graphOf(messages) {
       if (step.name === "update_graph" && step.graph) applyGraphOps(graph, step.graph, message.id);
       else if (step.name === "graph_check" && step.verdict) applyVerdict(graph, step.verdict, message.id);
       // 帮手在后台改的，按派它的那一步的位置算：先后差一点无妨，次数是对的
-      for (const s of [step, ...(step.sub?.steps || [])]) if (s.change && s.status === "done") changed(s.change.path);
+      for (const s of [step, ...(step.sub?.steps || [])]) if (s.change && s.status === "done") changed(graphPath(s.change.path));
     }
   }
   return graph;
+}
+// 文件写成与行迹里的改动记录同一个样子（目录内相对、正斜杠，见 server/work/paths.js 的 relPath），失效才对得上：
+// 模型、验的人写的 ./src/a.js、src\a.js、目录下的绝对路径都认作 src/a.js。只做 Windows，比目录时不计大小写
+/** @param {string} path @param {string|null} [workdir] */
+function graphPath(path, workdir = "") {
+  const p = String(path ?? "")
+      .trim()
+      .replace(/\\/g, "/")
+      .replace(/\/{2,}/g, "/"),
+    root = String(workdir || "")
+      .replace(/\\/g, "/")
+      .replace(/\/+$/, "");
+  return (root && p.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? p.slice(root.length + 1) : p).replace(/^(\.\/)+/, "");
 }
 /** @param {Graph} graph @param {GraphOp[]} ops @param {string} messageId */
 function applyGraphOps(graph, ops, messageId) {
@@ -201,9 +214,10 @@ const GRAPH_MARK_ALIASES = {
 /**
  * @param {Graph} graph 此刻的图
  * @param {any} raw 模型给的 nodes
+ * @param {string|null} [workdir] 这段对话的目录：files 里的路径据此写成相对的（见 graphPath）
  * @returns {{ ops: GraphOp[], problems: string[] }}
  */
-function normalizeGraphOps(graph, raw) {
+function normalizeGraphOps(graph, raw, workdir = "") {
   const problems = [],
     /** @type {GraphOp[]} */
     ops = [];
@@ -234,7 +248,9 @@ function normalizeGraphOps(graph, raw) {
     if (item.needs !== undefined)
       op.needs = [...new Set((Array.isArray(item.needs) ? item.needs : [item.needs]).map(n => clip(n, 60)).filter(Boolean))];
     if (item.files !== undefined)
-      op.files = [...new Set((Array.isArray(item.files) ? item.files : [item.files]).map(f => clip(f, 300)).filter(Boolean))].slice(0, 20);
+      op.files = [
+        ...new Set((Array.isArray(item.files) ? item.files : [item.files]).map(f => graphPath(clip(f, 300), workdir)).filter(Boolean))
+      ].slice(0, 20);
     if (item.status !== undefined) {
       const status = String(item.status).trim().toLowerCase(),
         mark = GRAPH_MARKS.has(status) ? status : GRAPH_MARK_ALIASES[status];

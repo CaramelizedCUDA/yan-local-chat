@@ -26,7 +26,7 @@ defineTool({
   name: "verdict",
   label: "判词",
   offer: ctx => !!ctx.audit,
-  run(step, args) {
+  run(step, args, ctx) {
     const box = auditing.get(step.scope || "");
     if (!box) return { ok: false, content: prompt("graph.notHere"), display: "此处不收" };
     const holds = args.holds === true || args.holds === "true",
@@ -34,7 +34,7 @@ defineTool({
         .trim()
         .slice(0, 1200),
       files = (Array.isArray(args.files) ? args.files : args.files ? [args.files] : [])
-        .map(f => String(f).trim())
+        .map(f => graphPath(String(f), workRoot(ctx.conversation)))
         .filter(Boolean)
         .slice(0, 20);
     box.verdict = { holds, gap, files };
@@ -68,7 +68,7 @@ defineTool({
 async function updateGraph(step, args, ctx) {
   const { conversation } = ctx,
     before = graphOf(conversation.messages),
-    { ops, problems } = normalizeGraphOps(before, args.nodes);
+    { ops, problems } = normalizeGraphOps(before, args.nodes, workRoot(conversation));
   if (problems.length)
     return { ok: false, content: prompt("graph.problems", { problems: problems.map(p => `- ${p}`).join("\n") }), display: "未改" };
   step.graph = quietGraphOps(before, ops);

@@ -111,6 +111,18 @@ test("修一处坏一处：验时看过的文件后来又被改了，已成立�
   assert.match(f.graphText(f.graphOf(messages)), /验后又改了 src\/a\.js/);
 });
 
+test("模型写的路径与改动记录对得上：./、反斜杠、目录下的绝对路径都认作相对的", () => {
+  const raw = [{ id: "x", claim: "解析对", check: "跑测试", files: ["./src/a.js", "src\\b.js", "E:\\Proj\\src\\c.js", "D:\\外\\d.js"] }];
+  const { ops: given, problems } = f.normalizeGraphOps(f.graphOf([]), raw, "e:\\proj\\");
+  assert.deepEqual(problems, []);
+  assert.deepEqual(given[0].files, ["src/a.js", "src/b.js", "src/c.js", "D:/外/d.js"]);
+  const steps = [{ ...ops(), graph: given }];
+  const messages = [answer("a1", steps)];
+  steps.push(ops({ id: "x", mark: "claimed" }), check(messages, "x", true));
+  steps.push(edit("src/c.js"));
+  assert.equal(state(messages, "x"), "stale");
+});
+
 test("在做时改过的文件记在它名下；帮手在后台改的也算", () => {
   const steps = [ops({ id: "x", claim: "解析对", check: "跑测试", mark: "doing" })];
   const messages = [answer("a1", steps)];

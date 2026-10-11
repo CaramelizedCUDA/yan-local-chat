@@ -58,7 +58,7 @@
   // 纲：长活的结论图（见 src/19-graph/），计划卡的升级；只给主模型。标 claimed 即另请验的人判
   update_graph: {
     description:
-      "长活（不止三五步）可立一张纲给用户看：拆成几项要成立的结论，各写怎么算成立、以哪几项为前提；没有谁以之为前提的是根。一项是值得单独验的结论（「配置写错时报错带行号」），不是一步动作。每次只给有改动的几项，已有的只给 id 与要改的字段。标 claimed 即请验的人照 check 判，成立以判词为准；说法一改回到未做，前提改了、或验后相关文件又被改，已成立的转为待复验。动过纲的这一答，收尾前会查根立住没有。",
+      "长活（不止三五步）可立一张纲给用户看：拆成几项要成立的结论，各写怎么算成立、以哪几项为前提。一项是值得单独验的结论，不是一步动作。每次只给有改动的几项，已有的只给 id 与要改的字段。标 claimed 即另请人照 check 验。",
 
     parameters: {
       type: "object",
@@ -70,12 +70,12 @@
             properties: {
               id: { type: "string", description: "短名，图上就写它：用对话的语言，八字以内；分情况的项写情形本身" },
               claim: { type: "string", description: "要成立的那句话" },
-              check: { type: "string", description: "怎么算成立：验的人照它判，可写要跑的检验、要看的现象" },
+              check: { type: "string", description: "怎么算成立：要跑的检验、要看的现象" },
               needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
-              when: { type: "string", description: "只在某一情形下需要成立时写明情形；分情况的几项各写一个，同为上一项的前提" },
+              when: { type: "string", description: "只在某一情形下须成立时写明；分情况的几项同为上一项的前提" },
               any: { type: "boolean", description: "true：前提里一项成立即可（几条路线择一）" },
               status: { type: "string", description: "open / doing / claimed / dropped" },
-              evidence: { type: "string", description: "标 claimed 时交的证据：改了什么、怎么验过、看哪里" },
+              evidence: { type: "string", description: "标 claimed 时附：改了什么、怎么验过" },
               files: { type: "array", items: { type: "string" } }
             },
             required: ["id"]
@@ -94,7 +94,7 @@
       properties: {
         holds: { type: "boolean", description: "照验收，这一项是否成立" },
         gap: { type: "string", description: "不成立时差在哪、怎么看出来的，写到做的人照着能补" },
-        files: { type: "array", items: { type: "string" }, description: "判它所凭的文件：日后它们再改，这一项就得重验" }
+        files: { type: "array", items: { type: "string" }, description: "判它所凭的文件" }
       },
       required: ["holds"]
     }
