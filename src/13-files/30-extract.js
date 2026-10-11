@@ -12,6 +12,10 @@ function readFile(file, mode) {
 // 文字按 UTF-8 读，读不通再按 GB18030（中文 Excel 另存的 CSV、旧记事本存的 txt 多是 GBK，按 UTF-8 读满屏乱码）
 /** @param {ArrayBuffer|Uint8Array} bytes */
 function decodeTextBytes(bytes) {
+  // 带 BOM 的 UTF-16（PowerShell 5.1 的 > 重定向、记事本另存的「Unicode」）照 BOM 读
+  const head = new Uint8Array(bytes instanceof ArrayBuffer ? bytes : bytes.buffer, bytes instanceof ArrayBuffer ? 0 : bytes.byteOffset, 2);
+  if (head[0] === 0xff && head[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes);
+  if (head[0] === 0xfe && head[1] === 0xff) return new TextDecoder("utf-16be").decode(bytes);
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
@@ -63,6 +67,7 @@ async function extractPdfText(data) {
     }),
     document = await loading.promise,
     pages = [];
+  let chars = 0;
   try {
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
       const page = await document.getPage(pageNumber),
@@ -77,12 +82,15 @@ async function extractPdfText(data) {
         }
       }
       if (line) output.push(line);
+      chars += output.join("").replace(/\s/g, "").length;
       pages.push(`第 ${pageNumber} 页\n${output.join("\n")}`);
       if (pages.join("\n\n").length >= MAX_EXTRACTED_CHARS) break;
     }
   } finally {
     await document.destroy();
   }
+  // 扫描版（每页只是一张图）抽出来只剩一串「第 N 页」：不当抽到了文字，原件照发给模型自己看
+  if (chars < pages.length * 10) throw Error("PDF 没有文字层（多半是扫描件），原件照发");
   return pages.join("\n\n");
 }
 async function unzipSelected(bytes, wanted) {

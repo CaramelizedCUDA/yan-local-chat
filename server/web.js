@@ -432,8 +432,16 @@ const handleFetch = jsonRoute(async body => {
   }
   const page = await fetchPublicText(url.href, 20000);
   const title = stripTags((page.text.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "");
-  const text = (/html|xml/i.test(page.type) ? htmlToText(page.text) : page.text).slice(0, 24000);
-  return { title, url: page.url, text };
+  const html = /html|xml/i.test(page.type),
+    full = html ? htmlToText(page.text) : page.text;
+  // total：正文原有多少字，页面据此说截去了多少；scripted：抽出的字寥寥、页里却满是脚本，多半要跑脚本才出内容
+  return {
+    title,
+    url: page.url,
+    text: full.slice(0, 24000),
+    total: full.length,
+    ...(html && full.trim().length < 200 && (page.text.match(/<script/gi) || []).length >= 3 ? { scripted: true } : {})
+  };
 });
 
 module.exports = {

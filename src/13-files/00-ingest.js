@@ -58,13 +58,54 @@ function placeAttachment(key, file) {
   store.drafts[key] = { ...draft, attachments: [...draft.attachments, file], updatedAt: now() };
   saveStoreSoon();
 }
-async function ingestFile(file) {
+// 图入库时就换成各家都收的样子：手机原图动辄五六 MB、上万像素，Claude 收图不过 5 MB、长边过八千即拒；
+// 认得的格式只有 PNG、JPEG、GIF、WebP。大了的缩到长边 2048、换成 JPEG（带透明的 PNG 仍存 PNG），别的格式能解开的一并转。
+// 解不开的（Edge 不认 HEIC）不当图，作文件留着，抽取那栏说明原因
+const IMAGE_SENDABLE = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]),
+  IMAGE_MAX_BYTES = 3.5 * MB,
+  IMAGE_MAX_SIDE = 2048;
+/** @param {File} file @returns {Promise<File|null>} 原样可用给原件，换过的给新件，解不开给 null */
+async function sendableImage(file) {
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return IMAGE_SENDABLE.has(file.type) ? file : null;
+  const long = Math.max(bitmap.width, bitmap.height);
+  if (IMAGE_SENDABLE.has(file.type) && file.size <= IMAGE_MAX_BYTES && long <= IMAGE_MAX_SIDE) {
+    bitmap.close();
+    return file;
+  }
+  // GIF 缩了就不动了，不大的照原样留着
+  if (file.type === "image/gif" && file.size <= IMAGE_MAX_BYTES) {
+    bitmap.close();
+    return file;
+  }
+  const scale = Math.min(1, IMAGE_MAX_SIDE / long),
+    canvas = new OffscreenCanvas(Math.max(1, Math.round(bitmap.width * scale)), Math.max(1, Math.round(bitmap.height * scale)));
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const type = file.type === "image/png" ? "image/png" : "image/jpeg";
+  let blob = await canvas.convertToBlob({ type, quality: 0.88 });
+  if (blob.size > IMAGE_MAX_BYTES) blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.82 });
+  const name =
+    blob.type === file.type
+      ? file.name
+      : `${String(file.name || "图片").replace(/\.[^.]+$/, "")}.${blob.type === "image/png" ? "png" : "jpg"}`;
+  return new File([blob], name, { type: blob.type, lastModified: file.lastModified });
+}
+async function ingestFile(original) {
+  let file = original,
+    unreadable = "";
+  if (original.type.startsWith("image/") || /\.(heic|heif|avif|bmp|tiff?)$/i.test(original.name)) {
+    const sendable = await sendableImage(original);
+    if (sendable) file = sendable;
+    else unreadable = "浏览器解不开这种图片（HEIC 之类），没法转成模型收的格式；可先另存成 JPG 再置入";
+  }
   /** @type {Attachment["kind"]} */
-  const kind = file.type.startsWith("image/")
-      ? "image"
-      : isTextFile(file) || (fileKind(file.name) === OTHER_FILE && (await sniffText(file)))
-        ? "text"
-        : "file",
+  const kind =
+      file.type.startsWith("image/") && !unreadable
+        ? "image"
+        : isTextFile(file) || (fileKind(file.name) === OTHER_FILE && (await sniffText(file)))
+          ? "text"
+          : "file",
     id = uid();
   const data = await readFile(file, kind === "text" ? "text" : "data");
   const metadata = {
@@ -76,8 +117,8 @@ async function ingestFile(file) {
     modifiedAt: file.lastModified || Date.now()
   };
   let extractedText = "",
-    extractionError = "";
-  if (kind === "file")
+    extractionError = unreadable;
+  if (kind === "file" && !unreadable)
     try {
       extractedText = await extractDocumentText(metadata.name, data);
     } catch (error) {
