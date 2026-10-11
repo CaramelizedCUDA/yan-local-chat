@@ -539,25 +539,60 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       release();
     }
   }, failed);
-  // 一组文件此刻的内容指纹：意里一项标成立时记下它依托的文件，此后谁改了（指令、手改、别的对话）都比得出来。
+  // 一组文件、目录此刻的内容指纹：意里一项标成立时记下它的凭据，此后谁改了（指令、手改、别的对话）都比得出来。
+  // 目录是整片：底下各文件的相对路径与内容一并算进去，新增、删除、改动都会变（跳过 node_modules 这类）；文件多了只量大小与修改时刻。
   // 不在的、读不了的给 null
+  const PRINT_DIR_FILES = 2000,
+    PRINT_DIR_BYTES = 32 * 1024 * 1024;
+  const fileHash = async file => {
+    const hash = createHash("sha1");
+    for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+    return hash.digest("hex");
+  };
+  async function dirHash(dir) {
+    const files = [];
+    const walk = async at => {
+      const entries = await fs.promises.readdir(at, { withFileTypes: true });
+      for (const entry of entries) {
+        if (files.length > PRINT_DIR_FILES) return;
+        const full = path.join(at, entry.name);
+        if (entry.isDirectory() && !entry.isSymbolicLink() && !WORK_SKIP.has(entry.name)) await walk(full);
+        else if (entry.isFile()) files.push(full);
+      }
+    };
+    await walk(dir);
+    files.sort();
+    const hash = createHash("sha1");
+    let bytes = 0;
+    for (const file of files) {
+      const stat = await fs.promises.stat(file).catch(() => null);
+      if (!stat) continue;
+      bytes += stat.size;
+      const content =
+        bytes <= PRINT_DIR_BYTES && files.length <= PRINT_DIR_FILES
+          ? await fileHash(file).catch(() => "?")
+          : `${stat.size}:${stat.mtimeMs}`;
+      hash.update(`${relPath(dir, file)}\u0000${content}\n`);
+    }
+    return hash.digest("hex");
+  }
   const handleWorkPrints = jsonRoute(async body => {
     const workdir = resolveWorkdir(body.workdir),
-      list = (Array.isArray(body.paths) ? body.paths : []).map(String).filter(Boolean).slice(0, 400),
-      prints = {};
-    await Promise.all(
-      list.map(async given => {
-        try {
-          const file = await targetOf(workdir, { ...body, path: given }),
-            hash = createHash("sha1");
-          for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
-          prints[given] = hash.digest("hex");
-        } catch {
-          prints[given] = null;
-        }
-      })
-    );
-    return { prints };
+      list = key => (Array.isArray(body[key]) ? body[key] : []).map(String).filter(Boolean).slice(0, 400),
+      prints = {},
+      dirs = {};
+    const take = (given, into, read) =>
+      targetOf(workdir, { ...body, path: given })
+        .then(read)
+        .then(
+          print => void (into[given] = print),
+          () => void (into[given] = null)
+        );
+    await Promise.all([
+      ...list("paths").map(given => take(given, prints, fileHash)),
+      ...list("dirs").map(given => take(given, dirs, dirHash))
+    ]);
+    return { prints, dirs };
   }, failed);
 
   return {
