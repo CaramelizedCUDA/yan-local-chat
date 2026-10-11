@@ -55,48 +55,26 @@
     }
   },
 
-  // 纲：长活的结论图（见 src/19-graph/），计划卡的升级；只给主模型。标 claimed 即另请验的人判
-  update_graph: {
+  // 计划：行里给用户看的任务清单，每次给完整清单；只给主模型
+  update_plan: {
     description:
-      "长活（不止三五步）可立一张纲给用户看：拆成几项要成立的结论，各写怎么算成立、以哪几项为前提。一项是值得单独验的结论，不是一步动作。每次只给有改动的几项，已有的只给 id 与要改的字段。标 claimed 即另请人照 check 验。",
-
+      "任务不止三五步时可把计划列给用户看，随做随更新；每次给完整清单，不多于十条。doing 同时至多一项，skipped 在 text 里说明为何。",
     parameters: {
       type: "object",
       properties: {
-        nodes: {
+        items: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              id: { type: "string", description: "短名，图上就写它：用对话的语言，八字以内；分情况的项写情形本身" },
-              claim: { type: "string", description: "要成立的那句话" },
-              check: { type: "string", description: "怎么算成立：要跑的检验、要看的现象" },
-              needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
-              when: { type: "string", description: "只在某一情形下须成立时写明；分情况的几项同为上一项的前提" },
-              any: { type: "boolean", description: "true：前提里一项成立即可（几条路线择一）" },
-              status: { type: "string", description: "open / doing / claimed / dropped" },
-              evidence: { type: "string", description: "标 claimed 时附：改了什么、怎么验过" },
-              files: { type: "array", items: { type: "string" } }
+              text: { type: "string", description: "一句话说明这一项" },
+              status: { type: "string", description: "pending / doing / done / skipped" }
             },
-            required: ["id"]
+            required: ["text", "status"]
           }
         }
       },
-      required: ["nodes"]
-    }
-  },
-
-  // 验的人交判词：只给验的人（见 src/19-graph/10-check.js）
-  verdict: {
-    description: "交判词，交了即可收工。",
-    parameters: {
-      type: "object",
-      properties: {
-        holds: { type: "boolean", description: "照验收，这一项是否成立" },
-        gap: { type: "string", description: "不成立时差在哪、怎么看出来的，写到做的人照着能补" },
-        files: { type: "array", items: { type: "string" }, description: "判它所凭的文件" }
-      },
-      required: ["holds"]
+      required: ["items"]
     }
   },
 

@@ -6,7 +6,6 @@ defineTool({
   label: "运行",
   offer: ctx => ctx.files,
   sideEffect: true,
-  audit: true,
   writes: true,
   html: workStepHtml,
   approval: commandApprovalHtml,
