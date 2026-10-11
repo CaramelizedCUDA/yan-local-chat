@@ -371,7 +371,7 @@ function reviseIntentRoot(intent, id, claim, { at = "", conversation = "" } = {}
   return next;
 }
 // ---------- 写成给模型读的字：每一问附着的、改完回给它的，都经这里 ----------
-const INTENT_STATE_TEXT = { open: "未做", doing: "在做", done: "成立", assumed: "假定", dropped: "已弃", stale: "待复核" };
+const INTENT_STATE_TEXT = { open: "未做", doing: "进行中", done: "成立", assumed: "假定", dropped: "已弃", stale: "待复核" };
 /** @param {Intent} intent @param {IntentPrints} [now] */
 function intentTally(intent, now = {}) {
   const live = Object.keys(intent.nodes).filter(id => intent.nodes[id].state !== "dropped");

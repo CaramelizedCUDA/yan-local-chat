@@ -222,7 +222,47 @@
   letter-spacing: 0;
 }
 
-/* 图：字在列里、线在列间、汇点在记号前（摆法见 src/19-intent/30-layout.js） */
+/* 各态一色：记号与字同色（--st），字掺一点墨以便读。未做、已弃仍是淡墨 */
+.intent-card [data-state="holds"],
+.intent-glance [data-state="holds"] {
+  --st: var(--stone-green);
+}
+.intent-card [data-state="assumed"],
+.intent-card [data-state="premised"] {
+  --st: var(--gold);
+}
+.intent-card [data-state="stale"] {
+  --st: var(--accent);
+}
+.intent-card [data-state="doing"] {
+  --st: var(--qing);
+}
+.intent-root[data-state] .intent-root-claim,
+.intent-detail[data-state] .intent-detail-id,
+.intent-detail[data-state] .intent-detail-claim,
+.intent-link[data-state],
+.intent-notes li[data-state] .intent-note-id {
+  color: color-mix(in srgb, var(--st, var(--ink)) 82%, var(--ink));
+}
+/* 待察的缘由也带一点它那一态的色，淡些 */
+.intent-notes li[data-state] .intent-note-why {
+  color: color-mix(in srgb, var(--st, var(--ink-2)) 55%, var(--ink-2));
+}
+.intent-link[data-state="open"],
+.intent-link[data-state="dropped"] {
+  color: var(--ink-2);
+}
+/* 进行中的芯在脉动 */
+.intent-pulse {
+  animation: pulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .intent-pulse {
+    animation: none;
+  }
+}
+
+/* 图：字在列里、线在列间、汇点在记号前（摆法见 src/19-intent/30-layout.js）。比卡片窄就居中，宽了从左起横滚 */
 .intent-graph {
   margin: 30px 0 26px;
   overflow-x: auto;
@@ -231,6 +271,7 @@
 }
 .intent-svg {
   display: block;
+  margin: 0 auto;
 }
 .intent-svg text {
   font-family: var(--body);
@@ -290,8 +331,19 @@
 }
 .intent-node[data-state="doing"] .intent-label,
 .intent-node[data-state="stale"] .intent-label {
-  fill: var(--ink);
   font-weight: 600;
+}
+.intent-node.root .intent-label {
+  fill: var(--ink);
+  font: 600 13.5px var(--title);
+}
+/* 图上的名字与记号同色（--st 见上），根也一样 */
+.intent-node[data-state="holds"] .intent-label,
+.intent-node[data-state="assumed"] .intent-label,
+.intent-node[data-state="premised"] .intent-label,
+.intent-node[data-state="stale"] .intent-label,
+.intent-node[data-state="doing"] .intent-label {
+  fill: color-mix(in srgb, var(--st) 82%, var(--ink));
 }
 /* 弃了的：淡墨、注「已弃」，不划删除线——划线压着左边的点线，看着像被挡住 */
 .intent-node[data-state="dropped"] {
@@ -299,10 +351,6 @@
 }
 .intent-node[data-state="dropped"] .intent-label {
   fill: var(--ink-3);
-}
-.intent-node.root .intent-label {
-  fill: var(--ink);
-  font: 600 13.5px var(--title);
 }
 .intent-chip {
   fill: none;
@@ -334,7 +382,7 @@
   font-size: 11.5px;
 }
 .intent-detail-state[data-state="holds"] {
-  color: var(--code-green);
+  color: var(--stone-green);
 }
 .intent-detail-state[data-state="stale"] {
   color: var(--accent);
@@ -344,7 +392,7 @@
   color: var(--gold);
 }
 .intent-detail-state[data-state="doing"] {
-  color: var(--ink);
+  color: var(--qing);
 }
 .intent-detail-claim {
   margin: 8px 0 16px;

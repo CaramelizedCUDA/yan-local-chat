@@ -99,7 +99,7 @@
               anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },
               state: { type: "string", description: "open / doing / done / assumed / dropped" },
               note: { type: "string", description: "假定的出处、备注" },
-              root: { type: "boolean", description: "最终要立住的结论，新立时标；立后说法不改" }
+              root: { type: "boolean", description: "整件工程最终要立住的结论（用户要的结果，不是手上这一步），新立时标；立后说法不改" }
             },
             required: ["id"]
           }

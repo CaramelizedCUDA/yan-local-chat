@@ -9,13 +9,14 @@ const INTENT_VIEW_TEXT = {
     premised: "存疑 · 前提未立",
     stale: "待复核",
     assumed: "假定",
-    doing: "在做",
+    doing: "进行中",
     open: "未做",
     dropped: "已弃"
   },
   INTENT_CHECK_STROKE = [1.4, 6, 2.9, 7.6, 4.3, 9.3, 6.8, 5, 10.8, 1.4];
-// 记号是符号，同一支笔写：已立一勾青绿，假定一勾泥金（算作已立，是借来的），存疑（自称成立而前提未立）一个泥金问号，
-// 待复核一圈朱，已弃一个灰叉；在做一粒墨点，未做一粒淡点。朱只给待复核
+// 记号是符号，同一支笔写：已立一勾石绿，假定一勾泥金（算作已立，是借来的），存疑（自称成立而前提未立）一个泥金问号，
+// 待复核一圈朱，已弃一个灰叉；进行中一圈石青虚点围着一粒脉动的芯（虚圈与待复核的实圈形就不同），未做一粒淡点。
+// 朱只给待复核。各项的字与它的记号同色（见 82-intent.css 的 --st）
 const INTENT_PENS = {
   holds: () => brushStroke(INTENT_CHECK_STROKE, 1.6, { tail: 0, head: 0.85, tone: "green" }),
   assumed: () => brushStroke(INTENT_CHECK_STROKE, 1.6, { tail: 0, head: 0.85, tone: "gold" }),
@@ -27,7 +28,10 @@ const INTENT_PENS = {
   dropped: () =>
     brushStroke([3, 2.6, 6, 5.6, 9, 8.6], 1.25, { tone: "ink2", tail: 0.2 }) +
     brushStroke([9, 2.6, 6, 5.6, 3, 8.6], 1.25, { tone: "ink2", tail: 0.2 }),
-  doing: () => brushDot(6, 5.6, 2.1, "ink"),
+  doing: () =>
+    Array.from({ length: 8 }, (_, i) =>
+      brushDot(+(6 + 4.3 * Math.cos((i * Math.PI) / 4)).toFixed(2), +(5.6 + 4.3 * Math.sin((i * Math.PI) / 4)).toFixed(2), 0.62, "qing")
+    ).join("") + `<circle class="qing intent-pulse" cx="6" cy="5.6" r="1.7"/>`,
   open: () => brushDot(6, 5.6, 1.4, "ink2")
 };
 /** @param {string} state @param {number} [x] @param {number} [y] 给了坐标即嵌进图里 */
@@ -122,7 +126,7 @@ function intentDetailHtml(intent, now, id) {
         ? `<span class="intent-links">${ids
             .map(
               k =>
-                `<button type="button" class="intent-link" data-intent-node="${escapeHtml(k)}">${intent.nodes[k] ? intentMark(intentView(intent, k, now)) : ""}${escapeHtml(k)}</button>`
+                `<button type="button" class="intent-link" data-intent-node="${escapeHtml(k)}" data-state="${intent.nodes[k] ? intentView(intent, k, now) : "open"}">${intent.nodes[k] ? intentMark(intentView(intent, k, now)) : ""}${escapeHtml(k)}</button>`
             )
             .join("")}</span>`
         : `<span class="intent-none">无</span>`,
@@ -134,7 +138,7 @@ function intentDetailHtml(intent, now, id) {
     ];
   if (view === "stale") rows.push(["缘由", escapeHtml(intentStaleWhy(intent, id, now)), "zhu"]);
   if (node.note) rows.push([node.state === "assumed" ? "出处" : "备注", escapeHtml(node.note), node.state === "assumed" ? "gold" : ""]);
-  return `<div class="intent-detail"><div class="intent-detail-head">${intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim">${node.when ? `<span class="intent-when">${escapeHtml(node.when)}</span>` : ""}${escapeHtml(node.claim)}</p><div class="intent-kv">${rows
+  return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head">${intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim">${node.when ? `<span class="intent-when">${escapeHtml(node.when)}</span>` : ""}${escapeHtml(node.claim)}</p><div class="intent-kv">${rows
     .map(([k, v, tone]) => `<span class="k${tone ? ` ${tone}` : ""}">${k}</span><span>${v}</span>`)
     .join("")}</div></div>`;
 }
@@ -154,7 +158,7 @@ function intentNotesHtml(intent, now) {
   return `<div class="intent-sec">待察 <span class="n">${rows.length}</span></div><ul class="intent-notes">${rows
     .map(
       ([view, id, why, quiet]) =>
-        `<li>${intentMark(view)}<span><button type="button" class="intent-note-id" data-intent-node="${escapeHtml(id)}">${escapeHtml(id)}</button><span class="intent-note-why${quiet ? " quiet" : ""}">${escapeHtml(why)}</span></span></li>`
+        `<li data-state="${view}">${intentMark(view)}<span><button type="button" class="intent-note-id" data-intent-node="${escapeHtml(id)}">${escapeHtml(id)}</button><span class="intent-note-why${quiet ? " quiet" : ""}">${escapeHtml(why)}</span></span></li>`
     )
     .join("")}</ul>`;
 }
@@ -173,7 +177,7 @@ function intentCardHtml(intent, now, { selected = "", editing = "", error = "" }
     .map(id => {
       const node = intent.nodes[id],
         edit = id === editing;
-      return `<div class="intent-root" data-root="${escapeHtml(id)}"><div class="intent-root-line">${intentMark(intentView(intent, id, now))}${
+      return `<div class="intent-root" data-root="${escapeHtml(id)}" data-state="${intentView(intent, id, now)}"><div class="intent-root-line">${intentMark(intentView(intent, id, now))}${
         edit
           ? `<textarea class="intent-root-draft" rows="2" aria-label="根的说法">${escapeHtml(node.claim)}</textarea>`
           : `<span class="intent-root-claim">${escapeHtml(node.claim)}</span>`
