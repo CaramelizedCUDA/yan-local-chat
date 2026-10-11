@@ -78,6 +78,37 @@
     }
   },
 
+  // 意：一件工程要成立的结论图，存在目录里、跨对话沿用（见 src/19-intent/）；只给主模型
+  update_intent: {
+    description:
+      "跨多答的长活可立一份意：整件工程要成立的结论图，存于目录 .yan/意.json，换对话也沿用（计划只管这一答的步骤）。一项是值得单独判的结论，不是一步动作；写怎么算成立、以哪几项为前提、依托哪些文件。每次只给有改动的几项，已有的只给 id 与要改的字段。成立与否由你照 check 判；借外部结论、不自己做的标 assumed，note 写出处。",
+    parameters: {
+      type: "object",
+      properties: {
+        nodes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "短名，用对话的语言，八字以内" },
+              claim: { type: "string", description: "要成立的那句话" },
+              check: { type: "string", description: "怎么算成立" },
+              needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
+              any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
+              when: { type: "string", description: "只在某情形下须成立时写明" },
+              files: { type: "array", items: { type: "string" }, description: "依托的文件，标成立后再被改即转待复核" },
+              state: { type: "string", description: "open / doing / done / assumed / dropped" },
+              note: { type: "string", description: "假定的出处、备注" },
+              root: { type: "boolean", description: "最终要立住的结论，新立时标；立后说法不改" }
+            },
+            required: ["id"]
+          }
+        }
+      },
+      required: ["nodes"]
+    }
+  },
+
   run_command: {
     description: "在工作目录执行一条非交互式指令，返回退出码、stdout 与 stderr。",
     brief: "在卷宗目录执行一条非交互式指令（生成文件、检查本机），返回退出码与输出。",

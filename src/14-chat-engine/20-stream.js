@@ -65,13 +65,16 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       const head = summaryMessages(contextIndex >= 0 ? before[contextIndex] : null);
       head.push(...(await historyForApi(source, lastUserId, budget)));
       // 这一问的首段往后各问里一字不差，标作缓存点：下一问时连它在内的整段历史都从缓存读（桥接只给 Claude 留着这个标，别家去掉）。
-      // 账本只附在这一问（之前的问不带，免得一份账本背上几十遍），所以接在后面另起一段——冠在开头，这一问每问都变，缓存只接得到上一答之前
+      // 账本只附在这一问（之前的问不带，免得一份账本背上几十遍），所以接在后面另起一段——冠在开头，这一问每问都变，缓存只接得到上一答之前。
+      // 意也一样（见 19-intent/10-store.js）
       const ask = head.findLast(entry => entry.role === "user"),
-        ledger = ledgerNote(conversation, "main", profile);
+        ledger = ledgerNote(conversation, "main", profile),
+        intent = intentNote(conversation);
       if (ask) {
         if (typeof ask.content === "string") ask.content = [{ type: "text", text: ask.content }];
         ask.content[0].cache_control = { type: "ephemeral" };
         if (ledger) ask.content.push({ type: "text", text: ledger.trimEnd() });
+        if (intent) ask.content.push({ type: "text", text: intent.trimEnd() });
       }
       // 续写：已写的话连同途中递进来的补言、回报照原处排上（与下一问装上一答同一个写法，见 answerParts），
       // 做过的步骤也得让它知道（另发一句「继续」时上一答的行迹本就随着去），不然从头再做一遍。只做了几步、一个字没写就断的也一样
@@ -83,7 +86,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }
       return head;
     };
-    await loadLedger(conversation, job.controller.signal);
+    await Promise.all([loadLedger(conversation, job.controller.signal), loadIntent(conversation, job.controller.signal)]);
     history = await buildHead();
     // 上一答断着时回来的回报（见 wakeWithReports）：开工即递上，模型续写时就知道帮手怎样了
     held = takeHeldReports(conversation, job);

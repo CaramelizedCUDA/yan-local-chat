@@ -841,6 +841,48 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // INTENTB：第二问，把这一问附着的整段（意在其中）回显；须先认它——它附着的意里有第一问的原话 INTENTA
+      if (typeof lastUser === "string" && lastUser.includes("INTENTB"))
+        return sse(res, [delta({ content: `INTENTB|${lastUser}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      // INTENTA：立意（一根一前提，前提依托 src/a.js）并写出那个文件；第二轮标前提成立、再试着改根的说法（该被拒）；第三轮回显各结果
+      if (typeof lastUser === "string" && lastUser.includes("INTENTA")) {
+        const n = toolResults.length,
+          call = (index, name, args) => ({
+            index,
+            id: `call_i${n}_${index}`,
+            type: "function",
+            function: { name, arguments: JSON.stringify(args) }
+          });
+        if (n === 0)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                call(0, "write_file", { path: "src/a.js", content: "v1" }),
+                call(1, "update_intent", {
+                  nodes: [
+                    { id: "上线", claim: "可在公网访问", check: "外网打得开", needs: ["甲"], root: true },
+                    { id: "甲", claim: "a.js 写好", check: "内容是 v1", files: ["./src/a.js"] }
+                  ]
+                })
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (n === 2)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                call(0, "update_intent", { nodes: [{ id: "甲", state: "done" }] }),
+                call(1, "update_intent", { nodes: [{ id: "上线", claim: "只在内网访问" }] })
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({ content: `INTENTA|${toolResults.map(t => String(t.content).replace(/\s+/g, " ")).join(" ▸ ")}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       if (typeof lastUser === "string" && lastUser.includes("NEWTOOLS")) {
         // 新工具一轮全用上：算一段 JS、调本机服务（放行）与内网地址（该拒）、下载本机文件与内网地址、列一份计划；第二轮把各结果回显
         const n = toolResults.length;

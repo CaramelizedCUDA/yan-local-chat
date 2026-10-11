@@ -10,7 +10,7 @@
 | `memory.js` | 录（记忆）：有这回事、有多少条 | 记忆启用时；条目内容本身不进提示 |
 | `delegate.js` | 差遣（子 Agent）：帮手自己的系统提示；回报的格式 | 帮手的请求另拼一段 |
 | `mcp.js` | 接入的 MCP 服务自带的用法（接在系统提示末尾）；工具不存在、参数不合时回给模型的话 | 有 MCP 工具交给模型时 |
-| `tools.js` | 各工具的 description 与参数说明；带 `brief` 的在言里用 brief（短说明） | 随工具一并交给模型；言不带 edit_file / search_files / update_plan；旁注不带 http_request；run_js 谁都有 |
+| `tools.js` | 各工具的 description 与参数说明；带 `brief` 的在言里用 brief（短说明） | 随工具一并交给模型；言不带 edit_file / search_files / update_plan / update_intent；旁注不带 http_request；run_js 谁都有 |
 
 拼接顺序（系统提示）：预设的提示词（对话选了预设时）在最前，其后照 `assistant.js` 文末的 `order` 表逐段拼。表里一段一行，写明何时带上：`tool` 是交给模型的工具里有这一件才带，`mode` 是只给行（work）或只给言（chat），`roles` 是只给主答（main）、旁注（side）或帮手（sub）。要填值、或视情形不带的（环境没备好、没有 MCP 服务附用法、旁注注的是一段还是整条），由 `src/14-chat-engine/50-prompt.js` 的 `PROMPT_VARS` 给出，给 `null` 即这回不带。`test/prompt-size.mjs` 用页面同一份代码拼（默认档：沙箱开、问而后行），量出来的与模型实际读到的一致，加一段只需在表里添一行。
 
