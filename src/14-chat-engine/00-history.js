@@ -4,7 +4,7 @@ const HISTORY_TEXT_CHARS = 3000;
 function attachmentExcerpt(text, name, label) {
   const value = String(text || "");
   return value.length > HISTORY_TEXT_CHARS
-    ? `\n\n--- 附件：${name}（${label}，摘要）---\n${value.slice(0, HISTORY_TEXT_CHARS)}\n[全文共 ${value.length} 字，此前已完整发送]`
+    ? `\n\n--- 附件：${name}（${label}，开头）---\n${value.slice(0, HISTORY_TEXT_CHARS)}\n[全文共 ${value.length} 字，此处只留开头 ${HISTORY_TEXT_CHARS} 字；其余要用时以 read_document 读取]`
     : `\n\n--- 附件：${name}（${label}）---\n${value}`;
 }
 /** @param {Message} message */

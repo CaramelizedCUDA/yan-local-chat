@@ -32,6 +32,8 @@ async function runRounds(target, history, run) {
   const { profile, conversation, host, signal, overrides, tally, inbox = null } = run,
     status = run.onStatus || (() => {}),
     toolCache = new Map();
+  // 轮次按这一趟算（帮手睡醒再进来是新的一趟）：上一趟到顶时收回的工具还给它，不然醒来就再也调不了工具
+  delete overrides.toolChoice;
   let rounds = 0,
     resumed = 0,
     retrying = false;
@@ -93,8 +95,8 @@ async function runRounds(target, history, run) {
         chargePartial(said);
         target.toolCalls = null;
         if (said.trim()) history.push({ role: "assistant", content: said }, { role: "user", content: prompt("assistant.resume") });
-        status("网络不稳 · 稍候接着写");
-        await restFor(2000 * resumed, signal);
+        status(error.finish === "length" ? "写到输出上限 · 接着写" : "网络不稳 · 稍候接着写");
+        if (error.finish !== "length") await restFor(2000 * resumed, signal);
         status();
         continue;
       }
@@ -241,25 +243,31 @@ function attachToolImages(history, images, profile) {
   toolImageMessages.add(message);
   history.push(message);
 }
-/** 请求被拒、报错说起图时去掉附上的图：有图可去才算数。别的 4xx（思考签名、参数）不能算到「看不了图」头上，不然这一页再不给它附图 @param {Profile} profile */
+// 报错说的是这一张图不行（太大、尺寸、格式解不开），而不是这个模型不收图
+const IMAGE_REJECTED =
+  /too large|exceed|maximum|\bsize|dimension|pixel|\d\s*MB|format|media.?type|mime|decode|could not process|invalid image|corrupt|heic|heif|过大|超过|尺寸|格式/i;
+/** 请求被拒、报错说起图时去掉附上的图重发：有图可去才算数。说这个模型不收图的，这一页此后不再给它附图；
+ * 说的是这一张（太大、格式不认）只去掉这一回——一张手机原图被拒，不该从此把它当成看不了图的。
+ * 别的 4xx（思考签名、参数）不能算到图头上 @param {Profile} profile */
 function dropToolImages(history, profile, message) {
   if (!/image|vision|multi-?modal|图/i.test(message)) return false;
-  const dropped = stripImages(history);
-  if (dropped) blindProfiles.add(profile.id);
+  const blind = !IMAGE_REJECTED.test(message),
+    dropped = stripImages(history, blind);
+  if (dropped && blind) blindProfiles.add(profile.id);
   return dropped > 0;
 }
 // 历史里的图一概换成一句话：工具交回的整条换掉，用户发的（这一问、最近带图的那一问，见 keptImageQuestion）逐张换。
 // 已认定看不了图的模型，每次发出前先过一遍（见 readReply），不必每问先被拒一回
-function stripImages(history) {
+function stripImages(history, blind = true) {
   let dropped = 0;
   for (const message of history) {
     if (toolImageMessages.has(message)) {
       toolImageMessages.delete(message);
-      message.content = prompt("assistant.toolImagesBlind");
+      message.content = prompt(blind ? "assistant.toolImagesBlind" : "assistant.imageRejected");
       dropped += 1;
     } else if (Array.isArray(message.content) && message.content.some(part => part?.type === "image_url")) {
       message.content = message.content.map(part =>
-        part?.type === "image_url" ? { type: "text", text: prompt("assistant.imageBlind") } : part
+        part?.type === "image_url" ? { type: "text", text: prompt(blind ? "assistant.imageBlind" : "assistant.imageRejected") } : part
       );
       dropped += 1;
     }
@@ -319,13 +327,26 @@ async function readReply(profile, history, signal, overrides, target, retried = 
   const sink = /** @type {Message} */ (target);
   // 记下这次请求实际的提示用量，下一轮据此估算会不会撑破窗口
   const sentAt = history.length,
+    wrote = target.content.length,
     note = () => {
       if (Number(target.usage?.prompt_tokens) > 0) overrides.seen = { at: sentAt, tokens: Number(target.usage.prompt_tokens) };
     };
   if (type.includes("text/event-stream"))
-    return readSse(response, sink, { onFrame }).then(note, error => {
-      // 开了口才断的（掉线、上游掐线、静默超时）：记一笔，streamReply 据此接着写而不是整答作废
-      if (error.name !== "AbortError") error.midStream = true;
+    return readSse(response, sink, { onFrame }).then(note, async error => {
+      if (error.name === "AbortError") throw error;
+      if (cutAtToolCall(error, target)) return note();
+      // 流里才说放不下（开口前没拦住）：与请求被拒时一样，压了再发一回
+      if (
+        !error.finish &&
+        !retried &&
+        target.content.length === wrote &&
+        !target.toolCalls?.length &&
+        contextOverflow(error.message) &&
+        (await keepInWindow(profile, history, signal, overrides, { overflow: true, target }))
+      )
+        return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
+      // 开了口才断的（掉线、上游掐线、静默超时、写到输出上限）：记一笔，runRounds 据此接着写而不是整答作废；被拦下的不接
+      if (!REFUSED_FINISH.test(error.finish || "")) error.midStream = true;
       throw error;
     });
   const data = await response.json(),
@@ -343,7 +364,12 @@ async function readReply(profile, history, signal, overrides, target, retried = 
     }));
   note();
   const fault = finishFault(data?.choices?.[0]?.finish_reason);
-  if (fault) throw Object.assign(Error(fault), { midStream: true });
+  if (fault && !cutAtToolCall(fault, target)) throw Object.assign(fault, { midStream: !REFUSED_FINISH.test(fault.finish) });
+}
+// 写到输出上限、截在工具调用中间：拟好的调用照常交下去——参数残缺的由登记表回一句「太长了，分几次写」（见 15-tools/00-registry.js），
+// 模型才知道该改写法。当成断线重来，它每回都照样写到上限，烧满三遍落成中断
+function cutAtToolCall(error, target) {
+  return error.finish === "length" && !!target.toolCalls?.some(call => call.name);
 }
 // 途中断过一回记一笔：只留最近十回，续写不清
 function noteBreak(target, why, auto = false) {

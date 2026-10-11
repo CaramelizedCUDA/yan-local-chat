@@ -285,10 +285,18 @@ function withCached(usage) {
 // 结束原因只认几个正常的：说完了（stop 及各家的别名）、要调工具。别的——vLLM 引擎里中止的 abort、出错的 error、
 // 内容拦截——都是半途被掐，可它照样带着结束标志来，不查就把半截话当写完了。没给原因的（只有 [DONE]）照常收尾
 const NORMAL_FINISH = new Set(["stop", "tool_calls", "function_call", "end_turn", "stop_sequence", "eos", "eos_token"]);
-/** 这一轮的结束原因不对时给一句说明（按中断处理、可续写）；正常给空 */
+// 被拦下的（内容审查、拒答）重发也是一样，不自动接着写，原样报出
+const REFUSED_FINISH = /content_filter|refusal|safety|sensitive|blocked|prohibited/i;
+/** 这一轮的结束原因不对时给一个错（finish 上记着原因，读流的据此判接着写还是作罢）；正常给 null */
 function finishFault(reason) {
-  if (!reason || NORMAL_FINISH.has(reason)) return "";
-  return reason === "length" ? "模型达到输出长度上限，回复尚未完成" : `接口异常收尾（finish_reason: ${reason}），回复尚未完成`;
+  if (!reason || NORMAL_FINISH.has(reason)) return null;
+  const why =
+    reason === "length"
+      ? "模型达到输出长度上限，回复尚未完成"
+      : REFUSED_FINISH.test(reason)
+        ? `接口拦下了这一轮（finish_reason: ${reason}）`
+        : `接口异常收尾（finish_reason: ${reason}），回复尚未完成`;
+  return Object.assign(Error(why), { finish: reason });
 }
 /** @param {Message} assistant 主消息、帮手，或拟题 / 压缩用的临时消息 */
 async function readSse(response, assistant, { onFrame = null } = {}) {
@@ -341,8 +349,9 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     schedule();
   };
   // 有些接口或中转站不走 reasoning_content，而是把思考直接写进正文开头的 <think>…</think>；这里把它剥出来，与 reasoning_content 一样归入折叠区。
-  // 标签可能被分块切开：开头先攥着几个字符看清是不是标签，思考期间末尾留 7 个字符等结束标签
-  const think = { mode: assistant.content ? "body" : "probe", held: "" };
+  // 标签可能被分块切开：开头先攥着几个字符看清是不是标签，思考期间末尾留 7 个字符等结束标签。
+  // 每次请求都从头看：工具循环的第二轮、续写时正文已有字，模型照样先写一段 <think>
+  const think = { mode: "probe", held: "" };
   const ingest = text => {
     if (think.mode === "body") {
       assistant.content += text;
@@ -402,7 +411,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     flushThink();
     if (!ended) throw Error("接口未发送结束标志，连接已中断");
     const fault = finishFault(finishReason);
-    if (fault) throw Error(fault);
+    if (fault) throw fault;
   } catch (error) {
     flushThink();
     closed = true;
@@ -456,9 +465,15 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
             (assistant.thinkingBlocks ||= []).push(delta.thinking_block);
           if (Array.isArray(delta?.tool_calls)) {
             for (const call of delta.tool_calls) {
-              const slot = ((assistant.toolCalls ||= [])[call.index ?? 0] ||= { id: "", name: "", arguments: "" });
+              // 不带 index 的：换了 id 就是新的一件，否则续在末一件上
+              const slots = (assistant.toolCalls ||= []),
+                last = slots.at(-1),
+                index = call.index ?? (last && call.id && last.id && call.id !== last.id ? slots.length : Math.max(0, slots.length - 1)),
+                slot = (slots[index] ||= { id: "", name: "", arguments: "" }),
+                name = call.function?.name;
               if (call.id) slot.id = call.id;
-              if (call.function?.name) slot.name += call.function.name;
+              // 名字多是头一块给全，也有每块重发一遍的：重发的不再拼上
+              if (name) slot.name = slot.name && name.startsWith(slot.name) ? name : slot.name + name;
               if (call.function?.arguments) slot.arguments += call.function.arguments;
             }
             refresh();

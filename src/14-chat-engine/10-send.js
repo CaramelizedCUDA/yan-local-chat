@@ -338,9 +338,11 @@ function titleFrom(text, attachments) {
   const chars = [...(text || `关于 ${attachments[0]?.name || "附件"}`).replace(/\s+/g, " ").trim()];
   return chars.slice(0, 28).join("") + (chars.length > 28 ? "…" : "");
 }
-// 停止：这一答连同这段对话后台的帮手一起停（帮手停了不回报，也就不再叫醒谁）
+// 停止：这一答连同这段对话后台的帮手一起停（帮手停了不回报，也就不再叫醒谁）；后台指令照跑，结束时也不再叫醒（见 releaseBackground）
 function stopGeneration(id = currentId) {
   stopCrew(id);
+  const stopped = store.conversations.find(item => item.id === id);
+  if (stopped) releaseBackground(stopped, stopped.messages);
   const job = requestJob(id);
   if (!job) return renderSendButtons();
   requestJobs.delete(id);

@@ -131,6 +131,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       afterRound: () => intentRound(conversation, watch, job.controller.signal),
       beforeEnd: () => intentGate(conversation, assistant, watch, job.controller.signal)
     });
+    // 末轮已读完、正文还在匀速写出时按了停：runRounds 照常返回，这里补一道，不然又记成写完，照跑压缩、拟题、补言另起一问
+    job.controller.signal.throwIfAborted();
     trimReply(assistant);
     if (!assistant.content)
       throw Error(
