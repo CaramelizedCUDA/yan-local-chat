@@ -120,7 +120,8 @@ function watchBackground(conversation, assistant, step) {
         const fresh = !data.reported;
         if (fresh) step.output = trimOutput([step.output, commandOutput(data)].filter(Boolean).join("\n"));
         settleBackground(step, "done", data.exitCode, assistant);
-        if (!fresh) return;
+        // 没人等它了（用户停了那一答，见 releaseBackground）：签照改，不再叫醒谁
+        if (!fresh || step.bg.quiet) return;
         mailReport(conversation, {
           report: prompt("work.bgDone", {
             id: data.id,
@@ -176,13 +177,30 @@ function bgStepOf(conversation, id) {
       .at(-1) || null
   );
 }
-// 开页时：还记着「在等」的后台指令重新等上（桥接没重启过，它们多半还在跑，或已结束等着报）；别处正作答的那几段留给别处
+// 开页时：还记着「在等」的后台指令重新等上（桥接没重启过，它们多半还在跑，或已结束等着报）；别处正作答的那几段留给别处。
+// 帮手开的也等上：帮手已随刷新收工，信不再送（见 mailHelper），签照样改成已结束
 function rewatchBackground() {
   for (const conversation of store.conversations) {
     if (remoteBusy.has(conversation.id)) continue;
     for (const message of conversation.messages)
-      for (const step of message.steps || []) if (step.bg?.state === "running") watchBackground(conversation, message, step);
+      for (const step of allSteps(message)) if (step.bg?.state === "running") watchBackground(conversation, message, step);
   }
+}
+// 后台指令随它所属的那一答收口——停止、重答改问、删对话都经这里，不各写一份：
+// 用户停了那一答（kill 为假）：进程照跑（训练、开着的服务未必要断），只是结束时不再叫醒模型另起一答；
+// 那一答被换下或对话删了（kill）：连进程收掉，不然成了占着端口的孤儿，新的一版再起同一个服务就撞上
+/** @param {Conversation} conversation @param {Message[]} messages */
+function releaseBackground(conversation, messages, { kill = false } = {}) {
+  for (const message of messages)
+    for (const step of allSteps(message)) {
+      if (step.bg?.state !== "running") continue;
+      step.bg.quiet = true;
+      if (!kill) continue;
+      const { id, key } = step.bg;
+      settleBackground(step, "stopped", undefined, message);
+      void bridge("/api/work/check", { id, key, stop: true }).catch(() => {});
+    }
+  markDirty(conversation.id);
 }
 /** @param {number} ms */
 function spokenDuration(ms) {
@@ -206,14 +224,16 @@ function roamAllowed() {
 
 // 「问而后行」里的本机规则：明确只读才免确认。系统检查纳入白名单；只允许一组纯展示管道，脚本块、远程会话与重定向仍去请示
 const READ_ONLY_COMMAND =
-    /^(?:git\s+(?:status|log|diff|show|rev-parse|ls-files|remote\s+-v)\b|git\s+branch(?:\s+(?:-a|-r|-v|-vv|--list))*\s*$|(?:ls|dir|tree|pwd|cat|type|head|tail|wc|grep|findstr|which|where|whoami|hostname|uname|uptime|free|df|du|ps|lscpu|lsmem|lsblk|lspci|lsusb|mount|id|groups|sw_vers|vm_stat)\b|Get-(?:ChildItem|Content|Location|Command|Item|ItemProperty|Date|ComputerInfo|CimInstance|WmiObject|Process|Service|NetAdapter|NetIPConfiguration|NetIPAddress|NetRoute|NetTCPConnection|NetUDPEndpoint|DnsClientServerAddress|Volume|Disk|Partition|PhysicalDisk|StorageReliabilityCounter|MpComputerStatus|HotFix|WinEvent|EventLog|ScheduledTask|LocalUser|LocalGroup|Acl|Package)\b|Select-String\b|(?:systeminfo|tasklist|driverquery|ipconfig|netstat)\b|sc(?:\.exe)?\s+query\b|wmic(?:\.exe)?\b[^\n]*\bget\b|wsl(?:\.exe)?\s+(?:--status|--version|-l\b|--list\b)|docker\s+(?:version|info|ps|images)\b|(?:node|npm|npx|python|python3|pip|dotnet|java|go|cargo|rustc|ruby|php|git)\s+(?:-v|-V|--version|version)\s*$)/i,
+    /^(?:git\s+(?:status|log|diff|show|rev-parse|ls-files|remote\s+-v)\b|git\s+branch(?:\s+(?:-a|-r|-v|-vv|--list))*\s*$|(?:ls|dir|tree|pwd|cat|type|head|tail|wc|grep|findstr|which|where|whoami|hostname|uname|uptime|free|df|du|ps|lscpu|lsmem|lsblk|lspci|lsusb|mount|id|groups|sw_vers|vm_stat)\b|Get-(?:ChildItem|Content|Location|Command|Item|ItemProperty|Date|ComputerInfo|CimInstance|WmiObject|Process|Service|NetAdapter|NetIPConfiguration|NetIPAddress|NetRoute|NetTCPConnection|NetUDPEndpoint|DnsClientServerAddress|Volume|Disk|Partition|PhysicalDisk|StorageReliabilityCounter|MpComputerStatus|HotFix|WinEvent|EventLog|ScheduledTask|LocalUser|LocalGroup|Acl|Package)\b|Select-String\b|(?:systeminfo|tasklist|driverquery|netstat)\b|ipconfig(?:\.exe)?(?:\s+\/(?:all|displaydns))?\s*$|sc(?:\.exe)?\s+query\b|wmic(?:\.exe)?\b[^\n]*\bget\b|wsl(?:\.exe)?\s+(?:--status|--version|-l\b|--list\b)|docker\s+(?:version|info|ps|images)\b|(?:node|npm|npx|python|python3|pip|dotnet|java|go|cargo|rustc|ruby|php|git)\s+(?:-v|-V|--version|version)\s*$)/i,
   READ_ONLY_PIPE =
-    /^(?:Select-Object|Sort-Object|Format-Table|Format-List|ConvertTo-Json|Measure-Object|Group-Object|findstr|grep|head|tail|wc)\b/i;
+    /^(?:Select-Object|Select-String|Where-Object|Sort-Object|Format-Table|Format-List|Out-String|ConvertTo-Json|Measure-Object|Group-Object|findstr|grep|head|tail|wc)\b/i;
 function isReadOnlyCommand(command) {
   const text = String(command || "").trim();
   if (/[;&<>`\n{}]|\$\(|\|\|/.test(text) || /-(?:ComputerName|CimSession|Session|Credential)\b/i.test(text)) return false;
   // git log / diff 带 --output 会写文件，--ext-diff 会跑外部程序：都不算只读
   if (/--output\b|--ext-diff\b/i.test(text)) return false;
+  // 读着不放的（Get-Content -Wait、tail -f）会一直挂到超时：照样请示
+  if (/\s-Wait\b|\btail\s+(?:-\w*f|--follow)/i.test(text)) return false;
   const parts = text.split("|").map(part => part.trim());
   return !!parts[0] && READ_ONLY_COMMAND.test(parts[0]) && parts.slice(1).every(part => READ_ONLY_PIPE.test(part));
 }

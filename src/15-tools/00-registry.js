@@ -34,9 +34,10 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {(parameters: Record<string, any>, ctx: OfferContext) => Record<string, any>} [params] 参数随处境改写（如枚举只列此模型认的几档）
  * @property {{ description: string, brief?: string, parameters: Record<string, any> }} [schema] 自带的说明与参数；不写则取 prompts/tools.js
  * @property {boolean} [parallel] 可与相邻的同类一起跑
- * @property {boolean} [sideEffect] 有副作用：参数 JSON 残缺就不执行
+ * @property {boolean} [sideEffect] 有副作用：参数 JSON 残缺就不执行；做过之后这一答里复用的结果作废；不写 digest 也照通用写法留痕
  * @property {boolean} [writes] 会在目录里出新文件：言里据此收成品
- * @property {true | ((args: Record<string, any>) => Record<string, any> | null)} [cache] 同一答里同样的参数直接复用结果；函数给出规范化后的参数，给 null 即这次不复用
+ * @property {true | ((args: Record<string, any>) => Record<string, any> | null)} [cache] 同一答里同样的参数直接复用结果（其间做过有副作用的一步就作废）；函数给出规范化后的参数，给 null 即这次不复用。
+ *   只给「外头不会自己变」的：本机开发服务、带时间与随机数的代码，参数一样结果也会变，不该登记
  * @property {(step: Step, args: Record<string, any>, ctx: ToolContext) => ToolOutcome | Promise<ToolOutcome>} [run]
  * @property {(step: Step, title: string) => string} [html] 行迹卡片；不写用通用的一种
  * @property {(el: Element, step: Step, prev: { status: string } | undefined) => boolean} [sync] 卡片就地更新，返回真即已画好；不写或返回假则变了就整张换
@@ -60,7 +61,10 @@ const TOOL_GROUPS = {
 /** @type {Map<string, Tool>} 按登记先后排，交给模型时也是这个次序 */
 const TOOLS = new Map();
 /** @param {Tool} tool */
+// 有副作用的必须留痕：下一问、续写时模型得知道自己已 POST 过、记过、传过话，不然再做一遍
+/** @param {Tool} tool */
 function defineTool(tool) {
+  if (tool.sideEffect && tool.digest === undefined) tool.digest = true;
   TOOLS.set(tool.name, tool);
 }
 function toolLabel(name) {
@@ -206,18 +210,21 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
       Object.assign(step, structuredClone(cached.presentation));
       step.cached = true;
       outcome = structuredClone(cached.outcome);
+      outcome.content = `（与本答先前一次同样的调用，结果照搬）\n${outcome.content}`;
       outcome.display = `复用 · ${outcome.display}`;
     } else {
       outcome = await runTool(step, ctx);
+      // 动过外头的（写了文件、跑了指令、调了接口）：先前查到的可能已经不是那样，一概作废
+      if (TOOLS.get(step.name)?.sideEffect) toolCache.clear();
       // 只缓存成功的：临时的 502、超时若也缓存，模型想重试只会一直拿到同一个旧失败
-      if (key && outcome.ok) toolCache.set(key, { outcome: structuredClone(outcome), presentation: toolPresentation(step) });
+      else if (key && outcome.ok) toolCache.set(key, { outcome: structuredClone(outcome), presentation: toolPresentation(step) });
     }
     const remaining = MIN_TOOL_STATUS_MS - (performance.now() - started);
     if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
     // 在后台接着做的（差遣）：这一步仍是进行中，做完由它自己收尾；先记一句「后台进行中」，下一问的行迹摘要里模型才知道它还没回来
     if (!outcome.background) step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
     step.result = outcome.display;
-    outcomes.set(step.id, String(outcome.content).slice(0, 60000));
+    outcomes.set(step.id, clipForModel(outcome.content, 60000, { hint: "要看后面的请缩小范围分次取" }));
     if (outcome.images) images.push(...outcome.images);
     refreshSteps(assistant);
     saveStore();
@@ -255,6 +262,16 @@ function settleStepList(steps, note) {
 /** @param {{ steps?: Step[] }} message 消息或帮手 */
 function allSteps(message) {
   return (message?.steps || []).flatMap(step => [step, ...(step.sub?.steps || [])]);
+}
+// 交给模型的长文截短：照实标出截去多少，不然它当那就是全部。tail：留头留尾（回报、日志的结论多在末尾）
+function clipForModel(text, limit, { tail = false, hint = "" } = {}) {
+  const value = String(text ?? "");
+  if (value.length <= limit) return value;
+  const cut = value.length - limit,
+    note = `${cut} 字截去${hint ? `；${hint}` : ""}`;
+  if (!tail) return `${value.slice(0, limit)}\n…（其后 ${note}）`;
+  const head = Math.floor(limit * 0.3);
+  return `${value.slice(0, head)}\n…（中间 ${note}）…\n${value.slice(value.length - (limit - head))}`;
 }
 // 步骤上留着的输出只留末尾一截：指令跑出几万行，整份存进对话既占地方也没人看
 const STEP_OUTPUT_KEEP = 6000;

@@ -6,7 +6,6 @@ defineTool({
   label: "计算",
   lookup: true,
   parallel: true,
-  cache: true,
   async run(step, args, { signal }) {
     const code = args.code.trim();
     step.code = code;

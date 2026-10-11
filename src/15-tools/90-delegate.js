@@ -443,7 +443,7 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
       title: step.title,
       steps: sub.steps.length,
       changed: changedNote,
-      report: sub.report.slice(0, 16000)
+      report: clipForModel(sub.report, 16000, { tail: true })
     }),
     display,
     ...(quiet ? { quiet } : {})
@@ -474,7 +474,7 @@ function waitingOutcome(step, sub, tally, overrides) {
       steps: sub.steps.length,
       changed: changedNote,
       ids,
-      report: sub.content.slice(tally.replyStart).trim().slice(0, 16000) || "（未留话）"
+      report: clipForModel(sub.content.slice(tally.replyStart).trim(), 16000, { tail: true }) || "（未留话）"
     }),
     display: `${display} · 等后台`
   };

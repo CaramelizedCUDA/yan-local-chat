@@ -359,7 +359,8 @@ async function deleteConversation(id) {
   // 那一处还在写，删了它也会写回来
   if (runningElsewhere(id)) return toast("此对话正在另一页面作答，暂不能删除");
   if (!(await askConfirm({ title: "删除这段对话？", body: `「${removed.title}」将连同其附件一起移除，无法撤销。`, ok: "删除" }))) return;
-  // 主答写完了、帮手还在后台做的，也一并停下
+  // 主答写完了、帮手还在后台做的，也一并停下；后台指令连进程收掉
+  releaseBackground(removed, everyMessage(removed), { kill: true });
   stopGeneration(id);
   for (const [key, job] of requestJobs)
     if (job.conversationId === id) {

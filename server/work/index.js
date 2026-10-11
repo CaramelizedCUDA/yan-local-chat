@@ -140,7 +140,8 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
     }
   }
   const handleWorkCheck = jsonRoute(
-    async body => await checkBackground(body.id, body.stop === true, clampNumber(Number(body.wait) * 1000, 0, 0, 120000)),
+    async body =>
+      await checkBackground(body.id, body.stop === true, clampNumber(Number(body.wait) * 1000, 0, 0, 120000), String(body.key || "")),
     failed
   );
   // 等一条后台指令结束：请求一直挂着（走总线不占连接），结束了才回；页面停了、关了，请求随之作罢
@@ -175,18 +176,30 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       });
       const existed = !!existing,
         previous = existed ? await fs.promises.readFile(file).catch(() => null) : null;
-      const previousText = previous ? decodeText(previous)?.text : "",
+      // 这一答（或这名帮手）没读过它就整份覆盖：先拦下，请它读了再写——最危险的整份覆盖不该比 edit_file 更不设防。空文件不拦
+      if (body.unseen === true && previous?.length)
+        throw Error(`${body.path} 已存在（${previous.length} 字节），整份覆盖前请先 read_file 看过；只改几处用 edit_file`);
+      const prior = previous ? decodeText(previous) : null,
+        previousText = prior?.text ?? "",
         previousLines = previousText ? countLines(previousText) : 0;
-      await writeTextAtomic(file, content, signal).catch(error => {
+      // 覆盖时照原文件的样子写：带 BOM 的还带、UTF-16 的还是 UTF-16，原文多半是 CRLF 而写来的只有 LF 的换成 CRLF。
+      // GBK 编不回去，存成 UTF-8（读的那头会说）
+      const crlf = (previousText.match(/\r\n/g) || []).length,
+        lf = (previousText.match(/\n/g) || []).length,
+        text = crlf && crlf * 2 >= lf && !content.includes("\r\n") ? content.replace(/\n/g, "\r\n") : content,
+        output = (prior && encodeText(text, prior.encoding)) || Buffer.from(text, "utf8");
+      await writeTextAtomic(file, output, signal).catch(error => {
         throw Error(describeFsError(error, String(body.path)));
       });
       // 覆盖时按行比出真增删，并捎回原文开头一段：页面上点开这件的改动，删去的那些才有红可看
       const counts = existed ? lineDiffCounts(previousText, content) : { added: countLines(content), removed: 0 };
       return {
         path: shownPath(workdir, file),
-        bytes: Buffer.byteLength(content),
+        bytes: output.length,
         lines: countLines(content),
         existed,
+        ...(previous?.length && !prior ? { binary: true } : {}),
+        ...(prior?.encoding === "gbk" ? { converted: "gbk" } : {}),
         previousLines,
         ...counts,
         previous:
@@ -225,41 +238,70 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       encoding: decoded.encoding
     };
   }, failed);
-  // 极简 glob：** 跨目录、* 不跨目录、? 单字符；没有 / 的模式只匹配文件名
+  // 极简 glob：**/ 跨目录（末尾的 ** 是其下一切）、* 不跨目录、? 单字符、{a,b} 任一；没有 / 的模式只匹配文件名
   function globToRegExp(pattern) {
     const text = String(pattern || "")
       .trim()
       .replace(/\\/g, "/");
     if (!text) return null;
-    const body = text
-      .replace(/[.+^${}()|[\]]/g, "\\$&")
-      .replace(/\*\*\/?/g, "\0")
-      .replace(/\*/g, "[^/]*")
-      .replace(/\?/g, "[^/]")
-      .replace(/\0/g, "(?:.*/)?");
+    let body = "",
+      braces = 0;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === "*" && text[i + 1] === "*") {
+        i += 1;
+        if (text[i + 1] === "/") {
+          i += 1;
+          body += "(?:.*/)?";
+        } else body += ".*";
+      } else if (ch === "*") body += "[^/]*";
+      else if (ch === "?") body += "[^/]";
+      else if (ch === "{") {
+        braces += 1;
+        body += "(?:";
+      } else if (ch === "}" && braces) {
+        braces -= 1;
+        body += ")";
+      } else if (ch === "," && braces) body += "|";
+      else body += ch.replace(/[.+^${}()|[\]]/g, "\\$&");
+    }
+    if (braces) return null;
     return new RegExp(`^${text.includes("/") ? "" : "(?:.*/)?"}${body}$`, "i");
   }
-  async function listTree(dir, base, depth, out, filter = null) {
-    const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => []);
-    entries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      if (out.length >= WORK_LIST_LIMIT) return;
-      const rel = path.relative(base, path.join(dir, entry.name)).split(path.sep).join("/");
-      if (entry.isSymbolicLink()) {
-        if (!filter) out.push(`${rel}@`);
-        continue;
-      } // 符号链接 / junction 只标出，不跟进：目标可能在工作目录之外
-      if (entry.isDirectory()) {
-        if (!filter) out.push(`${rel}/`);
-        if (depth > 1 && !WORK_SKIP.has(entry.name)) await listTree(path.join(dir, entry.name), base, depth - 1, out, filter);
-      } else if (!filter || filter.test(rel)) {
-        const size = await fs.promises
-          .stat(path.join(dir, entry.name))
-          .then(s => s.size)
-          .catch(() => 0);
-        out.push(`${rel}\t${size}`);
+  // 一层一层往下列（先列完浅的一层再往深处去）：条目到上限时丢的是最深处，不会因为头一个子目录很大，根目录下的文件全没列出来。
+  // 列完按路径排好，同一目录的挨在一起。进不去的大目录（node_modules、dist……）照列它自己，标上「未展开」
+  async function listTree(base, depth, filter = null) {
+    const out = [];
+    let level = [base];
+    for (let d = 1; d <= depth && level.length && out.length < WORK_LIST_LIMIT; d++) {
+      const next = [];
+      for (const dir of level) {
+        const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => []);
+        entries.sort((a, b) => a.name.localeCompare(b.name));
+        for (const entry of entries) {
+          if (out.length >= WORK_LIST_LIMIT) break;
+          const full = path.join(dir, entry.name),
+            rel = path.relative(base, full).split(path.sep).join("/");
+          if (entry.isSymbolicLink()) {
+            if (!filter) out.push({ rel, line: `${rel}@` });
+            continue;
+          } // 符号链接 / junction 只标出，不跟进：目标可能在工作目录之外
+          if (entry.isDirectory()) {
+            const skipped = WORK_SKIP.has(entry.name);
+            if (!filter) out.push({ rel: `${rel}/`, line: `${rel}/${skipped && d < depth ? "\t未展开" : ""}` });
+            if (!skipped) next.push(full);
+          } else if (!filter || filter.test(rel)) {
+            const size = await fs.promises
+              .stat(full)
+              .then(s => s.size)
+              .catch(() => 0);
+            out.push({ rel, line: `${rel}\t${size}` });
+          }
+        }
       }
+      level = next;
     }
+    return out.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0)).map(item => item.line);
   }
   const handleWorkList = jsonRoute(async body => {
     const workdir = resolveWorkdir(body.workdir),
@@ -269,9 +311,9 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       throw Error(
         stat ? `${body.path} 是文件，不是目录` : `目录不存在：${body.path || "."}${await missingHint(workdir, dir, strictBox(body))}`
       );
-    const filter = globToRegExp(body.pattern),
-      out = [];
-    await listTree(dir, dir, Math.floor(clampNumber(body.depth, filter ? 8 : 2, 1, 8)), out, filter);
+    const filter = globToRegExp(body.pattern);
+    if (body.pattern && !filter) throw Error(`pattern 写得不完整（花括号没配对）：${body.pattern}`);
+    const out = await listTree(dir, Math.floor(clampNumber(body.depth, filter ? 8 : 2, 1, 8)), filter);
     return { path: shownPath(workdir, dir) || ".", entries: out, truncated: out.length >= WORK_LIST_LIMIT };
   }, failed);
   // ---- edit_file：精确文本替换。old 必须在文件里唯一出现（或显式 replace_all）；文件是 CRLF 时把片段的换行也换成 CRLF 再匹配
@@ -300,8 +342,9 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       // 大半是 UTF-8、夹着几行 GBK 的（中文 Windows 上的老脚本、老源码）读时也认作 UTF-8；整份写回会把没改的那几行毁掉
       if (!encodeText(decoded.text, decoded.encoding).equals(raw))
         throw Error("文件里夹着不是 UTF-8 的字节（多半是几行 GBK），整份写回会把它们毁掉；请用指令转码后再改，或用 write_file 整体重写");
+      // 文件里有 CRLF、片段只有 LF：先照原样找（混着两种换行的文件，要改的那段可能本就是 LF），找不到再按 CRLF 找
       const source = decoded.text,
-        crlf = source.includes("\r\n") && !oldText.includes("\r\n");
+        crlf = source.includes("\r\n") && !oldText.includes("\r\n") && (!oldText.includes("\n") || !source.includes(oldText));
       const needle = crlf ? oldText.replace(/\r?\n/g, "\r\n") : oldText,
         replacement = crlf ? newText.replace(/\r?\n/g, "\r\n") : newText;
       let count = 0;
@@ -378,19 +421,23 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
         regex = literal(query);
         note = `正则无效（${error.message}），已按字面搜`;
       }
-    const filter = globToRegExp(body.glob),
-      limit = Math.floor(clampNumber(body.limit, 60, 1, SEARCH_MATCH_LIMIT));
+    const filter = globToRegExp(body.glob);
+    if (body.glob && !filter) throw Error(`glob 写得不完整（花括号没配对）：${body.glob}`);
+    const limit = Math.floor(clampNumber(body.limit, 60, 1, SEARCH_MATCH_LIMIT));
     const stat = await fs.promises.stat(dir).catch(() => null);
     if (!stat) throw Error(`目录不存在：${body.path || "."}${await missingHint(workdir, dir, boxed)}`);
-    const matches = [];
+    const matches = [],
+      // 没进去的大目录：结果里说一声，零命中时模型才不至于断言「没有」
+      skipped = new Set();
     let scanned = 0,
       filesHit = new Set(),
-      truncated = false;
+      truncated = false,
+      limited = false;
     // 搜一件：rel 是它相对于搜索起点的路径（glob 与沙箱筛查按它认）
     const scanFile = async (full, rel) => {
       if (boxed && sandbox.screenPath(rel)) return; // 沙箱不借检索带出机密文件
       if (++scanned > SEARCH_FILE_LIMIT) {
-        truncated = true;
+        truncated = limited = true;
         return;
       }
       const size = await fs.promises
@@ -422,6 +469,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
         if (entry.isSymbolicLink()) continue; // 不顺着链接读：链接指向目录外时，检索会把外面的内容带进来
         if (entry.isDirectory()) {
           if (!WORK_SKIP.has(entry.name)) await walk(full);
+          else skipped.add(entry.name);
           continue;
         }
         if (filter && !filter.test(rel)) continue;
@@ -431,7 +479,16 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
     // 给的是一件文件：就搜这一件（模型常把要查的那个文件当 path 给）
     if (stat.isDirectory()) await walk(dir);
     else await scanFile(dir, path.basename(dir));
-    return { path: shownPath(workdir, dir) || ".", matches, files: filesHit.size, scanned, truncated, ...(note ? { note } : {}) };
+    return {
+      path: shownPath(workdir, dir) || ".",
+      matches,
+      files: filesHit.size,
+      scanned: Math.min(scanned, SEARCH_FILE_LIMIT),
+      truncated,
+      ...(limited ? { limited: SEARCH_FILE_LIMIT } : {}),
+      ...(skipped.size ? { skipped: [...skipped].sort() } : {}),
+      ...(note ? { note } : {})
+    };
   }, failed);
   // ---- download_file：把网上的文件存进工作目录。地址门禁与 fetch_page 同一套（不许本机与内网）；path 给目录或省略时按网址里的文件名存，
   // 已有同名文件就加 (2)；最多 64 MB

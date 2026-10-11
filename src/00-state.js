@@ -64,7 +64,7 @@
  * @property {boolean} [readOnly] 只读指令，免确认
  * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
  * @property {boolean} [background] 后台指令
- * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost" }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它）
+ * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", quiet?: boolean }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；quiet：那一答已停，结束时不叫醒）
  * @property {{ old: string, new: string }} [diff]
  * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
  * @property {string} [previous] write_file 覆盖掉的原文（过长只留开头），与 written 比出红绿

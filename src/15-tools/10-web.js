@@ -43,17 +43,25 @@ defineTool({
     step.url = args.url;
     const data = await bridge("/api/fetch", { url: args.url }, signal);
     step.title = data.title || args.url;
-    return { ok: true, content: `标题：${data.title}\n地址：${data.url}\n\n${data.text}`, display: `${data.text.length} 字` };
+    const notes = [
+      data.total > data.text.length && `正文共 ${data.total} 字，此处只取了前 ${data.text.length} 字`,
+      data.scripted && "抽出的正文寥寥：这页多半要跑脚本才出内容，所见并非全貌"
+    ].filter(Boolean);
+    return {
+      ok: true,
+      content: `标题：${data.title}\n地址：${data.url}\n\n${data.text}${notes.length ? `\n\n（${notes.join("；")}）` : ""}`,
+      display: `${data.text.length} 字${data.total > data.text.length ? " · 截" : ""}`
+    };
   }
 });
 
-// 调接口能发 POST，不算纯查阅，旁注不给；只有 GET / HEAD 的结果可复用
+// 调接口能发 POST，不算纯查阅，旁注不给。GET 也不复用：多是打本机的开发服务，改了代码再 GET 就该是新的
 defineTool({
   name: "http_request",
   group: "web",
   label: "调接口",
   sideEffect: true,
-  cache: args => (/^\s*(GET|HEAD)?\s*$/i.test(args.method || "") ? args : null),
+  digest: step => `调接口 ${String(step.title || "").slice(0, 120)} → ${step.result || step.status}`,
   async run(step, args, { signal }) {
     const url = args.url.trim(),
       method = (args.method || "GET").trim().toUpperCase();
