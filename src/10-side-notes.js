@@ -367,10 +367,7 @@ function setupSidePanel() {
     )
       return;
     const job = sideJob(thread);
-    if (job) {
-      job.controller.abort();
-      requestJobs.delete(`side:${thread.id}`);
-    }
+    if (job) haltJob(`side:${thread.id}`, job);
     c.threads = threadsOf(c).filter(t => t !== thread);
     saveStore();
     renderConversation(false);
@@ -463,11 +460,7 @@ async function sendSide() {
     thread = currentThread();
   if (!c || !thread) return;
   const job = sideJob(thread);
-  if (job) {
-    requestJobs.delete(`side:${thread.id}`);
-    job.controller.abort();
-    return;
-  }
+  if (job) return void haltJob(`side:${thread.id}`, job);
   const input = $("#sideInput");
   if (!input.value.trim()) return;
   const profile = activeProfile();

@@ -338,41 +338,38 @@ function titleFrom(text, attachments) {
   const chars = [...(text || `关于 ${attachments[0]?.name || "附件"}`).replace(/\s+/g, " ").trim()];
   return chars.slice(0, 28).join("") + (chars.length > 28 ? "…" : "");
 }
-// 停止：这一答连同这段对话后台的帮手一起停（帮手停了不回报，也就不再叫醒谁）；后台指令照跑，结束时也不再叫醒（见 releaseBackground）
-function stopGeneration(id = currentId) {
-  stopCrew(id);
-  const stopped = store.conversations.find(item => item.id === id);
-  if (stopped) releaseBackground(stopped, stopped.messages);
-  const job = requestJob(id);
-  if (!job) return renderSendButtons();
-  requestJobs.delete(id);
-  markDirty(id);
+// ---------- 停：一处收口 ----------
+// 停下一件作答（主答，或 key 为 side:… 的旁注）：撤下作业、中止，还在写的那条记成已停止、没跑完的步骤收束
+function haltJob(key, job) {
+  if (requestJobs.get(key) === job) requestJobs.delete(key);
   job.controller.abort();
-  const conversation = store.conversations.find(item => item.id === id),
+  const conversation = store.conversations.find(item => item.id === (job.conversationId || key)),
+    messages = job.threadId ? conversation?.threads?.find(t => t.id === job.threadId)?.messages : conversation?.messages,
     assistant =
-      conversation?.messages.find(message => message.id === job.assistantId) ||
-      [...(conversation?.messages || [])].reverse().find(message => message.status === "streaming");
+      messages?.find(message => message.id === job.assistantId) ||
+      (job.threadId ? null : [...(messages || [])].reverse().find(message => message.status === "streaming"));
   if (assistant?.status === "streaming") {
     assistant.status = "stopped";
     settleSteps(assistant, "已停止");
   }
+  if (conversation) markDirty(conversation.id);
+}
+// 停下一段对话：主答连同后台的帮手（帮手停了不回报，也就不再叫醒谁）；后台指令照跑、结束时不再叫醒（见 releaseBackground）。
+// removing：对话要删了——旁注也停，后台指令连进程收掉
+function haltConversation(id, { removing = false } = {}) {
+  stopCrew(id);
+  const conversation = store.conversations.find(item => item.id === id);
+  if (conversation) releaseBackground(conversation, removing ? everyMessage(conversation) : conversation.messages, { kill: removing });
+  for (const [key, job] of [...requestJobs]) if (key === id || (removing && job.conversationId === id)) haltJob(key, job);
+}
+// 输入区那方印上的「止」
+function stopGeneration(id = currentId) {
+  haltConversation(id);
   saveStore();
   renderHistory();
   renderSendButtons();
 }
+// 清空全部对话之前
 function stopAllGenerations() {
-  for (const id of crews.keys()) stopCrew(id);
-  for (const [id, job] of requestJobs) {
-    job.controller.abort();
-    const conversation = store.conversations.find(item => item.id === (job.conversationId || id));
-    const assistant = job.threadId
-      ? conversation?.threads?.find(t => t.id === job.threadId)?.messages.find(m => m.id === job.assistantId)
-      : conversation?.messages.find(message => message.id === job.assistantId);
-    if (assistant?.status === "streaming") {
-      assistant.status = "stopped";
-      settleSteps(assistant, "已停止");
-    }
-    markDirty(conversation?.id);
-  }
-  requestJobs.clear();
+  for (const conversation of store.conversations) haltConversation(conversation.id, { removing: true });
 }
