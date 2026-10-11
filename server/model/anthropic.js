@@ -6,13 +6,21 @@ const ANTHROPIC_VERSION = "2023-06-01";
 // 老模型（4.5 及以前、Haiku、认不出型号的）：思考档位换成思考预算（token）；预算得小于 max_tokens，不够就把 max_tokens 抬上去
 const ANTHROPIC_BUDGETS = { minimal: 1024, low: 2048, medium: 8192, high: 16384, xhigh: 32768, max: 65536 };
 // 模型代际：4.6 起思考改为 adaptive、深浅由 effort 定（预算在 4.7 起一律 400）；4.7 起不收 temperature（也是 400），
-// 思绪默认不回、要明说 summarized；5 起不带 thinking 也照样在想。认不出型号的按老模型走
+// 思绪默认不回、要明说 summarized；5 起不带 thinking 也照样在想；xhigh 一档 4.7 起才有。Haiku 也一样（4.5 还是预算，5.5 只收 adaptive）。
+// 认不出型号的按老模型走。output：走预算的老模型输出上限（Opus 4 / 4.1 是 32k，其余 4.x、3.7 是 64k），预算连同输出不能越过它
 function anthropicGeneration(model) {
   const m = String(model || "")
     .toLowerCase()
     .match(/claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d)(?!\d))?/);
   const version = m ? Number(m[2]) + Number(m[3] || 0) / 10 : 0;
-  return { adaptive: !!m && m[1] !== "haiku" && version >= 4.6, noSampling: version >= 4.7, thinksByDefault: version >= 5, version };
+  return {
+    adaptive: version >= 4.6,
+    noSampling: version >= 4.7,
+    thinksByDefault: version >= 5,
+    xhigh: version >= 4.7,
+    output: !m || version >= 4.6 ? 0 : m[1] === "opus" && version < 4.5 ? 32000 : 64000,
+    version
+  };
 }
 // Base URL 可以填到根、到 /v1 或到 /v1/messages，都归到根再拼
 function anthropicEndpoint(baseUrl, suffix = "/v1/messages") {
@@ -118,15 +126,17 @@ function anthropicRequest(payload) {
     if (level || generation.thinksByDefault)
       body.thinking = { type: "adaptive", ...(generation.noSampling ? { display: "summarized" } : {}) };
     // effort 只认 low…max；4.6 还没有 xhigh
-    if (level) body.output_config = { effort: level === "minimal" ? "low" : level === "xhigh" && !generation.noSampling ? "high" : level };
+    if (level) body.output_config = { effort: level === "minimal" ? "low" : level === "xhigh" && !generation.xhigh ? "high" : level };
     if (!generation.noSampling && !body.thinking && payload.temperature !== undefined)
       body.temperature = Math.max(0, Math.min(1, Number(payload.temperature)));
   } else {
-    const budget = level ? ANTHROPIC_BUDGETS[level] || 8192 : 0;
+    // 预算得给正文留出 4096，连同正文不过这一代的输出上限（「最高」档的 65536 放在 64k 的模型上就是 400）
+    const ceiling = generation.output || Infinity,
+      budget = level ? Math.min(ANTHROPIC_BUDGETS[level] || 8192, ceiling - 4096) : 0;
     // 开了思考 temperature 只能是 1：不传
     if (budget) {
       body.thinking = { type: "enabled", budget_tokens: budget };
-      body.max_tokens = Math.max(maxTokens, budget + 4096);
+      body.max_tokens = Math.min(Math.max(maxTokens, budget + 4096), ceiling);
     } else if (payload.temperature !== undefined) body.temperature = Math.max(0, Math.min(1, Number(payload.temperature)));
   }
   if (Array.isArray(payload.tools) && payload.tools.length)
@@ -275,7 +285,8 @@ module.exports = {
     headers: config => anthropicHeaders(config.apiKey),
     request: payload => anthropicRequest(payload),
     stream: model => anthropicToOpenAiStream(model),
-    // 档位换算成预算或 effort 送出，没有可探的枚举：按通用四档列
-    levels: () => ["low", "medium", "high", "max"]
+    // 档位换算成预算或 effort 送出，没有可探的枚举：按型号列（4.7 起多一档 xhigh）
+    levels: config =>
+      anthropicGeneration(config.model).xhigh ? ["low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high", "max"]
   }
 };
