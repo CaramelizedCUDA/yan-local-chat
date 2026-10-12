@@ -142,7 +142,8 @@
   fill: var(--ink);
 }
 
-/* 各态一色：记号与题同色（--st）——图上的名字、展开处的题与态；底下的小字（说法、前提支撑的名字、待察）不着色。未做、已弃仍是淡墨 */
+/* 各态一色：记号与它后面的名同色（--st）——图上、簿录、展开处的题与前提支撑内含、模块顶上那一行、墨痕里假定的那一笔，凡记号带名处都绑在一起；
+   说法、事由这类句子不着色。未做、已弃不着色：清掉 --st，免得从外层（展开的笺）继承了别的态 */
 .intent-card [data-state="holds"],
 .intent-glance [data-state="holds"] {
   --st: var(--stone-green);
@@ -154,6 +155,10 @@
 }
 .intent-card [data-state="stale"] {
   --st: var(--accent);
+}
+.intent-card [data-state="open"],
+.intent-card [data-state="dropped"] {
+  --st: initial;
 }
 .intent-detail[data-state] .intent-detail-id {
   color: color-mix(in srgb, var(--st, var(--ink)) 82%, var(--ink));
@@ -421,7 +426,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--ink);
+  color: color-mix(in srgb, var(--st, var(--ink)) 82%, var(--ink));
   font: 13px var(--title);
 }
 .intent-link:hover,
@@ -587,6 +592,9 @@ button.intent-ink-name:hover {
   text-decoration: underline;
   text-decoration-color: var(--line);
   text-underline-offset: 3px;
+}
+.intent-ink-item[data-kind="假定"] .intent-ink-name {
+  color: color-mix(in srgb, var(--gold) 82%, var(--ink));
 }
 .intent-ink-item[data-kind="弃"] .intent-ink-name,
 .intent-ink-item[data-kind="撤"] .intent-ink-name {
