@@ -1,6 +1,7 @@
 // 言 · 意 · 卡片（见 设计稿/55 甲 · 一张纸、56、58 甲 · 疏排、60 二·甲 · 簿录）：意属于任务，不画在对话里。题下一行与书眉里那一枚（50-glance.js）、行迹里「意」那一步点开，
-// 都在预览浮层里铺开这一张：题头（更新于何时、已立几项、借了几条假定），各根（根的说法只在这里改），一张图（前提在左、根在右，
-// 摆法见 30-layout.js），图下「待察」——待复核的缘由、前提未立的、假定的出处；最末留痕。点图上一项，图下展开它的验收、凭据与缘由。
+// 都在预览浮层里铺开这一张：题头（更新于何时、已立几项、借了几条假定），一张图（前提在左、根在右，摆法见 30-layout.js），
+// 图下「待察」——待复核的缘由、前提未立的、假定的出处；最末留痕。点图上一项（根也一样），图下展开它的说法、验收、凭据与缘由。
+// 卡片只给看、不给改：要改的往往不是一两个字，直接告诉模型。
 // 由程序照 .yan/意.json 画，与文件一字不差，不请模型另画；展开的因果（支撑、缘由、哪条凭据变了）也是程序从图与指纹推出的，不经模型。
 // 单拿出来看的东西没跟上就像个错：题头写明更新于何时
 /** @typedef {"holds"|"premised"|"stale"|"assumed"|"doing"|"open"|"dropped"} IntentView 画出来的状态：成立的再按前提分已立与前提未立 */
@@ -15,8 +16,8 @@ const INTENT_VIEW_TEXT = {
   },
   INTENT_CHECK_STROKE = [1.4, 6, 2.9, 7.6, 4.3, 9.3, 6.8, 5, 10.8, 1.4];
 // 记号是符号，同一支笔写：已立一勾石绿，假定一勾泥金（算作已立，是借来的），存疑（自称成立而前提未立）一个泥金问号，
-// 待复核一圈朱，已弃一个灰叉；进行中一圈石青虚点围着一粒脉动的芯（虚圈与待复核的实圈形就不同），未做一粒淡点。
-// 朱只给待复核。各项的字与它的记号同色（见 82-intent.css 的 --st）
+// 待复核一圈朱，已弃一个灰叉；进行中一圈泥金虚点围着一粒脉动的芯（与存疑同色：都是还没落定的；虚圈与待复核的实圈形就不同），未做一粒淡点。
+// 朱只给待复核。图上的名字、展开处的题与记号同色，底下的小字不着色（见 82-intent.css 的 --st）
 const INTENT_PENS = {
   holds: () => brushStroke(INTENT_CHECK_STROKE, 1.6, { tail: 0, head: 0.85, tone: "green" }),
   assumed: () => brushStroke(INTENT_CHECK_STROKE, 1.6, { tail: 0, head: 0.85, tone: "gold" }),
@@ -30,8 +31,8 @@ const INTENT_PENS = {
     brushStroke([9, 2.6, 6, 5.6, 3, 8.6], 1.25, { tone: "ink2", tail: 0.2 }),
   doing: () =>
     Array.from({ length: 8 }, (_, i) =>
-      brushDot(+(6 + 4.3 * Math.cos((i * Math.PI) / 4)).toFixed(2), +(5.6 + 4.3 * Math.sin((i * Math.PI) / 4)).toFixed(2), 0.62, "qing")
-    ).join("") + `<circle class="qing intent-pulse" cx="6" cy="5.6" r="1.7"/>`,
+      brushDot(+(6 + 4.3 * Math.cos((i * Math.PI) / 4)).toFixed(2), +(5.6 + 4.3 * Math.sin((i * Math.PI) / 4)).toFixed(2), 0.62, "gold")
+    ).join("") + `<circle class="gold intent-pulse" cx="6" cy="5.6" r="1.7"/>`,
   open: () => brushDot(6, 5.6, 1.4, "ink2")
 };
 /** @param {string} state @param {number} [x] @param {number} [y] 给了坐标即嵌进图里 */
@@ -52,7 +53,6 @@ function intentGraphSvg(intent, now, selected) {
         return {
           id,
           label: id,
-          when: node.when,
           needs: node.needs,
           any: node.any,
           state,
@@ -82,13 +82,7 @@ function intentGraphSvg(intent, now, selected) {
   const nodes = drawing.nodes
     .map(({ id, x, y, w, node, more }) => {
       let cx = x + GRAPH_DRAW.mark,
-        inner = "";
-      if (node.when) {
-        const width = graphMeasure(node.when, 10.5) + 10;
-        inner += `<rect class="intent-chip" x="${cx.toFixed(1)}" y="${(y - 8).toFixed(1)}" width="${width.toFixed(1)}" height="16" rx="3"/><text class="intent-chip-t" x="${(cx + 5).toFixed(1)}" y="${(y + 3.6).toFixed(1)}">${escapeHtml(node.when)}</text>`;
-        cx += width + 5;
-      }
-      inner += `<text class="intent-label" x="${cx.toFixed(1)}" y="${(y + 4).toFixed(1)}">${escapeHtml(node.label)}</text>`;
+        inner = `<text class="intent-label" x="${cx.toFixed(1)}" y="${(y + 4).toFixed(1)}">${escapeHtml(node.label)}</text>`;
       cx += node.root
         ? graphMeasure(node.label, 13.5, 600, true)
         : graphMeasure(node.label, 12, node.state === "doing" || node.state === "stale" ? 600 : 400);
@@ -96,9 +90,9 @@ function intentGraphSvg(intent, now, selected) {
         inner += `<text class="intent-more" x="${(cx + 5).toFixed(1)}" y="${(y + 4).toFixed(1)}">+${more}</text>`;
         cx += graphMeasure(`+${more}`, 10) + 5;
       }
-      // 状态只凭记号，图上不另注字；悬停时写出来
-      const claim = intent.nodes[id]?.claim || "",
-        said = `${INTENT_VIEW_TEXT[node.state] || ""} · ${claim}`;
+      // 状态只凭记号、情形不画小格，图上不另注字；悬停时写出来
+      const { claim = "", when = "" } = intent.nodes[id] || {},
+        said = `${INTENT_VIEW_TEXT[node.state] || ""} · ${when ? `${when}：` : ""}${claim}`;
       return `<g class="intent-node${node.root ? " root" : ""}${id === selected ? " on" : ""}" data-intent-node="${escapeHtml(id)}" data-state="${escapeHtml(node.state)}" tabindex="0" role="button" aria-label="${escapeHtml(`${id}：${said}`)}"><title>${escapeHtml(said)}</title><rect class="intent-hit" x="${(x - 4).toFixed(1)}" y="${(y - 11).toFixed(1)}" width="${(w + 8).toFixed(1)}" height="22" rx="3"/>${intentMark(node.state, x, y - 5.5)}${inner}</g>`;
     })
     .join("");
@@ -162,35 +156,15 @@ function intentNotesHtml(intent, now) {
     )
     .join("")}</ul>`;
 }
-/**
- * 整张卡片
- * @param {Intent} intent @param {IntentPrints} now
- * @param {{ selected?: string, editing?: string, error?: string }} [options] editing：正改写说法的那个根
- */
-function intentCardHtml(intent, now, { selected = "", editing = "", error = "" } = {}) {
+/** 整张卡片 @param {Intent} intent @param {IntentPrints} now @param {{ selected?: string }} [options] */
+function intentCardHtml(intent, now, { selected = "" } = {}) {
   const live = Object.keys(intent.nodes).filter(id => intent.nodes[id].state !== "dropped");
   if (!live.length) return `<div class="intent-card"><div class="file-viewer-empty">此目录尚未立意</div></div>`;
   const { standing } = intentTally(intent, now),
-    roots = intentRoots(intent),
-    borrowed = [...new Set(roots.flatMap(id => intentBorrowed(intent, id)))].length;
-  const rootHtml = roots
-    .map(id => {
-      const node = intent.nodes[id],
-        edit = id === editing;
-      return `<div class="intent-root" data-root="${escapeHtml(id)}" data-state="${intentView(intent, id, now)}"><div class="intent-root-line">${intentMark(intentView(intent, id, now))}${
-        edit
-          ? `<textarea class="intent-root-draft" rows="2" aria-label="根的说法">${escapeHtml(node.claim)}</textarea>`
-          : `<span class="intent-root-claim">${escapeHtml(node.claim)}</span>`
-      }${
-        edit
-          ? `<span class="intent-root-ops"><button type="button" class="intent-btn" data-intent-save="${escapeHtml(id)}">保存</button><button type="button" class="intent-btn quiet" data-intent-cancel>取消</button></span>`
-          : `<button type="button" class="intent-edit" data-intent-edit="${escapeHtml(id)}" title="改写此根">${brushIcon("edit")}</button>`
-      }</div>${edit && error ? `<p class="intent-error">${escapeHtml(error)}</p>` : ""}</div>`;
-    })
-    .join("");
+    borrowed = [...new Set(intentRoots(intent).flatMap(id => intentBorrowed(intent, id)))].length;
   const log = intent.log.slice(-30).reverse();
   // 题头：左写更新于何时，右写计数（目录名已在预览浮层的标题栏里）。原问不上卡片，它是给模型对照用的
-  return `<div class="intent-card"><div class="intent-head">${intent.updated ? `<span class="intent-updated">更新于 ${escapeHtml(intentTime(intent.updated))}</span>` : ""}<span class="intent-meta"><span>已立 <b>${standing}</b> / ${live.length}</span>${borrowed ? `<span class="intent-borrow">假定 ${borrowed}</span>` : ""}</span></div>${rootHtml}<div class="intent-graph">${intentGraphSvg(intent, now, selected)}</div>${
+  return `<div class="intent-card"><div class="intent-head">${intent.updated ? `<span class="intent-updated">更新于 ${escapeHtml(intentTime(intent.updated))}</span>` : ""}<span class="intent-meta"><span>已立 <b>${standing}</b> / ${live.length}</span>${borrowed ? `<span class="intent-borrow">假定 ${borrowed}</span>` : ""}</span></div><div class="intent-graph">${intentGraphSvg(intent, now, selected)}</div>${
     selected ? intentDetailHtml(intent, now, selected) : ""
   }${intentNotesHtml(intent, now)}${
     log.length
@@ -209,14 +183,23 @@ function intentTime(at) {
   return date.getFullYear() === new Date().getFullYear() ? day : `${date.getFullYear()}-${day}`;
 }
 // ---------- 打开与交互：读文件、取指纹（文件与目录现取；探针用这一答开工时取的，不为看一眼去跑指令）----------
-/** @type {{ conversation: Conversation, intent: Intent, now: IntentPrints, selected: string, editing: string, error: string, revision: number }|null} */
+/** @type {{ conversation: Conversation, intent: Intent, now: IntentPrints, selected: string, revision: number }|null} */
 let intentCard = null;
 function paintIntentCard() {
   const stage = $("#fileViewerStage");
   if (!intentCard || intentCard.revision !== viewerRevision || !stage?.querySelector(".intent-card")) return;
-  const { intent, now, selected, editing, error } = intentCard;
-  stage.innerHTML = intentCardHtml(intent, now, { selected, editing, error });
-  stage.querySelector(".intent-root-draft")?.focus();
+  const { intent, now, selected } = intentCard,
+    // 图比卡片宽时横滚：重画（点了一项）留在原处；头一回画，滚到正做着的、待复核的那一项，没有就靠右见根
+    before = stage.querySelector(".intent-graph:not(:empty)")?.scrollLeft;
+  stage.innerHTML = intentCardHtml(intent, now, { selected });
+  const graph = stage.querySelector(".intent-graph");
+  if (!graph || graph.scrollWidth <= graph.clientWidth) return;
+  if (before !== undefined) return void (graph.scrollLeft = before);
+  const busy = graph.querySelector('g[data-state="doing"], g[data-state="stale"]');
+  if (!busy) return void (graph.scrollLeft = graph.scrollWidth);
+  // 图宽过卡片时从左起画、一单位一像素，图里的坐标即滚动的位置（浮层还在展开动画里也不受影响）
+  const box = /** @type {SVGGraphicsElement} */ (busy).getBBox();
+  graph.scrollLeft = box.x + box.width / 2 - graph.clientWidth / 2;
 }
 /** @param {Conversation} conversation */
 function workdirName(conversation) {
@@ -241,7 +224,7 @@ async function openIntentCard(conversation, trigger = null) {
       };
     if (revision !== viewerRevision) return;
     noteIntentGlance(conversation, intent, now);
-    intentCard = { conversation, intent, now, selected: "", editing: "", error: "", revision };
+    intentCard = { conversation, intent, now, selected: "", revision };
     paintIntentCard();
   } catch (error) {
     if (revision !== viewerRevision) return;
@@ -249,32 +232,6 @@ async function openIntentCard(conversation, trigger = null) {
     if (stage?.querySelector(".intent-card"))
       stage.innerHTML = `<div class="intent-card"><div class="file-viewer-empty">${escapeHtml(friendlyError(String(error.message || error)))}</div></div>`;
   }
-}
-// 根的说法只有用户能改：经桥接写回（带版本写，别处刚写过就照新的那份重来），改完这段对话往后附着的也是新的
-async function saveIntentRoot(id, claim) {
-  if (!intentCard || intentCard.revision !== viewerRevision) return;
-  const card = intentCard,
-    { conversation } = card,
-    text = claim.trim();
-  if (!text) {
-    card.error = "说法不可为空";
-    return paintIntentCard();
-  }
-  try {
-    const { next } = await changeIntent(conversation, undefined, async intent =>
-      intent.nodes[id] ? { next: reviseIntentRoot(intent, id, text, { at: new Date().toISOString(), conversation: conversation.id }) } : {}
-    );
-    if (!next) throw Error(`意中已无「${id}」`);
-    keepIntent(conversation, next, card.now);
-    if (intentCard !== card || card.revision !== viewerRevision) return;
-    card.intent = next;
-    card.editing = "";
-    card.error = "";
-  } catch (error) {
-    if (intentCard !== card || card.revision !== viewerRevision) return;
-    card.error = friendlyError(String(error.message || error));
-  }
-  paintIntentCard();
 }
 function bindIntentEvents() {
   // 题下一行与书眉里那一枚、行迹里「意」那一步：点开卡片
@@ -292,24 +249,10 @@ function bindIntentEvents() {
   const stage = $("#fileViewerStage");
   stage.addEventListener("click", event => {
     if (!intentCard || !stage.querySelector(".intent-card")) return;
-    const pick = event.target.closest("[data-intent-node]"),
-      edit = event.target.closest("[data-intent-edit]"),
-      save = event.target.closest("[data-intent-save]");
-    if (pick) {
-      intentCard.selected = intentCard.selected === pick.dataset.intentNode && pick.matches("g") ? "" : pick.dataset.intentNode;
-      return paintIntentCard();
-    }
-    if (edit) {
-      intentCard.editing = edit.dataset.intentEdit;
-      intentCard.error = "";
-      return paintIntentCard();
-    }
-    if (save) return void saveIntentRoot(save.dataset.intentSave, stage.querySelector(".intent-root-draft")?.value || "");
-    if (event.target.closest("[data-intent-cancel]")) {
-      intentCard.editing = "";
-      intentCard.error = "";
-      paintIntentCard();
-    }
+    const pick = event.target.closest("[data-intent-node]");
+    if (!pick) return;
+    intentCard.selected = intentCard.selected === pick.dataset.intentNode && pick.matches("g") ? "" : pick.dataset.intentNode;
+    paintIntentCard();
   });
   stage.addEventListener("keydown", event => {
     if (!intentCard) return;
@@ -319,10 +262,6 @@ function bindIntentEvents() {
       intentCard.selected = intentCard.selected === node.dataset.intentNode ? "" : node.dataset.intentNode;
       paintIntentCard();
       stage.querySelector(`g[data-intent-node="${CSS.escape(node.dataset.intentNode)}"]`)?.focus();
-    }
-    if (event.target.matches?.(".intent-root-draft") && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      void saveIntentRoot(intentCard.editing, event.target.value);
     }
   });
 }

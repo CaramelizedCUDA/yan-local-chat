@@ -12,24 +12,22 @@ const deferred = () => {
 };
 const intent = tag => ({ nodes: {}, log: [], tag });
 
-function viewer(read, change = async () => ({})) {
+function viewer(read) {
   const f = load([
     "openIntentCard",
-    "saveIntentRoot",
     "closeFileViewer",
     "showInFileViewer",
     "doc: () => document",
     "card: () => intentCard",
-    `setup: (read, change, remember) => {
-      readIntent = read; changeIntent = change; keepIntent = remember;
+    `setup: read => {
+      readIntent = read;
       intentPrints = async () => ({}); isWork = () => true; workdirName = c => c.id;
       intentCardHtml = intent => '<div class="intent-card">' + intent.tag + '</div>';
       listenViewerClosed = closeExpandedWork = () => {};
     }`
   ]);
   const query = f.doc().querySelector,
-    nodes = new Map(),
-    saved = [];
+    nodes = new Map();
   const node = selector => {
     if (selector === ".work-expanded") return null;
     if (!nodes.has(selector)) {
@@ -47,11 +45,10 @@ function viewer(read, change = async () => ({})) {
     return nodes.get(selector);
   };
   f.doc().querySelector = node;
-  f.setup(read, change, (c, next) => saved.push([c.id, next.tag]));
+  f.setup(read);
   return {
     f,
     node,
-    saved,
     restore: () => {
       f.doc().querySelector = query;
     }
@@ -70,30 +67,6 @@ for (const fail of [false, true])
       await opening;
       assert.equal(f.card().conversation.id, "B");
       assert.equal(node("#fileViewerStage").innerHTML, '<div class="intent-card">B</div>');
-    } finally {
-      restore();
-    }
-  });
-
-for (const next of ["B", "close", "change"])
-  test(`意 A 保存途中${next === "B" ? "打开意 B" : next === "close" ? "收起预览" : "打开改动预览"}：保存只更新 A 的记录`, async () => {
-    const gate = deferred();
-    const { f, node, saved, restore } = viewer(
-      async c => ({ intent: intent(c.id) }),
-      () => gate.promise
-    );
-    try {
-      await f.openIntentCard({ id: "A" });
-      const saving = f.saveIntentRoot("root", "改后的说法");
-      if (next === "B") await f.openIntentCard({ id: "B" });
-      else if (next === "close") f.closeFileViewer();
-      else f.showInFileViewer("改动", "文件里的改动");
-      const expected = node("#fileViewerStage").innerHTML;
-      gate.resolve({ next: intent("A saved") });
-      await saving;
-      assert.deepEqual(saved, [["A", "A saved"]]);
-      assert.equal(node("#fileViewerStage").innerHTML, expected);
-      if (next === "B") assert.equal(f.card().intent.tag, "B");
     } finally {
       restore();
     }

@@ -17,7 +17,6 @@ const f = load([
   "intentSealedAnchors",
   "parseAnchor",
   "intentUnowned",
-  "reviseIntentRoot",
   "intentTally",
   "intentText",
   "intentStaleIds",
@@ -111,7 +110,7 @@ test("回归：前提改了说法、后加了前提、自己改了说法，已�
   assert.match(dropped.log.at(-1).text, /^弃 乙/);
 });
 
-test("根：立时记下用户的原话；说法立后不由模型改，可以在底下标假定", () => {
+test("根：立时记下用户的原话；改说法时记下那一问、留痕，原问不动；可以在底下标假定", () => {
   let intent = change(
     empty(),
     [
@@ -124,8 +123,17 @@ test("根：立时记下用户的原话；说法立后不由模型改，可以�
   );
   assert.equal(intent.nodes["费马"].root.ask, "帮我证明费马大定理");
   assert.deepEqual(f.intentRoots(intent), ["费马"]);
-  assert.match(problems(intent, [{ id: "费马", claim: "证出 n=3 的情形" }])[0], /是根，说法立后不由你改/);
-  assert.deepEqual(problems(intent, [{ id: "费马", claim: "证出费马大定理" }]), [], "照原样再报一遍不算改");
+  assert.deepEqual(problems(intent, [{ id: "费马", claim: "证出 n=3 的情形" }]), [], "根的说法照用户的话改");
+  const revised = change(intent, [{ id: "费马", claim: "证出 n=3 的情形" }], { ask: "先只证 n=3" });
+  assert.equal(revised.nodes["费马"].root.ask, "帮我证明费马大定理", "原问不动");
+  assert.equal(revised.nodes["费马"].root.later, "先只证 n=3");
+  assert.equal(revised.log.at(-1).text, "改根 费马：证出 n=3 的情形");
+  assert.match(f.intentText(revised), /原问：帮我证明费马大定理\n  改根时：先只证 n=3/);
+  assert.equal(
+    change(intent, [{ id: "费马", claim: "证出费马大定理" }], { ask: "再看" }).nodes["费马"].root.later,
+    undefined,
+    "照原样再报一遍不算改"
+  );
   assert.match(problems(intent, [{ id: "模性", state: "assumed" }])[0], /note 里写明/);
   intent = change(intent, [
     { id: "模性", state: "assumed", note: "借 Wiles 1995 的模性定理" },
@@ -301,10 +309,10 @@ test("收尾前对照用的写法：立住了的根也附原话", () => {
   assert.ok(f.intentText(intent, {}, { asks: true }).endsWith("- [成立] 根（根）：R\n  原问：做完这件事"));
 });
 
-test("写入记下更新时刻：模型改意、用户改写根都算；读回来照样在", () => {
+test("写入记下更新时刻；读回来照样在", () => {
   let intent = f.applyIntentOps(empty(), [{ id: "甲", claim: "x", check: "y" }], { at: "2026-10-11T08:00:00Z" });
   assert.equal(intent.updated, "2026-10-11T08:00:00Z");
-  intent = f.reviseIntentRoot(intent, "甲", "x2", { at: "2026-10-11T09:00:00Z" });
+  intent = f.applyIntentOps(intent, [{ id: "甲", claim: "x2" }], { at: "2026-10-11T09:00:00Z" });
   assert.equal(intent.updated, "2026-10-11T09:00:00Z");
   assert.equal(f.asIntent(JSON.parse(JSON.stringify(intent))).updated, "2026-10-11T09:00:00Z");
 });

@@ -1,5 +1,5 @@
 // 意：存在目录的 .yan/意.json，跨对话沿用。立根时记下用户的原话；标成立时记下依托文件的指纹，此后文件被谁改了（这里在外面直接改），
-// 下一问附着的意里它就是待复核；根的说法模型改不了；桥接是唯一的写者，带着旧版本写会被退回
+// 下一问附着的意里它就是待复核；模型照用户的话改根，留痕、记下那一问；桥接是唯一的写者，带着旧版本写会被退回
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { connect, check, sleep, PAGE, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, close } = await connect();
@@ -42,7 +42,14 @@ try {
       /已立 1 \/ 2/.test(first),
     first
   );
-  check("the model cannot reword the root", /是根，说法立后不由你改/.test(first) && saved.nodes["上线"].claim === "可在公网访问", first);
+  check(
+    "the model rewords the root: the log says so, the first ask stays and this ask is kept beside it",
+    saved.nodes["上线"].claim === "只在内网访问" &&
+      saved.nodes["上线"].root.ask === "INTENTA 立意" &&
+      saved.nodes["上线"].root.later === "INTENTA 立意" &&
+      saved.log.some(entry => entry.text === "改根 上线：只在内网访问"),
+    JSON.stringify(saved.nodes["上线"])
+  );
   const steps = await evalJs(
     `(__yanState().conversations.find(c => c.messages[0]?.content === "INTENTA 立意").messages.at(-1).steps || []).filter(s => s.name === "update_intent").map(s => s.title + "|" + s.status)`
   );
@@ -67,7 +74,7 @@ try {
     gate
   );
 
-  // 意的卡片：题下一行（目录之后）与书眉常显一枚「意」，点开在预览浮层里画出卡片；点图上一项，图下展开；根的说法只在卡片里改
+  // 意的卡片：题下一行（目录之后）与书眉常显一枚「意」，点开在预览浮层里画出卡片；点图上一项，图下展开；卡片只给看
   const lastMessage = `[...document.querySelectorAll('#messages .message.assistant')].at(-1)`,
     glance = await evalJs(
       `({ meta: document.querySelector('#chatMeta .intent-glance')?.textContent || "", head: document.querySelector('#runningHead .intent-glance')?.textContent || "", marks: [...document.querySelectorAll('#chatMeta .intent-glance .intent-mk')].map(m => m.dataset.mark).join(","), bar: !!${lastMessage}?.querySelector('.change-bar .change-intent'), files: ${lastMessage}?.querySelector('.change-bar .change-summary')?.textContent || "" })`
@@ -84,12 +91,12 @@ try {
   await evalJs(`document.querySelector('#chatMeta .intent-glance').click(); true`);
   await waitFor(`!!document.querySelector('#fileViewerStage .intent-card .intent-svg')`, 10000);
   const card = await evalJs(
-    `(c => ({ name: document.querySelector('#fileViewerName').textContent, root: c.querySelector('.intent-root-claim')?.textContent, updated: c.querySelector('.intent-updated')?.textContent, states: [...c.querySelectorAll('.intent-node')].map(g => g.dataset.intentNode + ':' + g.dataset.state).sort().join(',') }))(document.querySelector('#fileViewerStage .intent-card'))`
+    `(c => ({ name: document.querySelector('#fileViewerName').textContent, editable: !!c.querySelector('textarea, [data-intent-edit]'), updated: c.querySelector('.intent-updated')?.textContent, states: [...c.querySelectorAll('.intent-node')].map(g => g.dataset.intentNode + ':' + g.dataset.state).sort().join(',') }))(document.querySelector('#fileViewerStage .intent-card'))`
   );
   check(
-    "the card draws the intent of this folder: when it was last updated, the root, each item in its state",
+    "the card draws the intent of this folder: when it was last updated, each item in its state, nothing to edit",
     card.name === "意 · intent-work" &&
-      card.root === "可在公网访问" &&
+      !card.editable &&
       /^更新于 \d\d-\d\d \d\d:\d\d$/.test(card.updated || "") &&
       card.states === "上线:open,甲:holds",
     JSON.stringify(card)
@@ -106,22 +113,9 @@ try {
     /a\.js 写好/.test(detail) && /文件src\/a\.js/.test(detail) && /目录src\//.test(detail) && /探针node --version/.test(detail),
     detail
   );
-  await evalJs(`document.querySelector('#fileViewerStage [data-intent-edit="上线"]').click(); true`);
-  await evalJs(
-    `(t => { t.value = '可在公网与内网访问'; document.querySelector('#fileViewerStage [data-intent-save]').click(); return true; })(document.querySelector('#fileViewerStage .intent-root-draft'))`
-  );
-  await waitFor(`document.querySelector('#fileViewerStage .intent-root-claim')?.textContent === '可在公网与内网访问'`, 10000);
-  const revised = JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8"));
-  check(
-    "the user rewords the root on the card: written back through the bridge, its version goes up and the log says so",
-    revised.nodes["上线"].claim === "可在公网与内网访问" &&
-      revised.nodes["上线"].rev === 2 &&
-      /^用户改意 上线：/.test(revised.log.at(-1).text),
-    JSON.stringify(revised.nodes["上线"])
-  );
   await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
   await evalJs(`${lastMessage}.querySelector('[data-tool="update_intent"] [data-intent-open]').click(); true`);
-  await waitFor(`document.querySelector('#fileViewerStage .intent-root-claim')?.textContent === '可在公网与内网访问'`, 10000);
+  await waitFor(`!!document.querySelector('#fileViewerStage .intent-card .intent-svg')`, 10000);
   check("the intent step in the trail opens the same card", true);
   await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
 
@@ -304,8 +298,8 @@ try {
   );
   await evalJs(`document.documentElement.dataset.theme = "light"; document.querySelector('#fileViewerClose').click(); true`);
 
-  // 把真实响应暂扣：先打开的一张迟到，或保存途中另开了一张，旧结果都不能改眼前的卡片。
-  const delayIntent = async write =>
+  // 把真实响应暂扣：先打开的一张迟到，旧结果不能改眼前的卡片。
+  const delayIntent = async () =>
     evalJs(`(() => {
     const original = Response.prototype.json;
     let release, held = false;
@@ -314,8 +308,7 @@ try {
     // 桥接可以直接 fetch，也可以把回包从总线交回；在读 JSON 这一步暂扣，两种都盖住。
     Response.prototype.json = async function () {
       const data = await original.call(this);
-      if (!held && typeof data?.version === "string" && data.data?.nodes &&
-          (!${write} || data.data.nodes["上线"]?.claim === "保存后的旧根")) {
+      if (!held && typeof data?.version === "string" && data.data?.nodes) {
         held = true;
         window.__intentDelay.ready = true;
         await gate;
@@ -332,8 +325,8 @@ try {
     writeFileSync(`${dir}/.yan/意.json`, JSON.stringify(data));
   };
   const rootSays = text =>
-    `document.querySelector('#fileViewerStage .intent-root[data-root="上线"] .intent-root-claim')?.textContent === ${JSON.stringify(text)}`;
-  await delayIntent(false);
+    `document.querySelector('#fileViewerStage g[data-intent-node="上线"] title')?.textContent.endsWith(${JSON.stringify(` · ${text}`)})`;
+  await delayIntent();
   await openCard();
   await waitFor(`window.__intentDelay.ready`);
   await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
@@ -344,23 +337,6 @@ try {
   await sleep(250);
   check("an older card's late response does not replace the newly opened card", await evalJs(rootSays("第二张卡片的根")));
 
-  await delayIntent(true);
-  await evalJs(`document.querySelector('[data-intent-edit="上线"]').click(); true`);
-  await evalJs(
-    `document.querySelector('.intent-root-draft').value = "保存后的旧根"; document.querySelector('[data-intent-save="上线"]').click(); true`
-  );
-  await waitFor(`window.__intentDelay.ready`);
-  check(
-    "the delayed save has actually reached the original folder",
-    JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8")).nodes["上线"].claim === "保存后的旧根"
-  );
-  await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
-  setClaim("保存途中新开的卡片");
-  await openCard();
-  await waitFor(rootSays("保存途中新开的卡片"));
-  await releaseIntent();
-  await sleep(250);
-  check("a save finishing after another card opens leaves that card intact", await evalJs(rootSays("保存途中新开的卡片")));
   await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
   writeFileSync(`${dir}/.yan/意.json`, '{"nodes":null,"log":[null]}');
   await openCard();

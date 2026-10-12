@@ -886,7 +886,7 @@ http
       // INTENTB：第二问，把这一问附着的整段（意在其中）回显；须先认它——它附着的意里有第一问的原话 INTENTA
       if (typeof lastUser === "string" && lastUser.includes("INTENTB"))
         return sse(res, [delta({ content: `INTENTB|${lastUser}` }), delta({}, { usage: { total_tokens: 5 } })]);
-      // INTENTA：立意（一根一前提，前提依托 src/a.js）并写出那个文件；第二轮标前提成立、再试着改根的说法（该被拒）；第三轮回显各结果
+      // INTENTA：立意（一根一前提，前提依托 src/a.js）并写出那个文件；第二轮标前提成立、再改根的说法；第三轮回显各结果
       if (typeof lastUser === "string" && lastUser.includes("INTENTA")) {
         const n = toolResults.length,
           call = (index, name, args) => ({

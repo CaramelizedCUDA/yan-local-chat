@@ -1,7 +1,7 @@
 // 言 · 意：一件工程要成立的结论图——项目实现的骨架。存在目录的 .yan/意.json（桥接是唯一的写者，见 server/work/index.js），
 // 不属于哪一段对话：换一段对话、压缩了前文、被回报叫醒另起一答，看到的都是同一份。
 // 程序只给形式约束与可见性，成立与否由模型自己判：
-//   结构——前提要在、不成环，不合的整批不收；根的说法立后不由模型改（立根时记下用户那一问的原话，日后拿它比）；
+//   结构——前提要在、不成环，不合的整批不收；立根时记下用户那一问的原话，日后拿它比；根的说法只照用户的话改，改时记下那一问、留一笔痕；
 //   传播——前提没立住，上面的就不算立住；
 //   回归——一项标成立时记下凭据（自己与各前提的说法版本、所依托凭据的指纹：文件、目录、探针，见 05-anchors.js），
 //     此后说法改了、凭据变了，它就转待复核。只是标记、不驱动什么：由数据算出，算一回就停，不会自己转起来；复核后再标成立，即换一份凭据。
@@ -23,7 +23,7 @@
  * @property {string} [note] 假定的出处、备注
  * @property {number} rev 说法的版本：claim、check、when 改一回加一
  * @property {IntentSeal} [seal] 标成立（或假定）那一刻记下的：说法版本、前提版本、各凭据的指纹
- * @property {{ ask: string, at: string }} [root] 根：立时用户那一问的原话
+ * @property {{ ask: string, at: string, later?: string }} [root] 根：立时用户那一问的原话；later：末一回改根时那一问
  * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null>, anchors?: string[] }} IntentSeal
  * @typedef {{ at: string, conversation: string, text: string }} IntentLog 改意、弃、假定的留痕
  * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[], updated?: string }} Intent updated：最近一回写入的时刻——单拿出来看时，看得出旧不旧
@@ -274,12 +274,7 @@ function normalizeIntentOps(intent, raw, workdir = "") {
         continue;
       }
       if (item.root === true || item.root === "true") op.root = true;
-    } else {
-      if (op.claim === "" || op.check === "") problems.push(`${id} 的 claim、check 不能改成空的`);
-      const node = intent.nodes[id];
-      if (node?.root && ["claim", "check", "when"].some(key => op[key] !== undefined && op[key] !== (node[key] || "")))
-        problems.push(`${id} 是根，说法立后不由你改（要改请用户在意里改）；做不到的部分可在它底下标假定`);
-    }
+    } else if (op.claim === "" || op.check === "") problems.push(`${id} 的 claim、check 不能改成空的`);
     ops.push(op);
   }
   // 折上去试一遍：前提都在、没有环、假定写了出处、不超上限
@@ -306,7 +301,7 @@ function intentSealing(intent, ops) {
  * 把一批改动折上去，得一份新的（不动原来那份）。先改说法与结构，最后才给标成立的各项记凭据：同一批里前提改了说法，记的是改后的
  * @param {Intent} intent
  * @param {IntentOp[]} ops
- * @param {{ at?: string, conversation?: string, ask?: string, prints?: IntentPrints }} [context] ask：立根时用户那一问的原话
+ * @param {{ at?: string, conversation?: string, ask?: string, prints?: IntentPrints }} [context] ask：这一问用户的原话（立根、改根时记下）
  * @returns {Intent}
  */
 function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", prints = {} } = {}) {
@@ -330,7 +325,9 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
       node.anchors = op.anchors;
     }
     if (`${node.claim}\u0001${node.check}\u0001${node.when || ""}` !== before) {
-      if (node.rev) log(`改意 ${op.id}：${node.claim}`);
+      if (node.rev) log(`${node.root ? "改根" : "改意"} ${op.id}：${node.claim}`);
+      // 根改了说法：记下这一问，与原问一起附着，收尾时照着比
+      if (node.rev && node.root && ask) node.root.later = String(ask).slice(0, 2000);
       node.rev += 1;
     }
     if (op.state && op.state !== node.state) {
@@ -354,20 +351,6 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
   }
   next.log = next.log.slice(-INTENT_LOG_LIMIT);
   if (at && ops.length) next.updated = at;
-  return next;
-}
-/**
- * 用户改写根的说法（模型改不了，见 normalizeIntentOps）：版本加一，凭旧说法成立的随之转待复核，留一笔痕
- * @param {Intent} intent @param {string} id @param {string} claim @param {{ at?: string, conversation?: string }} [context]
- */
-function reviseIntentRoot(intent, id, claim, { at = "", conversation = "" } = {}) {
-  const next = structuredClone(intent),
-    node = next.nodes[id];
-  if (!node || node.claim === claim) return next;
-  node.claim = claim.slice(0, 300);
-  node.rev += 1;
-  next.log = [...next.log, { at, conversation, text: `用户改意 ${id}：${node.claim}` }].slice(-INTENT_LOG_LIMIT);
-  if (at) next.updated = at;
   return next;
 }
 // ---------- 写成给模型读的字：每一问附着的、改完回给它的，都经这里 ----------
@@ -397,7 +380,10 @@ function intentText(intent, now = {}, { path = ".yan/意.json", asks = false } =
       premises = liveNeeds(intent, node),
       borrowed = roots.has(id) && established ? intentBorrowed(intent, id).filter(b => b !== id) : [],
       head = `- [${tag}] ${id}${roots.has(id) ? "（根）" : ""}：${node.claim}${node.when ? `（情形：${node.when}）` : ""}${premises.length ? `（前提：${premises.join("、")}${node.any ? "，任一即可" : ""}）` : ""}${borrowed.length ? `（借假定：${borrowed.join("、")}）` : ""}`;
-    const ask = node.root?.ask ? [`  原问：${node.root.ask.slice(0, asks ? 600 : 200)}`] : [];
+    const ask = [
+      ...(node.root?.ask ? [`  原问：${node.root.ask.slice(0, asks ? 600 : 200)}`] : []),
+      ...(node.root?.later ? [`  改根时：${node.root.later.slice(0, asks ? 600 : 200)}`] : [])
+    ];
     if (state === "assumed") return [head, `  出处：${node.note || ""}`, ...(asks ? ask : [])].join("\n");
     if (established) return [head, ...(asks ? ask : [])].join("\n");
     const more = [`  验收：${node.check}`];

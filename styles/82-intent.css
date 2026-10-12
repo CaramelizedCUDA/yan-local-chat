@@ -1,5 +1,5 @@
 /* 意（见 src/19-intent/40-card.js、50-glance.js 与 设计稿/55 甲、58 甲、59 乙、60）：题下一行与书眉常显一枚，行迹里那一步，点开都是预览浮层里这一张卡片。
-   记号是符号：已立青绿勾、假定泥金勾、存疑泥金问号、待复核朱圈、已弃灰叉；朱只给待复核。线从前提出、到结论止，立住的实、借来的泥金虚、
+   记号是符号：已立石绿勾、假定泥金勾、存疑泥金问号、进行中泥金虚圈、待复核朱圈、已弃灰叉；朱只给待复核。线从前提出、到结论止，立住的实、借来的泥金虚、
    凭据变了的朱虚、弃了的点线 */
 
 /* 记号：同一支笔写的小符号，别跟着笔意图标撑到 20px（图里、名字前、待察里都是这一号） */
@@ -118,85 +118,6 @@
 .intent-borrow {
   color: var(--gold);
 }
-.intent-root {
-  display: grid;
-  gap: 4px;
-  margin: 20px 0 0;
-}
-.intent-root-line {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.intent-root-line > .intent-mk {
-  flex: none;
-  margin-top: 7px;
-}
-.intent-root-claim {
-  color: var(--ink);
-  font: 600 16px/1.6 var(--title);
-  letter-spacing: 0.02em;
-}
-.intent-edit {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 26px;
-  height: 26px;
-  margin-top: 1px;
-  border-radius: var(--radius-s);
-  color: var(--ink-3);
-  opacity: 0.7;
-}
-.intent-edit:hover,
-.intent-edit:focus-visible {
-  background: color-mix(in srgb, var(--ink) 6%, transparent);
-  color: var(--ink);
-  opacity: 1;
-}
-.intent-edit .brush {
-  width: 15px;
-  height: 15px;
-}
-.intent-root-draft {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-m);
-  background: var(--paper);
-  color: var(--ink);
-  font: 15px/1.6 var(--title);
-  resize: vertical;
-}
-.intent-root-draft:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-}
-.intent-root-ops {
-  display: inline-flex;
-  flex: none;
-  gap: 6px;
-  margin-top: 3px;
-}
-.intent-btn {
-  padding: 2px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-m);
-  color: var(--ink);
-  font-size: 12px;
-}
-.intent-btn:hover {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-}
-.intent-btn.quiet {
-  color: var(--ink-3);
-}
-.intent-error {
-  margin: 0 0 0 20px;
-  color: var(--accent);
-  font-size: 12px;
-}
 /* 节题：待察、留痕同一种——字、条数、一道线 */
 .intent-sec,
 .intent-log summary {
@@ -222,35 +143,21 @@
   letter-spacing: 0;
 }
 
-/* 各态一色：记号与字同色（--st），字掺一点墨以便读。未做、已弃仍是淡墨 */
+/* 各态一色：记号与题同色（--st）——图上的名字、展开处的题与态；底下的小字（说法、前提支撑的名字、待察）不着色。未做、已弃仍是淡墨 */
 .intent-card [data-state="holds"],
 .intent-glance [data-state="holds"] {
   --st: var(--stone-green);
 }
 .intent-card [data-state="assumed"],
-.intent-card [data-state="premised"] {
+.intent-card [data-state="premised"],
+.intent-card [data-state="doing"] {
   --st: var(--gold);
 }
 .intent-card [data-state="stale"] {
   --st: var(--accent);
 }
-.intent-card [data-state="doing"] {
-  --st: var(--qing);
-}
-.intent-root[data-state] .intent-root-claim,
-.intent-detail[data-state] .intent-detail-id,
-.intent-detail[data-state] .intent-detail-claim,
-.intent-link[data-state],
-.intent-notes li[data-state] .intent-note-id {
+.intent-detail[data-state] .intent-detail-id {
   color: color-mix(in srgb, var(--st, var(--ink)) 82%, var(--ink));
-}
-/* 待察的缘由也带一点它那一态的色，淡些 */
-.intent-notes li[data-state] .intent-note-why {
-  color: color-mix(in srgb, var(--st, var(--ink-2)) 55%, var(--ink-2));
-}
-.intent-link[data-state="open"],
-.intent-link[data-state="dropped"] {
-  color: var(--ink-2);
 }
 /* 进行中的芯在脉动 */
 .intent-pulse {
@@ -262,7 +169,8 @@
   }
 }
 
-/* 图：字在列里、线在列间、汇点在记号前（摆法见 src/19-intent/30-layout.js）。比卡片窄就居中，宽了从左起横滚 */
+/* 图：字在列里、线在列间、汇点在记号前（摆法见 src/19-intent/30-layout.js）。比卡片窄就居中，宽了从左起横滚，
+   打开时滚到正做着的那一项（见 40-card.js 的 paintIntentCard） */
 .intent-graph {
   margin: 30px 0 26px;
   overflow-x: auto;
@@ -352,14 +260,6 @@
 .intent-node[data-state="dropped"] .intent-label {
   fill: var(--ink-3);
 }
-.intent-chip {
-  fill: none;
-  stroke: var(--line);
-}
-.intent-chip-t {
-  fill: var(--ink-2);
-  font-size: 10.5px;
-}
 
 /* 点中一项：图下展开（设计稿/60 二·甲 · 簿录）。不框不竖线：题一行（记号、名、态），说法，再一行一键、行间淡朱丝栏；
    前提、支撑写成带记号的名字。落选：两栏（窄了右栏挤）、铺一张笺（又是一块）；原先的左竖线、并排的小键名、小框嫌挤、一色 */
@@ -388,11 +288,9 @@
   color: var(--accent);
 }
 .intent-detail-state[data-state="assumed"],
-.intent-detail-state[data-state="premised"] {
-  color: var(--gold);
-}
+.intent-detail-state[data-state="premised"],
 .intent-detail-state[data-state="doing"] {
-  color: var(--qing);
+  color: var(--gold);
 }
 .intent-detail-claim {
   margin: 8px 0 16px;
