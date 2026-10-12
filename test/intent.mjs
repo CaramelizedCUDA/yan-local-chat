@@ -81,7 +81,7 @@ try {
     );
   check(
     "the intent stays in sight under the title and in the running head, with one mark per item; the change bar is left to the files",
-    glance.meta === "意已立 1 / 2" &&
+    glance.meta === "意进度 1 / 2" &&
       glance.head === "意1/2" &&
       glance.marks === "holds,open" &&
       !glance.bar &&
@@ -112,6 +112,19 @@ try {
     "clicking an item opens its check and anchors under the graph",
     /a\.js 写好/.test(detail) && /文件src\/a\.js/.test(detail) && /目录src\//.test(detail) && /探针node --version/.test(detail),
     detail
+  );
+  await evalJs(`document.querySelector('#fileViewerStage .intent-row[data-intent-node="上线"]').click(); true`);
+  const rolled = await evalJs(
+    `({ open: document.querySelector('#fileViewerStage .intent-roll-open .intent-detail-id')?.textContent, rows: [...document.querySelectorAll('#fileViewerStage .intent-row')].map(r => r.dataset.intentNode).join(',') })`
+  );
+  await evalJs(`document.querySelector('#fileViewerStage .intent-detail-head').click(); true`);
+  check(
+    "the roll under the graph lists this level, root first; a row opens in place and its head folds it back",
+    rolled.open === "上线" &&
+      rolled.rows === "甲" &&
+      (await evalJs(`[...document.querySelectorAll('#fileViewerStage .intent-row')].map(r => r.dataset.intentNode).join(',')`)) ===
+        "上线,甲",
+    JSON.stringify(rolled)
   );
   await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
   await evalJs(`${lastMessage}.querySelector('[data-tool="update_intent"] [data-intent-open]').click(); true`);
@@ -269,26 +282,33 @@ try {
     10000
   );
   const rich = await evalJs(
-    `(c => ({ states: Object.fromEntries([...c.querySelectorAll('.intent-node')].map(g => [g.dataset.intentNode, g.dataset.state])), more: c.querySelector('.intent-node[data-intent-node="高亮"] .intent-more')?.textContent, notes: c.querySelector('.intent-notes')?.textContent || "", meta: c.querySelector('.intent-meta')?.textContent, drop: c.querySelector('.intent-drop summary')?.textContent, dropList: c.querySelector('.intent-drop ul')?.textContent || "" }))(document.querySelector('#fileViewerStage .intent-card'))`
+    `(c => ({ states: Object.fromEntries([...c.querySelectorAll('.intent-node')].map(g => [g.dataset.intentNode, g.dataset.state])), more: c.querySelector('.intent-node[data-intent-node="高亮"] .intent-more')?.textContent, roll: c.querySelector('.intent-roll')?.textContent || "", meta: c.querySelector('.page-facts')?.textContent, ink: c.querySelector('[data-intent-ink]')?.textContent }))(document.querySelector('#fileViewerStage .intent-card'))`
   );
   check(
-    "a full intent: changed anchors make it stale and the items above it wait on their premise; the assumption is drawn as borrowed; a settled premise under a settled item folds into it as +1",
+    "a full intent: changed anchors make it stale and the items above it wait on their premise; the assumption is drawn as borrowed; a settled premise under a settled item folds into it as +1; the roll under the graph says why",
     rich.states["构建"] === "stale" &&
       rich.states["部署"] === "premised" &&
       rich.states["文章页"] === "premised" &&
       rich.states["域名"] === "assumed" &&
       rich.states["首页"] === "doing" &&
       rich.more === "+1" &&
-      /构建凭据已变：src\/、package\.json/.test(rich.notes) &&
-      /域名出处：用户说已在 DNS 面板配好/.test(rich.notes) &&
-      rich.meta === "已立 3 / 9假定 1",
+      /构建凭据已变：src\/、package\.json/.test(rich.roll) &&
+      /域名出处：用户说已在 DNS 面板配好/.test(rich.roll) &&
+      /文章页前提「构建」未立/.test(rich.roll) &&
+      /^进度 3 \/ 9假定 1更新于 /.test(rich.meta || "") &&
+      rich.ink === "墨痕 3",
     JSON.stringify(rich)
+  );
+  await evalJs(`document.querySelector('#fileViewerStage [data-intent-ink]').click(); true`);
+  const ink = await evalJs(
+    `({ ink: document.querySelector('#fileViewerStage .intent-ink')?.textContent || "", roll: !!document.querySelector('#fileViewerStage .intent-roll'), dropMark: !!document.querySelector('#fileViewerStage .intent-ink-item[data-kind="弃"] [data-mark="dropped"]') })`
   );
   check(
-    "a dropped path is not drawn; it is kept below the graph under 已弃 as a marker",
-    !("自写" in rich.states) && rich.drop === "已弃 1" && /自写自写一套配色/.test(rich.dropList),
-    JSON.stringify(rich)
+    "a dropped path is not drawn; the ink log (behind 墨痕 in the head) keeps it with a cross, in place of the roll",
+    !("自写" in rich.states) && /弃自写自写一套配色/.test(ink.ink) && /改意首页首页列出最新十篇/.test(ink.ink) && !ink.roll && ink.dropMark,
+    JSON.stringify(ink)
   );
+  await evalJs(`document.querySelector('#fileViewerStage [data-intent-ink]').click(); true`);
   // 截两张给人看：浅色与深色
   await evalJs(
     `document.querySelector('#fileViewerStage g[data-intent-node="构建"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
@@ -343,7 +363,10 @@ try {
   await send("Page.captureScreenshot", { format: "png" }).then(shot =>
     writeFileSync(`${TMP}/intent-nest-top.png`, Buffer.from(shot.data, "base64"))
   );
-  await evalJs(`document.querySelector('#fileViewerStage [data-intent-level="训练"]').click(); true`);
+  // 进模块：点图上模块后那个进度数（1/3 ›）
+  await evalJs(
+    `document.querySelector('#fileViewerStage .intent-go[data-intent-level="训练"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+  );
   await evalJs(
     `document.querySelector('#fileViewerStage g[data-intent-node="一号实验"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
   );

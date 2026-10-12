@@ -36,7 +36,8 @@ function drawNodeWidth(node, more, measure = graphMeasure) {
   const strong = node.state === "doing" || node.state === "stale";
   let w = GRAPH_DRAW.mark;
   if (node.when) w += measure(node.when, 10.5) + 10 + (node.label ? 5 : 0);
-  if (node.label) w += node.root ? measure(node.label, 13.5, 600, true) : measure(node.label, 12, strong ? 600 : 400);
+  // 名用题字（与卡片里别处的名同一种字，设计稿/65 二）
+  if (node.label) w += node.root ? measure(node.label, 13.5, 600, true) : measure(node.label, 12, strong ? 600 : 400, true);
   if (more) w += measure(`+${more}`, 10) + 5;
   if (node.num) w += measure(node.num, 10, 600) + 3;
   if (node.tag) w += measure(node.tag, 10) + 6;
@@ -187,6 +188,15 @@ function drawGraphLayout(list, { measure = graphMeasure, fold = true } = {}) {
     }
   }
   bestLayers.forEach((vs, l) => (layers[l] = vs));
+  index();
+  // 本身没有前提的项挪到列的两端：夹在有线进来的几项中间，线擦着它的记号过去，看着像连着（设计稿/64 甲）
+  for (let l = 1; l < L; l++) {
+    const fed = v => (nbr[v] || []).some(u => lay[u] === l - 1),
+      inner = layers[l].filter(fed);
+    if (!inner.length) continue;
+    const mid = inner.reduce((s, v) => s + pos[v], 0) / inner.length;
+    layers[l] = [...layers[l].filter(v => !fed(v) && pos[v] < mid), ...inner, ...layers[l].filter(v => !fed(v) && pos[v] >= mid)];
+  }
   index();
   // 就近摆放：保持次序、留足间距，尽量对齐连着的几项——保序回归，挪动的平方和最少；窄位的分量轻些
   const size = v => (all[v] ? rowH : lane);

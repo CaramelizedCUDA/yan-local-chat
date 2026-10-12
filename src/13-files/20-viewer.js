@@ -68,6 +68,7 @@ async function openFileViewer(target, name = "", trigger = null) {
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
   viewer.classList.remove("hidden");
+  setViewerSeal();
   $("#fileViewerDownload").classList.remove("hidden");
   $("#fileViewerName").textContent = title;
   $("#fileViewerStage").innerHTML = `<div class="file-viewer-empty">正在取出…</div>`;
@@ -226,13 +227,20 @@ function closeFileViewer(stop = false) {
   if (target?.isConnected) target.focus();
 }
 // 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起
-function showInFileViewer(title, html, trigger = null) {
+/** 顶栏那一枚印：预览一律「览」，意的卡片换它自己的石青「意」（全页仍只一枚印） @param {string} [glyph] */
+function setViewerSeal(glyph = "览") {
+  const seal = $("#fileViewer .file-viewer-head > .seal");
+  if (seal) seal.textContent = seal.dataset.seal = glyph;
+}
+/** @param {string} title @param {string} html @param {Element|null} [trigger] @param {string} [seal] 顶栏的印 */
+function showInFileViewer(title, html, trigger = null, seal = "览") {
   viewerRevision++;
   viewerPath = "";
   viewerSource = null;
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
   $("#fileViewer").classList.remove("hidden");
+  setViewerSeal(seal);
   $("#fileViewerDownload").classList.add("hidden");
   $("#fileViewerName").textContent = title;
   $("#fileViewerStage").innerHTML = html;

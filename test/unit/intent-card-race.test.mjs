@@ -35,6 +35,7 @@ function viewer(read) {
       nodes.set(selector, {
         innerHTML: "",
         textContent: "",
+        dataset: {},
         classList: { add: n => classes.add(n), remove: n => classes.delete(n), contains: n => classes.has(n) },
         focus() {},
         querySelector(selector) {
