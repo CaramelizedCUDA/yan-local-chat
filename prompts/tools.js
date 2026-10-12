@@ -97,8 +97,11 @@
               any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
               in: { type: "string", description: "所属模块的 id：一项拆开还有许多步，就当模块，细项写 in 指向它；不写即全局，至多两层" },
               anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },
-              state: { type: "string", description: "open / doing / done / assumed / dropped" },
-              note: { type: "string", description: "假定的出处、备注" },
+              state: {
+                type: "string",
+                description: "open / doing / done / assumed / dropped（走过不通的路，留作记号）/ removed（方案改了、写错了，整项撤去）"
+              },
+              note: { type: "string", description: "假定的出处；弃时写为何不通" },
               root: {
                 type: "boolean",
                 description: "整件工程最终要立住的结论（用户要的结果，不是手上这一步），新立时标；说法只照用户的意思改"

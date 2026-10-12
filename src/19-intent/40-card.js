@@ -1,6 +1,6 @@
 // 言 · 意 · 卡片（见 设计稿/55 甲 · 一张纸、56、58 甲 · 疏排、60 二·甲 · 簿录）：意属于任务，不画在对话里。题下一行与书眉里那一枚（50-glance.js）、行迹里「意」那一步点开，
 // 都在预览浮层里铺开这一张：题头（更新于何时、已立几项、借了几条假定），一张图（前提在左、根在右，摆法见 30-layout.js），
-// 图下「待察」——待复核的缘由、前提未立的、假定的出处；最末留痕。点图上一项（根也一样），图下展开它的说法、验收、凭据与缘由。
+// 图下「待察」——待复核的缘由、前提未立的、假定的出处；再是「已弃」，走过不通的路不上图、收在这里；最末留痕。点图上一项（根也一样），图下展开它的说法、验收、凭据与缘由。
 // 卡片只给看、不给改：要改的往往不是一两个字，直接告诉模型。
 // 嵌套（设计稿/63 甲 · 钻入）：图只画一层。模块在图上带「里面已立几项 ›」；点它，展开处多一栏「内含」与「打开模块」；
 // 打开后整张图换成模块里的，以模块自己收尾（最右那一项，淡些），顶上一行写所在（可点回上层）、右边写模块的前提与撑起什么。
@@ -57,8 +57,10 @@ const intentWhere = (intent, id) => intentAncestors(intent, id).reverse().join("
  * @param {Intent} intent @param {IntentPrints} now @param {string} selected @param {string} [level] 模块的 id；空即全局
  */
 function intentGraphSvg(intent, now, selected, level = "") {
-  const roots = new Set(intentRoots(intent)),
-    ids = Object.keys(intent.nodes).filter(id => (intent.nodes[id].in || "") === level),
+  // 弃了的不上图（列在图下「已弃」）；孤悬的不当根画
+  const strays = new Set(intentStrays(intent)),
+    roots = new Set(intentRoots(intent).filter(id => !strays.has(id))),
+    ids = Object.keys(intent.nodes).filter(id => (intent.nodes[id].in || "") === level && !intentGone(intent, id)),
     drawing = drawGraphLayout([
       ...ids.map(id => {
         const node = intent.nodes[id],
@@ -189,6 +191,19 @@ function intentNotesHtml(intent, now) {
     )
     .join("")}</ul>`;
 }
+/** 已弃：主线上走过、不通的路，收着作记号——名与弃时写的缘由（没写即那句说法），点名即展开 @param {Intent} intent */
+function intentDroppedHtml(intent) {
+  const ids = intentOrder(intent)
+    .reverse()
+    .filter(id => intent.nodes[id].state === "dropped");
+  if (!ids.length) return "";
+  return `<details class="intent-log intent-drop"><summary>已弃 <span class="n">${ids.length}</span></summary><ul class="intent-notes">${ids
+    .map(id => {
+      const { note = "", claim } = intent.nodes[id];
+      return `<li data-state="dropped">${intentMark("dropped")}<span><button type="button" class="intent-note-id" data-intent-node="${escapeHtml(id)}">${escapeHtml(id)}</button><span class="intent-note-why quiet">${escapeHtml(note || claim)}</span></span></li>`;
+    })
+    .join("")}</ul></details>`;
+}
 /** 模块里那一层的顶上一行：所在（上层可点回），模块的前提与撑起什么 @param {Intent} intent @param {IntentPrints} now @param {string} level */
 function intentCrumbHtml(intent, now, level) {
   if (!level || !intent.nodes[level]) return "";
@@ -215,7 +230,7 @@ function intentCardHtml(intent, now, { selected = "", level = "" } = {}) {
   // 题头：左写更新于何时，右写计数（目录名已在预览浮层的标题栏里）。原问不上卡片，它是给模型对照用的
   return `<div class="intent-card"><div class="intent-head">${intent.updated ? `<span class="intent-updated">更新于 ${escapeHtml(intentTime(intent.updated))}</span>` : ""}<span class="intent-meta"><span>已立 <b>${standing}</b> / ${live.length}</span>${borrowed ? `<span class="intent-borrow">假定 ${borrowed}</span>` : ""}</span></div>${intentCrumbHtml(intent, now, level)}<div class="intent-graph">${intentGraphSvg(intent, now, selected, level)}</div>${
     selected ? intentDetailHtml(intent, now, selected, level) : ""
-  }${intentNotesHtml(intent, now)}${
+  }${intentNotesHtml(intent, now)}${intentDroppedHtml(intent)}${
     log.length
       ? `<details class="intent-log"><summary>留痕 <span class="n">${intent.log.length}</span></summary><ul>${log
           .map(entry => `<li><time>${escapeHtml(intentTime(entry.at))}</time><span>${escapeHtml(entry.text)}</span></li>`)

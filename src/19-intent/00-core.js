@@ -5,6 +5,8 @@
 //   传播——前提没立住，上面的就不算立住；
 //   回归——一项标成立时记下凭据（自己与各前提的说法版本、所依托凭据的指纹：文件、目录、探针，见 05-anchors.js），
 //     此后说法改了、凭据变了，它就转待复核。只是标记、不驱动什么：由数据算出，算一回就停，不会自己转起来；复核后再标成立，即换一份凭据。
+// 方案改了、写错了的整项撤去（state 给 removed），指向它的前提一并抹掉，只留一笔痕；弃（dropped）不同——是主线上走过、不通的路，
+// 留在文件里作记号：不算数、不上图，卡片图下列着，模型读的意里也点到名，免得再走一遍。
 // 降级有合法的写法：借外部结论、不自己做的标「假定」（note 写出处），算立住，但往上记着借了几条——降在哪、降多少看得见。
 // 假定也可挂凭据：所借的变了（接口改版、依赖升级），它同样转待复核。
 // 节点不分类型：事件、功能、文件都是一句要成立的结论，粒度由模型拆到有凭据可挂为止，混着也无妨。
@@ -30,7 +32,7 @@
  * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null>, anchors?: string[] }} IntentSeal
  * @typedef {{ at: string, conversation: string, text: string }} IntentLog 改意、弃、假定的留痕
  * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[], updated?: string }} Intent updated：最近一回写入的时刻——单拿出来看时，看得出旧不旧
- * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean, in?: string }} IntentOp in：空串即挪回全局
+ * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean, in?: string, remove?: boolean }} IntentOp in：空串即挪回全局；remove：整项撤去
  * @typedef {Record<string, string|null>} IntentPrints 各凭据此刻的指纹，按「种类:值」；不在其中的即不知道，不据它判
  */
 const INTENT_LIMIT = 60,
@@ -51,6 +53,8 @@ const INTENT_LIMIT = 60,
     skipped: "dropped",
     drop: "dropped"
   },
+  // 撤：不是一种态，给了即整项删去
+  INTENT_REMOVE = new Set(["removed", "remove", "delete", "deleted", "revoked"]),
   // 记凭据的两种：成立的、假定的
   SEALED = new Set(["done", "assumed"]);
 // 节点表按 id 取项：内置对象名不能误当成已存在的节点。
@@ -141,6 +145,16 @@ function intentDependents(intent, id) {
 /** 根：没弃、也没有谁以它为前提的——一件活最终要立住的结论（模块里的总有模块等着，根只在全局） @param {Intent} intent */
 function intentRoots(intent) {
   return Object.keys(intent.nodes).filter(id => !intentGone(intent, id) && !intentDependents(intent, id).length);
+}
+/**
+ * 孤悬的：在全局、没声明为根，既无前提、也没有谁以它为前提，而图里另有根——多半是手上的一步忘了挂进它所服务的模块。
+ * 只有它一项、或声明过的根不算
+ * @param {Intent} intent
+ */
+function intentStrays(intent) {
+  const roots = intentRoots(intent);
+  if (roots.length < 2) return [];
+  return roots.filter(id => !intent.nodes[id].root && !intent.nodes[id].in && !liveNeeds(intent, id).length);
 }
 /**
  * 嵌套的规矩：所属的模块要在、不成环、不过两层；前提只连同一层；根在全局；一层不宜过多
@@ -317,10 +331,15 @@ function normalizeIntentOps(intent, raw, workdir = "") {
       for (const one of parsed) if ("problem" in one) problems.push(`${id} 的${one.problem}`);
       op.anchors = [...new Set(parsed.flatMap(one => ("key" in one ? [one.key] : [])))].slice(0, 20);
     }
+    if (item.state !== undefined && INTENT_REMOVE.has(String(item.state).trim().toLowerCase())) {
+      if (intent.nodes[id]) ops.push({ id, remove: true });
+      else problems.push(`${id} 不存在，无可撤`);
+      continue;
+    }
     if (item.state !== undefined) {
       const state = String(item.state).trim().toLowerCase(),
         mark = INTENT_MARKS.has(state) ? state : Object.hasOwn(INTENT_MARK_ALIASES, state) ? INTENT_MARK_ALIASES[state] : undefined;
-      if (!mark) problems.push(`${id} 的 state「${item.state}」不认得：只有 open / doing / done / assumed / dropped`);
+      if (!mark) problems.push(`${id} 的 state「${item.state}」不认得：只有 open / doing / done / assumed / dropped / removed`);
       else op.state = /** @type {IntentMark} */ (mark);
     }
     if (!known) {
@@ -337,11 +356,20 @@ function normalizeIntentOps(intent, raw, workdir = "") {
   for (const op of ops)
     for (const need of op.needs || [])
       if (!Object.hasOwn(trial.nodes, need)) problems.push(`${op.id} 的前提 ${need} 不存在（新的前提与它同一批写上即可）`);
+  for (const op of ops) {
+    if (!op.remove || trial.nodes[op.id]) continue;
+    const inside = Object.keys(trial.nodes).filter(k => trial.nodes[k].in === op.id);
+    if (inside.length) problems.push(`撤 ${op.id} 前，里面的 ${inside.join("、")} 先撤或挪出（同一批写上即可）`);
+  }
   const cycle = intentCycle(trial);
   if (cycle) problems.push(`前提成了环：${cycle.join(" → ")}`);
   // 嵌套的毛病只报这一批新添的：手编出的旧毛病不拦别的改动
   const nested = new Set(intentNestProblems(intent));
   problems.push(...intentNestProblems(trial).filter(problem => !nested.has(problem)));
+  const strays = new Set(intentStrays(intent));
+  for (const id of intentStrays(trial))
+    if (!strays.has(id))
+      problems.push(`${id} 孤悬在全局：既无前提，也没有谁以它为前提。手上的一步归进它所服务的模块（in），或写进它所撑那一项的 needs；本就是整件事要立的另一条结论，新立时标 root`);
   for (const op of ops)
     if (trial.nodes[op.id]?.state === "assumed" && !trial.nodes[op.id].note)
       problems.push(`${op.id} 标了假定，note 里写明借的是什么、出处在哪`);
@@ -367,6 +395,13 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
   const next = structuredClone(intent),
     log = text => next.log.push({ at, conversation, text });
   for (const op of ops) {
+    if (op.remove) {
+      if (!next.nodes[op.id]) continue;
+      log(`撤 ${op.id}：${next.nodes[op.id].claim}`);
+      delete next.nodes[op.id];
+      for (const other of Object.values(next.nodes)) other.needs = other.needs.filter(k => k !== op.id);
+      continue;
+    }
     let node = next.nodes[op.id];
     if (!node) {
       if (!op.claim) continue;
@@ -403,7 +438,7 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
   }
   for (const op of ops) {
     const node = next.nodes[op.id];
-    if (!SEALED.has(op.state || "") || !node) continue;
+    if (op.remove || !SEALED.has(op.state || "") || !node) continue;
     // 取不到指纹的凭据（探针这回没跑）不记：日后也不据它判
     node.seal = {
       rev: node.rev,
@@ -432,10 +467,11 @@ function intentText(intent, now = {}, { path = ".yan/意.json", asks = false } =
   const order = intentOrder(intent)
       .reverse()
       .filter(id => !intentGone(intent, id)),
-    roots = new Set(intentRoots(intent));
+    roots = new Set(intentRoots(intent)),
+    strays = new Set(intentStrays(intent));
   if (!order.length) return "";
   const { live, standing } = intentTally(intent, now),
-    dropped = Object.keys(intent.nodes).length - live;
+    dropped = Object.keys(intent.nodes).filter(id => intent.nodes[id].state === "dropped");
   /** @param {string} id @param {string} pad @returns {string[]} */
   const item = (id, pad) => {
     const node = intent.nodes[id],
@@ -447,7 +483,7 @@ function intentText(intent, now = {}, { path = ".yan/意.json", asks = false } =
       inside = kids.filter(k => intentEstablished(intent, k, now)).length,
       folded = kids.length && inside === kids.length,
       borrowed = roots.has(id) && established ? intentBorrowed(intent, id).filter(b => b !== id) : [],
-      head = `${pad}- [${tag}] ${id}${roots.has(id) ? "（根）" : ""}${kids.length ? `（模块，${folded ? `内 ${kids.length} 项都已立` : `内已立 ${inside} / ${kids.length}`}）` : ""}：${node.claim}${node.when ? `（情形：${node.when}）` : ""}${premises.length ? `（前提：${premises.join("、")}${node.any ? "，任一即可" : ""}）` : ""}${borrowed.length ? `（借假定：${borrowed.join("、")}）` : ""}`;
+      head = `${pad}- [${tag}] ${id}${strays.has(id) ? "（孤悬）" : roots.has(id) ? "（根）" : ""}${kids.length ? `（模块，${folded ? `内 ${kids.length} 项都已立` : `内已立 ${inside} / ${kids.length}`}）` : ""}：${node.claim}${node.when ? `（情形：${node.when}）` : ""}${premises.length ? `（前提：${premises.join("、")}${node.any ? "，任一即可" : ""}）` : ""}${borrowed.length ? `（借假定：${borrowed.join("、")}）` : ""}`;
     const ask = [
       ...(node.root?.ask ? [`${pad}  原问：${node.root.ask.slice(0, asks ? 600 : 200)}`] : []),
       ...(node.root?.later ? [`${pad}  改根时：${node.root.later.slice(0, asks ? 600 : 200)}`] : [])
@@ -461,7 +497,7 @@ function intentText(intent, now = {}, { path = ".yan/意.json", asks = false } =
   };
   /** @param {string} parent @param {string} pad */
   const level = (parent, pad) => order.filter(id => (intent.nodes[id].in || "") === parent).flatMap(id => item(id, pad));
-  return `［意 ${path}］已立 ${standing} / ${live}${dropped ? `，另有 ${dropped} 项已弃` : ""}\n${level("", "").join("\n")}`;
+  return `［意 ${path}］已立 ${standing} / ${live}${dropped.length ? `，已弃（走过不通的）：${dropped.join("、")}` : ""}\n${level("", "").join("\n")}`;
 }
 // ---------- 一答之内的回归：每轮工具做完重取指纹，新转待复核的当场告诉它；同一项来回被打回即相持，只提醒 ----------
 // 相持：修甲坏乙、修乙坏甲，每一步单看都对，合起来原地打转——程序不拦（兼顾两头的修法可能就在下一步），只把次数与牵连摆出来

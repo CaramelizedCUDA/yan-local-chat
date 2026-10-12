@@ -518,6 +518,18 @@
   gap: 10px;
   padding: 3px 0;
 }
+/* 已弃：借留痕的折叠，里面照待察的三列排，名也淡些 */
+.intent-drop ul {
+  gap: 6px;
+}
+.intent-drop li {
+  grid-template-columns: 18px 112px minmax(0, 1fr);
+  gap: 8px;
+  padding: 0;
+}
+.intent-drop .intent-note-id {
+  color: var(--ink-2);
+}
 .intent-log time {
   padding-top: 2px;
   font:

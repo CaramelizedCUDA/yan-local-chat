@@ -865,8 +865,8 @@ http
               call(0, "write_file", { path: "api/user.js", content: "v1" }),
               call(1, "update_intent", {
                 nodes: [
-                  { id: "登录", claim: "登录返回用户信息", check: "看返回", anchors: ["api/user.js"] },
-                  { id: "隐私", claim: "不泄露手机号", check: "看返回", anchors: ["api/user.js"] }
+                  { id: "登录", claim: "登录返回用户信息", check: "看返回", anchors: ["api/user.js"], root: true },
+                  { id: "隐私", claim: "不泄露手机号", check: "看返回", anchors: ["api/user.js"], root: true }
                 ]
               })
             ],

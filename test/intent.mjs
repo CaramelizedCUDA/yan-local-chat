@@ -269,7 +269,7 @@ try {
     10000
   );
   const rich = await evalJs(
-    `(c => ({ states: Object.fromEntries([...c.querySelectorAll('.intent-node')].map(g => [g.dataset.intentNode, g.dataset.state])), more: c.querySelector('.intent-node[data-intent-node="高亮"] .intent-more')?.textContent, notes: c.querySelector('.intent-notes')?.textContent || "", meta: c.querySelector('.intent-meta')?.textContent }))(document.querySelector('#fileViewerStage .intent-card'))`
+    `(c => ({ states: Object.fromEntries([...c.querySelectorAll('.intent-node')].map(g => [g.dataset.intentNode, g.dataset.state])), more: c.querySelector('.intent-node[data-intent-node="高亮"] .intent-more')?.textContent, notes: c.querySelector('.intent-notes')?.textContent || "", meta: c.querySelector('.intent-meta')?.textContent, drop: c.querySelector('.intent-drop summary')?.textContent, dropList: c.querySelector('.intent-drop ul')?.textContent || "" }))(document.querySelector('#fileViewerStage .intent-card'))`
   );
   check(
     "a full intent: changed anchors make it stale and the items above it wait on their premise; the assumption is drawn as borrowed; a settled premise under a settled item folds into it as +1",
@@ -282,6 +282,11 @@ try {
       /构建凭据已变：src\/、package\.json/.test(rich.notes) &&
       /域名出处：用户说已在 DNS 面板配好/.test(rich.notes) &&
       rich.meta === "已立 3 / 9假定 1",
+    JSON.stringify(rich)
+  );
+  check(
+    "a dropped path is not drawn; it is kept below the graph under 已弃 as a marker",
+    !("自写" in rich.states) && rich.drop === "已弃 1" && /自写自写一套配色/.test(rich.dropList),
     JSON.stringify(rich)
   );
   // 截两张给人看：浅色与深色

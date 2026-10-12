@@ -22,7 +22,8 @@ const f = load([
   "intentStaleIds",
   "intentRoundText",
   "intentDependents",
-  "intentTops"
+  "intentTops",
+  "intentStrays"
 ]);
 
 // 照工具里的次序：理顺、取指纹、折上去
@@ -93,7 +94,7 @@ test("回归：前提改了说法、后加了前提、自己改了说法，已�
   let intent = change(empty(), [
     { id: "根", claim: "R", check: "r", needs: ["甲"], root: true },
     { id: "甲", claim: "A", check: "a" },
-    { id: "乙", claim: "B", check: "b" }
+    { id: "乙", claim: "B", check: "b", root: true }
   ]);
   intent = change(intent, [
     { id: "甲", state: "done" },
@@ -223,8 +224,8 @@ test("更换、添加或撤下凭据后须复核；同一批重新标成立才�
 
 test("一答之内：新转待复核的接在这一轮后；同一项第 3 回才说相持，并摆出同依托一个文件、也被打回的那一项", () => {
   let intent = change(empty(), [
-    { id: "登录", claim: "登录返回用户信息", check: "c", anchors: ["api/user.js"] },
-    { id: "隐私", claim: "不泄露手机号", check: "c", files: ["api/user.js", "api/mask.js"] }
+    { id: "登录", claim: "登录返回用户信息", check: "c", anchors: ["api/user.js"], root: true },
+    { id: "隐私", claim: "不泄露手机号", check: "c", files: ["api/user.js", "api/mask.js"], root: true }
   ]);
   intent = change(
     intent,
@@ -361,7 +362,7 @@ test("嵌套的规矩：所属要在、不过两层、前提只连同一层、�
   assert.deepEqual(
     problems(intent, [
       { id: "乙", in: "" },
-      { id: "丙", in: "" }
+      { id: "甲", needs: ["乙"] }
     ]),
     [],
     "挪回全局"
@@ -395,4 +396,46 @@ test("给模型读的字：模块的细项缩进在它底下；里面都立住�
     ),
     text
   );
+});
+
+test("撤与弃：撤即整项删去、抹掉指向它的前提、留一笔痕；里面还有项的模块先撤里面的；弃的留作记号，读给模型时点到名", () => {
+  let intent = change(empty(), [
+    { id: "终局", claim: "交付", check: "c", root: true, needs: ["旧路", "新路"] },
+    { id: "旧路", claim: "老方案", check: "c" },
+    { id: "新路", claim: "新方案", check: "c" },
+    { id: "细项", claim: "x", check: "c", in: "新路" }
+  ]);
+  assert.match(problems(intent, [{ id: "无此", state: "removed" }])[0], /无此 不存在，无可撤/);
+  assert.match(problems(intent, [{ id: "新路", state: "removed" }]).join(), /撤 新路 前，里面的 细项 先撤或挪出/);
+  const removed = change(intent, [{ id: "旧路", state: "removed" }]);
+  assert.ok(!removed.nodes["旧路"]);
+  assert.deepEqual(removed.nodes["终局"].needs, ["新路"]);
+  assert.equal(removed.log.at(-1).text, "撤 旧路：老方案");
+  const both = change(intent, [
+    { id: "细项", state: "delete" },
+    { id: "新路", state: "removed" }
+  ]);
+  assert.ok(!both.nodes["新路"] && !both.nodes["细项"], "同一批先撤里面的即可");
+  const dropped = change(intent, [{ id: "旧路", state: "dropped", note: "算力不够" }]);
+  assert.ok(dropped.nodes["旧路"], "弃的留在文件里");
+  assert.match(f.intentText(dropped), /^［意 .*］已立 0 \/ 3，已弃（走过不通的）：旧路$/m);
+});
+
+test("孤悬：全局里没声明为根、既无前提又没人以它为前提的一项，新写出来即退回；旧有的不拦别的改动，读给模型时标出", () => {
+  let intent = change(empty(), [
+    { id: "终局", claim: "交付", check: "c", root: true, needs: ["保留"] },
+    { id: "保留", claim: "能力不退", check: "c" }
+  ]);
+  assert.match(problems(intent, [{ id: "补测", claim: "跑一轮读数", check: "c" }])[0], /补测 孤悬在全局/);
+  assert.deepEqual(problems(intent, [{ id: "补测", claim: "跑一轮读数", check: "c", in: "保留" }]), [], "挂进模块即可");
+  assert.deepEqual(problems(intent, [{ id: "另一根", claim: "另立的结论", check: "c", root: true }]), [], "声明为根的不算");
+  assert.deepEqual(f.intentStrays(empty()), []);
+  assert.deepEqual(f.intentStrays(change(empty(), [{ id: "独一", claim: "x", check: "c" }])), [], "只它一项不算");
+  // 手编、或旧版写下的孤悬：不拦别的改动，读给模型时不当根
+  const hand = f.asIntent({
+    nodes: { ...intent.nodes, 补测: { claim: "跑一轮读数", check: "c", state: "doing" } }
+  });
+  assert.deepEqual(f.intentStrays(hand), ["补测"]);
+  assert.deepEqual(problems(hand, [{ id: "保留", state: "doing" }]), []);
+  assert.match(f.intentText(hand), /^- \[进行中\] 补测（孤悬）：跑一轮读数$/m);
 });
