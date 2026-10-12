@@ -8,6 +8,8 @@
 // 降级有合法的写法：借外部结论、不自己做的标「假定」（note 写出处），算立住，但往上记着借了几条——降在哪、降多少看得见。
 // 假定也可挂凭据：所借的变了（接口改版、依赖升级），它同样转待复核。
 // 节点不分类型：事件、功能、文件都是一句要成立的结论，粒度由模型拆到有凭据可挂为止，混着也无妨。
+// 嵌套：一项做的事拆开还有许多步，就是模块——细项写 in 指向它，至多两层（全局 › 模块 › 子模块）。前提只连同一层，跨模块的写在模块上；
+// 模块以里面收口的几项（同层没人以它为前提的）为前提，所以里面立住它才算立住，传播、回归照旧，不另写判定。
 // 本文件只放纯函数：理顺模型交来的改动、判状态、写成给模型读的字。读写与附着见 10-store.js，工具登记见 15-tools/32-intent.js
 /**
  * @typedef {"open"|"doing"|"done"|"assumed"|"dropped"} IntentMark 模型标的
@@ -24,13 +26,16 @@
  * @property {number} rev 说法的版本：claim、check、when 改一回加一
  * @property {IntentSeal} [seal] 标成立（或假定）那一刻记下的：说法版本、前提版本、各凭据的指纹
  * @property {{ ask: string, at: string, later?: string }} [root] 根：立时用户那一问的原话；later：末一回改根时那一问
+ * @property {string} [in] 所属模块的 id；不写即在全局
  * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null>, anchors?: string[] }} IntentSeal
  * @typedef {{ at: string, conversation: string, text: string }} IntentLog 改意、弃、假定的留痕
  * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[], updated?: string }} Intent updated：最近一回写入的时刻——单拿出来看时，看得出旧不旧
- * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean }} IntentOp
+ * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean, in?: string }} IntentOp in：空串即挪回全局
  * @typedef {Record<string, string|null>} IntentPrints 各凭据此刻的指纹，按「种类:值」；不在其中的即不知道，不据它判
  */
 const INTENT_LIMIT = 60,
+  INTENT_DEPTH = 2,
+  INTENT_LEVEL_LIMIT = 15,
   INTENT_LOG_LIMIT = 200,
   INTENT_ID = /^[\p{L}\p{N}_.·-]{1,24}$/u,
   INTENT_MARKS = new Set(["open", "doing", "done", "assumed", "dropped"]),
@@ -78,6 +83,8 @@ function asIntent(raw) {
       state: INTENT_MARKS.has(node.state) ? node.state : "open",
       rev: Number(node.rev) || 1
     };
+    if (typeof node.in === "string" && node.in !== id && validIntentId(node.in)) intent.nodes[id].in = node.in;
+    else delete intent.nodes[id].in;
     if (node.seal !== undefined) {
       const record = value => (value && typeof value === "object" && !Array.isArray(value) ? value : {});
       intent.nodes[id].seal = {
@@ -103,14 +110,62 @@ function intentPath(path, workdir = "") {
       .replace(/\/+$/, "");
   return (root && p.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? p.slice(root.length + 1) : p).replace(/^(\.\/)+/, "");
 }
-const liveNeeds = (intent, node) => node.needs.filter(id => intent.nodes[id] && intent.nodes[id].state !== "dropped");
-/** 谁以它为前提 @param {Intent} intent @param {string} id */
-function intentDependents(intent, id) {
-  return Object.keys(intent.nodes).filter(other => intent.nodes[other].state !== "dropped" && intent.nodes[other].needs.includes(id));
+// ---------- 嵌套 ----------
+/** 所属的模块，由近及远（全局即空；手编出了环也不至于转不出来） @param {Intent} intent @param {string} id @returns {string[]} */
+function intentAncestors(intent, id) {
+  const out = [];
+  for (let at = intent.nodes[id]?.in; at && intent.nodes[at] && at !== id && !out.includes(at); at = intent.nodes[at].in) out.push(at);
+  return out;
 }
-/** 根：没弃、也没有谁以它为前提的——一件活最终要立住的结论 @param {Intent} intent */
+/** 不算数了：自己弃了，或所属的模块弃了 @param {Intent} intent @param {string} id */
+const intentGone = (intent, id) => !intent.nodes[id] || [id, ...intentAncestors(intent, id)].some(k => intent.nodes[k].state === "dropped");
+/** 模块直属的几项 @param {Intent} intent @param {string} id */
+const intentChildren = (intent, id) => Object.keys(intent.nodes).filter(k => intent.nodes[k].in === id && !intentGone(intent, k));
+/** 模块收口的几项：直属里同层没人以它为前提的——模块以它们为前提 @param {Intent} intent @param {string} id */
+function intentTops(intent, id) {
+  const kids = intentChildren(intent, id);
+  return kids.filter(k => !kids.some(other => intent.nodes[other].needs.includes(k)));
+}
+/** 写明的前提里还算数的 @param {Intent} intent @param {string} id */
+const writtenNeeds = (intent, id) => intent.nodes[id].needs.filter(k => !intentGone(intent, k));
+/** 实际的前提：写明的，加上（模块的）收口的几项 @param {Intent} intent @param {string} id */
+const liveNeeds = (intent, id) => [...writtenNeeds(intent, id), ...intentTops(intent, id)];
+/** 谁以它为前提：同层写明的，与（收口的）所属模块 @param {Intent} intent @param {string} id */
+function intentDependents(intent, id) {
+  const parent = intent.nodes[id]?.in;
+  return [
+    ...Object.keys(intent.nodes).filter(other => !intentGone(intent, other) && intent.nodes[other].needs.includes(id)),
+    ...(parent && intent.nodes[parent] && intentTops(intent, parent).includes(id) ? [parent] : [])
+  ];
+}
+/** 根：没弃、也没有谁以它为前提的——一件活最终要立住的结论（模块里的总有模块等着，根只在全局） @param {Intent} intent */
 function intentRoots(intent) {
-  return Object.keys(intent.nodes).filter(id => intent.nodes[id].state !== "dropped" && !intentDependents(intent, id).length);
+  return Object.keys(intent.nodes).filter(id => !intentGone(intent, id) && !intentDependents(intent, id).length);
+}
+/**
+ * 嵌套的规矩：所属的模块要在、不成环、不过两层；前提只连同一层；根在全局；一层不宜过多
+ * @param {Intent} intent @returns {string[]}
+ */
+function intentNestProblems(intent) {
+  const problems = [],
+    counts = new Map();
+  for (const [id, node] of Object.entries(intent.nodes)) {
+    if (node.in !== undefined && !intent.nodes[node.in]) problems.push(`${id} 的 in「${node.in}」不存在（模块与细项同一批写上即可）`);
+    const up = intentAncestors(intent, id),
+      top = up.at(-1);
+    if (top && intent.nodes[top].in !== undefined && intent.nodes[intent.nodes[top].in])
+      problems.push(`${id} 的所属成了环：${[id, ...up, intent.nodes[top].in].join(" → ")}`);
+    else if (up.length > INTENT_DEPTH) problems.push(`${id} 嵌得太深：至多两层（全局 › 模块 › 子模块）`);
+    for (const need of node.needs)
+      if (intent.nodes[need] && (intent.nodes[need].in || "") !== (node.in || ""))
+        problems.push(`${id} 的前提 ${need} 不在同一层：前提只连同一层，跨模块的写在模块上`);
+    if (node.root && node.in) problems.push(`${id} 是根，根在全局，不归模块`);
+    if (!intentGone(intent, id)) counts.set(node.in || "", (counts.get(node.in || "") || 0) + 1);
+  }
+  for (const [level, n] of counts)
+    if (n > INTENT_LEVEL_LIMIT)
+      problems.push(`「${level || "全局"}」一层多于 ${INTENT_LEVEL_LIMIT} 项：把相关的几项并成一个模块（细项写 in 指向它）`);
+  return problems;
 }
 /** 前提在前的次序（万一有环，环上的按原序排在末尾，不至于丢） @param {Intent} intent */
 function intentOrder(intent) {
@@ -120,7 +175,7 @@ function intentOrder(intent) {
   const visit = id => {
     if (done.has(id) || visiting.has(id) || !intent.nodes[id]) return;
     visiting.add(id);
-    for (const need of intent.nodes[id].needs) visit(need);
+    for (const need of [...intent.nodes[id].needs, ...intentTops(intent, id)]) visit(need);
     visiting.delete(id);
     done.add(id);
     out.push(id);
@@ -163,7 +218,7 @@ function intentStaleWhy(intent, id, now = {}) {
     return "凭据已改";
   // 假定不靠前提，只看它自己的说法与凭据
   if (node.state === "done")
-    for (const need of liveNeeds(intent, node)) {
+    for (const need of liveNeeds(intent, id)) {
       if (!(need in seal.premises)) return `前提「${need}」为后添`;
       if (seal.premises[need] !== intent.nodes[need].rev) return `前提「${need}」说法已改`;
     }
@@ -185,12 +240,12 @@ function intentEstablished(intent, id, now = {}, seen = new Set()) {
   const state = intentState(intent, id, now);
   if (state === "assumed") return true;
   if (state !== "done") return false;
-  const premises = liveNeeds(intent, node);
-  if (!premises.length) return true;
-  const next = new Set(seen).add(id);
-  return node.any
-    ? premises.some(need => intentEstablished(intent, need, now, next))
-    : premises.every(need => intentEstablished(intent, need, now, next));
+  // any 只管写明的前提；模块收口的几项都得立住
+  const written = writtenNeeds(intent, id),
+    tops = intentTops(intent, id),
+    next = new Set(seen).add(id),
+    holds = need => intentEstablished(intent, need, now, next);
+  return (node.any && written.length ? written.some(holds) : written.every(holds)) && tops.every(holds);
 }
 /** 这一项底下借了哪几条假定 @param {Intent} intent @param {string} id */
 function intentBorrowed(intent, id) {
@@ -202,7 +257,7 @@ function intentBorrowed(intent, id) {
     if (seen.has(at) || !intent.nodes[at]) continue;
     seen.add(at);
     if (intent.nodes[at].state === "assumed") out.add(at);
-    else queue.push(...liveNeeds(intent, intent.nodes[at]));
+    else queue.push(...liveNeeds(intent, at));
   }
   return [...out];
 }
@@ -249,10 +304,10 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     for (const [key, n] of /** @type {const} */ ([
       ["claim", 300],
       ["check", 600],
-      ["when", 200],
       ["note", 1000]
     ]))
       if (item[key] !== undefined) op[key] = clip(item[key], n);
+    if (item.in !== undefined && item.in !== null) op.in = clip(item.in, 40);
     if (item.any !== undefined) op.any = item.any === true || item.any === "true";
     if (item.needs !== undefined) op.needs = [...new Set(list(item.needs).map(n => clip(n, 40)))].filter(n => n && n !== id);
     // 凭据：带前缀的是那一种，裸的是文件。模型照旧写 files 的也认
@@ -284,11 +339,14 @@ function normalizeIntentOps(intent, raw, workdir = "") {
       if (!Object.hasOwn(trial.nodes, need)) problems.push(`${op.id} 的前提 ${need} 不存在（新的前提与它同一批写上即可）`);
   const cycle = intentCycle(trial);
   if (cycle) problems.push(`前提成了环：${cycle.join(" → ")}`);
+  // 嵌套的毛病只报这一批新添的：手编出的旧毛病不拦别的改动
+  const nested = new Set(intentNestProblems(intent));
+  problems.push(...intentNestProblems(trial).filter(problem => !nested.has(problem)));
   for (const op of ops)
     if (trial.nodes[op.id]?.state === "assumed" && !trial.nodes[op.id].note)
       problems.push(`${op.id} 标了假定，note 里写明借的是什么、出处在哪`);
-  const live = Object.values(trial.nodes).filter(node => node.state !== "dropped").length;
-  if (live > INTENT_LIMIT && live > Object.values(intent.nodes).filter(node => node.state !== "dropped").length)
+  const live = Object.keys(trial.nodes).filter(id => !intentGone(trial, id)).length;
+  if (live > INTENT_LIMIT && live > Object.keys(intent.nodes).filter(id => !intentGone(intent, id)).length)
     problems.push(`意里的项不宜多于 ${INTENT_LIMIT} 项（此刻 ${live}）：一项是值得单独判的结论，不是每一步动作；细的并进上一级`);
   return { ops, problems };
 }
@@ -319,6 +377,11 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
     for (const key of /** @type {const} */ (["claim", "check", "when", "note"])) if (op[key] !== undefined) node[key] = op[key];
     if (op.any !== undefined) node.any = op.any;
     if (op.needs) node.needs = op.needs;
+    if (op.in !== undefined && op.in !== (node.in || "")) {
+      if (node.rev) log(`${op.id} 归入${op.in ? `「${op.in}」` : "全局"}`);
+      if (op.in) node.in = op.in;
+      else delete node.in;
+    }
     if (op.anchors) {
       // 旧版凭据没有清单：改之前补上原清单，换了凭据也须重新复核。
       if (node.seal && !node.seal.anchors) node.seal.anchors = [...node.anchors];
@@ -345,7 +408,7 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
     node.seal = {
       rev: node.rev,
       anchors: [...node.anchors],
-      premises: op.state === "done" ? Object.fromEntries(liveNeeds(next, node).map(need => [need, next.nodes[need].rev])) : {},
+      premises: op.state === "done" ? Object.fromEntries(liveNeeds(next, op.id).map(need => [need, next.nodes[need].rev])) : {},
       prints: Object.fromEntries(node.anchors.filter(key => key in prints).map(key => [key, prints[key]]))
     };
   }
@@ -357,40 +420,48 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
 const INTENT_STATE_TEXT = { open: "未做", doing: "进行中", done: "成立", assumed: "假定", dropped: "已弃", stale: "待复核" };
 /** @param {Intent} intent @param {IntentPrints} [now] */
 function intentTally(intent, now = {}) {
-  const live = Object.keys(intent.nodes).filter(id => intent.nodes[id].state !== "dropped");
+  const live = Object.keys(intent.nodes).filter(id => !intentGone(intent, id));
   return { live: live.length, standing: live.filter(id => intentEstablished(intent, id, now)).length };
 }
 /**
- * 根在前、前提在后；立住了的只留一行，没立住的写验收与缘由，没立住的根附上用户的原话
+ * 根在前、前提在后；立住了的只留一行，没立住的写验收与缘由，没立住的根附上用户的原话。
+ * 模块的细项缩进写在它底下；里面都立住了的模块只留一行，没立住的才展开——长活里看到的是整副骨架加手头那一块
  * @param {Intent} intent @param {IntentPrints} [now] @param {{ path?: string, asks?: boolean }} [options] asks：立住了的根也附原话（收尾前对照用）
  */
 function intentText(intent, now = {}, { path = ".yan/意.json", asks = false } = {}) {
   const order = intentOrder(intent)
       .reverse()
-      .filter(id => intent.nodes[id].state !== "dropped"),
+      .filter(id => !intentGone(intent, id)),
     roots = new Set(intentRoots(intent));
   if (!order.length) return "";
   const { live, standing } = intentTally(intent, now),
     dropped = Object.keys(intent.nodes).length - live;
-  const lines = order.map(id => {
+  /** @param {string} id @param {string} pad @returns {string[]} */
+  const item = (id, pad) => {
     const node = intent.nodes[id],
       state = intentState(intent, id, now),
       established = intentEstablished(intent, id, now),
       tag = state === "done" && !established ? "成立·前提未立" : INTENT_STATE_TEXT[state],
-      premises = liveNeeds(intent, node),
+      premises = writtenNeeds(intent, id),
+      kids = intentChildren(intent, id),
+      inside = kids.filter(k => intentEstablished(intent, k, now)).length,
+      folded = kids.length && inside === kids.length,
       borrowed = roots.has(id) && established ? intentBorrowed(intent, id).filter(b => b !== id) : [],
-      head = `- [${tag}] ${id}${roots.has(id) ? "（根）" : ""}：${node.claim}${node.when ? `（情形：${node.when}）` : ""}${premises.length ? `（前提：${premises.join("、")}${node.any ? "，任一即可" : ""}）` : ""}${borrowed.length ? `（借假定：${borrowed.join("、")}）` : ""}`;
+      head = `${pad}- [${tag}] ${id}${roots.has(id) ? "（根）" : ""}${kids.length ? `（模块，${folded ? `内 ${kids.length} 项都已立` : `内已立 ${inside} / ${kids.length}`}）` : ""}：${node.claim}${node.when ? `（情形：${node.when}）` : ""}${premises.length ? `（前提：${premises.join("、")}${node.any ? "，任一即可" : ""}）` : ""}${borrowed.length ? `（借假定：${borrowed.join("、")}）` : ""}`;
     const ask = [
-      ...(node.root?.ask ? [`  原问：${node.root.ask.slice(0, asks ? 600 : 200)}`] : []),
-      ...(node.root?.later ? [`  改根时：${node.root.later.slice(0, asks ? 600 : 200)}`] : [])
+      ...(node.root?.ask ? [`${pad}  原问：${node.root.ask.slice(0, asks ? 600 : 200)}`] : []),
+      ...(node.root?.later ? [`${pad}  改根时：${node.root.later.slice(0, asks ? 600 : 200)}`] : [])
     ];
-    if (state === "assumed") return [head, `  出处：${node.note || ""}`, ...(asks ? ask : [])].join("\n");
-    if (established) return [head, ...(asks ? ask : [])].join("\n");
-    const more = [`  验收：${node.check}`];
-    if (state === "stale") more.push(`  缘由：${intentStaleWhy(intent, id, now)}`);
-    return [head, ...more, ...ask].join("\n");
-  });
-  return `［意 ${path}］已立 ${standing} / ${live}${dropped ? `，另有 ${dropped} 项已弃` : ""}\n${lines.join("\n")}`;
+    const inner = folded ? [] : level(id, `${pad}  `);
+    if (state === "assumed") return [head, `${pad}  出处：${node.note || ""}`, ...(asks ? ask : []), ...inner];
+    if (established) return [head, ...(asks ? ask : []), ...inner];
+    const more = [`${pad}  验收：${node.check}`];
+    if (state === "stale") more.push(`${pad}  缘由：${intentStaleWhy(intent, id, now)}`);
+    return [head, ...more, ...ask, ...inner];
+  };
+  /** @param {string} parent @param {string} pad */
+  const level = (parent, pad) => order.filter(id => (intent.nodes[id].in || "") === parent).flatMap(id => item(id, pad));
+  return `［意 ${path}］已立 ${standing} / ${live}${dropped ? `，另有 ${dropped} 项已弃` : ""}\n${level("", "").join("\n")}`;
 }
 // ---------- 一答之内的回归：每轮工具做完重取指纹，新转待复核的当场告诉它；同一项来回被打回即相持，只提醒 ----------
 // 相持：修甲坏乙、修乙坏甲，每一步单看都对，合起来原地打转——程序不拦（兼顾两头的修法可能就在下一步），只把次数与牵连摆出来

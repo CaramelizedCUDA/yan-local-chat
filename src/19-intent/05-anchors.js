@@ -46,9 +46,9 @@ function parseAnchor(raw, workdir = "") {
  * @param {Intent} intent @param {string[]} paths 改过的文件（目录内相对，或目录外的完整路径）
  */
 function intentUnowned(intent, paths) {
-  const anchors = Object.values(intent.nodes)
-    .filter(node => node.state !== "dropped")
-    .flatMap(node => node.anchors)
+  const anchors = Object.keys(intent.nodes)
+    .filter(id => !intentGone(intent, id))
+    .flatMap(id => intent.nodes[id].anchors)
     .map(anchorParts);
   return [...new Set(paths.map(path => intentPath(path)))].filter(
     path => path && !path.startsWith(".yan/") && !anchors.some(([kind, value]) => ANCHOR_KINDS.get(kind)?.covers?.(value, path))

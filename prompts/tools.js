@@ -95,7 +95,7 @@
               check: { type: "string", description: "怎么算成立" },
               needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
               any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
-              when: { type: "string", description: "只在某情形下须成立时写明" },
+              in: { type: "string", description: "所属模块的 id：一项拆开还有许多步，就当模块，细项写 in 指向它；不写即全局，至多两层" },
               anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },
               state: { type: "string", description: "open / doing / done / assumed / dropped" },
               note: { type: "string", description: "假定的出处、备注" },

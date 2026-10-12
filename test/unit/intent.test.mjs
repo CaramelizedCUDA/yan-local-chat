@@ -20,7 +20,9 @@ const f = load([
   "intentTally",
   "intentText",
   "intentStaleIds",
-  "intentRoundText"
+  "intentRoundText",
+  "intentDependents",
+  "intentTops"
 ]);
 
 // 照工具里的次序：理顺、取指纹、折上去
@@ -315,4 +317,82 @@ test("写入记下更新时刻；读回来照样在", () => {
   intent = f.applyIntentOps(intent, [{ id: "甲", claim: "x2" }], { at: "2026-10-11T09:00:00Z" });
   assert.equal(intent.updated, "2026-10-11T09:00:00Z");
   assert.equal(f.asIntent(JSON.parse(JSON.stringify(intent))).updated, "2026-10-11T09:00:00Z");
+});
+
+test("嵌套：模块以里面收口的几项为前提——里面立住它才算立住，里面改了说法它转待复核；根只在全局", () => {
+  let intent = change(empty(), [
+    { id: "成品", claim: "模型训成", check: "评测过", root: true, needs: ["训练"] },
+    { id: "训练", claim: "两轮实验跑完", check: "读数入账" },
+    { id: "一号", claim: "一号跑完", check: "c", in: "训练" },
+    { id: "二号", claim: "二号跑完", check: "c", in: "训练", needs: ["一号"] }
+  ]);
+  assert.deepEqual(f.intentRoots(intent), ["成品"]);
+  assert.deepEqual(f.intentTops(intent, "训练"), ["二号"]);
+  assert.deepEqual(f.intentDependents(intent, "二号"), ["训练"], "收口的一项撑起所属模块");
+  intent = change(intent, [{ id: "训练", state: "done" }]);
+  assert.ok(!f.intentEstablished(intent, "训练"), "里面没立住，模块不算立住");
+  intent = change(intent, [
+    { id: "一号", state: "done" },
+    { id: "二号", state: "done" },
+    { id: "训练", state: "done" }
+  ]);
+  assert.ok(f.intentEstablished(intent, "训练"));
+  assert.equal(f.intentStaleWhy(change(intent, [{ id: "二号", claim: "二号改跑" }]), "训练"), "前提「二号」说法已改");
+  assert.equal(
+    f.intentStaleWhy(change(intent, [{ id: "三号", claim: "补一轮", check: "c", in: "训练", needs: ["二号"] }]), "训练"),
+    "前提「三号」为后添"
+  );
+  // 模块弃了，里面的一并不算
+  const gone = change(intent, [{ id: "训练", state: "dropped" }]);
+  assert.equal(f.intentTally(gone).live, 1);
+});
+
+test("嵌套的规矩：所属要在、不过两层、前提只连同一层、根不归模块；旧毛病不拦别的改动", () => {
+  const intent = change(empty(), [
+    { id: "甲", claim: "a", check: "c" },
+    { id: "乙", claim: "b", check: "c", in: "甲" },
+    { id: "丙", claim: "c", check: "c", in: "乙" }
+  ]);
+  assert.match(problems(intent, [{ id: "丁", claim: "d", check: "c", in: "无此" }])[0], /in「无此」不存在/);
+  assert.match(problems(intent, [{ id: "丁", claim: "d", check: "c", in: "丙" }])[0], /嵌得太深/);
+  assert.match(problems(intent, [{ id: "丁", claim: "d", check: "c", needs: ["乙"] }])[0], /不在同一层/);
+  assert.match(problems(intent, [{ id: "丁", claim: "d", check: "c", in: "甲", root: true }])[0], /根在全局/);
+  assert.match(problems(intent, [{ id: "甲", in: "丙" }]).join(), /所属成了环/);
+  assert.deepEqual(
+    problems(intent, [
+      { id: "乙", in: "" },
+      { id: "丙", in: "" }
+    ]),
+    [],
+    "挪回全局"
+  );
+  const many = Array.from({ length: 16 }, (_, i) => ({ id: `项${i}`, claim: "x", check: "c" }));
+  assert.match(problems(empty(), many).join(), /「全局」一层多于 15 项/);
+  const hand = f.asIntent({
+    nodes: { 甲: { claim: "a", check: "c", needs: ["乙"] }, 乙: { claim: "b", check: "c", in: "丙" }, 丙: { claim: "c", check: "c" } }
+  });
+  assert.deepEqual(problems(hand, [{ id: "丙", state: "doing" }]), [], "手编出的跨层前提不拦这一批");
+});
+
+test("给模型读的字：模块的细项缩进在它底下；里面都立住了的模块折成一行", () => {
+  let intent = change(empty(), [
+    { id: "成品", claim: "模型训成", check: "评测过", root: true, needs: ["训练", "数据"] },
+    { id: "数据", claim: "数据备好", check: "过闸" },
+    { id: "清洗", claim: "去重", check: "c", in: "数据" },
+    { id: "训练", claim: "两轮跑完", check: "读数入账", needs: ["数据"] },
+    { id: "一号", claim: "一号跑完", check: "看日志", in: "训练" }
+  ]);
+  intent = change(intent, [
+    { id: "清洗", state: "done" },
+    { id: "数据", state: "done" }
+  ]);
+  const text = f.intentText(intent);
+  assert.match(text, /^- \[成立\] 数据（模块，内 1 项都已立）：数据备好$/m);
+  assert.ok(!text.includes("清洗"), "立住的模块不展开");
+  assert.ok(
+    text.includes(
+      "- [未做] 训练（模块，内已立 0 / 1）：两轮跑完（前提：数据）\n  验收：读数入账\n  - [未做] 一号：一号跑完\n    验收：看日志"
+    ),
+    text
+  );
 });

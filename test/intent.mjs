@@ -298,6 +298,73 @@ try {
   );
   await evalJs(`document.documentElement.dataset.theme = "light"; document.querySelector('#fileViewerClose').click(); true`);
 
+  // 嵌套（设计稿/63 甲 · 钻入）：图只画一层；模块带里面已立几项，点开即换成模块里的图，模块自己收尾，顶上一行写所在、可点回
+  const richIntent = readFileSync(`${dir}/.yan/意.json`, "utf8");
+  const done = (premises = {}) => ({ state: "done", seal: { rev: 1, premises, prints: {} } });
+  writeFileSync(
+    `${dir}/.yan/意.json`,
+    JSON.stringify({
+      nodes: {
+        成品: { claim: "以推理时间换质量的模型", check: "评测过", needs: ["训练"], root: { ask: "训一个模型", at: "" } },
+        数据准备: { claim: "v4 数据过闸", check: "c", ...done({ 清洗: 1 }) },
+        清洗: { claim: "去重去噪", check: "c", in: "数据准备", ...done() },
+        训练: { claim: "两轮实验跑完并汇总读数", check: "读数入账", needs: ["数据准备"], state: "doing" },
+        配方冻结: { claim: "j 配方落 configs/", check: "c", in: "训练", ...done() },
+        一号实验: { claim: "第一轮跑完", check: "c", in: "训练", needs: ["配方冻结"], state: "doing" },
+        二号实验: { claim: "第二轮跑完", check: "c", in: "训练", needs: ["一号实验"] }
+      },
+      log: []
+    })
+  );
+  await evalJs(`document.querySelector('#chatMeta .intent-glance').click(); true`);
+  await waitFor(`!!document.querySelector('#fileViewerStage .intent-card .intent-svg')`, 10000);
+  const nestTop = await evalJs(
+    `({ nodes: [...document.querySelectorAll('#fileViewerStage .intent-node')].map(g => g.dataset.intentNode).sort().join(','), tag: document.querySelector('#fileViewerStage g[data-intent-node="训练"]')?.textContent })`
+  );
+  check(
+    "the top graph draws only the top level; a module carries how many inside have stood",
+    nestTop.nodes === "成品,数据准备,训练" && /1\/3 ›/.test(nestTop.tag || ""),
+    JSON.stringify(nestTop)
+  );
+  await evalJs(
+    `document.querySelector('#fileViewerStage g[data-intent-node="训练"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+  );
+  const moduleDetail = await evalJs(`document.querySelector('#fileViewerStage .intent-detail')?.textContent || ""`);
+  check(
+    "clicking a module shows where it sits, what it holds, and a way in",
+    /全局两轮实验跑完/.test(moduleDetail) && /内含配方冻结一号实验二号实验打开模块/.test(moduleDetail),
+    moduleDetail
+  );
+  await send("Page.captureScreenshot", { format: "png" }).then(shot =>
+    writeFileSync(`${TMP}/intent-nest-top.png`, Buffer.from(shot.data, "base64"))
+  );
+  await evalJs(`document.querySelector('#fileViewerStage [data-intent-level="训练"]').click(); true`);
+  await evalJs(
+    `document.querySelector('#fileViewerStage g[data-intent-node="一号实验"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+  );
+  const inside = await evalJs(
+    `({ crumb: document.querySelector('#fileViewerStage .intent-crumb')?.textContent, nodes: [...document.querySelectorAll('#fileViewerStage .intent-node')].map(g => g.dataset.intentNode + (g.classList.contains('sink') ? '*' : '')).sort().join(','), where: document.querySelector('#fileViewerStage .intent-when')?.textContent })`
+  );
+  check(
+    "opening the module swaps in its own graph, closed by the module itself, with the path and its premise on top",
+    /^全局›训练前提数据准备撑起成品$/.test(inside.crumb || "") &&
+      inside.nodes === "一号实验,二号实验,训练*,配方冻结" &&
+      inside.where === "训练",
+    JSON.stringify(inside)
+  );
+  await send("Page.captureScreenshot", { format: "png" }).then(shot =>
+    writeFileSync(`${TMP}/intent-nest-inside.png`, Buffer.from(shot.data, "base64"))
+  );
+  await evalJs(`document.querySelector('#fileViewerStage .intent-crumb [data-intent-level=""]').click(); true`);
+  check(
+    "the path leads back to the top",
+    await evalJs(
+      `!document.querySelector('#fileViewerStage .intent-crumb') && !!document.querySelector('#fileViewerStage g[data-intent-node="成品"]')`
+    )
+  );
+  await evalJs(`document.querySelector('#fileViewerClose').click(); true`);
+  writeFileSync(`${dir}/.yan/意.json`, richIntent);
+
   // 把真实响应暂扣：先打开的一张迟到，旧结果不能改眼前的卡片。
   const delayIntent = async () =>
     evalJs(`(() => {
