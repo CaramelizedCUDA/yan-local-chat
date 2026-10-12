@@ -120,7 +120,10 @@ const text1 = await evalJs(`document.querySelector(".message.assistant .assistan
 check("final answer references tool result", text1.includes("指令结果：成功"), text1);
 check("stack meta after completion", (await evalJs(`document.querySelector(".tool-stack-meta").textContent`)) === "1 步");
 check("waiting marker cleared", await evalJs(`!document.querySelector(".history-state.waiting, .history-state.running")`));
-check("chat meta shows workdir", (await evalJs(`document.querySelector(".chat-meta-path")?.textContent || ""`)).includes("work"));
+check(
+  "the conversation is bound to the workdir",
+  await evalJs(`(__yanState().conversations.find(c => c.workdir)?.workdir || "").toLowerCase().includes("work")`)
+);
 await sleep(600);
 check("auto title applied", (await evalJs(`document.querySelector("#chatTitle").textContent`)) === "测试标题");
 

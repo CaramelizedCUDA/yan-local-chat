@@ -184,23 +184,4 @@ function setupChips() {
     saveStore();
     renderChips(workMode());
   };
-  // 对话页标题下的目录签：绑上、更换或解开
-  const meta = $("#chatMeta");
-  meta.addEventListener("click", event => {
-    if (event.target.closest(".chip-pop")) return event.stopPropagation();
-    if (event.target.closest("[data-export-md]")) return void exportConversationMarkdown(currentConversation());
-    const button = event.target.closest("[data-workdir-bind]");
-    if (!button) return;
-    event.stopPropagation();
-    const c = currentConversation();
-    if (!c) return;
-    openWorkdirPop({
-      anchor: button,
-      host: meta,
-      value: c.workdir || "",
-      live: false,
-      bound: isWork(c),
-      onCommit: dir => void bindWorkdir(c, dir)
-    });
-  });
 }

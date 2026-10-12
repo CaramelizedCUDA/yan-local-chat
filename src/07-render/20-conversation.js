@@ -30,15 +30,15 @@ function restoreScrollPosition(snapshot, { follow = true } = {}) {
   if (anchor) host.scrollTop += anchor.getBoundingClientRect().top - host.getBoundingClientRect().top - snapshot.anchorOffset;
   else host.scrollTop = Math.min(snapshot.top, Math.max(0, host.scrollHeight - host.clientHeight));
 }
-// 标题下的元信息行：日期、几问、旁注、目录签、存入卷宗；一答收尾后也刷一次（存入卷宗要等有完整的答才出现）
+// 标题下的元信息行：日期、几问、旁注、意；一答收尾后也刷一次。绑定（更换）目录、存入卷宗都在侧栏对话的「⋯」里，这里不重复
 /** @param {Conversation} c */
 function renderChatMeta(c) {
   $("#chatMeta").innerHTML =
-    `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? ` · <button type="button" class="chat-meta-path" data-workdir-bind title="工作目录">${escapeHtml(c.workdir || "")}</button>${intentGlance(c)}` : ` · <button type="button" class="chat-meta-bind" data-workdir-bind title="绑定工作目录，此后指令与改动落于其中">绑定目录</button>`}${c.messages.some(m => m.role === "assistant" && m.status === "complete") ? ` · <button type="button" class="chat-meta-bind" data-export-md title="以 Markdown 存入卷宗">存入卷宗</button>` : ""}`;
+    `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? intentGlance(c) : ""}`;
   renderRunningHead();
   requestAnimationFrame(syncRunningHead);
 }
-// 意属于目录，跟在目录之后（见 19-intent/50-glance.js）
+// 意属于目录（见 19-intent/50-glance.js）
 function intentGlance(c) {
   const html = intentGlanceHtml(c);
   return html ? ` · ${html}` : "";
