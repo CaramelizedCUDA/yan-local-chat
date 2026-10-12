@@ -6,9 +6,9 @@
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
 const { createHash, randomBytes, randomUUID } = require("node:crypto");
 const { jsonRoute, writeAtomic } = require("../http.js");
+const { openUrl } = require("../platform.js");
 
 // 两处地址可由环境变量换掉，只为测试：起一个假的授权与接口服务
 const AUTH = (process.env.YAN_CHATGPT_AUTH || "https://auth.openai.com").replace(/\/+$/, "");
@@ -186,9 +186,7 @@ module.exports = function createChatgpt({ home }) {
       ...(auth.clientId ? {} : { agent_name_hint: "言" })
     });
     const url = `${AUTH}/api/accounts/authorize?${query}`;
-    // 交给 url.dll 用默认浏览器打开：不经 cmd（网址里的 & 会被当成命令分隔）；explorer.exe 认不全这种长网址，会打开「文档」
-    if (process.platform === "win32" && !process.env.YAN_CHATGPT_AUTH)
-      spawn("rundll32.exe", ["url.dll,FileProtocolHandler", url], { detached: true, stdio: "ignore" }).unref();
+    if (!process.env.YAN_CHATGPT_AUTH) openUrl(url);
     return { url };
   }
   function status() {

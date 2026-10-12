@@ -7,6 +7,7 @@
 // stdio：本机起一个进程，逐行一条 JSON；http：可流式的 HTTP（每次 POST，回的是 JSON 或一段事件流）；sse：旧式 HTTP+SSE（先 GET 一条事件流拿到投递地址）
 "use strict";
 const { spawn } = require("node:child_process");
+const { OWN_GROUP, killTree } = require("../platform.js");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -33,6 +34,7 @@ class StdioTransport {
       env,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
+      ...OWN_GROUP,
       shell
     });
     this.child.stdout.setEncoding("utf8");
@@ -82,22 +84,8 @@ class StdioTransport {
     const child = this.child;
     if (!child || child.exitCode !== null) return;
     child.stdin.end();
-    // 服务可能又起了子进程：Windows 上连同整棵进程树一起结束
-    if (process.platform === "win32") {
-      try {
-        const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-          stdio: "ignore",
-          windowsHide: true
-        });
-        killer.on("error", () => child.kill());
-        killer.on("close", code => {
-          if (code !== 0 && child.exitCode === null) child.kill();
-        });
-        killer.unref();
-      } catch {
-        child.kill();
-      }
-    } else child.kill();
+    // 服务可能又起了子进程：连同整棵进程树一起结束；Windows 之外发 SIGTERM，让它自己收掉另起进程组的浏览器
+    killTree(child, "SIGTERM");
   }
 }
 // Windows 上 npx、uvx 这类是 .cmd：得经 cmd 才起得来。先按 PATH 与 PATHEXT 找到真身，是 .cmd / .bat 就交给 shell（参数逐个加引号）

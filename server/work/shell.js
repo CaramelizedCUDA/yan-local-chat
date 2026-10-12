@@ -2,6 +2,7 @@
 "use strict";
 const { spawn, spawnSync } = require("node:child_process");
 const sandbox = require("../sandbox.js");
+const { OWN_GROUP, killTree, killTreeSync } = require("../platform.js");
 const { tail, decodeClixml, encodePowerShell } = require("./text.js");
 
 // Windows 上有 PowerShell 7（pwsh）就用它：被 Select-Object -First 截断的原生程序不再报退出码 -1、&& 与 || 可用、
@@ -29,25 +30,6 @@ const WORK_OUTPUT_LIMIT = 20000;
 const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
 const shownOutput = (text, stderr = false) =>
   tail((stderr && process.platform === "win32" ? decodeClixml(text) : text).replace(ANSI, ""), WORK_OUTPUT_LIMIT);
-// 杀整棵进程树：PowerShell 起的子进程（node、python、构建脚本）不能只杀 shell 本身，否则用户点了停止，脚本还在后台改文件
-function killTree(child) {
-  if (!child.pid || child.exitCode !== null || child.signalCode) return;
-  if (process.platform !== "win32") return child.kill("SIGKILL");
-  // taskkill 能把孙进程一起收掉，但受限环境里可能被系统拒绝；那时至少要终止直属 shell，不能让指令继续写文件。
-  const killShell = () => {
-    if (child.exitCode !== null || child.signalCode) return;
-    try {
-      child.kill("SIGKILL");
-    } catch {}
-  };
-  const killer = spawn("taskkill", ["/T", "/F", "/PID", String(child.pid)], { windowsHide: true, stdio: "ignore" }),
-    fallback = setTimeout(killShell, 750);
-  killer.once("error", killShell);
-  killer.once("close", code => {
-    clearTimeout(fallback);
-    if (code) killShell();
-  });
-}
 module.exports = function createShell({ toolEnv }) {
   // 起一个 shell 跑指令（Windows 上外面包一层，见 POWERSHELL_WRAPPER）；指令经环境变量递进去，比塞进命令行能长两倍多
   function spawnShell(command, cwd, { boxed = false } = {}) {
@@ -58,6 +40,7 @@ module.exports = function createShell({ toolEnv }) {
     const child = spawn(win ? (PWSH ? "pwsh.exe" : "powershell.exe") : "/bin/sh", args, {
       cwd,
       windowsHide: true,
+      ...OWN_GROUP,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...toolEnv(boxed ? sandbox.sandboxEnv(process.env) : process.env),
@@ -209,15 +192,9 @@ module.exports = function createShell({ toolEnv }) {
       durationMs: Date.now() - job.started
     };
   }
-  // 桥接退出时把还在跑的指令（前台的与后台的）一并收掉（退出时起不了异步的 taskkill，用同步的）
+  // 桥接退出时把还在跑的指令（前台的与后台的）一并收掉，连根
   process.on("exit", () => {
-    for (const child of runningShells)
-      if (child.pid && child.exitCode === null && !child.signalCode)
-        try {
-          if (process.platform === "win32")
-            spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { windowsHide: true, stdio: "ignore" });
-          else child.kill("SIGKILL");
-        } catch {}
+    for (const child of runningShells) killTreeSync(child);
   });
   // check_command：取后台指令的新输出；stop 时先收掉它（最多等三秒）
   // key：页面收口时带上（编号在桥接重启后重数，不带 key 可能收到别的指令上）
@@ -254,5 +231,5 @@ module.exports = function createShell({ toolEnv }) {
     job.reported = true;
     return { ...(await backgroundReport(job, 0)), command: job.command };
   }
-  return { WORK_SHELL, killTree, runShell, startBackground, backgroundReport, checkBackground, watchBackground };
+  return { WORK_SHELL, runShell, startBackground, backgroundReport, checkBackground, watchBackground };
 };

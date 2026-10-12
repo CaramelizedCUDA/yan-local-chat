@@ -13,6 +13,7 @@ const os = require("node:os");
 const { fasterSide, pickSource } = require("./mirror.js");
 const path = require("node:path");
 const { sendJson, readJson } = require("./http.js");
+const platform = require("./platform.js");
 
 // 参数里哪一项都没写调试口时的默认（见 docs/stage.md：避开常被端口转发占着的 9222 / 9223）
 const DEFAULT_PORT = 9288;
@@ -153,16 +154,15 @@ function serviceOf(body, root) {
 }
 // 本机有哪几个浏览器：Edge、Chrome 看常见的安装处，自带内核看「内核」目录
 function localBrowsers(root) {
-  const env = process.env,
-    has = (/** @type {string[]} */ list) => list.some(file => !!file && fs.existsSync(file)),
-    pf = [env["ProgramFiles(x86)"], env.ProgramFiles, env.LOCALAPPDATA].filter(Boolean);
+  const has = (/** @type {string[]} */ list) => list.some(file => !!file && fs.existsSync(file)),
+    files = platform.browserFiles();
   let chromium = false;
   try {
     chromium = fs.readdirSync(stageHome(root).engine).some(name => name.startsWith("chromium-"));
   } catch {}
   return {
-    msedge: has(pf.map(dir => path.join(String(dir), "Microsoft", "Edge", "Application", "msedge.exe"))),
-    chrome: has(pf.map(dir => path.join(String(dir), "Google", "Chrome", "Application", "chrome.exe"))),
+    msedge: has(files.msedge),
+    chrome: has(files.chrome),
     chromium
   };
 }
@@ -202,7 +202,13 @@ function runInstall(file, args, env, cwd, { stall = 0, onProgress = () => {} } =
     // npm 在 Windows 上是 .cmd，得经 shell 起；参数都是言自己写的，没有外来的字
     // 路径里有空格（D:\Program Files\npm.cmd）：经 shell 起时整条加引号
     const shell = /\.cmd$/i.test(file) || file === "npm",
-      child = spawn(shell ? `"${file}"` : file, args, { cwd, env: { ...process.env, ...env }, shell, windowsHide: true });
+      child = spawn(shell ? `"${file}"` : file, args, {
+        cwd,
+        env: { ...process.env, ...env },
+        shell,
+        windowsHide: true,
+        ...platform.OWN_GROUP
+      });
     let tail = "",
       /** @type {NodeJS.Timeout | undefined} */ timer;
     const watch = () => {
@@ -210,7 +216,7 @@ function runInstall(file, args, env, cwd, { stall = 0, onProgress = () => {} } =
       clearTimeout(timer);
       timer = setTimeout(() => {
         // 下载在它另起的子进程里，连根结束
-        spawn("taskkill", ["/T", "/F", "/PID", String(child.pid)], { windowsHide: true });
+        platform.killTree(child);
         reject(Object.assign(Error("下载卡住了"), { stalled: true }));
       }, stall);
     };
@@ -368,8 +374,7 @@ module.exports = function createStage({ root = () => "" } = {}) {
   async function open(req, res) {
     const url = String((await readJson(req)).url || "");
     if (!/^https?:\/\//i.test(url)) return sendJson(res, 400, { error: "只有网页（http / https）能交给系统浏览器" });
-    if (!process.env.YAN_NO_EXTERNAL)
-      spawn("rundll32.exe", ["url.dll,FileProtocolHandler", url], { detached: true, stdio: "ignore" }).unref();
+    if (!process.env.YAN_NO_EXTERNAL) platform.openUrl(url);
     sendJson(res, 200, { ok: true });
   }
   // 只显出、不打开：下载来的可能是程序，开它要人自己在资源管理器里点
@@ -378,15 +383,13 @@ module.exports = function createStage({ root = () => "" } = {}) {
       { path: file } = body,
       target = String(file || "");
     if (target && fs.existsSync(target)) {
-      // 目录直接打开，文件在它所在的目录里选中
-      const dir = fs.statSync(target).isDirectory();
-      spawn("explorer.exe", [dir ? path.resolve(target) : `/select,${path.resolve(target)}`], { detached: true, stdio: "ignore" }).unref();
+      platform.reveal(target);
       return sendJson(res, 200, { ok: true });
     }
     const service = serviceOf(body, root()),
       { output } = browserOf(service.args, service.cwd);
     if (!output || !fs.existsSync(output)) return sendJson(res, 404, { error: "还没有下载过，或找不到存下载的目录" });
-    spawn("explorer.exe", [output], { detached: true, stdio: "ignore" }).unref();
+    platform.openPath(output);
     sendJson(res, 200, { ok: true });
   }
   // 一回一个文件：{ name, data: dataURL } → 落盘的路径。一天前落的顺手清掉
