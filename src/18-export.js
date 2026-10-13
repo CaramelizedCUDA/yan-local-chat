@@ -13,11 +13,11 @@ function exportMarkdownLabel(value) {
 function exportToolTrail(message) {
   const steps = message.steps || [];
   if (!steps.length) return "";
-  // 模型上下文的 stepsDigest 会截短、只取前 16 步；导出单独排成纯文本，不把命令当 Markdown 解析。
+  // 模型上下文的 stepsDigest 会截短、步数多了只留头尾；导出单独排成纯文本，不把命令当 Markdown 解析。
   const text = steps
     .map(
       (step, index) =>
-        `${index + 1}. ${TOOLS.get(step.name)?.label || step.name} · ${step.title || step.note || ""} → ${step.result || step.status || ""}`
+        `${index + 1}. ${TOOLS.get(step.name)?.label || step.name} · ${step.name === "fold" ? foldTitle(step) : step.title || step.note || ""} → ${step.result || step.status || ""}`
     )
     .join("\n");
   const fence = "`".repeat(Math.max(3, ...Array.from(text.matchAll(/`+/g), match => match[0].length + 1)));
@@ -36,7 +36,7 @@ function conversationMarkdown(c) {
       lines.push(
         "---",
         "",
-        m.summary ? `> **前文摘要**\n>\n> ${String(m.summary).replace(/\n/g, "\n> ")}` : "*（上下文由此重新开始）*",
+        m.summary ? `> **前文撮要**\n>\n> ${String(m.summary).replace(/\n/g, "\n> ")}` : "*（上下文由此重新开始）*",
         ""
       );
       continue;

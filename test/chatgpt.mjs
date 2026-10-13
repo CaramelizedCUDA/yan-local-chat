@@ -30,7 +30,7 @@ const url = await evalJs(`${card}.querySelector(".profile-status a").href`);
 const landing = await (await fetch(url)).text();
 check("the callback page says signed in", landing.includes("已登录"), landing.slice(0, 80));
 await waitFor(`${card}.querySelector("[data-chatgpt-account]")?.textContent.includes("me@example.com")`, 8000);
-await waitFor(`${card}.querySelector(".profile-status").textContent.includes("已获取 2 个模型")`, 8000);
+await waitFor(`${card}.querySelector(".profile-status").textContent.includes("已取回 2 个模型")`, 8000);
 check("after signing in the model list comes in, newest included, hidden ones left out", true);
 const first = (await log()).authorize.slice(before.authorize.length)[0] || {};
 check(
@@ -59,6 +59,8 @@ await evalJs(
 await waitFor(`(__yanState().conversations[0]?.messages || []).some(m => m.role === "assistant" && m.status === "complete")`, 15000);
 const reply = await evalJs(`__yanState().conversations[0].messages.find(m => m.role === "assistant").content`);
 check("chat goes straight to the Responses API with the token", /CHATGPT\|bearer:true\|store:false\|instr:true/.test(reply), reply);
+// 缓存键要同时放进请求头的 session_id：后端照它找存着前文的那一处，只放请求体里一回也不中
+check("the cache key also rides in the session_id header", reply.includes("|session:true"), reply);
 
 // 退出：吊销刷新令牌；再登录沿用发下的 client_id，不再报名字
 await evalJs(`document.querySelector("#openSettings").click(); true`);

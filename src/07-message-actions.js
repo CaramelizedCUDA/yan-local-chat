@@ -117,6 +117,8 @@ async function regenerateAt({ c, index }) {
   c.messages.push(assistant);
   saveStore();
   renderConversation(true);
+  // 面板里开着的旁注若注在被换下去的那几条上，退回目录（与切版本同理）
+  if (sidePanelOpen()) renderSidePanel();
   await streamReply(c, assistant, profile);
 }
 /** @param {Conversation} conversation */
@@ -149,6 +151,7 @@ async function saveEditedMessage(conversation, index, value) {
   conversation.messages.push(assistant);
   saveStore();
   render(true);
+  if (sidePanelOpen()) renderSidePanel();
   await streamReply(conversation, assistant, profile);
 }
 async function copyText(text) {

@@ -237,7 +237,7 @@ $("#groups").addEventListener("click", async event => {
   const pick = /** @type {HTMLButtonElement|null} */ (target.closest("#groupWorkdirPick"));
   if (pick) {
     pick.disabled = true;
-    pick.textContent = "选择中…";
+    pick.textContent = "择取中…";
     try {
       const input = /** @type {HTMLInputElement} */ ($("#groupWorkdir"));
       const data = await bridge("/api/work/pick", { current: input.value.trim() }, AbortSignal.timeout(300000));
@@ -249,7 +249,7 @@ $("#groups").addEventListener("click", async event => {
       toast(String(error.message || error).slice(0, 80));
     } finally {
       pick.disabled = false;
-      pick.textContent = "选择…";
+      pick.textContent = "择目录…";
     }
   }
 });

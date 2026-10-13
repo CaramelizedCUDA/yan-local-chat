@@ -78,6 +78,44 @@
     }
   },
 
+  // 意：一件工程要成立的结论图，存在目录里、跨对话沿用（见 src/19-intent/）；只给主模型
+  update_intent: {
+    description:
+      "跨多答的长活可立一份意：整件工程要成立的结论图，存于目录 .yan/意.json，换对话也沿用（计划只管这一答的步骤）。一项是值得单独判的结论，不是一步动作；写怎么算成立、以哪几项为前提、凭什么。每次只给有改动的几项，已有的只给 id 与要改的字段。成立与否由你照 check 判；借外部结论、不自己做的标 assumed，note 写出处。",
+    parameters: {
+      type: "object",
+      properties: {
+        nodes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "短名，用对话的语言，八字以内" },
+              rename: { type: "string", description: "已有一项改叫这个名字（说法变了、旧名不贴切时）；前提与所属随之改" },
+              claim: { type: "string", description: "要成立的那句话" },
+              check: { type: "string", description: "怎么算成立" },
+              needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
+              any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
+              in: { type: "string", description: "所属模块的 id：一项拆开还有许多步，就当模块，细项写 in 指向它；不写即全局，至多两层" },
+              anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },
+              state: {
+                type: "string",
+                description: "open / doing / waiting（等人拍板）/ done / assumed / dropped（走过不通的路，留作记号）/ removed（方案改了、写错了，整项撤去）"
+              },
+              note: { type: "string", description: "假定的出处；待定写等谁、定什么；弃时写为何不通" },
+              root: {
+                type: "boolean",
+                description: "整件工程最终要立住的结论（用户要的结果，不是手上这一步），新立时标；说法只照用户的意思改"
+              }
+            },
+            required: ["id"]
+          }
+        }
+      },
+      required: ["nodes"]
+    }
+  },
+
   run_command: {
     description: "在工作目录执行一条非交互式指令，返回退出码、stdout 与 stderr。",
     brief: "在卷宗目录执行一条非交互式指令（生成文件、检查本机），返回退出码与输出。",
@@ -178,7 +216,7 @@
 
   delegate: {
     description:
-      "差遣一名帮手独立完成一件自成一段的子任务，做完回报。宜于量大、独立、或会读进大量与主线无关内容的活（通读归纳、多路检索比对、排查不熟的模块、按已定方案实现一部分、改后复查）；一两步的事直接做。帮手的目录与工具同你（请示用户、记与忘除外），但看不到这段对话，task 须写全。能拆成互不相干的几块时，可同一轮差遣多名并行（所改文件互不重叠）。",
+      "差遣一名帮手独立完成一件自成一段的子任务，做完回报。宜于量大、独立、或会读进大量与主线无关内容的活（通读归纳、多路检索比对、排查不熟的模块、按已定方案实现一部分、改后复查）；一两步的事直接做。帮手的目录与工具同你（请示用户、记与忘、计划与意除外），但看不到这段对话，task 须写全。能拆成互不相干的几块时，可同一轮差遣多名并行（所改文件互不重叠）。",
     brief:
       "把一件自成一段的大活（通读一批资料并归纳、多路检索比对、生成一份复杂文件）交给帮手独立做完后回报；一两步的事直接做。帮手看不到这段对话，task 须写全。",
     parameters: {

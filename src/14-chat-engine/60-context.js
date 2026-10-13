@@ -26,34 +26,41 @@ async function compactContext(c, { auto = false, before = null, profile = active
     return false;
   }
   if (compactingIds.has(c.id)) {
-    if (!auto) toast("正在压缩");
+    if (!auto) toast("正在撮要");
     return false;
   }
-  // 补言按到达的位置排进这一答（见 replyParts），摘要才分得清先后
-  const clip = text => String(text || "").slice(0, 6000),
-    transcript = source
-      .flatMap(m =>
-        m.role === "user"
-          ? [`用户：${clip(m.content)}`]
-          : [
-              ...replyParts(m).map(part =>
-                part.role === "user" ? `用户（途中补言）：${clip(part.note.note)}` : `助手：${clip(part.content)}`
-              ),
-              stepsDigest(m)
-            ].filter(Boolean)
-      )
-      .join("\n\n");
   // 摘要先在外面生成，成了再一次性插进分隔（生成期间只有页面上一行「正在压缩」，不进消息、不落盘）：
   // 中途关页面不会留下半成品分隔把历史截掉；期间用户接着发的消息也不受影响——分隔插在被压缩的最后一条之后，之后的消息照旧在分隔之后
-  const lastCompacted = source.at(-1);
+  const lastCompacted = source.at(-1),
+    // 上一份摘要是更早前文的唯一留存：一并喂进去，新摘要才是累积的，不然再压一回早期前文就整个没了
+    from = c.messages.indexOf(source[0]),
+    earlier = c.messages.findLast((m, i) => i < from && m.role === "context")?.summary;
   compactingIds.add(c.id);
   renderConversation();
   try {
+    // 途中递进来的补言、回报按到达的位置排进这一答（见 answerParts），摘要才分得清先后；问里的引文照送给模型的样子，附件记个名
+    const clip = text => String(text || "").slice(0, 6000),
+      attached = m => (m.attachments?.length ? `（附件：${m.attachments.map(file => file.name).join("、")}）` : ""),
+      transcript = (
+        await Promise.all(
+          source.map(async m =>
+            m.role === "user"
+              ? [`用户：${clip(quotedText(m))}${attached(m)}`]
+              : [
+                  ...(await answerForApi(m)).map(entry =>
+                    entry.role === "user" ? `途中递来：${clip(entryText(entry))}` : `助手：${clip(entry.content)}`
+                  ),
+                  stepsDigest(m)
+                ].filter(Boolean)
+          )
+        )
+      ).flat();
+    if (earlier) transcript.unshift(`更早的前文（上一份摘要）：${earlier}`);
     // 转写可能很长、模型可能先思考再写：超时给足五分钟。这段对话开了思考档位的，压缩时降到最低一档：摘要用不着深想
     const timeout = AbortSignal.timeout(300000),
       summary = await summarize(
         profile,
-        prompt("assistant.compact", { transcript }),
+        prompt("assistant.compact", { transcript: transcript.join("\n\n") }),
         signal ? AbortSignal.any([signal, timeout]) : timeout,
         c.reasoning
       );
@@ -68,7 +75,7 @@ async function compactContext(c, { auto = false, before = null, profile = active
     saveStore();
     compactingIds.delete(c.id);
     renderConversation();
-    toast(auto ? "上下文已重，前文已自动压成摘要" : "前文已压成摘要");
+    toast(auto ? "上下文已重，前文已自动撮要" : "前文已撮要");
     return true;
   } catch (error) {
     compactingIds.delete(c.id);
@@ -76,8 +83,8 @@ async function compactContext(c, { auto = false, before = null, profile = active
     // 作答途中压的，用户点了停止：不必再说压缩失败
     if (signal?.aborted) return false;
     console.warn("压缩失败", error);
-    const reason = error?.name === "TimeoutError" ? "模型五分钟内未写出摘要" : friendlyError(String(error?.message || error));
-    toast(`压缩失败：${reason.slice(0, 80)}`);
+    const reason = error?.name === "TimeoutError" ? "模型五分钟内未写出撮要" : friendlyError(String(error?.message || error));
+    toast(`撮要未成：${reason.slice(0, 80)}`);
     return false;
   } finally {
     compactingIds.delete(c.id);
@@ -105,7 +112,7 @@ async function summarize(profile, ask, signal, reasoning = "") {
   const summary = String(temp.content || "")
     .replace(/<think>[\s\S]*?<\/think>/g, "")
     .trim();
-  if (!summary) throw Error(temp.reasoning ? "模型只写了思考、没写出摘要（输出被上限截断）" : "模型没有写出摘要");
+  if (!summary) throw Error(temp.reasoning ? "模型只写了思考、没写出撮要（输出被上限截断）" : "模型没有写出撮要");
   return summary;
 }
 // 分隔上的摘要进历史：一问一答的样子，各家接口都认（说法见 prompts/assistant.js 的 summary）
@@ -198,13 +205,44 @@ function foldTranscript(region, budget) {
   }
   return lines.filter(Boolean).join("\n\n");
 }
+// 撮要在行迹里记作一步（不是工具，画法登记在 15-tools/51-fold.js）：落在它发生的那一刻，正撮着转圈、撮完一勾，点开是笔记——
+// 模型此后只凭笔记做事，看行迹的人得知道。拟题、压缩这些临时对象不走这里（它们没有 head）
+/** @param {Message|SubAgent|null} target @param {NonNullable<Step["fold"]>} fold */
+function foldMark(target, fold) {
+  if (!target) return null;
+  /** @type {Step} */
+  const step = {
+    id: `fold_${uid().slice(0, 8)}`,
+    name: "fold",
+    arguments: "{}",
+    status: "running",
+    at: String(target.content || "").length,
+    rat: String(target.reasoning || "").length,
+    fold
+  };
+  (target.steps ||= []).push(step);
+  return step;
+}
+// 撮要没成事（前文太短不必压、压前文失败另有提示）：那一步撤下，不留痕
+function dropFoldMark(target, step) {
+  if (!target?.steps || !step) return;
+  target.steps = target.steps.filter(s => s !== step);
+  if (!target.steps.length) delete target.steps;
+}
+// 被撮的往来有多少字：说的话、工具结果与调用参数
+const regionChars = region =>
+  region.reduce(
+    (n, m) => n + plainContent(m.content).length + (m.tool_calls || []).reduce((k, c) => k + String(c.function?.arguments || "").length, 0),
+    0
+  );
 /**
  * 需要时把 history 里这一答较早的往来压成笔记（就地改 history），压了返回 true
  * @param {Profile} profile
  * @param {Array<Record<string, any>>} history
  * @param {Record<string, any>} overrides 读 head、systemPrompt、tools、reasoning、onFold、compactHead；seen 由 readReply 记下
+ * 末一个参数里 target 是撮要那一步记在谁的行迹上（主答、帮手）
  */
-async function keepInWindow(profile, history, signal, overrides, { overflow = false } = {}) {
+async function keepInWindow(profile, history, signal, overrides, { overflow = false, target = null } = {}) {
   const head = overrides.head,
     window = Number(profile.contextWindow) || 0;
   if (typeof head !== "number") return false;
@@ -225,16 +263,27 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
   if (!region.some(m => m.role === "tool")) {
     if (!overrides.compactHead || overrides.headCompacted) return false;
     overrides.headCompacted = true;
+    // 已在做事的答才记进行迹；还没开工的不为它起一条行迹，问句之上那道摘要分隔就是它的痕迹
+    const mark = target?.steps?.length ? foldMark(target, { head: true }) : null;
     overrides.onFold?.(true);
     try {
-      if (!(await overrides.compactHead(signal))) return false;
+      if (!(await overrides.compactHead(signal))) {
+        dropFoldMark(target, mark);
+        return false;
+      }
+      if (mark) mark.status = "done";
       overrides.seen = null;
+      overrides.folds = (overrides.folds || 0) + 1;
       return true;
+    } catch (error) {
+      if (!signal.aborted) dropFoldMark(target, mark);
+      throw error;
     } finally {
       overrides.onFold?.(false);
     }
   }
   const task = plainContent(history.slice(0, head).findLast(m => m.role === "user")?.content).slice(0, 4000);
+  const mark = foldMark(target, { steps: region.filter(m => m.role === "tool").length, from: regionChars(region) });
   overrides.onFold?.(true);
   try {
     const note = await summarize(
@@ -249,13 +298,16 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
       { role: "assistant", content: `［工作笔记］\n${note}` },
       { role: "user", content: prompt("assistant.folded") }
     );
+    if (mark) Object.assign(mark, { status: "done", note, fold: { ...mark.fold, to: note.length } });
     overrides.seen = null;
     overrides.folds = (overrides.folds || 0) + 1;
     return true;
   } catch (error) {
+    // 停止了：那一步由收尾的 settleSteps 记成已停止
     if (signal.aborted) throw error;
     // 没压成：送出前的那次照原样发，也许还放得下；接口已回说放不下的，由 readReply 把原来的错交回去
     console.warn("轮内压缩失败", error);
+    if (mark) Object.assign(mark, { status: "error", result: "未撮成" });
     return false;
   } finally {
     overrides.onFold?.(false);

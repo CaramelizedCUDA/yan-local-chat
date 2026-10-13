@@ -6,9 +6,9 @@
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
 const { createHash, randomBytes, randomUUID } = require("node:crypto");
 const { jsonRoute, writeAtomic } = require("../http.js");
+const { openUrl } = require("../platform.js");
 
 // 两处地址可由环境变量换掉，只为测试：起一个假的授权与接口服务
 const AUTH = (process.env.YAN_CHATGPT_AUTH || "https://auth.openai.com").replace(/\/+$/, "");
@@ -108,8 +108,14 @@ module.exports = function createChatgpt({ home }) {
     })().finally(() => (refreshing = null));
     return refreshing;
   }
-  async function headers() {
-    return { "Content-Type": "application/json", Authorization: `Bearer ${await accessToken()}` };
+  // 缓存键另放进请求头的 session_id：后端照它把请求送到存着前文缓存的那一处，光有请求体里的 prompt_cache_key 一回也不中
+  // （2026-10-09 实测：同一前缀隔半分钟再发，带它读到 99%，不带一直是 0）
+  async function headers(_config, body) {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${await accessToken()}`,
+      ...(body?.prompt_cache_key ? { session_id: body.prompt_cache_key } : {})
+    };
   }
 
   // 登录：桥接在 127.0.0.1 上临时开一个回调口，用系统浏览器打开授权页；用户点了同意，浏览器带着 code 回到回调口，
@@ -180,9 +186,7 @@ module.exports = function createChatgpt({ home }) {
       ...(auth.clientId ? {} : { agent_name_hint: "言" })
     });
     const url = `${AUTH}/api/accounts/authorize?${query}`;
-    // 交给 url.dll 用默认浏览器打开：不经 cmd（网址里的 & 会被当成命令分隔）；explorer.exe 认不全这种长网址，会打开「文档」
-    if (process.platform === "win32" && !process.env.YAN_CHATGPT_AUTH)
-      spawn("rundll32.exe", ["url.dll,FileProtocolHandler", url], { detached: true, stdio: "ignore" }).unref();
+    if (!process.env.YAN_CHATGPT_AUTH) openUrl(url);
     return { url };
   }
   function status() {
@@ -236,7 +240,7 @@ module.exports = function createChatgpt({ home }) {
   const provider = {
     needsBaseUrl: false,
     url: () => `${API}/responses`,
-    headers: () => headers(),
+    headers: (config, body) => headers(config, body),
     request: payload => responsesRequest(payload),
     stream: model => responsesToOpenAiStream(model),
     models: () => models(),
@@ -375,14 +379,16 @@ function responsesToOpenAiStream(model = "") {
       );
     else if (type === "response.completed" || type === "response.incomplete") {
       const u = data.response?.usage || {},
-        length = data.response?.incomplete_details?.reason === "max_output_tokens";
+        // 没写完（incomplete）的原因：到输出上限即 length；内容拦截之类原样交给页面，由它判作半途被掐，不冒充写完
+        cut = type === "response.incomplete" ? data.response?.incomplete_details?.reason || "incomplete" : "",
+        finish = !cut ? (calls.size ? "tool_calls" : "stop") : cut === "max_output_tokens" ? "length" : cut;
       const usage = {
         prompt_tokens: Number(u.input_tokens) || 0,
         completion_tokens: Number(u.output_tokens) || 0,
         total_tokens: Number(u.total_tokens) || 0,
         prompt_tokens_details: { cached_tokens: Number(u.input_tokens_details?.cached_tokens) || 0 }
       };
-      controller.enqueue(chunk({}, { usage }, length ? "length" : calls.size ? "tool_calls" : "stop"));
+      controller.enqueue(chunk({}, { usage }, finish));
       stopped = true;
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
     } else if (type === "response.failed") fail(controller, data.response?.error);

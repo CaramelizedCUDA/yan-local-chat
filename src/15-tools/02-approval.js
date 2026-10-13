@@ -1,6 +1,8 @@
 // 言 · 请示：步骤挂起、等用户定夺——运行一条指令（run_command），或答一张小表单（ask_user）。
 // 请示条从输入框上方浮出，不必去行迹里找那一行；条上画什么由那件工具的 approval 定。输入框留空时按 Enter 即运行或翻到下一题
 const pendingApprovals = new Map();
+// 挂起时作业条、行迹题头与那一步上写的字；侧栏、帮手面板据它认出「在等人」，别处只引这一个
+const AWAITING = "待你定夺";
 /**
  * 挂起这一步，等用户在请示条上定夺，返回定夺的结果
  * @param {Step} step
@@ -10,7 +12,7 @@ async function askApproval(step, { conversation, assistant, signal }) {
   signal.throwIfAborted();
   const job = requestJob(conversation.id);
   step.status = "pending";
-  if (job) setJobLabel(conversation, job, "等待确认");
+  if (job) setJobLabel(conversation, job, AWAITING);
   refreshSteps(assistant);
   saveStore();
   renderHistory();

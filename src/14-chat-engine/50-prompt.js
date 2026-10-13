@@ -59,7 +59,7 @@ function workVars(conversation) {
           ? "work.reachAnywhere"
           : "work.reachInside"
     ),
-    platform: win ? "Windows" : bootstrap.work?.platform || "类 Unix",
+    platform: win ? "Windows" : bootstrap.work?.platform === "darwin" ? "macOS" : "类 Unix",
     shell,
     shellNote: win ? prompt(/5\.1/.test(shell) ? "work.windowsShellLegacy" : "work.windowsShell") : ""
   };

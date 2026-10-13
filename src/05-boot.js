@@ -7,7 +7,7 @@ function recoverConversation(conversation) {
   for (const message of conversation.messages || [])
     if (message.status === "streaming") {
       message.status = "interrupted";
-      message.error = "页面刷新或连接中断，已生成的内容已保留";
+      message.error = "页面刷新或连接中断，已写的部分都在";
       message.interruptedAt = now();
       // 用时停在最后一次存盘时（作答时每秒记一回），起始时刻不再有用
       delete message.startedAt;
@@ -117,6 +117,7 @@ function bindEvents() {
   bindHistoryEvents();
   bindMessageActionEvents();
   bindTrailEvents();
+  bindIntentEvents();
   bindApprovalEvents();
   bindHelperEvents();
   setupChips();
@@ -126,6 +127,14 @@ function bindEvents() {
   bindAttachmentEvents();
   bindStage();
   bindStageInk();
+  // 输入法组字中的按键（选词的 Enter、取消组字的 Esc）归输入法：在最外层先拦下，各处的快捷键都不必各自判一回
+  window.addEventListener(
+    "keydown",
+    e => {
+      if (e.isComposing || e.keyCode === 229) e.stopImmediatePropagation();
+    },
+    true
+  );
   // Esc 收最上面开着的那一层浮层（各层在自己那一段登记，见 03-ui-utils.js 的 LAYERS）
   window.addEventListener("keydown", e => {
     if (e.key === "Escape") closeTopLayer();

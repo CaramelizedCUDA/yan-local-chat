@@ -516,7 +516,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   position: relative;
   z-index: 5;
 }
-/* 书眉：标题滚走后，顶栏左边靠侧栏留一行题名与问数；没滚过标题时不显示，不与标题重复。点一下回到开头。
+/* 书眉：标题滚走后，顶栏左边靠侧栏留一行题名与问数（立了意的再带一枚意，点它开卡片）；没滚过标题时不显示，不与标题重复。点一下回到开头。
    落选的：居中疏排只留题名（像书页页眉，但与右侧的状态挤在一条线上，题名一长就难看） */
 .running-head {
   position: absolute;
@@ -533,6 +533,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font: 500 13px var(--title);
   letter-spacing: 0.08em;
   text-align: left;
+  cursor: pointer;
   opacity: 0;
   transform: translateY(4px);
   pointer-events: none;
@@ -554,7 +555,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.running-head:hover .running-head-title {
+.running-head:hover:not(:has(.intent-glance:hover)) .running-head-title {
   color: var(--ink);
 }
 .running-head-meta {
@@ -562,6 +563,9 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   color: var(--ink-3);
   font: 10px var(--title);
   letter-spacing: 0.14em;
+}
+.running-head-intent {
+  display: contents;
 }
 /* 翻在一段摊开的行迹中间时，顶栏正中浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
    对着对话那一列的中线；它浮出时，左边的书眉让到中线以左，长题名不压到它底下。
@@ -795,7 +799,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .theme-toggle[data-theme="dark"]:hover .theme-wash {
   transform: rotate(204deg);
 }
-/* 余墨：一笔墨色短横（画法见 src/07-render.js 的 quotaInk），数目与上限在靠近时浮出的纸签上（方角顶朱，同浮签一式）。
+/* 余墨：一笔墨色短横（画法见 src/07-render/00-frame.js 的 quotaInk），数目与上限在靠近时浮出的纸签上（方角顶朱，同浮签一式）。
    用尽时那一笔转朱。落选的：「余墨」二字 + 朱色渐变一笔 + 等宽数目常显（设计稿/30） */
 .quota {
   position: relative;

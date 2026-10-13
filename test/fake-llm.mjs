@@ -135,7 +135,7 @@ function chatgpt(req, res) {
       const send = data => res.write(`data: ${JSON.stringify(data)}\n\n`);
       send({
         type: "response.output_text.delta",
-        delta: `CHATGPT|bearer:${bearer}|store:${payload.store}|instr:${!!payload.instructions}|effort:${payload.reasoning?.effort || ""}`
+        delta: `CHATGPT|bearer:${bearer}|store:${payload.store}|instr:${!!payload.instructions}|effort:${payload.reasoning?.effort || ""}|session:${!!payload.prompt_cache_key && req.headers.session_id === payload.prompt_cache_key}`
       });
       send({ type: "response.completed", response: { usage: { input_tokens: 10, output_tokens: 3, total_tokens: 13 } } });
       return res.end();
@@ -841,6 +841,91 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // 收尾前对照意：递来的那句话原样回显，就此收尾（只拦一回，回显之后不该再来）
+      if (typeof lastUser === "string" && lastUser.startsWith("［收尾前对照意］"))
+        return sse(res, [delta({ content: `GATE|${lastUser}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      // INTENTC：两项同依托 api/user.js，标成立后改它、再标成立、再改……第三回改完该说相持；末轮回显各工具结果。
+      // 须排在 INTENTA、INTENTB 前：同一目录的意里记着它们的原话，随这一问附着
+      if (typeof lastUser === "string" && lastUser.includes("INTENTC")) {
+        const n = toolResults.length,
+          call = (index, name, args) => ({
+            index,
+            id: `call_c${n}_${index}`,
+            type: "function",
+            function: { name, arguments: JSON.stringify(args) }
+          }),
+          both = {
+            nodes: [
+              { id: "登录", state: "done" },
+              { id: "隐私", state: "done" }
+            ]
+          },
+          rounds = {
+            0: [
+              call(0, "write_file", { path: "api/user.js", content: "v1" }),
+              call(1, "update_intent", {
+                nodes: [
+                  { id: "登录", claim: "登录返回用户信息", check: "看返回", anchors: ["api/user.js"], root: true },
+                  { id: "隐私", claim: "不泄露手机号", check: "看返回", anchors: ["api/user.js"], root: true }
+                ]
+              })
+            ],
+            2: [call(0, "update_intent", both)],
+            3: [call(0, "write_file", { path: "api/user.js", content: "v2" })],
+            4: [call(0, "update_intent", both)],
+            5: [call(0, "write_file", { path: "api/user.js", content: "v3" })],
+            6: [call(0, "update_intent", both)],
+            7: [call(0, "write_file", { path: "api/user.js", content: "v4" })]
+          };
+        if (rounds[n]) return sse(res, [delta({ tool_calls: rounds[n] }), delta({}, { usage: { total_tokens: 5 } })]);
+        return sse(res, [
+          delta({ content: `INTENTC|${toolResults.map(t => String(t.content)).join(" ▸ ")}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
+      // INTENTB：第二问，把这一问附着的整段（意在其中）回显；须先认它——它附着的意里有第一问的原话 INTENTA
+      if (typeof lastUser === "string" && lastUser.includes("INTENTB"))
+        return sse(res, [delta({ content: `INTENTB|${lastUser}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      // INTENTA：立意（一根一前提，前提依托 src/a.js）并写出那个文件；第二轮标前提成立、再改根的说法；第三轮回显各结果
+      if (typeof lastUser === "string" && lastUser.includes("INTENTA")) {
+        const n = toolResults.length,
+          call = (index, name, args) => ({
+            index,
+            id: `call_i${n}_${index}`,
+            type: "function",
+            function: { name, arguments: JSON.stringify(args) }
+          });
+        if (n === 0)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                call(0, "write_file", { path: "src/a.js", content: "v1" }),
+                call(2, "write_file", { path: "notes.txt", content: "随手记" }),
+                call(1, "update_intent", {
+                  nodes: [
+                    { id: "上线", claim: "可在公网访问", check: "外网打得开", needs: ["甲"], root: true },
+                    { id: "甲", claim: "a.js 写好", check: "内容是 v1", anchors: ["./src/a.js", "dir:src/", "cmd:node --version"] }
+                  ]
+                })
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (n === 3)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                call(0, "update_intent", { nodes: [{ id: "甲", state: "done" }] }),
+                call(1, "update_intent", { nodes: [{ id: "上线", claim: "只在内网访问" }] })
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({ content: `INTENTA|${toolResults.map(t => String(t.content).replace(/\s+/g, " ")).join(" ▸ ")}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       if (typeof lastUser === "string" && lastUser.includes("NEWTOOLS")) {
         // 新工具一轮全用上：算一段 JS、调本机服务（放行）与内网地址（该拒）、下载本机文件与内网地址、列一份计划；第二轮把各结果回显
         const n = toolResults.length;
@@ -932,6 +1017,12 @@ http
           delta({ content: "先写半句，" }),
           delta({ content: "再写半句。" }),
           { error: { message: "rate limited (fake)", type: "rate_limit_error" } }
+        ]);
+      // 写到半个词，结束标志却照常来，原因是 abort（vLLM 引擎里中止）：页面该按中断接着写
+      if (typeof lastUser === "string" && lastUser.includes("ABORTCUT"))
+        return sse(res, [
+          delta({ content: "写到一半 back" }),
+          { ...delta({}, { usage: { total_tokens: 5 } }), choices: [{ index: 0, delta: {}, finish_reason: "abort" }] }
         ]);
       if (typeof lastUser === "string" && lastUser.includes("STREAMCUT")) {
         // 写了半截上游就掐线：桥接得补一条报错事件给页面，页面按中断处理，而不是把半截当写完
@@ -1148,7 +1239,8 @@ http
           res,
           [
             delta({
-              content: `回报乙：已新建 src/b.js。｜echo:${String(msgs.find(m => m.role === "assistant" && m.tool_calls)?.reasoning_content || "").startsWith("帮手乙想第 1 步。") ? "yes" : "no"}｜effort:${payload.reasoning_effort ?? "none"}`
+              // 两个字段名都得带：新版 vLLM 只认 reasoning
+              content: `回报乙：已新建 src/b.js。｜echo:${[msgs.find(m => m.role === "assistant" && m.tool_calls)].every(m => String(m?.reasoning_content || "").startsWith("帮手乙想第 1 步。") && m.reasoning === m.reasoning_content) ? "yes" : "no"}｜effort:${payload.reasoning_effort ?? "none"}`
             }),
             delta({}, { usage: { total_tokens: 7 } })
           ],

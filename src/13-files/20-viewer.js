@@ -5,6 +5,7 @@
 // 自己上传的 CSV、PDF、Markdown 点开就该是看，而不是把刚发出去的东西再下载一遍。
 // viewerSource 记着当前看的是哪一件：{ path } 是卷宗，{ attachmentId } 是附件；viewerPath 仍留给卷宗那一路的下载
 let viewerPath = "",
+  viewerRevision = 0,
   viewerSource = null,
   viewerReturnFocus = null,
   viewerObjectUrls = [];
@@ -51,6 +52,7 @@ async function viewerReader(source) {
 }
 /** @param {string|{path?:string, attachmentId?:string}} target 卷宗路径，或 { attachmentId } */
 async function openFileViewer(target, name = "", trigger = null) {
+  viewerRevision++;
   const source = typeof target === "string" ? { path: target } : target;
   const viewer = $("#fileViewer");
   if (!viewer) return;
@@ -66,6 +68,7 @@ async function openFileViewer(target, name = "", trigger = null) {
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
   viewer.classList.remove("hidden");
+  setViewerSeal();
   $("#fileViewerDownload").classList.remove("hidden");
   $("#fileViewerName").textContent = title;
   $("#fileViewerStage").innerHTML = `<div class="file-viewer-empty">正在取出…</div>`;
@@ -210,6 +213,7 @@ function splitDelimited(row, split) {
 }
 /** @param {boolean} [stop] 点的是 ×：摊着的若是正放的那一曲，一并停下；别的关法只收起，正放着的挂上顶栏接着放 */
 function closeFileViewer(stop = false) {
+  viewerRevision++;
   listenViewerClosed(stop);
   const target = viewerReturnFocus;
   viewerPath = "";
@@ -223,19 +227,29 @@ function closeFileViewer(stop = false) {
   if (target?.isConnected) target.focus();
 }
 // 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起
-function showInFileViewer(title, html, trigger = null) {
+/** 顶栏那一枚印：预览一律「览」，意的卡片换它自己的石青「意」（全页仍只一枚印） @param {string} [glyph] */
+function setViewerSeal(glyph = "览") {
+  const seal = $("#fileViewer .file-viewer-head > .seal");
+  if (seal) seal.textContent = seal.dataset.seal = glyph;
+}
+/** @param {string} title @param {string} html @param {Element|null} [trigger] @param {string} [seal] 顶栏的印 */
+function showInFileViewer(title, html, trigger = null, seal = "览") {
+  viewerRevision++;
   viewerPath = "";
   viewerSource = null;
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
   $("#fileViewer").classList.remove("hidden");
+  setViewerSeal(seal);
   $("#fileViewerDownload").classList.add("hidden");
   $("#fileViewerName").textContent = title;
   $("#fileViewerStage").innerHTML = html;
   $("#fileViewerClose").focus();
 }
-let imageViewerArchivePath = null;
+let imageViewerArchivePath = null,
+  imageViewerRevision = 0;
 function openArchiveImage(path, trigger = null) {
+  imageViewerRevision++;
   const entry = (archiveEntries || []).find(file => file.path === path);
   imageViewerAttachmentId = null;
   imageViewerArchivePath = path;
@@ -308,6 +322,7 @@ function toggleImageViewerZoom() {
 let imageViewerAttachmentId = null,
   imageViewerReturnFocus = null;
 function closeImageViewer() {
+  imageViewerRevision++;
   const viewer = $("#imageViewer");
   if (viewer.classList.contains("hidden")) return;
   viewer.classList.add("hidden");
@@ -321,8 +336,10 @@ function closeImageViewer() {
   if (target?.isConnected) target.focus();
 }
 async function openImageViewer(id, trigger = null) {
+  const revision = ++imageViewerRevision;
   try {
     const file = await getAttachment(id);
+    if (revision !== imageViewerRevision) return;
     if (!file) return toast("图片原件已找不到");
     if (file.kind !== "image") return openFileViewer({ attachmentId: id }, file.name, trigger);
     imageViewerAttachmentId = id;
@@ -338,7 +355,7 @@ async function openImageViewer(id, trigger = null) {
     $("#imageViewer").classList.remove("hidden");
     $("#imageViewerClose").focus();
   } catch {
-    toast("图片读取失败");
+    if (revision === imageViewerRevision) toast("图片读取失败");
   }
 }
 // 图片查看器盖在卷宗预览之上，先收它（连同底下的预览）；CSV、Markdown、PDF 这些预览单独开着时，Esc 也得关得掉

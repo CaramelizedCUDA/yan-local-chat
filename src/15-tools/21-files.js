@@ -11,7 +11,9 @@ defineTool({
   html: workStepHtml,
   digest: true,
   async run(step, args, { conversation, signal }) {
-    const data = await bridge("/api/work/write", { ...workScope(conversation), path: args.path, content: args.content }, signal);
+    // 没读过的：已有的文件桥接那头拦下（新建的照写），与 edit_file 同一条「改之前先读过」
+    const unseen = !seenBefore(conversation, step, args.path),
+      data = await bridge("/api/work/write", { ...workScope(conversation), path: args.path, content: args.content, unseen }, signal);
     step.title = data.path;
     step.root = workRoot(conversation);
     step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
@@ -32,7 +34,7 @@ defineTool({
     if (data.previous) step.previous = String(data.previous);
     return {
       ok: true,
-      content: `已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? "，覆盖了原文件" : ""}）`,
+      content: `已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? `，覆盖了原${data.binary ? "有的二进制" : ""}文件` : ""}${data.converted ? "；原文件是 GBK，已存成 UTF-8" : ""}）`,
       display: data.existed ? "已覆盖" : "已写入"
     };
   }
@@ -101,7 +103,7 @@ defineTool({
 defineTool({
   name: "list_files",
   group: "work",
-  label: "列目录",
+  label: "览目录",
   offer: ctx => ctx.files,
   parallel: true,
   html: workStepHtml,
@@ -119,8 +121,10 @@ defineTool({
     return {
       ok: true,
       content: data.entries.length
-        ? `${data.entries.join("\n")}${data.truncated ? "\n…（条目过多已截断，请指定子目录）" : ""}`
-        : "（空目录）",
+        ? `${data.entries.join("\n")}${data.truncated ? "\n…（条目过多已截断，深处的没列全；请指定子目录）" : ""}`
+        : args.pattern
+          ? `（没有匹配 ${args.pattern} 的文件）`
+          : "（空目录）",
       display: `${data.entries.length} 项`
     };
   }
@@ -152,9 +156,16 @@ defineTool({
     step.output = trimOutput(lines.join("\n"));
     // 桥接替模型圆过的（正则写不成，按字面搜了）：说在结果前头
     step.note = data.note || (lines.length ? "" : "无匹配");
-    const found = lines.length
-      ? `${lines.join("\n")}${data.truncated ? "\n…（结果已截断，请缩小范围或加 glob）" : ""}`
-      : `未找到匹配「${args.query}」的内容（扫描了 ${data.scanned} 个文件）`;
+    // 搜得不全的照实说：扫到文件上限、没进去的大目录。零命中时模型最容易据此断言「没有」
+    const partial = [
+        data.limited && `只扫了前 ${data.limited} 个文件，其余未搜；请缩小 path 或加 glob`,
+        data.skipped?.length && `未进入 ${data.skipped.join("、")}；要搜其中的，把 path 指进去`
+      ]
+        .filter(Boolean)
+        .join("；"),
+      found = lines.length
+        ? `${lines.join("\n")}${data.truncated && !data.limited ? "\n…（结果已截断，请缩小范围或加 glob）" : ""}${partial ? `\n（${partial}）` : ""}`
+        : `扫描的 ${data.scanned} 个文件里未找到匹配「${args.query}」的内容${partial ? `（${partial}）` : ""}`;
     return {
       ok: true,
       content: data.note ? `（${data.note}）\n${found}` : found,
@@ -259,13 +270,13 @@ async function ensureWorkReady(conversation) {
     if (prepared.created) toast("工作目录不存在，已新建");
     conversation.workdir = prepared.workdir;
   } catch (error) {
-    toast(bridgeTimedOut(error) ? "本机桥接响应超时，消息未发送，文字仍在输入框" : `工作目录不可用：${String(error.message || error)}`);
+    toast(bridgeTimedOut(error) ? "本机桥接响应超时，未能寄出，文字仍在输入框" : `工作目录不可用：${String(error.message || error)}`);
     return false;
   }
   return true;
 }
 // 账本：跨多答的长活，任务活在目录里、不活在哪一段对话里——目录下 .yan/账本.md 由主模型自己立、自己维护，
-// 只记对这件工程持续有约束的（目标与达标标准、约束与取舍、计划与进展、走不通的路），旧的随手淘汰。
+// 只记对这件工程持续有约束、又不是一条结论的（约束与取舍、做法与环境上的要点），旧的随手淘汰；结论、进展与走不通的路归意（见 src/19-intent/）。
 // 每一答开工时读一回，附在这一问之后（见 ledgerNote 与 streamReply）：压缩了、被回报叫醒另起一答、换一段对话接着做，看到的都是同一份。
 // 附在问上而不进系统提示：账本改了也不冲掉前面的缓存。没有这个文件就什么都不附。
 // 账本记多少不设上限——有的活真要记很多；限的只是每一问附多少：随模型窗口走，取附件那把尺子的一半（它每一问都附）。

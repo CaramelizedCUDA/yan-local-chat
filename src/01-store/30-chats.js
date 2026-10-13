@@ -160,7 +160,8 @@ async function writeConversation(id) {
         }
       }
     if (activeChatWrites.get(id) === pending) activeChatWrites.delete(id);
-    if (persisted && !deletedChatIds.has(id)) {
+    // 桥接在线却没写进盘（文件被占着之类）：浏览器里暂存着，但脏标记留着，下回保存再往盘上写
+    if (persisted && !deletedChatIds.has(id) && !(spilled && chatsOnline())) {
       chatHashes.set(id, hash);
       if (!pendingChatWrites.has(id)) dirtyChatIds.delete(id);
     }

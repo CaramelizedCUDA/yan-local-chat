@@ -2,6 +2,7 @@
 "use strict";
 const { spawn, spawnSync } = require("node:child_process");
 const sandbox = require("../sandbox.js");
+const { OWN_GROUP, killTree, killTreeSync } = require("../platform.js");
 const { tail, decodeClixml, encodePowerShell } = require("./text.js");
 
 // Windows 上有 PowerShell 7（pwsh）就用它：被 Select-Object -First 截断的原生程序不再报退出码 -1、&& 与 || 可用、
@@ -11,39 +12,24 @@ const WORK_SHELL = process.platform !== "win32" ? "sh" : PWSH ? "PowerShell 7" :
 // 包在指令外的一层：先把输入输出切到 UTF-8，再把指令（经环境变量 YAN_COMMAND 递进来）当作一段脚本解析、在当前作用域执行。
 // 指令若直接拼进来，写错了（bash 的 heredoc 之类）整段解析不过、切编码那行也没跑，报错按系统代码页吐出来就成了乱码；
 // 分开解析，报错是读得懂的字，模型一看就知道改。末尾追记的 $? 是指令最后一句成没成（包成脚本块后外头的 $? 不再是它）。
-// 原生程序的退出码在 $LASTEXITCODE；cmdlet 出错不设它，靠那个 $? 兜底，让模型能从退出码看出失败
+// 原生程序的退出码在 $LASTEXITCODE；cmdlet 出错不设它，靠那个 $? 兜底，让模型能从退出码看出失败。
+// 5.1 下原生程序经 2>&1 写了 stderr（git clone、npm install 的进度）也会让 $? 为假、$LASTEXITCODE 却是 0：最近一条错是
+// NativeCommandError 的就不算失败，退出码以 $LASTEXITCODE 为准。
+// 5.1 的读写文件 cmdlet 默认按系统代码页、> 写 UTF-16：统一成 UTF-8（写出带 BOM，5.1 读 .ps1 才不当 ANSI），与 write_file 写出的读得通
 const POWERSHELL_WRAPPER = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; $OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference='SilentlyContinue'
 if ($PSStyle) { $PSStyle.OutputRendering = 'PlainText' }
+if ($PSVersionTable.PSVersion.Major -lt 6) { foreach ($__c in 'Get-Content','Set-Content','Add-Content','Out-File','Export-Csv','Import-Csv','Select-String') { $PSDefaultParameterValues["$($__c):Encoding"] = 'utf8' } }
 try { $__yan = [ScriptBlock]::Create($env:YAN_COMMAND + [Environment]::NewLine + '$__yanOk = $?') }
 catch { [Console]::Error.WriteLine("PowerShell 解析不了这条指令：" + $(if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message })); exit 1 }
 Remove-Item Env:YAN_COMMAND
 $__yanOk = $true
 . $__yan
-if ($LASTEXITCODE) { exit $LASTEXITCODE } elseif (-not $__yanOk) { exit 1 }`;
+if ($LASTEXITCODE) { exit $LASTEXITCODE } elseif (-not $__yanOk -and -not ($Error.Count -and "$($Error[0].FullyQualifiedErrorId)" -like 'NativeCommandError*')) { exit 1 }`;
 const WORK_OUTPUT_LIMIT = 20000;
 // 交给模型的输出：stderr 里 PowerShell 的 CLIXML 还原成字，终端的颜色控制符（pytest、PowerShell 7 的报错都会带）去掉，过长的留尾
 const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
 const shownOutput = (text, stderr = false) =>
   tail((stderr && process.platform === "win32" ? decodeClixml(text) : text).replace(ANSI, ""), WORK_OUTPUT_LIMIT);
-// 杀整棵进程树：PowerShell 起的子进程（node、python、构建脚本）不能只杀 shell 本身，否则用户点了停止，脚本还在后台改文件
-function killTree(child) {
-  if (!child.pid || child.exitCode !== null || child.signalCode) return;
-  if (process.platform !== "win32") return child.kill("SIGKILL");
-  // taskkill 能把孙进程一起收掉，但受限环境里可能被系统拒绝；那时至少要终止直属 shell，不能让指令继续写文件。
-  const killShell = () => {
-    if (child.exitCode !== null || child.signalCode) return;
-    try {
-      child.kill("SIGKILL");
-    } catch {}
-  };
-  const killer = spawn("taskkill", ["/T", "/F", "/PID", String(child.pid)], { windowsHide: true, stdio: "ignore" }),
-    fallback = setTimeout(killShell, 750);
-  killer.once("error", killShell);
-  killer.once("close", code => {
-    clearTimeout(fallback);
-    if (code) killShell();
-  });
-}
 module.exports = function createShell({ toolEnv }) {
   // 起一个 shell 跑指令（Windows 上外面包一层，见 POWERSHELL_WRAPPER）；指令经环境变量递进去，比塞进命令行能长两倍多
   function spawnShell(command, cwd, { boxed = false } = {}) {
@@ -54,6 +40,7 @@ module.exports = function createShell({ toolEnv }) {
     const child = spawn(win ? (PWSH ? "pwsh.exe" : "powershell.exe") : "/bin/sh", args, {
       cwd,
       windowsHide: true,
+      ...OWN_GROUP,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...toolEnv(boxed ? sandbox.sandboxEnv(process.env) : process.env),
@@ -62,6 +49,11 @@ module.exports = function createShell({ toolEnv }) {
         PYTHONIOENCODING: "utf-8",
         PYTHONUTF8: "1",
         CI: "1",
+        // 窗口是隐藏的、没有输入：git 要在控制台问凭据、问主机指纹、开编辑器写提交说明，只会挂到超时。
+        // 让它当场失败、把原因报出来（凭据管理器的登录窗不受影响）；用户自己设了的照旧
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_EDITOR: process.env.GIT_EDITOR || "true",
+        GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND || "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
         ...(win ? { YAN_COMMAND: command } : {})
       }
     });
@@ -200,20 +192,15 @@ module.exports = function createShell({ toolEnv }) {
       durationMs: Date.now() - job.started
     };
   }
-  // 桥接退出时把还在跑的指令（前台的与后台的）一并收掉（退出时起不了异步的 taskkill，用同步的）
+  // 桥接退出时把还在跑的指令（前台的与后台的）一并收掉，连根
   process.on("exit", () => {
-    for (const child of runningShells)
-      if (child.pid && child.exitCode === null && !child.signalCode)
-        try {
-          if (process.platform === "win32")
-            spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { windowsHide: true, stdio: "ignore" });
-          else child.kill("SIGKILL");
-        } catch {}
+    for (const child of runningShells) killTreeSync(child);
   });
   // check_command：取后台指令的新输出；stop 时先收掉它（最多等三秒）
-  async function checkBackground(id, stop, waitMs) {
+  // key：页面收口时带上（编号在桥接重启后重数，不带 key 可能收到别的指令上）
+  async function checkBackground(id, stop, waitMs, key = "") {
     const job = backgroundJobs.get(String(id || ""));
-    if (!job) throw Error(`没有编号为 ${id} 的后台指令（桥接重启过的话，之前的后台指令已随之结束）`);
+    if (!job || (key && job.key !== key)) throw Error(`没有编号为 ${id} 的后台指令（桥接重启过的话，之前的后台指令已随之结束）`);
     if (stop && job.exitCode === null) {
       killTree(job.child);
       await new Promise(resolve => {
@@ -244,5 +231,5 @@ module.exports = function createShell({ toolEnv }) {
     job.reported = true;
     return { ...(await backgroundReport(job, 0)), command: job.command };
   }
-  return { WORK_SHELL, killTree, runShell, startBackground, backgroundReport, checkBackground, watchBackground };
+  return { WORK_SHELL, runShell, startBackground, backgroundReport, checkBackground, watchBackground };
 };

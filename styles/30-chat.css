@@ -104,6 +104,7 @@ html.work-mode .chat-scroll-grabber {
   background: var(--paper-2);
   white-space: pre-wrap;
   line-height: 1.7;
+  overflow-wrap: break-word;
 }
 .user-quote {
   max-width: 80%;
@@ -657,22 +658,24 @@ html.work-mode .chat-scroll-grabber {
   color: var(--ink-3);
   font-size: 10px;
 }
-.chat-meta-path,
-.chat-meta-bind {
-  padding: 0;
+/* 夹：名字墨色加重、后缀一枚淡 ›；顶上回上一层的一行是路径，淡墨小字，下压一线 */
+.chip-pop.attach-picker .chip-pop-list .picker-dir {
+  color: var(--ink);
+}
+.chip-pop.attach-picker .picker-dir i {
+  margin-left: 5px;
   color: var(--ink-3);
-  font: inherit;
-  letter-spacing: inherit;
-  overflow-wrap: anywhere;
+  font-style: normal;
 }
-.chat-meta-path {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  letter-spacing: 0;
+.chip-pop.attach-picker .chip-pop-list .picker-up {
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+  color: var(--ink-3);
+  font-size: 11px;
 }
-.chat-meta-path:hover,
-.chat-meta-bind:hover {
-  color: var(--accent);
-  text-decoration: underline;
+.chip-pop.attach-picker .chip-pop-list .picker-up:hover {
+  color: var(--ink);
 }
 .chip-pop-unbind {
   width: 100%;
@@ -924,6 +927,11 @@ html.work-mode .chat-scroll-grabber {
   background: var(--accent);
   vertical-align: -2px;
   animation: blink 1s steps(1) infinite;
+}
+/* 不带空格的长串（Windows 路径、哈希、网址）放不下时就地折行，不撑出横向滚动。用 break-word 不用 anywhere：
+   anywhere 会把表格的最小宽度算成一个字宽，各列挤成竖条 */
+.markdown {
+  overflow-wrap: break-word;
 }
 .markdown p {
   margin: 0 0 1em;

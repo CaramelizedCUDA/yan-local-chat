@@ -72,7 +72,7 @@ await waitFor(
   30000
 );
 const steer = await evalJs(
-  `(c => ({ users: c.messages.filter(m => m.role === "user").map(m => m.content), notes: (c.messages.at(-1).steps || []).map(s => [s.name, s.status, s.result]), reply: c.messages.at(-1).content }))(__yanState().conversations[0])`
+  `(c => ({ users: c.messages.filter(m => m.role === "user").map(m => m.content), notes: (c.messages.at(-1).steps || []).map(s => [s.name, s.status, s.result, s.at]), reply: c.messages.at(-1).content }))(__yanState().conversations[0])`
 );
 const cutParagraphs = (steer.reply.match(/第\d+段/g) || []).length;
 check(
@@ -85,6 +85,12 @@ check(
     cutParagraphs < 20 &&
     /再说一句。\n\n正文回答：这里有一个术语 X 需要留意。$/.test(steer.reply),
   JSON.stringify(steer)
+);
+// 那一步挪到递上的地方（停下的段落尾），不留在到达处：往后重装历史按它拆开这一答，先后才与模型当时读到的一样
+check(
+  "the delivered note sits where the round stopped, right before what the model wrote after reading it",
+  steer.reply.slice(steer.notes[0][3]).startsWith("\n\n正文回答") && /。$/.test(steer.reply.slice(0, steer.notes[0][3])),
+  JSON.stringify(steer.notes)
 );
 check("the note step shows in the trail, ticked", await evalJs(`!!${lastAssistant}.querySelector('.tool-step-note[data-status="done"]')`));
 
@@ -249,7 +255,7 @@ const halted = await evalJs(
 );
 check(
   "with the answer closed, the seal stops the helper outright: no report, no new answer",
-  halted.step?.status === "error" && halted.step.result === "已停止" && halted.n === 2 && halted.seal !== "止",
+  halted.step?.status === "error" && halted.step.result === "已止" && halted.n === 2 && halted.seal !== "止",
   JSON.stringify({ status: halted.step?.status, result: halted.step?.result, n: halted.n, seal: halted.seal })
 );
 

@@ -2,7 +2,6 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
 const { createHash } = require("node:crypto");
 // 拼接规则（build.js）改了就重新载入：页面脚本本是即时拼的，不该因为拼法变了就得重启桥接
 const BUILD_FILE = require.resolve("./build.js");
@@ -18,6 +17,7 @@ function currentBundler() {
   return bundler;
 }
 const { sendJson } = require("./server/http.js");
+const { openUrl } = require("./server/platform.js");
 // 联网：地址门禁、翻网页、检索、调接口
 const WEB = require("./server/web.js");
 
@@ -311,8 +311,5 @@ server.listen(PORT, HOST, () => {
   console.log(`\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  存储    ${STORE.paths().root}\n`);
   console.log("  请保持此窗口开启；关闭后页面刷新、模型转发、联网与执事都会停止。按 Ctrl+C 退出。");
   console.log("  此窗口不会显示 API Key。\n");
-  if (process.argv.includes("--open") && process.platform === "win32") {
-    const child = spawn("cmd.exe", ["/c", "start", "", address], { detached: true, stdio: "ignore", windowsHide: true });
-    child.unref();
-  }
+  if (process.argv.includes("--open")) openUrl(address);
 });

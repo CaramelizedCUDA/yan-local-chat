@@ -3,7 +3,7 @@
 // 目录在存储根里（chatsHome()，默认 ~/.yan/对话，见 server/store.js）。文件名带标题便于翻看，末尾缀上按对话 id 算的短码来认身份：
 // 「关于滚动条·3f9a2c1b0e.json」；标题改了文件跟着改名，删对话就删文件。配置不在这里，在存储根的 配置.json
 "use strict";
-const { sendJson, readJson, jsonRoute, errorText, writeAtomic } = require("./http.js");
+const { sendJson, readJson, jsonRoute, errorText, writeAtomic, parseJsonText } = require("./http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
@@ -80,7 +80,7 @@ module.exports = function createChats({ chatsHome }) {
   function readConversationFile(home, name) {
     const file = path.join(home, name);
     if (fs.statSync(file).size > FILE_LIMIT) throw Error("文件过大");
-    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+    const data = parseJsonText(fs.readFileSync(file, "utf8"));
     const conversation = data?.conversation;
     if (!conversation || typeof conversation !== "object" || !conversation.id) throw Error("不是言的对话文件");
     return { id: String(conversation.id), savedAt: Number(data.savedAt) || 0, file: name, conversation };
@@ -99,7 +99,7 @@ module.exports = function createChats({ chatsHome }) {
         } finally {
           fs.closeSync(fd);
         }
-        const match = /^\{"言":"对话","version":\d+,"savedAt":(\d+)/.exec(head.toString("utf8", 0, read));
+        const match = /^\uFEFF?\{"言":"对话","version":\d+,"savedAt":(\d+)/.exec(head.toString("utf8", 0, read));
         latest = Math.max(latest, match ? Number(match[1]) : readConversationFile(home, name).savedAt);
       } catch {}
     return latest;
@@ -118,9 +118,23 @@ module.exports = function createChats({ chatsHome }) {
         if (!name.endsWith(".json") || name === META_FILE || name === TOMBSTONE_FILE) continue;
         if (wanted && !wanted.some(suffix => name.endsWith(suffix))) continue;
         try {
-          const item = readConversationFile(home, name);
+          const item = readConversationFile(home, name),
+            // 名字是言自己起的样子（标题·码.json）：改名时旧的没删成留下的，可以清。用户自己复制的（「… - 副本.json」）不动，
+            // 只在没有言起名的那份时才拿来用
+            own = name.endsWith(`·${codeOf(item.id)}.json`),
+            prior = seen.get(item.id);
+          if (prior) {
+            const priorOwn = prior.file.endsWith(`·${codeOf(item.id)}.json`);
+            if (own !== priorOwn) {
+              if (own) seen.set(item.id, item);
+              continue;
+            }
+            if (!own) {
+              if (item.savedAt > prior.savedAt) seen.set(item.id, item);
+              continue;
+            }
+          }
           // 同一段对话若留了两个文件（改名时旧的没删成），以较新的为准，旧的顺手清掉
-          const prior = seen.get(item.id);
           if (prior && prior.savedAt >= item.savedAt) {
             fs.rmSync(path.join(home, name), { force: true });
             continue;

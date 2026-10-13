@@ -3,7 +3,7 @@
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { openPath } = require("./platform.js");
 
 function sendJson(res, status, data) {
   const body = JSON.stringify(data);
@@ -198,6 +198,21 @@ const RUNNABLE = new Set([
 function openWithSystem(file) {
   if (RUNNABLE.has(path.extname(file).slice(1).toLowerCase())) throw Error("可执行的文件不在此打开，请到资源管理器里自行处理");
   if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) throw Error("文件不存在");
-  spawn("explorer.exe", [file], { detached: true, stdio: "ignore" }).unref();
+  openPath(file);
 }
-module.exports = { sendJson, readJson, jsonRoute, requestSignal, errorText, writeAtomic, fileMime, sendFile, openWithSystem };
+// 读盘上的 JSON 文本：带 UTF-8 BOM 的（PowerShell 5.1 的 -Encoding UTF8、旧记事本都会写）先去掉，不然 JSON.parse 认不得
+function parseJsonText(text) {
+  return JSON.parse(String(text).replace(/^\uFEFF/, ""));
+}
+module.exports = {
+  sendJson,
+  readJson,
+  jsonRoute,
+  requestSignal,
+  errorText,
+  writeAtomic,
+  fileMime,
+  sendFile,
+  openWithSystem,
+  parseJsonText
+};

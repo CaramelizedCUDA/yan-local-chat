@@ -2,7 +2,7 @@
 // 言 · 模型转发：测试连接、列模型、对话。页面只说 OpenAI chat.completions 的话，各家接口的差异都收在下面的 PROVIDERS 表里，
 // 加一家只需加一份登记。一份登记有这几样：
 //   url(config)               对话发往哪
-//   headers(config)           带什么头（可以是异步的：ChatGPT 订阅的令牌要换新）
+//   headers(config, body)     带什么头（可以是异步的：ChatGPT 订阅的令牌要换新；对话时 body 是已换好的请求体）
 //   request(payload, config)  OpenAI 格式的请求体换成这家的
 //   stream(model)             这家的事件流换回 chat.completions 分块的 TransformStream；不给即原样透传
 //   modelsUrl(config) / models(config)  列模型：给地址的照通行的 { data: [...] } 读，自有说法的自己列
@@ -91,7 +91,7 @@ module.exports = function createModel({ home }) {
     }
   }
   async function handleChat(req, res) {
-    const meter = { model: "", opened: 0, last: 0, bytes: 0 };
+    const meter = { model: "", opened: 0, last: 0, bytes: 0, finish: "" };
     try {
       const body = await readJson(req),
         { config, provider } = resolveProfile(body.profile, true);
@@ -131,10 +131,11 @@ module.exports = function createModel({ home }) {
       });
       console.log(`${stamp()} → ${config.model}：${messages.length} 条消息${payload.tools ? `，工具 ${payload.tools.length} 个` : ""}`);
       // 上游的状态码原样带回页面（连不上记作 502）：429、5xx、过载这些页面会等一等再试，参数错之类的 4xx 不试
+      const upstream = provider.request(payload, config);
       const response = await fetch(provider.url(config), {
         method: "POST",
-        headers: await provider.headers(config),
-        body: JSON.stringify(provider.request(payload, config)),
+        headers: await provider.headers(config, upstream),
+        body: JSON.stringify(upstream),
         signal: abort.signal
       }).catch(error => {
         throw Object.assign(Error(`连不上上游接口：${error.cause?.code || error.cause?.message || error.message}`), {
@@ -165,11 +166,30 @@ module.exports = function createModel({ home }) {
         Connection: "keep-alive",
         "X-Accel-Buffering": "no"
       });
+      // 各家的流换成 chat.completions 分块之后，顺路认出结束原因：收尾时记一行，半截话停下时看得出对面发的是 stop 还是 abort
+      const decoder = new TextDecoder();
+      let tail = "";
+      const watched = (provider.stream ? metered.pipeThrough(provider.stream(config.model)) : metered).pipeThrough(
+        new TransformStream({
+          transform(chunk, controller) {
+            tail = (tail + decoder.decode(chunk, { stream: true })).slice(-4096);
+            for (const match of tail.matchAll(/"finish_reason"\s*:\s*"([^"]+)"/g)) meter.finish = match[1];
+            tail = tail.slice(tail.lastIndexOf("\n") + 1);
+            controller.enqueue(chunk);
+          }
+        })
+      );
       // 不用 pipeline：上游一断它连页面这头也一并销毁，下面 catch 里那条「连接中断」的报错事件就补不上了，页面只见一句 network error
-      const source = Readable.fromWeb(provider.stream ? metered.pipeThrough(provider.stream(config.model)) : metered);
+      const source = Readable.fromWeb(watched);
       source.pipe(res, { end: false });
       await finished(source);
       res.end();
+      const finish = meter.finish,
+        // 与页面的 NORMAL_FINISH 同一张单子（中转站原样转来的 end_turn 之类也算正常）
+        normal = ["stop", "tool_calls", "function_call", "end_turn", "stop_sequence", "eos", "eos_token"].includes(finish);
+      console.log(
+        `${stamp()} ${normal ? "←" : "⚠"} ${meter.model}：${finish ? `收尾 ${finish}` : "流到头了却没有结束原因"} · ${Math.round((Date.now() - meter.opened) / 1000)} 秒、${meter.bytes} 字节`
+      );
     } catch (error) {
       // 底层的原因码（UND_ERR_SOCKET 对面掐线、UND_ERR_BODY_TIMEOUT 静默五分钟……）比一句「terminated」有用，一并带上
       const code = error?.cause?.code || error?.code || "",

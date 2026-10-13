@@ -14,7 +14,7 @@ await sleep(1200);
 check(
   "suggestions are code-oriented",
   (await evalJs(`[...document.querySelectorAll("#welcome .suggestion")].map(b => b.textContent).join("|")`)) ===
-    "读懂这个项目|修一个问题|加一个功能|写一段脚本并运行"
+    "项目梳理|深度调研|网页操作|原型演示"
 );
 await evalJs(
   `document.querySelector("#welcomeInput").value = "EDIT"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
@@ -53,7 +53,7 @@ check(
 );
 check(
   "tool arguments being drafted are announced",
-  [...drafting].some(t => /正在拟 (修改|读取|运行|搜索|列目录)/.test(t)),
+  [...drafting].some(t => /正在拟 (修改|读取|运行|搜索|览目录)/.test(t)),
   JSON.stringify([...drafting])
 );
 const trailThoughts = await evalJs(
@@ -114,7 +114,7 @@ check(
   "search_files results",
   steps[4].label === "搜索" && steps[4].status === "done" && steps[4].out.includes("src/a.js:2:") && /1 处 · 1 文件/.test(steps[4].meta)
 );
-check("list_files with pattern", steps[5].label === "列目录" && steps[5].out.includes("src/a.js") && !steps[5].out.includes("src/\n"));
+check("list_files with pattern", steps[5].label === "览目录" && steps[5].out.includes("src/a.js") && !steps[5].out.includes("src/\n"));
 check(
   "no pending approval happened",
   await evalJs(`!document.querySelector('#messages [data-approve]') && document.querySelector('#approvalBar').classList.contains('hidden')`)
@@ -145,7 +145,7 @@ const par = await evalJs(
 );
 check(
   "three read-only calls ran in one round, results in order",
-  par.text === "PAR|call_p0,call_p1,call_p2" && par.steps.join() === "列目录:done,搜索:done,读取:done",
+  par.text === "PAR|call_p0,call_p1,call_p2" && par.steps.join() === "览目录:done,搜索:done,读取:done",
   JSON.stringify(par)
 );
 check(

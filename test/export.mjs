@@ -51,7 +51,9 @@ await send("Page.navigate", { url: PAGE });
 await waitFor(`!!document.querySelector('[data-conversation="export-probe"]')`, 10000);
 await evalJs(`document.querySelector('[data-conversation="export-probe"] .history-open').click(); true`);
 await waitFor(`document.querySelectorAll('.html-app[data-app-state="ready"]').length === 3`, 20000);
-await evalJs(`document.querySelector('#chatMeta [data-export-md]').click(); true`);
+await evalJs(
+  `document.querySelector('[data-conversation="export-probe"] [data-history-action="menu"]').click(); document.querySelector('.chip-pop [data-menu="export"]').click(); true`
+);
 for (let i = 0; i < 100 && !readdirSync(ARCHIVE).includes("导出回归.md"); i++) await sleep(150);
 const md = readFileSync(`${ARCHIVE}/导出回归.md`, "utf8");
 const files = [...md.matchAll(/\[可视化 \d+\]\(<([^>]+)>\)/g)].map(match => decodeURIComponent(match[1]));
@@ -71,7 +73,9 @@ check(
 writeFileSync(`${TMP}/single-export.html`, downloaded);
 
 // 再导出同名对话，链接必须用实际保存的 (2) 文件名。
-await evalJs(`document.querySelector('#chatMeta [data-export-md]').click(); true`);
+await evalJs(
+  `document.querySelector('[data-conversation="export-probe"] [data-history-action="menu"]').click(); document.querySelector('.chip-pop [data-menu="export"]').click(); true`
+);
 for (let i = 0; i < 100 && !readdirSync(ARCHIVE).includes("导出回归 (2).md"); i++) await sleep(150);
 const second = readFileSync(`${ARCHIVE}/导出回归 (2).md`, "utf8");
 check("duplicate export links to its own renamed assets", second.includes(encodeURIComponent("导出回归-可视化-1 (2).html")));

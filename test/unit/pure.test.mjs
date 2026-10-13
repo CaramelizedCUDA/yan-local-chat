@@ -24,6 +24,7 @@ const f = load([
   "reasoningChoices",
   "reasoningFields",
   "parseReasoningLevels",
+  "finishFault",
   "reasoningProbed",
   "learnReasoningLevels",
   "contextOverflow",
@@ -154,6 +155,14 @@ test("nearestReasoning：认的原样用，不认取最近的一档，同样近�
   assert.equal(f.nearestReasoning(none, "high"), "");
   assert.deepEqual(f.reasoningFields(none, "high"), {});
 });
+test("finishFault：stop、调工具与各家别名是正常收尾；length 与 abort、error 之类是半途被掐，拦下的另说", () => {
+  for (const reason of ["", null, undefined, "stop", "tool_calls", "end_turn"]) assert.equal(f.finishFault(reason), null);
+  assert.match(f.finishFault("length").message, /输出长度上限/);
+  assert.equal(f.finishFault("length").finish, "length");
+  for (const reason of ["abort", "error", "content_filter"]) assert.match(f.finishFault(reason).message, new RegExp(reason));
+  assert.match(f.finishFault("content_filter").message, /拦下/);
+  assert.match(f.finishFault("refusal").message, /拦下/);
+});
 test("parseReasoningLevels：报错里列的几档由低到高排；不提档位的报错、只提一档的都给空", () => {
   assert.deepEqual(f.parseReasoningLevels("Invalid value: 'probe'. Supported values are: 'high', 'low', and 'medium'.", "probe"), [
     "low",
@@ -185,6 +194,12 @@ test("isReadOnlyCommand：开发与系统检查免确认，只放行纯展示管
   assert.equal(f.isReadOnlyCommand("git status | grep x"), true);
   assert.equal(f.isReadOnlyCommand("Get-Process -ComputerName elsewhere"), false);
   assert.equal(f.isReadOnlyCommand("Get-Process | Remove-Item"), false);
+  // ipconfig 只放行查看；读着不放的去请示；Select-String 作管道也是只读
+  assert.equal(f.isReadOnlyCommand("ipconfig /all"), true);
+  assert.equal(f.isReadOnlyCommand("ipconfig /flushdns"), false);
+  assert.equal(f.isReadOnlyCommand("Get-Content app.log -Wait"), false);
+  assert.equal(f.isReadOnlyCommand("tail -f app.log"), false);
+  assert.equal(f.isReadOnlyCommand("Get-Content a.txt | Select-String error"), true);
   assert.equal(f.isReadOnlyCommand("rm -rf ."), false);
   assert.equal(f.isReadOnlyCommand("cat a > b"), false);
 });
@@ -403,6 +418,20 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
   assert.equal(sonnet46Plain.temperature, 0.4);
   const haiku = f.anthropicRequest({ model: "claude-haiku-4-5", messages: [{ role: "user", content: "x" }], reasoning_effort: "low" });
   assert.equal(haiku.thinking.budget_tokens, 2048);
+  // Haiku 5.5 与大的一样走 adaptive、不带 temperature；走预算的老模型「最高」档不越过它的输出上限
+  const haiku55 = f.anthropicRequest({
+    model: "claude-haiku-5-5",
+    messages: [{ role: "user", content: "x" }],
+    temperature: 0.3,
+    reasoning_effort: "max"
+  });
+  assert.deepEqual(haiku55.thinking, { type: "adaptive", display: "summarized" });
+  assert.deepEqual(haiku55.output_config, { effort: "max" });
+  assert.equal(haiku55.temperature, undefined);
+  const sonnet45 = f.anthropicRequest({ model: "claude-sonnet-4-5", messages: [{ role: "user", content: "x" }], reasoning_effort: "max" });
+  assert.ok(sonnet45.max_tokens <= 64000 && sonnet45.thinking.budget_tokens < sonnet45.max_tokens);
+  const opus41 = f.anthropicRequest({ model: "claude-opus-4-1", messages: [{ role: "user", content: "x" }], reasoning_effort: "xhigh" });
+  assert.ok(opus41.max_tokens <= 32000 && opus41.thinking.budget_tokens < opus41.max_tokens);
   assert.equal(f.anthropicEndpoint("https://api.anthropic.com/v1/"), "https://api.anthropic.com/v1/messages");
   assert.equal(f.anthropicLike({ baseUrl: "https://api.anthropic.com" }), true);
   assert.equal(f.anthropicLike({ baseUrl: "https://api.anthropic.com", api: "openai" }), false);
@@ -466,6 +495,18 @@ test("anthropicToOpenAiStream：流到半途的 error 事件按流里的报错�
   assert.match(last.error.message, /overloaded_error/);
   assert.equal(last.choices, undefined);
   assert.ok(!chunks.some(c => c.includes("接口错误")));
+});
+test("anthropicToOpenAiStream：没等到 message_stop 就断流，不补 [DONE]、不冒充写完", async () => {
+  const raw = [
+    ["message_start", { type: "message_start", message: { model: "claude-x", usage: { input_tokens: 3 } } }],
+    ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
+    ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "写到一半" } }]
+  ]
+    .map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
+    .join("");
+  const text = await new Response(new Blob([raw]).stream().pipeThrough(f.anthropicToOpenAiStream("claude"))).text();
+  assert.ok(!text.includes("[DONE]"));
+  assert.ok(!text.includes('"finish_reason":"'));
 });
 test("isReadOnlyCommand：git 带 --output / --ext-diff 不算只读", () => {
   assert.equal(f.isReadOnlyCommand("git log --oneline"), true);
@@ -642,4 +683,55 @@ test("OpenAI 兼容：DashScope 的档位换成预算，别家原样；思考块
   assert.equal(plain.enable_thinking, undefined);
   assert.deepEqual(openaiProvider.levels({ baseUrl: "https://dashscope.aliyuncs.com/v1" }), ["low", "medium", "high", "max"]);
   assert.equal(openaiProvider.levels({ baseUrl: "https://example.com/v1" }), null);
+});
+test("结束原因：认不出的原样交出，由页面的白名单判半途被掐；被遮蔽的思考块照原样回传", async () => {
+  const stopWith = async reason => {
+    const raw = [
+      ["message_start", { type: "message_start", message: { model: "claude-x", usage: { input_tokens: 3 } } }],
+      ["message_delta", { type: "message_delta", delta: { stop_reason: reason }, usage: { output_tokens: 1 } }],
+      ["message_stop", { type: "message_stop" }]
+    ]
+      .map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
+      .join("");
+    const text = await new Response(new Blob([raw]).stream().pipeThrough(f.anthropicToOpenAiStream("claude"))).text();
+    return JSON.parse(
+      text
+        .split("\n\n")
+        .filter(Boolean)
+        .at(-2)
+        .replace(/^data: /, "")
+    ).choices[0].finish_reason;
+  };
+  assert.equal(await stopWith("end_turn"), "stop");
+  assert.equal(await stopWith("max_tokens"), "length");
+  assert.equal(await stopWith("refusal"), "refusal");
+  const redacted = [
+    ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "redacted_thinking", data: "密文" } }],
+    ["content_block_stop", { type: "content_block_stop", index: 0 }]
+  ]
+    .map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
+    .join("");
+  const out = await new Response(new Blob([redacted]).stream().pipeThrough(f.anthropicToOpenAiStream("claude"))).text();
+  assert.deepEqual(JSON.parse(out.replace(/^data: /, "")).choices[0].delta.thinking_block, { redacted: "密文" });
+  const body = f.anthropicRequest({
+    model: "claude-opus-5",
+    messages: [
+      { role: "user", content: "x" },
+      {
+        role: "assistant",
+        content: "",
+        thinking_blocks: [{ redacted: "密文" }, { thinking: "想", signature: "s" }],
+        tool_calls: [{ id: "t", function: { name: "f", arguments: "{}" } }]
+      },
+      { role: "tool", tool_call_id: "t", content: "好" }
+    ]
+  });
+  assert.deepEqual(
+    body.messages[1].content.map(block => block.type),
+    ["redacted_thinking", "thinking", "tool_use"]
+  );
+  const { responsesToOpenAiStream } = requireFrom(import.meta.url)("../../server/model/chatgpt.js");
+  const incomplete = `data: ${JSON.stringify({ type: "response.incomplete", response: { usage: {}, incomplete_details: { reason: "content_filter" } } })}\n\n`;
+  const cut = await new Response(new Blob([incomplete]).stream().pipeThrough(responsesToOpenAiStream("gpt"))).text();
+  assert.equal(JSON.parse(cut.split("\n\n")[0].replace(/^data: /, "")).choices[0].finish_reason, "content_filter");
 });

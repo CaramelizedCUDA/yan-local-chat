@@ -1,3 +1,5 @@
+// 言 · 设置 · 外壳：各栏的登记、开合与画法；通用、工具、个性化这几栏
+// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 设置的各栏：画法、接事件、题下一句导语成组登记，左侧栏目钮（index.html 的 .tab-btn）照 data-tab 认。换一栏只画、只接这一栏；
 // 各栏自己的面板写在各自领域里（记忆在 11-memory，游目在 26-stage/40-settings），这里只登记。加一栏只需加一行与一枚栏目钮。
 // 导语是题记，只管气韵，不讲这一栏怎么用（用法进 设置 → 文档）
@@ -90,8 +92,6 @@ function bindSettingsShell() {
     if (file) await importData(file);
   };
 }
-// 言 · 设置 · 外壳：各栏的登记、开合与画法；通用、工具、个性化这几栏
-// 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 存储位置：对话、卷宗、配置（含模型配置）都在这一个 .yan 目录里，几个浏览器共用；换位置时整份拷过去，旧处留着
 function storageSettingsHtml() {
   const info = bootstrap.store || {},
@@ -139,7 +139,7 @@ function fontRow(active = "mixed") {
     ["kai", "楷体"],
     ["fangsong", "仿宋"]
   ];
-  return `<div class="setting-row"><div class="setting-copy"><strong>字体</strong><small>回复与标题用的字</small></div><div class="segmented font-segmented">${items.map(([v, label]) => `<button data-setting="font" data-value="${v}" class="${(active || "mixed") === v ? "active" : ""}" style="font-family:${escapeHtml(FONT_STACKS[v].title)}">${label}</button>`).join("")}</div></div>`;
+  return `<div class="setting-row"><div class="setting-copy"><strong>字体</strong><small>答复与标题用的字</small></div><div class="segmented font-segmented">${items.map(([v, label]) => `<button data-setting="font" data-value="${v}" class="${(active || "mixed") === v ? "active" : ""}" style="font-family:${escapeHtml(FONT_STACKS[v].title)}">${label}</button>`).join("")}</div></div>`;
 }
 function segmentRow(title, desc, key, items, active) {
   return `<div class="setting-row"><div class="setting-copy"><strong>${title}</strong><small>${desc}</small></div><div class="segmented">${items.map(([v, label]) => `<button data-setting="${key}" data-value="${v}" class="${String(active) === String(v) ? "active" : ""}">${label}</button>`).join("")}</div></div>`;
@@ -253,7 +253,7 @@ function bindToolSettings() {
     status.textContent = "检索中…";
     try {
       const data = await bridge("/api/search", { query: "OpenAI", count: 1 }, AbortSignal.timeout(20000));
-      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已接通，暂无结果";
+      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已接通，未得结果";
     } catch (error) {
       status.textContent = friendlyError(error.message).slice(0, 60);
     }

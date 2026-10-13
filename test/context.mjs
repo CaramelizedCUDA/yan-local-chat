@@ -131,13 +131,13 @@ check(
   "gauge click asks before compacting",
   (
     await evalJs(`document.querySelector("#confirmTitle").textContent + "|" + document.querySelector("#confirmBody").textContent`)
-  ).startsWith("把前文压成摘要？|此前的 3 问 3 答")
+  ).startsWith("撮要前文？|此前的 3 问 3 答")
 );
 await evalJs(`document.querySelector("#confirmOk").click(); true`);
 check(
-  "gauge shows 压缩中 while working (or has already finished)",
+  "gauge shows 撮要中 while working (or has already finished)",
   await evalJs(
-    `document.querySelector("#contextGauge .context-gauge-label").textContent === "压缩中" || !!document.querySelector(".context-divider.has-summary, .context-divider.compacting")`
+    `document.querySelector("#contextGauge .context-gauge-label").textContent === "撮要中" || !!document.querySelector(".context-divider.has-summary, .context-divider.compacting")`
   )
 );
 await waitFor(`!!document.querySelector(".context-divider.has-summary")`, 15000);

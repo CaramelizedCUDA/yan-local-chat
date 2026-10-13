@@ -91,7 +91,9 @@ check(
   )
 );
 // 存成 Markdown 入卷宗
-await evalJs(`document.querySelector("#chatMeta [data-export-md]").click(); true`);
+await evalJs(
+  `document.querySelector('.history-item.active [data-history-action="menu"]').click(); document.querySelector('.chip-pop [data-menu="export"]').click(); true`
+);
 await sleep(800);
 check(
   "conversation exported as markdown into the archive",
@@ -102,9 +104,11 @@ check(
   "chat message with tools draws the same timeline as 行 (what it said before the last step folds away with the steps)",
   await evalJs(`!!document.querySelector(".tool-stack.is-work")`)
 );
+await evalJs(`document.querySelector('.history-item.active [data-history-action="menu"]').click(); true`);
 check(
-  "chat meta offers to bind a directory",
-  (await evalJs(`document.querySelector("#chatMeta .chat-meta-bind")?.textContent`)) === "绑定目录"
+  "the chat's ⋯ menu offers to bind a directory; the meta line no longer repeats it",
+  (await evalJs(`document.querySelector('.chip-pop [data-menu="bind"]')?.textContent`)) === "绑定目录" &&
+    (await evalJs(`!document.querySelector("#chatMeta [data-workdir-bind], #chatMeta [data-export-md]")`))
 );
 check("seal still says 言", (await evalJs(`document.querySelector("#modeSeal").dataset.mode`)) === "chat");
 check(
@@ -115,16 +119,13 @@ check(
 );
 
 // ---- 中途绑定：同一段对话，下一问起变为行
-await evalJs(`document.querySelector("#chatMeta .chat-meta-bind").click(); true`);
-check(
-  "bind pop opens under the meta line",
-  await evalJs(`!!document.querySelector("#chatMeta .chip-pop[data-kind=workdir] #workdirCommit")`)
-);
+await evalJs(`document.querySelector('.chip-pop [data-menu="bind"]').click(); true`);
+check("bind pop opens from the menu", await evalJs(`!!document.querySelector(".chip-pop[data-kind=workdir] #workdirCommit")`));
 await shot("archive-bind.png");
 await evalJs(
-  `(i => { i.value = ${JSON.stringify(WORK)}; })(document.querySelector("#chatMeta #workdirInput")); document.querySelector("#chatMeta #workdirCommit").click(); true`
+  `(i => { i.value = ${JSON.stringify(WORK)}; })(document.querySelector("#workdirInput")); document.querySelector("#workdirCommit").click(); true`
 );
-await waitFor(`(document.querySelector("#chatMeta .chat-meta-path")?.textContent || "").includes("work")`);
+await waitFor(`(__yanState().conversations[0].workdir || "").toLowerCase().endsWith("work")`);
 check("pop closed after binding", await evalJs(`!document.querySelector(".chip-pop")`));
 check(
   "seal flips to 行",
@@ -151,10 +152,12 @@ check("after binding the prompt is the 执事 one and history is intact", /work:
 check("stored conversation carries the workdir", await evalJs(`__yanState().conversations[0].workdir.toLowerCase().endsWith("work")`));
 
 // ---- 解开：回到言
-await evalJs(`document.querySelector("#chatMeta .chat-meta-path").click(); true`);
-await waitFor(`!!document.querySelector("#chatMeta [data-unbind]")`);
-await evalJs(`document.querySelector("#chatMeta [data-unbind]").click(); true`);
-await waitFor(`!!document.querySelector("#chatMeta .chat-meta-bind")`);
+await evalJs(
+  `document.querySelector('.history-item.active [data-history-action="menu"]').click(); document.querySelector('.chip-pop [data-menu="bind"]').click(); true`
+);
+await waitFor(`!!document.querySelector(".chip-pop [data-unbind]")`);
+await evalJs(`document.querySelector(".chip-pop [data-unbind]").click(); true`);
+await waitFor(`!__yanState().conversations[0].workdir`);
 check("unbound: seal back to 言", (await evalJs(`document.querySelector("#modeSeal").dataset.mode`)) === "chat");
 
 // ---- 欢迎页的目录签：填了目录即为行，清空即回言；侧栏的印跟着变
@@ -366,6 +369,37 @@ check(
       `(f => f.path + "|" + f.name)(__yanState().conversations.find(c => c.id === "deliver-follow").messages[1].deliverables[0])`
     )) === "课程/成品.txt|成品.txt"
 );
+// 输入框「＋」→ 卷宗 选件也逐层看：根上只列夹与根上的件，点夹即进、顶上一行回上一层；查找跨层平铺
+await evalJs(`document.querySelector("#newChat").click(); true`);
+await waitFor(`!document.querySelector("#welcome").classList.contains("hidden")`);
+await evalJs(`document.querySelector("#welcome .attach-trigger").click(); true`);
+await waitFor(`!!document.querySelector('.chip-pop[data-kind=attach] [data-menu="archive"]')`);
+await evalJs(`document.querySelector('.chip-pop[data-kind=attach] [data-menu="archive"]').click(); true`);
+await waitFor(`!!document.querySelector('.chip-pop.attach-picker [data-dir="课程"]')`);
+const pickerRows = () =>
+  evalJs(
+    `[...document.querySelectorAll(".chip-pop.attach-picker .chip-pop-list button")].map(b => b.dataset.dir !== undefined ? (b.classList.contains("picker-up") ? "‹" : "夹:") + b.dataset.dir : b.dataset.pick).join()`
+  );
+check("the archive picker shows one level: folders, then that level's files", (await pickerRows()) === "夹:课程,一声.mp3,讲义.txt,ARCHIVE 做个表.md");
+await evalJs(`document.querySelector('.chip-pop.attach-picker [data-dir="课程"]').click(); true`);
+await waitFor(`!!document.querySelector('.chip-pop.attach-picker .picker-up')`);
+check(
+  "clicking a folder in the picker enters it, with a way back up",
+  (await pickerRows()) === "‹,夹:课程/空夹,夹:课程/深度学习,课程/新.txt,课程/成品.txt" && (await evalJs(`!!document.querySelector(".chip-pop.attach-picker")`))
+);
+await evalJs(
+  `(() => { const i = document.querySelector(".chip-pop.attach-picker input"); i.value = "笔记"; i.dispatchEvent(new Event("input")); })(); true`
+);
+check(
+  "searching in the picker lists matches from every level",
+  (await pickerRows()) === "课程/深度学习/笔记.md" &&
+    (await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="课程/深度学习/笔记.md"] small').textContent.startsWith("课程/深度学习 · ")`))
+);
+await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="课程/深度学习/笔记.md"]').click(); true`);
+await waitFor(`!!document.querySelector("#welcomeAttachments .attachment-card[data-name='笔记.md']")`);
+check("a file picked from inside a folder lands on the desk", await evalJs(`!document.querySelector(".chip-pop")`));
+await evalJs(`document.querySelector("#openLibrary").click(); true`);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程"]')`);
 
 // ---- 簿录上的管理：新建夹即就地起名，件就地改名，夹拖进夹，簿头 ‹ 回上一层，删夹连同里头
 const typeName = name =>

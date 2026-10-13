@@ -294,7 +294,7 @@ function renderSideSend() {
     button = $("#sideSend");
   if (!button) return;
   sealGlyph(button, running);
-  button.title = running ? "停止" : "发送";
+  button.title = running ? "搁笔" : "寄出";
   button.classList.toggle("stop-btn", running);
   button.classList.toggle("empty", !running && !$("#sideInput")?.value.trim());
 }
@@ -324,7 +324,7 @@ function setupSidePanel() {
     if (!e.target.closest("[data-side-new]")) return;
     const c = currentConversation(),
       anchor = c && indexNewAnchor(c);
-    if (!anchor) return toast("此对话尚无可注的回复");
+    if (!anchor) return toast("此对话尚无可注的答复");
     getSelection()?.removeAllRanges();
     createThread(anchor);
   });
@@ -335,7 +335,6 @@ function setupSidePanel() {
     renderSideSend();
   });
   input.addEventListener("keydown", e => {
-    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void sendSide();
@@ -368,10 +367,7 @@ function setupSidePanel() {
     )
       return;
     const job = sideJob(thread);
-    if (job) {
-      job.controller.abort();
-      requestJobs.delete(`side:${thread.id}`);
-    }
+    if (job) haltJob(`side:${thread.id}`, job);
     c.threads = threadsOf(c).filter(t => t !== thread);
     saveStore();
     renderConversation(false);
@@ -392,7 +388,7 @@ function setupSidePanel() {
       await copyText(message.content);
       return toast("已复制");
     }
-    if (sideJob(thread)) return toast("生成中，稍后再改");
+    if (sideJob(thread)) return toast("作答中，稍后再改");
     if (action === "cancel-edit") {
       editingMessageId = null;
       return renderSidePanel();
@@ -464,11 +460,7 @@ async function sendSide() {
     thread = currentThread();
   if (!c || !thread) return;
   const job = sideJob(thread);
-  if (job) {
-    requestJobs.delete(`side:${thread.id}`);
-    job.controller.abort();
-    return;
-  }
+  if (job) return void haltJob(`side:${thread.id}`, job);
   const input = $("#sideInput");
   if (!input.value.trim()) return;
   const profile = activeProfile();
@@ -585,7 +577,7 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     assistant.status = "complete";
     thread.updatedAt = now();
   } catch (error) {
-    settleSteps(assistant, error.name === "AbortError" ? "已停止" : "已中断");
+    settleSteps(assistant, error.name === "AbortError" ? "已止" : "已中断");
     if (error.name === "AbortError") assistant.status = "stopped";
     else {
       assistant.status = "error";

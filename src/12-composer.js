@@ -23,16 +23,16 @@ function renderSendButtons() {
   document.querySelectorAll(".send-trigger").forEach(b => {
     sealGlyph(b, stop);
     b.title = sendPreparing
-      ? "正在准备发送"
+      ? "正在备寄"
       : elsewhere
         ? "另一个页面正在这段对话里作答，这里跟着看"
         : stop
           ? crew
             ? "叫停后台的帮手"
-            : "停止生成"
+            : "搁笔"
           : running
             ? "插言引路：模型说到落点便读这句，可就此改道"
-            : "发送";
+            : "寄出";
     b.classList.toggle("stop-btn", stop);
     b.classList.toggle("empty", !running && !has);
     b.disabled = sendPreparing || (!running && !crew && ended);
@@ -46,7 +46,6 @@ function renderSendButtons() {
 function bindComposerEvents() {
   const welcomeInput = $("#welcomeInput"),
     restPlaceholder = welcomeInput.placeholder;
-  chatSuggestionsHtml = $("#welcome .suggestions").innerHTML;
   bindSuggestions = () =>
     document.querySelectorAll(".suggestion").forEach(button => {
       const prompt = button.dataset.prompt || button.textContent;
@@ -83,17 +82,21 @@ function bindComposerEvents() {
       renderSendButtons();
     });
     input.addEventListener("keydown", e => {
-      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        // 按住不放的那几下不算：请示条一换位，没读过的下一条就被连着批了
+        if (e.repeat) return;
         const waiting = input.id === "chatInput" && !input.value.trim() ? pendingApprovalHere() : null;
         if (waiting) return approveByEnter(waiting);
+        // 案上空着时 Enter 不当「止」：误按一下就掐掉长活、叫停帮手。停只认点那方印
+        if (!composerHasContent()) return;
         sendOrStop();
       }
     });
     input.addEventListener("paste", e => {
       const images = Array.from(e.clipboardData?.files || []).filter(file => file.type.startsWith("image/"));
-      if (!images.length) return;
+      // 从 Excel、Word 复制的一段：剪贴板里文字之外还捎着一张渲染图。有文字就照文字粘，那张图不要
+      if (!images.length || e.clipboardData?.getData("text/plain").trim()) return;
       e.preventDefault();
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "").slice(4);
       void addFiles(

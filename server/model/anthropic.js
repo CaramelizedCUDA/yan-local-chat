@@ -6,13 +6,21 @@ const ANTHROPIC_VERSION = "2023-06-01";
 // 老模型（4.5 及以前、Haiku、认不出型号的）：思考档位换成思考预算（token）；预算得小于 max_tokens，不够就把 max_tokens 抬上去
 const ANTHROPIC_BUDGETS = { minimal: 1024, low: 2048, medium: 8192, high: 16384, xhigh: 32768, max: 65536 };
 // 模型代际：4.6 起思考改为 adaptive、深浅由 effort 定（预算在 4.7 起一律 400）；4.7 起不收 temperature（也是 400），
-// 思绪默认不回、要明说 summarized；5 起不带 thinking 也照样在想。认不出型号的按老模型走
+// 思绪默认不回、要明说 summarized；5 起不带 thinking 也照样在想；xhigh 一档 4.7 起才有。Haiku 也一样（4.5 还是预算，5.5 只收 adaptive）。
+// 认不出型号的按老模型走。output：走预算的老模型输出上限（Opus 4 / 4.1 是 32k，其余 4.x、3.7 是 64k），预算连同输出不能越过它
 function anthropicGeneration(model) {
   const m = String(model || "")
     .toLowerCase()
     .match(/claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d)(?!\d))?/);
   const version = m ? Number(m[2]) + Number(m[3] || 0) / 10 : 0;
-  return { adaptive: !!m && m[1] !== "haiku" && version >= 4.6, noSampling: version >= 4.7, thinksByDefault: version >= 5, version };
+  return {
+    adaptive: version >= 4.6,
+    noSampling: version >= 4.7,
+    thinksByDefault: version >= 5,
+    xhigh: version >= 4.7,
+    output: !m || version >= 4.6 ? 0 : m[1] === "opus" && version < 4.5 ? 32000 : 64000,
+    version
+  };
 }
 // Base URL 可以填到根、到 /v1 或到 /v1/messages，都归到根再拼
 function anthropicEndpoint(baseUrl, suffix = "/v1/messages") {
@@ -75,8 +83,11 @@ function anthropicRequest(payload) {
     } else if (role === "user") push("user", anthropicUserBlocks(message.content));
     else if (role === "assistant") {
       const blocks = [];
+      // 思考块按原样、原次序回传；被遮蔽的（redacted_thinking）只有一段密文，同样要回传，少了它带工具调用的那一轮会被拒
       for (const block of Array.isArray(message.thinking_blocks) ? message.thinking_blocks : [])
-        if (block?.thinking && block.signature) blocks.push({ type: "thinking", thinking: block.thinking, signature: block.signature });
+        if (block?.redacted) blocks.push({ type: "redacted_thinking", data: block.redacted });
+        else if (block?.thinking && block.signature)
+          blocks.push({ type: "thinking", thinking: block.thinking, signature: block.signature });
       const text = typeof message.content === "string" ? message.content : "";
       if (text.trim()) blocks.push({ type: "text", text });
       for (const call of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
@@ -115,15 +126,17 @@ function anthropicRequest(payload) {
     if (level || generation.thinksByDefault)
       body.thinking = { type: "adaptive", ...(generation.noSampling ? { display: "summarized" } : {}) };
     // effort 只认 low…max；4.6 还没有 xhigh
-    if (level) body.output_config = { effort: level === "minimal" ? "low" : level === "xhigh" && !generation.noSampling ? "high" : level };
+    if (level) body.output_config = { effort: level === "minimal" ? "low" : level === "xhigh" && !generation.xhigh ? "high" : level };
     if (!generation.noSampling && !body.thinking && payload.temperature !== undefined)
       body.temperature = Math.max(0, Math.min(1, Number(payload.temperature)));
   } else {
-    const budget = level ? ANTHROPIC_BUDGETS[level] || 8192 : 0;
+    // 预算得给正文留出 4096，连同正文不过这一代的输出上限（「最高」档的 65536 放在 64k 的模型上就是 400）
+    const ceiling = generation.output || Infinity,
+      budget = level ? Math.min(ANTHROPIC_BUDGETS[level] || 8192, ceiling - 4096) : 0;
     // 开了思考 temperature 只能是 1：不传
     if (budget) {
       body.thinking = { type: "enabled", budget_tokens: budget };
-      body.max_tokens = Math.max(maxTokens, budget + 4096);
+      body.max_tokens = Math.min(Math.max(maxTokens, budget + 4096), ceiling);
     } else if (payload.temperature !== undefined) body.temperature = Math.max(0, Math.min(1, Number(payload.temperature)));
   }
   if (Array.isArray(payload.tools) && payload.tools.length)
@@ -135,9 +148,18 @@ function anthropicRequest(payload) {
   if (body.tools && payload.tool_choice === "none") body.tool_choice = { type: "none" };
   return body;
 }
+// 结束原因换成 chat.completions 的说法；认不出的（refusal、pause_turn……）原样交给页面，由它的白名单判是不是半途被掐（见 finishFault），
+// 不一概说成 stop——那样拒答、被掐的半截话都冒充写完了
+const ANTHROPIC_FINISH = {
+  end_turn: "stop",
+  stop_sequence: "stop",
+  tool_use: "tool_calls",
+  max_tokens: "length",
+  model_context_window_exceeded: "length"
+};
 // Messages API 的事件流 → OpenAI 风格的 SSE 分块（data: {...}\n\n，末尾 [DONE]）。
 // text_delta → content，thinking_delta → reasoning_content，tool_use 块 → tool_calls（按出现顺序编号），思考块收尾时整块带上签名
-// 作 thinking_block 交给页面（带工具调用的那一轮要回传）；message_delta 里的用量换成 usage
+// 作 thinking_block 交给页面（带工具调用的那一轮要回传；被遮蔽的那种只有密文，记作 redacted）；message_delta 里的用量换成 usage
 function anthropicToOpenAiStream(model = "") {
   const decoder = new TextDecoder(),
     encoder = new TextEncoder(),
@@ -184,10 +206,11 @@ function anthropicToOpenAiStream(model = "") {
       const block = blocks.get(data.index);
       if (block?.type === "thinking" && block.signature)
         controller.enqueue(chunk({ thinking_block: { thinking: block.text, signature: block.signature } }));
+      else if (block?.type === "redacted_thinking" && block.data) controller.enqueue(chunk({ thinking_block: { redacted: block.data } }));
     } else if (name === "message_delta") {
       if (data.usage?.output_tokens !== undefined) usage.completion_tokens = Number(data.usage.output_tokens) || 0;
       const reason = data.delta?.stop_reason,
-        finish = reason === "tool_use" ? "tool_calls" : reason === "max_tokens" ? "length" : reason ? "stop" : null;
+        finish = reason ? ANTHROPIC_FINISH[reason] || reason : null;
       controller.enqueue(chunk({}, { usage: { ...usage, total_tokens: usage.prompt_tokens + usage.completion_tokens } }, finish));
     } else if (name === "message_stop") {
       stopped = true;
@@ -218,10 +241,10 @@ function anthropicToOpenAiStream(model = "") {
     transform(bytes, controller) {
       feed(controller, decoder.decode(bytes, { stream: true }));
     },
+    // 没等到 message_stop 就断了：不补 [DONE]，页面按「连接中断」处理、可续写（已收到 message_delta 的，页面凭结束原因照常收尾）
     flush(controller) {
       feed(controller, decoder.decode());
       if (buffer) feed(controller, "\n");
-      if (!stopped) controller.enqueue(encoder.encode("data: [DONE]\n\n"));
     }
   });
 }
@@ -262,7 +285,8 @@ module.exports = {
     headers: config => anthropicHeaders(config.apiKey),
     request: payload => anthropicRequest(payload),
     stream: model => anthropicToOpenAiStream(model),
-    // 档位换算成预算或 effort 送出，没有可探的枚举：按通用四档列
-    levels: () => ["low", "medium", "high", "max"]
+    // 档位换算成预算或 effort 送出，没有可探的枚举：按型号列（4.7 起多一档 xhigh）
+    levels: config =>
+      anthropicGeneration(config.model).xhigh ? ["low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high", "max"]
   }
 };

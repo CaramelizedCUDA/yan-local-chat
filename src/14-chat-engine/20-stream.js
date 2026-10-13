@@ -49,7 +49,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   let held = [];
   try {
     const budget = inlineTextBudget(profile),
-      resumeFrom = resume ? assistant.content : "";
+      // 续写：这一答开工前的样子（已写的话与那时的行迹）。作答途中压了前文要重装时，照的仍是这一份，这一截新做的在历史后段
+      resumed = resume ? { content: assistant.content, steps: [...(assistant.steps || [])] } : null;
     let lastUserId = "";
     // 这一问之前的历史：上次压缩的摘要、此后的往来、续写时已写的那截。开头装一次；作答途中压了前文（compactHead）再装一次
     const buildHead = async () => {
@@ -57,33 +58,42 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       const at = conversation.messages.findIndex(m => m.id === assistant.id),
         before = at < 0 ? conversation.messages : conversation.messages.slice(0, at),
         contextIndex = before.map(m => m.role).lastIndexOf("context");
-      const source = before
-        .slice(contextIndex + 1)
-        .filter(m => m.id !== assistant.id && m.status !== "error" && ["user", "assistant"].includes(m.role));
+      const source = before.slice(contextIndex + 1).filter(
+        m =>
+          m.id !== assistant.id &&
+          m.status !== "error" &&
+          ["user", "assistant"].includes(m.role) &&
+          // 刚发出就停下、一个字一步都没有的空答：不进历史（有的兼容接口拒收空的 assistant）
+          !(m.role === "assistant" && !String(m.content || "").trim() && !m.steps?.length)
+      );
       lastUserId = source.filter(m => m.role === "user").at(-1)?.id;
       const head = summaryMessages(contextIndex >= 0 ? before[contextIndex] : null);
       head.push(...(await historyForApi(source, lastUserId, budget)));
       // 这一问的首段往后各问里一字不差，标作缓存点：下一问时连它在内的整段历史都从缓存读（桥接只给 Claude 留着这个标，别家去掉）。
-      // 账本只附在这一问（之前的问不带，免得一份账本背上几十遍），所以接在后面另起一段——冠在开头，这一问每问都变，缓存只接得到上一答之前
+      // 账本只附在这一问（之前的问不带，免得一份账本背上几十遍），所以接在后面另起一段——冠在开头，这一问每问都变，缓存只接得到上一答之前。
+      // 意也一样（见 19-intent/10-store.js）
       const ask = head.findLast(entry => entry.role === "user"),
-        ledger = ledgerNote(conversation, "main", profile);
+        ledger = ledgerNote(conversation, "main", profile),
+        intent = intentNote(conversation);
       if (ask) {
         if (typeof ask.content === "string") ask.content = [{ type: "text", text: ask.content }];
         ask.content[0].cache_control = { type: "ephemeral" };
         if (ledger) ask.content.push({ type: "text", text: ledger.trimEnd() });
+        if (intent) ask.content.push({ type: "text", text: intent.trimEnd() });
       }
-      // 续写只递已写的话，做过的步骤也得让它知道（另发一句「继续」时上一答的行迹本就随着去），不然从头再做一遍
-      if (resumeFrom) {
-        const trail = stepsDigest(assistant);
-        head.push(
-          { role: "assistant", content: resumeFrom },
-          { role: "user", content: `${trail ? `${trail}\n\n` : ""}${prompt("assistant.resume")}` }
-        );
+      // 续写：已写的话连同途中递进来的补言、回报照原处排上（与下一问装上一答同一个写法，见 answerParts），
+      // 做过的步骤也得让它知道（另发一句「继续」时上一答的行迹本就随着去），不然从头再做一遍。只做了几步、一个字没写就断的也一样
+      if (resumed) {
+        const parts = (await answerForApi(resumed, budget)).filter(part => part.role !== "assistant" || part.content),
+          trail = stepsDigest(resumed);
+        if (parts.length || trail)
+          head.push(...parts, { role: "user", content: `${trail ? `${trail}\n\n` : ""}${prompt("assistant.resume")}` });
       }
       return head;
     };
-    await loadLedger(conversation, job.controller.signal);
+    await Promise.all([loadLedger(conversation, job.controller.signal), loadIntent(conversation, job.controller.signal)]);
     history = await buildHead();
+    const watch = intentWatch(conversation);
     // 上一答断着时回来的回报（见 wakeWithReports）：开工即递上，模型续写时就知道帮手怎样了
     held = takeHeldReports(conversation, job);
     if (held.length) await deliverSupplements(job, history, budget, assistant);
@@ -97,7 +107,11 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       tools,
       reasoning: conversation.reasoning || "",
       head: history.length,
-      onFold: busy => setJobLabel(conversation, job, busy ? "上下文将满 · 整理中" : ""),
+      // 撮要那一步由 keepInWindow 记进行迹（见 60-context.js 的 foldMark），这里只管重画与作业条上的一句
+      onFold: busy => {
+        setJobLabel(conversation, job, busy ? "正删繁就简" : "");
+        refreshSteps(assistant);
+      },
       // 放不下的是这一问之前的对话：压成摘要落成分隔（下一问也用得上），换掉 history 里这一问之前的那截
       compactHead: async signal => {
         const user = conversation.messages.find(m => m.id === lastUserId);
@@ -118,13 +132,17 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       roundLimit: toolRoundLimit(),
       inbox: job,
       budget,
-      onStatus: label => setJobLabel(conversation, job, label)
+      onStatus: label => setJobLabel(conversation, job, label),
+      afterRound: () => intentRound(conversation, watch, job.controller.signal),
+      beforeEnd: () => intentGate(conversation, assistant, watch, job.controller.signal)
     });
+    // 末轮已读完、正文还在匀速写出时按了停：runRounds 照常返回，这里补一道，不然又记成写完，照跑压缩、拟题、补言另起一问
+    job.controller.signal.throwIfAborted();
     trimReply(assistant);
     if (!assistant.content)
       throw Error(
         assistant.steps?.length
-          ? "模型执行工具后未返回正文，可继续生成以收尾"
+          ? "模型调过工具后未落正文，可续写收尾"
           : anthropicLike(profile)
             ? "模型未返回正文，可在模型的高级配置里调高 max_tokens 后重试"
             : "模型未返回正文，可重试"
@@ -142,7 +160,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   } catch (error) {
     // 一个字没等到就又断了：模型没读到那几份回报，原样还回去等下一答
     if (!tally.opened) returnHeldReports(conversation, assistant, held);
-    settleSteps(assistant, error.name === "AbortError" ? "已停止" : "已中断");
+    settleSteps(assistant, error.name === "AbortError" ? "已止" : "已中断");
     if (error.name === "AbortError") assistant.status = "stopped";
     else if (assistant.content || assistant.reasoning || assistant.steps?.length) {
       assistant.status = "interrupted";

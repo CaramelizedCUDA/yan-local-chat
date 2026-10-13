@@ -281,6 +281,9 @@ module.exports = function createEnv({ envHome }) {
   }
   const handlePrepare = jsonRoute(
     async body => {
+      // 各件工具包下的都是 Windows 的发行版（python.exe、windows-amd64 的 zip……），别处装不上
+      if (process.platform !== "win32")
+        throw Error("环境工具包只备了 Windows 版；在 macOS 上请用系统里的 Python 与 Node（可经 Homebrew 安装）");
       if (!job?.running) {
         job = { running: true, step: "", log: [], error: "" };
         void prepare(body);

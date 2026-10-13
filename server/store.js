@@ -8,7 +8,7 @@
 // 测试用 YAN_HOME 直接指定根目录，不读也不写位置条子
 // 由 server.js 装配：require("./server/store.js")()
 "use strict";
-const { sendJson, readJson, jsonRoute, errorText, writeAtomic } = require("./http.js");
+const { sendJson, readJson, jsonRoute, errorText, writeAtomic, parseJsonText } = require("./http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
@@ -90,7 +90,7 @@ module.exports = function createStore() {
       await readJson(req);
       const file = paths().config;
       if (!fs.existsSync(file)) return sendJson(res, 200, { config: null, savedAt: 0 });
-      const data = JSON.parse(fs.readFileSync(file, "utf8"));
+      const data = parseJsonText(fs.readFileSync(file, "utf8"));
       const { 言: _mark, savedAt, ...config } = data || {};
       sendJson(res, 200, { config, savedAt: Number(savedAt) || 0 });
     } catch (error) {
@@ -107,7 +107,7 @@ module.exports = function createStore() {
       let previous = "";
       try {
         previous = fs.readFileSync(paths().config, "utf8");
-        const existing = JSON.parse(previous) || {};
+        const existing = parseJsonText(previous) || {};
         current = Number(existing.savedAt) || 0;
         if (body.base !== undefined && current > (Number(body.base) || 0)) {
           const { 言: _mark, savedAt: _savedAt, ...config } = existing;

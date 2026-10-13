@@ -6,6 +6,7 @@ const { claudeModel, markOpenAiCache, stripCacheMarks } = require("./anthropic.j
 // DashScope（通义）兼容模式不认 reasoning_effort，认 enable_thinking + thinking_budget；档位没有可探的枚举，按通用四档列
 const DASHSCOPE = /dashscope|aliyuncs/i;
 const DASHSCOPE_BUDGETS = { minimal: 1024, low: 2048, medium: 8192, high: 32768, xhigh: 65536, max: 81920 };
+const OPENAI_REASONING = /(^|\/)(o\d|gpt-5)/i;
 
 function endpoint(baseUrl) {
   const url = new URL(String(baseUrl || "").trim());
@@ -46,6 +47,12 @@ module.exports = {
       })
     };
     body.messages = claudeModel(config.model) ? markOpenAiCache(body.messages) : stripCacheMarks(body.messages);
+    // OpenAI 的推理模型（o 系、gpt-5 一族，经 OpenRouter 的 openai/… 也是）不收 max_tokens，只认 max_completion_tokens：
+    // 拟题、压缩、探档位带着上限，不换就是 400
+    if (body.max_tokens !== undefined && OPENAI_REASONING.test(String(config.model || ""))) {
+      body.max_completion_tokens = body.max_tokens;
+      delete body.max_tokens;
+    }
     if (body.reasoning_effort && DASHSCOPE.test(config.baseUrl)) {
       body.enable_thinking = true;
       body.thinking_budget = DASHSCOPE_BUDGETS[body.reasoning_effort] || 8192;
