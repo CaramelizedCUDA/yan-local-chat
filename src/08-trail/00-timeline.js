@@ -26,17 +26,23 @@ function trailWork(message) {
 }
 /** @param {Message} message */
 function trailBase(message) {
-  return trailWork(message) ? Math.max(0, ...message.steps.map(step => Number(step.at) || 0)) : 0;
+  return trailWork(message) ? trailGroups(message).at(-1)?.at || 0 : 0;
 }
 /** @param {Message|SubAgent} message 主消息或帮手：两者都有 content / reasoning / steps */
 function trailGroups(message) {
-  const groups = [];
+  const groups = [],
+    steps = message.steps || [];
   let prev = 0,
     rprev = 0;
-  for (const step of message.steps || []) {
+  for (const [i, step] of steps.entries()) {
     const at = Number(step.at) || 0,
       rat = Number(step.rat) || 0,
       last = groups.at(-1);
+    // 收尾前递的话（coda，如收尾前对照意）放了行、其后没再动手：走向没变，之前那段话仍是答复——并进前一组，不另起、不挪答复的起点
+    if (last && i === steps.length - 1 && TOOLS.get(step.name)?.coda) {
+      last.steps.push(step);
+      continue;
+    }
     // 同一轮后来的步骤把这组思绪的边界往后推，下一组的起点也得跟着走，不然推过去的那段会在下一组再显示一次
     if (last && last.at === at) {
       last.steps.push(step);
@@ -51,7 +57,7 @@ function trailGroups(message) {
 }
 /** @param {Message} message */
 function trailReasoningBase(message) {
-  return trailWork(message) ? Math.max(0, ...message.steps.map(step => Number(step.rat) || 0)) : 0;
+  return trailWork(message) ? Math.max(0, ...trailGroups(message).map(group => group.rat)) : 0;
 }
 function rollText(el, text) {
   const prev = el.dataset.rollText ?? el.textContent;

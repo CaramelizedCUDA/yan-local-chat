@@ -73,6 +73,18 @@ try {
       /对照各根的原问，看这一答能否就此收尾/.test(gate),
     gate
   );
+  // 对照完没再动手就收尾：之前那段话仍是答复，留在外面不折进行迹；对照那一步并进行迹末一组
+  const settled = await evalJs(
+    `(a => ({ outer: a.querySelector(".assistant-block > .markdown")?.textContent.trim() || "", gateInTrail: !!a.querySelector('.trail-group [data-tool="intent_gate"]'), notes: [...a.querySelectorAll(".trail-note")].map(n => n.textContent.trim().slice(0, 8)) }))([...document.querySelectorAll('#messages .message.assistant')].at(-1))`
+  );
+  check(
+    "a gate that lets the answer close keeps the reply before it outside the trail",
+    settled.outer.startsWith("INTENTA|") &&
+      settled.outer.includes("GATE|") &&
+      settled.gateInTrail &&
+      !settled.notes.some(n => n.startsWith("INTENTA|")),
+    JSON.stringify(settled)
+  );
 
   // 意的卡片：题下一行（目录之后）与书眉常显一枚「意」，点开在预览浮层里画出卡片；点图上一项，图下展开；卡片只给看
   const lastMessage = `[...document.querySelectorAll('#messages .message.assistant')].at(-1)`,

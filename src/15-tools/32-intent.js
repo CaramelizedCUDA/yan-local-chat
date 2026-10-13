@@ -58,11 +58,13 @@ defineTool({
     return { ok: true, content: `${intentText(next, now, { path: INTENT_FILE })}${unread}`, display: `${standing}/${live}` };
   }
 });
-// 收尾前对照意递的那句话（见 19-intent/10-store.js 的 intentGate）：不是工具，记作行迹里它递上的那一步；往后重装这一答照原处插回
+// 收尾前对照意递的那句话（见 19-intent/10-store.js 的 intentGate）：不是工具，记作行迹里它递上的那一步；往后重装这一答照原处插回。
+// coda：对照完没再动手就收尾的，之前那段话仍作答复，不折进行迹（见 08-trail/00-timeline.js 的 trailGroups）
 defineTool({
   name: "intent_gate",
   label: "意",
   offer: false,
+  coda: true,
   html: step => intentStepHtml(step, "intent_gate"),
   replay: replayReport
 });
