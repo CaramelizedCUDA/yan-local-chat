@@ -40,7 +40,8 @@ const empty = () => f.asIntent(null);
 test("结构：新的一项要写全，前提要在、不成环；有错整批不收", () => {
   let intent = empty();
   assert.match(problems(intent, [{ id: "甲", claim: "能登录" }])[0], /claim 与 check 都要写/);
-  assert.match(problems(intent, [{ id: "有 空格", claim: "x", check: "y" }])[0], /不含空格/);
+  assert.match(problems(intent, [{ id: "@ ：", claim: "x", check: "y" }])[0], /须有字母、数字或汉字/);
+  assert.match(problems(intent, [{ id: "很".repeat(25), claim: "x", check: "y" }])[0], /至多 24 个汉字/);
   assert.match(problems(intent, [{ id: "甲", claim: "x", check: "y", needs: ["乙"] }])[0], /前提 乙 不存在/);
   intent = change(intent, [
     { id: "甲", claim: "能登录", check: "带对的密码登得进", needs: ["乙"] },
@@ -438,4 +439,66 @@ test("孤悬：全局里没声明为根、既无前提又没人以它为前提�
   assert.deepEqual(f.intentStrays(hand), ["补测"]);
   assert.deepEqual(problems(hand, [{ id: "保留", state: "doing" }]), []);
   assert.match(f.intentText(hand), /^- \[进行中\] 补测（孤悬）：跑一轮读数$/m);
+});
+
+test("名字：空格、@ 之类照规矩改写，同一批的前提与所属一并改，回给模型时说一声；英文名可比汉字长一倍", () => {
+  const { ops, problems: found, tidied } = f.normalizeIntentOps(empty(), [
+    { id: "north star", claim: "R", check: "r", root: true, needs: ["A_i50@512 run"] },
+    { id: "A_i50@512 run", claim: "跑一轮", check: "读数落卷" }
+  ]);
+  assert.deepEqual(found, []);
+  assert.deepEqual(
+    ops.map(op => [op.id, op.needs]),
+    [
+      ["north_star", ["A_i50_512_run"]],
+      ["A_i50_512_run", undefined]
+    ]
+  );
+  assert.deepEqual(tidied, [
+    ["north star", "north_star"],
+    ["A_i50@512 run", "A_i50_512_run"]
+  ]);
+  assert.deepEqual(problems(empty(), [{ id: "48G decoding speed-up reservation", claim: "x", check: "y", root: true }]), []);
+});
+
+test("改名：前提、所属、所记的前提版本一并换，立住的照旧立住；同一批里写旧名的照新名认；新名不能撞", () => {
+  let intent = change(empty(), [
+    { id: "竞赛做成", claim: "R", check: "r", root: true, needs: ["卖点落地"] },
+    { id: "卖点落地", claim: "S", check: "s", needs: ["三谱LDA"] },
+    { id: "三谱LDA", claim: "三个语料各跑 LDA", check: "主题词表在", anchors: ["out/lda.json"] },
+    { id: "细项", claim: "D", check: "d", in: "三谱LDA" }
+  ]);
+  intent = change(intent, [
+    { id: "细项", state: "done" },
+    { id: "三谱LDA", state: "done" },
+    { id: "卖点落地", state: "done" }
+  ]);
+  assert.match(problems(intent, [{ id: "三谱LDA", rename: "卖点落地" }])[0], /这个名字已有/);
+  assert.match(problems(intent, [{ id: "没有", rename: "新" }])[0], /无可改名/);
+  const next = change(intent, [
+    { id: "三谱LDA", rename: "两谱LDA", claim: "两个语料各跑 LDA" },
+    { id: "卖点落地", needs: ["三谱LDA"] }
+  ]);
+  assert.deepEqual(Object.keys(next.nodes), ["竞赛做成", "卖点落地", "两谱LDA", "细项"], "次序不动");
+  assert.deepEqual(next.nodes["卖点落地"].needs, ["两谱LDA"]);
+  assert.equal(next.nodes["细项"].in, "两谱LDA");
+  assert.deepEqual(Object.keys(next.nodes["卖点落地"].seal.premises), ["两谱LDA"]);
+  assert.ok(next.log.some(entry => entry.text === "改名 三谱LDA → 两谱LDA"));
+  // 只改名不改说法：立住的照旧
+  const plain = change(intent, [{ id: "三谱LDA", rename: "两谱LDA" }]);
+  assert.ok(f.intentEstablished(plain, "卖点落地") && f.intentEstablished(plain, "两谱LDA"));
+  // 同时改了说法：它自己转待复核，上面的跟着不算立住
+  assert.equal(f.intentState(next, "两谱LDA"), "stale");
+  assert.ok(!f.intentEstablished(next, "卖点落地"));
+});
+
+test("降下来的根：成了别项的前提就不再算根，原问不再附；改说法记作改意", () => {
+  let intent = change(empty(), [{ id: "建模达标", claim: "M", check: "m", root: true }], { ask: "把当前任务的意建立起来" });
+  intent = change(intent, [{ id: "竞赛做成", claim: "R", check: "r", root: true, needs: ["建模达标"] }], { ask: "竞赛整体做成" });
+  const text = f.intentText(intent, {}, { asks: true });
+  assert.match(text, /原问：竞赛整体做成/);
+  assert.ok(!text.includes("把当前任务的意建立起来"));
+  const revised = change(intent, [{ id: "建模达标", claim: "M2" }], { ask: "改一下" });
+  assert.equal(revised.log.at(-1).text, "改意 建模达标：M2");
+  assert.equal(revised.nodes["建模达标"].root.later, undefined);
 });

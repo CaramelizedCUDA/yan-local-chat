@@ -32,14 +32,16 @@
  * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null>, anchors?: string[] }} IntentSeal
  * @typedef {{ at: string, conversation: string, text: string }} IntentLog 改意、弃、假定的留痕
  * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[], updated?: string }} Intent updated：最近一回写入的时刻——单拿出来看时，看得出旧不旧
- * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean, in?: string, remove?: boolean }} IntentOp in：空串即挪回全局；remove：整项撤去
+ * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean, in?: string, remove?: boolean, rename?: string }} IntentOp in：空串即挪回全局；remove：整项撤去；rename：已有一项改叫这个名字
  * @typedef {Record<string, string|null>} IntentPrints 各凭据此刻的指纹，按「种类:值」；不在其中的即不知道，不据它判
  */
 const INTENT_LIMIT = 60,
   INTENT_DEPTH = 2,
   INTENT_LEVEL_LIMIT = 15,
   INTENT_LOG_LIMIT = 200,
-  INTENT_ID = /^[\p{L}\p{N}_.·-]{1,24}$/u,
+  INTENT_ID = /^[\p{L}\p{N}_.·-]+$/u,
+  // 名字的宽：汉字一类全角记 2、字母数字记 1——至多 24 个汉字或 48 个字母
+  INTENT_ID_WIDTH = 48,
   INTENT_MARKS = new Set(["open", "doing", "done", "assumed", "dropped"]),
   INTENT_MARK_ALIASES = {
     pending: "open",
@@ -58,7 +60,30 @@ const INTENT_LIMIT = 60,
   // 记凭据的两种：成立的、假定的
   SEALED = new Set(["done", "assumed"]);
 // 节点表按 id 取项：内置对象名不能误当成已存在的节点。
-const validIntentId = id => INTENT_ID.test(id) && !Object.hasOwn(Object.prototype, id);
+const validIntentId = id =>
+  INTENT_ID.test(id) &&
+  [...id].reduce((w, ch) => w + (/** @type {number} */ (ch.codePointAt(0)) > 0x2e7f ? 2 : 1), 0) <= INTENT_ID_WIDTH &&
+  !Object.hasOwn(Object.prototype, id);
+/** 这一项改完叫什么（改了名的即新名） @param {IntentOp} op */
+const intentOpId = op => op.rename || op.id;
+// 模型给的名字理成合式：首尾的空格、冒号、@ 之类去掉，中间连着的一串换成一个 _；它自己写的 _ 不动。
+// 同一批里 id、前提、所属、改名都经这里，改写得一致
+/** @param {any} raw */
+const tidyIntentId = raw =>
+  String(raw ?? "")
+    .replace(/^[^\p{L}\p{N}_.·-]+|[^\p{L}\p{N}_.·-]+$/gu, "")
+    .replace(/[^\p{L}\p{N}_.·-]+/gu, "_");
+// 改名：节点换个键（次序不动），前提、所属、各项所记的前提版本跟着换；说法没变，记下的凭据照旧作数
+/** @param {Intent} intent @param {string} from @param {string} to */
+function renameIntentNode(intent, from, to) {
+  intent.nodes = Object.fromEntries(Object.entries(intent.nodes).map(([id, node]) => [id === from ? to : id, node]));
+  for (const node of Object.values(intent.nodes)) {
+    node.needs = node.needs.map(k => (k === from ? to : k));
+    if (node.in === from) node.in = to;
+    const premises = node.seal?.premises;
+    if (premises && Object.hasOwn(premises, from)) node.seal.premises = Object.fromEntries(Object.entries(premises).map(([k, v]) => [k === from ? to : k, v]));
+  }
+}
 /** 读到的 JSON 理成一份意：缺的补上，认不得的项丢掉 @returns {Intent} */
 function asIntent(raw) {
   const nodes = raw?.nodes && typeof raw.nodes === "object" && !Array.isArray(raw.nodes) ? raw.nodes : {},
@@ -290,29 +315,38 @@ function intentSealedAnchors(intent) {
  * @param {Intent} intent 此刻的意
  * @param {any} raw 模型给的 nodes
  * @param {string|null} [workdir] 凭据里的路径据此写成相对的
- * @returns {{ ops: IntentOp[], problems: string[] }}
+ * @returns {{ ops: IntentOp[], problems: string[], tidied: [string, string][] }} tidied：照规矩改写过的名字（原样 → 改后），回给模型时说一声
  */
 function normalizeIntentOps(intent, raw, workdir = "") {
   const problems = [],
     /** @type {IntentOp[]} */
-    ops = [];
-  if (!Array.isArray(raw) || !raw.length) return { ops, problems: ["nodes 须是非空数组"] };
+    ops = [],
+    /** @type {Map<string, string>} */
+    tidied = new Map();
+  if (!Array.isArray(raw) || !raw.length) return { ops, problems: ["nodes 须是非空数组"], tidied: [] };
   const clip = (value, n) =>
     String(value ?? "")
       .trim()
       .slice(0, n);
   const list = value => (Array.isArray(value) ? value : value === undefined || value === null || value === "" ? [] : [value]);
+  const idOf = value => {
+    const said = clip(value, 80),
+      id = tidyIntentId(said);
+    if (id && id !== said) tidied.set(said, id);
+    return id;
+  };
+  const badId = said => `id「${clip(said, 80)}」不合要求：须有字母、数字或汉字，至多 24 个汉字（字母数字 48 个）`;
   for (const item of raw) {
     if (!item || typeof item !== "object") {
       problems.push("nodes 里每一项须是对象");
       continue;
     }
-    const id = clip(item.id, 40);
+    const id = idOf(item.id);
     if (!validIntentId(id)) {
-      problems.push(`id「${id}」不合要求：1–24 个字母、数字、汉字或 _ . · -，不含空格`);
+      problems.push(badId(item.id));
       continue;
     }
-    const known = intent.nodes[id] || ops.find(op => op.id === id && op.claim);
+    const known = intent.nodes[id] || ops.find(op => (op.id === id && op.claim) || op.rename === id);
     /** @type {IntentOp} */
     const op = { id };
     for (const [key, n] of /** @type {const} */ ([
@@ -321,9 +355,17 @@ function normalizeIntentOps(intent, raw, workdir = "") {
       ["note", 1000]
     ]))
       if (item[key] !== undefined) op[key] = clip(item[key], n);
-    if (item.in !== undefined && item.in !== null) op.in = clip(item.in, 40);
+    if (item.in !== undefined && item.in !== null) op.in = clip(item.in, 80) && idOf(item.in);
     if (item.any !== undefined) op.any = item.any === true || item.any === "true";
-    if (item.needs !== undefined) op.needs = [...new Set(list(item.needs).map(n => clip(n, 40)))].filter(n => n && n !== id);
+    if (item.needs !== undefined) op.needs = [...new Set(list(item.needs).map(idOf))].filter(n => n && n !== id);
+    if (item.rename !== undefined && item.rename !== null && clip(item.rename, 80)) {
+      const to = idOf(item.rename);
+      if (!validIntentId(to)) problems.push(badId(item.rename));
+      else if (!intent.nodes[id]) problems.push(`${id} 不存在，无可改名（新的一项直接用新名字立）`);
+      else if (to !== id && (intent.nodes[to] || ops.some(other => other.id === to || other.rename === to)))
+        problems.push(`${id} 改名为 ${to}：这个名字已有`);
+      else if (to !== id) op.rename = to;
+    }
     // 凭据：带前缀的是那一种，裸的是文件。模型照旧写 files 的也认
     const anchors = item.anchors !== undefined ? item.anchors : item.files;
     if (anchors !== undefined) {
@@ -351,8 +393,18 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     } else if (op.claim === "" || op.check === "") problems.push(`${id} 的 claim、check 不能改成空的`);
     ops.push(op);
   }
-  // 折上去试一遍：前提都在、没有环、假定写了出处、不超上限
-  const trial = applyIntentOps(intent, ops);
+  // 同一批里别处仍写旧名的（前提、所属、再改那一项）：照新名认
+  const renames = new Map(ops.filter(op => op.rename).map(op => [op.id, /** @type {string} */ (op.rename)])),
+    renamed = id => renames.get(id) || id;
+  if (renames.size)
+    for (const op of ops) {
+      if (!op.rename && renames.has(op.id)) op.id = renamed(op.id);
+      if (op.needs) op.needs = [...new Set(op.needs.map(renamed))];
+      if (op.in) op.in = renamed(op.in);
+    }
+  // 折上去试一遍：前提都在、没有环、假定写了出处、不超上限。比「这一批新添的毛病」时，原来那份也先照新名改过，改名本身不算新毛病
+  const trial = applyIntentOps(intent, ops),
+    base = renames.size ? applyIntentOps(intent, ops.filter(op => op.rename).map(op => ({ id: op.id, rename: op.rename }))) : intent;
   for (const op of ops)
     for (const need of op.needs || [])
       if (!Object.hasOwn(trial.nodes, need)) problems.push(`${op.id} 的前提 ${need} 不存在（新的前提与它同一批写上即可）`);
@@ -364,24 +416,23 @@ function normalizeIntentOps(intent, raw, workdir = "") {
   const cycle = intentCycle(trial);
   if (cycle) problems.push(`前提成了环：${cycle.join(" → ")}`);
   // 嵌套的毛病只报这一批新添的：手编出的旧毛病不拦别的改动
-  const nested = new Set(intentNestProblems(intent));
+  const nested = new Set(intentNestProblems(base));
   problems.push(...intentNestProblems(trial).filter(problem => !nested.has(problem)));
-  const strays = new Set(intentStrays(intent));
+  const strays = new Set(intentStrays(base));
   for (const id of intentStrays(trial))
     if (!strays.has(id))
       problems.push(`${id} 孤悬在全局：既无前提，也没有谁以它为前提。手上的一步归进它所服务的模块（in），或写进它所撑那一项的 needs；本就是整件事要立的另一条结论，新立时标 root`);
-  for (const op of ops)
-    if (trial.nodes[op.id]?.state === "assumed" && !trial.nodes[op.id].note)
-      problems.push(`${op.id} 标了假定，note 里写明借的是什么、出处在哪`);
+  for (const id of ops.map(intentOpId))
+    if (trial.nodes[id]?.state === "assumed" && !trial.nodes[id].note) problems.push(`${id} 标了假定，note 里写明借的是什么、出处在哪`);
   const live = Object.keys(trial.nodes).filter(id => !intentGone(trial, id)).length;
   if (live > INTENT_LIMIT && live > Object.keys(intent.nodes).filter(id => !intentGone(intent, id)).length)
     problems.push(`意里的项不宜多于 ${INTENT_LIMIT} 项（此刻 ${live}）：一项是值得单独判的结论，不是每一步动作；细的并进上一级`);
-  return { ops, problems };
+  return { ops, problems, tidied: [...tidied] };
 }
 /** 这一批里标成立、标假定的各项挂的凭据：写之前取一回指纹记下 @param {Intent} intent @param {IntentOp[]} ops */
 function intentSealing(intent, ops) {
   const trial = applyIntentOps(intent, ops);
-  return [...new Set(ops.filter(op => SEALED.has(op.state || "")).flatMap(op => trial.nodes[op.id]?.anchors || []))];
+  return [...new Set(ops.filter(op => SEALED.has(op.state || "")).flatMap(op => trial.nodes[intentOpId(op)]?.anchors || []))];
 }
 /**
  * 把一批改动折上去，得一份新的（不动原来那份）。先改说法与结构，最后才给标成立的各项记凭据：同一批里前提改了说法，记的是改后的
@@ -402,10 +453,15 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
       for (const other of Object.values(next.nodes)) other.needs = other.needs.filter(k => k !== op.id);
       continue;
     }
-    let node = next.nodes[op.id];
+    if (op.rename && next.nodes[op.id] && !next.nodes[op.rename]) {
+      renameIntentNode(next, op.id, op.rename);
+      log(`改名 ${op.id} → ${op.rename}`);
+    }
+    const id = op.rename && next.nodes[op.rename] ? op.rename : op.id;
+    let node = next.nodes[id];
     if (!node) {
       if (!op.claim) continue;
-      node = next.nodes[op.id] = { claim: "", check: "", needs: [], anchors: [], state: "open", rev: 0 };
+      node = next.nodes[id] = { claim: "", check: "", needs: [], anchors: [], state: "open", rev: 0 };
       if (op.root) node.root = { ask: String(ask).slice(0, 2000), at };
     }
     const before = `${node.claim}\u0001${node.check}\u0001${node.when || ""}`;
@@ -413,7 +469,7 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
     if (op.any !== undefined) node.any = op.any;
     if (op.needs) node.needs = op.needs;
     if (op.in !== undefined && op.in !== (node.in || "")) {
-      if (node.rev) log(`${op.id} 归入${op.in ? `「${op.in}」` : "全局"}`);
+      if (node.rev) log(`${id} 归入${op.in ? `「${op.in}」` : "全局"}`);
       if (op.in) node.in = op.in;
       else delete node.in;
     }
@@ -423,27 +479,30 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
       node.anchors = op.anchors;
     }
     if (`${node.claim}\u0001${node.check}\u0001${node.when || ""}` !== before) {
-      if (node.rev) log(`${node.root ? "改根" : "改意"} ${op.id}：${node.claim}`);
+      // 根：立时标过、此刻也没有谁以它为前提的（降成别项前提的不再算根，原问留着，哪天又成了根再用）
+      const rooted = !!node.root && !intentDependents(next, id).length;
+      if (node.rev) log(`${rooted ? "改根" : "改意"} ${id}：${node.claim}`);
       // 根改了说法：记下这一问，与原问一起附着，收尾时照着比
-      if (node.rev && node.root && ask) node.root.later = String(ask).slice(0, 2000);
+      if (node.rev && rooted && ask) node.root.later = String(ask).slice(0, 2000);
       node.rev += 1;
     }
     if (op.state && op.state !== node.state) {
       if (op.state === "dropped" || op.state === "assumed")
-        log(`${op.state === "dropped" ? "弃" : "假定"} ${op.id}${op.state === "assumed" && node.note ? `：${node.note}` : ""}`);
-      if (node.state === "dropped") log(`复立 ${op.id}`);
+        log(`${op.state === "dropped" ? "弃" : "假定"} ${id}${op.state === "assumed" && node.note ? `：${node.note}` : ""}`);
+      if (node.state === "dropped") log(`复立 ${id}`);
     }
     if (op.state) node.state = op.state;
     if (!SEALED.has(node.state)) delete node.seal;
   }
   for (const op of ops) {
-    const node = next.nodes[op.id];
+    const id = op.rename && next.nodes[op.rename] ? op.rename : op.id,
+      node = next.nodes[id];
     if (op.remove || !SEALED.has(op.state || "") || !node) continue;
     // 取不到指纹的凭据（探针这回没跑）不记：日后也不据它判
     node.seal = {
       rev: node.rev,
       anchors: [...node.anchors],
-      premises: op.state === "done" ? Object.fromEntries(liveNeeds(next, op.id).map(need => [need, next.nodes[need].rev])) : {},
+      premises: op.state === "done" ? Object.fromEntries(liveNeeds(next, id).map(need => [need, next.nodes[need].rev])) : {},
       prints: Object.fromEntries(node.anchors.filter(key => key in prints).map(key => [key, prints[key]]))
     };
   }
@@ -484,10 +543,12 @@ function intentText(intent, now = {}, { path = ".yan/意.json", asks = false } =
       folded = kids.length && inside === kids.length,
       borrowed = roots.has(id) && established ? intentBorrowed(intent, id).filter(b => b !== id) : [],
       head = `${pad}- [${tag}] ${id}${strays.has(id) ? "（孤悬）" : roots.has(id) ? "（根）" : ""}${kids.length ? `（模块，${folded ? `内 ${kids.length} 项都已立` : `内已立 ${inside} / ${kids.length}`}）` : ""}：${node.claim}${node.when ? `（情形：${node.when}）` : ""}${premises.length ? `（前提：${premises.join("、")}${node.any ? "，任一即可" : ""}）` : ""}${borrowed.length ? `（借假定：${borrowed.join("、")}）` : ""}`;
-    const ask = [
-      ...(node.root?.ask ? [`${pad}  原问：${node.root.ask.slice(0, asks ? 600 : 200)}`] : []),
-      ...(node.root?.later ? [`${pad}  改根时：${node.root.later.slice(0, asks ? 600 : 200)}`] : [])
-    ];
+    // 原问只随此刻的根附：立时标了根、后来成了别项前提的，不再附
+    const said = roots.has(id) ? node.root : undefined,
+      ask = [
+        ...(said?.ask ? [`${pad}  原问：${said.ask.slice(0, asks ? 600 : 200)}`] : []),
+        ...(said?.later ? [`${pad}  改根时：${said.later.slice(0, asks ? 600 : 200)}`] : [])
+      ];
     const inner = folded ? [] : level(id, `${pad}  `);
     if (state === "assumed") return [head, `${pad}  出处：${node.note || ""}`, ...(asks ? ask : []), ...inner];
     if (established) return [head, ...(asks ? ask : []), ...inner];

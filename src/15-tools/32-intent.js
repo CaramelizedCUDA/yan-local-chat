@@ -23,14 +23,15 @@ defineTool({
       user = (at < 0 ? conversation.messages : conversation.messages.slice(0, at)).findLast(m => m.role === "user"),
       ask = user ? quotedText(user) : "";
     const outcome = await changeIntent(conversation, signal, async intent => {
-      const { ops, problems } = normalizeIntentOps(intent, args.nodes, workdir);
-      if (problems.length) return { problems, ops };
+      const { ops, problems, tidied } = normalizeIntentOps(intent, args.nodes, workdir);
+      if (problems.length) return { problems, ops, tidied };
       // 标成立、标假定的各项：先取一回所挂凭据此刻的指纹记下
       const sealing = intentSealing(intent, ops),
         prints = await intentPrints(conversation, sealing, signal);
       return {
         problems,
         ops,
+        tidied,
         prints,
         unread: sealing.filter(key => !(key in prints)),
         next: applyIntentOps(intent, ops, { at: new Date().toISOString(), conversation: conversation.id, ask, prints })
@@ -52,10 +53,11 @@ defineTool({
       { live, standing } = intentTally(next, now),
       unread = outcome.unread.length
         ? `\n\n这几条凭据此刻取不到指纹，未记下，日后也不据它判：${outcome.unread.map(anchorLabel).join("、")}（问而后行里探针只自动跑明确只读的指令）`
-        : "";
+        : "",
+      tidied = outcome.tidied.length ? `\n\n名字照规矩改写了：${outcome.tidied.map(([said, id]) => `「${said}」→ ${id}`).join("、")}` : "";
     keepIntent(conversation, next, now);
-    step.title = `已立 ${standing} / ${live} · ${outcome.ops.map(op => op.id).join("、")}`.slice(0, 80);
-    return { ok: true, content: `${intentText(next, now, { path: INTENT_FILE })}${unread}`, display: `${standing}/${live}` };
+    step.title = `已立 ${standing} / ${live} · ${outcome.ops.map(intentOpId).join("、")}`.slice(0, 80);
+    return { ok: true, content: `${intentText(next, now, { path: INTENT_FILE })}${unread}${tidied}`, display: `${standing}/${live}` };
   }
 });
 // 收尾前对照意递的那句话（见 19-intent/10-store.js 的 intentGate）：不是工具，记作行迹里它递上的那一步；往后重装这一答照原处插回。

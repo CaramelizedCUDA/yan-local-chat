@@ -91,6 +91,7 @@
             type: "object",
             properties: {
               id: { type: "string", description: "短名，用对话的语言，八字以内" },
+              rename: { type: "string", description: "已有一项改叫这个名字（说法变了、旧名不贴切时）；前提与所属随之改" },
               claim: { type: "string", description: "要成立的那句话" },
               check: { type: "string", description: "怎么算成立" },
               needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
