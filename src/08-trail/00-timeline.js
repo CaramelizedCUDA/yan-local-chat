@@ -122,10 +122,9 @@ function syncSubSteps(details, sub, steps) {
   if (running) settleDetails(details, true);
   else settleDetails(details, false, null, true);
 }
-// 用时：不足一秒不写，一分以上带分
+// 用时：不足一秒不写
 function spentText(ms) {
-  const seconds = Math.round((Number(ms) || 0) / 1000);
-  return !seconds ? "" : seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分${seconds % 60 ? ` ${seconds % 60} 秒` : ""}`;
+  return Math.round((Number(ms) || 0) / 1000) ? spanText(ms) : "";
 }
 /** @param {Message} message */
 function trailLabel(message) {

@@ -47,6 +47,7 @@ defineTool({
       signal
     );
     const seconds = (data.durationMs / 1000).toFixed(data.durationMs < 10000 ? 1 : 0),
+      took = data.durationMs < 60000 ? `${seconds}s` : spanText(data.durationMs),
       marks = `${escalated ? " · 出沙箱" : ""}${step.readOnly && policy === "ask" && !step.sandboxWhy ? " · 只读免确认" : ""}`;
     step.output = commandOutput(data);
     if (background) {
@@ -66,7 +67,7 @@ defineTool({
     return {
       ok: !data.timedOut && data.exitCode === 0,
       content: `退出码：${data.exitCode}${data.timedOut ? "（超时被终止）" : ""}\n--- stdout ---\n${data.stdout || "(空)"}\n--- stderr ---\n${data.stderr || "(空)"}`,
-      display: `${data.timedOut ? `超时终止 · ${seconds}s` : data.exitCode === 0 ? `完成 · ${seconds}s` : `退出码 ${data.exitCode} · ${seconds}s`}${marks}`
+      display: `${data.timedOut ? `超时终止 · ${took}` : data.exitCode === 0 ? `完成 · ${took}` : `退出码 ${data.exitCode} · ${took}`}${marks}`
     };
   }
 });
@@ -127,7 +128,7 @@ function watchBackground(conversation, assistant, step) {
             id: data.id,
             command: String(data.command || step.title).slice(0, 200),
             exitCode: data.exitCode,
-            duration: spokenDuration(data.durationMs),
+            duration: spanText(data.durationMs),
             stdout: data.stdout || "(空)",
             stderr: data.stderr || "(空)"
           }),
@@ -201,11 +202,6 @@ function releaseBackground(conversation, messages, { kill = false } = {}) {
       void bridge("/api/work/check", { id, key, stop: true }).catch(() => {});
     }
   markDirty(conversation.id);
-}
-/** @param {number} ms */
-function spokenDuration(ms) {
-  const seconds = Math.round((Number(ms) || 0) / 1000);
-  return seconds < 60 ? `${seconds} 秒` : seconds < 3600 ? `${Math.round(seconds / 60)} 分` : `${(seconds / 3600).toFixed(1)} 小时`;
 }
 function commandOutput(data) {
   return trimOutput([data.stdout, data.stderr].filter(Boolean).join(data.stdout && data.stderr ? "\n--- stderr ---\n" : ""));

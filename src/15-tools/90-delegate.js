@@ -453,11 +453,10 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
 /** @param {Step} step @param {SubAgent} sub @param {number} ms */
 function helperSummary(step, sub, overrides, ms) {
   const changed = subChangedPaths(step),
-    stats = changeStats({ steps: [step] }),
-    seconds = Math.round(ms / 1000);
+    stats = changeStats({ steps: [step] });
   return {
     changedNote: changed.length ? `，改了 ${changed.length} 个文件：${changed.join("、")}（+${stats.added} −${stats.removed}）` : "",
-    display: `${sub.steps.filter(s => !isFold(s)).length} 步${changed.length ? ` · 改 ${changed.length} 个文件` : ""}${overrides.folds ? ` · 撮要 ${overrides.folds} 回` : ""} · ${seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分`}`
+    display: `${sub.steps.filter(s => !isFold(s)).length} 步${changed.length ? ` · 改 ${changed.length} 个文件` : ""}${overrides.folds ? ` · 撮要 ${overrides.folds} 回` : ""} · ${spanText(ms)}`
   };
 }
 // 睡下之前交的进展：此刻说的话，连同在等哪几条后台指令；主模型读了知道它还在、结束后会再回报

@@ -44,6 +44,19 @@ function formatDay(value) {
     year = date.getFullYear();
   return `${year !== new Date().getFullYear() ? `${[...String(year)].map(d => DIGITS[Number(d)]).join("")}年` : ""}${chineseNumber(date.getMonth() + 1)}月${chineseNumber(date.getDate())}日`;
 }
+// 一段用时：至多两级——秒、分秒、时分、天时。跑几个钟头的长活写「3 小时 12 分」，不写「192 分」；零头为零就不写
+/** @param {number} ms */
+function spanText(ms) {
+  const s = Math.round((Number(ms) || 0) / 1000),
+    pair = (big, unit, small, smallUnit) => `${big} ${unit}${small ? ` ${small} ${smallUnit}` : ""}`;
+  return s < 60
+    ? `${s} 秒`
+    : s < 3600
+      ? pair(Math.floor(s / 60), "分", s % 60, "秒")
+      : s < 86400
+        ? pair(Math.floor(s / 3600), "小时", Math.floor(s / 60) % 60, "分")
+        : pair(Math.floor(s / 86400), "天", Math.floor(s / 3600) % 24, "小时");
+}
 function dayBucket(value) {
   const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(value).setHours(0, 0, 0, 0)) / 86400000);
   return days <= 0 ? "今天" : days < 7 ? "过去七天" : "更早";
