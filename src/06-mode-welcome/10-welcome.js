@@ -66,7 +66,6 @@ const GREETINGS = {
     "暮色入窗，墨色渐深",
     "炉上水初沸",
     "月上东墙，砚中有影",
-    "墨染太极",
     "晚风叩窗，似有人来",
     "竹幽听雨落"
   ]
@@ -76,7 +75,7 @@ const WORK_GREETINGS = [
   "墨未干，事已行",
   "纸上落言，案前成事",
   "意既明，手便随",
-  "一言既定，诸事随之",
+  "墨染太极",
   "一事一毕，不留残笔",
   "议定即行，不尚空谈"
 ];
@@ -84,7 +83,7 @@ const greetingPick = Math.random();
 function greeting() {
   if (workMode()) return WORK_GREETINGS[Math.floor(greetingPick * WORK_GREETINGS.length)];
   const h = new Date().getHours(),
-    pool = GREETINGS[h < 6 ? "night" : h < 11 ? "morning" : h < 18 ? "day" : "evening"];
+    pool = GREETINGS[h < 6 || h >= 22 ? "night" : h < 11 ? "morning" : h < 18 ? "day" : "evening"];
   return pool[Math.floor(greetingPick * pool.length)];
 }
 // 推荐语是给头一回来的人看言能做什么的：言是画在正文里的图、后台定时、读材料、生成文件；行是通读项目立意、帮手分头调研、
