@@ -53,7 +53,7 @@ for (let i = 0; i < 200; i++) {
   if (s?.status === "running") breathing = true;
   if (/名帮手|帮手「/.test(s?.meta || "")) metaHelpers = s.meta;
   if (s?.status === "running" && /^\d+ 步 · \d+ 秒$/.test(s.card)) cardClock = s.card;
-  if (/^工作中 · \d+ 秒$/.test(s?.label || "")) labelClock = s.label;
+  if (/^行进中 · \d+ 秒$/.test(s?.label || "")) labelClock = s.label;
   // 面板里就地更新：给第一个做完的嵌套步骤做个记号，之后每次刷新都该还是同一个节点（整段换新会让输出闪、思绪合不上）
   if (s?.status === "running" && s.panelNested >= 1)
     await evalJs(

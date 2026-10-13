@@ -7,7 +7,7 @@ function recoverConversation(conversation) {
   for (const message of conversation.messages || [])
     if (message.status === "streaming") {
       message.status = "interrupted";
-      message.error = "页面刷新或连接中断，已生成的内容已保留";
+      message.error = "页面刷新或连接中断，已写的部分都在";
       message.interruptedAt = now();
       // 用时停在最后一次存盘时（作答时每秒记一回），起始时刻不再有用
       delete message.startedAt;

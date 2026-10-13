@@ -23,16 +23,16 @@ function renderSendButtons() {
   document.querySelectorAll(".send-trigger").forEach(b => {
     sealGlyph(b, stop);
     b.title = sendPreparing
-      ? "正在准备发送"
+      ? "正在备寄"
       : elsewhere
         ? "另一个页面正在这段对话里作答，这里跟着看"
         : stop
           ? crew
             ? "叫停后台的帮手"
-            : "停止生成"
+            : "搁笔"
           : running
             ? "插言引路：模型说到落点便读这句，可就此改道"
-            : "发送";
+            : "寄出";
     b.classList.toggle("stop-btn", stop);
     b.classList.toggle("empty", !running && !has);
     b.disabled = sendPreparing || (!running && !crew && ended);

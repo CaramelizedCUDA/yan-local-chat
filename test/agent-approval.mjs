@@ -38,7 +38,7 @@ check(
 check("tool stack forced open", await evalJs(`document.querySelector(".tool-stack").open`));
 check("work strip leaves 等待确认 to the approval bar", await evalJs(`!document.querySelector("#helperBar .work-notice")`));
 check("sidebar waiting marker", await evalJs(`!!document.querySelector(".history-state.waiting")`));
-check("meta 等待确认", (await evalJs(`document.querySelector(".tool-stack-meta").textContent`)) === "等待确认");
+check("meta 待你定夺", (await evalJs(`document.querySelector(".tool-stack-meta").textContent`)) === "待你定夺");
 check(
   "approval bar above composer shows the command",
   await evalJs(
@@ -77,7 +77,7 @@ await waitFor(`!document.querySelector(".tool-stack").open`, 4000).catch(() => {
 check(
   "work trail collapses after completion with a duration label",
   await evalJs(
-    `!document.querySelector(".tool-stack").open && document.querySelector(".tool-stack").classList.contains("is-work") && /^工作了 /.test(document.querySelector(".tool-stack-label").textContent)`
+    `!document.querySelector(".tool-stack").open && document.querySelector(".tool-stack").classList.contains("is-work") && /^行迹 · /.test(document.querySelector(".tool-stack-label").textContent)`
   ),
   await evalJs(`document.querySelector(".tool-stack-label").textContent`)
 );
@@ -157,7 +157,7 @@ await sleep(400);
 const step3 = await evalJs(
   `(s => ({ status: s.dataset.status, meta: s.querySelector(".tool-meta").textContent, hasButtons: !!s.querySelector("[data-approve]") }))([...document.querySelectorAll(".tool-step")].at(-1))`
 );
-check("stop settles pending step", step3.status === "skipped" && step3.meta === "已停止" && !step3.hasButtons, JSON.stringify(step3));
+check("stop settles pending step", step3.status === "skipped" && step3.meta === "已止" && !step3.hasButtons, JSON.stringify(step3));
 check("message stopped", (await evalJs(`[...document.querySelectorAll('.message.assistant')].at(-1)?.dataset.status`)) === "stopped");
 check("send button back to 寄", (await evalJs(`document.querySelector("#chatSend").textContent`)) === "寄");
 

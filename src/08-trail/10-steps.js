@@ -124,7 +124,7 @@ function delegateDoing(step) {
     steps = sub?.steps || [],
     current = [...steps].reverse().find(s => s.status === "running" || s.status === "pending") || steps.at(-1);
   if (current && (current.status === "running" || current.status === "pending"))
-    return `${current.status === "pending" ? "等待确认" : "正在"} ${toolLabel(current.name)} ${String(current.title || "").slice(0, 60)}`.trim();
+    return `${current.status === "pending" ? AWAITING : "正在"} ${toolLabel(current.name)} ${String(current.title || "").slice(0, 60)}`.trim();
   // 睡着等自己挂的后台指令
   if (sub?.waiting)
     return `等后台 ${helperWaits(sub)
@@ -142,7 +142,7 @@ function stepStateHtml(status) {
   return status === "running"
     ? `<span class="tool-state spinning" aria-label="进行中"></span>`
     : status === "pending"
-      ? `<span class="tool-state pending" aria-label="等待确认">?</span>`
+      ? `<span class="tool-state pending" aria-label="${AWAITING}">?</span>`
       : status === "skipped"
         ? `<span class="tool-state skipped" aria-label="已跳过">–</span>`
         : status === "error"
@@ -164,7 +164,7 @@ function clampLines(text, full) {
 function workStepHtml(step, title) {
   const status = step.status || "done",
     command = step.name === "run_command";
-  const meta = status === "running" ? "执行中" : status === "pending" ? "等待确认" : escapeHtml(step.result || step.note || "");
+  const meta = status === "running" ? "" : status === "pending" ? AWAITING : escapeHtml(step.result || step.note || "");
   let body = "",
     more = "";
   // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头

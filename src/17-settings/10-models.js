@@ -154,7 +154,7 @@ async function handleProfileAction(profile, action, card) {
   }
   if (action === "models") {
     const status = card.querySelector(".profile-status");
-    status.textContent = "获取中…";
+    status.textContent = "取列表中…";
     try {
       const models = await fetchModelList(profile);
       if (!models.length) throw Error("接口未返回模型列表，请手动输入模型 ID");
@@ -164,7 +164,7 @@ async function handleProfileAction(profile, action, card) {
       renderSettings();
       renderHeader();
       card = document.querySelector(`[data-profile-card="${profile.id}"]`);
-      if (card) card.querySelector(".profile-status").textContent = `已获取 ${models.length} 个模型`;
+      if (card) card.querySelector(".profile-status").textContent = `已取回 ${models.length} 个模型`;
       void reportReasoningProbe(profile, card);
     } catch (error) {
       status.textContent = friendlyError(error.message);
@@ -173,11 +173,11 @@ async function handleProfileAction(profile, action, card) {
   }
   if (action === "test") {
     let status = card.querySelector(".profile-status");
-    status.textContent = "连接中…";
+    status.textContent = "接通中…";
     try {
       card = document.querySelector(`[data-profile-card="${profile.id}"]`) || card;
       status = card.querySelector(".profile-status");
-      status.textContent = "连接中…";
+      status.textContent = "接通中…";
       const started = performance.now();
       await bridge("/api/test", { profile: profileForRequest(profile) });
       status.textContent = `可用 · ${Math.round(performance.now() - started)} ms`;

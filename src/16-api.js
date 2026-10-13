@@ -292,10 +292,10 @@ function finishFault(reason) {
   if (!reason || NORMAL_FINISH.has(reason)) return null;
   const why =
     reason === "length"
-      ? "模型达到输出长度上限，回复尚未完成"
+      ? "模型达到输出长度上限，答复尚未写完"
       : REFUSED_FINISH.test(reason)
         ? `接口拦下了这一轮（finish_reason: ${reason}）`
-        : `接口异常收尾（finish_reason: ${reason}），回复尚未完成`;
+        : `接口异常收尾（finish_reason: ${reason}），答复尚未写完`;
   return Object.assign(Error(why), { finish: reason });
 }
 /** @param {Message} assistant 主消息、帮手，或拟题 / 压缩用的临时消息 */

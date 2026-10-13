@@ -142,7 +142,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     if (!assistant.content)
       throw Error(
         assistant.steps?.length
-          ? "模型执行工具后未返回正文，可继续生成以收尾"
+          ? "模型调过工具后未落正文，可续写收尾"
           : anthropicLike(profile)
             ? "模型未返回正文，可在模型的高级配置里调高 max_tokens 后重试"
             : "模型未返回正文，可重试"
@@ -160,7 +160,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   } catch (error) {
     // 一个字没等到就又断了：模型没读到那几份回报，原样还回去等下一答
     if (!tally.opened) returnHeldReports(conversation, assistant, held);
-    settleSteps(assistant, error.name === "AbortError" ? "已停止" : "已中断");
+    settleSteps(assistant, error.name === "AbortError" ? "已止" : "已中断");
     if (error.name === "AbortError") assistant.status = "stopped";
     else if (assistant.content || assistant.reasoning || assistant.steps?.length) {
       assistant.status = "interrupted";

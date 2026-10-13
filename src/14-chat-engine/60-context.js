@@ -26,7 +26,7 @@ async function compactContext(c, { auto = false, before = null, profile = active
     return false;
   }
   if (compactingIds.has(c.id)) {
-    if (!auto) toast("正在压缩");
+    if (!auto) toast("正在撮要");
     return false;
   }
   // 摘要先在外面生成，成了再一次性插进分隔（生成期间只有页面上一行「正在压缩」，不进消息、不落盘）：
@@ -75,7 +75,7 @@ async function compactContext(c, { auto = false, before = null, profile = active
     saveStore();
     compactingIds.delete(c.id);
     renderConversation();
-    toast(auto ? "上下文已重，前文已自动压成摘要" : "前文已压成摘要");
+    toast(auto ? "上下文已重，前文已自动撮要" : "前文已撮要");
     return true;
   } catch (error) {
     compactingIds.delete(c.id);
@@ -83,8 +83,8 @@ async function compactContext(c, { auto = false, before = null, profile = active
     // 作答途中压的，用户点了停止：不必再说压缩失败
     if (signal?.aborted) return false;
     console.warn("压缩失败", error);
-    const reason = error?.name === "TimeoutError" ? "模型五分钟内未写出摘要" : friendlyError(String(error?.message || error));
-    toast(`压缩失败：${reason.slice(0, 80)}`);
+    const reason = error?.name === "TimeoutError" ? "模型五分钟内未写出撮要" : friendlyError(String(error?.message || error));
+    toast(`撮要未成：${reason.slice(0, 80)}`);
     return false;
   } finally {
     compactingIds.delete(c.id);
@@ -112,7 +112,7 @@ async function summarize(profile, ask, signal, reasoning = "") {
   const summary = String(temp.content || "")
     .replace(/<think>[\s\S]*?<\/think>/g, "")
     .trim();
-  if (!summary) throw Error(temp.reasoning ? "模型只写了思考、没写出摘要（输出被上限截断）" : "模型没有写出摘要");
+  if (!summary) throw Error(temp.reasoning ? "模型只写了思考、没写出撮要（输出被上限截断）" : "模型没有写出撮要");
   return summary;
 }
 // 分隔上的摘要进历史：一问一答的样子，各家接口都认（说法见 prompts/assistant.js 的 summary）

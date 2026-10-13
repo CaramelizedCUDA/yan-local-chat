@@ -183,7 +183,7 @@ function syncMessages(c, converged) {
   if (compactingIds.has(c.id))
     items.push({
       key: "__compacting",
-      html: `<div class="context-divider compacting" data-message="__compacting"><span>正在把前文压成摘要…</span></div>`
+      html: `<div class="context-divider compacting" data-message="__compacting"><span>正在撮要前文…</span></div>`
     });
   if (conversationDry(c))
     items.push({
@@ -260,7 +260,7 @@ function relayHtml(message, branch = null) {
 function renderMessage(message, branch = null, side = false) {
   if (message.role === "context")
     return message.summary
-      ? `<div class="context-divider has-summary" data-message="${escapeHtml(message.id)}"><details class="context-summary"><summary>前文已压成摘要 · ${escapeHtml(chineseNumber(message.compacted || 0, true))}条</summary><div class="context-summary-body">${renderMarkdown(message.summary)}</div></details><button type="button" class="context-toggle" data-toggle-compacted>展开前文</button></div>`
+      ? `<div class="context-divider has-summary" data-message="${escapeHtml(message.id)}"><details class="context-summary"><summary>前文撮要 · ${escapeHtml(chineseNumber(message.compacted || 0, true))}条</summary><div class="context-summary-body">${renderMarkdown(message.summary)}</div></details><button type="button" class="context-toggle" data-toggle-compacted>展开前文</button></div>`
       : `<div class="context-divider" data-message="${escapeHtml(message.id)}"><span>上下文由此重新开始</span></div>`;
   if (message.role === "user" && message.relay) return relayHtml(message, branch);
   if (message.role === "user") {
@@ -306,7 +306,7 @@ function assistantNoteHtml(message) {
   return message.status === "error"
     ? `<div class="message-error">${escapeHtml(message.error || "请求失败")}</div>`
     : message.status === "interrupted"
-      ? `<div class="resume-note">${message.error ? `${escapeHtml(message.error.replace(/[。.\s]+$/, ""))}。` : "连接中断，"}已生成的内容均已保留，可由此续写。</div>`
+      ? `<div class="resume-note">${message.error ? `${escapeHtml(message.error.replace(/[。.\s]+$/, ""))}。` : "连接中断，"}已写的部分都在，可由此续写。</div>`
       : "";
 }
 /** @param {Message} message */
@@ -316,8 +316,8 @@ function assistantActionsHtml(message) {
     : message.status === "error"
       ? actionIcon("retry", "重试")
       : message.status === "interrupted"
-        ? `${message.content ? actionIcon("copy", "复制已生成内容") : ""}${actionIcon("resume", "继续生成")}${actionIcon("retry", "从头重试")}`
-        : `${actionIcon("copy", "复制回复")}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", "继续生成") : ""}${actionIcon("regenerate", "重新生成")}${actionIcon("note", "旁注")}${messageCostHtml(message)}`;
+        ? `${message.content ? actionIcon("copy", "复制已写的部分") : ""}${actionIcon("resume", "续写")}${actionIcon("retry", "从头重写")}`
+        : `${actionIcon("copy", "复制答复")}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", "续写") : ""}${actionIcon("regenerate", "重新生成")}${actionIcon("note", "旁注")}${messageCostHtml(message)}`;
 }
 // 这一答耗了多少墨：各轮请求的用量之和（含帮手），接口报了用量就用实数，没报则按字数估；当前上下文有多大另看右下角
 /** @param {Message} message */
@@ -328,7 +328,7 @@ function messageCostHtml(message) {
     prompt = Number(message.usage?.prompt_tokens) || 0,
     cached = Number(message.usage?.cached_tokens) || 0,
     hit = prompt && cached ? `；提示里 ${Math.round((cached / prompt) * 100)}% 读自缓存` : "";
-  return `<span class="message-cost${heavy ? " heavy" : ""}" title="这一答共耗约 ${formatTokens(n)} token${message.tokenEstimated ? "（估算）" : ""}${hit}${heavy ? "；上下文已重，可压缩前文" : ""}">耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}</span>`;
+  return `<span class="message-cost${heavy ? " heavy" : ""}" title="这一答共耗约 ${formatTokens(n)} token${message.tokenEstimated ? "（估算）" : ""}${hit}${heavy ? "；上下文已重，可撮要前文" : ""}">耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}</span>`;
 }
 // 一答收尾：就地画成定稿的样子（图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下）；这条不在页上就整段重画
 /**

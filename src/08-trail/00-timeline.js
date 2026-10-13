@@ -6,7 +6,7 @@ function toolStackLabel() {
 // 撮要不算一步：它是言替模型删繁就简，另记「撮要 n 回」
 const isFold = step => step.name === "fold";
 function toolStackMeta(all = []) {
-  if (all.some(step => step.status === "pending")) return "等待确认";
+  if (all.some(step => step.status === "pending")) return AWAITING;
   const steps = all.filter(step => !isFold(step)),
     folds = all.filter(step => isFold(step) && step.status === "done").length,
     running = all.some(step => step.status === "running"),
@@ -132,10 +132,10 @@ function trailLabel(message) {
   if (!trailWork(message)) return toolStackLabel();
   if (message.status === "streaming") {
     const live = message.startedAt ? spentText(Date.now() - message.startedAt) : "";
-    return live ? `工作中 · ${live}` : "工作中";
+    return live ? `行进中 · ${live}` : "行进中";
   }
   const spent = spentText(message.durationMs);
-  if (message.status === "complete") return spent ? `工作了 ${spent}` : "工作记录";
+  if (message.status === "complete") return spent ? `行迹 · ${spent}` : "行迹";
   // 停下、断了的也记着做了多久：续写时接着这个数走
   return `${message.status === "stopped" ? "已搁笔" : "已中断"}${spent ? ` · ${spent}` : ""}`;
 }

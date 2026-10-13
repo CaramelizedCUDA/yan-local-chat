@@ -12,7 +12,7 @@ function renderHelperBar() {
     stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 },
     // 等待确认有请示条，不在这里重说
     label = c && requestJob(c.id)?.label,
-    notice = label && label !== "等待确认" ? label : "";
+    notice = label && label !== AWAITING ? label : "";
   if (!helpers.length && !stats.files.length && !notice) {
     workFilesOpen = false;
     bar.dataset.sig = "";

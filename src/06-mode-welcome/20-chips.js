@@ -112,7 +112,7 @@ function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating =
   pop.querySelector("#workdirPick").onclick = async () => {
     const button = pop.querySelector("#workdirPick");
     button.disabled = true;
-    button.textContent = "选择中…";
+    button.textContent = "择取中…";
     try {
       const data = await bridge("/api/work/pick", { current: input.value.trim() }, AbortSignal.timeout(300000));
       if (data.path) {
@@ -123,7 +123,7 @@ function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating =
       toast(String(error.message || error).slice(0, 80));
     } finally {
       button.disabled = false;
-      button.textContent = "选择…";
+      button.textContent = "择目录…";
     }
   };
   setTimeout(() => input.focus(), 0);

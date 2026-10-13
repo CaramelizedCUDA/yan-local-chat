@@ -60,14 +60,14 @@ function renderHistory() {
     // 这一答写完了、帮手还在后台做，也算在忙；帮手的请示没有哪一答替它挂「等待确认」，按请示本身认
     const job = requestJob(c.id),
       running = !!job || crewRunning(c.id),
-      waiting = job?.label === "等待确认" || [...pendingApprovals.values()].some(entry => entry.conversationId === c.id),
-      runningTip = job ? "后台生成中" : "帮手在后台做";
+      waiting = job?.label === AWAITING || [...pendingApprovals.values()].some(entry => entry.conversationId === c.id),
+      runningTip = job ? "后台作答中" : "帮手在后台做";
     const state = waiting
-      ? `<span class="history-state waiting" title="有指令等待确认" aria-label="有指令等待确认">问</span>`
+      ? `<span class="history-state waiting" title="有指令待你定夺" aria-label="有指令待你定夺">问</span>`
       : running
         ? `<span class="history-state running" title="${runningTip}" aria-label="${runningTip}"></span>`
         : c.unread
-          ? `<span class="history-state unread" title="有新回复" aria-label="有新回复"></span>`
+          ? `<span class="history-state unread" title="有新答复" aria-label="有新答复"></span>`
           : c.pinned && groupOf(c)
             ? `<span class="history-state pinned" title="组内置顶" aria-label="组内置顶"></span>`
             : "";

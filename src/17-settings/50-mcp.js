@@ -23,7 +23,7 @@ function mcpCardHtml(name) {
   const [kind, text] = config.disabled
     ? ["", "已停用"]
     : !state
-      ? ["", "连接中…"]
+      ? ["", "接通中…"]
       : state.ok
         ? [
             "ok",

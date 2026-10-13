@@ -191,7 +191,7 @@ function launchHelper(step, args, ctx, past = null) {
       error => {
         step.status = "error";
         // 用户停的（停止、刷新）：不回报，也就不再叫醒谁
-        if (error.name === "AbortError") return void (step.result = "已停止");
+        if (error.name === "AbortError") return void (step.result = "已止");
         step.result = friendlyError(String(error.message || error));
         mailReport(conversation, {
           report: prompt("delegate.failed", {
@@ -392,7 +392,7 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
     if (left.length) crews.set(conversation.id, left);
     else crews.delete(conversation.id);
     // 停了、断了：没跑完的步骤收束；收工前才到、没来得及递的话标出来
-    if (sub.status !== "complete") settleStepList(sub.steps, sub.status === "stopped" ? "已停止" : "已中断");
+    if (sub.status !== "complete") settleStepList(sub.steps, sub.status === "stopped" ? "已止" : "已中断");
     for (const { note } of box.queue)
       if (note) {
         note.status = "error";

@@ -350,7 +350,7 @@ function haltJob(key, job) {
       (job.threadId ? null : [...(messages || [])].reverse().find(message => message.status === "streaming"));
   if (assistant?.status === "streaming") {
     assistant.status = "stopped";
-    settleSteps(assistant, "已停止");
+    settleSteps(assistant, "已止");
   }
   if (conversation) markDirty(conversation.id);
 }

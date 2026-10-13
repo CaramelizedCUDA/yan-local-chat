@@ -59,7 +59,7 @@ defineTool({
 defineTool({
   name: "http_request",
   group: "web",
-  label: "调接口",
+  label: "问接口",
   sideEffect: true,
   digest: step => `调接口 ${String(step.title || "").slice(0, 120)} → ${step.result || step.status}`,
   async run(step, args, { signal }) {

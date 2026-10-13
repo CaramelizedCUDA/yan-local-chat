@@ -39,7 +39,7 @@ async function runRounds(target, history, run) {
     retrying = false;
   overrides.onRetry = n => {
     retrying = true;
-    status(`网络不稳 · 第 ${n} 次重试`);
+    status(`网络不稳 · 再试第 ${n} 回`);
   };
   // 这一轮开了头又没写完（断线、补言停下）：花的墨按估算记上
   const chargePartial = said => {
@@ -85,7 +85,7 @@ async function runRounds(target, history, run) {
       );
       // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾
       if (!target.content.slice(roundStart).trim() && !target.toolCalls?.some(call => call.name))
-        throw Object.assign(Error("模型本轮未返回正文或工具调用，回复尚未完成"), { midStream: true });
+        throw Object.assign(Error("模型本轮未返回正文或工具调用，答复尚未写完"), { midStream: true });
     } catch (error) {
       // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
       if (error.midStream && !signal.aborted && resumed < AUTO_RESUMES) {

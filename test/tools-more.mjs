@@ -64,11 +64,11 @@ const ui = await evalJs(
   `(m => ({ plan: [...m.querySelectorAll(".plan-item")].map(li => li.dataset.plan).join(","), doing: m.querySelector('.plan-item[data-plan="doing"] .plan-text')?.textContent, code: !!m.querySelector(".tool-code"), labels: [...m.querySelectorAll(".tool-label")].map(n => n.textContent.trim()).join(","), frames: document.querySelectorAll(".compute-frame").length }))(${lastAssistant})`
 );
 check(
-  "trail: plan card lists the four states, run_js shows its code, labels are 计算 / 调接口 / 下载 / 计划; compute iframes are cleaned up",
+  "trail: plan card lists the four states, run_js shows its code, labels are 计算 / 问接口 / 下载 / 计划; compute iframes are cleaned up",
   ui.plan === "done,doing,pending,skipped" &&
     ui.doing === "调接口" &&
     ui.code &&
-    /计算.*调接口.*下载.*计划/.test(ui.labels) &&
+    /计算.*问接口.*下载.*计划/.test(ui.labels) &&
     ui.frames === 0,
   JSON.stringify(ui)
 );

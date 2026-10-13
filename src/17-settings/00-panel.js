@@ -139,7 +139,7 @@ function fontRow(active = "mixed") {
     ["kai", "楷体"],
     ["fangsong", "仿宋"]
   ];
-  return `<div class="setting-row"><div class="setting-copy"><strong>字体</strong><small>回复与标题用的字</small></div><div class="segmented font-segmented">${items.map(([v, label]) => `<button data-setting="font" data-value="${v}" class="${(active || "mixed") === v ? "active" : ""}" style="font-family:${escapeHtml(FONT_STACKS[v].title)}">${label}</button>`).join("")}</div></div>`;
+  return `<div class="setting-row"><div class="setting-copy"><strong>字体</strong><small>答复与标题用的字</small></div><div class="segmented font-segmented">${items.map(([v, label]) => `<button data-setting="font" data-value="${v}" class="${(active || "mixed") === v ? "active" : ""}" style="font-family:${escapeHtml(FONT_STACKS[v].title)}">${label}</button>`).join("")}</div></div>`;
 }
 function segmentRow(title, desc, key, items, active) {
   return `<div class="setting-row"><div class="setting-copy"><strong>${title}</strong><small>${desc}</small></div><div class="segmented">${items.map(([v, label]) => `<button data-setting="${key}" data-value="${v}" class="${String(active) === String(v) ? "active" : ""}">${label}</button>`).join("")}</div></div>`;
@@ -253,7 +253,7 @@ function bindToolSettings() {
     status.textContent = "检索中…";
     try {
       const data = await bridge("/api/search", { query: "OpenAI", count: 1 }, AbortSignal.timeout(20000));
-      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已接通，暂无结果";
+      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已接通，未得结果";
     } catch (error) {
       status.textContent = friendlyError(error.message).slice(0, 60);
     }

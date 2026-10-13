@@ -41,7 +41,7 @@ function renderModeSwitch() {
   seal.title = work ? "行 · 执事：指令与改动落在工作目录" : "言 · 对谈：产出收入卷宗";
 }
 const COMMAND_POLICY_META = {
-  ask: ["问而后行", "只读指令径行，其余逐条确认"],
+  ask: ["问而后行", "只读指令径行，其余逐条请示"],
   review: ["审而后行", "桥接代审：常规改动放行，高危动作回绝"],
   auto: ["径行", "不再审查；沙箱之界照守"]
 };

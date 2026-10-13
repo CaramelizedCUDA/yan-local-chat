@@ -255,7 +255,7 @@ const halted = await evalJs(
 );
 check(
   "with the answer closed, the seal stops the helper outright: no report, no new answer",
-  halted.step?.status === "error" && halted.step.result === "已停止" && halted.n === 2 && halted.seal !== "止",
+  halted.step?.status === "error" && halted.step.result === "已止" && halted.n === 2 && halted.seal !== "止",
   JSON.stringify({ status: halted.step?.status, result: halted.step?.result, n: halted.n, seal: halted.seal })
 );
 

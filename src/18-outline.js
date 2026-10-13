@@ -2,7 +2,7 @@
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 
 // ---------- 上下文计数：下一问会送出多少（估算），随输入、流式生成实时变 ----------
-// 与真正发送时的拼法同源（系统提示 + 工具定义 + 上次压缩以来的历史 + 行迹摘要 + 草稿 + 案上待发的附件与引文），附件按入库时记下的字数估
+// 与真正发送时的拼法同源（系统提示 + 工具定义 + 上次撮要以来的往来 + 行迹摘要 + 草稿 + 案上待发的附件与引文），附件按入库时记下的字数估
 /** @param {Conversation} c */
 function contextEstimate(c, draft = "", pending = null) {
   if (!c) return 0;
@@ -76,7 +76,7 @@ function updateContextGauge() {
   gauge.style.setProperty("--ratio", window ? `${Math.min(100, Math.round((n / window) * 100))}%` : "0%");
   rollText(gauge.querySelector(".context-gauge-value"), formatTokens(n));
   gauge.querySelector(".context-gauge-window").textContent = window ? `/ ${formatTokens(window)}` : "";
-  gauge.title = `下一问约送出 ${formatTokens(n)} token${window ? `，占此模型窗口 ${formatTokens(window)} 的 ${Math.round((n / window) * 100)}%` : ""}（估算，含系统提示、工具定义与上次压缩以来的历史）${window ? "；过七成半自动压成摘要" : "；放不下时自动压成摘要"}${heavy ? "\n上下文已重，可压缩前文" : "\n压缩前文"}`;
+  gauge.title = `下一问约送出 ${formatTokens(n)} token${window ? `，占此模型窗口 ${formatTokens(window)} 的 ${Math.round((n / window) * 100)}%` : ""}（估算，含系统提示、工具定义与上次撮要以来的往来）${window ? "；过七成半自动撮要" : "；放不下时自动撮要"}${heavy ? "\n上下文已重，可撮要前文" : "\n撮要前文"}`;
 }
 function scheduleContextGauge(delay = 160) {
   clearTimeout(gaugeTimer);
@@ -88,15 +88,15 @@ async function openContextMenu(anchor) {
   if (!c || anchor.dataset.busy) return;
   const source = compactable(c),
     turns = source.filter(m => m.role === "user").length;
-  if (turns < 2) return toast(conversationRunning(c.id) || runningElsewhere(c.id) ? "生成中，稍后再压" : "对话还短，不必压缩");
+  if (turns < 2) return toast(conversationRunning(c.id) || runningElsewhere(c.id) ? "作答中，稍后再撮" : "对话还短，不必撮要");
   const ok = await askConfirm({
-    title: "把前文压成摘要？",
-    body: `此前的 ${turns} 问 ${source.length - turns} 答会由模型压成一份摘要（目标、事实、决定、改过的文件、待办），此后每一问只带摘要与之后的消息。页面上的记录都还在，只是折起来。`,
-    ok: "压缩"
+    title: "撮要前文？",
+    body: `此前的 ${turns} 问 ${source.length - turns} 答会由模型撮要成一份（目标、事实、决定、改过的文件、待办），此后每一问只带这份撮要与其后的消息。页面上的记录都还在，只是折起来。`,
+    ok: "撮要"
   });
   if (!ok) return;
   anchor.dataset.busy = "1";
-  anchor.querySelector(".context-gauge-label").textContent = "压缩中";
+  anchor.querySelector(".context-gauge-label").textContent = "撮要中";
   try {
     await compactContext(c);
   } finally {

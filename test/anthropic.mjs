@@ -20,7 +20,7 @@ const got = await evalJs(
 );
 check(
   "anthropic round trip: system, tools with input_schema, list_files ran, thinking block signed and passed back",
-  got.text.includes("ANTHROPIC|sys:yes|think:yes|tools:") && got.text.includes("|schema:yes|result:") && got.steps === "列目录:done",
+  got.text.includes("ANTHROPIC|sys:yes|think:yes|tools:") && got.text.includes("|schema:yes|result:") && got.steps === "览目录:done",
   JSON.stringify(got)
 );
 check("thinking shown as 思绪", got.thought.includes("想一想先看目录"), got.thought);

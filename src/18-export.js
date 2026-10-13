@@ -36,7 +36,7 @@ function conversationMarkdown(c) {
       lines.push(
         "---",
         "",
-        m.summary ? `> **前文摘要**\n>\n> ${String(m.summary).replace(/\n/g, "\n> ")}` : "*（上下文由此重新开始）*",
+        m.summary ? `> **前文撮要**\n>\n> ${String(m.summary).replace(/\n/g, "\n> ")}` : "*（上下文由此重新开始）*",
         ""
       );
       continue;
