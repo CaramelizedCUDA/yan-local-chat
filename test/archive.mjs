@@ -369,6 +369,37 @@ check(
       `(f => f.path + "|" + f.name)(__yanState().conversations.find(c => c.id === "deliver-follow").messages[1].deliverables[0])`
     )) === "课程/成品.txt|成品.txt"
 );
+// 输入框「＋」→ 卷宗 选件也逐层看：根上只列夹与根上的件，点夹即进、顶上一行回上一层；查找跨层平铺
+await evalJs(`document.querySelector("#newChat").click(); true`);
+await waitFor(`!document.querySelector("#welcome").classList.contains("hidden")`);
+await evalJs(`document.querySelector("#welcome .attach-trigger").click(); true`);
+await waitFor(`!!document.querySelector('.chip-pop[data-kind=attach] [data-menu="archive"]')`);
+await evalJs(`document.querySelector('.chip-pop[data-kind=attach] [data-menu="archive"]').click(); true`);
+await waitFor(`!!document.querySelector('.chip-pop.attach-picker [data-dir="课程"]')`);
+const pickerRows = () =>
+  evalJs(
+    `[...document.querySelectorAll(".chip-pop.attach-picker .chip-pop-list button")].map(b => b.dataset.dir !== undefined ? (b.classList.contains("picker-up") ? "‹" : "夹:") + b.dataset.dir : b.dataset.pick).join()`
+  );
+check("the archive picker shows one level: folders, then that level's files", (await pickerRows()) === "夹:课程,一声.mp3,讲义.txt,ARCHIVE 做个表.md");
+await evalJs(`document.querySelector('.chip-pop.attach-picker [data-dir="课程"]').click(); true`);
+await waitFor(`!!document.querySelector('.chip-pop.attach-picker .picker-up')`);
+check(
+  "clicking a folder in the picker enters it, with a way back up",
+  (await pickerRows()) === "‹,夹:课程/空夹,夹:课程/深度学习,课程/新.txt,课程/成品.txt" && (await evalJs(`!!document.querySelector(".chip-pop.attach-picker")`))
+);
+await evalJs(
+  `(() => { const i = document.querySelector(".chip-pop.attach-picker input"); i.value = "笔记"; i.dispatchEvent(new Event("input")); })(); true`
+);
+check(
+  "searching in the picker lists matches from every level",
+  (await pickerRows()) === "课程/深度学习/笔记.md" &&
+    (await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="课程/深度学习/笔记.md"] small').textContent.startsWith("课程/深度学习 · ")`))
+);
+await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="课程/深度学习/笔记.md"]').click(); true`);
+await waitFor(`!!document.querySelector("#welcomeAttachments .attachment-card[data-name='笔记.md']")`);
+check("a file picked from inside a folder lands on the desk", await evalJs(`!document.querySelector(".chip-pop")`));
+await evalJs(`document.querySelector("#openLibrary").click(); true`);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程"]')`);
 
 // ---- 簿录上的管理：新建夹即就地起名，件就地改名，夹拖进夹，簿头 ‹ 回上一层，删夹连同里头
 const typeName = name =>

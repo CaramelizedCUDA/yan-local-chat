@@ -41,24 +41,49 @@ function openAttachMenu(anchor) {
     { align: "left", kind: "attach" }
   );
 }
-// 卷宗选件：一栏可查找的清单，点一件即置于案上；子目录里的件注上它所在的夹，查找也认夹名
+// 卷宗选件：与卷宗页一样逐层看——先列这一层的夹、再列件，点夹即进、顶上一行「‹」回上一层，点一件即置于案上；
+// 一旦查找，就跨各层平铺，件旁注上它所在的夹，查找也认夹名
 function renderArchivePicker(pop, anchor) {
-  const items = (archiveEntries || []).map(file => ({ key: file.path, name: file.name, dir: parentDir(file.path), size: file.size }));
+  const files = archiveEntries || [];
+  let at = "";
   pop.classList.add("attach-picker");
   pop.innerHTML = `<input class="field" placeholder="按文件名查找" aria-label="查找卷宗"><div class="chip-pop-list"></div>`;
   const input = pop.querySelector("input"),
     list = pop.querySelector(".chip-pop-list");
+  const fileHtml = (file, flat) => {
+    const dir = parentDir(file.path);
+    return `<button type="button" data-pick="${escapeHtml(file.path)}" title="${escapeHtml(file.path)}"><span>${escapeHtml(file.name)}</span><small>${flat && dir ? `${escapeHtml(dir)} · ` : ""}${formatFileSize(file.size)}</small></button>`;
+  };
+  const folderHtml = dir => {
+    const count = files.filter(file => file.path.startsWith(`${dir.path}/`)).length;
+    return `<button type="button" class="picker-dir" data-dir="${escapeHtml(dir.path)}" title="打开 ${escapeHtml(dir.path)}"><span>${escapeHtml(dir.name)}<i aria-hidden="true">›</i></span><small>${count ? `${count} 件` : "空"}</small></button>`;
+  };
+  // 清单的高随层而变：每画一回重新贴一次锚点（向上翻的，底边贴住锚点）
+  const place = () => {
+    const rect = anchor.getBoundingClientRect(),
+      height = pop.offsetHeight;
+    if (pop.classList.contains("drop-up") || innerHeight - rect.bottom - 6 < height + 10) {
+      pop.classList.add("drop-up");
+      pop.style.top = `${Math.max(10, rect.top - 6 - height)}px`;
+    }
+  };
   const paint = () => {
-    const query = input.value.trim().toLowerCase(),
-      shown = items.filter(item => !query || `${item.dir || ""}/${item.name}`.toLowerCase().includes(query));
-    list.innerHTML = shown.length
-      ? shown
-          .map(
-            item =>
-              `<button type="button" data-pick="${escapeHtml(item.key)}" title="${escapeHtml(item.dir ? `${item.dir}/${item.name}` : item.name)}"><span>${escapeHtml(item.name)}</span><small>${item.dir ? `${escapeHtml(item.dir)} · ` : ""}${formatFileSize(item.size)}</small></button>`
-          )
-          .join("")
-      : `<div class="chip-pop-label">没有匹配的卷宗</div>`;
+    const query = input.value.trim().toLowerCase();
+    let html;
+    if (query) {
+      const shown = files.filter(file => file.path.toLowerCase().includes(query));
+      html = shown.length ? shown.map(file => fileHtml(file, true)).join("") : `<div class="chip-pop-label">没有匹配的卷宗</div>`;
+    } else {
+      const folders = archiveDirs.filter(dir => parentDir(dir.path) === at).sort((a, b) => a.name.localeCompare(b.name, "zh-CN")),
+        here = files.filter(file => parentDir(file.path) === at),
+        up = at
+          ? `<button type="button" class="picker-up" data-dir="${escapeHtml(parentDir(at))}" title="回上一层"><span>‹ ${escapeHtml(["卷宗", ...at.split("/")].join(" › "))}</span></button>`
+          : "";
+      html = `${up}${folders.map(folderHtml).join("")}${here.map(file => fileHtml(file, false)).join("")}${folders.length || here.length ? "" : `<div class="chip-pop-label">此夹尚空</div>`}`;
+    }
+    list.innerHTML = html;
+    list.scrollTop = 0;
+    place();
   };
   paint();
   input.addEventListener("input", paint);
@@ -69,18 +94,17 @@ function renderArchivePicker(pop, anchor) {
     }
   });
   list.addEventListener("click", event => {
+    const dir = event.target.closest("[data-dir]");
+    if (dir) {
+      at = dir.dataset.dir;
+      paint();
+      return input.focus();
+    }
     const button = event.target.closest("[data-pick]");
     if (!button) return;
     closeChipPop();
     void placeFromArchive(button.dataset.pick);
   });
-  // 清单比菜单高，重新贴一次锚点
-  const rect = anchor.getBoundingClientRect(),
-    height = pop.offsetHeight;
-  if (pop.classList.contains("drop-up") || innerHeight - rect.bottom - 6 < height + 10) {
-    pop.classList.add("drop-up");
-    pop.style.top = `${Math.max(10, rect.top - 6 - height)}px`;
-  }
   setTimeout(() => input.focus(), 0);
 }
 // 目录签的弹层，欢迎页与对话页共用：输入 / 选择；不列「最近」——删掉的目录会留在那儿、点了又能把它绑回来，每次自己选。
