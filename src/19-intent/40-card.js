@@ -8,19 +8,21 @@
 // 嵌套：图只画一层。模块在图上与簿录里带「里面已立几项 ›」，点它即进模块：整张图换成模块里的，以模块自己收尾（最右那一项，淡些），
 // 页头下一行写所在（可点回上层）、右边写模块的前提与撑起什么。
 // 由程序照 .yan/意.json 画，与文件一字不差，不请模型另画；展开的因果（支撑、缘由、哪条凭据变了）也是程序从图与指纹推出的，不经模型。
-/** @typedef {"holds"|"premised"|"stale"|"assumed"|"doing"|"open"|"dropped"} IntentView 画出来的状态：成立的再按前提分已立与前提未立 */
+/** @typedef {"holds"|"premised"|"stale"|"assumed"|"doing"|"waiting"|"open"|"dropped"} IntentView 画出来的状态：成立的再按前提分已立与前提未立 */
 const INTENT_VIEW_TEXT = {
     holds: "已立",
     premised: "存疑 · 前提未立",
     stale: "待复核",
     assumed: "假定",
     doing: "进行中",
+    waiting: "待定",
     open: "未做",
     dropped: "已弃"
   },
   INTENT_CHECK_STROKE = [1.4, 6, 2.9, 7.6, 4.3, 9.3, 6.8, 5, 10.8, 1.4];
 // 记号是符号，同一支笔写：已立一勾石绿，假定一勾泥金（算作已立，是借来的），存疑（自称成立而前提未立）一个泥金问号，
-// 待复核一圈朱，已弃一个灰叉；进行中一圈泥金虚点围着一粒脉动的芯（与存疑同色：都是还没落定的；虚圈与待复核的实圈形就不同），未做一粒淡点。
+// 待复核一圈朱，已弃一个灰叉；进行中一圈泥金虚点围着一粒脉动的芯（与存疑同色：都是还没落定的；虚圈与待复核的实圈形就不同），未做一粒淡点；
+// 待定两笔正墨竖（停着，等人拍板）：一家里只它是正墨，不靠颜色也认得（设计稿/72 甲；落选：泥金与进行中糊作一片，空方原大像缺字，沙漏笔画重，差一笔的淡影看不见）。
 // 朱只给待复核。图上的名字、展开处的题与记号同色，底下的小字不着色（见 82-intent.css 的 --st）
 const INTENT_PENS = {
   holds: () => brushStroke(INTENT_CHECK_STROKE, 1.6, { tail: 0, head: 0.85, tone: "green" }),
@@ -37,6 +39,9 @@ const INTENT_PENS = {
     Array.from({ length: 8 }, (_, i) =>
       brushDot(+(6 + 4.3 * Math.cos((i * Math.PI) / 4)).toFixed(2), +(5.6 + 4.3 * Math.sin((i * Math.PI) / 4)).toFixed(2), 0.62, "gold")
     ).join("") + `<circle class="gold intent-pulse" cx="6" cy="5.6" r="1.7"/>`,
+  waiting: () =>
+    brushStroke([4.1, 2.3, 4.25, 5.6, 4.1, 8.9], 1.35, { tone: "ink", tail: 0.3 }) +
+    brushStroke([7.9, 2.3, 8.05, 5.6, 7.9, 8.9], 1.35, { tone: "ink", tail: 0.3 }),
   open: () => brushDot(6, 5.6, 1.4, "ink2")
 };
 /** @param {string} state @param {number} [x] @param {number} [y] 给了坐标即嵌进图里 */
@@ -162,7 +167,12 @@ function intentDetailHtml(intent, now, id, level = "") {
     ];
   if (view === "stale") rows.push(["缘由", escapeHtml(intentStaleWhy(intent, id, now)), "zhu"]);
   if (node.note)
-    rows.push([node.state === "assumed" ? "出处" : "备注", escapeHtml(node.note), node.state === "assumed" ? "gold" : "", true]);
+    rows.push([
+      { assumed: "出处", waiting: "待定" }[node.state] || "备注",
+      escapeHtml(node.note),
+      node.state === "assumed" ? "gold" : "",
+      true
+    ]);
   const kids = intentChildren(intent, id);
   if (kids.length)
     rows.push([
@@ -178,7 +188,7 @@ function intentDetailHtml(intent, now, id, level = "") {
     )
     .join("")}</div></div>`;
 }
-/** 簿录里一行的说法：有事的换成事由——待复核写缘由、成立而前提未立写卡在哪、假定写出处；余者是那句说法 @param {Intent} intent @param {IntentPrints} now @param {string} id @param {IntentView} view @returns {[string, string]} [字, 语气] */
+/** 簿录里一行的说法：有事的换成事由——待复核写缘由、成立而前提未立写卡在哪、假定写出处、待定写等谁定什么；余者是那句说法 @param {Intent} intent @param {IntentPrints} now @param {string} id @param {IntentView} view @returns {[string, string]} [字, 语气] */
 function intentRowSay(intent, now, id, view) {
   const node = intent.nodes[id];
   if (view === "stale") return [intentStaleWhy(intent, id, now), "zhu"];
@@ -187,6 +197,7 @@ function intentRowSay(intent, now, id, view) {
     return [`前提${stuck.map(k => `「${k}」`).join("")}未立`, "quiet"];
   }
   if (view === "assumed") return [`出处：${node.note || ""}`, ""];
+  if (view === "waiting") return [node.note || "", ""];
   return [node.claim, ""];
 }
 /** 簿录：这一层一项一行，点中的那一行就地摊开 @param {Intent} intent @param {IntentPrints} now @param {string[]} order @param {string} selected @param {string} level */
@@ -211,12 +222,12 @@ function intentInkHtml(intent) {
   for (const entry of [...intent.log].reverse()) {
     const time = intentTime(entry.at);
     if (groups.at(-1)?.time !== time) groups.push({ time, items: [] });
-    const said = entry.text.match(/^(弃|撤|改意|改根|假定|复立) ([^：]+?)(?:：([\s\S]*))?$/),
+    const said = entry.text.match(/^(弃|撤|改意|改根|假定|待定|复立|改名) ([^：]+?)(?:：([\s\S]*))?$/),
       moved = !said && entry.text.match(/^(.+?) 归入(.+)$/);
     let [kind, name, rest] = said ? [said[1], said[2], said[3] || ""] : moved ? ["归入", moved[1], moved[2]] : ["", "", entry.text];
     const node = intent.nodes[name];
     if (kind === "弃" && node?.state === "dropped") rest = node.note || node.claim;
-    const mark = kind === "弃" ? intentMark("dropped") : kind === "假定" ? intentMark("assumed") : "<i></i>",
+    const mark = kind === "弃" ? intentMark("dropped") : kind === "假定" ? intentMark("assumed") : kind === "待定" ? intentMark("waiting") : "<i></i>",
       who = !name
         ? ""
         : node && !intentGone(intent, name)
@@ -296,7 +307,7 @@ function paintIntentCard() {
   const graph = stage.querySelector(".intent-graph");
   if (!graph || graph.scrollWidth <= graph.clientWidth) return;
   if (before !== undefined) return void (graph.scrollLeft = before);
-  const busy = graph.querySelector('g[data-state="doing"], g[data-state="stale"]');
+  const busy = graph.querySelector('g[data-state="doing"], g[data-state="stale"], g[data-state="waiting"]');
   if (!busy) return void (graph.scrollLeft = graph.scrollWidth);
   // 图宽过卡片时从左起画、一单位一像素，图里的坐标即滚动的位置（浮层还在展开动画里也不受影响）
   const box = /** @type {SVGGraphicsElement} */ (busy).getBBox();

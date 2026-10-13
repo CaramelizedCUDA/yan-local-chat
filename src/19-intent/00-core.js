@@ -9,12 +9,13 @@
 // 留在文件里作记号：不算数、不上图，卡片图下列着，模型读的意里也点到名，免得再走一遍。
 // 降级有合法的写法：借外部结论、不自己做的标「假定」（note 写出处），算立住，但往上记着借了几条——降在哪、降多少看得见。
 // 假定也可挂凭据：所借的变了（接口改版、依赖升级），它同样转待复核。
+// 卡在人手里、要等人拍板的标「待定」（note 写等谁、定什么）：不算立住，换了对话、过了几天也看得见卡在谁那儿。
 // 节点不分类型：事件、功能、文件都是一句要成立的结论，粒度由模型拆到有凭据可挂为止，混着也无妨。
 // 嵌套：一项做的事拆开还有许多步，就是模块——细项写 in 指向它，至多两层（全局 › 模块 › 子模块）。前提只连同一层，跨模块的写在模块上；
 // 模块以里面收口的几项（同层没人以它为前提的）为前提，所以里面立住它才算立住，传播、回归照旧，不另写判定。
 // 本文件只放纯函数：理顺模型交来的改动、判状态、写成给模型读的字。读写与附着见 10-store.js，工具登记见 15-tools/32-intent.js
 /**
- * @typedef {"open"|"doing"|"done"|"assumed"|"dropped"} IntentMark 模型标的
+ * @typedef {"open"|"doing"|"waiting"|"done"|"assumed"|"dropped"} IntentMark 模型标的；waiting：待定，卡在人手里、等人拍板
  * @typedef {IntentMark|"stale"} IntentState 算出来的：成立的凭据不再作数即待复核
  * @typedef {Object} IntentNode
  * @property {string} claim 要成立的那句话
@@ -42,11 +43,14 @@ const INTENT_LIMIT = 60,
   INTENT_ID = /^[\p{L}\p{N}_.·-]+$/u,
   // 名字的宽：汉字一类全角记 2、字母数字记 1——至多 24 个汉字或 48 个字母
   INTENT_ID_WIDTH = 48,
-  INTENT_MARKS = new Set(["open", "doing", "done", "assumed", "dropped"]),
+  INTENT_MARKS = new Set(["open", "doing", "waiting", "done", "assumed", "dropped"]),
   INTENT_MARK_ALIASES = {
     pending: "open",
     todo: "open",
     in_progress: "doing",
+    blocked: "waiting",
+    on_hold: "waiting",
+    paused: "waiting",
     complete: "done",
     completed: "done",
     holds: "done",
@@ -381,7 +385,7 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     if (item.state !== undefined) {
       const state = String(item.state).trim().toLowerCase(),
         mark = INTENT_MARKS.has(state) ? state : Object.hasOwn(INTENT_MARK_ALIASES, state) ? INTENT_MARK_ALIASES[state] : undefined;
-      if (!mark) problems.push(`${id} 的 state「${item.state}」不认得：只有 open / doing / done / assumed / dropped / removed`);
+      if (!mark) problems.push(`${id} 的 state「${item.state}」不认得：只有 open / doing / waiting / done / assumed / dropped / removed`);
       else op.state = /** @type {IntentMark} */ (mark);
     }
     if (!known) {
@@ -422,8 +426,10 @@ function normalizeIntentOps(intent, raw, workdir = "") {
   for (const id of intentStrays(trial))
     if (!strays.has(id))
       problems.push(`${id} 孤悬在全局：既无前提，也没有谁以它为前提。手上的一步归进它所服务的模块（in），或写进它所撑那一项的 needs；本就是整件事要立的另一条结论，新立时标 root`);
-  for (const id of ops.map(intentOpId))
+  for (const id of ops.map(intentOpId)) {
     if (trial.nodes[id]?.state === "assumed" && !trial.nodes[id].note) problems.push(`${id} 标了假定，note 里写明借的是什么、出处在哪`);
+    if (trial.nodes[id]?.state === "waiting" && !trial.nodes[id].note) problems.push(`${id} 标了待定，note 里写明等谁、定什么`);
+  }
   const live = Object.keys(trial.nodes).filter(id => !intentGone(trial, id)).length;
   if (live > INTENT_LIMIT && live > Object.keys(intent.nodes).filter(id => !intentGone(intent, id)).length)
     problems.push(`意里的项不宜多于 ${INTENT_LIMIT} 项（此刻 ${live}）：一项是值得单独判的结论，不是每一步动作；细的并进上一级`);
@@ -487,8 +493,8 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
       node.rev += 1;
     }
     if (op.state && op.state !== node.state) {
-      if (op.state === "dropped" || op.state === "assumed")
-        log(`${op.state === "dropped" ? "弃" : "假定"} ${id}${op.state === "assumed" && node.note ? `：${node.note}` : ""}`);
+      if (op.state === "dropped" || op.state === "assumed" || op.state === "waiting")
+        log(`${{ dropped: "弃", assumed: "假定", waiting: "待定" }[op.state]} ${id}${op.state !== "dropped" && node.note ? `：${node.note}` : ""}`);
       if (node.state === "dropped") log(`复立 ${id}`);
     }
     if (op.state) node.state = op.state;
@@ -511,7 +517,7 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
   return next;
 }
 // ---------- 写成给模型读的字：每一问附着的、改完回给它的，都经这里 ----------
-const INTENT_STATE_TEXT = { open: "未做", doing: "进行中", done: "成立", assumed: "假定", dropped: "已弃", stale: "待复核" };
+const INTENT_STATE_TEXT = { open: "未做", doing: "进行中", waiting: "待定", done: "成立", assumed: "假定", dropped: "已弃", stale: "待复核" };
 /** @param {Intent} intent @param {IntentPrints} [now] */
 function intentTally(intent, now = {}) {
   const live = Object.keys(intent.nodes).filter(id => !intentGone(intent, id));
@@ -552,7 +558,7 @@ function intentText(intent, now = {}, { path = ".yan/意.json", asks = false } =
     const inner = folded ? [] : level(id, `${pad}  `);
     if (state === "assumed") return [head, `${pad}  出处：${node.note || ""}`, ...(asks ? ask : []), ...inner];
     if (established) return [head, ...(asks ? ask : []), ...inner];
-    const more = [`${pad}  验收：${node.check}`];
+    const more = [...(state === "waiting" ? [`${pad}  待定：${node.note || ""}`] : []), `${pad}  验收：${node.check}`];
     if (state === "stale") more.push(`${pad}  缘由：${intentStaleWhy(intent, id, now)}`);
     return [head, ...more, ...ask, ...inner];
   };

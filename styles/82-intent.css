@@ -156,6 +156,10 @@
 .intent-card [data-state="stale"] {
   --st: var(--accent);
 }
+/* 待定：正墨，比未做的淡墨重一档（设计稿/72 甲） */
+.intent-card [data-state="waiting"] {
+  --st: var(--ink);
+}
 .intent-card [data-state="open"],
 .intent-card [data-state="dropped"] {
   --st: initial;
@@ -254,7 +258,8 @@
 .intent-node[data-state="assumed"] .intent-label,
 .intent-node[data-state="premised"] .intent-label,
 .intent-node[data-state="stale"] .intent-label,
-.intent-node[data-state="doing"] .intent-label {
+.intent-node[data-state="doing"] .intent-label,
+.intent-node[data-state="waiting"] .intent-label {
   fill: color-mix(in srgb, var(--st) 82%, var(--ink));
 }
 /* 模块里那一层：模块自己作收尾那一项，淡些（设计稿/63 甲） */
@@ -367,6 +372,9 @@
 }
 .intent-detail-state[data-state="stale"] {
   color: var(--accent);
+}
+.intent-detail-state[data-state="waiting"] {
+  color: var(--ink);
 }
 .intent-detail-state[data-state="assumed"],
 .intent-detail-state[data-state="premised"],

@@ -100,9 +100,9 @@
               anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },
               state: {
                 type: "string",
-                description: "open / doing / done / assumed / dropped（走过不通的路，留作记号）/ removed（方案改了、写错了，整项撤去）"
+                description: "open / doing / waiting（等人拍板）/ done / assumed / dropped（走过不通的路，留作记号）/ removed（方案改了、写错了，整项撤去）"
               },
-              note: { type: "string", description: "假定的出处；弃时写为何不通" },
+              note: { type: "string", description: "假定的出处；待定写等谁、定什么；弃时写为何不通" },
               root: {
                 type: "boolean",
                 description: "整件工程最终要立住的结论（用户要的结果，不是手上这一步），新立时标；说法只照用户的意思改"

@@ -1,8 +1,8 @@
 // 言 · 意 · 常显（见 设计稿/59 乙、60 一·甲）：意是整个目录的骨架，不随行迹跑掉——题下一行（目录之后）与书眉（滚过标题后，顶栏左侧）
-// 各带一枚：石青「意」印、已立几项、一排记号（按态排：已立、假定在前，存疑、待复核、在做，未做在后）；点开即卡片（见 40-card.js）。
+// 各带一枚：石青「意」印、已立几项、一排记号（按态排：已立、假定在前，存疑、待复核、待定、在做，未做在后）；点开即卡片（见 40-card.js）。
 // 按目录记最近见到的那份：每答开工读的、改完交回的都记进来；同一目录的几段对话看的是同一份。
 // 刚打开、本页还没见过的目录现读一回（文件与目录现取指纹，探针不为看一眼去跑）
-const INTENT_GLANCE_ORDER = ["holds", "assumed", "premised", "stale", "doing", "open"],
+const INTENT_GLANCE_ORDER = ["holds", "assumed", "premised", "stale", "waiting", "doing", "open"],
   INTENT_GLANCE_MARKS = 24;
 /** @type {Map<string, { intent: Intent, now: IntentPrints }>} 目录 → 最近见到的意 */
 const intentGlances = new Map();

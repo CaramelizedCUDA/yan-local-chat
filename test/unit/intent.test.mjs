@@ -502,3 +502,18 @@ test("降下来的根：成了别项的前提就不再算根，原问不再附�
   assert.equal(revised.log.at(-1).text, "改意 建模达标：M2");
   assert.equal(revised.nodes["建模达标"].root.later, undefined);
 });
+
+test("待定：等人拍板的一项，note 写等谁、定什么；不算立住，读给模型时写出来，墨痕记一笔", () => {
+  let intent = change(empty(), [
+    { id: "竞赛做成", claim: "R", check: "r", root: true, needs: ["提交规范"] },
+    { id: "提交规范", claim: "合官方规范", check: "逐条对照通知" }
+  ]);
+  assert.match(problems(intent, [{ id: "提交规范", state: "waiting" }])[0], /标了待定，note 里写明等谁、定什么/);
+  assert.equal(f.normalizeIntentOps(intent, [{ id: "提交规范", state: "blocked", note: "x" }]).ops[0].state, "waiting");
+  intent = change(intent, [{ id: "提交规范", state: "waiting", note: "等官方通知：篇幅与提交渠道" }]);
+  assert.equal(f.intentState(intent, "提交规范"), "waiting");
+  assert.ok(!f.intentEstablished(intent, "提交规范"));
+  assert.match(f.intentText(intent), /- \[待定\] 提交规范：合官方规范\n {2}待定：等官方通知：篇幅与提交渠道\n {2}验收：逐条对照通知/);
+  assert.equal(intent.log.at(-1).text, "待定 提交规范：等官方通知：篇幅与提交渠道");
+  assert.equal(f.asIntent(JSON.parse(JSON.stringify(intent))).nodes["提交规范"].state, "waiting", "存盘读回仍是待定");
+});
