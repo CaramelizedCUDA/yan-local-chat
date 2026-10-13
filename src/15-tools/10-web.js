@@ -20,14 +20,18 @@ defineTool({
     step.title = args.query;
     const data = await bridge("/api/search", { query: args.query, count: 6 }, signal);
     step.results = data.results.map(({ title, url, snippet }) => ({ title, url, snippet }));
+    // 各家都答非所问（搜索引擎多半在拦）：结果照给，先说一声
+    const doubt = data.offTopic ? "（这批结果与关键词对不上，搜索引擎多半在拦，未必可信）\n" : "";
     return {
       ok: true,
-      content: step.results.length ? JSON.stringify(step.results) : "未找到结果",
+      content: step.results.length ? doubt + JSON.stringify(step.results) : "未找到结果",
       display: `${step.results.length} 条结果`
     };
   }
 });
 
+// 一段多少字：与桥接那头（server/web.js 的 PAGE_CHARS）一样长；PDF 在这头分段，用这个
+const FETCH_PAGE_CHARS = 24000;
 defineTool({
   name: "fetch_page",
   group: "web",
@@ -41,16 +45,28 @@ defineTool({
   sources: step => [{ url: step.url, title: step.title, read: true }],
   async run(step, args, { signal }) {
     step.url = args.url;
-    const data = await bridge("/api/fetch", { url: args.url }, signal);
+    const offset = Math.max(0, Math.floor(Number(args.offset) || 0)),
+      data = await bridge("/api/fetch", { url: args.url, offset }, signal);
     step.title = data.title || args.url;
+    let { text, total } = data;
+    // PDF 由桥接原样交回，在这头抽字（与附件同一套 pdf.js），一段与网页一样长
+    if (data.pdf) {
+      const full = await extractPdfText(data.pdf).catch(error => {
+        throw Error(/文字层/.test(error.message) ? "这份 PDF 没有文字层（多半是扫描件），读不出字" : error.message);
+      });
+      total = full.length;
+      text = full.slice(offset, offset + FETCH_PAGE_CHARS);
+    }
+    const end = offset + text.length;
     const notes = [
-      data.total > data.text.length && `正文共 ${data.total} 字，此处只取了前 ${data.text.length} 字`,
+      total && offset >= total && `正文共 ${total} 字，offset 已过了末尾`,
+      end < total && `正文共 ${total} 字，此处为第 ${offset + 1}–${end} 字；续读传 offset=${end}`,
       data.scripted && "抽出的正文寥寥：这页多半要跑脚本才出内容，所见并非全貌"
     ].filter(Boolean);
     return {
       ok: true,
-      content: `标题：${data.title}\n地址：${data.url}\n\n${data.text}${notes.length ? `\n\n（${notes.join("；")}）` : ""}`,
-      display: `${data.text.length} 字${data.total > data.text.length ? " · 截" : ""}`
+      content: `标题：${data.title}\n地址：${data.url}\n\n${text}${notes.length ? `\n\n（${notes.join("；")}）` : ""}`,
+      display: `${offset ? `自 ${offset + 1} 字 · ` : ""}${text.length} 字${end < total ? " · 截" : ""}`
     };
   }
 });

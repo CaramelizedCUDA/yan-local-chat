@@ -1,6 +1,7 @@
 "use strict";
 const http = require("node:http");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { createHash } = require("node:crypto");
 // 拼接规则（build.js）改了就重新载入：页面脚本本是即时拼的，不该因为拼法变了就得重启桥接
@@ -20,6 +21,7 @@ const { sendJson } = require("./server/http.js");
 const { openUrl } = require("./server/platform.js");
 // 联网：地址门禁、翻网页、检索、调接口
 const WEB = require("./server/web.js");
+const SEARCH = require("./server/search.js");
 
 const ROOT = __dirname;
 const HOST = "127.0.0.1";
@@ -140,6 +142,9 @@ const WORK = require("./server/work/index.js")({
 const CHATS = require("./server/chats.js")({ chatsHome: () => STORE.paths().chats });
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable });
 const STAGE_LIB = require("./server/stage.js");
+// 检索与翻网页用的无头浏览器（直接请求被拦、网页要跑脚本时才起，见 server/headless.js）：配置目录只是 Cookie 与缓存，不算用户的东西，
+// 放系统临时目录、不进存储根（也不进 环境/：清空环境时它若开着，删到一半就卡住）；按端口各一份，测试的桥接不与常开的那个共用
+require("./server/headless.js").configure({ home: () => path.join(os.tmpdir(), `yan-检索浏览器-${PORT}`) });
 // MCP：按设置里的配置起、连外部的 MCP 服务，把它们的工具交给页面
 const MCP = require("./server/mcp/index.js")({
   version: APP_VERSION,
@@ -160,6 +165,7 @@ const OPEN_ROUTES = {
     "GET /api/bootstrap": handleBootstrap,
     ...MODEL.openRoutes,
     ...WEB.openRoutes,
+    ...SEARCH.openRoutes,
     ...BUS.routes
   },
   TRUSTED_ROUTES = {

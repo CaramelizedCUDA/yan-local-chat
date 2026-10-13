@@ -252,8 +252,13 @@ function bindToolSettings() {
     const status = $("#searchStatus");
     status.textContent = "检索中…";
     try {
-      const data = await bridge("/api/search", { query: "OpenAI", count: 1 }, AbortSignal.timeout(20000));
-      status.textContent = data.results?.length ? `可用 · ${data.results.length} 条结果` : "已接通，未得结果";
+      // 多几个词：被拦时搜索引擎只认第一个词，单个词测不出来
+      const data = await bridge("/api/search", { query: "苏轼 定风波 原文", count: 3 }, AbortSignal.timeout(30000));
+      status.textContent = !data.results?.length
+        ? "已接通，未得结果"
+        : data.offTopic
+          ? "已接通，但结果对不上关键词（多半被拦了）"
+          : `可用 · ${data.source} · ${data.results.length} 条结果`;
     } catch (error) {
       status.textContent = friendlyError(error.message).slice(0, 60);
     }
