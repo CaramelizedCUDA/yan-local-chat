@@ -3,12 +3,12 @@
 //   字只在列里——每列宽量出这一列最长的字，下一列从它之后起，同列上下隔一行；
 //   线只在列间——从字尾出，平着走到列边，在列间的空里拐弯，到下一项的记号前止；隔几列才到的前提，中间每列给它让一个窄位平穿；
 //   汇点也在列间——三条以上的线、或择一的几条，先在记号前汇成一个结（择一的结里写「或」），再一根进来。
-// 摆之前先删繁：能经别的前提走到的直连线不画（传递约简：「发版」以「测试」为前提、「测试」以「行号」为前提，「发版—行号」那条就不必再画）；
-// 一串都已立住的前提并作最靠外的那一项、注「+n」，图只把还有事的部分摊开。这两样只是少画，意本身照完整的前提算。
+// 摆之前先删繁：能经别的前提走到的直连线不画（传递约简：「发版」以「测试」为前提、「测试」以「行号」为前提，「发版—行号」那条就不必再画）。
+// 这只是少画，意本身照完整的前提算。已立住的照样摊开不并（原先并作「+n」，审阅时看不到走过的路）。
 // 本段只算坐标与路径，不碰 DOM；字宽由调用方给（页面用画布量，测试按字数估）
 /**
  * @typedef {{ id: string, label: string, when?: string, needs: string[], any?: boolean, state: string, tag?: string, num?: string, root?: boolean }} DrawNode
- * @typedef {{ id: string, x: number, y: number, w: number, node: DrawNode, more: number }} PlacedNode
+ * @typedef {{ id: string, x: number, y: number, w: number, node: DrawNode }} PlacedNode
  * @typedef {{ from: string, to: string, d: string, state: string }} PlacedEdge
  * @typedef {{ x: number, y: number, any: boolean, to: string }} PlacedKnot
  * @typedef {{ width: number, height: number, nodes: PlacedNode[], edges: PlacedEdge[], knots: PlacedKnot[], boxes: number[][] }} Drawing
@@ -31,14 +31,13 @@ const graphMeasure = (() => {
     return [...value].reduce((w, ch) => w + (/[\x00-\x7f]/.test(ch) ? 0.55 : 1) * px, 0);
   };
 })();
-/** 一项在图上占多宽：记号、情形的小格、字、行末的小注与编号 @param {DrawNode} node @param {number} more */
-function drawNodeWidth(node, more, measure = graphMeasure) {
+/** 一项在图上占多宽：记号、情形的小格、字、行末的小注与编号 @param {DrawNode} node */
+function drawNodeWidth(node, measure = graphMeasure) {
   const strong = node.state === "doing" || node.state === "stale";
   let w = GRAPH_DRAW.mark;
   if (node.when) w += measure(node.when, 10.5) + 10 + (node.label ? 5 : 0);
   // 名用题字（与卡片里别处的名同一种字，设计稿/65 二）
   if (node.label) w += node.root ? measure(node.label, 13.5, 600, true) : measure(node.label, 12, strong ? 600 : 400, true);
-  if (more) w += measure(`+${more}`, 10) + 5;
   if (node.num) w += measure(node.num, 10, 600) + 3;
   if (node.tag) w += measure(node.tag, 10) + 6;
   return Math.ceil(w);
@@ -66,47 +65,19 @@ function reducedNeeds(nodes) {
     })
   );
 }
-// 并：已立住、且等它的都已立住的那几项不单画，记在最靠外的那一项上（「+n」）。根总要画
-/** @param {Record<string, DrawNode>} nodes @param {Record<string, string[]>} needs @returns {{ hidden: Set<string>, more: Record<string, number> }} */
-function settledFold(nodes, needs) {
-  const deps = {};
-  for (const [id, list] of Object.entries(needs)) for (const k of list) (deps[k] ||= []).push(id);
-  const settled = id => nodes[id].state === "holds";
-  const hidden = new Set(
-    Object.keys(nodes).filter(id => settled(id) && (deps[id] || []).length && deps[id].every(settled) && !nodes[id].root)
-  );
-  /** @type {Record<string, number>} */
-  const more = {};
-  for (const id of Object.keys(nodes)) {
-    if (hidden.has(id)) continue;
-    const seen = new Set(),
-      walk = k => {
-        for (const j of needs[k] || [])
-          if (hidden.has(j) && !seen.has(j)) {
-            seen.add(j);
-            walk(j);
-          }
-      };
-    walk(id);
-    if (seen.size) more[id] = seen.size;
-  }
-  return { hidden, more };
-}
 /**
  * 摆一张图
  * @param {DrawNode[]} list
- * @param {{ measure?: typeof graphMeasure, fold?: boolean }} [options]
+ * @param {{ measure?: typeof graphMeasure }} [options]
  * @returns {Drawing}
  */
-function drawGraphLayout(list, { measure = graphMeasure, fold = true } = {}) {
+function drawGraphLayout(list, { measure = graphMeasure } = {}) {
   const { rowH, lane, gap, knot, pad } = GRAPH_DRAW;
   /** @type {Record<string, DrawNode>} */
   const all = Object.fromEntries(list.map(node => [node.id, node]));
-  const reduced = reducedNeeds(all),
-    { hidden, more } = fold ? settledFold(all, reduced) : { hidden: new Set(), more: {} };
-  const ids = list.map(node => node.id).filter(id => !hidden.has(id));
+  const needs = reducedNeeds(all);
+  const ids = list.map(node => node.id);
   if (!ids.length) return { width: 0, height: 0, nodes: [], edges: [], knots: [], boxes: [] };
-  const needs = Object.fromEntries(ids.map(id => [id, reduced[id].filter(k => !hidden.has(k))]));
   const deps = Object.fromEntries(ids.map(id => [id, []]));
   for (const id of ids) for (const k of needs[id]) deps[k].push(id);
   // 分列：离根的距离取「所有等它的项」里最远的再加一——前提总在它所撑的结论之前，又尽量靠根，链短的不被拉长
@@ -231,7 +202,7 @@ function drawGraphLayout(list, { measure = graphMeasure, fold = true } = {}) {
     }
   // 列宽量出来；汇点要在列前留出一个结的位置
   const width = {};
-  for (const id of ids) width[id] = drawNodeWidth(all[id], more[id] || 0, measure);
+  for (const id of ids) width[id] = drawNodeWidth(all[id], measure);
   const knotted = id => needs[id].length >= 3 || (all[id].any && needs[id].length >= 2);
   const colW = layers.map(vs => Math.max(0, ...vs.filter(v => all[v]).map(v => width[v])));
   const colX = [];
@@ -284,7 +255,7 @@ function drawGraphLayout(list, { measure = graphMeasure, fold = true } = {}) {
       });
     }
   /** @type {PlacedNode[]} */
-  const nodes = ids.map(id => ({ id, x: colX[lay[id]], y: y[id], w: width[id], node: all[id], more: more[id] || 0 }));
+  const nodes = ids.map(id => ({ id, x: colX[lay[id]], y: y[id], w: width[id], node: all[id] }));
   return {
     width: Math.ceil(colX[L - 1] + colW[L - 1] + pad + 4),
     height: Math.ceil(hi - lo + pad * 2),

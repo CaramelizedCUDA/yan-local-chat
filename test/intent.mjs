@@ -296,16 +296,16 @@ try {
     10000
   );
   const rich = await evalJs(
-    `(c => ({ states: Object.fromEntries([...c.querySelectorAll('.intent-node')].map(g => [g.dataset.intentNode, g.dataset.state])), more: c.querySelector('.intent-node[data-intent-node="高亮"] .intent-more')?.textContent, roll: c.querySelector('.intent-roll')?.textContent || "", meta: c.querySelector('.page-facts')?.textContent, ink: c.querySelector('[data-intent-ink]')?.textContent }))(document.querySelector('#fileViewerStage .intent-card'))`
+    `(c => ({ states: Object.fromEntries([...c.querySelectorAll('.intent-node')].map(g => [g.dataset.intentNode, g.dataset.state])), roll: c.querySelector('.intent-roll')?.textContent || "", meta: c.querySelector('.page-facts')?.textContent, ink: c.querySelector('[data-intent-ink]')?.textContent }))(document.querySelector('#fileViewerStage .intent-card'))`
   );
   check(
-    "a full intent: changed anchors make it stale and the items above it wait on their premise; the assumption is drawn as borrowed; a settled premise under a settled item folds into it as +1; the roll under the graph says why",
+    "a full intent: changed anchors make it stale and the items above it wait on their premise; the assumption is drawn as borrowed; settled premises stay drawn; the roll under the graph says why",
     rich.states["构建"] === "stale" &&
       rich.states["部署"] === "premised" &&
       rich.states["文章页"] === "premised" &&
       rich.states["域名"] === "assumed" &&
       rich.states["首页"] === "doing" &&
-      rich.more === "+1" &&
+      Object.keys(rich.states).length === 9 &&
       /构建凭据已变：src\/、package\.json/.test(rich.roll) &&
       /域名出处：用户说已在 DNS 面板配好/.test(rich.roll) &&
       /文章页前提「构建」未立/.test(rich.roll) &&
@@ -370,8 +370,8 @@ try {
   );
   const moduleDetail = await evalJs(`document.querySelector('#fileViewerStage .intent-detail')?.textContent || ""`);
   check(
-    "clicking a module shows where it sits, what it holds, and a way in",
-    /全局两轮实验跑完/.test(moduleDetail) && /内含配方冻结一号实验二号实验打开模块/.test(moduleDetail),
+    "clicking a module shows where it sits and what it holds",
+    /全局两轮实验跑完/.test(moduleDetail) && /内含配方冻结一号实验二号实验$/.test(moduleDetail),
     moduleDetail
   );
   await send("Page.captureScreenshot", { format: "png" }).then(shot =>

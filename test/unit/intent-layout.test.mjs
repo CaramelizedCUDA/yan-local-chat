@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { load } from "./harness.mjs";
 
-const f = load(["drawGraphLayout", "reducedNeeds", "settledFold"]);
+const f = load(["drawGraphLayout", "reducedNeeds"]);
 
 // 可复现的随机数
 function rng(seed) {
@@ -126,22 +126,16 @@ test("能经别的前提走到的直连线不画：发版—行号那条省去",
   assert.deepEqual(f.reducedNeeds(nodes).ship, ["tests", "docs"]);
 });
 
-test("一串都已立住的前提并作最靠外那一项，注 +n；根总要画", () => {
+test("已立住的前提照样摊开，不并作一项", () => {
   const graph = [
     { id: "parse", label: "记行列", needs: [], state: "holds" },
     { id: "msg", label: "报行列", needs: ["parse"], state: "holds" },
     { id: "docs", label: "README", needs: [], state: "doing" },
     { id: "ship", label: "可以发版", needs: ["msg", "docs"], state: "open", root: true }
   ];
-  const drawing = f.drawGraphLayout(graph);
-  assert.deepEqual(drawing.nodes.map(n => n.id).sort(), ["docs", "msg", "ship"]);
-  assert.equal(drawing.nodes.find(n => n.id === "msg").more, 1);
   const all = f.drawGraphLayout(graph.map(n => ({ ...n, state: "holds" })));
-  assert.deepEqual(
-    all.nodes.map(n => n.id),
-    ["ship"]
-  );
-  assert.equal(all.nodes[0].more, 3);
+  assert.deepEqual(all.nodes.map(n => n.id).sort(), ["docs", "msg", "parse", "ship"]);
+  assert.equal(all.edges.length, 3);
 });
 
 test("三条以上的前提、或择一的几条，先汇成一个结再进来；同一张纲摆出来每回一样", () => {

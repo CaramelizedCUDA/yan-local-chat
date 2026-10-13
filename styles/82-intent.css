@@ -318,17 +318,6 @@
 .intent-crumb-ctx > span:not(:first-child) {
   margin-left: 8px;
 }
-.intent-enter {
-  color: var(--ink-2);
-  font-size: 12px;
-  white-space: nowrap;
-  text-decoration: underline;
-  text-decoration-color: var(--line);
-  text-underline-offset: 3px;
-}
-.intent-enter:hover {
-  color: var(--ink);
-}
 
 /* 点中一项：图下展开（设计稿/60 二·丙 · 一张笺）。铺在一张淡底小笺上、右上折角（与撮要同式）：题一行（记号、名、态），说法，
    再是各栏——键名在上、值在下，两栏：验收、备注占满一行，前提与支撑、凭据与缘由各并一行。前提、支撑写成带记号的名字。

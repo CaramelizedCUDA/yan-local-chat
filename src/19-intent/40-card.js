@@ -107,16 +107,12 @@ function intentGraphSvg(intent, now, selected, level = "") {
       )
       .join("");
   const nodes = drawing.nodes
-    .map(({ id, x, y, w, node, more }) => {
+    .map(({ id, x, y, w, node }) => {
       let cx = x + GRAPH_DRAW.mark,
         inner = `<text class="intent-label" x="${cx.toFixed(1)}" y="${(y + 4).toFixed(1)}">${escapeHtml(node.label)}</text>`;
       cx += node.root
         ? graphMeasure(node.label, 13.5, 600, true)
         : graphMeasure(node.label, 12, node.state === "doing" || node.state === "stale" ? 600 : 400, true);
-      if (more) {
-        inner += `<text class="intent-more" x="${(cx + 5).toFixed(1)}" y="${(y + 4).toFixed(1)}">+${more}</text>`;
-        cx += graphMeasure(`+${more}`, 10) + 5;
-      }
       // 模块的进度可点：点了进模块（点名仍是选中）
       if (node.tag)
         inner += `<text class="intent-more intent-go" data-intent-level="${escapeHtml(id)}" x="${(cx + 6).toFixed(1)}" y="${(y + 4).toFixed(1)}"><title>打开模块</title>${escapeHtml(node.tag)}</text>`;
@@ -143,8 +139,8 @@ function intentAnchorsHtml(node, now) {
     })
     .join("")}</span>`;
 }
-/** 图下展开的一项 @param {Intent} intent @param {IntentPrints} now @param {string} id @param {string} [level] 眼前这一层 */
-function intentDetailHtml(intent, now, id, level = "") {
+/** 图下展开的一项 @param {Intent} intent @param {IntentPrints} now @param {string} id */
+function intentDetailHtml(intent, now, id) {
   const node = intent.nodes[id];
   if (!node) return "";
   const view = intentView(intent, id, now),
@@ -175,12 +171,7 @@ function intentDetailHtml(intent, now, id, level = "") {
     ]);
   const kids = intentChildren(intent, id);
   if (kids.length)
-    rows.push([
-      "内含",
-      `${chips(kids)}${id === level ? "" : `<button type="button" class="intent-enter" data-intent-level="${escapeHtml(id)}">打开模块 →</button>`}`,
-      "",
-      true
-    ]);
+    rows.push(["内含", chips(kids), "", true]);
   return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head" data-intent-node="${escapeHtml(id)}" role="button" tabindex="0" title="收起">${intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim"><span class="intent-when">${escapeHtml(intentWhere(intent, id))}</span>${escapeHtml(node.claim)}</p><div class="intent-fields">${rows
     .map(
       ([k, v, tone, wide]) =>
@@ -205,7 +196,7 @@ function intentRollHtml(intent, now, order, selected, level) {
   const roots = new Set(intentRoots(intent));
   return `<div class="intent-roll">${order
     .map(id => {
-      if (id === selected) return `<div class="intent-roll-open">${intentDetailHtml(intent, now, id, level)}</div>`;
+      if (id === selected) return `<div class="intent-roll-open">${intentDetailHtml(intent, now, id)}</div>`;
       const view = intentView(intent, id, now),
         inside = id === level ? "" : intentInside(intent, now, id),
         [say, tone] = intentRowSay(intent, now, id, view);
