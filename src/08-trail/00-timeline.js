@@ -28,21 +28,24 @@ function trailWork(message) {
 function trailBase(message) {
   return trailWork(message) ? trailGroups(message).at(-1)?.at || 0 : 0;
 }
+// 收尾前递的话（coda，如收尾前对照意）放了行、其后没再动手：走向没变，之前那段话仍是答复。这一步不进行迹，照实际的先后画在答复之后、
+// 它引出的那几句之前（见 07-paint.js 的正文）；还在写时照常进行迹
+/** @param {Message|SubAgent} message @returns {Step|null} */
+function trailCoda(message) {
+  const last = message.steps?.at(-1);
+  return last && message.status !== "streaming" && TOOLS.get(last.name)?.coda ? last : null;
+}
 /** @param {Message|SubAgent} message 主消息或帮手：两者都有 content / reasoning / steps */
 function trailGroups(message) {
   const groups = [],
-    steps = message.steps || [];
+    coda = trailCoda(message);
   let prev = 0,
     rprev = 0;
-  for (const [i, step] of steps.entries()) {
+  for (const step of message.steps || []) {
+    if (step === coda) continue;
     const at = Number(step.at) || 0,
       rat = Number(step.rat) || 0,
       last = groups.at(-1);
-    // 收尾前递的话（coda，如收尾前对照意）放了行、其后没再动手：走向没变，之前那段话仍是答复——并进前一组，不另起、不挪答复的起点
-    if (last && i === steps.length - 1 && TOOLS.get(step.name)?.coda) {
-      last.steps.push(step);
-      continue;
-    }
     // 同一轮后来的步骤把这组思绪的边界往后推，下一组的起点也得跟着走，不然推过去的那段会在下一组再显示一次
     if (last && last.at === at) {
       last.steps.push(step);
@@ -144,7 +147,8 @@ function tickTrailClock(message) {
 }
 /** @param {Message} message */
 function trailMeta(message) {
-  const base = toolStackMeta(message.steps);
+  const coda = trailCoda(message),
+    base = toolStackMeta(coda ? message.steps.filter(step => step !== coda) : message.steps);
   if (!trailWork(message)) return base;
   // 帮手不随这一答收尾：这一答写完了、它还在后台做，收起的行迹题头上也看得见
   const helpers = runningDelegates(message);

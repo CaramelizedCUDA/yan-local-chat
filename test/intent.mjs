@@ -73,15 +73,17 @@ try {
       /对照各根的原问，看这一答能否就此收尾/.test(gate),
     gate
   );
-  // 对照完没再动手就收尾：之前那段话仍是答复，留在外面不折进行迹；对照那一步并进行迹末一组
+  // 对照完没再动手就收尾：之前那段话仍是答复，留在外面不折进行迹；对照那一步照实际的先后画在答复之后，引出的话接在它后面
   const settled = await evalJs(
-    `(a => ({ outer: a.querySelector(".assistant-block > .markdown")?.textContent.trim() || "", gateInTrail: !!a.querySelector('.trail-group [data-tool="intent_gate"]'), notes: [...a.querySelectorAll(".trail-note")].map(n => n.textContent.trim().slice(0, 8)) }))([...document.querySelectorAll('#messages .message.assistant')].at(-1))`
+    `(a => ({ kids: [...a.querySelectorAll(".assistant-block > .markdown, .assistant-block > .trail-coda")].map(n => n.classList.contains("trail-coda") ? "coda:" + (n.querySelector('[data-tool="intent_gate"] .tool-title')?.textContent || "") : n.textContent.trim().slice(0, 8)), gateInTrail: !!a.querySelector('.tool-stack [data-tool="intent_gate"]'), notes: [...a.querySelectorAll(".trail-note")].map(n => n.textContent.trim().slice(0, 8)) }))([...document.querySelectorAll('#messages .message.assistant')].at(-1))`
   );
   check(
-    "a gate that lets the answer close keeps the reply before it outside the trail",
-    settled.outer.startsWith("INTENTA|") &&
-      settled.outer.includes("GATE|") &&
-      settled.gateInTrail &&
+    "a gate that lets the answer close: the reply stays outside the trail, the gate and what it drew out follow it in order",
+    settled.kids.length === 3 &&
+      settled.kids[0].startsWith("INTENTA|") &&
+      settled.kids[1] === "coda:收尾前对照意" &&
+      settled.kids[2].startsWith("GATE|") &&
+      !settled.gateInTrail &&
       !settled.notes.some(n => n.startsWith("INTENTA|")),
     JSON.stringify(settled)
   );

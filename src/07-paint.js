@@ -118,7 +118,11 @@ function paintBlock(block, message, o) {
     reasoning = String(source.reasoning || ""),
     visible = reveal ? content.slice(0, reveal.shown) : content,
     fresh = reveal?.fresh || [],
-    work = trailWork(message);
+    work = trailWork(message),
+    // 收尾前对照放了行（见 trailCoda）：它不进行迹，正文从它处断开——之前的答复、这一步、它引出的思绪与几句，照实际的先后排
+    coda = work ? trailCoda(message) : null,
+    cut = coda ? Math.max(trailBase(message), Number(coda.at) || 0) : content.length,
+    rcut = coda ? Math.max(trailReasoningBase(message), Number(coda.rat) || 0) : reasoning.length;
   /** @type {Part[]} */
   const parts = [];
   const stack = message.steps?.length
@@ -127,7 +131,7 @@ function paintBlock(block, message, o) {
   // 执事的行迹在前：思绪各归各轮；做完后最后一轮的思绪落在行迹之后。对谈里思绪在前、行迹是折起的注脚
   if (work) {
     parts.push(stack);
-    const tail = reasoning.slice(trailReasoningBase(message));
+    const tail = reasoning.slice(trailReasoningBase(message), rcut);
     if (!streaming && tail.trim()) parts.push(thoughtPart("tail-thought", tail, false, message));
   } else {
     if (reasoning.trim()) parts.push(thoughtPart("reasoning", reasoning, reasoningLive({ ...source, content: visible }), message));
@@ -137,13 +141,27 @@ function paintBlock(block, message, o) {
   if (streaming && !visible) parts.push(placeholderPart("正在凝神"));
   else if (!content && message.status === "stopped") parts.push(placeholderPart("搁笔于此"));
   else {
-    const text = work ? (streaming ? "" : content.slice(trailBase(message)).trim()) : visible;
+    const text = work ? (streaming ? "" : content.slice(trailBase(message), cut).trim()) : visible;
     if (text)
       parts.push({
         key: "main",
         sig: `${streaming}|${text}`,
         html: () => `<div class="markdown"></div>`,
         paint: el => paintMarkdown(el, text, { streaming, fresh })
+      });
+  }
+  if (coda) {
+    const line = `<div class="trail-coda">${stepHtml(coda)}</div>`,
+      thought = reasoning.slice(rcut),
+      after = content.slice(cut).trim();
+    parts.push({ key: "coda", sig: line, html: () => line });
+    if (thought.trim()) parts.push(thoughtPart("coda-thought", thought, false, message));
+    if (after)
+      parts.push({
+        key: "coda-said",
+        sig: after,
+        html: () => `<div class="markdown"></div>`,
+        paint: el => paintMarkdown(el, after, { streaming: false, fresh: [] })
       });
   }
   const drafting = !work && streaming ? draftingLabel(message) : "";

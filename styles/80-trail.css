@@ -120,6 +120,10 @@
   border-radius: var(--radius-m);
   font-size: 11.5px;
 }
+/* 收尾前对照放了行：那一步照实际的先后落在答复之后（见 07-paint.js 的 coda），与行迹里一步同一副样子，左缘对齐正文 */
+.trail-coda {
+  margin: 8px 0 2px -7px;
+}
 .tool-step-head {
   min-height: 25px;
   display: flex;
