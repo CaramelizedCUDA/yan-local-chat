@@ -2,6 +2,7 @@
 // 由 server/work/index.js 装配，落点、沙箱、锁与报错的写法都从那里传进来（work）
 "use strict";
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { jsonRoute, requestSignal } = require("../http.js");
 const { fetchPublicResponse, readLimitedBytes } = require("../web.js");
@@ -12,6 +13,9 @@ const writeTextAtomic = require("./atomic.js");
 // 读一回最多交出多少字；覆盖写时捎回原文的长度，与页面留存写入内容的长度（src/15-tools/21-files.js 的 WRITTEN_KEEP_CHARS）一致
 const WORK_FILE_LIMIT = 200000,
   PREVIOUS_KEEP_CHARS = 4000;
+// 文件指纹：读、写、改都捎回一枚，页面记在那一步上；再写、再改时带上自己最后见到的那枚（seen），在锁里与现状比——
+// 对不上就是读过之后被别人（别的帮手、主模型、编辑器、指令）改过。按内容算，改了又改回去的不算
+const fingerprint = buffer => crypto.createHash("sha1").update(buffer).digest("hex").slice(0, 16);
 
 module.exports = function createFiles(work) {
   const { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile } = work;
@@ -35,6 +39,9 @@ module.exports = function createFiles(work) {
       // 这一答（或这名帮手）没读过它就整份覆盖：先拦下，请它读了再写——最危险的整份覆盖不该比 edit_file 更不设防。空文件不拦
       if (body.unseen === true && previous?.length)
         throw Error(`${body.path} 已存在（${previous.length} 字节），整份覆盖前请先 read_file 看过；只改几处用 edit_file`);
+      // 读过之后被别人改过：拿旧印象整份写回，别人的改动就悄悄没了。不写，回现状的指纹，页面据此查是谁改的、请它重读
+      if (typeof body.seen === "string" && previous?.length && fingerprint(previous) !== body.seen)
+        return { stale: true, path: shownPath(workdir, file), sig: fingerprint(previous) };
       const prior = previous ? decodeText(previous) : null,
         previousText = prior?.text ?? "",
         previousLines = previousText ? countLines(previousText) : 0;
@@ -58,6 +65,7 @@ module.exports = function createFiles(work) {
         ...(prior?.encoding === "gbk" ? { converted: "gbk" } : {}),
         previousLines,
         ...counts,
+        sig: fingerprint(output),
         previous:
           previousText.length > PREVIOUS_KEEP_CHARS
             ? `${previousText.slice(0, PREVIOUS_KEEP_CHARS)}\n…（其后 ${previousText.length - PREVIOUS_KEEP_CHARS} 字未留存）`
@@ -91,7 +99,8 @@ module.exports = function createFiles(work) {
       offset,
       shown: slice.length,
       text,
-      encoding: decoded.encoding
+      encoding: decoded.encoding,
+      sig: fingerprint(buffer)
     };
   }, failed);
   // ---- edit_file：精确文本替换。old 必须在文件里唯一出现（或显式 replace_all）；文件是 CRLF 时把片段的换行也换成 CRLF 再匹配
@@ -143,13 +152,17 @@ module.exports = function createFiles(work) {
       await writeTextAtomic(file, output, signal).catch(error => {
         throw Error(describeFsError(error, String(body.path)));
       });
-      const line = source.slice(0, source.indexOf(needle)).split(/\r?\n/).length;
+      const line = source.slice(0, source.indexOf(needle)).split(/\r?\n/).length,
+        before = fingerprint(raw);
+      // 读过之后被别人改过、要改的这段原文却还对得上：照改（原文比对已兜住这一处），捎回改前的指纹，页面据此说是谁动过、别处的现状它没看过
       return {
         path: shownPath(workdir, file),
         replaced: replaceAll ? count : 1,
         line,
         lines: countLines(result),
-        bytes: output.length
+        bytes: output.length,
+        sig: fingerprint(output),
+        ...(typeof body.seen === "string" && before !== body.seen ? { drift: before } : {})
       };
     } finally {
       release();

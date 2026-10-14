@@ -13,8 +13,20 @@ defineTool({
   async run(step, args, { conversation, signal }) {
     // 没读过的：已有的文件桥接那头拦下（新建的照写），与 edit_file 同一条「改之前先读过」
     const unseen = !seenBefore(conversation, step, args.path),
-      data = await bridge("/api/work/write", { ...workScope(conversation), path: args.path, content: args.content, unseen }, signal);
+      seen = seenSig(conversation, step, args.path),
+      data = await bridge(
+        "/api/work/write",
+        { ...workScope(conversation), path: args.path, content: args.content, unseen, ...(seen ? { seen } : {}) },
+        signal
+      );
     step.title = data.path;
+    if (data.stale)
+      return {
+        ok: false,
+        content: prompt("work.stale", { path: data.path, who: changedBy(conversation, step, data.sig) }),
+        display: "读后已被改过"
+      };
+    step.sig = data.sig;
     step.root = workRoot(conversation);
     step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
     // 覆盖时的增删由桥接按前后两版逐行比出（旧桥接只给原有行数，退回整删整增）；lines 是写后这件的行数，新建的件按它算净增
@@ -53,19 +65,30 @@ defineTool({
     step.title = args.path;
     if (!seenBefore(conversation, step, args.path))
       return { ok: false, content: prompt("work.unread", { path: args.path }), display: "需先读取" };
-    const data = await bridge(
-      "/api/work/edit",
-      { ...workScope(conversation), path: args.path, old: args.old, new: args.new, replaceAll: args.replace_all === true },
-      signal
-    );
+    const seen = seenSig(conversation, step, args.path),
+      data = await bridge(
+        "/api/work/edit",
+        {
+          ...workScope(conversation),
+          path: args.path,
+          old: args.old,
+          new: args.new,
+          replaceAll: args.replace_all === true,
+          ...(seen ? { seen } : {})
+        },
+        signal
+      );
     step.title = data.path;
     step.root = workRoot(conversation);
     step.diff = { old: args.old.slice(0, 1500), new: args.new.slice(0, 1500) };
+    step.sig = data.sig;
+    // 读后被别人改过：这一处照改了，可文件别处的现状它没看过——这一步不算「看清了」，整份覆盖前还得重读
+    if (data.drift) step.drifted = changedBy(conversation, step, data.drift);
     const counts = diffCounts(args.old, args.new);
     step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced, lines: data.lines };
     return {
       ok: true,
-      content: `已修改 ${data.path}：第 ${data.line} 行起替换 ${data.replaced} 处，文件现为 ${data.lines} 行`,
+      content: `已修改 ${data.path}：第 ${data.line} 行起替换 ${data.replaced} 处，文件现为 ${data.lines} 行${step.drifted ? prompt("work.drift", { who: step.drifted }) : ""}`,
       display: `第 ${data.line} 行 · ${data.replaced} 处`
     };
   }
@@ -88,6 +111,7 @@ defineTool({
     );
     step.title = data.path;
     step.root = workRoot(conversation);
+    step.sig = data.sig;
     const encoding =
       data.encoding === "utf-8"
         ? ""
@@ -209,22 +233,52 @@ const SEEING_TOOLS = new Set(["read_file", "write_file", "edit_file"]);
  * @param {Step} step 正要改的这一步
  */
 function seenBefore(conversation, step, file) {
+  // 账本每一问都附着（见 ledgerNote）：附的是全文，主模型不必再读一遍才能改；截过的不算，没看到的后半截不能被一笔覆盖掉
+  if (
+    !step.scope &&
+    ledgers.get(conversation.id) &&
+    !ledgersCut.has(conversation.id) &&
+    seenPath(conversation, file) === seenPath(conversation, LEDGER_PATH)
+  )
+    return true;
+  return !!lastSeen(conversation, step, file);
+}
+// 同一人（主模型，或某名帮手）最后一回读、写、改这个文件的那一步：各人的步骤在对话里本就按先后排
+/** @param {Conversation} conversation @param {Step} step */
+function lastSeen(conversation, step, file) {
   const root = workRoot(conversation),
     wanted = seenPath(conversation, file);
-  // 账本每一问都附着（见 ledgerNote）：附的是全文，主模型不必再读一遍才能改；截过的不算，没看到的后半截不能被一笔覆盖掉
-  if (!step.scope && ledgers.get(conversation.id) && !ledgersCut.has(conversation.id) && wanted === seenPath(conversation, LEDGER_PATH))
-    return true;
-  return conversation.messages.some(message =>
-    allSteps(message).some(
-      seen =>
-        seen !== step &&
-        SEEING_TOOLS.has(seen.name) &&
-        seen.status === "done" &&
-        (seen.scope || "") === (step.scope || "") &&
-        (!seen.root || seen.root === root) &&
-        seenPath(conversation, seen.title) === wanted
-    )
+  return (
+    conversation.messages
+      .flatMap(message => allSteps(message))
+      .findLast(
+        seen =>
+          seen !== step &&
+          SEEING_TOOLS.has(seen.name) &&
+          seen.status === "done" &&
+          (seen.scope || "") === (step.scope || "") &&
+          (!seen.root || seen.root === root) &&
+          seenPath(conversation, seen.title) === wanted
+      ) || null
   );
+}
+// 那一步见到的文件指纹，写、改时带给桥接比对：读后被别人改过就知道。读后被改、只照原文改了一处的，别处它没看过，记作对不上的一枚；
+// 早先没记指纹的步骤不比
+/** @param {Conversation} conversation @param {Step} step */
+function seenSig(conversation, step, file) {
+  const last = lastSeen(conversation, step, file);
+  return last?.drifted ? "stale" : last?.sig || "";
+}
+// 读后改了这个文件的是谁：按改后的指纹在各人的写、改里找；自己读后被改、只照原文改了一处的，记着当时是谁
+/** @param {Conversation} conversation @param {Step} step @param {string} sig 文件现在（或被改后）的指纹 */
+function changedBy(conversation, step, sig) {
+  const mine = step.scope || "",
+    steps = conversation.messages.flatMap(message => allSteps(message)),
+    by = steps.findLast(s => s.sig === sig && (s.name === "write_file" || s.name === "edit_file") && (s.scope || "") !== mine);
+  if (!by) return lastSeen(conversation, step, step.title)?.drifted || "别处（指令、编辑器或别的对话）";
+  if (!by.scope) return "主对话";
+  const helper = steps.find(s => s.sub?.id === by.scope);
+  return `帮手「${helper?.title || "?"}」`;
 }
 // 「读过没有」按同一个文件认：读时写相对路径、改时写完整路径，或 Windows 上大小写不同，都是同一个文件
 /** @param {Conversation} conversation */

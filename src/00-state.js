@@ -72,6 +72,8 @@
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
  * @property {number} [rat] 调用发起时思绪的长度
  * @property {string} [scope] 帮手的步骤记它所属的帮手 id
+ * @property {string} [sig] 读、写、改之后这件文件的指纹（再写再改时比对，见 seenSig）
+ * @property {string} [drifted] 改时发现读后已被谁改过：这一处照原文改了，别处没看过，整份覆盖前须重读
  * @property {string} [root] 读、写、改文件时落在哪个目录（换了目录，先前读过的不算数）
  * @property {Attachment[]} [attachments] 补言（user_note）随带的附件
  * @property {boolean} [cached] 结果是复用的
