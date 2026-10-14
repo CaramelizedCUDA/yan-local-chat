@@ -72,6 +72,7 @@ function reserveTokens(profile, amount) {
 function spendTokens(profile, amount) {
   const live = profiles().find(p => p.id === profile.id) || profile;
   live.usedTokens = Math.max(0, Number(live.usedTokens || 0)) + amount;
+  noteSpend(live.id, amount);
   return live;
 }
 /** @param {Profile} profile */

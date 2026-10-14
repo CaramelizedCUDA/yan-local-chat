@@ -322,6 +322,7 @@ function flushOnUnload() {
   saveTimer = null;
   writeMeta({ disk: false });
   if (configSaveTimer) saveConfigNow();
+  keepSentConfigs();
   const db = stateDb;
   if (!db) return;
   const records = [];

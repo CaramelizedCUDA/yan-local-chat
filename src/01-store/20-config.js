@@ -7,11 +7,33 @@ let configSaveTimer = null,
 // 几个浏览器共用一份，靠的是「基准」：记着上次与磁盘对齐时的那一份（configBase，连同它在磁盘上的时间戳 configSyncedAt）。
 // 写的时候带上这个时间戳，磁盘上若已有别处写过的更新的一份，桥接不写、把那份交回来；这边就按基准做三方合并——
 // 自己改过的取自己的，没改的取对方的——再写一次。基准记在 localStorage 里，关了页面再开也接得上
-const CONFIG_BASE_KEY = "yan-config-base";
+const CONFIG_BASE_KEY = "yan-config-base",
+  CONFIG_SENT_KEY = "yan-config-sent";
 let configBase = "",
   configSaving = false,
   configSaveAgain = false,
   configSaveFailures = 0;
+// 发出去的几份（按 savedAt 记，连同那时这边花了多少墨）：写进了磁盘却没听到回音——超时、页面关了——下回读到的「别处的新版」
+// 其实是自己这份，认出来先作基准再比，不然三方合并把自己的改动当成对方的再算一遍
+const sentConfigs = new Map();
+function rememberSentConfig(savedAt, meta, spent = Object.fromEntries(spentHere)) {
+  sentConfigs.set(savedAt, { meta, spent });
+  for (const key of sentConfigs.keys()) if (sentConfigs.size > 8) sentConfigs.delete(key);
+}
+// 用量不靠基准相减：这边花了多少、其中多少已确认写进磁盘，按模型各记一个累计数，合并时取磁盘上的、加上还没确认的那一截。
+// 基准一旦认错（回音丢了、页面关了），相减会把自己花的整份当成对方的再加一遍、一回翻一倍；这样顶多把没确认的那一截多记一回
+const spentHere = new Map(),
+  spentSettled = new Map();
+function noteSpend(id, amount) {
+  spentHere.set(id, (spentHere.get(id) || 0) + amount);
+}
+function unsettledSpend(id) {
+  return Math.max(0, (spentHere.get(id) || 0) - (spentSettled.get(id) || 0));
+}
+// 某次写入落了盘：它带着的那些都算确认了（之后谁再写，都是在它之上合并的）
+function settleSpend(spent) {
+  for (const [id, amount] of Object.entries(spent || {})) spentSettled.set(id, Math.max(spentSettled.get(id) || 0, Number(amount) || 0));
+}
 function rememberConfigBase(meta, savedAt) {
   configBase = meta;
   configSyncedAt = savedAt;
@@ -30,6 +52,28 @@ function restoreConfigBase() {
       configBase = String(saved.meta);
       configSyncedAt = Math.max(configSyncedAt, Number(saved.savedAt) || 0);
     }
+    // 上回离页时还没确认的：没等到回音的几份，与还没确认落盘的墨
+    const sent = JSON.parse(localStorage.getItem(CONFIG_SENT_KEY) || "null");
+    if (sent?.root === (bootstrap.store?.root || "")) {
+      for (const [id, amount] of Object.entries(sent.unsettled || {})) noteSpend(id, Number(amount) || 0);
+      for (const item of Array.isArray(sent.items) ? sent.items : [])
+        if (item?.meta) rememberSentConfig(Number(item.savedAt) || 0, String(item.meta), item.spent || {});
+    }
+  } catch {}
+}
+// 页面要关：还没确认的记进 localStorage，下回开页认得出磁盘上那份是自己写的、也不丢这几笔墨。
+// 累计数换成相对已确认的那一截，下回从零记起
+function keepSentConfigs() {
+  const relative = spent =>
+    Object.fromEntries(Object.entries(spent).map(([id, amount]) => [id, Math.max(0, amount - (spentSettled.get(id) || 0))]));
+  const items = [...sentConfigs]
+      .filter(([savedAt]) => savedAt > configSyncedAt)
+      .map(([savedAt, sent]) => ({ savedAt, meta: sent.meta, spent: relative(sent.spent) })),
+    unsettled = Object.fromEntries([...spentHere.keys()].map(id => [id, unsettledSpend(id)]).filter(([, amount]) => amount > 0));
+  try {
+    if (items.length || Object.keys(unsettled).length)
+      localStorage.setItem(CONFIG_SENT_KEY, JSON.stringify({ root: bootstrap.store?.root || "", items, unsettled }));
+    else localStorage.removeItem(CONFIG_SENT_KEY);
   } catch {}
 }
 function scheduleConfigSave() {
@@ -46,9 +90,11 @@ function saveConfigNow({ force = false } = {}) {
     return;
   }
   const meta = JSON.stringify(metaOf()),
+    spent = Object.fromEntries(spentHere),
     savedAt = Math.max(Date.now(), configSyncedAt + 1),
     body = `{"config":${meta},"savedAt":${savedAt}${force ? "" : `,"base":${configSyncedAt}`}}`;
   configSaving = true;
+  rememberSentConfig(savedAt, meta, spent);
   // 页面要关时用 keepalive 送出去（浏览器只给它 64 KB 的余地；配置一般远小于此，超了就随它去，下次开页再推）
   fetch(`${apiBase}/api/store/config/save`, {
     method: "POST",
@@ -62,7 +108,10 @@ function saveConfigNow({ force = false } = {}) {
       if (response.status === 409 && data.config) return reconcileConfig(data.config, Number(data.savedAt) || 0);
       if (!response.ok) throw Error(data.error || `请求失败（${response.status}）`);
       configSaveFailures = 0;
-      rememberConfigBase(meta, Number(data.savedAt) || savedAt);
+      // 路上已从别处认过更新的一份（对齐时认出了这份，或已合并了更新的）：基准不往回退
+      const written = Number(data.savedAt) || savedAt;
+      if (written > configSyncedAt) rememberConfigBase(meta, written);
+      settleSpend(spent);
     })
     .catch(error => {
       if (unloading) return;
@@ -87,6 +136,12 @@ function saveConfigNow({ force = false } = {}) {
 // 磁盘上有一份配置：与这边对一对。磁盘上的不比基准新——这边改过就写下去；磁盘上的更新、这边没改过——换进来；
 // 两边都改过——三方合并后换进来，再写回去
 function reconcileConfig(config, savedAt) {
+  // 磁盘上那份正是自己发出的（时间戳对得上、内容一字不差——桥接原样存、原样交回）：先认它作基准
+  const own = sentConfigs.get(savedAt);
+  if (own && JSON.stringify(config) === own.meta) {
+    settleSpend(own.spent);
+    if (savedAt > configSyncedAt) rememberConfigBase(own.meta, savedAt);
+  }
   // 基准丢了就无法判断本地缓存的默认值是不是用户刚改的。磁盘是正本；只补入本地独有的记录，
   // 再以磁盘为基准写回，免得把已装工具、模型等配置退回默认值。
   if (!configBase) return mergeUnbasedConfig(config, savedAt);
@@ -98,12 +153,12 @@ function reconcileConfig(config, savedAt) {
   }
   if (!changed) return adoptConfig(config, savedAt);
   const theirs = metaOf(normalizeStoreData({ ...config, conversations: [] }));
-  adoptConfig(mergeConfig3(configBase ? JSON.parse(configBase) : {}, JSON.parse(mine), theirs), savedAt, JSON.stringify(theirs));
+  adoptConfig(mergeConfig3(JSON.parse(configBase), JSON.parse(mine), theirs, unsettledSpend), savedAt, JSON.stringify(theirs));
   saveConfigNow();
 }
 // 三方合并：base 是上次对齐时的那份。同一样东西，自己没动过的取对方的，自己动过的取自己的；
-// 模型、卷宗、记忆按 id 逐件比，设置与草稿按键逐项比；两边各自花掉的用量相加，不互相抹掉
-function mergeConfig3(base, mine, theirs) {
+// 模型、卷宗、记忆按 id 逐件比，设置与草稿按键逐项比；用量取对方的、加上这边还没确认写下的（unsettled，缺省按基准相减），不互相抹掉
+function mergeConfig3(base, mine, theirs, unsettled = null) {
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const keyed = (b, m, t, pick = (bv, mv, tv) => (same(mv, bv) ? tv : mv)) => {
     b ||= {};
@@ -132,8 +187,10 @@ function mergeConfig3(base, mine, theirs) {
     if (same(m, b)) return t;
     const out = keyed(b, m, t);
     // 用量两边各自往上加：合并时把两边新花的都记上（额度改过的一边会把用量清零，那时按合并的结果算）
-    if (b && same(m.quota, b.quota) && same(t.quota, b.quota))
-      out.usedTokens = Math.max(0, Number(m.usedTokens || 0) + Number(t.usedTokens || 0) - Number(b.usedTokens || 0));
+    if (b && same(m.quota, b.quota) && same(t.quota, b.quota)) {
+      const mineNew = unsettled ? unsettled(m.id) : Number(m.usedTokens || 0) - Number(b.usedTokens || 0);
+      out.usedTokens = Math.max(0, Number(t.usedTokens || 0) + mineNew);
+    }
     return out;
   };
   const baseSettings = base.settings || {},
