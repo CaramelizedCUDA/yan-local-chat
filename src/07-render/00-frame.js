@@ -49,6 +49,7 @@ function renderHeader() {
   renderModeSwitch();
   renderWelcome();
   renderQuota();
+  renderClepsydra();
   renderModelMenu();
   renderLibraryCount();
 }

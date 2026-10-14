@@ -120,6 +120,7 @@ function bindEvents() {
   bindIntentEvents();
   bindApprovalEvents();
   bindHelperEvents();
+  bindClepsydraEvents();
   setupChips();
   setupQuoteTip();
   setupSidePanel();

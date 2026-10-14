@@ -202,6 +202,17 @@ function renderHelperPanel(fresh = false) {
   }
   paintHelperTrail(trail, step, !blank);
 }
+// 回到当前对话行迹里的那一步（行迹折着就摊开）；帮手手上的一步不在正文行迹里，就回到派它的那枚签
+function revealStep(id) {
+  const cardOf = stepId => document.querySelector(`#messages .tool-step[data-step-id="${CSS.escape(stepId)}"]`),
+    owner = currentConversation()
+      ?.messages.flatMap(message => message.steps || [])
+      .find(step => step.sub?.steps?.some(sub => sub.id === id)),
+    card = cardOf(id) || (owner ? cardOf(owner.id) : null),
+    stack = card?.closest(".tool-stack");
+  if (stack && !stack.open) setProcessDetails(stack, true);
+  if (card) scrollChatTo(card, "center");
+}
 // 差遣面板：帮手条与行迹里的签打开它，遮罩与合起关上它，‹ › 与列表翻帮手
 function bindHelperEvents() {
   // 帮手行迹的收起：时间线上方的题头，与翻过题头后顶栏右侧浮出的那一枚
@@ -230,15 +241,9 @@ function bindHelperEvents() {
   $("#messages").addEventListener("click", event => {
     const relay = event.target.closest("[data-relay-step]");
     if (relay) return openHelperPanel(relay.dataset.relayStep || "");
-    // 后台指令结束的那一项：回到行迹里挂它的那一步（行迹折着就摊开）
+    // 后台指令结束的那一项：回到行迹里挂它的那一步
     const reveal = event.target.closest("[data-relay-reveal]");
-    if (reveal) {
-      const card = document.querySelector(`#messages .tool-step[data-step-id="${CSS.escape(reveal.dataset.relayReveal || "")}"]`),
-        stack = card?.closest(".tool-stack");
-      if (stack && !stack.open) setProcessDetails(stack, true);
-      if (card) scrollChatTo(card, "center");
-      return;
-    }
+    if (reveal) return revealStep(reveal.dataset.relayReveal || "");
     const head = event.target.closest(".tool-step-delegate > .tool-step-head");
     if (head) openFromCard(head.parentElement);
   });

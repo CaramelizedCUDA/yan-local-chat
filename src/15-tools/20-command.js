@@ -54,7 +54,7 @@ defineTool({
       step.exitCode = data.exitCode ?? undefined;
       // 还在跑的：等它结束再叫醒开它的那一个——主答（这段对话），或帮手自己（帮手手上有它就睡着等，见 90-delegate.js）
       if (data.running) {
-        step.bg = { id: data.id, key: data.key, state: "running" };
+        step.bg = { id: data.id, key: data.key, state: "running", started: Date.now() - (Number(data.durationMs) || 0) };
         watchBackground(conversation, ctx.assistant, step);
       }
       return {
@@ -112,6 +112,7 @@ function watchBackground(conversation, assistant, step) {
     profile = requestJob(conversation.id)?.profile || profiles().find(p => p.id === conversation.profileId) || activeProfile();
   bgWatches.set(step.id, controller);
   holdAwake();
+  renderClepsydra();
   bridge("/api/work/watch", { id: step.bg.id, key: step.bg.key }, controller.signal)
     .then(
       data => {
@@ -165,6 +166,7 @@ function settleBackground(step, state, exitCode, assistant) {
   if (conversation) markDirty(conversation.id);
   saveStoreSoon();
   refreshSteps(assistant);
+  renderClepsydra();
   // 帮手开的：它若睡着等，叫它看一眼——有信就接着做，等的都了结了就收工（随桥接重启而止的不寄信，见 mailHelper）
   if (step.scope && conversation) (crews.get(conversation.id) || []).find(box => box.sub.id === step.scope)?.wake?.();
 }
