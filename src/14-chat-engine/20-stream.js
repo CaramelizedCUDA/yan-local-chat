@@ -184,6 +184,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
         step.sub.charged = true;
         tally.usageKnown = true;
         for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(step.sub.usage[key] || 0);
+        // 帮手各轮的墨已当场扣进余墨，这里只算进这一答
+        tally.spent += Number(step.sub.usage.total_tokens || 0);
       }
     assistant.usage = tally.usageKnown ? tally.usage : null;
     releaseQuota();
@@ -191,7 +193,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       opened: tally.opened,
       partialRound: tally.roundOpen,
       roundStart: tally.roundStart,
-      steered: tally.steered
+      steered: tally.steered,
+      spent: tally.spent
     });
     if (prior) {
       if (prior.usage) {

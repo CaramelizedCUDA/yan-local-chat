@@ -590,7 +590,8 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       opened: tally.opened,
       partialRound: tally.roundOpen,
       roundStart: tally.roundStart,
-      steered: tally.steered
+      steered: tally.steered,
+      spent: tally.spent
     });
     if (requestJobs.get(key) === job) requestJobs.delete(key);
     markDirty(conversation.id);

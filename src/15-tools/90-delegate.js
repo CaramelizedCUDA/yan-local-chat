@@ -220,16 +220,14 @@ function launchHelper(step, args, ctx, past = null) {
 function helperWaits(sub) {
   return sub.steps.filter(step => step.bg?.state === "running");
 }
-// 派它的那一答收尾时它还没做完，墨没算进去：做完了记回那一答
-/** @param {Message} assistant @param {Profile|null} profile */
-function chargeHelper(assistant, usage, profile) {
+// 派它的那一答收尾时它还没做完，墨没算进这一答：做完了记回那一答（余墨各轮已当场扣过，见 runRounds 的 spend）
+/** @param {Message} assistant */
+function chargeHelper(assistant, usage) {
   const spent = Number(usage?.total_tokens || 0);
-  if (!spent || !profile) return;
+  if (!spent) return;
   assistant.usage ||= { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   for (const key of Object.keys(usage)) assistant.usage[key] = Number(assistant.usage[key] || 0) + Number(usage[key] || 0);
   assistant.tokenCount = Number(assistant.tokenCount || 0) + spent;
-  spendTokens(profile, spent);
-  renderQuota();
 }
 // 续派时帮手先前的经过：每一趟一问一答（所领之命 → 回报），上一趟的行迹冠在下一趟的命前，与主对话的历史同一个写法
 /** @param {Conversation} conversation @param {Step} past */
@@ -331,7 +329,9 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
   let painted = "";
   const paint = () => {
-    const sig = `${sub.content.length}|${sub.reasoning.length}|${sub.status}|${sub.steps.map(s => s.status).join("")}|${Math.floor((Date.now() - sub.startedAt) / 1000)}`;
+    // 用量边做边记在帮手身上：差遣面板的题下跟着跳（收工后照旧是这一份）
+    if (tally.usageKnown) sub.usage = tally.usage;
+    const sig = `${tally.usage.total_tokens}|${sub.content.length}|${sub.reasoning.length}|${sub.status}|${sub.steps.map(s => s.status).join("")}|${Math.floor((Date.now() - sub.startedAt) / 1000)}`;
     if (sig === painted) return;
     painted = sig;
     refreshSteps(assistant);
@@ -405,7 +405,7 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
     // 按「止」时主答的 job 已先撤下、它的收尾也会来算这名帮手：谁先记谁打 charged，另一边跳过
     if (!sub.charged && requestJob(conversation.id)?.assistantId !== assistant.id) {
       sub.charged = true;
-      chargeHelper(assistant, sub.usage, profile);
+      chargeHelper(assistant, sub.usage);
     }
     // 回报是最后一段话；裁掉开头的空行，偏移跟着前移
     const lead = trimReply(sub);

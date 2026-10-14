@@ -15,7 +15,7 @@ function setup(replies = []) {
       document.documentElement.dataset.inkMotion = 'off';
       document.hidden = true;
       saveStoreSoon = saveStore = renderSendButtons = renderHistory =
-        setJobLabel = refreshSteps = markDirty = accountUsage = () => {};
+        setJobLabel = refreshSteps = markDirty = accountUsage = renderQuota = () => {};
       keepInWindow = mcpForTurn = maybeAutoCompact = maybeAutoTitle = async () => {};
       reserveTokens = () => () => {};
       restFor = async () => {};

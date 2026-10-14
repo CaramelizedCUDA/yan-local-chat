@@ -4,11 +4,13 @@
 // 请模型开口 → 有工具调用就记成步骤、执行、把结果交回 → 再开口，直到它不再调工具。写到一半断了稍候接着写（同一轮最多两回）；
 // 一轮既没说话也没调工具不算收尾；轮次到顶收回工具，请它就已有结果收尾。
 // 带收件口（inbox，即这一答的 job）的还收补言与后台帮手的回报：补言等落点停下这一轮递上；只剩等帮手时就收尾，回报到了另起一答。
-// 用量记在 tally 上——停了、断了也照样有——由调用方收尾时结算
+// 用量记在 tally 上——停了、断了也照样有——由调用方收尾时结算这一答的耗墨；余墨则每轮当场扣（spent），长活跑着右下角也在动
 function newTally() {
   return {
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cached_tokens: 0 },
     usageKnown: false,
+    // 已当场扣进余墨的：收尾结算时只补其余（估算的那一截）
+    spent: 0,
     opened: false,
     roundOpen: false,
     roundStart: 0,
@@ -32,6 +34,13 @@ async function runRounds(target, history, run) {
   const { profile, conversation, host, signal, overrides, tally, inbox = null } = run,
     status = run.onStatus || (() => {}),
     toolCache = new Map();
+  // 一轮的墨当场扣：右下角的余墨跟着动，帮手的签上也跟着跳
+  const spend = amount => {
+    if (!(amount > 0)) return;
+    tally.spent += amount;
+    spendTokens(profile, amount);
+    renderQuota();
+  };
   // 轮次按这一趟算（帮手睡醒再进来是新的一趟）：上一趟到顶时收回的工具还给它，不然醒来就再也调不了工具
   delete overrides.toolChoice;
   let rounds = 0,
@@ -49,6 +58,7 @@ async function runRounds(target, history, run) {
     tally.usage.total_tokens += spent;
     tally.usageKnown = tally.steered = true;
     tally.roundOpen = false;
+    spend(spent);
   };
   for (;;) {
     // 开工前等着的那几步（装历史、起 MCP、断线稍候）里已按了停：中止在先，后面挂上的监听再也等不到，当场作罢
@@ -126,6 +136,7 @@ async function runRounds(target, history, run) {
       tally.usageKnown = true;
       tally.roundOpen = false;
       for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(target.usage[key] || 0);
+      spend(Number(target.usage.total_tokens || 0));
     }
     const calls = (target.toolCalls || []).filter(call => call.name);
     // 轮次到顶后模型仍要调工具（有的中转不认 tool_choice）：不再受理，就此收尾
@@ -431,7 +442,8 @@ async function requestPatiently(profile, history, signal, overrides) {
   }
 }
 // opened：接口至少接下过一次请求（没接下的——400、连不上——不花墨）；partialRound：最后一轮开了头却没等到它的 usage（停止、断网），
-// 那一轮按估算补上——提示全文加上这一轮写出的字；一次 usage 都没拿到的（接口不回 usage）整答按估算
+// 那一轮按估算补上——提示全文加上这一轮写出的字；一次 usage 都没拿到的（接口不回 usage）整答按估算。
+// spent：各轮已当场扣进余墨的（见 runRounds 的 spend），这里只补其余
 /**
  * @param {Profile} profile
  * @param {Message} assistant
@@ -442,13 +454,13 @@ function accountUsage(
   assistant,
   requestMessages,
   conversation,
-  { opened = true, partialRound = false, roundStart = 0, steered = false } = {}
+  { opened = true, partialRound = false, roundStart = 0, steered = false, spent = 0 } = {}
 ) {
   const exact = Number(assistant.usage?.total_tokens || 0);
   const estimate = from => estimateTokens(requestMessages) + estimateTokens([{ content: String(assistant.content || "").slice(from) }]);
   const consumed = exact > 0 ? exact + (partialRound ? estimate(roundStart) : 0) : opened ? estimate(0) : 0;
   if (!(consumed > 0)) return;
-  const live = spendTokens(profile, consumed);
+  const live = spendTokens(profile, Math.max(0, consumed - spent));
   assistant.tokenCount = consumed;
   assistant.tokenEstimated = !(exact > 0) || partialRound || steered;
   if (quotaExhausted(live)) toast("此答写毕，余墨已尽；换个模型可续");
