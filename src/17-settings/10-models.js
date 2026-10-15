@@ -1,6 +1,7 @@
 // 言 · 设置 · 模型：模型卡片、ChatGPT 账号、思考档位探测、测试连接与模型列表
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 const advancedOpen = new Set();
+const SILICONFLOW_BASE = "https://api.siliconflow.cn/v1";
 // 模型设置里摊开着的那几个（一个模型平时收成一行，点开才是整张表）
 const profileOpen = new Set();
 function modelsSettingsHtml() {
@@ -19,7 +20,8 @@ function profileCardHtml(p) {
     quota = quotaParts(p.quota),
     models = Array.isArray(p.modelList) ? p.modelList : [],
     listed = models.includes(p.model),
-    chatgpt = profileApi(p) === "chatgpt";
+    chatgpt = profileApi(p) === "chatgpt",
+    siliconflow = profileApi(p) === "siliconflow";
   const modelField = `<div class="field-row">${models.length ? `<select class="field wide select" data-model-select>${models.map(m => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("")}<option value="__custom__"${listed ? "" : " selected"}>手动输入…</option></select>` : ""}<input class="field wide${models.length && listed ? " hidden" : ""}" data-field="model" value="${escapeHtml(p.model)}" placeholder="如 gpt-4o-mini"><button class="outline-btn" data-profile-action="models" title="从接口的 /models 获取可用模型">${models.length ? "刷新" : "获取列表"}</button></div>`;
   const quotaField = `<div class="field-row"><input type="number" min="0" step="any" class="field wide" data-quota-amount value="${escapeHtml(quota.amount)}" placeholder="不限" ${invalidQuota ? `aria-invalid="true"` : ""}><select class="field select" data-quota-unit>${[
     ["k", "千 (k)"],
@@ -29,7 +31,7 @@ function profileCardHtml(p) {
     .map(([v, label]) => `<option value="${v}"${quota.unit === v ? " selected" : ""}>${label}</option>`)
     .join("")}</select></div>`;
   // 平时收成一行：名字、模型 ID 与接口、是否默认；点开才是整张表。模型一多，一行一个翻得过来
-  return `<details class="profile-card" data-profile-card="${escapeHtml(p.id)}"${profileOpen.has(p.id) ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${escapeHtml(p.name)}</strong><span class="profile-gist">${escapeHtml(profileGist(p))}</span>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</summary><div class="profile-body"><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>用量上限${quotaField}<small>留空不限</small></label><label>接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${anthropicLike(p) || chatgpt ? "" : "active"}">OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button><button data-choice-field="api" data-value="chatgpt" class="${chatgpt ? "active" : ""}">ChatGPT 订阅</button></div><small>${chatgpt ? "额度记在 ChatGPT 订阅上" : anthropicLike(p) ? "Messages API" : "chat/completions"}</small></label>${chatgpt ? chatgptAccountHtml() : `<label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">模型${modelField}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${p.tools === false ? "本机工具关" : ""}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>需接口支持 function calling</small></label>${chatgpt ? "" : `<label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number.isFinite(p.temperature) ? p.temperature : ""}" placeholder="接口默认"><small>0–2，留空由接口定</small></label>`}${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>留空按 ${DEFAULT_MAX_TOKENS}</small></label>` : ""}<label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>过七成半自动压缩前文</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>逗号分隔；选定模型时自动探测</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}<button class="danger-btn" data-profile-action="delete">删除</button><span class="profile-status">${invalidQuota ? "请填写大于 0 的数值，或留空不限" : ""}</span></div></div></details>`;
+  return `<details class="profile-card" data-profile-card="${escapeHtml(p.id)}"${profileOpen.has(p.id) ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${escapeHtml(p.name)}</strong><span class="profile-gist">${escapeHtml(profileGist(p))}</span>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">默认</span>` : ""}</summary><div class="profile-body"><div class="profile-grid"><label>显示名称<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>用量上限${quotaField}<small>留空不限</small></label><label class="profile-full">接口<div class="segmented"><button data-choice-field="api" data-value="openai" class="${profileApi(p) === "openai" ? "active" : ""}">OpenAI 兼容</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button><button data-choice-field="api" data-value="chatgpt" class="${chatgpt ? "active" : ""}">ChatGPT 订阅</button><button data-choice-field="api" data-value="siliconflow" class="${siliconflow ? "active" : ""}">硅基流动</button></div><small>${chatgpt ? "额度记在 ChatGPT 订阅上" : anthropicLike(p) ? "Messages API" : "chat/completions"}</small></label>${chatgpt ? chatgptAccountHtml() : `<label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : siliconflow ? SILICONFLOW_BASE : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">模型${modelField}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">高级配置</span><small>${p.tools === false ? "本机工具关" : ""}</small></summary><div class="profile-grid"><label>本机联网与文档工具<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">开</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">关</button></div><small>需接口支持 function calling</small></label>${chatgpt ? "" : `<label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number.isFinite(p.temperature) ? p.temperature : ""}" placeholder="接口默认"><small>0–2，留空由接口定</small></label>`}${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>留空按 ${DEFAULT_MAX_TOKENS}</small></label>` : ""}<label>上下文窗口<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="如 128000"><small>过七成半自动压缩前文</small></label><label>思考档位<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>逗号分隔；选定模型时自动探测</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">测试连接</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">设为默认</button>` : ""}<button class="danger-btn" data-profile-action="delete">删除</button><span class="profile-status">${invalidQuota ? "请填写大于 0 的数值，或留空不限" : ""}</span></div></div></details>`;
 }
 // ChatGPT 订阅的账号：在浏览器里授权登录（OpenAI 的「Sign in with ChatGPT」），凭证只在桥接里，页面只问登没登、是谁。
 // 不用 label 包：label 里的按钮会被点标签文字连带按下
@@ -82,7 +84,10 @@ async function chatgptLogin(profile, card) {
 }
 /** @param {Profile} p */
 function profileGist(p) {
-  return [p.model || "未填模型", { chatgpt: "ChatGPT 订阅", anthropic: "Anthropic", openai: "OpenAI 兼容" }[profileApi(p)]].join(" · ");
+  return [
+    p.model || "未填模型",
+    { chatgpt: "ChatGPT 订阅", anthropic: "Anthropic", openai: "OpenAI 兼容", siliconflow: "硅基流动" }[profileApi(p)]
+  ].join(" · ");
 }
 
 // 选定模型后探它认哪几档，结果写在卡片的状态行上，高级配置里的「思考档位」也跟着填；探不成不吭声（撞了错再学）。
@@ -280,7 +285,11 @@ function bindModelSettings() {
       button =>
         (button.onclick = () => {
           if (button.disabled) return;
-          p[button.dataset.choiceField] = button.dataset.value;
+          // 选硅基流动即填好它的地址；从它换走时地址一并清掉，免得别家的请求还发去硅基流动
+          const field = button.dataset.choiceField,
+            toSiliconflow = button.dataset.value === "siliconflow";
+          if (field === "api" && toSiliconflow !== (profileApi(p) === "siliconflow")) p.baseUrl = toSiliconflow ? SILICONFLOW_BASE : "";
+          p[field] = button.dataset.value;
           saveStore();
           renderSettings();
         })

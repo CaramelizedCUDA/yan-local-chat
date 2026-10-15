@@ -160,7 +160,7 @@
  * @property {string} model
  * @property {string} [baseUrl]
  * @property {string} [apiKey]
- * @property {"openai"|"anthropic"|"chatgpt"} [api] 接口类型；没写按地址认（anthropic.com）；chatgpt 是在浏览器里登录的 ChatGPT 订阅
+ * @property {"openai"|"anthropic"|"chatgpt"|"siliconflow"} [api] 接口类型；没写按地址认（anthropic.com）；chatgpt 是在浏览器里登录的 ChatGPT 订阅；siliconflow 即 OpenAI 兼容、地址填好
  * @property {number} [temperature] 留空即不传，由接口定
  * @property {number} [maxTokens] 只对 Anthropic 有意义（Messages API 必填）；OpenAI 兼容接口不传，由服务端定
  * @property {string} quota 用量上限，如 "100k"；空则不限

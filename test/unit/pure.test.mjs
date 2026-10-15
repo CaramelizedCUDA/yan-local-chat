@@ -702,6 +702,26 @@ test("OpenAI 兼容：DashScope 的档位换成预算，别家原样；思考块
   assert.deepEqual(openaiProvider.levels({ baseUrl: "https://dashscope.aliyuncs.com/v1" }), ["low", "medium", "high", "max"]);
   assert.equal(openaiProvider.levels({ baseUrl: "https://example.com/v1" }), null);
 });
+test("硅基流动：Qwen 之类换成预算，DeepSeek-V4 与 GLM-5.2 照送 reasoning_effort；模型列表只要对话的", () => {
+  const sf = model => ({ api: "siliconflow", baseUrl: "https://api.siliconflow.cn/v1", model });
+  const payload = { model: "Qwen/Qwen3-32B", messages: [{ role: "user", content: "x" }], reasoning_effort: "max" };
+  const qwen = openaiProvider.request(payload, sf("Qwen/Qwen3-32B"));
+  assert.equal(qwen.reasoning_effort, undefined);
+  assert.equal(qwen.enable_thinking, true);
+  assert.equal(qwen.thinking_budget, 32768);
+  const deepseek = openaiProvider.request(payload, sf("Pro/deepseek-ai/DeepSeek-V4"));
+  assert.equal(deepseek.reasoning_effort, "max");
+  assert.equal(deepseek.enable_thinking, undefined);
+  assert.deepEqual(openaiProvider.levels(sf("zai-org/GLM-5.2")), ["high", "max"]);
+  assert.deepEqual(openaiProvider.levels(sf("Qwen/Qwen3-32B")), ["low", "medium", "high", "max"]);
+  // 旧配置选的 OpenAI 兼容、地址是硅基流动的，一样认得
+  assert.equal(
+    openaiProvider.request(payload, { baseUrl: "https://api.siliconflow.com/v1", model: "Qwen/Qwen3-32B" }).thinking_budget,
+    32768
+  );
+  assert.equal(String(openaiProvider.modelsUrl(sf(""))), "https://api.siliconflow.cn/v1/models?sub_type=chat");
+  assert.equal(String(openaiProvider.modelsUrl({ baseUrl: "https://example.com/v1" })), "https://example.com/v1/models");
+});
 test("结束原因：认不出的原样交出，由页面的白名单判半途被掐；被遮蔽的思考块照原样回传", async () => {
   const stopWith = async reason => {
     const raw = [

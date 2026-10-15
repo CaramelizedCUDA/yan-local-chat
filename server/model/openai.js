@@ -1,12 +1,17 @@
 "use strict";
 // 言 · OpenAI 兼容接口：页面说的本就是它的话，请求原样转发，只理三处——别家才要的思考块去掉、经中转用 Claude 时标上缓存、
-// DashScope 兼容模式的思考档位换成它认的预算（登记的样子见 index.js 开头）
+// DashScope 与硅基流动的思考档位换成它认的预算（登记的样子见 index.js 开头）。硅基流动在设置里单列一档，登记就是这一份
 const { claudeModel, markOpenAiCache, stripCacheMarks } = require("./anthropic.js");
 
 // DashScope（通义）兼容模式不认 reasoning_effort，认 enable_thinking + thinking_budget；档位没有可探的枚举，按通用四档列
 const DASHSCOPE = /dashscope|aliyuncs/i;
 const DASHSCOPE_BUDGETS = { minimal: 1024, low: 2048, medium: 8192, high: 32768, xhigh: 65536, max: 81920 };
 const OPENAI_REASONING = /(^|\/)(o\d|gpt-5)/i;
+// 硅基流动：只有 DeepSeek-V4 一族与 GLM-5.2 认 reasoning_effort，且只分 high、max 两档；别的（Qwen3 之类）同 DashScope，
+// 认 enable_thinking + thinking_budget，预算 128–32768。/models 不加筛选连画图、向量、语音模型一并列出，只要对话的
+const SILICONFLOW = config => config.api === "siliconflow" || /siliconflow/i.test(config.baseUrl);
+const SILICONFLOW_EFFORT = /deepseek-v4|glm-5\.2/i;
+const SILICONFLOW_BUDGETS = { minimal: 1024, low: 4096, medium: 8192, high: 16384, xhigh: 32768, max: 32768 };
 
 function endpoint(baseUrl) {
   const url = new URL(String(baseUrl || "").trim());
@@ -30,12 +35,19 @@ function filePart(part) {
 }
 module.exports = {
   url: config => endpoint(config.baseUrl),
-  modelsUrl: config => modelsUrl(config.baseUrl),
+  modelsUrl(config) {
+    const url = modelsUrl(config.baseUrl);
+    if (SILICONFLOW(config)) url.searchParams.set("sub_type", "chat");
+    return url;
+  },
   headers: config => ({
     "Content-Type": "application/json; charset=utf-8",
     ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {})
   }),
-  levels: config => (DASHSCOPE.test(config.baseUrl) ? ["low", "medium", "high", "max"] : null),
+  levels(config) {
+    if (SILICONFLOW(config)) return SILICONFLOW_EFFORT.test(config.model) ? ["high", "max"] : ["low", "medium", "high", "max"];
+    return DASHSCOPE.test(config.baseUrl) ? ["low", "medium", "high", "max"] : null;
+  },
   request(payload, config) {
     const body = {
       ...payload,
@@ -53,7 +65,11 @@ module.exports = {
       body.max_completion_tokens = body.max_tokens;
       delete body.max_tokens;
     }
-    if (body.reasoning_effort && DASHSCOPE.test(config.baseUrl)) {
+    if (body.reasoning_effort && SILICONFLOW(config) && !SILICONFLOW_EFFORT.test(config.model)) {
+      body.enable_thinking = true;
+      body.thinking_budget = SILICONFLOW_BUDGETS[body.reasoning_effort] || 8192;
+      delete body.reasoning_effort;
+    } else if (body.reasoning_effort && DASHSCOPE.test(config.baseUrl)) {
       body.enable_thinking = true;
       body.thinking_budget = DASHSCOPE_BUDGETS[body.reasoning_effort] || 8192;
       delete body.reasoning_effort;

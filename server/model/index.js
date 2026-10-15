@@ -41,7 +41,8 @@ async function upstreamError(response) {
 /** @param {{ home: () => string }} options 存储根（ChatGPT 订阅的登录凭证放在那里） */
 module.exports = function createModel({ home }) {
   const chatgpt = require("./chatgpt.js")({ home });
-  const PROVIDERS = { openai, anthropic: anthropic.provider, chatgpt: chatgpt.provider };
+  // 硅基流动是 OpenAI 兼容的，设置里单列一档只为标出名字、填好地址；它与别家不同的几处在 openai.js 里按 api 认
+  const PROVIDERS = { openai, siliconflow: openai, anthropic: anthropic.provider, chatgpt: chatgpt.provider };
   // 接口类型由页面定好了送来（设置里选的，旧配置没写的页面按地址认）；没写的当 OpenAI 兼容
   const providerOf = config => PROVIDERS[config.api] || PROVIDERS.openai;
 
