@@ -74,9 +74,8 @@ function keepCookies(headers) {
 async function searchBing(query, count) {
   return bingLane(async () => {
     if (!bingJar.size) keepCookies((await fetchText("https://www.bing.com/")).headers);
-    const { text, headers } = await fetchText(bingUrl(query), 15000, {
-      Cookie: [...bingJar].map(([name, value]) => `${name}=${value}`).join("; "),
-      Referer: "https://www.bing.com/"
+    const { text, headers } = await fetchText(bingUrl(query), {
+      headers: { Cookie: [...bingJar].map(([name, value]) => `${name}=${value}`).join("; "), Referer: "https://www.bing.com/" }
     });
     keepCookies(headers);
     return parseBing(text, count);

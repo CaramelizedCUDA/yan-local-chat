@@ -2,6 +2,7 @@
 // 把 OpenAI 格式的请求换成 Messages API 的，再把它的事件流换回 OpenAI 风格的 SSE 分块，其余代码一字不动。
 // 登记的样子见 index.js 开头
 "use strict";
+const { translateSse } = require("./sse.js");
 const ANTHROPIC_VERSION = "2023-06-01";
 // 老模型（4.5 及以前、Haiku、认不出型号的）：思考档位换成思考预算（token）；预算得小于 max_tokens，不够就把 max_tokens 抬上去
 const ANTHROPIC_BUDGETS = { minimal: 1024, low: 2048, medium: 8192, high: 16384, xhigh: 32768, max: 65536 };
@@ -161,91 +162,47 @@ const ANTHROPIC_FINISH = {
 // text_delta → content，thinking_delta → reasoning_content，tool_use 块 → tool_calls（按出现顺序编号），思考块收尾时整块带上签名
 // 作 thinking_block 交给页面（带工具调用的那一轮要回传；被遮蔽的那种只有密文，记作 redacted）；message_delta 里的用量换成 usage
 function anthropicToOpenAiStream(model = "") {
-  const decoder = new TextDecoder(),
-    encoder = new TextEncoder(),
-    id = `chatcmpl-${Date.now().toString(36)}`;
-  let buffer = "",
-    event = "",
-    tools = 0,
-    stopped = false;
+  let tools = 0;
   const blocks = new Map(),
     usage = { prompt_tokens: 0, completion_tokens: 0 };
-  const chunk = (delta, extra = {}, finish = null) =>
-    encoder.encode(
-      `data: ${JSON.stringify({ id, object: "chat.completion.chunk", model, choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`
-    );
-  const handle = (controller, name, data) => {
+  return translateSse(model, (out, data, name) => {
     if (name === "message_start") {
       const u = data.message?.usage || {};
       usage.prompt_tokens =
         Number(u.input_tokens || 0) + Number(u.cache_read_input_tokens || 0) + Number(u.cache_creation_input_tokens || 0);
       usage.prompt_tokens_details = { cached_tokens: Number(u.cache_read_input_tokens || 0) };
-      if (data.message?.model) model = data.message.model;
+      if (data.message?.model) out.model = data.message.model;
     } else if (name === "content_block_start") {
       const block = { ...(data.content_block || {}), text: "", json: "", signature: "" };
       blocks.set(data.index, block);
       if (block.type === "tool_use") {
         block.slot = tools++;
-        controller.enqueue(
-          chunk({ tool_calls: [{ index: block.slot, id: block.id, type: "function", function: { name: block.name, arguments: "" } }] })
-        );
+        out.chunk({ tool_calls: [{ index: block.slot, id: block.id, type: "function", function: { name: block.name, arguments: "" } }] });
       }
     } else if (name === "content_block_delta") {
       const block = blocks.get(data.index),
         delta = data.delta || {};
-      if (delta.type === "text_delta" && delta.text) controller.enqueue(chunk({ content: delta.text }));
+      if (delta.type === "text_delta" && delta.text) out.chunk({ content: delta.text });
       else if (delta.type === "thinking_delta" && delta.thinking) {
         if (block) block.text += delta.thinking;
-        controller.enqueue(chunk({ reasoning_content: delta.thinking }));
+        out.chunk({ reasoning_content: delta.thinking });
       } else if (delta.type === "input_json_delta" && block) {
         block.json += delta.partial_json || "";
-        if (delta.partial_json)
-          controller.enqueue(chunk({ tool_calls: [{ index: block.slot, function: { arguments: delta.partial_json } }] }));
+        if (delta.partial_json) out.chunk({ tool_calls: [{ index: block.slot, function: { arguments: delta.partial_json } }] });
       } else if (delta.type === "signature_delta" && block) block.signature += delta.signature || "";
     } else if (name === "content_block_stop") {
       const block = blocks.get(data.index);
       if (block?.type === "thinking" && block.signature)
-        controller.enqueue(chunk({ thinking_block: { thinking: block.text, signature: block.signature } }));
-      else if (block?.type === "redacted_thinking" && block.data) controller.enqueue(chunk({ thinking_block: { redacted: block.data } }));
+        out.chunk({ thinking_block: { thinking: block.text, signature: block.signature } });
+      else if (block?.type === "redacted_thinking" && block.data) out.chunk({ thinking_block: { redacted: block.data } });
     } else if (name === "message_delta") {
       if (data.usage?.output_tokens !== undefined) usage.completion_tokens = Number(data.usage.output_tokens) || 0;
       const reason = data.delta?.stop_reason,
         finish = reason ? ANTHROPIC_FINISH[reason] || reason : null;
-      controller.enqueue(chunk({}, { usage: { ...usage, total_tokens: usage.prompt_tokens + usage.completion_tokens } }, finish));
-    } else if (name === "message_stop") {
-      stopped = true;
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-    } else if (name === "error") {
-      // 流到半途的报错（overloaded_error 最常见）：按 OpenAI 流里的报错格式交出去，页面据此按「连接中断」处理、稍候接着写，
-      // 而不是把一句报错写进正文、当这一答写完了
-      stopped = true;
-      const message = [data.error?.type, data.error?.message].filter(Boolean).join("：") || "未知错误";
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: { message: `接口在作答途中出错：${message}` } })}\n\n`));
-    }
-  };
-  const feed = (controller, text) => {
-    buffer += text;
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (line.startsWith("event:")) event = line.slice(6).trim();
-      else if (line.startsWith("data:")) {
-        try {
-          const data = JSON.parse(line.slice(5).trim());
-          handle(controller, event || data.type, data);
-        } catch {}
-      } else if (!line) event = "";
-    }
-  };
-  return new TransformStream({
-    transform(bytes, controller) {
-      feed(controller, decoder.decode(bytes, { stream: true }));
-    },
-    // 没等到 message_stop 就断了：不补 [DONE]，页面按「连接中断」处理、可续写（已收到 message_delta 的，页面凭结束原因照常收尾）
-    flush(controller) {
-      feed(controller, decoder.decode());
-      if (buffer) feed(controller, "\n");
-    }
+      out.chunk({}, { usage: { ...usage, total_tokens: usage.prompt_tokens + usage.completion_tokens } }, finish);
+    } else if (name === "message_stop") out.done();
+    // 流到半途的报错（overloaded_error 最常见）
+    else if (name === "error") out.fail([data.error?.type, data.error?.message].filter(Boolean).join("："));
   });
 }
 // 经 OpenAI 兼容的中转用 Claude：缓存同样要显式标，不标就一分不省（实测原价重发）。中转认 OpenAI 内容段上的 cache_control、照转给 Claude，

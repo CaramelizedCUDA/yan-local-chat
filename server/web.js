@@ -298,15 +298,7 @@ const handleHttp = jsonRoute(async body => {
     { buffer, truncated } = await readLimitedBytes(response, textual ? 4 * 1024 * 1024 : 64 * 1024);
   const responseHeaders = {};
   for (const [name, value] of response.headers) if (!/^set-cookie$/i.test(name)) responseHeaders[name] = value;
-  let text = "";
-  if (textual) {
-    const charset = (type.match(/charset=["']?([\w-]+)/i) || [])[1] || "utf-8";
-    try {
-      text = new TextDecoder(charset).decode(buffer);
-    } catch {
-      text = buffer.toString("utf8");
-    }
-  }
+  const text = textual ? decodeText(buffer, charsetOf(type)) : "";
   return {
     status: response.status,
     statusText: response.statusText,
@@ -321,102 +313,45 @@ const handleHttp = jsonRoute(async body => {
   };
 });
 const FETCH_TEXT_LIMIT = 3 * 1024 * 1024;
-// 正文最多只收 3 MB：边读边计，到量即取消读取器——不先把整个响应吃进内存再截，对方回 500 MB 也只占 3 MB
+const charsetOf = text => (String(text).match(/charset=["']?([\w-]+)/i) || [])[1];
+// 认不得的字符集（写错、冷门）照 UTF-8 读，不让整页读不成
+function decodeText(buffer, charset = "utf-8") {
+  try {
+    return new TextDecoder(charset).decode(buffer);
+  } catch {
+    return buffer.toString("utf8");
+  }
+}
+// 正文最多只收 3 MB（见 readLimitedBytes：边读边计，对方回 500 MB 也只占 3 MB）；字符集先看响应头，没写再看页头的 <meta>
 async function readLimitedText(response, limit = FETCH_TEXT_LIMIT) {
   const type = response.headers.get("content-type") || "";
   if (!/text\/|application\/(xhtml|json|xml)/i.test(type)) {
     await response.body?.cancel().catch(() => {});
     throw Error(`不支持的内容类型 ${type.split(";")[0] || "未知"}`);
   }
-  const chunks = [];
-  let size = 0;
-  if (response.body) {
-    const reader = response.body.getReader();
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (size + value.length >= limit) {
-        chunks.push(value.subarray(0, limit - size));
-        size = limit;
-        await reader.cancel().catch(() => {});
-        break;
-      }
-      chunks.push(value);
-      size += value.length;
-    }
-  }
-  const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)));
-  const charset =
-    (type.match(/charset=["']?([\w-]+)/i) ||
-      buffer
-        .subarray(0, 4096)
-        .toString("latin1")
-        .match(/charset=["']?([\w-]+)/i) ||
-      [])[1] || "utf-8";
-  let text;
-  try {
-    text = new TextDecoder(charset).decode(buffer);
-  } catch {
-    text = buffer.toString("utf8");
-  }
-  return { text, type, truncated: size >= limit };
+  const { buffer, truncated } = await readLimitedBytes(response, limit);
+  const charset = charsetOf(type) || charsetOf(buffer.subarray(0, 4096).toString("latin1"));
+  return { text: decodeText(buffer, charset), type, truncated };
 }
-async function fetchText(url, timeout = 15000, headers = {}) {
+// 取网页的字（翻网页、检索）：地址门禁与逐跳再查都经 fetchPublicResponse，只此一路。没成的报错带 status（翻网页据此认被拒）；
+// pdf：是 PDF 就原样交回字节，不当文字读
+async function fetchText(url, { timeout = 15000, headers = {}, pdf = false } = {}) {
   const { response, url: finalUrl } = await fetchPublicResponse(url, {
-    headers: {
-      "User-Agent": BROWSER_UA,
-      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
-      Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
-      ...headers
-    },
+    headers: { Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5", ...headers },
     timeout
   });
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
-    throw Error(`网页返回 ${response.status}`);
+    throw Object.assign(Error(`网页返回 ${response.status}`), { status: response.status });
+  }
+  const declared = response.headers.get("content-type") || "";
+  if (pdf && (/application\/pdf/i.test(declared) || (/octet-stream/i.test(declared) && /\.pdf$/i.test(new URL(finalUrl).pathname)))) {
+    const { buffer, truncated } = await readLimitedBytes(response, PDF_LIMIT);
+    if (truncated) throw Error("PDF 超过 20 MB，用 download_file 存下来再读");
+    return { pdf: buffer, url: finalUrl, type: declared };
   }
   const { text, type } = await readLimitedText(response);
   return { text, url: finalUrl, type, headers: response.headers };
-}
-async function fetchPublicText(url, timeout = 20000) {
-  let current = new URL(url);
-  const signal = AbortSignal.timeout(timeout);
-  for (let redirects = 0; redirects <= 5; redirects++) {
-    const addresses = await assertPublicUrl(current);
-    const response = await pinnedFetch(
-      current,
-      {
-        headers: {
-          "User-Agent": BROWSER_UA,
-          "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
-          Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
-          [OUTBOUND_MARK]: "1"
-        },
-        signal
-      },
-      addresses
-    );
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      await response.body?.cancel().catch(() => {});
-      if (!location) throw Error("网页跳转缺少目标地址");
-      current = new URL(location, current);
-      continue;
-    }
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
-      throw Object.assign(Error(`网页返回 ${response.status}`), { status: response.status });
-    }
-    const declared = response.headers.get("content-type") || "";
-    if (/application\/pdf/i.test(declared) || (/octet-stream/i.test(declared) && /\.pdf$/i.test(current.pathname))) {
-      const { buffer, truncated } = await readLimitedBytes(response, PDF_LIMIT);
-      if (truncated) throw Error("PDF 超过 20 MB，用 download_file 存下来再读");
-      return { pdf: buffer, url: current.href, type: declared };
-    }
-    const { text, type } = await readLimitedText(response);
-    return { text, url: current.href, type };
-  }
-  throw Error("网页跳转次数过多");
 }
 const PAGE_CHARS = 24000,
   PDF_LIMIT = 20 * 1024 * 1024,
@@ -435,7 +370,7 @@ const handleFetch = jsonRoute(async body => {
   let page = null,
     refused = null;
   try {
-    page = await fetchPublicText(url.href, 20000);
+    page = await fetchText(url.href, { timeout: 20000, pdf: true });
   } catch (error) {
     if (!REFUSED.has(error.status) || !browser.available()) throw error;
     refused = error;

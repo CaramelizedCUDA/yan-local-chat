@@ -8,6 +8,7 @@ const http = require("node:http");
 const path = require("node:path");
 const { createHash, randomBytes, randomUUID } = require("node:crypto");
 const { jsonRoute, writeAtomic } = require("../http.js");
+const { translateSse } = require("./sse.js");
 const { openUrl } = require("../platform.js");
 
 // 两处地址可由环境变量换掉，只为测试：起一个假的授权与接口服务
@@ -335,48 +336,28 @@ function responsesRequest(payload) {
 }
 // Responses 事件流 → OpenAI 风格的 SSE 分块：正文、思考摘要、函数调用（按出现顺序编号）、收尾的用量与结束原因
 function responsesToOpenAiStream(model = "") {
-  const decoder = new TextDecoder(),
-    encoder = new TextEncoder(),
-    id = `chatcmpl-${Date.now().toString(36)}`;
-  let buffer = "",
-    stopped = false,
-    summaries = 0;
+  let summaries = 0;
   const calls = new Map();
-  const chunk = (delta, extra = {}, finish = null) =>
-    encoder.encode(
-      `data: ${JSON.stringify({ id, object: "chat.completion.chunk", model, choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`
-    );
-  const fail = (controller, error) => {
-    stopped = true;
-    const message = hinted(error?.code, error?.message);
-    controller.enqueue(
-      encoder.encode(`data: ${JSON.stringify({ error: { message: `接口在作答途中出错：${message || "未知错误"}` } })}\n\n`)
-    );
-  };
-  const handle = (controller, data) => {
+  return translateSse(model, (out, data) => {
     const type = data.type,
       item = data.item;
-    if (type === "response.output_text.delta" && data.delta) controller.enqueue(chunk({ content: data.delta }));
-    else if (type === "response.reasoning_summary_part.added" && summaries++) controller.enqueue(chunk({ reasoning_content: "\n\n" }));
-    else if (type === "response.reasoning_summary_text.delta" && data.delta) controller.enqueue(chunk({ reasoning_content: data.delta }));
+    if (type === "response.output_text.delta" && data.delta) out.chunk({ content: data.delta });
+    else if (type === "response.reasoning_summary_part.added" && summaries++) out.chunk({ reasoning_content: "\n\n" });
+    else if (type === "response.reasoning_summary_text.delta" && data.delta) out.chunk({ reasoning_content: data.delta });
     else if (type === "response.output_item.added" && item?.type === "function_call") {
       const call = { slot: calls.size, streamed: false };
       calls.set(item.id, call);
-      controller.enqueue(
-        chunk({ tool_calls: [{ index: call.slot, id: item.call_id, type: "function", function: { name: item.name, arguments: "" } }] })
-      );
+      out.chunk({ tool_calls: [{ index: call.slot, id: item.call_id, type: "function", function: { name: item.name, arguments: "" } }] });
     } else if (type === "response.function_call_arguments.delta" && calls.has(data.item_id) && data.delta) {
       calls.get(data.item_id).streamed = true;
-      controller.enqueue(chunk({ tool_calls: [{ index: calls.get(data.item_id).slot, function: { arguments: data.delta } }] }));
+      out.chunk({ tool_calls: [{ index: calls.get(data.item_id).slot, function: { arguments: data.delta } }] });
     } else if (type === "response.output_item.done" && item?.type === "function_call" && calls.has(item.id) && !calls.get(item.id).streamed)
-      controller.enqueue(chunk({ tool_calls: [{ index: calls.get(item.id).slot, function: { arguments: item.arguments || "{}" } }] }));
+      out.chunk({ tool_calls: [{ index: calls.get(item.id).slot, function: { arguments: item.arguments || "{}" } }] });
     // 思考整段收尾：加密原件作 thinking_block 交给页面（signature 一栏装它），这一轮带工具调用时页面原样带回
     else if (type === "response.output_item.done" && item?.type === "reasoning" && item.encrypted_content)
-      controller.enqueue(
-        chunk({
-          thinking_block: { thinking: (item.summary || []).map(part => part.text || "").join("\n\n"), signature: item.encrypted_content }
-        })
-      );
+      out.chunk({
+        thinking_block: { thinking: (item.summary || []).map(part => part.text || "").join("\n\n"), signature: item.encrypted_content }
+      });
     else if (type === "response.completed" || type === "response.incomplete") {
       const u = data.response?.usage || {},
         // 没写完（incomplete）的原因：到输出上限即 length；内容拦截之类原样交给页面，由它判作半途被掐，不冒充写完
@@ -388,30 +369,11 @@ function responsesToOpenAiStream(model = "") {
         total_tokens: Number(u.total_tokens) || 0,
         prompt_tokens_details: { cached_tokens: Number(u.input_tokens_details?.cached_tokens) || 0 }
       };
-      controller.enqueue(chunk({}, { usage }, finish));
-      stopped = true;
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-    } else if (type === "response.failed") fail(controller, data.response?.error);
-    else if (type === "error") fail(controller, data.error || data);
-  };
-  const feed = (controller, text) => {
-    buffer += text;
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      try {
-        handle(controller, JSON.parse(line.slice(5).trim()));
-      } catch {}
-    }
-  };
-  return new TransformStream({
-    transform(bytes, controller) {
-      if (!stopped) feed(controller, decoder.decode(bytes, { stream: true }));
-    },
-    // 没等到 response.completed 就断了：不补 [DONE]，页面按「连接中断」处理、可续写
-    flush(controller) {
-      if (!stopped) feed(controller, `${decoder.decode()}\n`);
+      out.chunk({}, { usage }, finish);
+      out.done();
+    } else if (type === "response.failed" || type === "error") {
+      const error = type === "error" ? data.error || data : data.response?.error;
+      out.fail(hinted(error?.code, error?.message));
     }
   });
 }

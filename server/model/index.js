@@ -4,7 +4,7 @@
 //   url(config)               对话发往哪
 //   headers(config, body)     带什么头（可以是异步的：ChatGPT 订阅的令牌要换新；对话时 body 是已换好的请求体）
 //   request(payload, config)  OpenAI 格式的请求体换成这家的
-//   stream(model)             这家的事件流换回 chat.completions 分块的 TransformStream；不给即原样透传
+//   stream(model)             这家的事件流换回 chat.completions 分块的 TransformStream（用 sse.js 的骨架，只写一个事件换成什么）；不给即原样透传
 //   modelsUrl(config) / models(config)  列模型：给地址的照通行的 { data: [...] } 读，自有说法的自己列
 //   levels(config)            这家认的思考档位有定表的：页面探档位时照表回，不必真发一趟
 //   needsBaseUrl              是否要填 Base URL（ChatGPT 订阅不用）
