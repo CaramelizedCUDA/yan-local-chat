@@ -65,9 +65,9 @@ async function compactContext(c, { auto = false, before = null, profile = active
         c.reasoning
       );
     const at = c.messages.indexOf(lastCompacted);
-    if (at < 0) throw Error(t("对话在压缩期间已改动"));
+    if (at < 0) throw Error("对话在压缩期间已改动");
     // 期间又压过一次（分隔已在这条之后）就作废，以后来的为准
-    if (c.messages.slice(at + 1).some(m => m.role === "context")) throw Error(t("对话在压缩期间已改动"));
+    if (c.messages.slice(at + 1).some(m => m.role === "context")) throw Error("对话在压缩期间已改动");
     /** @type {Message} */
     const marker = { id: uid(), role: "context", content: "", timestamp: now(), summary, compacted: source.length };
     c.messages.splice(at + 1, 0, marker);

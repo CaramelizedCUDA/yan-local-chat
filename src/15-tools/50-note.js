@@ -20,7 +20,11 @@ function noteStepHtml(step, { seal = t("补"), label = t("补言") } = {}) {
     first = text.split("\n").find(Boolean)?.slice(0, 80) || "",
     files = (step.attachments || []).map(file => file.name);
   const meta =
-    status === "running" ? t("待寄") : status === "error" ? escapeHtml(step.result || t("未送达")) : escapeHtml(step.result || t("已递"));
+    status === "running"
+      ? t("待寄")
+      : status === "error"
+        ? escapeHtml(stepText(step.result) || t("未送达"))
+        : escapeHtml(stepText(step.result) || t("已递"));
   // 一句短话只占题头一行；摊开了全文（多行、过长、带附件）题头就不再重复第一行
   const body =
     text.length > first.length || files.length

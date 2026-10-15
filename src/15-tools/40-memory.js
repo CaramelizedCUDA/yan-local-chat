@@ -13,27 +13,27 @@ defineTool({
       text = cleanMemoryText(args.text),
       category = cleanMemoryCategory(args.category);
     step.title = `${category}｜${text.length > 120 ? `${text.slice(0, 120)}…` : text}`;
-    if (!text) return { ok: false, content: t("text 不能为空"), display: t("内容为空") };
+    if (!text) return { ok: false, content: t("text 不能为空"), display: "内容为空" };
     // 过长不截：退回去让模型拆成几条或精简，免得记下半句
     if (text.length > MEMORY_TEXT_CHARS)
-      return { ok: false, content: t`这条有 ${text.length} 字，超过 ${MEMORY_TEXT_CHARS} 字；请拆成几条或精简后再记`, display: t("过长") };
+      return { ok: false, content: t`这条有 ${text.length} 字，超过 ${MEMORY_TEXT_CHARS} 字；请拆成几条或精简后再记`, display: "过长" };
     const source = { conversationId: conversation.id, title: conversation.title };
     const existing = (args.replaces && items.find(item => item.id === args.replaces)) || items.find(item => item.text === text);
     if (existing) {
       Object.assign(existing, { text, category, updatedAt: now(), source });
       saveStore();
       refreshMemorySettings();
-      return { ok: true, content: t`已更新 ${memoryLine(existing, true)}`, display: t("已更新") };
+      return { ok: true, content: t`已更新 ${memoryLine(existing, true)}`, display: "已更新" };
     }
     if (items.length >= MAX_MEMORY_ITEMS)
       return {
         ok: false,
         content: t`记忆已有 ${MAX_MEMORY_ITEMS} 条，已满。请先用 recall 查看，用 forget 删去过时的，或用 replaces 把相近的合并成一条`,
-        display: t("记忆已满")
+        display: "记忆已满"
       };
     const item = addMemory(text, source, category);
     refreshMemorySettings();
-    return { ok: true, content: t`已记入 ${memoryLine(item, true)}`, display: t("已记入") };
+    return { ok: true, content: t`已记入 ${memoryLine(item, true)}`, display: "已记入" };
   }
 });
 
@@ -48,11 +48,11 @@ defineTool({
     const items = store.memory.items,
       index = items.findIndex(item => item.id === args.id);
     step.title = index >= 0 ? items[index].text : args.id;
-    if (index < 0) return { ok: false, content: t("没有这条记忆，id 以 recall 的结果为准"), display: t("未找到") };
+    if (index < 0) return { ok: false, content: t("没有这条记忆，id 以 recall 的结果为准"), display: "未找到" };
     items.splice(index, 1);
     saveStore();
     refreshMemorySettings();
-    return { ok: true, content: t("已删除"), display: t("已删除") };
+    return { ok: true, content: t("已删除"), display: "已删除" };
   }
 });
 
@@ -78,7 +78,7 @@ defineTool({
               .map(cat => t`${cat.name}（${cat.items.length} 条，最近 ${cat.updatedAt.slice(0, 10)}）：${memoryGist(cat.items[0].text)}`)
               .join("\n")
           : t("记忆里还没有条目"),
-        display: t`${categories.length} 类`
+        display: `${categories.length} 类`
       };
     }
     let hits = category ? store.memory.items.filter(item => memoryCategoryOf(item) === cleanMemoryCategory(category)) : store.memory.items;
@@ -92,7 +92,7 @@ defineTool({
         : category && !terms.length
           ? t`没有「${category}」这一类`
           : t("记忆里没有相关条目"),
-      display: t`${hits.length} 条`
+      display: `${hits.length} 条`
     };
   }
 });
@@ -109,7 +109,7 @@ defineTool({
   run(step, args, { conversation }) {
     const terms = keywordTerms(args.query);
     step.title = args.query.trim();
-    if (!terms.length) return { ok: false, content: t("query 不能为空"), display: t("缺少关键词") };
+    if (!terms.length) return { ok: false, content: t("query 不能为空"), display: "缺少关键词" };
     const limit = clampNumber(Number(args.limit), 8, 1, 20),
       sameRepo = c => isWork(conversation) && isWork(c) && c.workdir === conversation.workdir,
       hits = [];
@@ -144,7 +144,7 @@ defineTool({
             )
             .join("\n")
         : t("此前的对话里没有命中"),
-      display: t`${hits.length} 段`
+      display: `${hits.length} 段`
     };
   }
 });
@@ -160,10 +160,10 @@ defineTool({
   run(step, args, { conversation }) {
     const c = store.conversations.find(item => item.id === args.id);
     step.title = c ? c.title : args.id;
-    if (!c) return { ok: false, content: t("没有这段对话，id 以 search_conversations 的结果为准"), display: t("未找到") };
+    if (!c) return { ok: false, content: t("没有这段对话，id 以 search_conversations 的结果为准"), display: "未找到" };
     step.conversationId = c.id;
     step.date = c.updatedAt || c.createdAt;
-    if (c.id === conversation.id) return { ok: false, content: t("这是当前对话，无需读取"), display: t("当前对话") };
+    if (c.id === conversation.id) return { ok: false, content: t("这是当前对话，无需读取"), display: "当前对话" };
     const lines = c.messages.filter(m => (m.role === "user" || m.role === "assistant") && (m.content || m.attachments?.length));
     const offset = Math.max(1, Number(args.offset) || 1),
       limit = clampNumber(Number(args.limit), 40, 1, 100),
@@ -178,7 +178,7 @@ defineTool({
     return {
       ok: true,
       content: t`「${c.title}」${String(c.createdAt).slice(0, 10)}${isWork(c) ? t` · 执事：${c.workdir}` : ""}，共 ${lines.length} 条，此为第 ${offset}–${end} 条${end < lines.length ? t`；后面还有 ${lines.length - end} 条` : ""}\n\n${body || t("（这段对话没有正文）")}`,
-      display: t`${slice.length} 条`
+      display: `${slice.length} 条`
     };
   }
 });

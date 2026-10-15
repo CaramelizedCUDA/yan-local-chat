@@ -41,7 +41,7 @@ defineTool({
       return {
         ok: false,
         content: t`意没有改：\n${outcome.problems.map(p => `- ${p}`).join("\n")}\n改正后这一批重给。`,
-        display: t("未改")
+        display: "未改"
       };
     // 此刻的指纹：便宜的几种现取；探针不再跑一遍——刚标的用刚取的，其余用这一答开工时取的
     const next = outcome.next,

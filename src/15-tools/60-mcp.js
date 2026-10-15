@@ -159,7 +159,7 @@ const MCP_LAZY_TOOLS = [
         )
         .join("\n\n");
       step.output = trimOutput(text);
-      return { ok: true, content: text, display: t`${found.length} 件` };
+      return { ok: true, content: text, display: `${found.length} 件` };
     }
   },
   {
@@ -185,7 +185,7 @@ const MCP_LAZY_TOOLS = [
             problems: problems.join("；"),
             hint: schemaHint(spec.inputSchema)
           }),
-          display: t("参数不合要求")
+          display: "参数不合要求"
         };
       return runMcpTool(step, args.server, args.tool, inner, ctx);
     }
@@ -223,7 +223,7 @@ function mcpUnknown(server, tool) {
           .filter(name => mcp.servers[name].ok)
           .join("、") || t("无")
       }`;
-  return { ok: false, content: prompt("mcp.unknown", { server, tool, known }), display: t("未找到") };
+  return { ok: false, content: prompt("mcp.unknown", { server, tool, known }), display: "未找到" };
 }
 // 调一件：服务标了只读的径直跑；其余在「问而后行」里请示一声（配置 autoApprove 里列了的免问），另两档照跑
 /**
@@ -240,7 +240,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
   const ask = !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
   if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
-    return { ok: false, content: prompt("assistant.declined"), display: t("已跳过") };
+    return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
   }
   const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal).finally(
     stageWatch(tool, args)
@@ -253,7 +253,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
   return {
     ok: !data.result.isError,
     content: text,
-    display: data.result.isError ? t("出错") : images.length ? t`${images.length} 幅画面` : t`${text.length} 字`,
+    display: data.result.isError ? "出错" : images.length ? `${images.length} 幅画面` : `${text.length} 字`,
     ...(images.length ? { images } : {})
   };
 }

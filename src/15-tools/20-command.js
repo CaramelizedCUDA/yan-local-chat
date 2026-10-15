@@ -14,7 +14,7 @@ defineTool({
     const { conversation, signal } = ctx,
       { workdir, sandbox } = workScope(conversation);
     step.title = args.command.trim();
-    if (!step.title) return { ok: false, content: t("指令为空"), display: t("指令为空") };
+    if (!step.title) return { ok: false, content: t("指令为空"), display: "指令为空" };
     step.readOnly = isReadOnlyCommand(step.title);
     const background = args.background === true;
     if (background) step.background = true;
@@ -28,7 +28,7 @@ defineTool({
     if (policy === "ask" && (!step.readOnly || step.sandboxWhy)) {
       if (!(await askApproval(step, ctx))) {
         step.skipped = true;
-        return { ok: false, content: prompt("assistant.declined"), display: t("已跳过") };
+        return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
       }
       escalated = !!step.sandboxWhy;
     }
@@ -48,7 +48,7 @@ defineTool({
     );
     const seconds = (data.durationMs / 1000).toFixed(data.durationMs < 10000 ? 1 : 0),
       took = data.durationMs < 60000 ? `${seconds}s` : spanText(data.durationMs),
-      marks = `${escalated ? t(" · 出沙箱") : ""}${step.readOnly && policy === "ask" && !step.sandboxWhy ? t(" · 只读免确认") : ""}`;
+      marks = `${escalated ? " · 出沙箱" : ""}${step.readOnly && policy === "ask" && !step.sandboxWhy ? " · 只读免确认" : ""}`;
     step.output = commandOutput(data);
     if (background) {
       step.exitCode = data.exitCode ?? undefined;
@@ -60,14 +60,14 @@ defineTool({
       return {
         ok: data.running || data.exitCode === 0,
         content: `${data.running ? prompt("work.bgStarted", { id: data.id, seconds }) : t`后台指令 ${data.id} 已结束，退出码：${data.exitCode}`}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
-        display: t`后台 ${data.id} · ${data.running ? t("进行中") : t`已结束 · 退出码 ${data.exitCode}`}${marks}`
+        display: `后台 ${data.id} · ${data.running ? "进行中" : `已结束 · 退出码 ${data.exitCode}`}${marks}`
       };
     }
     step.exitCode = data.exitCode;
     return {
       ok: !data.timedOut && data.exitCode === 0,
       content: t`退出码：${data.exitCode}${data.timedOut ? t("（超时被终止）") : ""}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
-      display: `${data.timedOut ? t`超时终止 · ${took}` : data.exitCode === 0 ? t`完成 · ${took}` : t`退出码 ${data.exitCode} · ${took}`}${marks}`
+      display: `${data.timedOut ? `超时终止 · ${took}` : data.exitCode === 0 ? `完成 · ${took}` : `退出码 ${data.exitCode} · ${took}`}${marks}`
     };
   }
 });
@@ -95,7 +95,7 @@ defineTool({
     return {
       ok: true,
       content: t`${data.running ? t`${data.id} 还在进行` : t`${data.id} 已结束，退出码：${data.exitCode}`}\n--- 新的 stdout ---\n${data.stdout || t("(空)")}\n--- 新的 stderr ---\n${data.stderr || t("(空)")}`,
-      display: data.running ? t("进行中") : stop ? t("已结束") : t`已结束 · 退出码 ${data.exitCode}`
+      display: data.running ? "进行中" : stop ? "已结束" : `已结束 · 退出码 ${data.exitCode}`
     };
   }
 });
@@ -160,8 +160,8 @@ function settleBackground(step, state, exitCode, assistant) {
   if (exitCode !== undefined) step.exitCode = exitCode;
   step.result =
     state === "lost"
-      ? t`后台 ${step.bg.id} · 随桥接重启而止`
-      : t`后台 ${step.bg.id} · 已结束${exitCode !== undefined && exitCode !== null ? t` · 退出码 ${exitCode}` : ""}`;
+      ? `后台 ${step.bg.id} · 随桥接重启而止`
+      : `后台 ${step.bg.id} · 已结束${exitCode !== undefined && exitCode !== null ? ` · 退出码 ${exitCode}` : ""}`;
   const conversation = store.conversations.find(c => c.messages.includes(assistant));
   if (conversation) markDirty(conversation.id);
   saveStoreSoon();

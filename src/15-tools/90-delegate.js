@@ -103,7 +103,7 @@ function tellHelper(step, args, ctx) {
             .map(title => `「${title}」`)
             .join("、") || t("无")
       }),
-      display: t("没有这名帮手")
+      display: "没有这名帮手"
     });
   step.title = box?.title || past?.title || name;
   if (stop) {
@@ -111,9 +111,9 @@ function tellHelper(step, args, ctx) {
     if (!box) return gone();
     step.ref = box.step.id;
     box.controller.abort();
-    return { ok: true, content: prompt("delegate.stopping", { title: box.title }), display: t("已叫停") };
+    return { ok: true, content: prompt("delegate.stopping", { title: box.title }), display: "已叫停" };
   }
-  if (!text) return { ok: false, content: t("message 不能为空"), display: t("无话") };
+  if (!text) return { ok: false, content: t("message 不能为空"), display: "无话" };
   step.note = text;
   if (box) {
     // 正做着：话落在它自己的时间线里，进它的收件口——正说着就等到句尾再停这一轮递上，正跑工具就等结果交回时递
@@ -138,13 +138,13 @@ function tellHelper(step, args, ctx) {
     // 睡着等后台的：叫醒它读这句
     box.wake?.();
     refreshSteps(box.host);
-    return { ok: true, content: prompt("delegate.noted", { title: box.title }), display: t("已递") };
+    return { ok: true, content: prompt("delegate.noted", { title: box.title }), display: "已递" };
   }
   if (!past) return gone();
   // 已收工：续派。这一步自己成一趟，在当前的行迹里另起一枚签，点开看的是这一趟
   step.mode = "resume";
   launchHelper(step, { title: past.title, task: text }, ctx, past);
-  return { ok: true, background: true, content: prompt("delegate.resumed", { title: past.title }), display: t("后台进行中") };
+  return { ok: true, background: true, content: prompt("delegate.resumed", { title: past.title }), display: "后台进行中" };
 }
 // 差遣当即回一句「已开工」，主模型这一轮随即结束、照常往下走；帮手在后台做，做完回报寄给这段对话（见 mailReport）
 /**
@@ -158,9 +158,9 @@ function delegateInBackground(step, args, ctx) {
     String(args.title || "")
       .trim()
       .slice(0, 40) || task.slice(0, 24);
-  if (!task) return { ok: false, content: t("task 不能为空：请把背景、目标、边界与要回报的内容写全"), display: t("任务为空") };
+  if (!task) return { ok: false, content: t("task 不能为空：请把背景、目标、边界与要回报的内容写全"), display: "任务为空" };
   launchHelper(step, args, ctx);
-  return { ok: true, background: true, content: prompt("delegate.started", { title: step.title }), display: t("后台进行中") };
+  return { ok: true, background: true, content: prompt("delegate.started", { title: step.title }), display: "后台进行中" };
 }
 // 起一趟：差遣是头一趟，续派（past 是它上一趟）接着做。做完由它自己收尾这一步，回报寄给这段对话
 /**
@@ -191,8 +191,8 @@ function launchHelper(step, args, ctx, past = null) {
       error => {
         step.status = "error";
         // 用户停的（停止、刷新）：不回报，也就不再叫醒谁
-        if (error.name === "AbortError") return void (step.result = t("已止"));
-        step.result = friendlyError(String(error.message || error));
+        if (error.name === "AbortError") return void (step.result = "已止");
+        step.result = bridgeErrorText(String(error.message || error));
         mailReport(conversation, {
           report: prompt("delegate.failed", {
             title: step.title,
@@ -262,9 +262,9 @@ function subChangedPaths(step) {
 async function runDelegate(step, args, ctx, profile, past, progress) {
   const { conversation, assistant } = ctx;
   const task = String(args.task).trim();
-  if (!profile) return { ok: false, content: t("没有可用的模型"), display: t("无模型") };
+  if (!profile) return { ok: false, content: t("没有可用的模型"), display: "无模型" };
   const tools = toolDefinitions(conversation, { sub: true });
-  if (!tools) return { ok: false, content: t("此对话里没有可交给帮手的工具"), display: t("无工具可用") };
+  if (!tools) return { ok: false, content: t("此对话里没有可交给帮手的工具"), display: "无工具可用" };
   const id = `sub-${uid()}`;
   // 思考强度：主模型按活的难易给（省略即同主答），续派沿用这名帮手上一趟的；记下的是模型实际认的那一档，卡片上标出
   const asked = REASONING_ORDER.includes(args.effort) ? args.effort : past?.sub?.effort || conversation.reasoning || "",
@@ -392,11 +392,11 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
     if (left.length) crews.set(conversation.id, left);
     else crews.delete(conversation.id);
     // 停了、断了：没跑完的步骤收束；收工前才到、没来得及递的话标出来
-    if (sub.status !== "complete") settleStepList(sub.steps, sub.status === "stopped" ? t("已止") : t("已中断"));
+    if (sub.status !== "complete") settleStepList(sub.steps, sub.status === "stopped" ? "已止" : "已中断");
     for (const { note } of box.queue)
       if (note) {
         note.status = "error";
-        note.result = t("帮手已收工，未递到");
+        note.result = "帮手已收工，未递到";
       }
     sub.usage = tally.usageKnown ? tally.usage : null;
     sub.durationMs = Math.round(performance.now() - started);
@@ -423,7 +423,7 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
         changed: changedNote,
         partial: sub.report ? t`它最后说：${sub.report.slice(0, 4000)}` : ""
       }),
-      display: t`${display} · 未完成`
+      display: `${display} · 未完成`
     };
   if (!sub.report)
     return {
@@ -435,7 +435,7 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
         changed: changedNote,
         partial: ""
       }),
-      display: t`${display} · 无回报`
+      display: `${display} · 无回报`
     };
   return {
     ok: true,
@@ -456,7 +456,7 @@ function helperSummary(step, sub, overrides, ms) {
     stats = changeStats({ steps: [step] });
   return {
     changedNote: changed.length ? t`，改了 ${changed.length} 个文件：${changed.join("、")}（+${stats.added} −${stats.removed}）` : "",
-    display: t`${sub.steps.filter(s => !isFold(s)).length} 步${changed.length ? t` · 改 ${changed.length} 个文件` : ""}${overrides.folds ? t` · 撮要 ${overrides.folds} 回` : ""} · ${spanText(ms)}`
+    display: `${sub.steps.filter(s => !isFold(s)).length} 步${changed.length ? ` · 改 ${changed.length} 个文件` : ""}${overrides.folds ? ` · 撮要 ${overrides.folds} 回` : ""} · ${spanText(ms)}`
   };
 }
 // 睡下之前交的进展：此刻说的话，连同在等哪几条后台指令；主模型读了知道它还在、结束后会再回报
@@ -475,7 +475,7 @@ function waitingOutcome(step, sub, tally, overrides) {
       ids,
       report: clipForModel(sub.content.slice(tally.replyStart).trim(), 16000, { tail: true }) || t("（未留话）")
     }),
-    display: t`${display} · 等后台`
+    display: `${display} · 等后台`
   };
 }
 // 行迹里只留一枚签：差遣是并行的活，塞进线性的时间线会把后面的东西一直往下顶。
@@ -485,7 +485,7 @@ function waitingOutcome(step, sub, tally, overrides) {
 /** @param {Step} step @param {string} [kind] 签上的标签：差遣 / 续派 */
 function delegateStepHtml(step, kind = "差遣") {
   const { sub, status, meta } = delegateSubState(step);
-  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" title="${t(`展开帮手的行迹`)}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">${t(`遣`)}</span>${t(kind)}</span><span class="tool-title" title="${escapeHtml(sub?.task || step.title || "")}">${escapeHtml(step.title || "")}</span>${kind === "差遣" ? "" : `<span class="helper-fresh">${t(`已更新`)}</span>`}<span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || t("未完成")) : ""}">${escapeHtml(meta)}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" title="${t(`展开帮手的行迹`)}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">${t(`遣`)}</span>${t(kind)}</span><span class="tool-title" title="${escapeHtml(sub?.task || step.title || "")}">${escapeHtml(step.title || "")}</span>${kind === "差遣" ? "" : `<span class="helper-fresh">${t(`已更新`)}</span>`}<span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result) || t("未完成")) : ""}">${escapeHtml(meta)}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 行迹里那枚签的就地更新：只动头上的状态与标题。帮手自己的时间线与回报不在这儿，在面板里。返回真即已就地画好
 /** @param {Step} step */
@@ -522,7 +522,7 @@ function helperStepHtml(step) {
     status = step.status || "done",
     said = text.split("\n").find(Boolean) || "",
     fresh = kind === "传话" && status !== "error";
-  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"${step.ref ? ` data-ref="${escapeHtml(step.ref)}"` : ""}${step.noteId ? ` data-note="${escapeHtml(step.noteId)}"` : ""}><div class="tool-step-head" role="button" tabindex="0" title="${step.ref ? t("看这名帮手") : ""}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">${t(`遣`)}</span>${t(kind)}</span><span class="tool-title" title="${escapeHtml(text)}">${escapeHtml(name)}${said ? `<span class="helper-said">${escapeHtml(said.slice(0, 80))}</span>` : ""}</span>${fresh ? `<span class="helper-fresh">${t(`已更新`)}</span>` : ""}<span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "") : ""}">${status === "running" ? "" : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"${step.ref ? ` data-ref="${escapeHtml(step.ref)}"` : ""}${step.noteId ? ` data-note="${escapeHtml(step.noteId)}"` : ""}><div class="tool-step-head" role="button" tabindex="0" title="${step.ref ? t("看这名帮手") : ""}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">${t(`遣`)}</span>${t(kind)}</span><span class="tool-title" title="${escapeHtml(text)}">${escapeHtml(name)}${said ? `<span class="helper-said">${escapeHtml(said.slice(0, 80))}</span>` : ""}</span>${fresh ? `<span class="helper-fresh">${t(`已更新`)}</span>` : ""}<span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result) || "") : ""}">${status === "running" ? "" : escapeHtml(stepText(step.result) || "")}</span>${stepStateHtml(status)}</div></div>`;
 }
 /** @param {Step} step */
 function relayStepHtml(step) {
@@ -533,7 +533,7 @@ function relayStepHtml(step) {
       ? t`后台 ${relay.title} 已结束${relay.ok ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`}`
       : t`帮手「${relay.title}」${relay.ok ? t("回报") : t("未完成")}`,
     target = bg ? `data-relay-reveal="${escapeHtml(relay.step)}"` : `data-relay-step="${escapeHtml(relay.step)}"`;
-  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? t("回到挂它的那一步") : t("看这一趟的经过")}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? t("候") : t("遣")}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(step.result || t("已递"))}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? t("回到挂它的那一步") : t("看这一趟的经过")}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? t("候") : t("遣")}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result) || t("已递"))}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 签的种类变了（参数拟完才知道是续派还是传话）就整张换；续派的签与差遣一样就地更新
 /** @param {Step} step */

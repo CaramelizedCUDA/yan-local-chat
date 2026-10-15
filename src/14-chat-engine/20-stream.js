@@ -160,16 +160,16 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   } catch (error) {
     // 一个字没等到就又断了：模型没读到那几份回报，原样还回去等下一答
     if (!tally.opened) returnHeldReports(conversation, assistant, held);
-    settleSteps(assistant, error.name === "AbortError" ? t("已止") : t("已中断"));
+    settleSteps(assistant, error.name === "AbortError" ? "已止" : "已中断");
     if (error.name === "AbortError") assistant.status = "stopped";
     else if (assistant.content || assistant.reasoning || assistant.steps?.length) {
       assistant.status = "interrupted";
-      assistant.error = friendlyError(error.message);
+      assistant.error = bridgeErrorText(error.message);
       assistant.interruptedAt = now();
       noteBreak(assistant, assistant.error);
     } else {
       assistant.status = "error";
-      assistant.error = friendlyError(error.message);
+      assistant.error = bridgeErrorText(error.message);
     }
   } finally {
     if (gaugeTicker) clearInterval(gaugeTicker);

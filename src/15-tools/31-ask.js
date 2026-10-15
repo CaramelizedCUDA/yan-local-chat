@@ -30,7 +30,7 @@ defineTool({
       return {
         ok: false,
         content: t`没能从参数里读出问题。questions 是一个数组，每项至少要有 question（完整的问句）与 options（2–4 个字符串选项），要多选就给 multi: true。例如：{"questions":[{"question":"用哪种风格？","header":"风格","options":["清简 — 留白多","繁复 — 信息密"],"multi":false}]}\n收到了 ${args.questions.length} 项，但没有一项带得出 question。`,
-        display: t("表单为空")
+        display: "表单为空"
       };
     // 一个选项都没有的题只能靠自填，多半是模型漏了 options：补一句提醒，但表单照出，不白费这一轮
     const missing = questions.filter(q => q.options.length < 2).length;
@@ -42,14 +42,14 @@ defineTool({
     const answers = await askApproval(step, ctx);
     if (!Array.isArray(answers)) {
       step.skipped = true;
-      return { ok: false, content: t("用户没有作答。请按你的最佳判断继续，并在正文里说明你做了什么假设。"), display: t("未作答") };
+      return { ok: false, content: t("用户没有作答。请按你的最佳判断继续，并在正文里说明你做了什么假设。"), display: "未作答" };
     }
     step.answers = answers;
-    step.note = questions.map((q, i) => `${q.header || q.question}：${answers[i] || t("（未答）")}`).join("；");
+    step.note = questions.map((q, i) => `${q.header || q.question}：${answers[i] || "（未答）"}`).join("；");
     return {
       ok: true,
       content: `${questions.map((q, i) => `${q.question}\n→ ${answers[i] || t("（未答）")}`).join("\n\n")}${missing ? t`\n\n（有 ${missing} 题没给够选项，只能由用户自填；下次每题给 2–4 个选项。）` : ""}`,
-      display: t("已作答")
+      display: "已作答"
     };
   }
 });
@@ -75,10 +75,10 @@ function askStepHtml(step) {
       status === "pending"
         ? t("待作答")
         : status === "skipped"
-          ? escapeHtml(step.result || t("未作答"))
+          ? escapeHtml(stepText(step.result) || t("未作答"))
           : status === "error"
-            ? escapeHtml(step.result || t("失败"))
-            : escapeHtml(step.result || t("已作答"));
+            ? escapeHtml(stepText(step.result) || t("失败"))
+            : escapeHtml(stepText(step.result) || t("已作答"));
   const body =
     status === "done" && step.answers
       ? `<div class="tool-note">${escapeHtml(step.note || "")}</div>`

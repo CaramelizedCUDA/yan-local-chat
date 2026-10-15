@@ -18,7 +18,7 @@ defineTool({
         const status = String(item.status || "").toLowerCase();
         return { text: String(item.text).trim().slice(0, 200), status: PLAN_STATUSES.has(status) ? status : "pending" };
       });
-    if (!items.length) return { ok: false, content: t("items 为空：每项给 text 与 status"), display: t("清单为空") };
+    if (!items.length) return { ok: false, content: t("items 为空：每项给 text 与 status"), display: "清单为空" };
     step.plan = items;
     const done = items.filter(item => item.status === "done").length,
       doing = items.find(item => item.status === "doing");
@@ -59,7 +59,7 @@ function planStepHtml(step) {
     .join("");
   const meta =
     status === "error"
-      ? escapeHtml(step.result || t("失败"))
+      ? escapeHtml(stepText(step.result) || t("失败"))
       : `<span class="plan-row" role="img" aria-label="${done}/${items.length}">${items.map(item => planMarkHtml(item.status)).join("")}</span>`;
   // 做完不再挂 ✓：那一排记号已说了进度
   return `<div class="tool-step tool-step-plan" data-tool="update_plan" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"><span class="tool-label">${t(`计划`)}</span><span class="tool-title" title="${escapeHtml(step.title || "")}">${escapeHtml(step.title || "")}</span><span class="tool-meta">${meta}</span>${status === "done" ? "" : stepStateHtml(status)}</div>${items.length ? `<ol class="plan-list">${rows}</ol>` : ""}</div>`;

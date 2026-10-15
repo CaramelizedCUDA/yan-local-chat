@@ -39,7 +39,7 @@ function foldStepHtml(step) {
     status === "running"
       ? t("撮要中")
       : status === "error"
-        ? escapeHtml(step.result || t("未撮成"))
+        ? escapeHtml(stepText(step.result) || t("未撮成"))
         : fold.from && fold.to
           ? t`${roughChars(fold.from)} → ${roughChars(fold.to)}字`
           : "";

@@ -25,7 +25,7 @@ defineTool({
     return {
       ok: true,
       content: step.results.length ? doubt + JSON.stringify(step.results) : t("未找到结果"),
-      display: t`${step.results.length} 条结果`
+      display: `${step.results.length} 条结果`
     };
   }
 });
@@ -66,7 +66,7 @@ defineTool({
     return {
       ok: true,
       content: t`标题：${data.title}\n地址：${data.url}\n\n${text}${notes.length ? `\n\n（${notes.join("；")}）` : ""}`,
-      display: t`${offset ? t`自 ${offset + 1} 字 · ` : ""}${text.length} 字${end < total ? t(" · 截") : ""}`
+      display: `${offset ? `自 ${offset + 1} 字 · ` : ""}${text.length} 字${end < total ? " · 截" : ""}`
     };
   }
 });
@@ -92,7 +92,7 @@ defineTool({
     return {
       ok: data.status < 400,
       content: t`HTTP ${data.status} ${data.statusText}${data.url !== url ? t`（跳转到 ${data.url}）` : ""}\n--- 响应头 ---\n${headers}\n--- 正文${data.truncated ? t("（已截断）") : ""} ---\n${body}`,
-      display: `${data.status} · ${data.textual ? t`${data.text.length} 字` : formatFileSize(data.bytes)}`
+      display: `${data.status} · ${data.textual ? `${data.text.length} 字` : formatFileSize(data.bytes)}`
     };
   }
 });

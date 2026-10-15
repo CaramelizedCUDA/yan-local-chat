@@ -298,9 +298,24 @@ async function syncConfigWithDisk() {
       localStorage.setItem(STORE_ROOT_KEY, info.root || "");
     } catch {}
     if (strayed) toast(t`存储落在了 ${pathTail(info.root || "")}，上回用的是 ${met}；在设置 → 通用的「存储位置」填回去即可`, 8000);
+    followLanguage();
   } catch (error) {
     toast(t`配置未能与存储目录对齐：${String(error.message || error).slice(0, 60)}`);
   }
+}
+// 开页时对齐来的配置换了界面语言（这台浏览器头一回打开、存储里记着英文，或别处改过）：译文表只在开页时载得进来，
+// 存下即重新载入一回。只在开页这一次跟：切回页面时再跟，就把正在作答的打断了。同一语言一个会话只重载一回，不会来回转
+function followLanguage() {
+  const want = store.settings.language;
+  if (!want || want === LANG) return;
+  try {
+    if (sessionStorage.getItem("yan-language-reload") === want) return;
+    sessionStorage.setItem("yan-language-reload", want);
+  } catch {
+    return;
+  }
+  saveStore();
+  location.reload();
 }
 // 从后台切回来：另一个浏览器可能改过配置，与磁盘上的对一对（这边有没写下去的改动也不丢，见 reconcileConfig）
 async function refreshConfigFromDisk() {

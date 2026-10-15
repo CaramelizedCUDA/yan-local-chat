@@ -6,7 +6,7 @@ function toolStackLabel() {
 // 撮要不算一步：它是言替模型删繁就简，另记「撮要 n 回」
 const isFold = step => step.name === "fold";
 function toolStackMeta(all = []) {
-  if (all.some(step => step.status === "pending")) return AWAITING;
+  if (all.some(step => step.status === "pending")) return t(AWAITING);
   const steps = all.filter(step => !isFold(step)),
     folds = all.filter(step => isFold(step) && step.status === "done").length,
     running = all.some(step => step.status === "running"),

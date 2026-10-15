@@ -125,39 +125,39 @@ function presetAllows(preset, tool) {
  */
 async function runTool(step, ctx) {
   const tool = TOOLS.get(step.name);
-  if (!tool?.run) return { ok: false, content: t`未知工具 ${step.name}`, display: t("未知工具") };
+  if (!tool?.run) return { ok: false, content: t`未知工具 ${step.name}`, display: "未知工具" };
   // 没交给它的工具，它也可能照着名字调（旁注只查不改、预设只挑了几组、帮手拿不到只给主模型的）：给哪些就只认哪些
   if (ctx.offered && !ctx.offered.has(step.name))
     return step.scope && tool.mainOnly
-      ? { ok: false, content: t`${step.name} 只有主模型可用；需要它做的事写进回报里，由主模型决定。`, display: t("帮手无权") }
-      : { ok: false, content: t`此处没有提供 ${step.name}，只能用这一轮给出的工具。`, display: t("此处未提供") };
+      ? { ok: false, content: t`${step.name} 只有主模型可用；需要它做的事写进回报里，由主模型决定。`, display: "帮手无权" }
+      : { ok: false, content: t`此处没有提供 ${step.name}，只能用这一轮给出的工具。`, display: "此处未提供" };
   const parsed = parseToolArguments(step.arguments);
   if (!parsed.ok)
     return {
       ok: false,
       content: t`调用 ${step.name} 的参数不是合法 JSON（${parsed.error}）。arguments 必须是一个 JSON 对象，不要加代码围栏、注释或多余的逗号，也不要把它再编码成字符串；内容过长时先精简再发。这件工具收的参数：${toolSchemaHint(step.name)}\n\n收到的原文（前 300 字）：${parsed.raw.slice(0, 300)}`,
-      display: t("参数解析失败")
+      display: "参数解析失败"
     };
   // 截断的参数救回来也不能拿去写：内容已经不全，写下去就是把文件写坏
   if (parsed.truncated && tool.sideEffect)
     return {
       ok: false,
       content: t`调用 ${step.name} 的参数 JSON 不完整（多半是输出被最大长度截断），为安全起见没有执行。请把内容精简或分成几次写入（大文件先 write_file 写开头，再用 edit_file 追加），确保 arguments 是完整的 JSON。这件工具收的参数：${toolSchemaHint(step.name)}\n\n收到的原文（末尾 200 字）：…${step.arguments.slice(-200)}`,
-      display: t("参数不完整")
+      display: "参数不完整"
     };
   const { args, problems } = normalizeToolArguments(step.name, parsed.args);
   if (problems.length)
     return {
       ok: false,
       content: t`调用 ${step.name} 的参数不合要求：${problems.join("；")}。这件工具收的参数：${toolSchemaHint(step.name)}；实际收到的键：${Object.keys(parsed.args).join("、") || t("（无）")}${parsed.truncated ? t("\n（参数 JSON 不完整，可能是输出被截断）") : ""}\n\n收到的原文（前 300 字）：${step.arguments.slice(0, 300)}`,
-      display: t("参数不合要求")
+      display: "参数不合要求"
     };
   try {
     return await tool.run(step, args, ctx);
   } catch (error) {
     if (error.name === "AbortError") throw error;
     const message = String(error.message || error);
-    return { ok: false, content: t`工具执行失败：${message}`, display: friendlyError(message).slice(0, 60) };
+    return { ok: false, content: t`工具执行失败：${message}`, display: bridgeErrorText(message).slice(0, 60) };
   }
 }
 // 同一答里同样的参数不必再跑一遍：键是工具名加规范化后的参数，怎么规范由各工具的 cache 定
@@ -212,7 +212,7 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
       step.cached = true;
       outcome = structuredClone(cached.outcome);
       outcome.content = t`（与本答先前一次同样的调用，结果照搬）\n${outcome.content}`;
-      outcome.display = t`复用 · ${outcome.display}`;
+      outcome.display = `复用 · ${outcome.display}`;
     } else {
       outcome = await runTool(step, ctx);
       // 动过外头的（写了文件、跑了指令、调了接口）：先前查到的可能已经不是那样，一概作废

@@ -42,12 +42,12 @@ function plainStepHtml(step, title) {
       : step.url
         ? `<div class="tool-note">${link(step.url, escapeHtml(safeWebUrl(step.url) || step.url))}</div>`
         : step.note
-          ? `<div class="tool-note">${escapeHtml(step.note)}</div>`
+          ? `<div class="tool-note">${escapeHtml(stepText(step.note))}</div>`
           : "");
   const status = step.status || "done",
     foldable = !!body,
     folded = foldable && (step.expanded === undefined ? true : !step.expanded);
-  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? t("展开") : t("收起")}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || t("工具执行失败")) : ""}">${status === "running" ? t("查阅中") : status === "error" ? escapeHtml(step.result || t("失败")) : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div>${stepShotsHtml(step)}${body}</div>`;
+  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? t("展开") : t("收起")}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result) || t("工具执行失败")) : ""}">${status === "running" ? t("查阅中") : status === "error" ? escapeHtml(stepText(step.result) || t("失败")) : escapeHtml(stepText(step.result) || "")}</span>${stepStateHtml(status)}</div>${stepShotsHtml(step)}${body}</div>`;
 }
 // 工具交回的画面（游目截图之类）：折起时也露着——画面就是这一步的结果；点开进图片查看器
 /** @param {Step} step */
@@ -78,7 +78,7 @@ function delegateSubState(step) {
             (sub?.startedAt && spentText(Date.now() - sub.startedAt)) || (steps.length ? t("进行中") : ""),
             sub?.waiting ? t("等后台") : ""
           ]
-        : [String(step.result || "")]),
+        : [stepText(step.result)]),
       sub?.effort ? t`思考${reasoningLabel(sub.effort)}` : ""
     ]
       .filter(Boolean)
@@ -124,7 +124,7 @@ function delegateDoing(step) {
     steps = sub?.steps || [],
     current = [...steps].reverse().find(s => s.status === "running" || s.status === "pending") || steps.at(-1);
   if (current && (current.status === "running" || current.status === "pending"))
-    return `${current.status === "pending" ? AWAITING : t("正在")} ${toolLabel(current.name)} ${String(current.title || "").slice(0, 60)}`.trim();
+    return `${current.status === "pending" ? t(AWAITING) : t("正在")} ${toolLabel(current.name)} ${String(current.title || "").slice(0, 60)}`.trim();
   // 睡着等自己挂的后台指令
   if (sub?.waiting)
     return t`等后台 ${helperWaits(sub)
@@ -142,7 +142,7 @@ function stepStateHtml(status) {
   return status === "running"
     ? `<span class="tool-state spinning" aria-label="${t(`进行中`)}"></span>`
     : status === "pending"
-      ? `<span class="tool-state pending" aria-label="${AWAITING}">?</span>`
+      ? `<span class="tool-state pending" aria-label="${t(AWAITING)}">?</span>`
       : status === "skipped"
         ? `<span class="tool-state skipped" aria-label="${t(`已跳过`)}">–</span>`
         : status === "error"
@@ -164,7 +164,7 @@ function clampLines(text, full) {
 function workStepHtml(step, title) {
   const status = step.status || "done",
     command = step.name === "run_command";
-  const meta = status === "running" ? "" : status === "pending" ? AWAITING : escapeHtml(step.result || step.note || "");
+  const meta = status === "running" ? "" : status === "pending" ? t(AWAITING) : escapeHtml(stepText(step.result || step.note));
   let body = "",
     more = "";
   // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头
@@ -180,7 +180,7 @@ function workStepHtml(step, title) {
     body = `<pre class="tool-output">${escapeHtml(out.text)}</pre>`;
     if (out.clipped) more = t`展开全部 · ${out.total} 行`;
     else if (step.full && out.total > STEP_SHOW_LINES) more = t`只看前 ${STEP_SHOW_LINES} 行`;
-  } else if (step.note && !command) body = `<div class="tool-note">${escapeHtml(step.note)}</div>`;
+  } else if (step.note && !command) body = `<div class="tool-note">${escapeHtml(stepText(step.note))}</div>`;
   if (more) body += `<button type="button" class="tool-more" data-step-more>${more}</button>`;
   const foldable = !!body && status !== "pending",
     openByDefault = status !== "error" && (!!step.diff || step.name === "list_files"),

@@ -294,10 +294,10 @@ function finishFault(reason) {
   if (!reason || NORMAL_FINISH.has(reason)) return null;
   const why =
     reason === "length"
-      ? t("模型达到输出长度上限，答复尚未写完")
+      ? "模型达到输出长度上限，答复尚未写完"
       : REFUSED_FINISH.test(reason)
-        ? t`接口拦下了这一轮（finish_reason: ${reason}）`
-        : t`接口异常收尾（finish_reason: ${reason}），答复尚未写完`;
+        ? `接口拦下了这一轮（finish_reason: ${reason}）`
+        : `接口异常收尾（finish_reason: ${reason}），答复尚未写完`;
   return Object.assign(Error(why), { finish: reason });
 }
 /** @param {Message} assistant 主消息、帮手，或拟题 / 压缩用的临时消息 */
@@ -400,7 +400,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reader.cancel().catch(() => {});
-        reject(Error(t("接口静默超过五分钟，连接已中断")));
+        reject(Error("接口静默超过五分钟，连接已中断"));
       }, SSE_IDLE_MS);
       reader
         .read()
@@ -411,7 +411,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   try {
     await pump();
     flushThink();
-    if (!ended) throw Error(t("接口未发送结束标志，连接已中断"));
+    if (!ended) throw Error("接口未发送结束标志，连接已中断");
     const fault = finishFault(finishReason);
     if (fault) throw fault;
   } catch (error) {
@@ -446,7 +446,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
           const json = JSON.parse(data);
           // 流里夹着的报错（限流、上游掐线、桥接补的「连接中断」）：不能当没看见让半截话冒充写完了——按中断处理，已写的留着、可续写
           if (json.error && !json.choices)
-            failure = (typeof json.error === "string" ? json.error : json.error?.message) || t("接口在作答途中返回了错误");
+            failure = (typeof json.error === "string" ? json.error : json.error?.message) || "接口在作答途中返回了错误";
           const delta = json.choices?.[0]?.delta;
           if (json.choices?.[0]?.finish_reason) {
             finishReason = json.choices[0].finish_reason;
@@ -504,8 +504,12 @@ function normalizeContent(content) {
 function extractContent(data) {
   return normalizeContent(data?.choices?.[0]?.message?.content);
 }
-function friendlyError(message) {
+// 报错的原话（中文）：存进消息、步骤的用它，显示时再 tr；直接显示的用 friendlyError
+function bridgeErrorText(message) {
   if (/Failed to fetch|NetworkError|Load failed/i.test(message))
-    return t("本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。");
-  return tr(String(message).slice(0, 500));
+    return "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
+  return String(message).slice(0, 500);
+}
+function friendlyError(message) {
+  return tr(bridgeErrorText(message));
 }

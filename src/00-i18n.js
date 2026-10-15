@@ -25,26 +25,49 @@ function t(text, ...values) {
 }
 // 现成的一句话（多是桥接回的报错，在桥接那头已拼好）：整句查表，查不到再按带 {0} 的句式认。
 // 报错原文在逻辑里照旧是中文（有的比对靠它），只在显示的出口换：提示条、对话里的报错、设置里的状态行
-/** @type {[RegExp, string][] | null} */
+// 存进数据的字（步骤上的摘要、消息上的报错）一律存中文原文，画出来时过 tr：换了语言，旧记录跟着换
+/** @type {{ re: RegExp, en: string, han: number }[] | null} */
 let patterns = null;
-/** @param {string} text */
-function tr(text) {
+/**
+ * @param {string} text
+ * @param {boolean} [loose] 来路明确的短句（步骤摘要）：句式里只有一两个汉字的也认；平常只认至少三个汉字的——
+ *   「{0}问{1}」这种几乎全是变量的，拿去套来路不明的话，什么都对得上
+ */
+function tr(text, loose = false) {
   text = String(text ?? "");
   if (!I18N || !text) return text;
   if (I18N[text]) return I18N[text];
-  // 只认字面够长的句式（至少三个汉字）：「{0}问{1}」这种几乎全是变量的，什么话都对得上
+  // 字面长的句式在前：几条都对得上时取最具体的那条
   patterns ||= Object.keys(I18N)
-    .filter(key => /\{\d+\}/.test(key) && (key.replace(/\{\d+\}/g, "").match(/[一-鿿]/g) || []).length >= 3)
-    .map(key => [
-      new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\{(\d+)\\\}/g, (_, i) => `(?<g${i}>[\\s\\S]*?)`)}$`),
-      I18N[key]
-    ]);
-  for (const [re, en] of patterns) {
+    .filter(key => /\{\d+\}/.test(key))
+    .map(key => ({
+      re: new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\{(\d+)\\\}/g, (_, i) => `(?<g${i}>[\\s\\S]*?)`)}$`),
+      en: I18N[key],
+      han: (key.replace(/\{\d+\}/g, "").match(/[一-鿿]/g) || []).length
+    }))
+    .filter(p => p.han)
+    .sort((a, b) => b.han - a.han);
+  for (const { re, en, han } of patterns) {
+    if (han < 3 && !loose) break;
     const m = text.match(re);
-    if (m) return fillIn(en, i => tr(m.groups?.[`g${i}`] ?? ""));
+    if (m && !/[一-鿿]/.test(en)) {
+      const out = fillIn(en, i => tr(m.groups?.[`g${i}`] ?? "", loose));
+      if (!loose || !/[一-鿿]/.test(out)) return out;
+    }
+  }
+  // 步骤摘要多是「 · 」串起来的几段（行数 · 大小 · 覆盖）：整句对不上就逐段换，单段也认表里带「 · 」头的那条
+  if (loose && text.includes(" · ")) {
+    const parts = text.split(" · ").map(part => {
+      const hit = I18N[part] || I18N[` · ${part}`]?.replace(/^ · /, "");
+      return hit || tr(part, true);
+    });
+    return parts.join(" · ");
   }
   return text;
 }
+// 步骤上存的摘要（程序自己拼的短句，存的是中文原文）画出来时用它；模型、用户写的自由文字不过这个
+/** @param {string | undefined} text */
+const stepText = text => tr(text, true);
 // index.html 里写死的字：开页时照表换一遍（文字与 title、placeholder、aria-label 几样属性）
 function translateStatic(root = document.body) {
   if (!I18N) return;

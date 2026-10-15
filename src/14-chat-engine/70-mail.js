@@ -79,7 +79,7 @@ function sleepUntilMail(box) {
   return new Promise((resolve, reject) => {
     const stop = () => {
       box.wake = null;
-      reject(Object.assign(Error(t("已停止")), { name: "AbortError" }));
+      reject(Object.assign(Error("已停止"), { name: "AbortError" }));
     };
     if (signal.aborted) return stop();
     signal.addEventListener("abort", stop, { once: true });

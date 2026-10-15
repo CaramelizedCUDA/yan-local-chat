@@ -15,7 +15,7 @@ defineTool({
         .find(line => line.trim())
         ?.trim()
         .slice(0, 80) || "";
-    if (!code) return { ok: false, content: t("code 为空"), display: t("代码为空") };
+    if (!code) return { ok: false, content: t("code 为空"), display: "代码为空" };
     const timeout = clampNumber(Number(args.timeout) * 1000, 10000, 1000, 60000);
     const result = await computeInSandbox(code, timeout, signal);
     const parts = [];
@@ -32,7 +32,7 @@ defineTool({
             60000
           )
         : t`运行出错：${result.error || t("未知错误")}${result.logs ? t`\n出错前的输出：\n${result.logs}` : ""}`,
-      display: result.ok ? (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`) : t("出错")
+      display: result.ok ? (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`) : "出错"
     };
   }
 });

@@ -578,11 +578,11 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     assistant.status = "complete";
     thread.updatedAt = now();
   } catch (error) {
-    settleSteps(assistant, error.name === "AbortError" ? t("已止") : t("已中断"));
+    settleSteps(assistant, error.name === "AbortError" ? "已止" : "已中断");
     if (error.name === "AbortError") assistant.status = "stopped";
     else {
       assistant.status = "error";
-      assistant.error = friendlyError(error.message);
+      assistant.error = bridgeErrorText(error.message);
     }
   } finally {
     // 停止或中断也结算：接口接下了请求就花了墨；查阅了几轮的，各轮用量相加

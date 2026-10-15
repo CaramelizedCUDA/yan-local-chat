@@ -14,6 +14,14 @@ test("中文界面：t 与 tr 原样返回", () => {
   assert.equal(tr("连不上上游接口：ECONNREFUSED"), "连不上上游接口：ECONNREFUSED");
 });
 
+test("文字解码：空文件、单字节、UTF-16 都解得开", () => {
+  const { decodeTextBytes } = load(["decodeTextBytes"]);
+  assert.equal(decodeTextBytes(new Uint8Array(0)), "");
+  assert.equal(decodeTextBytes(new Uint8Array([0x61])), "a");
+  assert.equal(decodeTextBytes(new Uint8Array([0xff, 0xfe, 0x61, 0x00])), "a");
+  assert.equal(decodeTextBytes(new Uint8Array([0x61, 0x62, 0x63]).subarray(2)), "c");
+});
+
 test("英文表：译文里的变量都出自原文，原文的变量译文都用上了", () => {
   const indices = text => new Set([...text.matchAll(/\{(\d+)(?:\|[^}]*)?\}/g)].map(m => m[1]));
   for (const [key, value] of Object.entries(EN)) {
@@ -43,6 +51,12 @@ test("英文界面：整句、带变量的句子、单复数、桥接的报错",
     assert.equal(tr("搜索引擎暂时不可用：连接超时"), "Search engine unavailable: Connection timed out");
     // 几乎全是变量的句式不拿来套别的话
     assert.equal(tr("这一问没有结果"), "这一问没有结果");
+    // 步骤上存的是中文原文，画出来时照语言换；嵌着的几段也各自换
+    const { stepText } = load(["stepText"]);
+    assert.equal(stepText("已写入"), "Written");
+    assert.equal(stepText("12 行 · 3 KB · 覆盖"), "12 lines · 3 KB · overwrite");
+    assert.equal(stepText("后台 b1 · 已结束 · 退出码 0 · 出沙箱"), "Background b1 · finished · exit code 0 · outside sandbox");
+    assert.equal(stepText(undefined), "");
   } finally {
     delete globalThis.YAN_EN;
   }
