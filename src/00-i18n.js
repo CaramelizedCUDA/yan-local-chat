@@ -47,12 +47,15 @@ function tr(text, loose = false) {
     }))
     .filter(p => p.han)
     .sort((a, b) => b.han - a.han);
+  // 宽认时换出来还带汉字的先放着、接着找更贴的一条：可能是套错了句式，也可能变量本就是中文（查的关键词、文件名）——都找不到更好的就用它
+  let partial = "";
   for (const { re, en, han } of patterns) {
     if (han < 3 && !loose) break;
     const m = text.match(re);
     if (m && !/[一-鿿]/.test(en)) {
       const out = fillIn(en, i => tr(m.groups?.[`g${i}`] ?? "", loose));
       if (!loose || !/[一-鿿]/.test(out)) return out;
+      partial ||= out;
     }
   }
   // 步骤摘要多是「 · 」串起来的几段（行数 · 大小 · 覆盖）：整句对不上就逐段换，单段也认表里带「 · 」头的那条
@@ -61,9 +64,10 @@ function tr(text, loose = false) {
       const hit = I18N[part] || I18N[` · ${part}`]?.replace(/^ · /, "");
       return hit || tr(part, true);
     });
-    return parts.join(" · ");
+    const joined = parts.join(" · ");
+    if (!partial || !/[一-鿿]/.test(joined)) return joined;
   }
-  return text;
+  return partial || text;
 }
 // 步骤上存的摘要（程序自己拼的短句，存的是中文原文）画出来时用它；模型、用户写的自由文字不过这个
 /** @param {string | undefined} text */

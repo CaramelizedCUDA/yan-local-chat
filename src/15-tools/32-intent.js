@@ -56,7 +56,8 @@ defineTool({
         : "",
       tidied = outcome.tidied.length ? t`\n\n名字照规矩改写了：${outcome.tidied.map(([said, id]) => `「${said}」→ ${id}`).join("、")}` : "";
     keepIntent(conversation, next, now);
-    step.title = t`已立 ${standing} / ${live} · ${outcome.ops.map(intentOpId).join("、")}`.slice(0, 80);
+    // 存中文原文，画出来时照语言换（见 intentStepHtml）
+    step.title = `已立 ${standing} / ${live} · ${outcome.ops.map(intentOpId).join("、")}`.slice(0, 80);
     return { ok: true, content: `${intentText(next, now, { path: INTENT_FILE })}${unread}${tidied}`, display: `${standing}/${live}` };
   }
 });
@@ -75,5 +76,5 @@ defineTool({
 function intentStepHtml(step, name) {
   const status = step.status || "done",
     open = status === "done";
-  return `<div class="tool-step tool-step-intent" data-tool="${name}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${open ? t` data-intent-open role="button" tabindex="0" title="打开意"` : ""}><span class="tool-label">${t(`意`)}</span><span class="tool-title">${escapeHtml(step.title || "")}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "") : ""}">${escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-intent" data-tool="${name}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${open ? t` data-intent-open role="button" tabindex="0" title="打开意"` : ""}><span class="tool-label">${t(`意`)}</span><span class="tool-title">${escapeHtml(stepText(step.title))}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result)) : ""}">${escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;
 }

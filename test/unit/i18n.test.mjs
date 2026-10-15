@@ -57,6 +57,9 @@ test("英文界面：整句、带变量的句子、单复数、桥接的报错",
     assert.equal(stepText("12 行 · 3 KB · 覆盖"), "12 lines · 3 KB · overwrite");
     assert.equal(stepText("后台 b1 · 已结束 · 退出码 0 · 出沙箱"), "Background b1 · finished · exit code 0 · outside sandbox");
     assert.equal(stepText(undefined), "");
+    // 变量本就是中文（查的关键词）：句式照换，关键词原样留着
+    assert.equal(stepText("关键词「中文」"), 'Query "中文"');
+    assert.equal(stepText("关键词「中文」 · 已写入"), 'Query "中文" · Written');
   } finally {
     delete globalThis.YAN_EN;
   }

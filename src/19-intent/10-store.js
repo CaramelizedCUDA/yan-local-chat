@@ -102,8 +102,9 @@ async function intentGate(conversation, assistant, watch, signal) {
     name: "intent_gate",
     arguments: "{}",
     status: "done",
-    title: t("收尾前对照意"),
-    result: t`已立 ${standing} / ${live}`,
+    // 存中文原文，画出来时照语言换
+    title: "收尾前对照意",
+    result: `已立 ${standing} / ${live}`,
     at: String(assistant.content || "").length,
     rat: String(assistant.reasoning || "").length,
     report
