@@ -596,7 +596,7 @@ button:focus:not(:focus-visible) {
     border: 0;
   }
   .settings-nav {
-    width: 118px;
+    width: 136px;
   }
   .settings-content {
     padding: 28px 20px;
@@ -609,11 +609,22 @@ button:focus:not(:focus-visible) {
   .field {
     width: 100%;
   }
+  .field-num {
+    width: 72px;
+  }
+  /* 窄屏下分段钮折行、栅格不被最宽的一格撑开：英文的钮字长，一排放不下 */
+  .segmented {
+    flex-wrap: wrap;
+  }
   .profile-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .profile-full {
     grid-column: auto;
+  }
+  .guide-gist {
+    flex: 0 1 auto;
+    min-width: 0;
   }
   .user-bubble,
   .message-editor {
