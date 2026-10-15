@@ -360,14 +360,21 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       if (!REFUSED_FINISH.test(error.finish || "")) error.midStream = true;
       throw error;
     });
-  const data = await response.json(),
-    message = data?.choices?.[0]?.message;
+  const finish = takeWholeReply(await response.json(), sink);
+  note();
+  const fault = finishFault(finish);
+  if (fault && !cutAtToolCall(fault, target)) throw Object.assign(fault, { midStream: !REFUSED_FINISH.test(fault.finish) });
+}
+// 整份回来的答复（没走流式）读进 target，与 readSse 落下的一样：正文、思考、用量、工具调用；回的是结束原因
+/** @param {Message} target */
+function takeWholeReply(data, target) {
+  const message = data?.choices?.[0]?.message;
   // 回 200 却是一份报错（有的中转站这样回）：把它说的原因交出去，不报成「模型未返回正文」
   if (data?.error && !data.choices) throw Error((typeof data.error === "string" ? data.error : data.error.message) || "接口返回了错误");
   target.content += extractContent(data);
   // 与流式一致：有的接口把思考放在 reasoning 而不是 reasoning_content
   target.reasoning = normalizeContent(message?.reasoning_content ?? message?.reasoning) || target.reasoning;
-  splitInlineThink(sink);
+  splitInlineThink(target);
   target.usage = data.usage ? withCached(data.usage) : null;
   if (Array.isArray(message?.tool_calls))
     target.toolCalls = message.tool_calls.map(call => ({
@@ -375,9 +382,18 @@ async function readReply(profile, history, signal, overrides, target, retried = 
       name: call.function?.name || "",
       arguments: call.function?.arguments || ""
     }));
-  note();
-  const fault = finishFault(data?.choices?.[0]?.finish_reason);
-  if (fault && !cutAtToolCall(fault, target)) throw Object.assign(fault, { midStream: !REFUSED_FINISH.test(fault.finish) });
+  return data?.choices?.[0]?.finish_reason;
+}
+// 一问一答的小请求（拟题、撮要）：答复读进一条不进对话的消息，流式、整份都认；花的墨记在模型上，接口没报用量的按字估
+/** @param {Profile} profile @param {string} ask 发出去的那一问 @returns {Promise<Message>} */
+async function readAside(response, profile, ask) {
+  /** @type {Message} */
+  const temp = { id: `aside-${uid()}`, role: "assistant", content: "", timestamp: now() };
+  if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, temp);
+  else takeWholeReply(await response.json(), temp);
+  spendTokens(profile, Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]));
+  renderQuota();
+  return temp;
 }
 // 写到输出上限、截在工具调用中间：拟好的调用照常交下去——参数残缺的由登记表回一句「太长了，分几次写」（见 15-tools/00-registry.js），
 // 模型才知道该改写法。当成断线重来，它每回都照样写到上限，烧满三遍落成中断

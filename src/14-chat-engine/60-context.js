@@ -98,17 +98,7 @@ async function summarize(profile, ask, signal, reasoning = "") {
     reasoning: reasoning ? "low" : ""
   });
   if (!response.ok) throw Error(await describeResponseError(response));
-  /** @type {Message} */
-  const temp = { id: `summary-${uid()}`, role: "assistant", content: "", timestamp: now() };
-  if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, temp);
-  else {
-    const data = await response.json();
-    temp.content = extractContent(data);
-    temp.reasoning = normalizeContent(data?.choices?.[0]?.message?.reasoning_content ?? data?.choices?.[0]?.message?.reasoning);
-    temp.usage = data.usage;
-  }
-  spendTokens(profile, Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]));
-  renderQuota();
+  const temp = await readAside(response, profile, ask);
   const summary = String(temp.content || "")
     .replace(/<think>[\s\S]*?<\/think>/g, "")
     .trim();

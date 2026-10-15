@@ -40,17 +40,7 @@ async function maybeAutoTitle(conversation, profile) {
       reasoning: conversation.reasoning ? "low" : ""
     });
     if (!response.ok) return;
-    /** @type {Message} */
-    const temp = { id: `title-${uid()}`, role: "assistant", content: "", timestamp: now() };
-    if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, temp);
-    else {
-      const data = await response.json();
-      temp.content = extractContent(data);
-      temp.usage = data.usage;
-    }
-    const spent = Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]);
-    spendTokens(profile, spent);
-    renderQuota();
+    const temp = await readAside(response, profile, ask);
     const line =
       temp.content
         .split("\n")
