@@ -5,7 +5,7 @@
 const LOCAL_BRIDGE = "http://127.0.0.1:8787";
 // 桥接的引导信息（版本、存储根、目录、平台、shell）；notice 是页面自己写的桥接状态提示，在设置 → 模型顶部显示
 let bootstrap = { notice: "" };
-/** @type {string|null} 桥接的地址：桥接自己开的页面是 ""（同源），别处打开的（VS Code Webview）是 LOCAL_BRIDGE */
+/** @type {string|null} 桥接的地址：桥接自己开的页面是 ""（同源），探测别的本机端口时用 LOCAL_BRIDGE */
 let apiBase = null;
 // 页面是不是桥接自己开的（http://127.0.0.1:端口）：是的话桥接一定在，探测失败多半只是首次加载时被大文件挤慢了，该多等、多试
 function servedByBridge() {
@@ -94,6 +94,9 @@ function busReady() {
 /** @returns {Promise<Response>} */
 async function bridgeFetch(path, body, signal) {
   const direct = () => fetch(`${apiBase}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
+  // 大文件与长对话直接送原请求，避免总线再包一层 JSON、服务端拆开后再复制一整份。
+  // 4 Mi 个字符即使全是转义字符，外层 JSON 也小于总线的 32 MiB 上限。
+  if (typeof body === "string" && body.length > 4 * 1024 * 1024) return direct();
   if (!(await busReady())) return direct();
   signal?.throwIfAborted();
   // 回话一定读完：不读，浏览器就一直攥着这次请求连同发出去的整段 body（GC 也收不掉）。

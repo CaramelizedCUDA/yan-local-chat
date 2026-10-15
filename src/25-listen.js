@@ -11,6 +11,8 @@ let listenTrack = null,
   /** @type {ListenTrack | null} 预览整页上摆着的那一曲（可能还没放，与 listenTrack 不同） */
   listenShown = null,
   listenOwnUrl = "",
+  listenRevision = 0,
+  listenSeekCancel = null,
   listenFrameId = 0,
   listenGraph = null,
   listenSwing = { amp: 0, t: 0 };
@@ -142,6 +144,8 @@ function listenInit() {
   });
 }
 async function listenLoad(track, play = false) {
+  const revision = ++listenRevision;
+  listenSeekCancel?.();
   listenInit();
   const el = listenEl();
   if (listenOwnUrl) URL.revokeObjectURL(listenOwnUrl);
@@ -155,12 +159,13 @@ async function listenLoad(track, play = false) {
   if (url.startsWith("blob:")) {
     const bytes = await track.bytes();
     // 读着字节的工夫已换了曲（快点上下首）或收了喇叭：这一份作废，别盖掉后来那一首
-    if (listenTrack !== track) return;
+    if (revision !== listenRevision) return;
     if (listenOwnUrl) URL.revokeObjectURL(listenOwnUrl);
     url = listenOwnUrl = URL.createObjectURL(new Blob([bytes]));
   }
   el.src = url;
   if (play) await listenPlay();
+  if (revision !== listenRevision) return;
   listenSync();
   listenRenderPage();
 }
@@ -182,6 +187,8 @@ async function listenPlay() {
   await el.play().catch(() => {});
 }
 function listenRelease() {
+  listenRevision++;
+  listenSeekCancel?.();
   const el = listenEl();
   el.pause();
   el.removeAttribute("src");
@@ -211,14 +218,30 @@ function listenStep(dir, track = listenTrack) {
 }
 async function listenSeek(ratio, track = listenTrack) {
   if (!track) return;
-  if (listenTrack?.key !== track.key) await listenLoad(track, false);
+  listenSeekCancel?.();
+  const change = listenTrack?.key !== track.key,
+    revision = listenRevision + (change ? 1 : 0);
+  if (change) await listenLoad(track, false);
   const el = listenEl(),
     go = () => {
+      if (revision !== listenRevision || listenTrack?.key !== track.key || !Number.isFinite(el.duration)) return;
       el.currentTime = Math.min(0.999, Math.max(0, ratio)) * el.duration;
       void listenPlay();
     };
+  if (revision !== listenRevision || listenTrack?.key !== track.key) return;
   if (Number.isFinite(el.duration)) go();
-  else el.addEventListener("loadedmetadata", go, { once: true });
+  else {
+    const ready = () => {
+      cancel();
+      go();
+    };
+    const cancel = () => {
+      el.removeEventListener("loadedmetadata", ready);
+      if (listenSeekCancel === cancel) listenSeekCancel = null;
+    };
+    listenSeekCancel = cancel;
+    el.addEventListener("loadedmetadata", ready, { once: true });
+  }
 }
 
 // ---------- 一面：预览里的整页（设计稿/27 一 · 乙 · 圆相）：圆里是题名、时刻与钮，旁边是出处、音量与同夹的曲 ----------

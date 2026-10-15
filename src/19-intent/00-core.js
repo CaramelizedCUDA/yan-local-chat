@@ -66,7 +66,7 @@ const INTENT_LIMIT = 60,
 // 节点表按 id 取项：内置对象名不能误当成已存在的节点。
 const validIntentId = id =>
   INTENT_ID.test(id) &&
-  [...id].reduce((w, ch) => w + /** @type {number} */ ((ch.codePointAt(0)) > 0x2e7f ? 2 : 1), 0) <= INTENT_ID_WIDTH &&
+  [...id].reduce((w, ch) => w + /** @type {number} */ (ch.codePointAt(0) > 0x2e7f ? 2 : 1), 0) <= INTENT_ID_WIDTH &&
   !Object.hasOwn(Object.prototype, id);
 /** 这一项改完叫什么（改了名的即新名） @param {IntentOp} op */
 const intentOpId = op => op.rename || op.id;
@@ -109,6 +109,7 @@ function asIntent(raw) {
       ...node,
       claim: String(node.claim || ""),
       check: String(node.check || ""),
+      ...(node.when !== undefined ? { when: String(node.when) } : {}),
       needs: Array.isArray(node.needs) ? node.needs.map(String).filter(validIntentId) : [],
       // 凭据不带登记过的前缀（手编的、写漏的）即文件
       anchors: Array.isArray(node.anchors)
@@ -357,6 +358,7 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     for (const [key, n] of /** @type {const} */ ([
       ["claim", 300],
       ["check", 600],
+      ["when", 300],
       ["note", 1000]
     ]))
       if (item[key] !== undefined) op[key] = clip(item[key], n);

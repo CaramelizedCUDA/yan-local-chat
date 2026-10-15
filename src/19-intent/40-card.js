@@ -161,6 +161,7 @@ function intentDetailHtml(intent, now, id) {
       [t("支撑"), chips(intentDependents(intent, id))],
       [t("凭据"), intentAnchorsHtml(node, now)]
     ];
+  if (node.when) rows.push([t("情形"), escapeHtml(node.when), "", true]);
   if (view === "stale") rows.push([t("缘由"), escapeHtml(intentStaleWhy(intent, id, now)), "zhu"]);
   if (node.note)
     rows.push([

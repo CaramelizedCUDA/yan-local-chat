@@ -52,7 +52,7 @@ async function viewerReader(source) {
 }
 /** @param {string|{path?:string, attachmentId?:string}} target 卷宗路径，或 { attachmentId } */
 async function openFileViewer(target, name = "", trigger = null) {
-  viewerRevision++;
+  const revision = ++viewerRevision;
   const source = typeof target === "string" ? { path: target } : target;
   const viewer = $("#fileViewer");
   if (!viewer) return;
@@ -74,12 +74,14 @@ async function openFileViewer(target, name = "", trigger = null) {
   $("#fileViewerStage").innerHTML = `<div class="file-viewer-empty">${t(`正在取出…`)}</div>`;
   $("#fileViewerClose").focus();
   try {
-    const html = await fileViewerBody(await viewerReader(source), title, kind);
-    if (viewerSource !== source) return;
+    const reader = await viewerReader(source);
+    if (revision !== viewerRevision) return;
+    const html = await fileViewerBody(reader, title, kind, revision);
+    if (revision !== viewerRevision) return;
     $("#fileViewerStage").innerHTML = html;
     renderEnhancements($("#fileViewerStage"));
   } catch (error) {
-    if (viewerSource !== source) return;
+    if (revision !== viewerRevision) return;
     $("#fileViewerStage").innerHTML =
       `<div class="file-viewer-empty">${t`未能预览：${escapeHtml(String(error.message || error).slice(0, 120))}`}<br><button type="button" class="outline-btn" data-viewer-download>${t(`下载查看`)}</button></div>`;
   }
@@ -102,7 +104,7 @@ function downloadViewerFile() {
   if (viewerSource?.attachmentId) void downloadAttachment(viewerSource.attachmentId);
   else if (viewerPath) downloadArchiveFile(viewerPath);
 }
-async function fileViewerBody(reader, name, kind) {
+async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
   if (kind === "image") return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;
   // PDF 交给浏览器自带的阅读器；卷宗的响应带 CSP: sandbox，脚本不会以本站身份运行
   if (kind === "pdf") return `<iframe class="file-viewer-frame" src="${escapeHtml(reader.url())}" title="${escapeHtml(name)}"></iframe>`;
@@ -131,27 +133,31 @@ async function fileViewerBody(reader, name, kind) {
     }
     const id = `app${uid().replace(/[^a-z0-9]/gi, "")}`;
     setTimeout(() => {
-      const frame = $("#fileViewerStage iframe");
+      if (revision !== viewerRevision) return;
+      const frame = $(`#fileViewerStage iframe[data-viewer-app="${id}"][sandbox="allow-scripts"]`);
       if (!frame) return;
-      frame.addEventListener("load", () => frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source, theme }, "*"), {
-        once: true
-      });
+      frame.addEventListener(
+        "load",
+        () => {
+          if (revision === viewerRevision && frame.isConnected && frame.getAttribute("sandbox") === "allow-scripts")
+            frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source, theme }, "*");
+        },
+        { once: true }
+      );
       frame.src = `./preview.html#${id}`;
     }, 0);
-    return `<iframe class="file-viewer-frame" sandbox="allow-scripts" title="${t(`隔离的网页预览`)}"></iframe>`;
+    return `<iframe class="file-viewer-frame" data-viewer-app="${id}" sandbox="allow-scripts" title="${t(`隔离的网页预览`)}"></iframe>`;
   }
   if (kind === "table") {
     const text = await reader.text(),
-      rows = text.split(/\r?\n/).filter(Boolean).slice(0, 400),
-      split = fileExtension(name) === "tsv" ? "\t" : ",";
-    if (!rows.length) return `<div class="file-viewer-empty">${t(`空文件`)}</div>`;
-    const cells = rows.map(row => splitDelimited(row, split));
+      split = fileExtension(name) === "tsv" ? "\t" : ",",
+      rows = parseDelimited(text, split, 401),
+      cells = rows.slice(0, 400);
+    if (!cells.length) return `<div class="file-viewer-empty">${t(`空文件`)}</div>`;
     return `<div class="file-viewer-text file-viewer-fit"><table class="file-viewer-table"><thead><tr>${cells[0].map(c => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead><tbody>${cells
       .slice(1)
       .map(row => `<tr>${row.map(c => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`)
-      .join(
-        ""
-      )}</tbody></table>${text.split(/\r?\n/).filter(Boolean).length > 400 ? `<p class="file-viewer-note">${t(`仅显示前 400 行`)}</p>` : ""}</div>`;
+      .join("")}</tbody></table>${rows.length > 400 ? `<p class="file-viewer-note">${t(`仅显示前 400 行`)}</p>` : ""}</div>`;
   }
   if (kind === "doc") {
     // 每回从原件现抽（按结构抽成 Markdown）；原件取不到时才用附件上传时抽下的那份
@@ -187,29 +193,50 @@ async function fileViewerBody(reader, name, kind) {
   if (kind === "markdown") return `<div class="file-viewer-text markdown">${renderMarkdown(text.slice(0, 200000))}</div>`;
   return `<div class="file-viewer-text"><pre class="file-viewer-code">${escapeHtml(text.slice(0, 200000))}</pre>${text.length > 200000 ? `<p class="file-viewer-note">${t(`仅显示前 20 万字`)}</p>` : ""}</div>`;
 }
-// CSV 的一行：带引号的字段里可以有分隔符与转义的引号
-function splitDelimited(row, split) {
-  const out = [];
+// CSV / TSV：引号里的换行仍属于同一个字段，显示上限按记录计。
+function parseDelimited(text, split, limit = Infinity) {
+  const rows = [];
+  let row = [];
   let cell = "",
-    quoted = false;
-  for (let i = 0; i < row.length; i++) {
-    const ch = row[i];
+    quoted = false,
+    started = false;
+  const finish = () => {
+    if (started || row.length) rows.push([...row, cell]);
+    row = [];
+    cell = "";
+    started = false;
+  };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
     if (quoted) {
-      if (ch === '"' && row[i + 1] === '"') {
+      if (ch === '"' && text[i + 1] === '"') {
         cell += '"';
         i++;
       } else if (ch === '"') quoted = false;
       else cell += ch;
       continue;
     }
-    if (ch === '"') quoted = true;
-    else if (ch === split) {
-      out.push(cell);
+    if (ch === "\r" || ch === "\n") {
+      finish();
+      if (rows.length >= limit) return rows;
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+    } else if (ch === '"') {
+      quoted = true;
+      started = true;
+    } else if (ch === split) {
+      row.push(cell);
       cell = "";
-    } else cell += ch;
+      started = true;
+    } else {
+      cell += ch;
+      started = true;
+    }
   }
-  out.push(cell);
-  return out;
+  finish();
+  return rows;
+}
+function splitDelimited(row, split) {
+  return parseDelimited(row, split)[0] || [""];
 }
 /** @param {boolean} [stop] 点的是 ×：摊着的若是正放的那一曲，一并停下；别的关法只收起，正放着的挂上顶栏接着放 */
 function closeFileViewer(stop = false) {

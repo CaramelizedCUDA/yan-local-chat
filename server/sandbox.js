@@ -109,9 +109,9 @@ const REVIEW_FORBIDDEN = [
   [/\bInvoke-Expression\b|(^|[\s;&|(])iex\s|-EncodedCommand\b|(^|\s)-(enc|ec|e)\s+[A-Za-z0-9+=]{32,}/i, "不代为执行隐藏或动态拼接的指令"],
   [/\bwmic(?:\.exe)?\b[^\n]*\b(?:call|delete)\b/i, "不代为通过 WMI 修改系统"]
 ];
-// 审而后行只守系统目录：Windows、Program Files、ProgramData。用户目录、临时目录、别的项目都是用户自己的地方，写就写
+// 审而后行只守系统目录；POSIX 的 /usr、/etc、macOS 的 /System 等也认。用户目录、临时目录、别的项目照常可写。
 const REVIEW_SYSTEM_PATH =
-  /\$env:(ProgramData|ProgramFiles(\(x86\))?|ProgramW6432|SystemRoot|windir)\b|%(ProgramData|ProgramFiles(\(x86\))?|ProgramW6432|SystemRoot|windir)%|(?<![A-Za-z0-9_])[a-z]:[\\/](?:windows|program files(?: \(x86\))?|programdata)(?=[\\/\s"']|$)/i;
+  /\$env:(ProgramData|ProgramFiles(\(x86\))?|ProgramW6432|SystemRoot|windir)\b|%(ProgramData|ProgramFiles(\(x86\))?|ProgramW6432|SystemRoot|windir)%|(?<![A-Za-z0-9_])[a-z]:[\\/](?:windows|program files(?: \(x86\))?|programdata)(?=[\\/\s"']|$)|(?:^|[\s"'=])\/(?:usr|etc|bin|sbin|boot|lib(?:32|64)?|opt|System|Library|Applications|private\/(?:etc|var)|var\/(?:db|lib|log|run))(?=[\/\s"']|$)/i;
 const BROAD_DELETE =
   /\bRemove-Item\b(?=[^\n]*(?:-Recurse|-Force))(?=[^\n]*\s(?:\.(?:[\\/]\*)?|\*|\/|[a-z]:[\\/]?)(?:\s|$))[^\n]*|(^|[;&|(]\s*)rm\s+-[^\s]*r[^\s]*\s+(?:\.|\*|\/|[a-z]:[\\/]?)\s*$|\b(?:rmdir|rd)\b(?=[^\n]*\/s)(?=[^\n]*\s(?:\.|\*|[\\/]|[a-z]:[\\/]?)(?:\s|$))[^\n]*/i;
 
@@ -220,7 +220,7 @@ function screenAutoReview(command) {
   for (const [pattern, why] of REVIEW_FORBIDDEN) if (pattern.test(text)) return `审查拒绝：${why}`;
   if (BROAD_DELETE.test(text)) return "审查拒绝：不代为执行整目录、通配符或磁盘级删除";
   if (DIRECT_FILE_MUTATION.test(text) && REVIEW_SYSTEM_PATH.test(stripReadSources(text)))
-    return "审查拒绝：不往 Windows、Program Files 这类系统目录里写";
+    return "审查拒绝：不往 Windows、Program Files、/usr、/System 这类系统目录里写";
   return null;
 }
 /**
@@ -235,7 +235,7 @@ function screenLoose(command) {
   for (const [pattern, why] of REVIEW_FORBIDDEN) if (pattern.test(text)) return `沙箱拒绝：${why.replace(/^不代为/, "不")}`;
   if (ALIASING.test(text)) return "沙箱拒绝：不定义别名，直接写出指令";
   if (DIRECT_FILE_MUTATION.test(text) && REVIEW_SYSTEM_PATH.test(stripReadSources(text)))
-    return "沙箱拒绝：不往 Windows、Program Files 这类系统目录里写";
+    return "沙箱拒绝：不往 Windows、Program Files、/usr、/System 这类系统目录里写";
   return null;
 }
 /**

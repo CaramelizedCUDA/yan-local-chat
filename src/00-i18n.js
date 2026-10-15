@@ -26,7 +26,7 @@ function t(text, ...values) {
 // 现成的一句话（多是桥接回的报错，在桥接那头已拼好）：整句查表，查不到再按带 {0} 的句式认。
 // 报错原文在逻辑里照旧是中文（有的比对靠它），只在显示的出口换：提示条、对话里的报错、设置里的状态行
 // 存进数据的字（步骤上的摘要、消息上的报错）一律存中文原文，画出来时过 tr：换了语言，旧记录跟着换
-/** @type {{ re: RegExp, en: string, han: number }[] | null} */
+/** @type {{ re: RegExp, en: string, han: number, literal: Set<string>, count: boolean }[] | null} */
 let patterns = null;
 /**
  * @param {string} text
@@ -43,24 +43,45 @@ function tr(text, loose = false) {
     .map(key => ({
       re: new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\{(\d+)\\\}/g, (_, i) => `(?<g${i}>[\\s\\S]*?)`)}$`),
       en: I18N[key],
+      // 引号里的名字、关键词是数据，不是待翻译的状态；意的节点名也是如此。
+      literal: new Set([...Array.from(key.matchAll(/「\{(\d+)\}」/g), m => m[1]), ...(key === "已立 {0} / {1} · {2}" ? ["2"] : [])]),
+      count: /^\{0\}\s*(?:问|秒|件|字|步|条|轮|行|项|处|段|页|类|夹|分|小时|天)(?=\{|\s|$)/.test(key),
       han: (key.replace(/\{\d+\}/g, "").match(/[一-鿿]/g) || []).length
     }))
     .filter(p => p.han)
     .sort((a, b) => b.han - a.han);
   // 宽认时换出来还带汉字的先放着、接着找更贴的一条：可能是套错了句式，也可能变量本就是中文（查的关键词、文件名）——都找不到更好的就用它
   let partial = "";
-  for (const { re, en, han } of patterns) {
+  for (const { re, en, han, literal, count } of patterns) {
     if (han < 3 && !loose) break;
     const m = text.match(re);
+    if (count && !/^\d+(?:\.\d+)?$/.test(m?.groups?.g0 || "")) continue;
     if (m && !/[一-鿿]/.test(en)) {
-      const out = fillIn(en, i => tr(m.groups?.[`g${i}`] ?? "", loose));
-      if (!loose || !/[一-鿿]/.test(out)) return out;
+      const out = fillIn(en, i => {
+        const value = m.groups?.[`g${i}`] ?? "";
+        return literal.has(i) ? value : tr(value, loose);
+      });
+      if (!loose || literal.size || !/[一-鿿]/.test(out)) return out;
       partial ||= out;
     }
   }
   // 步骤摘要多是「 · 」串起来的几段（行数 · 大小 · 覆盖）：整句对不上就逐段换，单段也认表里带「 · 」头的那条
-  if (loose && text.includes(" · ")) {
-    const parts = text.split(" · ").map(part => {
+  const pieces = [];
+  let quoted = 0,
+    start = 0;
+  if (loose)
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === "「") quoted++;
+      else if (text[i] === "」") quoted = Math.max(0, quoted - 1);
+      else if (!quoted && text.startsWith(" · ", i)) {
+        pieces.push(text.slice(start, i));
+        start = i + 3;
+        i += 2;
+      }
+    }
+  if (pieces.length) {
+    pieces.push(text.slice(start));
+    const parts = pieces.map(part => {
       const hit = I18N[part] || I18N[` · ${part}`]?.replace(/^ · /, "");
       return hit || tr(part, true);
     });

@@ -35,6 +35,20 @@ for (let i = 0; i < 40; i++) {
   }
 }
 // 总线：外站开不了事件流；本机别的端口的页面能开，但借总线转进去的请求照旧按它自己的来源过门禁，碰不到执事接口
+{
+  const root = `${TMP}/cross-site-must-not-create`;
+  const url = `${BASE}/api/archive/file?root=${encodeURIComponent(root)}&path=missing.txt`;
+  for (const site of ["cross-site", "same-site"]) {
+    const response = await fetch(url, { headers: { "Sec-Fetch-Site": site } });
+    check(
+      `originless ${site} browser GET cannot create an archive root`,
+      response.status === 403 && !existsSync(root),
+      String(response.status)
+    );
+  }
+  const webview = await post("/api/work/prepare", { workdir: WORK }, { Origin: "vscode-webview://untrusted-extension" });
+  check("extension webviews are not implicitly trusted", webview.status === 403, String(webview.status));
+}
 const openBus = (page, origin) =>
   new Promise(resolve => {
     const events = [];

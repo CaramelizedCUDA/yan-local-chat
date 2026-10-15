@@ -54,15 +54,11 @@ function securityHeaders(req, res) {
       : `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:*; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`
   );
 }
-// 能调桥接的页面：本机的与 VS Code Webview。别的网站连模型转发、列模型也不许借道——那等于让任意网页经桥接往局域网里发请求。
+// 能调桥接的页面：本机来源。别的网站连模型转发、列模型也不许借道——那等于让任意网页经桥接往局域网里发请求。
 // 来源为 "null" 的一概不认：file:// 打开的页面是它，可任何网站嵌一个开了沙箱的 iframe 也是它，分不出来；
 // file:// 打开的页面因此接不上桥接，页面只提示去 http://127.0.0.1:端口 打开
 function allowedOrigin(origin) {
-  return (
-    /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin || "") ||
-    /^vscode-webview:\/\//i.test(origin || "") ||
-    /^https:\/\/[a-z0-9-]+\.(vscode-cdn|vscode-webview)\.net$/i.test(origin || "")
-  );
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin || "");
 }
 // Host 头只认本机的这个端口：防 DNS 重绑定——恶意域名解析到 127.0.0.1 后，它的页面对桥接发的是「同源」请求，GET 不带 Origin，
 // 只看 Origin 就会被当成本机脚本放行（卷宗的取件接口能读到任意路径）
@@ -80,11 +76,11 @@ function corsHeaders(req, res) {
   if (req.headers["access-control-request-private-network"] === "true") res.setHeader("Access-Control-Allow-Private-Network", "true");
 }
 // 执事接口能执行本机指令，不能只依赖 CORS：不可信页面即使读不到响应，也可能用简单请求触发副作用。
-// 无 Origin 的本机脚本仍可调用（沙箱里跑的脚本也在其列：它本就以用户权限运行，调桥接不多出什么，见 server/sandbox.js 的 callsBridge）；浏览器只接受本站页面与 VS Code Webview（别的本机端口可对谈，但不开放执事）。
+// 无 Origin 的本机脚本仍可调用；浏览器只接受本站页面（别的本机端口可对谈，但不开放执事）。
 function trustedWorkRequest(req) {
   const origin = req.headers.origin;
-  if (!origin) return true;
-  if (/^vscode-webview:\/\//i.test(origin) || /^https:\/\/[a-z0-9-]+\.(vscode-cdn|vscode-webview)\.net$/i.test(origin)) return true;
+  // img / video 等浏览器 GET 通常不带 Origin，仍须按 Fetch Metadata 拒绝跨站与别的本机来源。
+  if (!origin) return !req.headers["sec-fetch-site"] || ["same-origin", "none"].includes(req.headers["sec-fetch-site"]);
   try {
     const url = new URL(origin),
       port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
@@ -160,7 +156,7 @@ const BUS = require("./server/bus.js")({ dispatch });
 const MODEL = require("./server/model/index.js")({ home: () => STORE.paths().root });
 
 // 接口表：「方法 路径」→ 处理函数。受信的那一半能碰本机磁盘与本机服务（执事、卷宗、对话目录、存储、附件，以及能打本机的 http_request），
-// 只受理本站页面与 VS Code Webview；另一半（引导、转发、检索、翻网页）凡是本机桥接认得的来源都可调
+// 只受理本站页面与本机脚本；另一半（引导、转发、检索、翻网页）凡是本机桥接认得的来源都可调
 const OPEN_ROUTES = {
     "GET /api/bootstrap": handleBootstrap,
     ...MODEL.openRoutes,
@@ -278,7 +274,7 @@ async function dispatch(req, res) {
     if (urlPath.startsWith("/api/") && req.headers.origin && !allowedOrigin(req.headers.origin))
       return sendJson(res, 403, { error: "此页面无权调用本机桥接" });
     if (TRUSTED_PATHS.has(urlPath) && !trustedWorkRequest(req))
-      return sendJson(res, 403, { error: "此页面无权调用本机执事接口，请从桥接地址或 VS Code 打开「言」" });
+      return sendJson(res, 403, { error: "此页面无权调用本机执事接口，请从桥接地址打开「言」" });
     corsHeaders(req, res);
     if (req.method === "OPTIONS") {
       res.writeHead(204);

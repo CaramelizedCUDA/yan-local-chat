@@ -2,6 +2,18 @@
 // 选了英文时由 theme-boot.js 载入；印章、给模型看的话（工具结果、提示词）不收，表里没有的照中文原文显示。
 // 用语直白：言 → Chat、行 → Agent、卷宗 → Files、帮手 → subagent、余墨 → tokens left、旁注 → side thread、游目 → Browser
 var YAN_EN = {
+  "\n\n[压缩包：{0}；本机原件路径：{1}。用 run_command 将原件复制到工作目录，再解压到独立的临时子目录并读取；不要修改原件。]":
+    "\n\n[Archive: {0}; local original path: {1}. Use run_command to copy it into the working directory, then extract it into a separate temporary subdirectory and read the contents. Keep the original unchanged.]",
+  "\n\n[压缩包 {0} 的本机原件暂不可用：{1}]": "\n\n[The local original of archive {0} is currently unavailable: {1}]",
+  情形: "Condition",
+  "带自定义认证请求头的请求不能跨来源跳转，请直接请求目标地址":
+    "Requests with custom authentication headers cannot redirect to another origin. Request the destination directly",
+  "请用请求头提供认证，不在网址里放凭据": "Put authentication in request headers, not in the URL",
+  "网址没有可用的 IP 地址": "No usable IP address for this URL",
+  "审查拒绝：不往 Windows、Program Files、/usr、/System 这类系统目录里写":
+    "Review blocked: writing to system folders such as Windows, Program Files, /usr or /System is not allowed",
+  "沙箱拒绝：不往 Windows、Program Files、/usr、/System 这类系统目录里写":
+    "Sandbox blocked: writing to system folders such as Windows, Program Files, /usr or /System is not allowed",
   // ---- 桥接与存储 ----
   "本机桥接已更新，请关闭桥接窗口后重新运行 start.cmd": "The local bridge was updated. Close the bridge window and run start.cmd again",
   "请求失败（{0}）": "Request failed ({0})",
@@ -1463,8 +1475,8 @@ var YAN_EN = {
   只受理发往本机桥接地址的请求: "Only requests to the local bridge address are accepted",
   桥接不受理自己转出的请求: "The bridge doesn't accept requests it forwarded itself",
   此页面无权调用本机桥接: "This page isn't allowed to call the local bridge",
-  "此页面无权调用本机执事接口，请从桥接地址或 VS Code 打开「言」":
-    "This page isn't allowed to call the local agent API. Open Yan from the bridge address or VS Code",
+  "此页面无权调用本机执事接口，请从桥接地址打开「言」":
+    "This page isn't allowed to call the local agent API. Open Yan from the bridge address",
   不支持此请求: "Unsupported request",
 
   // ---- 欢迎页（问候另写在 src/06-mode-welcome/10-welcome.js；推荐语里留给人填的写在方括号里） ----

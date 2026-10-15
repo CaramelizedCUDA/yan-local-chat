@@ -712,8 +712,14 @@ test("硅基流动：Qwen 之类换成预算，DeepSeek-V4 与 GLM-5.2 照送 re
   const deepseek = openaiProvider.request(payload, sf("Pro/deepseek-ai/DeepSeek-V4"));
   assert.equal(deepseek.reasoning_effort, "max");
   assert.equal(deepseek.enable_thinking, undefined);
-  assert.deepEqual(openaiProvider.levels(sf("zai-org/GLM-5.2")), ["high", "max"]);
+  assert.deepEqual(openaiProvider.levels(sf("Pro/zai-org/GLM-5.2")), ["high", "max"]);
   assert.deepEqual(openaiProvider.levels(sf("Qwen/Qwen3-32B")), ["low", "medium", "high", "max"]);
+  const unknown = sf("new-provider/New-Model-2027");
+  assert.equal(openaiProvider.levels(unknown), null);
+  const untouched = openaiProvider.request(payload, unknown);
+  assert.equal(untouched.enable_thinking, undefined);
+  assert.equal(untouched.thinking_budget, undefined);
+  assert.equal(untouched.reasoning_effort, "max");
   // 旧配置选的 OpenAI 兼容、地址是硅基流动的，一样认得
   assert.equal(
     openaiProvider.request(payload, { baseUrl: "https://api.siliconflow.com/v1", model: "Qwen/Qwen3-32B" }).thinking_budget,

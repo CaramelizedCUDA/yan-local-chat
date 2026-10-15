@@ -84,6 +84,17 @@ module.exports = function createFiles({ filesHome, playable }) {
     },
     error => errorText(error, 200)
   );
+  // 压缩包交给本机工具处理：只取位置，不把整包编成 base64 再送进模型接口。
+  const handlePath = jsonRoute(
+    async body => {
+      const id = checkId(body.id),
+        dir = home(),
+        raw = rawFileOf(dir, id, readMeta(dir, id));
+      if (!raw) throw Error("附件原件不在存储目录里");
+      return { id, path: path.resolve(dir, raw) };
+    },
+    error => errorText(error, 200)
+  );
   // 原件直取：GET /api/files/raw?id=…。预览器看 PDF、放音视频用它——同源地址，不必把整份原件编成 data: URL 经 JSON 取回，也免得 blob: 地址被页面的 CSP 挡住
   async function handleRaw(req, res) {
     try {
@@ -171,6 +182,7 @@ module.exports = function createFiles({ filesHome, playable }) {
     routes: {
       "POST /api/files/put": handlePut,
       "POST /api/files/get": handleGet,
+      "POST /api/files/path": handlePath,
       "GET /api/files/raw": handleRaw,
       "POST /api/files/has": handleHas,
       "POST /api/files/open": handleOpen,

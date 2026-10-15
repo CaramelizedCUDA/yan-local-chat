@@ -264,7 +264,7 @@ function changeDiffHtml(message, path) {
   if (created && lastWrite > 0) steps = steps.slice(lastWrite);
   return `<div class="file-viewer-text change-diff">${steps
     .map(step => {
-      const note = [toolLabel(step.name), step.scope ? t("帮手") : "", step.result || step.note || ""].filter(Boolean).join(" · "),
+      const note = [toolLabel(step.name), step.scope ? t("帮手") : "", stepText(step.result || step.note)].filter(Boolean).join(" · "),
         head = `<p class="file-viewer-note">${escapeHtml(note)}</p>`;
       if (step.diff) return `${head}<div class="tool-diff">${splitDiffHtml(step.diff.old, step.diff.new).html}</div>`;
       // 新建的件（或没记下原文的）也并排画：左边留空，与改动同一种画法，不一会儿整宽一会儿两栏

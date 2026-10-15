@@ -8,6 +8,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { browserFiles, killTree, killTreeSync, OWN_GROUP } = require("./platform.js");
+const createPublicProxy = require("./headless-proxy.js");
 
 const MAX_TABS = 3,
   IDLE_MS = 3 * 60 * 1000,
@@ -99,11 +100,20 @@ async function launch() {
   if (!file || !dir) throw Error("本机没有 Edge 或 Chrome");
   fs.mkdirSync(dir, { recursive: true });
   const adopted = await adopt(dir);
-  if (adopted) return Object.assign(adopted, { child: null });
+  if (adopted) {
+    // 旧实例的代理属于上回桥接，不能接着用；先让 Cookie 落盘，再带这次的代理重新起。
+    await adopted.send("Browser.close").catch(() => {});
+    adopted.ws.close();
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  const proxy = await createPublicProxy();
   const child = spawn(
     file,
     [
       "--headless=new",
+      `--proxy-server=${proxy.url}`,
+      "--proxy-bypass-list=<-loopback>",
+      "--edge-skip-compat-layer-relaunch",
       "--remote-debugging-port=0",
       `--user-data-dir=${dir}`,
       "--no-first-run",
@@ -135,14 +145,18 @@ async function launch() {
     child.once("error", error => finish(error));
     child.once("exit", code => finish(Error(`浏览器起来就退了（${code}）`)));
   }).catch(error => {
+    proxy.close();
     killTree(child);
     throw error;
   });
   const browser = await connect(endpoint).catch(error => {
+    proxy.close();
     killTree(child);
     throw error;
   });
-  return Object.assign(browser, { child });
+  child.once("exit", () => proxy.close());
+  browser.ws.addEventListener("close", () => proxy.close());
+  return Object.assign(browser, { child, proxy });
 }
 async function ensure() {
   if (current) return current;

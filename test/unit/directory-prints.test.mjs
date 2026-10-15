@@ -69,8 +69,16 @@ test("目录超过 2000 件文件：后面的改动、新增、删除也改变�
   const { root, print, clean } = folder();
   try {
     for (let i = 0; i < 2005; i++) fs.writeFileSync(path.join(root, `${String(i).padStart(4, "0")}.txt`), "a");
+    const tracked = path.join(root, "2004.txt"),
+      fixedTime = 1700000000;
+    fs.utimesSync(tracked, fixedTime, fixedTime);
     let before = await print();
     assert.equal(await print(), before);
+    fs.writeFileSync(tracked, "b");
+    fs.utimesSync(tracked, fixedTime, fixedTime);
+    const sameMetadata = await print();
+    assert.notEqual(sameMetadata, before, "同大小、同修改时间的内容变化也须检出");
+    before = sameMetadata;
     fs.writeFileSync(path.join(root, "2004.txt"), "changed");
     const changed = await print();
     assert.notEqual(changed, before);

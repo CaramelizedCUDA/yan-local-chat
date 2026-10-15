@@ -303,6 +303,21 @@ test("screenLoose：审而后行与径行的沙箱只守系统——联网、目
     assert.match(screenLoose(command), /沙箱拒绝/, command);
 });
 
+test("宽沙箱与审查都拒绝写 POSIX 系统目录，只读来源与临时目录仍可用", () => {
+  for (const screen of [screenLoose, screenAutoReview]) {
+    for (const command of [
+      "cp plain.txt /usr/yan.txt",
+      "printf x > /etc/yan",
+      "touch /System/yan",
+      "mv x /Library/yan",
+      'echo x > "/Applications/yan"'
+    ])
+      assert.match(screen(command), /拒绝/, command);
+    for (const command of ["cp /usr/share/a.txt ./a.txt", "cat /etc/hosts", "printf x > /tmp/yan", "cp x ./usr/yan"])
+      assert.equal(screen(command), null, command);
+  }
+});
+
 test("三档筛查都不放指令调言的本机桥接：它的接口不经请示与沙箱，调它就绕过了整套门禁", () => {
   const port = Number(process.env.YAN_PORT || 8787);
   for (const command of [

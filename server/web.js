@@ -3,6 +3,10 @@
 "use strict";
 const dns = require("node:dns").promises;
 const net = require("node:net");
+const http = require("node:http");
+const https = require("node:https");
+const { Readable } = require("node:stream");
+const zlib = require("node:zlib");
 const { jsonRoute } = require("./http.js");
 const browser = require("./headless.js");
 
@@ -148,10 +152,48 @@ async function assertPublicUrl(url, { allowLoopback = false } = {}) {
   const host = hostLiteral(url.hostname);
   const blocked = address => isPrivateAddress(address) && !(allowLoopback && isLoopback(address));
   if (blocked(host)) throw Error(allowLoopback ? "不允许访问内网地址（本机 127.0.0.1 / localhost 除外）" : "不允许访问本机或内网地址");
-  if (net.isIP(host) || (allowLoopback && host === "localhost")) return;
+  if (net.isIP(host)) return [{ address: host, family: net.isIP(host) }];
   const addresses = await dns.lookup(host, { all: true, verbatim: true });
   const hit = addresses.find(item => blocked(item.address) && !isFakeIpAddress(item.address));
   if (!addresses.length || hit) throw Error(`网址解析到了本机或内网地址${hit ? `（${hit.address}）` : ""}`);
+  return addresses;
+}
+// 连接只用刚验过的解析结果：Host / TLS SNI 仍取原域名，不在 fetch 时再解析一回。
+const pinnedLookup = addresses => (_host, options, done) => {
+  const list = options.family ? addresses.filter(item => item.family === options.family) : addresses;
+  if (!list.length) return done(Error("网址没有可用的 IP 地址"));
+  if (options.all) done(null, list);
+  else done(null, list[0].address, list[0].family);
+};
+function pinnedFetch(url, options, addresses) {
+  if (url.username || url.password) return Promise.reject(Error("请用请求头提供认证，不在网址里放凭据"));
+  return new Promise((resolve, reject) => {
+    const request = (url.protocol === "https:" ? https : http).request(
+      url,
+      { ...options, lookup: pinnedLookup(addresses), agent: false },
+      incoming => {
+        const headers = new Headers();
+        for (let i = 0; i < incoming.rawHeaders.length; i += 2) headers.append(incoming.rawHeaders[i], incoming.rawHeaders[i + 1]);
+        const decode = { gzip: zlib.createGunzip, deflate: zlib.createInflate, br: zlib.createBrotliDecompress }[
+          headers.get("content-encoding")
+        ];
+        const empty = options.method === "HEAD" || [204, 205, 304].includes(incoming.statusCode);
+        let body = incoming;
+        if (decode && !empty) {
+          body = decode();
+          incoming.on("error", error => body.destroy(error));
+          body.on("close", () => incoming.destroy());
+          incoming.pipe(body);
+          headers.delete("content-encoding");
+          headers.delete("content-length");
+        }
+        if (empty) incoming.resume();
+        resolve(new Response(empty ? null : Readable.toWeb(body), { status: incoming.statusCode, headers }));
+      }
+    );
+    request.on("error", reject);
+    request.end(options.body || undefined);
+  });
 }
 // 桥接自己发出的请求都带这个头；桥接收到带它的 /api/ 请求一律拒绝。http_request / download_file 能打本机，
 // 不设这一道，模型就能借它们调桥接自己的执事接口，绕过请示与沙箱在沙箱外跑指令（无 Origin、Host 也对得上）
@@ -161,17 +203,29 @@ async function fetchPublicResponse(url, { method = "GET", headers = {}, body = n
   let current = new URL(url);
   const signal = AbortSignal.timeout(timeout);
   for (let redirects = 0; redirects <= 5; redirects++) {
-    await assertPublicUrl(current, { allowLoopback });
-    const response = await fetch(current, {
-      method,
-      headers: { "User-Agent": BROWSER_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7", ...headers, [OUTBOUND_MARK]: "1" },
-      body: body && !["GET", "HEAD"].includes(method) ? body : undefined,
-      redirect: "manual",
-      signal
-    });
+    const addresses = await assertPublicUrl(current, { allowLoopback });
+    const response = await pinnedFetch(
+      current,
+      {
+        method,
+        headers: { "User-Agent": BROWSER_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7", ...headers, [OUTBOUND_MARK]: "1" },
+        body: body && !["GET", "HEAD"].includes(method) ? body : undefined,
+        signal
+      },
+      addresses
+    );
     if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
       await response.body?.cancel().catch(() => {});
-      current = new URL(response.headers.get("location"), current);
+      const next = new URL(response.headers.get("location"), current);
+      // 自定义头可能就是凭据（包括服务自定的 token 头）：跨来源时不替用户转交。
+      if (
+        next.origin !== current.origin &&
+        Object.keys(headers).some(
+          name => !/^(accept|accept-language|content-type|user-agent|range|if-none-match|if-modified-since)$/i.test(name)
+        )
+      )
+        throw Error("带自定义认证请求头的请求不能跨来源跳转，请直接请求目标地址");
+      current = next;
       // 303 与 POST 后的 301/302 按浏览器惯例改成 GET
       if (response.status === 303 || (method !== "GET" && method !== "HEAD" && [301, 302].includes(response.status))) {
         method = "GET";
@@ -308,37 +362,40 @@ async function readLimitedText(response, limit = FETCH_TEXT_LIMIT) {
   return { text, type, truncated: size >= limit };
 }
 async function fetchText(url, timeout = 15000, headers = {}) {
-  const response = await fetch(url, {
+  const { response, url: finalUrl } = await fetchPublicResponse(url, {
     headers: {
       "User-Agent": BROWSER_UA,
       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
       Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
       ...headers
     },
-    redirect: "follow",
-    signal: AbortSignal.timeout(timeout)
+    timeout
   });
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
     throw Error(`网页返回 ${response.status}`);
   }
   const { text, type } = await readLimitedText(response);
-  return { text, url: response.url, type, headers: response.headers };
+  return { text, url: finalUrl, type, headers: response.headers };
 }
 async function fetchPublicText(url, timeout = 20000) {
   let current = new URL(url);
   const signal = AbortSignal.timeout(timeout);
   for (let redirects = 0; redirects <= 5; redirects++) {
-    await assertPublicUrl(current);
-    const response = await fetch(current, {
-      headers: {
-        "User-Agent": BROWSER_UA,
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
-        Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5"
+    const addresses = await assertPublicUrl(current);
+    const response = await pinnedFetch(
+      current,
+      {
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+          Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
+          [OUTBOUND_MARK]: "1"
+        },
+        signal
       },
-      redirect: "manual",
-      signal
-    });
+      addresses
+    );
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       await response.body?.cancel().catch(() => {});
@@ -428,6 +485,7 @@ module.exports = {
   stripTags,
   fetchText,
   assertPublicUrl,
+  pinnedLookup,
   fetchPublicResponse,
   readLimitedBytes
 };

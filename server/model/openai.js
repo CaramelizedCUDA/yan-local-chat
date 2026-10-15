@@ -7,10 +7,13 @@ const { claudeModel, markOpenAiCache, stripCacheMarks } = require("./anthropic.j
 const DASHSCOPE = /dashscope|aliyuncs/i;
 const DASHSCOPE_BUDGETS = { minimal: 1024, low: 2048, medium: 8192, high: 32768, xhigh: 65536, max: 81920 };
 const OPENAI_REASONING = /(^|\/)(o\d|gpt-5)/i;
-// 硅基流动：只有 DeepSeek-V4 一族与 GLM-5.2 认 reasoning_effort，且只分 high、max 两档；别的（Qwen3 之类）同 DashScope，
-// 认 enable_thinking + thinking_budget，预算 128–32768。/models 不加筛选连画图、向量、语音模型一并列出，只要对话的
+// 硅基流动：已登记的 DeepSeek-V4 与 GLM-5.2 用 reasoning_effort，已登记的预算模型用 enable_thinking + thinking_budget。
+// /models 不加筛选连画图、向量、语音模型一并列出，只要对话的。
 const SILICONFLOW = config => config.api === "siliconflow" || /siliconflow/i.test(config.baseUrl);
-const SILICONFLOW_EFFORT = /deepseek-v4|glm-5\.2/i;
+// 只给官方明确列出的模型套参数；未知模型走普通档位探测，不按名字猜它支持预算。
+// https://docs.siliconflow.cn/docs/api/chat-completions-post
+const SILICONFLOW_EFFORT = /^(?:Pro\/deepseek-ai\/DeepSeek-V4|deepseek-ai\/DeepSeek-V4-Flash|Pro\/zai-org\/GLM-5\.2)$/i;
+const SILICONFLOW_THINKING = /^(?:Pro\/)?(?:Qwen\/Qwen3-(?:8B|14B|32B)|deepseek-ai\/DeepSeek-(?:R1|V3\.2))$/i;
 const SILICONFLOW_BUDGETS = { minimal: 1024, low: 4096, medium: 8192, high: 16384, xhigh: 32768, max: 32768 };
 
 function endpoint(baseUrl) {
@@ -45,7 +48,12 @@ module.exports = {
     ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {})
   }),
   levels(config) {
-    if (SILICONFLOW(config)) return SILICONFLOW_EFFORT.test(config.model) ? ["high", "max"] : ["low", "medium", "high", "max"];
+    if (SILICONFLOW(config))
+      return SILICONFLOW_EFFORT.test(config.model)
+        ? ["high", "max"]
+        : SILICONFLOW_THINKING.test(config.model)
+          ? ["low", "medium", "high", "max"]
+          : null;
     return DASHSCOPE.test(config.baseUrl) ? ["low", "medium", "high", "max"] : null;
   },
   request(payload, config) {
@@ -65,7 +73,7 @@ module.exports = {
       body.max_completion_tokens = body.max_tokens;
       delete body.max_tokens;
     }
-    if (body.reasoning_effort && SILICONFLOW(config) && !SILICONFLOW_EFFORT.test(config.model)) {
+    if (body.reasoning_effort && SILICONFLOW(config) && SILICONFLOW_THINKING.test(config.model)) {
       body.enable_thinking = true;
       body.thinking_budget = SILICONFLOW_BUDGETS[body.reasoning_effort] || 8192;
       delete body.reasoning_effort;

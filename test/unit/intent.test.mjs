@@ -37,6 +37,16 @@ function change(intent, nodes, { prints = {}, ask = "", workdir = "" } = {}) {
 const problems = (intent, nodes, workdir = "") => f.normalizeIntentOps(intent, nodes, workdir).problems;
 const empty = () => f.asIntent(null);
 
+test("when 从工具参数进入结论，修改条件使旧封印待复核，空串可撤去", () => {
+  let intent = change(empty(), [{ id: "条件", claim: "可用", check: "验证", when: "仅生产环境" }]);
+  assert.equal(intent.nodes["条件"].when, "仅生产环境");
+  intent = change(intent, [{ id: "条件", state: "done" }]);
+  const changed = change(intent, [{ id: "条件", when: "仅测试环境" }]);
+  assert.equal(f.intentState(changed, "条件"), "stale");
+  assert.match(f.intentText(changed), /情形：仅测试环境/);
+  assert.equal(change(changed, [{ id: "条件", when: "" }]).nodes["条件"].when, "");
+});
+
 test("结构：新的一项要写全，前提要在、不成环；有错整批不收", () => {
   let intent = empty();
   assert.match(problems(intent, [{ id: "甲", claim: "能登录" }])[0], /claim 与 check 都要写/);
@@ -442,7 +452,11 @@ test("孤悬：全局里没声明为根、既无前提又没人以它为前提�
 });
 
 test("名字：空格、@ 之类照规矩改写，同一批的前提与所属一并改，回给模型时说一声；英文名可比汉字长一倍", () => {
-  const { ops, problems: found, tidied } = f.normalizeIntentOps(empty(), [
+  const {
+    ops,
+    problems: found,
+    tidied
+  } = f.normalizeIntentOps(empty(), [
     { id: "north star", claim: "R", check: "r", root: true, needs: ["A_i50@512 run"] },
     { id: "A_i50@512 run", claim: "跑一轮", check: "读数落卷" }
   ]);

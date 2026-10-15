@@ -98,6 +98,10 @@
               rename: { type: "string", description: "已有一项改叫这个名字（说法变了、旧名不贴切时）；前提与所属随之改" },
               claim: { type: "string", description: "要成立的那句话" },
               check: { type: "string", description: "怎么算成立" },
+              when: {
+                type: "string",
+                description: "只在什么情形下须成立；这是给人和模型判断的条件说明，不是自动执行的表达式；空串撤去条件"
+              },
               needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
               any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
               in: { type: "string", description: "所属模块的 id：一项拆开还有许多步，就当模块，细项写 in 指向它；不写即全局，至多两层" },

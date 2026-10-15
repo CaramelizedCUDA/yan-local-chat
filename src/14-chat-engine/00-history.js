@@ -157,6 +157,17 @@ async function messageForApi(message, latest, budget = inlineTextBudget(), image
   const content = [{ type: "text", text: quotedText(message) || t("请查看附件。") }];
   let notes = "";
   for (const metadata of message.attachments) {
+    // 模型接口通常不收压缩包；原件已经落在本机，给出可用的路径，让本机工具解包。
+    // 历史里的包也保留这条索引。先复制到工作目录再解压，来源在目录外时也不必放宽沙箱。
+    if (fileKind(metadata.name).name === "archive") {
+      try {
+        const local = await bridge("/api/files/path", { id: metadata.id }, AbortSignal.timeout(8000));
+        notes += t`\n\n[压缩包：${metadata.name}；本机原件路径：${local.path}。用 run_command 将原件复制到工作目录，再解压到独立的临时子目录并读取；不要修改原件。]`;
+      } catch (error) {
+        notes += t`\n\n[压缩包 ${metadata.name} 的本机原件暂不可用：${String(error.message || error)}]`;
+      }
+      continue;
+    }
     // 早先消息里的图片只留一行占位，用不着原件：不必每问都把它从存储目录整份取回来。
     // 占位照实说图已不在：写「已在此前发送」，模型会当自己还看得见，问起图里的细节便凭空作答
     if (!images && metadata.kind === "image") {
