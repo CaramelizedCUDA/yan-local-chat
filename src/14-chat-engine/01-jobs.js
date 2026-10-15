@@ -32,7 +32,7 @@ const bgWatches = new Map();
 let awakeHold = null;
 function holdAwake() {
   const busy = requestJobs.size || crews.size || bgWatches.size;
-  if (busy && !awakeHold && globalThis.navigator?.locks) {
+  if (busy && !awakeHold && navigator.locks) {
     const hold = { release: () => {} },
       done = new Promise(resolve => (hold.release = () => resolve(null)));
     awakeHold = hold;
