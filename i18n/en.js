@@ -964,6 +964,12 @@ var YAN_EN = {
   未设: "Not set",
   收入文件: "Add files",
   全部: "All",
+  // 卷宗的分类筛选（单字；看图框头上的「画」是印章，不换）
+  画: "Images",
+  文: "Text",
+  音: "Audio",
+  影: "Video",
+  卷: "Docs",
   不入正文: "Kept out of the main chat",
   所领之命: "Task",
   言之有物: "Local chat and agent",

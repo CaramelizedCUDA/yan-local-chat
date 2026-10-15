@@ -76,7 +76,8 @@ function translateStatic(root = document.body) {
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const raw = node.nodeValue || "",
       text = raw.trim();
-    if (text && I18N[text]) node.nodeValue = raw.replace(text, I18N[text]);
+    // 印章不动：看图框头上的「画」与卷宗筛选的「画」同字，只换后者
+    if (text && I18N[text] && !node.parentElement?.closest(".seal")) node.nodeValue = raw.replace(text, I18N[text]);
   }
   for (const el of root.querySelectorAll("[title],[placeholder],[aria-label],[data-tip]"))
     for (const name of ["title", "placeholder", "aria-label", "data-tip"]) {
