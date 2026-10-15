@@ -5,17 +5,14 @@
 > 清简为骨，纸墨为意。长问慢答，尽付纸墨；言毕，即行。
 
 <p align="center">
-  <a href="https://siliconflow.cn" title="硅基流动 SiliconFlow">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/powered-by-siliconflow-dark.png">
-      <img src="assets/powered-by-siliconflow-light.png" alt="Powered by SiliconFlow" width="220">
-    </picture>
-  </a>
-</p>
-
-<p align="center">
   <img src="assets/yan-home.png" alt="言 · 本地聊天与轻量执事界面" width="100%">
 </p>
+
+## 合作伙伴
+
+<a href="https://siliconflow.cn" title="硅基流动 SiliconFlow"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/powered-by-siliconflow-dark.png"><img src="assets/powered-by-siliconflow-light.png" alt="Powered by SiliconFlow" height="44"></picture></a>
+
+言与 [硅基流动 SiliconFlow](https://siliconflow.cn) 合作：DeepSeek、Qwen、GLM、Kimi 等模型一处可用。在「设置 → 模型」的接口里选「硅基流动」，填上自己的 API Key 即可——地址已填好，模型列表只列对话模型，思考档位按各模型所认换算。图文步骤见 [在言中使用硅基流动](docs/siliconflow.md)。
 
 ## 特色
 
