@@ -19,6 +19,14 @@ npm start
 
 `start.cmd` 打开的 CMD 窗口即本机桥接进程，必须保持开启；关闭后已加载的页面暂时仍在，但刷新、模型转发、联网与执事都会停止。浏览器开了、页面却报「本机桥接已停止」时，先看这个窗口：桥接退出会停在那里并打出原因（端口被占、缺 node 等），不会一闪而过。
 
+## Windows 便携包
+
+不想先装 Node 的，用便携包：解开是一个「言」文件夹，双击里面的 `言.exe` 即可，其余与上面一样（窗口即桥接，须开着）。包里带着官方 Node（`node\`，含 npm），言自己的文件与仓库里的一字不差；`start.cmd` 也认这个 `node\`，两者等价。自带的 Node 接在 PATH 末尾：模型跑的 `node`、`npx` 与「环境」里装的前端工具找得到它，系统已装了 Node 的仍用系统的。对话、卷宗、配置照旧在 `~/.yan/`，换用便携包或换回源码都接得上。
+
+`言.exe` 没有代码签名，头一回双击 Windows 可能提示「已保护你的电脑」，点「更多信息 → 仍要运行」即可。
+
+打包：在仓库里运行 `npm run pack`，得 `dist/yan-<版本>-win-x64.zip`。要用到系统自带的 `curl.exe`、`tar.exe` 与 .NET Framework 4 的 `csc.exe`（Windows 10 / 11 都有）；Node 的版本写在 `pack/pack.mjs` 开头，压缩包按 nodejs.org 的校验和验过才用，换版本后整套测试用包里的 Node 跑一遍（`dist\言\node\node.exe test/run.mjs`）。启动器的源码是 `pack/launcher.cs`，图标 `pack/icon.ico` 由 `icon.svg` 画成。
+
 ## 在 VS Code 内使用
 
 1. 通过「终端 → 运行任务」执行「言：启动模型桥接」，并保持该任务终端开启。
