@@ -304,10 +304,16 @@ async function syncConfigWithDisk() {
   }
 }
 // 开页时对齐来的配置换了界面语言（这台浏览器头一回打开、存储里记着英文，或别处改过）：译文表只在开页时载得进来，
-// 存下即重新载入一回。只在开页这一次跟：切回页面时再跟，就把正在作答的打断了。同一语言一个会话只重载一回，不会来回转
+// 存下即重新载入一回。只在开页这一次跟：切回页面时再跟，就把正在作答的打断了。
+// 重载过还没换过来（如直接打开 index.html 载不进译文表）就不再重载，免得来回转；换过来了即撤下记号，往后别处再改照样跟
 function followLanguage() {
   const want = store.settings.language;
-  if (!want || want === LANG) return;
+  if (!want || want === LANG) {
+    try {
+      sessionStorage.removeItem("yan-language-reload");
+    } catch {}
+    return;
+  }
   try {
     if (sessionStorage.getItem("yan-language-reload") === want) return;
     sessionStorage.setItem("yan-language-reload", want);

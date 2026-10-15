@@ -286,11 +286,13 @@ function bindSettingRows() {
           return;
         }
         // 换语言：译文表在开页时载入（见 theme-boot.js），存下即重新载入
+        // 点的正是眼前的语言（多半是随浏览器来的）：不必重载，但记下这是选定的，往后换了浏览器也照它
         if (key === "language") {
-          if (value === LANG) return;
+          const was = store.settings.language;
           store.settings.language = value === "en" ? "en" : "zh";
+          if (store.settings.language === was) return;
           saveStore();
-          location.reload();
+          if (value !== LANG) location.reload();
           return;
         }
         if (key === "memoryEnabled") {
