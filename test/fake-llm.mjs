@@ -489,6 +489,31 @@ http
           250
         );
       }
+      // BOOKSTALE：开工时附上了账本，指令随后改了它，再差遣（帮手领命时现读到新版）；主模型拿开工时那份整份写回，须被挡下
+      if (firstUser.includes("BOOKSTALE")) {
+        const call = (id, name, args) =>
+          delta({ tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] });
+        if (firstTurn && !toolResults.length)
+          return sse(res, [
+            call("call_bs0", "run_command", { command: "Add-Content -Path .yan/账本.md -Value '- 乙' -Encoding utf8" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (firstTurn && toolResults.length === 1)
+          return sse(res, [
+            call("call_bs1", "delegate", { title: "看账本", task: "BOOKHELPER：照账本办，回报看到的约束。" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
+        if (!msgs.some(m => m.tool_calls?.some(c => c.function.name === "write_file")))
+          return sse(res, [
+            call("call_bs2", "write_file", { path: ".yan/账本.md", content: "# 约束\n- 甲\n" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({ content: `BOOKSTALE|${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // BOOKMID：开工时还没有账本，主模型中途立账本、再差遣；帮手领命时拿到的须是刚立的那份
       if (firstUser.includes("BOOKHELPER"))
         return sse(res, [

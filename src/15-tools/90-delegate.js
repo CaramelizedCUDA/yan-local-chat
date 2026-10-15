@@ -284,13 +284,13 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
   step.sub = sub;
   // 领命时附上主对话的账本（只读）：目标与约束它也得知道，开头提过的一条小约束才不会在分出去的活里丢了。
   // 领命这一刻现读：「先定下约束、再派活」最常见，开工时读的那份往往是旧的，甚至还没有
-  await loadLedger(conversation, ctx.signal);
+  const ledger = await loadLedger(conversation, ctx.signal, "sub");
   // 读账本这一会儿里按了「止」：它把中止吞了，这里补上——帮手还没登记，过了这里 stopCrew 就找不到它
   ctx.signal?.throwIfAborted();
   const lead = past ? settledDigest(past.sub) : "";
   const history = [
     ...(past ? helperHistory(conversation, past) : []),
-    { role: "user", content: `${ledgerNote(conversation, "sub", profile)}${lead ? `${lead}\n\n` : ""}${task}` }
+    { role: "user", content: `${ledgerNote(conversation, "sub", profile, ledger)}${lead ? `${lead}\n\n` : ""}${task}` }
   ];
   const overrides = {
     systemPrompt: systemPrompt(conversation, tools, { role: "sub" }),

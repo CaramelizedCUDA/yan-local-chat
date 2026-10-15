@@ -349,7 +349,7 @@ async function ensureWorkReady(conversation) {
 // 账本记多少不设上限——有的活真要记很多；限的只是每一问附多少：随模型窗口走，取附件那把尺子的一半（它每一问都附）。
 // 超出就附开头一段并写明其余用 read_file 看——所以账本是索引：常看的写在前面，细的记录（实验数据、长清单）另立 .yan/ 下的文件、账本里留一行指向它
 const LEDGER_PATH = ".yan/账本.md";
-/** @type {Map<string, { text: string, lines: number, partial: boolean, sig: string }>} 最近读到的账本，按对话：每一答开工时读，差遣帮手时再现读一回。
+/** @type {Map<string, { text: string, lines: number, partial: boolean, sig: string }>} 主答附上的账本，按对话：每一答开工时读（帮手领命时现读的那份不进这里）。
  * text 是读到的那截，lines 是整份的行数；partial：读接口一回给得有限，长账本只拿到了前面；sig 是读时的指纹 */
 const ledgers = new Map();
 /** @type {Set<string>} 上回附上去的账本被截过的对话：截过就不算读过全文，改它得先读 */
@@ -358,9 +358,13 @@ const ledgersCut = new Set();
 function ledgerBudget(profile) {
   return Math.floor(inlineTextBudget(profile || activeProfile()) / 2);
 }
-/** @param {Conversation} conversation */
-async function loadLedger(conversation, signal) {
-  if (!isWork(conversation)) return void ledgers.delete(conversation.id);
+// 帮手领命时现读的那份只交给帮手（role 为 sub）：主答没看过它，记进 ledgers 就等于替主答认了新版的指纹，读后被改也写得回去
+/** @param {Conversation} conversation @param {AbortSignal} [signal] @param {"main"|"sub"} [role] */
+async function loadLedger(conversation, signal, role = "main") {
+  if (!isWork(conversation)) {
+    if (role === "main") ledgers.delete(conversation.id);
+    return null;
+  }
   const data = await bridge("/api/work/read", { ...workScope(conversation), path: LEDGER_PATH, limit: 2000 }, signal).catch(() => null);
   const raw = String(data?.text || ""),
     clip = /\n…（内容过长已截断[^\n]*$/,
@@ -368,19 +372,23 @@ async function loadLedger(conversation, signal) {
       .replace(clip, "")
       .replace(/^ *\d+\| /gm, "")
       .trimEnd();
-  if (text.trim())
-    ledgers.set(conversation.id, {
-      text,
-      lines: Number(data.totalLines) || text.split("\n").length,
-      partial: clip.test(raw) || Number(data.shown) < Number(data.totalLines),
-      sig: String(data.sig || "")
-    });
-  else ledgers.delete(conversation.id);
+  const ledger = text.trim()
+    ? {
+        text,
+        lines: Number(data.totalLines) || text.split("\n").length,
+        partial: clip.test(raw) || Number(data.shown) < Number(data.totalLines),
+        sig: String(data.sig || "")
+      }
+    : null;
+  if (role === "main") ledger ? ledgers.set(conversation.id, ledger) : ledgers.delete(conversation.id);
+  return ledger;
 }
 // 附在这一问之后的一段；帮手的是只读的一份（账本只由主对话写，星形）
-/** @param {Conversation} conversation @param {"main"|"sub"} role @param {Profile|null} [profile] */
-function ledgerNote(conversation, role = "main", profile = null) {
-  const ledger = ledgers.get(conversation.id);
+/**
+ * @param {Conversation} conversation @param {"main"|"sub"} role @param {Profile|null} [profile]
+ * @param {{ text: string, lines: number, partial: boolean, sig: string } | null} [ledger] 帮手的那份由领命时现读传进来
+ */
+function ledgerNote(conversation, role = "main", profile = null, ledger = ledgers.get(conversation.id)) {
   if (!ledger) return "";
   const { text, lines, partial } = ledger,
     tokens = estimateText(text),
