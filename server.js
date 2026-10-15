@@ -250,7 +250,9 @@ function serveStatic(req, res) {
   }
   res.writeHead(200, { ...headers, "Content-Length": stat.size });
   if (req.method === "HEAD") return res.end();
-  fs.createReadStream(file).pipe(res);
+  fs.createReadStream(file)
+    .on("error", () => res.destroy())
+    .pipe(res);
 }
 
 // YAN_DEBUG=1：把每个请求与异常断开都打到控制台，排查「页面说桥接没起」这类问题时用

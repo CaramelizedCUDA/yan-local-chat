@@ -13,7 +13,12 @@ function readFile(file, mode) {
 /** @param {ArrayBuffer|Uint8Array} bytes */
 function decodeTextBytes(bytes) {
   // 带 BOM 的 UTF-16（PowerShell 5.1 的 > 重定向、记事本另存的「Unicode」）照 BOM 读
-  const head = new Uint8Array(bytes instanceof ArrayBuffer ? bytes : bytes.buffer, bytes instanceof ArrayBuffer ? 0 : bytes.byteOffset, 2);
+  // 只看头两个字节；空文件、单字节的文件不够两个，按实有的看（越界会抛 RangeError）
+  const head = new Uint8Array(
+    bytes instanceof ArrayBuffer ? bytes : bytes.buffer,
+    bytes instanceof ArrayBuffer ? 0 : bytes.byteOffset,
+    Math.min(2, bytes.byteLength)
+  );
   if (head[0] === 0xff && head[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes);
   if (head[0] === 0xfe && head[1] === 0xff) return new TextDecoder("utf-16be").decode(bytes);
   try {

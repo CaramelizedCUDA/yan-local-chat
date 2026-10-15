@@ -24,11 +24,11 @@ defineTool({
       return {
         ok: false,
         content: prompt("work.stale", { path: data.path, who: changedBy(conversation, step, data.sig) }),
-        display: t("读后已被改过")
+        display: "读后已被改过"
       };
     step.sig = data.sig;
     step.root = workRoot(conversation);
-    step.note = t`${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? t(" · 覆盖") : ""}`;
+    step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
     // 覆盖时的增删由桥接按前后两版逐行比出（旧桥接只给原有行数，退回整删整增）；lines 是写后这件的行数，新建的件按它算净增
     step.change = {
       path: data.path,
@@ -47,7 +47,7 @@ defineTool({
     return {
       ok: true,
       content: t`已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? t`，覆盖了原${data.binary ? t("有的二进制") : ""}文件` : ""}${data.converted ? t("；原文件是 GBK，已存成 UTF-8") : ""}）`,
-      display: data.existed ? t("已覆盖") : t("已写入")
+      display: data.existed ? "已覆盖" : "已写入"
     };
   }
 });
@@ -64,7 +64,7 @@ defineTool({
   async run(step, args, { conversation, signal }) {
     step.title = args.path;
     if (!seenBefore(conversation, step, args.path))
-      return { ok: false, content: prompt("work.unread", { path: args.path }), display: t("需先读取") };
+      return { ok: false, content: prompt("work.unread", { path: args.path }), display: "需先读取" };
     const seen = seenSig(conversation, step, args.path),
       data = await bridge(
         "/api/work/edit",
@@ -89,7 +89,7 @@ defineTool({
     return {
       ok: true,
       content: t`已修改 ${data.path}：第 ${data.line} 行起替换 ${data.replaced} 处，文件现为 ${data.lines} 行${step.drifted ? prompt("work.drift", { who: step.drifted }) : ""}`,
-      display: t`第 ${data.line} 行 · ${data.replaced} 处`
+      display: `第 ${data.line} 行 · ${data.replaced} 处`
     };
   }
 });
@@ -119,7 +119,7 @@ defineTool({
     return {
       ok: true,
       content: t`${data.path}（共 ${data.totalLines} 行，此处第 ${data.offset}–${data.offset + data.shown - 1} 行${encoding}）\n${data.text}`,
-      display: t`${data.shown}/${data.totalLines} 行`
+      display: `${data.shown}/${data.totalLines} 行`
     };
   }
 });
@@ -149,7 +149,7 @@ defineTool({
         : args.pattern
           ? t`（没有匹配 ${args.pattern} 的文件）`
           : t("（空目录）"),
-      display: t`${data.entries.length} 项`
+      display: `${data.entries.length} 项`
     };
   }
 });
@@ -179,7 +179,7 @@ defineTool({
     const lines = data.matches.map(match => `${match.file}:${match.line}: ${match.text}`);
     step.output = trimOutput(lines.join("\n"));
     // 桥接替模型圆过的（正则写不成，按字面搜了）：说在结果前头
-    step.note = data.note || (lines.length ? "" : t("无匹配"));
+    step.note = data.note || (lines.length ? "" : "无匹配");
     // 搜得不全的照实说：扫到文件上限、没进去的大目录。零命中时模型最容易据此断言「没有」
     const partial = [
         data.limited && t`只扫了前 ${data.limited} 个文件，其余未搜；请缩小 path 或加 glob`,
@@ -193,7 +193,7 @@ defineTool({
     return {
       ok: true,
       content: data.note ? `（${data.note}）\n${found}` : found,
-      display: t`${lines.length} 处 · ${data.files} 文件`
+      display: `${lines.length} 处 · ${data.files} 文件`
     };
   }
 });
@@ -262,10 +262,23 @@ function lastSeen(conversation, step, file) {
       ) || null
   );
 }
+// 主模型写、改账本时带的指纹：这一答里亲手读写过的以那一步为准，没有的以开工时附上的那份为准——
+// 附上的就算它读过（见 seenBefore），读后别的对话又改了账本，整份写回前得认得出来。不是账本的回 null
+/** @param {Conversation} conversation @param {Step} step @returns {string | null} */
+function ledgerSig(conversation, step, file) {
+  const ledger = ledgers.get(conversation.id);
+  if (step.scope || !ledger || seenPath(conversation, file) !== seenPath(conversation, LEDGER_PATH)) return null;
+  const answer = conversation.messages.find(message => allSteps(message).includes(step)),
+    here = lastSeen(conversation, step, file);
+  if (here && answer && allSteps(answer).includes(here)) return here.drifted ? "stale" : here.sig || "";
+  return ledger.sig;
+}
 // 那一步见到的文件指纹，写、改时带给桥接比对：读后被别人改过就知道。读后被改、只照原文改了一处的，别处它没看过，记作对不上的一枚；
 // 早先没记指纹的步骤不比
 /** @param {Conversation} conversation @param {Step} step */
 function seenSig(conversation, step, file) {
+  const ledger = ledgerSig(conversation, step, file);
+  if (ledger !== null) return ledger;
   const last = lastSeen(conversation, step, file);
   return last?.drifted ? "stale" : last?.sig || "";
 }
@@ -336,8 +349,8 @@ async function ensureWorkReady(conversation) {
 // 账本记多少不设上限——有的活真要记很多；限的只是每一问附多少：随模型窗口走，取附件那把尺子的一半（它每一问都附）。
 // 超出就附开头一段并写明其余用 read_file 看——所以账本是索引：常看的写在前面，细的记录（实验数据、长清单）另立 .yan/ 下的文件、账本里留一行指向它
 const LEDGER_PATH = ".yan/账本.md";
-/** @type {Map<string, { text: string, lines: number, partial: boolean }>} 最近读到的账本，按对话：每一答开工时读，差遣帮手时再现读一回。
- * text 是读到的那截，lines 是整份的行数；partial：读接口一回给得有限，长账本只拿到了前面 */
+/** @type {Map<string, { text: string, lines: number, partial: boolean, sig: string }>} 最近读到的账本，按对话：每一答开工时读，差遣帮手时再现读一回。
+ * text 是读到的那截，lines 是整份的行数；partial：读接口一回给得有限，长账本只拿到了前面；sig 是读时的指纹 */
 const ledgers = new Map();
 /** @type {Set<string>} 上回附上去的账本被截过的对话：截过就不算读过全文，改它得先读 */
 const ledgersCut = new Set();
@@ -359,7 +372,8 @@ async function loadLedger(conversation, signal) {
     ledgers.set(conversation.id, {
       text,
       lines: Number(data.totalLines) || text.split("\n").length,
-      partial: clip.test(raw) || Number(data.shown) < Number(data.totalLines)
+      partial: clip.test(raw) || Number(data.shown) < Number(data.totalLines),
+      sig: String(data.sig || "")
     });
   else ledgers.delete(conversation.id);
 }

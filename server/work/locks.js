@@ -1,5 +1,7 @@
 // 言 · 桥接 · 执事的写锁
 "use strict";
+const fs = require("node:fs");
+const path = require("node:path");
 
 // ---- 并行帮手共用一个目录时的写锁：同一文件的写入 / 修改按先后排队（edit 的读—改—写在锁内，不会互相覆盖），不同文件照常并行。
 // run_command 不拿锁：对谈的工作目录都是卷宗，一把整目录的锁会让所有对话、所有帮手的指令与写入排成一队，
@@ -47,9 +49,24 @@ const stopped = () => Object.assign(Error("已停止"), { stopped: true });
 module.exports = function createLocks() {
   const pathLocks = new Map();
   const lockKey = file => (process.platform === "win32" ? file.toLowerCase() : file);
+  // 同一个文件有几种写法（目录链接、junction、符号链接）：按真实路径认锁，不然两条路各拿一把、同时改同一份。
+  // 还不存在的文件取最深一层在的上级的真实路径，再把余下几段接回去
+  async function canonical(file) {
+    const rest = [];
+    for (let dir = file; ; ) {
+      try {
+        return path.join(await fs.promises.realpath(dir), ...rest);
+      } catch {
+        const up = path.dirname(dir);
+        if (up === dir) return file;
+        rest.unshift(path.basename(dir));
+        dir = up;
+      }
+    }
+  }
   // 写一个文件：该路径的独占锁；返回一次性的释放函数。没人握着、也没人排队的锁随手清掉
   async function lockFile(file, signal) {
-    const key = lockKey(file);
+    const key = lockKey(await canonical(file));
     let lock = pathLocks.get(key);
     if (!lock) pathLocks.set(key, (lock = new Mutex()));
     const forget = () => {

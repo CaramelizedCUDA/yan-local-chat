@@ -40,7 +40,8 @@ module.exports = function createFiles(work) {
       if (body.unseen === true && previous?.length)
         throw Error(`${body.path} 已存在（${previous.length} 字节），整份覆盖前请先 read_file 看过；只改几处用 edit_file`);
       // 读过之后被别人改过：拿旧印象整份写回，别人的改动就悄悄没了。不写，回现状的指纹，页面据此查是谁改的、请它重读
-      if (typeof body.seen === "string" && previous?.length && fingerprint(previous) !== body.seen)
+      // 读后被清空也算被改过（空的也有指纹）：不比长度
+      if (typeof body.seen === "string" && previous && fingerprint(previous) !== body.seen)
         return { stale: true, path: shownPath(workdir, file), sig: fingerprint(previous) };
       const prior = previous ? decodeText(previous) : null,
         previousText = prior?.text ?? "",
@@ -222,11 +223,16 @@ module.exports = function createFiles(work) {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       const extension = path.extname(target),
         stem = target.slice(0, target.length - extension.length);
+      // 挑名与落盘是一步：独占创建（wx），名字被占了（别的下载、别处刚写的）就顺延到下一个序号，不会两份落进同一个名字
       let file = target;
-      for (let n = 2; fs.existsSync(file); n++) file = `${stem} (${n})${extension}`;
-      await fs.promises.writeFile(file, buffer).catch(error => {
-        throw Error(describeFsError(error, shownPath(workdir, file)));
-      });
+      for (let n = 2; ; n++)
+        try {
+          await fs.promises.writeFile(file, buffer, { flag: "wx" });
+          break;
+        } catch (error) {
+          if (error.code !== "EEXIST") throw Error(describeFsError(error, shownPath(workdir, file)));
+          file = `${stem} (${n})${extension}`;
+        }
       return {
         path: shownPath(workdir, file),
         bytes: buffer.length,

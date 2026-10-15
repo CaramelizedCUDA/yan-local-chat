@@ -33,7 +33,7 @@ defineTool({
       (docs.length === 1 ? docs[0] : null);
     if (!doc) {
       const listed = documentList(step, docs);
-      return { ok: false, content: t`未找到文档「${args.name}」。${listed.content}`, display: t("未找到") };
+      return { ok: false, content: t`未找到文档「${args.name}」。${listed.content}`, display: "未找到" };
     }
     step.title = doc.name;
     let text = "";
@@ -41,20 +41,20 @@ defineTool({
       try {
         text = await archiveDocumentText(doc);
       } catch (error) {
-        return { ok: false, content: t`卷宗文档读取失败：${String(error.message || error).slice(0, 120)}`, display: t("读取失败") };
+        return { ok: false, content: t`卷宗文档读取失败：${String(error.message || error).slice(0, 120)}`, display: "读取失败" };
       }
     } else {
       const record = await getAttachment(doc.id);
       text = record ? (record.kind === "text" ? record.data : record.extractedText) || "" : "";
     }
-    if (!text) return { ok: false, content: t("该文档无可读取的文本"), display: t("无文本") };
+    if (!text) return { ok: false, content: t("该文档无可读取的文本"), display: "无文本" };
     const pages = text.split(/^(?=第 \d+ 页$)/m),
       pageCount = pages.filter(p => /^第 \d+ 页$/m.test(p)).length;
     if (args.page) {
       const page = pages.find(p => p.startsWith(`第 ${args.page} 页`));
-      if (!page) return { ok: false, content: t`没有第 ${args.page} 页，共 ${pageCount || 1} 页`, display: t("页码超出") };
-      step.note = t`第 ${args.page} 页`;
-      return { ok: true, content: page.slice(0, 20000), display: t`第 ${args.page} 页 · ${page.length} 字` };
+      if (!page) return { ok: false, content: t`没有第 ${args.page} 页，共 ${pageCount || 1} 页`, display: "页码超出" };
+      step.note = `第 ${args.page} 页`;
+      return { ok: true, content: page.slice(0, 20000), display: `第 ${args.page} 页 · ${page.length} 字` };
     }
     if (args.query) {
       const needle = args.query.toLowerCase(),
@@ -65,20 +65,20 @@ defineTool({
         hits.push(text.slice(Math.max(0, index - 300), index + needle.length + 300).trim());
         index = lower.indexOf(needle, index + needle.length + 300);
       }
-      step.note = t`关键词「${args.query}」`;
+      step.note = `关键词「${args.query}」`;
       return hits.length
-        ? { ok: true, content: hits.map((hit, i) => t`片段 ${i + 1}：…${hit}…`).join("\n\n"), display: t`${hits.length} 处匹配` }
-        : { ok: true, content: t`全文未出现「${args.query}」`, display: t("无匹配") };
+        ? { ok: true, content: hits.map((hit, i) => t`片段 ${i + 1}：…${hit}…`).join("\n\n"), display: `${hits.length} 处匹配` }
+        : { ok: true, content: t`全文未出现「${args.query}」`, display: "无匹配" };
     }
     const limit = 12000;
-    step.note = t`${text.length} 字${pageCount ? t` · ${pageCount} 页` : ""}`;
+    step.note = `${text.length} 字${pageCount ? ` · ${pageCount} 页` : ""}`;
     return {
       ok: true,
       content:
         text.length > limit
           ? t`${text.slice(0, limit)}\n\n[文档共 ${text.length} 字${pageCount ? t`、${pageCount} 页` : ""}，此处只给出开头；可用 page 或 query 参数读取其余部分]`
           : text,
-      display: t`${Math.min(text.length, limit)} 字`
+      display: `${Math.min(text.length, limit)} 字`
     };
   }
 });
@@ -98,7 +98,7 @@ function documentList(step, docs) {
   return {
     ok: true,
     content: lines.length ? t`可读文档（name 给文件名或卷宗路径）：\n${lines.join("\n")}${more}` : t("没有可读的文档"),
-    display: t`${docs.length} 件`
+    display: `${docs.length} 件`
   };
 }
 /** @param {Conversation} conversation */
@@ -122,7 +122,7 @@ async function archiveDocumentText(doc) {
   if (!response.ok) throw Error(t("取回失败"));
   const blob = await response.blob();
   const text = isTextFile({ name: doc.name, type: "" })
-    ? await blob.text()
+    ? decodeTextBytes(await blob.arrayBuffer())
     : await extractDocumentText(doc.name, await readFile(blob, "data"));
   archiveDocCache.set(key, text);
   if (archiveDocCache.size > 12) archiveDocCache.delete(archiveDocCache.keys().next().value);

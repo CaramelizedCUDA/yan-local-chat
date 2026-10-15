@@ -64,3 +64,33 @@ test("读后被改：edit 原文对得上照改，捎回改前指纹", async () 
   const legacy = await call("write", { content: "x\n" });
   assert.equal(legacy.stale, undefined);
 });
+
+test("读后被清空也算被改：整份覆盖不写", async () => {
+  const { root, call } = setup();
+  const read = await call("read", {});
+  fs.writeFileSync(path.join(root, "a.txt"), "");
+  const stale = await call("write", { content: "mine\n", seen: read.sig });
+  assert.equal(stale.stale, true);
+  assert.equal(fs.readFileSync(path.join(root, "a.txt"), "utf8"), "");
+});
+
+test("并发下载到同一个名字：各落一份，不互相覆盖", async () => {
+  const { root, call } = setup();
+  const http = await import("node:http");
+  const server = http.createServer((req, res) => setTimeout(() => res.end(`body ${req.url}`), 50));
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    fs.writeFileSync(path.join(root, "report.txt"), "old");
+    const [one, two] = await Promise.all([
+      call("download", { url: `${base}/1`, path: "report.txt" }),
+      call("download", { url: `${base}/2`, path: "report.txt" })
+    ]);
+    assert.notEqual(one.path, two.path);
+    const bodies = [one.path, two.path].map(p => fs.readFileSync(path.join(root, p), "utf8")).sort();
+    assert.deepEqual(bodies, ["body /1", "body /2"]);
+    assert.equal(fs.readFileSync(path.join(root, "report.txt"), "utf8"), "old");
+  } finally {
+    server.close();
+  }
+});
