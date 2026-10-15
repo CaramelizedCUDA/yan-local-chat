@@ -375,15 +375,18 @@ function listenPendant() {
     if (part === "toggle") return void listenToggle();
     if (part === "prev" || part === "next") return listenStep(part === "next" ? 1 : -1);
   });
-  // 点签外、按 Esc：纸签收回，只留那一缕
+  // 点签外、按 Esc（见下面登记的一层）：纸签收回，只留那一缕
   document.addEventListener("pointerdown", e => {
     if (box.classList.contains("open") && !box.contains(e.target)) box.classList.remove("open");
   });
-  window.addEventListener("keydown", e => {
-    if (e.key === "Escape" && box.classList.contains("open")) box.classList.remove("open");
-  });
   return box;
 }
+defineLayer({
+  name: "listen-card",
+  rank: 92,
+  open: () => !!$("#listenPendant")?.classList.contains("open"),
+  close: () => $("#listenPendant").classList.remove("open")
+});
 function listenRenderPendant() {
   const box = $("#listenPendant");
   if (!box?.childElementCount || !listenTrack) return;

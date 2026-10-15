@@ -42,17 +42,8 @@ function clepsydraInk(age) {
       [3.2, 5].map(d => brushStroke([14.4, top + d, 15.1, top + d, 15.8, top + d], 0.6, { head: 1, tail: 0.6, tone: "ink2" })).join("");
   return `${pot}${basin}<g class="clepsydra-drop">${drop(9.7, 9.4, 0.85)}</g><g class="clepsydra-arrow">${arrow}</g>`;
 }
-function clepsydraSpan(ms) {
-  const minutes = Math.floor(Math.max(0, ms) / 60000),
-    hours = Math.floor(minutes / 60);
-  return minutes < 1
-    ? t("不到 1 分钟")
-    : minutes < 60
-      ? t`${minutes} 分钟`
-      : hours < 24
-        ? t`${hours} 小时${minutes % 60 ? t` ${minutes % 60} 分` : ""}`
-        : t`${Math.floor(hours / 24)} 天${hours % 24 ? t` ${hours % 24} 小时` : ""}`;
-}
+// 一分钟才重画一回：取整到分，秒不写
+const clepsydraSpan = ms => (ms < 60000 ? t("不到 1 分钟") : spanText(Math.floor(ms / 60000) * 60000));
 /** 簿录：当前对话排前；只牵涉一段对话时不分组 @param {ReturnType<typeof runningBackground>} list */
 function clepsydraListHtml(list, now) {
   const groups = new Map();
@@ -110,7 +101,5 @@ function bindClepsydraEvents() {
   document.addEventListener("pointerdown", event => {
     if (clepsydraOpen && !host.contains(/** @type {Node} */ (event.target))) setClepsydraOpen(false);
   });
-  window.addEventListener("keydown", event => {
-    if (clepsydraOpen && event.key === "Escape") setClepsydraOpen(false);
-  });
 }
+defineLayer({ name: "clepsydra", rank: 92, open: () => clepsydraOpen, close: () => setClepsydraOpen(false) });

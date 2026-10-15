@@ -68,7 +68,7 @@ check(
     groups.grps[0].endsWith("当前") &&
     groups.grps[1] === "正大杯" &&
     groups.rows.includes("bg11 小时 12 分›") &&
-    groups.rows.includes("bg726 分钟›"),
+    groups.rows.includes("bg726 分›"),
   JSON.stringify(groups)
 );
 await shot("clepsydra-open.png");

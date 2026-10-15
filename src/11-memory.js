@@ -169,6 +169,30 @@ function openMemoryCategory(name, item = "") {
   renderSettings();
   if (moved) $("#settingsContent").scrollTop = 0;
 }
+// 把一个按钮就地换成一格写类名的输入框：回车、失焦即定，Esc 作罢（交回空字）；只定一回
+/** @param {Element} target @param {(typed: string) => void} settle */
+function memoryNameField(target, className, settle) {
+  const field = document.createElement("input");
+  field.className = className;
+  field.placeholder = t("新类名");
+  field.maxLength = 24;
+  target.replaceWith(field);
+  field.focus();
+  let settled = false;
+  const done = keep => {
+    if (settled) return;
+    settled = true;
+    settle(keep ? field.value : "");
+  };
+  field.addEventListener("keydown", e => {
+    if (e.key === "Enter") done(true);
+    else if (e.key === "Escape") {
+      e.stopPropagation();
+      done(false);
+    }
+  });
+  field.addEventListener("blur", () => done(true));
+}
 function bindMemoryEvents() {
   const host = $("#settingsContent");
   // 改着的输入框随字长高
@@ -262,27 +286,7 @@ function bindMemoryEvents() {
           label: t("另起一类…"),
           run: () => {
             // 另起一类：就地换成一个输入框，回车落定，Esc 作罢
-            const field = document.createElement("input");
-            field.className = "memory-move";
-            field.placeholder = t("新类名");
-            field.maxLength = 24;
-            move.replaceWith(field);
-            field.focus();
-            let settled = false;
-            const settle = keep => {
-              if (settled) return;
-              settled = true;
-              if (keep && field.value.trim()) fileMemory(item, field.value);
-              else renderSettings();
-            };
-            field.addEventListener("keydown", e => {
-              if (e.key === "Enter") settle(true);
-              else if (e.key === "Escape") {
-                e.stopPropagation();
-                settle(false);
-              }
-            });
-            field.addEventListener("blur", () => settle(true));
+            memoryNameField(move, "memory-move", name => (name.trim() ? fileMemory(item, name) : renderSettings()));
           }
         }
       ]);
@@ -311,29 +315,12 @@ function bindMemoryEvents() {
   // 另起一类：就地换成输入框写名，回车即在这一类里手记第一条——类不另存，有了条目才算有这一类，
   // 第一条没写就离开，这一类也随之消失。写的是已有的名字即打开那一类
   $("#newMemoryCat")?.addEventListener("click", e => {
-    const field = document.createElement("input");
-    field.className = "memory-cat memory-cat-new";
-    field.placeholder = t("新类名");
-    field.maxLength = 24;
-    e.currentTarget.replaceWith(field);
-    field.focus();
-    let settled = false;
-    const settle = keep => {
-      if (settled) return;
-      settled = true;
-      const name = keep && field.value.trim() ? cleanMemoryCategory(field.value) : "";
+    memoryNameField(e.currentTarget, "memory-cat memory-cat-new", typed => {
+      const name = typed.trim() ? cleanMemoryCategory(typed) : "";
       if (!name) return renderSettings();
       if (memoryCategories().some(cat => cat.name === name)) return openMemoryCategory(name);
       jot(name);
-    };
-    field.addEventListener("keydown", e => {
-      if (e.key === "Enter") settle(true);
-      else if (e.key === "Escape") {
-        e.stopPropagation();
-        settle(false);
-      }
     });
-    field.addEventListener("blur", () => settle(true));
   });
   $("#dropMemoryCat")?.addEventListener("click", async () => {
     const name = memoryCategoryOpen,

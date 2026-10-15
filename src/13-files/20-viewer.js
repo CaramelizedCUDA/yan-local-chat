@@ -280,14 +280,16 @@ function openArchiveImage(path, trigger = null) {
   const entry = (archiveEntries || []).find(file => file.path === path);
   imageViewerAttachmentId = null;
   imageViewerArchivePath = path;
+  showImageViewer(archiveFileUrl(path), entry?.name || "", `${entry?.name || path} · ${formatFileSize(entry?.size || 0)}`, trigger);
+}
+// 看图框摊开一张图（附件、卷宗共用），先按窗口大小看
+function showImageViewer(src, name, label, trigger) {
   imageViewerReturnFocus = trigger || document.activeElement;
-  $("#imageViewerName").textContent = `${entry?.name || path} · ${formatFileSize(entry?.size || 0)}`;
+  $("#imageViewerName").textContent = label;
   const image = $("#imageViewerImage");
-  image.src = archiveFileUrl(path);
-  image.alt = entry?.name || t("图片预览");
-  $("#imageViewerStage").classList.remove("actual");
-  $("#imageViewerZoom").textContent = t("原图");
-  $("#imageViewerZoom").setAttribute("aria-pressed", "false");
+  image.src = src;
+  image.alt = name || t("图片预览");
+  setImageViewerZoom(false);
   $("#imageViewer").classList.remove("hidden");
   $("#imageViewerClose").focus();
 }
@@ -340,9 +342,11 @@ function bindViewerEvents() {
   });
 }
 function toggleImageViewerZoom() {
-  const stage = $("#imageViewerStage"),
-    actual = !stage.classList.contains("actual");
-  stage.classList.toggle("actual", actual);
+  setImageViewerZoom(!$("#imageViewerStage").classList.contains("actual"));
+}
+// 原图大小还是适应窗口；按钮写的是点了换成哪样
+function setImageViewerZoom(actual) {
+  $("#imageViewerStage").classList.toggle("actual", actual);
   $("#imageViewerZoom").textContent = actual ? t("适应") : t("原图");
   $("#imageViewerZoom").setAttribute("aria-pressed", String(actual));
 }
@@ -354,9 +358,7 @@ function closeImageViewer() {
   if (viewer.classList.contains("hidden")) return;
   viewer.classList.add("hidden");
   $("#imageViewerImage").removeAttribute("src");
-  $("#imageViewerStage").classList.remove("actual");
-  $("#imageViewerZoom").textContent = t("原图");
-  $("#imageViewerZoom").setAttribute("aria-pressed", "false");
+  setImageViewerZoom(false);
   imageViewerAttachmentId = null;
   const target = imageViewerReturnFocus;
   imageViewerReturnFocus = null;
@@ -371,16 +373,7 @@ async function openImageViewer(id, trigger = null) {
     if (file.kind !== "image") return openFileViewer({ attachmentId: id }, file.name, trigger);
     imageViewerAttachmentId = id;
     imageViewerArchivePath = null;
-    imageViewerReturnFocus = trigger || document.activeElement;
-    $("#imageViewerName").textContent = `${file.name || t("图片")} · ${formatFileSize(file.size)}`;
-    const image = $("#imageViewerImage");
-    image.src = file.data;
-    image.alt = file.name || t("图片预览");
-    $("#imageViewerStage").classList.remove("actual");
-    $("#imageViewerZoom").textContent = t("原图");
-    $("#imageViewerZoom").setAttribute("aria-pressed", "false");
-    $("#imageViewer").classList.remove("hidden");
-    $("#imageViewerClose").focus();
+    showImageViewer(file.data, file.name, `${file.name || t("图片")} · ${formatFileSize(file.size)}`, trigger);
   } catch {
     if (revision === imageViewerRevision) toast(t("图片读取失败"));
   }
