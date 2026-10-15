@@ -207,8 +207,7 @@ function bindModelSettings() {
       id: uid(),
       name: t("新模型"),
       model: "",
-      api: "siliconflow",
-      baseUrl: SILICONFLOW_BASE,
+      baseUrl: "",
       apiKey: "",
       quota: "",
       usedTokens: 0
