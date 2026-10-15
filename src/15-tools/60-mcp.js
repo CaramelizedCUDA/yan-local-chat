@@ -74,7 +74,7 @@ async function mcpForTurn() {
   clearTimeout(timer);
   if (!ready && !mcp.waitWarned) {
     mcp.waitWarned = true;
-    toast("外部服务仍在连接，本问先使用已就绪的工具");
+    toast(t("外部服务仍在连接，本问先使用已就绪的工具"));
   }
 }
 function registerMcpTools() {
@@ -155,11 +155,11 @@ const MCP_LAZY_TOOLS = [
       const text = found
         .map(
           tool =>
-            `## ${tool.name}${mcpReadOnly(tool) ? "（只读）" : ""}\n${tool.description || tool.title || ""}\n参数：${JSON.stringify(tool.inputSchema)}`
+            t`## ${tool.name}${mcpReadOnly(tool) ? t("（只读）") : ""}\n${tool.description || tool.title || ""}\n参数：${JSON.stringify(tool.inputSchema)}`
         )
         .join("\n\n");
       step.output = trimOutput(text);
-      return { ok: true, content: text, display: `${found.length} 件` };
+      return { ok: true, content: text, display: t`${found.length} 件` };
     }
   },
   {
@@ -185,7 +185,7 @@ const MCP_LAZY_TOOLS = [
             problems: problems.join("；"),
             hint: schemaHint(spec.inputSchema)
           }),
-          display: "参数不合要求"
+          display: t("参数不合要求")
         };
       return runMcpTool(step, args.server, args.tool, inner, ctx);
     }
@@ -208,7 +208,7 @@ function mcpDirectory(preset) {
           .split("\n")[0]
           .trim()
           .slice(0, 60);
-        return `- ${tool.name}${mcpReadOnly(tool) ? "（只读）" : ""}${first ? `：${first}` : ""}`;
+        return `- ${tool.name}${mcpReadOnly(tool) ? t("（只读）") : ""}${first ? `：${first}` : ""}`;
       });
       return `【${server}】${head}\n${lines.join("\n")}`;
     })
@@ -217,13 +217,13 @@ function mcpDirectory(preset) {
 function mcpUnknown(server, tool) {
   const state = mcp.servers[server];
   const known = state?.ok
-    ? `${server} 有：${state.tools.map(t => t.name).join("、")}`
-    : `已接入的服务：${
+    ? t`${server} 有：${state.tools.map(t => t.name).join("、")}`
+    : t`已接入的服务：${
         Object.keys(mcp.servers)
           .filter(name => mcp.servers[name].ok)
-          .join("、") || "无"
+          .join("、") || t("无")
       }`;
-  return { ok: false, content: prompt("mcp.unknown", { server, tool, known }), display: "未找到" };
+  return { ok: false, content: prompt("mcp.unknown", { server, tool, known }), display: t("未找到") };
 }
 // 调一件：服务标了只读的径直跑；其余在「问而后行」里请示一声（配置 autoApprove 里列了的免问），另两档照跑
 /**
@@ -240,7 +240,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
   const ask = !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
   if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
-    return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
+    return { ok: false, content: prompt("assistant.declined"), display: t("已跳过") };
   }
   const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal).finally(
     stageWatch(tool, args)
@@ -253,7 +253,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
   return {
     ok: !data.result.isError,
     content: text,
-    display: data.result.isError ? "出错" : images.length ? `${images.length} 幅画面` : `${text.length} 字`,
+    display: data.result.isError ? t("出错") : images.length ? t`${images.length} 幅画面` : t`${text.length} 字`,
     ...(images.length ? { images } : {})
   };
 }
@@ -286,7 +286,7 @@ async function mcpResultImages(step, result) {
           name:
             images.length === 1 && said
               ? said
-              : `画面-${step.id.slice(-6)}${images.length > 1 ? `-${i + 1}` : ""}.${mime.split("/")[1]?.replace("jpeg", "jpg") || "png"}`,
+              : t`画面-${step.id.slice(-6)}${images.length > 1 ? `-${i + 1}` : ""}.${mime.split("/")[1]?.replace("jpeg", "jpg") || "png"}`,
           mime,
           size: Math.round(item.data.length * 0.75),
           modifiedAt: Date.now()
@@ -302,7 +302,7 @@ async function mcpResultImages(step, result) {
 /** @param {Step} step */
 function mcpApprovalHtml(step) {
   const where = step.name === "mcp_call" ? step.title : `${toolLabel(step.name)} · ${step.title}`;
-  return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">问</span><span class="approval-title">MCP 请示 · ${escapeHtml(where)}</span><span class="approval-hint" title="输入框留空时，Enter 即运行">Enter 运行</span></div><pre class="approval-cmd">${escapeHtml(step.code || "{}")}</pre><div class="approval-actions"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="径行：此对话中后续调用不再询问">径行</button></div>`;
+  return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">${t(`问`)}</span><span class="approval-title">${t`MCP 请示 · ${escapeHtml(where)}`}</span><span class="approval-hint" title="${t(`输入框留空时，Enter 即运行`)}">${t(`Enter 运行`)}</span></div><pre class="approval-cmd">${escapeHtml(step.code || "{}")}</pre><div class="approval-actions"><button type="button" data-approve="run">${t(`运行`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button><button type="button" data-approve="auto" title="${t(`径行：此对话中后续调用不再询问`)}">${t(`径行`)}</button></div>`;
 }
 // 结果的几种内容合成一段文字：文本照录；图片、音频、资源只写一行说明（不把 base64 塞给模型）；只有结构化结果的给 JSON
 function mcpResultText(result, names = []) {
@@ -311,17 +311,17 @@ function mcpResultText(result, names = []) {
     item.type === "text"
       ? item.text
       : item.type === "image"
-        ? `[图片「${names[shot++] || item.mimeType}」，附在工具结果之后；回复里写 ![](${names[shot - 1] || "文件名"}) 即给用户看]`
+        ? t`[图片「${names[shot++] || item.mimeType}」，附在工具结果之后；回复里写 ![](${names[shot - 1] || t("文件名")}) 即给用户看]`
         : item.type === "audio"
-          ? `[音频 ${item.mimeType}，约 ${formatFileSize(Math.round(item.data.length * 0.75))}，未随结果转交]`
+          ? t`[音频 ${item.mimeType}，约 ${formatFileSize(Math.round(item.data.length * 0.75))}，未随结果转交]`
           : item.type === "resource_link"
-            ? `[资源 ${item.name || ""} ${item.uri}]`
+            ? t`[资源 ${item.name || ""} ${item.uri}]`
             : item.type === "resource"
-              ? (item.resource.text ?? `[资源 ${item.resource.uri}（${item.resource.mimeType || "二进制"}）]`)
+              ? (item.resource.text ?? t`[资源 ${item.resource.uri}（${item.resource.mimeType || t("二进制")}）]`)
               : JSON.stringify(item)
   );
   if (!parts.length && result.structuredContent) parts.push(JSON.stringify(result.structuredContent, null, 2));
-  return parts.join("\n\n") || "（无输出）";
+  return parts.join("\n\n") || t("（无输出）");
 }
 // 系统提示里 mcp.hint 那一段的值：交给模型的工具里有哪几个服务的，就附上那几个服务的用法——用户在配置里写的 note 在前
 //（模型无从自知的约定，如「我说打开浏览器即指这个」），服务握手时自带的 instructions 在后；一个都没有就不带这段

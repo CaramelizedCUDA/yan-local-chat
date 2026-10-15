@@ -293,3 +293,15 @@ body {
   color: var(--ink-3);
   font-size: 13px;
 }
+
+/* 英文界面：各处的字距是给汉字留的，拉丁字母照常排 */
+:root[lang="en"] body,
+:root[lang="en"] body * {
+  letter-spacing: normal !important;
+}
+:root[lang="en"] .model-option.active:after {
+  content: "Current";
+}
+:root[lang="en"] .helper-panel-body .sub-report:before {
+  content: "Report";
+}

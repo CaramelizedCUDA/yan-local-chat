@@ -47,7 +47,7 @@ function trimExtractedText(value) {
     .replace(/\n{4,}/g, "\n\n\n")
     .trim();
   return text.length > MAX_EXTRACTED_CHARS
-    ? `${text.slice(0, MAX_EXTRACTED_CHARS)}\n\n[文档内容过长，已在本机截取前 ${MAX_EXTRACTED_CHARS} 个字符]`
+    ? t`${text.slice(0, MAX_EXTRACTED_CHARS)}\n\n[文档内容过长，已在本机截取前 ${MAX_EXTRACTED_CHARS} 个字符]`
     : text;
 }
 async function extractDocumentText(name, data) {
@@ -83,14 +83,14 @@ async function extractPdfText(data) {
       }
       if (line) output.push(line);
       chars += output.join("").replace(/\s/g, "").length;
-      pages.push(`第 ${pageNumber} 页\n${output.join("\n")}`);
+      pages.push(t`第 ${pageNumber} 页\n${output.join("\n")}`);
       if (pages.join("\n\n").length >= MAX_EXTRACTED_CHARS) break;
     }
   } finally {
     await document.destroy();
   }
   // 扫描版（每页只是一张图）抽出来只剩一串「第 N 页」：不当抽到了文字，原件照发给模型自己看
-  if (chars < pages.length * 10) throw Error("PDF 没有文字层（多半是扫描件），原件照发");
+  if (chars < pages.length * 10) throw Error(t("PDF 没有文字层（多半是扫描件），原件照发"));
   return pages.join("\n\n");
 }
 async function unzipSelected(bytes, wanted) {
@@ -103,7 +103,7 @@ async function unzipSelected(bytes, wanted) {
       eocd = offset;
       break;
     }
-  if (eocd < 0) throw Error("文档压缩结构无效");
+  if (eocd < 0) throw Error(t("文档压缩结构无效"));
   const count = view.getUint16(eocd + 10, true),
     centralOffset = view.getUint32(eocd + 16, true),
     entries = new Map();
@@ -141,7 +141,7 @@ async function unzipSelected(bytes, wanted) {
 }
 function parseXml(value) {
   const document = new DOMParser().parseFromString(value, "application/xml");
-  if (document.querySelector("parsererror")) throw Error("文档 XML 无效");
+  if (document.querySelector("parsererror")) throw Error(t("文档 XML 无效"));
   return document;
 }
 // ---------- 文档抽成 Markdown：标题、加粗、列表、表格照原样，预览交给现成的 Markdown 渲染，送给模型的也是这一份 ----------
@@ -173,7 +173,7 @@ function mdTable(rows) {
   const line = row => `| ${Array.from({ length: width }, (_, i) => row[i] || " ").join(" | ")} |`;
   return (
     [line(body[0]), `| ${Array(width).fill("---").join(" | ")} |`, ...body.slice(1).map(line)].join("\n") +
-    (more > 0 ? `\n\n（其后 ${more} 行未列出）` : "")
+    (more > 0 ? t`\n\n（其后 ${more} 行未列出）` : "")
   );
 }
 // 一段里的字：相邻同样式的并成一截再包 ** / *，免得出现「****」
@@ -285,7 +285,7 @@ function pptxMarkdown(slides) {
             )
           )
         );
-      return [`## 第 ${index + 1} 页${title ? ` · ${title}` : ""}`, points.join("\n"), ...tables].filter(Boolean).join("\n\n");
+      return [t`## 第 ${index + 1} 页${title ? ` · ${title}` : ""}`, points.join("\n"), ...tables].filter(Boolean).join("\n\n");
     })
     .join("\n\n");
 }
@@ -321,7 +321,7 @@ function xlsxMarkdown(entries) {
     sheets = [...entries.keys()]
       .filter(name => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-      .map((file, i) => ({ name: `工作表 ${i + 1}`, file }));
+      .map((file, i) => ({ name: t`工作表 ${i + 1}`, file }));
   return sheets
     .map(({ name, file }) => {
       const rows = xmlDeep(parseXml(entries.get(file)), "row").map(row => {
@@ -348,7 +348,7 @@ function xlsxMarkdown(entries) {
         }
         return Array.from(cells, cell => cell ?? "");
       });
-      return `## ${name}\n\n${mdTable(rows) || "（空表）"}`;
+      return `## ${name}\n\n${mdTable(rows) || t("（空表）")}`;
     })
     .join("\n\n");
 }
@@ -387,7 +387,7 @@ function odfMarkdown(contentXml) {
       } else if (name === "page") {
         pages += 1;
         out.push(
-          `## 第 ${pages} 页${child.getAttribute("draw:name") && !/^page\d+$/i.test(child.getAttribute("draw:name")) ? ` · ${child.getAttribute("draw:name")}` : ""}`
+          t`## 第 ${pages} 页${child.getAttribute("draw:name") && !/^page\d+$/i.test(child.getAttribute("draw:name")) ? ` · ${child.getAttribute("draw:name")}` : ""}`
         );
         walk(child, depth);
       } else walk(child, depth);

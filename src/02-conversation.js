@@ -21,7 +21,7 @@ function forkTail(c, index) {
     box.halted = true;
     box.controller.abort();
   }
-  if (orphans.length) toast("旧答派出的帮手已停下");
+  if (orphans.length) toast(t("旧答派出的帮手已停下"));
   // 旧答开的后台指令也一样：结束时无处可报，进程一并收掉
   releaseBackground(c, tail, { kill: true });
   c.messages = c.messages.slice(0, index);
@@ -66,7 +66,7 @@ function switchBranch(c, index, step) {
     tail = c.messages.slice(index),
     parentId = c.messages[index - 1]?.id ?? null;
   // 眼前这一版的帮手还在做：切走了它的回报会落进别的版本里
-  if (crewOf(c, tail).length) return toast("这一版派出的帮手还在做，做完再切");
+  if (crewOf(c, tail).length) return toast(t("这一版派出的帮手还在做，做完再切"));
   const anchor = document.querySelector(`#messages [data-message="${CSS.escape(c.messages[index].id)}"]`),
     host = $("#chatScroll"),
     keepTop = anchor ? anchor.getBoundingClientRect().top - host.getBoundingClientRect().top : null;
@@ -88,7 +88,7 @@ function switchBranch(c, index, step) {
 }
 function branchNavHtml(branch) {
   return branch
-    ? `<span class="branch-nav"><button class="message-action" data-action="branch-prev" title="上一个版本" aria-label="上一个版本" ${branch.at <= 1 ? "disabled" : ""}>‹</button><span>${branch.at}/${branch.total}</span><button class="message-action" data-action="branch-next" title="下一个版本" aria-label="下一个版本" ${branch.at >= branch.total ? "disabled" : ""}>›</button></span>`
+    ? `<span class="branch-nav"><button class="message-action" data-action="branch-prev" title="${t(`上一个版本`)}" aria-label="${t(`上一个版本`)}" ${branch.at <= 1 ? "disabled" : ""}>‹</button><span>${branch.at}/${branch.total}</span><button class="message-action" data-action="branch-next" title="${t(`下一个版本`)}" aria-label="${t(`下一个版本`)}" ${branch.at >= branch.total ? "disabled" : ""}>›</button></span>`
     : "";
 }
 function profiles() {

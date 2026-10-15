@@ -86,10 +86,10 @@ async function intentGate(conversation, assistant, watch, signal) {
   const unowned = intentUnowned(intent, changedPaths(assistant)),
     report = [
       prompt("work.intentGate", { intent: intentText(intent, now, { path: INTENT_FILE, asks: true }) }),
-      watch.bounces.size && prompt("work.intentGateBounced", { list: [...watch.bounces].map(([id, n]) => `${id} ${n} 回`).join("、") }),
+      watch.bounces.size && prompt("work.intentGateBounced", { list: [...watch.bounces].map(([id, n]) => t`${id} ${n} 回`).join("、") }),
       unowned.length &&
         prompt("work.intentGateUnowned", {
-          list: `${unowned.slice(0, INTENT_UNOWNED_SHOWN).join("、")}${unowned.length > INTENT_UNOWNED_SHOWN ? ` 等 ${unowned.length} 个` : ""}`
+          list: `${unowned.slice(0, INTENT_UNOWNED_SHOWN).join("、")}${unowned.length > INTENT_UNOWNED_SHOWN ? t` 等 ${unowned.length} 个` : ""}`
         }),
       prompt("work.intentGateAsk")
     ]
@@ -102,8 +102,8 @@ async function intentGate(conversation, assistant, watch, signal) {
     name: "intent_gate",
     arguments: "{}",
     status: "done",
-    title: "收尾前对照意",
-    result: `已立 ${standing} / ${live}`,
+    title: t("收尾前对照意"),
+    result: t`已立 ${standing} / ${live}`,
     at: String(assistant.content || "").length,
     rat: String(assistant.reasoning || "").length,
     report
@@ -140,5 +140,5 @@ async function changeIntent(conversation, signal, change) {
     const data = await bridge("/api/work/intent", { ...workScope(conversation), data: result.next, base: version }, signal);
     if (!data.conflict) return result;
   }
-  throw Error("意被别处接连改动，没写成，稍后再试");
+  throw Error(t("意被别处接连改动，没写成，稍后再试"));
 }

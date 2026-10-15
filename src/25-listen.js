@@ -30,7 +30,7 @@ function listenArchiveTrack(entry) {
     key: `p:${entry.path}`,
     name: entry.name,
     url: archiveFileUrl(entry.path),
-    where: ["卷宗", ...dir].join(" › ") + ` · ${fileExtension(entry.name).toUpperCase()} · ${formatFileSize(entry.size || 0)}`,
+    where: [t("卷宗"), ...dir].join(" › ") + ` · ${fileExtension(entry.name).toUpperCase()} · ${formatFileSize(entry.size || 0)}`,
     source: { path: entry.path },
     bytes: async () => (await fetch(archiveFileUrl(entry.path))).arrayBuffer(),
     list: []
@@ -54,7 +54,7 @@ function listenTrackFrom(source, name, reader) {
     key: `a:${source?.attachmentId}`,
     name,
     url: reader.url(),
-    where: `附件 · ${fileExtension(name).toUpperCase()}`,
+    where: t`附件 · ${fileExtension(name).toUpperCase()}`,
     source,
     bytes: async () => (await reader.blob()).arrayBuffer(),
     list: []
@@ -136,8 +136,8 @@ function listenInit() {
     if (!listenTrack) return;
     const page = $("#fileViewerStage .listen-page");
     if (page && listenShown?.key === listenTrack.key)
-      page.outerHTML = `<div class="file-viewer-empty">浏览器不支持此编码，可下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
-    else toast("此曲无法播放");
+      page.outerHTML = `<div class="file-viewer-empty">${t(`浏览器不支持此编码，可下载后以本机程序打开`)}<br><button type="button" class="outline-btn" data-viewer-download>${t(`下载`)}</button></div>`;
+    else toast(t("此曲无法播放"));
     listenRelease();
   });
 }
@@ -249,18 +249,18 @@ function listenPageHtml(track) {
       : "";
   const dots = Array.from(
     { length: LISTEN_VOLUME_STEPS },
-    (_, i) => `<button type="button" data-listen-volume="${i + 1}" aria-label="音量 ${i + 1}/${LISTEN_VOLUME_STEPS}"></button>`
+    (_, i) => `<button type="button" data-listen-volume="${i + 1}" aria-label="${t`音量 ${i + 1}/${LISTEN_VOLUME_STEPS}`}"></button>`
   ).join("");
   return `<div class="listen-page">
     <div class="listen-ring"><svg viewBox="0 0 300 300" data-listen-ring aria-hidden="true"><defs><filter id="listenRough" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="5"/><feDisplacementMap in="SourceGraphic" scale="2.4"/></filter></defs>
       <g filter="url(#listenRough)"><path class="listen-rest" d="${listenRingD(listenRing(track), 0, LISTEN_BARS - 1)}"/><path class="listen-past" d=""/></g></svg>
       <div class="listen-mid"><p class="listen-title">${escapeHtml(track.name.replace(/\.[^.]+$/, ""))}</p><span class="listen-clock" data-listen-clock>0:00 / —</span>
         <div class="listen-controls">
-          <button type="button" class="listen-step" data-listen-do="prev" title="上一首" aria-label="上一首">${brushIcon("back")}</button>
-          <button type="button" class="listen-play" data-listen-do="toggle" title="播放">奏</button>
-          <button type="button" class="listen-step" data-listen-do="next" title="下一首" aria-label="下一首">${brushIcon("forward")}</button>
+          <button type="button" class="listen-step" data-listen-do="prev" title="${t(`上一首`)}" aria-label="${t(`上一首`)}">${brushIcon("back")}</button>
+          <button type="button" class="listen-play" data-listen-do="toggle" title="${t(`播放`)}">${t(`奏`)}</button>
+          <button type="button" class="listen-step" data-listen-do="next" title="${t(`下一首`)}" aria-label="${t(`下一首`)}">${brushIcon("forward")}</button>
         </div></div></div>
-    <div class="listen-aside"><p class="listen-where">${escapeHtml(track.where)}</p><div class="listen-volume" title="音量">音${dots}</div>${list}</div></div>`;
+    <div class="listen-aside"><p class="listen-where">${escapeHtml(track.where)}</p><div class="listen-volume" title="${t(`音量`)}">${t`音${dots}`}</div>${list}</div></div>`;
 }
 // 在预览里换摆另一曲：题名、下载都跟着这一曲
 function listenShowPage(track) {
@@ -315,8 +315,8 @@ function listenRenderPage() {
     `${listenClock(live ? el.currentTime : 0)} / ${live ? listenClock(el.duration) : "—"}`;
   const playing = live && !el.paused,
     button = page.querySelector(".listen-play");
-  button.textContent = playing ? "止" : "奏";
-  button.title = playing ? "暂停" : "播放";
+  button.textContent = playing ? t("止") : t("奏");
+  button.title = playing ? t("暂停") : t("播放");
   const level = Math.round(el.volume * LISTEN_VOLUME_STEPS);
   page.querySelectorAll("[data-listen-volume]").forEach(dot => dot.classList.toggle("on", Number(dot.dataset.listenVolume) <= level));
 }
@@ -331,11 +331,11 @@ let listenDrawn = -1;
 function listenPendantHtml() {
   const { x, cord, r } = LISTEN_HANG;
   return `<svg class="brush listen-svg" viewBox="0 0 28 64" aria-hidden="true">${brushStroke([x, 0, x + 0.4, cord / 2, x, cord], 1.1, { tail: 0.8, head: 1 })}${brushArc(x, cord + r + 1, r, -90, 270, 1.4, { tone: "ghost", tail: 1, head: 1 })}<g class="listen-played"></g><circle class="zhu listen-now" r="1.5" cx="${x}" cy="${cord + 1}"/></svg>
-  <button type="button" class="listen-hit" data-listen="rope" aria-label="听音"></button>
+  <button type="button" class="listen-hit" data-listen="rope" aria-label="${t(`听音`)}"></button>
   <div class="listen-card">
-    <button type="button" class="listen-name" data-listen="page" title="回整页"></button>
+    <button type="button" class="listen-name" data-listen="page" title="${t(`回整页`)}"></button>
     <small class="listen-time"></small>
-    <div class="listen-acts"><button type="button" data-listen="prev">上一首</button><button type="button" class="listen-toggle" data-listen="toggle">止</button><button type="button" data-listen="next">下一首</button><button type="button" class="listen-stop" data-listen="stop" title="停止" aria-label="停止">✕</button></div>
+    <div class="listen-acts"><button type="button" data-listen="prev">${t(`上一首`)}</button><button type="button" class="listen-toggle" data-listen="toggle">${t(`止`)}</button><button type="button" data-listen="next">${t(`下一首`)}</button><button type="button" class="listen-stop" data-listen="stop" title="${t(`停止`)}" aria-label="${t(`停止`)}">✕</button></div>
   </div>`;
 }
 function listenPendant() {
@@ -379,7 +379,7 @@ function listenRenderPendant() {
     now.setAttribute("cy", String(listenN(cy + r * Math.sin((end * Math.PI) / 180))));
   }
   box.querySelector(".listen-time").textContent = `${listenClock(el.currentTime)} / ${listenClock(el.duration)}`;
-  box.querySelector(".listen-toggle").textContent = el.paused ? "奏" : "止";
+  box.querySelector(".listen-toggle").textContent = el.paused ? t("奏") : t("止");
 }
 
 // ---------- 两面何时各现：都由喇叭此刻的样子推出来 ----------

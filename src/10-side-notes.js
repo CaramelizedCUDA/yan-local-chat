@@ -177,7 +177,7 @@ function markAnchor(body, thread, ordinal) {
     const mark = document.createElement("mark");
     mark.className = "note-anchor";
     mark.dataset.thread = thread.id;
-    mark.title = "打开这条旁注";
+    mark.title = t("打开这条旁注");
     target.replaceWith(mark);
     mark.append(target);
     if (!tagged) {
@@ -185,7 +185,7 @@ function markAnchor(body, thread, ordinal) {
       ref.className = "note-ref";
       ref.dataset.thread = thread.id;
       ref.textContent = String(ordinal);
-      ref.title = "打开这条旁注";
+      ref.title = t("打开这条旁注");
       mark.after(ref);
       tagged = true;
     }
@@ -202,7 +202,7 @@ function renderSidePanel() {
     at = list.indexOf(thread) + 1;
   $("#sideNav").innerHTML =
     list.length > 1
-      ? `<button class="message-action" type="button" data-side-nav="-1" title="上一条旁注" ${at <= 1 ? "disabled" : ""}>‹</button><span>${at}/${list.length}</span><button class="message-action" type="button" data-side-nav="1" title="下一条旁注" ${at >= list.length ? "disabled" : ""}>›</button>`
+      ? `<button class="message-action" type="button" data-side-nav="-1" title="${t(`上一条旁注`)}" ${at <= 1 ? "disabled" : ""}>‹</button><span>${at}/${list.length}</span><button class="message-action" type="button" data-side-nav="1" title="${t(`下一条旁注`)}" ${at >= list.length ? "disabled" : ""}>›</button>`
       : "";
   // 所注的一段列在顶上，点它回到出处；就整条回复起的旁注没有范围可言，不列
   const { live, any } = anchorState(c, thread),
@@ -211,9 +211,10 @@ function renderSidePanel() {
   anchorEl.classList.toggle("hidden", !thread.anchor.text);
   anchorEl.classList.toggle("lost", !live);
   anchorEl.disabled = !live;
-  anchorEl.title = live ? "回到出处" : any ? "所注段落在另一版本中" : "所注段落已不在此对话中";
+  anchorEl.title = live ? t("回到出处") : any ? t("所注段落在另一版本中") : t("所注段落已不在此对话中");
   const host = $("#sideMessages");
-  if (!thread.messages.length) host.innerHTML = `<div class="side-empty" data-message="__empty">就此处追问<br>所答不入正文</div>`;
+  if (!thread.messages.length)
+    host.innerHTML = `<div class="side-empty" data-message="__empty">${t(`就此处追问`)}<br>${t(`所答不入正文`)}</div>`;
   else {
     const { added } = syncNodes(
       host,
@@ -242,20 +243,20 @@ function renderSideIndex(c) {
     const index = order.get(thread.anchor.messageId),
       message = c.messages[index],
       nth = c.messages.slice(0, index + 1).filter(m => m.role === message.role).length;
-    return `第${chineseNumber(nth)}${message.role === "user" ? "问" : "答"}`;
+    return message.role === "user" ? t`第${chineseNumber(nth)}问` : t`第${chineseNumber(nth)}答`;
   };
   const items = list
     .map((thread, i) => {
       const asked = thread.messages.filter(m => m.role === "user").length,
-        lead = thread.anchor.text || thread.messages.find(m => m.role === "user")?.content || "尚未落笔",
+        lead = thread.anchor.text || thread.messages.find(m => m.role === "user")?.content || t("尚未落笔"),
         running = !!sideJob(thread);
-      return `<button type="button" class="side-index-item${thread.anchor.messageId === sideIndexFor ? " here" : ""}" data-side-open="${escapeHtml(thread.id)}"><span class="side-index-num">${i + 1}</span><span class="side-index-copy"><strong>${escapeHtml(lead)}</strong><small>${escapeHtml(where(thread))} · ${asked ? `${escapeHtml(chineseNumber(asked, true))}问` : "未问"}${running ? " · 作答中" : ""} · ${escapeHtml(formatDay(thread.updatedAt || thread.createdAt))}</small></span></button>`;
+      return `<button type="button" class="side-index-item${thread.anchor.messageId === sideIndexFor ? " here" : ""}" data-side-open="${escapeHtml(thread.id)}"><span class="side-index-num">${i + 1}</span><span class="side-index-copy"><strong>${escapeHtml(lead)}</strong><small>${escapeHtml(where(thread))} · ${asked ? t`${escapeHtml(chineseNumber(asked, true))}问` : t("未问")}${running ? t(" · 作答中") : ""} · ${escapeHtml(formatDay(thread.updatedAt || thread.createdAt))}</small></span></button>`;
     })
     .join("");
   // 「＋」另起一条：正文里划着一段就注在那一段上；没划就是就整条回复而谈（从哪条回复进来的就是哪条，否则是最末一答）
   $("#sideMessages").innerHTML =
-    `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? `${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="另起一条旁注"><span>＋</span>另起一条</button></div></div>${
-      items ? items : `<div class="side-empty">尚无旁注</div>`
+    `<div class="side-index" data-message="__index"><div class="side-index-head"><h2>${escapeHtml(c.title)}</h2><div class="side-index-bar"><small>${list.length ? t`${escapeHtml(chineseNumber(list.length, true))}条旁注` : ""}</small><button type="button" class="side-index-new" data-side-new title="${t(`另起一条旁注`)}"><span>＋</span>${t(`另起一条`)}</button></div></div>${
+      items ? items : `<div class="side-empty">${t(`尚无旁注`)}</div>`
     }</div>`;
   renderSideSend();
 }
@@ -294,7 +295,7 @@ function renderSideSend() {
     button = $("#sideSend");
   if (!button) return;
   sealGlyph(button, running);
-  button.title = running ? "搁笔" : "寄出";
+  button.title = running ? t("搁笔") : t("寄出");
   button.classList.toggle("stop-btn", running);
   button.classList.toggle("empty", !running && !$("#sideInput")?.value.trim());
 }
@@ -305,8 +306,8 @@ function setupSidePanel() {
       wide = !panel.classList.contains("wide");
     panel.classList.toggle("wide", wide);
     const b = $("#sideExpand");
-    b.textContent = wide ? "窄" : "阔";
-    b.title = wide ? "收回侧边" : "铺满整页";
+    b.textContent = wide ? t("窄") : t("阔");
+    b.title = wide ? t("收回侧边") : t("铺满整页");
     b.setAttribute("aria-pressed", String(wide));
   };
   $("#chatMeta").addEventListener("click", e => {
@@ -324,7 +325,7 @@ function setupSidePanel() {
     if (!e.target.closest("[data-side-new]")) return;
     const c = currentConversation(),
       anchor = c && indexNewAnchor(c);
-    if (!anchor) return toast("此对话尚无可注的答复");
+    if (!anchor) return toast(t("此对话尚无可注的答复"));
     getSelection()?.removeAllRanges();
     createThread(anchor);
   });
@@ -351,7 +352,7 @@ function setupSidePanel() {
     const thread = currentThread();
     if (!thread) return;
     const source = document.querySelector(`#messages [data-message="${CSS.escape(thread.anchor.messageId)}"]`);
-    if (!source) return toast("所注段落不在当前版本中");
+    if (!source) return toast(t("所注段落不在当前版本中"));
     scrollChatTo(source, "center");
     source.classList.remove("flash");
     void source.offsetWidth;
@@ -363,7 +364,7 @@ function setupSidePanel() {
     if (!c || !thread) return;
     if (
       thread.messages.length &&
-      !(await askConfirm({ title: "移除这条旁注？", body: "旁注里的问答将一并移除，正文不受影响。", ok: "移除" }))
+      !(await askConfirm({ title: t("移除这条旁注？"), body: t("旁注里的问答将一并移除，正文不受影响。"), ok: t("移除") }))
     )
       return;
     const job = sideJob(thread);
@@ -386,9 +387,9 @@ function setupSidePanel() {
     const action = button.dataset.action;
     if (action === "copy") {
       await copyText(message.content);
-      return toast("已复制");
+      return toast(t("已复制"));
     }
-    if (sideJob(thread)) return toast("作答中，稍后再改");
+    if (sideJob(thread)) return toast(t("作答中，稍后再改"));
     if (action === "cancel-edit") {
       editingMessageId = null;
       return renderSidePanel();
@@ -440,7 +441,7 @@ function setupSidePanel() {
       e.preventDefault();
       if (local.dataset.openTalk) {
         if (store.conversations.some(c => c.id === local.dataset.openTalk)) openConversation(local.dataset.openTalk);
-        else toast("这段对话已不在");
+        else toast(t("这段对话已不在"));
       } else openSettings("memory");
       return;
     }
@@ -465,11 +466,11 @@ async function sendSide() {
   if (!input.value.trim()) return;
   const profile = activeProfile();
   if (!profile) {
-    toast("请先接入模型");
+    toast(t("请先接入模型"));
     return openSettings("models");
   }
   if (quotaBlocked(profile))
-    return toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候");
+    return toast(quotaExhausted(profile) ? t("余墨已尽，请调高上限或更换模型") : t("余墨不足：进行中的对话已占去余量，请稍候"));
   // 认领的工夫里接着写的也算上，所以到这里才取
   const text = (await claimSide(c, thread)) && input.value.trim();
   if (!text) return;
@@ -491,7 +492,7 @@ async function sendSide() {
 /** @param {Conversation} c @param {Thread} thread */
 async function claimSide(c, thread) {
   if (runningElsewhere(c.id) || !(await claimConversation(c.id))) {
-    toast("此对话正在另一页面作答，稍后再发");
+    toast(t("此对话正在另一页面作答，稍后再发"));
     return false;
   }
   return !sideJob(thread) && currentThread() === thread;
@@ -504,7 +505,7 @@ async function claimSide(c, thread) {
 async function askSideAgain(c, thread, from) {
   const profile = activeProfile();
   if (!profile) return openSettings("models");
-  if (quotaBlocked(profile)) return toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足，请稍候");
+  if (quotaBlocked(profile)) return toast(quotaExhausted(profile) ? t("余墨已尽，请调高上限或更换模型") : t("余墨不足，请稍候"));
   if (!(await claimSide(c, thread))) return;
   /** @type {Message} */
   const assistant = { id: uid(), role: "assistant", content: "", timestamp: now(), status: "streaming", modelName: profile.name };
@@ -573,11 +574,11 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       onFrame
     });
     trimReply(assistant);
-    if (!assistant.content) throw Error(assistant.steps?.length ? "模型查阅后未返回正文" : "模型未返回正文");
+    if (!assistant.content) throw Error(assistant.steps?.length ? t("模型查阅后未返回正文") : t("模型未返回正文"));
     assistant.status = "complete";
     thread.updatedAt = now();
   } catch (error) {
-    settleSteps(assistant, error.name === "AbortError" ? "已止" : "已中断");
+    settleSteps(assistant, error.name === "AbortError" ? t("已止") : t("已中断"));
     if (error.name === "AbortError") assistant.status = "stopped";
     else {
       assistant.status = "error";

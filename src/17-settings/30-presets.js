@@ -33,26 +33,26 @@ function presetMenuHtml() {
   const current = presetOf(currentConversation())?.id || "";
   const option = (id, name, note) =>
     `<button class="model-option preset-option${id === current ? " active" : ""}" data-preset="${escapeHtml(id)}"${id === current ? ' aria-current="true"' : ""} title="${escapeHtml(note)}"><strong><span class="model-dot"></span><span class="model-option-name">${escapeHtml(name)}</span></strong></button>`;
-  return `<div class="menu-section"><div class="menu-section-title"><span>预设</span></div></div>${option("", "本色", "言之本色，不加预设")}${presets.map(preset => option(preset.id, preset.name, preset.prompt.split("\n")[0].slice(0, 80))).join("")}`;
+  return `<div class="menu-section"><div class="menu-section-title"><span>${t(`预设`)}</span></div></div>${option("", t("本色"), t("言之本色，不加预设"))}${presets.map(preset => option(preset.id, preset.name, preset.prompt.split("\n")[0].slice(0, 80))).join("")}`;
 }
 
 function presetsSettingsHtml() {
   const presets = store.settings.presets;
-  return `<div id="presetPage"><h2>预设</h2><div class="card-list">${
+  return `<div id="presetPage"><h2>${t(`预设`)}</h2><div class="card-list">${
     presets.map(preset => (preset.id === presetEditing ? presetFormHtml(preset) : presetCardHtml(preset))).join("") ||
-    `<p class="card-note">尚无预设</p>`
-  }</div><div class="card-foot"><button id="presetAdd" class="outline-btn" type="button">＋ 新添预设</button></div></div>`;
+    `<p class="card-note">${t(`尚无预设`)}</p>`
+  }</div><div class="card-foot"><button id="presetAdd" class="outline-btn" type="button">${t(`＋ 新添预设`)}</button></div></div>`;
 }
 /** @param {Preset} preset */
 function presetCardHtml(preset) {
   const profile = profiles().find(p => p.id === preset.profileId),
     groups = preset.tools ? preset.tools.map(id => TOOL_GROUPS[id]).filter(Boolean) : null,
     parts = [
-      groups ? (groups.length ? `工具：${groups.join("、")}` : "不带工具") : "工具全给",
-      preset.mcp ? (preset.mcp.length ? `MCP：${preset.mcp.join("、")}` : "不接 MCP") : ""
+      groups ? (groups.length ? t`工具：${groups.join("、")}` : t("不带工具")) : t("工具全给"),
+      preset.mcp ? (preset.mcp.length ? `MCP：${preset.mcp.join("、")}` : t("不接 MCP")) : ""
     ].filter(Boolean);
-  const first = preset.prompt.trim().split("\n")[0] || "（未写提示词）";
-  return `<div class="card" data-preset-card="${escapeHtml(preset.id)}"><div class="card-head"><span class="card-name">${escapeHtml(preset.name)}</span>${profile ? `<span class="card-tag">${escapeHtml(profile.name)}</span>` : ""}${preset.policy ? `<span class="card-tag">${policyName(preset.policy)}</span>` : ""}<span class="card-state"></span><span class="card-actions"><button type="button" class="outline-btn" data-preset-action="edit">编辑</button><button type="button" class="outline-btn" data-preset-action="use">选用</button></span></div><div class="card-note" title="${escapeHtml(preset.prompt)}">${escapeHtml(first.slice(0, 120))}</div><div class="card-sub">${escapeHtml(parts.join(" · "))}</div></div>`;
+  const first = preset.prompt.trim().split("\n")[0] || t("（未写提示词）");
+  return `<div class="card" data-preset-card="${escapeHtml(preset.id)}"><div class="card-head"><span class="card-name">${escapeHtml(preset.name)}</span>${profile ? `<span class="card-tag">${escapeHtml(profile.name)}</span>` : ""}${preset.policy ? `<span class="card-tag">${policyName(preset.policy)}</span>` : ""}<span class="card-state"></span><span class="card-actions"><button type="button" class="outline-btn" data-preset-action="edit">${t(`编辑`)}</button><button type="button" class="outline-btn" data-preset-action="use">${t(`选用`)}</button></span></div><div class="card-note" title="${escapeHtml(preset.prompt)}">${escapeHtml(first.slice(0, 120))}</div><div class="card-sub">${escapeHtml(parts.join(" · "))}</div></div>`;
 }
 /** @param {Preset} preset */
 function presetFormHtml(preset) {
@@ -65,27 +65,27 @@ function presetFormHtml(preset) {
       )
       .join("")}</div>`;
   const policies = [
-    ["", "照设置"],
-    ["ask", "问而后行"],
-    ["review", "审而后行"],
-    ["auto", "径行"]
+    ["", t("照设置")],
+    ["ask", t("问而后行")],
+    ["review", t("审而后行")],
+    ["auto", t("径行")]
   ];
-  return `<div class="card editing" data-preset-card="${escapeHtml(preset.id)}"><div class="profile-grid"><label class="profile-full">名称<input class="field wide" data-preset-field="name" value="${escapeHtml(preset.name)}" maxlength="24"></label><label class="profile-full">提示词<textarea class="field wide field-area preset-prompt" data-preset-field="prompt" placeholder="所任何职、所司何事、答以何种风格；列于系统提示之首" spellcheck="false">${escapeHtml(preset.prompt)}</textarea></label><label>模型<select class="field wide select" data-preset-field="profileId"><option value="">沿用当前模型</option>${profiles()
+  return `<div class="card editing" data-preset-card="${escapeHtml(preset.id)}"><div class="profile-grid"><label class="profile-full">${t(`名称`)}<input class="field wide" data-preset-field="name" value="${escapeHtml(preset.name)}" maxlength="24"></label><label class="profile-full">${t(`提示词`)}<textarea class="field wide field-area preset-prompt" data-preset-field="prompt" placeholder="${t(`所任何职、所司何事、答以何种风格；列于系统提示之首`)}" spellcheck="false">${escapeHtml(preset.prompt)}</textarea></label><label>${t(`模型`)}<select class="field wide select" data-preset-field="profileId"><option value="">${t(`沿用当前模型`)}</option>${profiles()
     .map(p => `<option value="${escapeHtml(p.id)}"${p.id === preset.profileId ? " selected" : ""}>${escapeHtml(p.name)}</option>`)
     .join(
       ""
-    )}</select></label><label>指令权限<div class="segmented">${policies.map(([value, label]) => `<button type="button" data-preset-policy="${value}" class="${preset.policy === value ? "active" : ""}">${label}</button>`).join("")}</div></label><div class="profile-full"><span class="preset-label">工具</span>${checks("tool", Object.entries(TOOL_GROUPS), preset.tools)}</div>${
+    )}</select></label><label>${t(`指令权限`)}<div class="segmented">${policies.map(([value, label]) => `<button type="button" data-preset-policy="${value}" class="${preset.policy === value ? "active" : ""}">${label}</button>`).join("")}</div></label><div class="profile-full"><span class="preset-label">${t(`工具`)}</span>${checks("tool", Object.entries(TOOL_GROUPS), preset.tools)}</div>${
     servers.length
-      ? `<div class="profile-full"><span class="preset-label">MCP 服务</span>${checks(
+      ? `<div class="profile-full"><span class="preset-label">${t(`MCP 服务`)}</span>${checks(
           "mcp",
           servers.map(name => [name, name]),
           preset.mcp
         )}</div>`
       : ""
-  }</div><div class="card-form-foot"><button type="button" class="outline-btn" data-preset-action="done">完成</button><button type="button" class="outline-btn" data-preset-action="use">选用</button><button type="button" class="danger-btn" data-preset-action="delete">删除</button></div></div>`;
+  }</div><div class="card-form-foot"><button type="button" class="outline-btn" data-preset-action="done">${t(`完成`)}</button><button type="button" class="outline-btn" data-preset-action="use">${t(`选用`)}</button><button type="button" class="danger-btn" data-preset-action="delete">${t(`删除`)}</button></div></div>`;
 }
 function policyName(policy) {
-  return { ask: "问而后行", review: "审而后行", auto: "径行" }[policy] || "";
+  return { ask: t("问而后行"), review: t("审而后行"), auto: t("径行") }[policy] || "";
 }
 function renderPresetSettings() {
   if (settingsTab !== "presets" || $("#settingsModal").classList.contains("hidden")) return;
@@ -95,7 +95,7 @@ function bindPresetEvents() {
   const page = $("#presetPage"),
     presetIn = el => store.settings.presets.find(preset => preset.id === el.closest("[data-preset-card]")?.dataset.presetCard);
   $("#presetAdd").addEventListener("click", () => {
-    const preset = normalizePreset({ id: uid(), name: "新预设", prompt: "" });
+    const preset = normalizePreset({ id: uid(), name: t("新预设"), prompt: "" });
     store.settings.presets.push(preset);
     presetEditing = preset.id;
     saveStore();
@@ -108,7 +108,7 @@ function bindPresetEvents() {
       preset = presetIn(el),
       key = el.dataset.presetField;
     if (!preset || !key) return;
-    preset[key] = key === "name" ? el.value.trim() || "未命名" : el.value;
+    preset[key] = key === "name" ? el.value.trim() || t("未命名") : el.value;
     saveStoreSoon();
     renderHeader();
   });
@@ -137,10 +137,10 @@ function bindPresetEvents() {
     if (action === "done") presetEditing = null;
     if (action === "use") {
       selectPreset(preset.id);
-      toast(`已选用「${preset.name}」`);
+      toast(t`已选用「${preset.name}」`);
     }
     if (action === "delete") {
-      if (!(await askConfirm({ title: `删除预设「${preset.name}」？`, body: "选用它的对话将回到本色。", ok: "删除" }))) return;
+      if (!(await askConfirm({ title: t`删除预设「${preset.name}」？`, body: t("选用它的对话将回到本色。"), ok: t("删除") }))) return;
       store.settings.presets = store.settings.presets.filter(item => item !== preset);
       if (store.settings.presetId === preset.id) store.settings.presetId = "";
       for (const c of store.conversations)

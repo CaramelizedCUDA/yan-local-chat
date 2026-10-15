@@ -46,12 +46,12 @@ function clepsydraSpan(ms) {
   const minutes = Math.floor(Math.max(0, ms) / 60000),
     hours = Math.floor(minutes / 60);
   return minutes < 1
-    ? "不到 1 分钟"
+    ? t("不到 1 分钟")
     : minutes < 60
-      ? `${minutes} 分钟`
+      ? t`${minutes} 分钟`
       : hours < 24
-        ? `${hours} 小时${minutes % 60 ? ` ${minutes % 60} 分` : ""}`
-        : `${Math.floor(hours / 24)} 天${hours % 24 ? ` ${hours % 24} 小时` : ""}`;
+        ? t`${hours} 小时${minutes % 60 ? t` ${minutes % 60} 分` : ""}`
+        : t`${Math.floor(hours / 24)} 天${hours % 24 ? t` ${hours % 24} 小时` : ""}`;
 }
 /** 簿录：当前对话排前；只牵涉一段对话时不分组 @param {ReturnType<typeof runningBackground>} list */
 function clepsydraListHtml(list, now) {
@@ -63,10 +63,10 @@ function clepsydraListHtml(list, now) {
   const ordered = [...groups].sort(([a], [b]) => Number(b.id === currentId) - Number(a.id === currentId)),
     row = ({ conversation, step, started }) =>
       `<button class="clepsydra-row" type="button" data-conversation="${escapeHtml(conversation.id)}" data-step="${escapeHtml(step.id)}" title="${escapeHtml(step.title || "")}"><span class="clepsydra-id">${escapeHtml(step.bg?.id || "")}</span><span class="clepsydra-age">${clepsydraSpan(now - started)}</span><span class="clepsydra-go" aria-hidden="true">›</span></button>`;
-  return `<div class="clepsydra-head">候 · ${list.length} 条</div>${ordered
+  return `<div class="clepsydra-head">${t`候 · ${list.length} 条`}</div>${ordered
     .map(
       ([conversation, items]) =>
-        `${ordered.length > 1 ? `<div class="clepsydra-grp">${escapeHtml(conversation.title || "新对话")}${conversation.id === currentId ? "<small>当前</small>" : ""}</div>` : ""}${items.map(row).join("")}`
+        `${ordered.length > 1 ? `<div class="clepsydra-grp">${escapeHtml(conversation.title || t("新对话"))}${conversation.id === currentId ? "<small>" + t("当前") + "</small>" : ""}</div>` : ""}${items.map(row).join("")}`
     )
     .join("")}`;
 }
@@ -87,7 +87,7 @@ function renderClepsydra() {
   host.querySelector("svg").innerHTML = list.length ? clepsydraInk(clepsydraAge(now - oldest)) : "";
   host.querySelector(".clepsydra-n").textContent = list.length > 1 ? String(list.length) : "";
   host.classList.toggle("counted", list.length > 1);
-  button.setAttribute("aria-label", `后台指令 ${list.length} 条在跑`);
+  button.setAttribute("aria-label", t`后台指令 ${list.length} 条在跑`);
   button.setAttribute("aria-expanded", String(clepsydraOpen));
   panel.classList.toggle("hidden", !clepsydraOpen);
   if (clepsydraOpen) panel.innerHTML = clepsydraListHtml(list, now);

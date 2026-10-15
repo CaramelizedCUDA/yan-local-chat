@@ -20,7 +20,7 @@ function safeHost(url) {
   try {
     return new URL(url).host;
   } catch {
-    return "未填写地址";
+    return t("未填写地址");
   }
 }
 function formatTime(value) {
@@ -30,6 +30,8 @@ function formatTime(value) {
 const DIGITS = "〇一二三四五六七八九";
 function chineseNumber(n, twoAsLiang = false) {
   n = Math.max(0, Math.floor(Number(n) || 0));
+  // 英文界面写阿拉伯数字
+  if (LANG === "en") return String(n);
   if (n === 2 && twoAsLiang) return "两";
   if (n < 10) return DIGITS[n];
   if (n < 100) {
@@ -42,6 +44,12 @@ function chineseNumber(n, twoAsLiang = false) {
 function formatDay(value) {
   const date = new Date(value),
     year = date.getFullYear();
+  if (LANG === "en")
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      ...(year !== new Date().getFullYear() ? { year: "numeric" } : {})
+    });
   return `${year !== new Date().getFullYear() ? `${[...String(year)].map(d => DIGITS[Number(d)]).join("")}年` : ""}${chineseNumber(date.getMonth() + 1)}月${chineseNumber(date.getDate())}日`;
 }
 // 一段用时：至多两级——秒、分秒、时分、天时。跑几个钟头的长活写「3 小时 12 分」，不写「192 分」；零头为零就不写
@@ -50,21 +58,21 @@ function spanText(ms) {
   const s = Math.round((Number(ms) || 0) / 1000),
     pair = (big, unit, small, smallUnit) => `${big} ${unit}${small ? ` ${small} ${smallUnit}` : ""}`;
   return s < 60
-    ? `${s} 秒`
+    ? t`${s} 秒`
     : s < 3600
-      ? pair(Math.floor(s / 60), "分", s % 60, "秒")
+      ? pair(Math.floor(s / 60), t("分"), s % 60, t("秒"))
       : s < 86400
-        ? pair(Math.floor(s / 3600), "小时", Math.floor(s / 60) % 60, "分")
-        : pair(Math.floor(s / 86400), "天", Math.floor(s / 3600) % 24, "小时");
+        ? pair(Math.floor(s / 3600), t("小时"), Math.floor(s / 60) % 60, t("分"))
+        : pair(Math.floor(s / 86400), t("天"), Math.floor(s / 3600) % 24, t("小时"));
 }
 function dayBucket(value) {
   const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(value).setHours(0, 0, 0, 0)) / 86400000);
-  return days <= 0 ? "今天" : days < 7 ? "过去七天" : "更早";
+  return days <= 0 ? t("今天") : days < 7 ? t("过去七天") : t("更早");
 }
 let toastTimer = null;
 function toast(message, ms = 2200) {
   const el = $("#toast");
-  el.textContent = message;
+  el.textContent = tr(message);
   showNow(el);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => hideWithFade(el), ms);
@@ -213,7 +221,7 @@ defineLayer({ name: "pop", rank: 90, open: () => !!document.querySelector(".chip
 // 同风格的确认弹层，替代浏览器自带的 confirm()
 let confirmResolve = null;
 let confirmReturnFocus = null;
-function askConfirm({ title, body = "", ok = "确定", danger = true }) {
+function askConfirm({ title, body = "", ok = t("确定"), danger = true }) {
   return new Promise(resolve => {
     settleConfirm(false);
     confirmReturnFocus = document.activeElement;

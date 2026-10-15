@@ -7,22 +7,22 @@ function recoverConversation(conversation) {
   for (const message of conversation.messages || [])
     if (message.status === "streaming") {
       message.status = "interrupted";
-      message.error = "页面刷新或连接中断，已写的部分都在";
+      message.error = t("页面刷新或连接中断，已写的部分都在");
       message.interruptedAt = now();
       // 用时停在最后一次存盘时（作答时每秒记一回），起始时刻不再有用
       delete message.startedAt;
-      settleSteps(message, "连接中断");
+      settleSteps(message, t("连接中断"));
       changed = true;
     } else if ((message.steps || []).some(step => step.sub && step.status === "running") && !crewRunning(conversation.id)) {
       // 这一答早写完了，后台的帮手却还记着「在做」：做它的那一处已经不在了
-      settleSteps(message, "页面刷新，帮手已中断");
+      settleSteps(message, t("页面刷新，帮手已中断"));
       changed = true;
     }
   for (const thread of conversation.threads || [])
     for (const message of thread.messages || [])
       if (message.status === "streaming") {
         message.status = message.content ? "stopped" : "error";
-        message.error = "页面刷新或连接中断";
+        message.error = t("页面刷新或连接中断");
         changed = true;
       }
   return changed;
@@ -194,7 +194,7 @@ function toggleSidebar(force) {
   syncScrim();
   const button = $("#collapseSidebar");
   button.textContent = collapsed ? "›" : "‹";
-  button.title = collapsed ? "展开侧栏" : "收起侧栏";
+  button.title = collapsed ? t("展开侧栏") : t("收起侧栏");
 }
 function toggleHistorySearch(force) {
   const wrap = $("#historySearchWrap"),

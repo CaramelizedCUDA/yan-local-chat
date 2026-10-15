@@ -39,7 +39,7 @@ function parseAnchor(raw, workdir = "") {
     match = /^([a-z]{2,8}):([\s\S]*)$/.exec(text),
     [kind, given] = match && ANCHOR_KINDS.has(match[1]) ? [match[1], match[2]] : ["file", text],
     value = ANCHOR_KINDS.get(kind).normalize(given, workdir || "");
-  return value ? { key: `${kind}:${value}` } : { problem: `凭据「${text.slice(0, 80)}」写不对：${ANCHOR_KINDS.get(kind).problem}` };
+  return value ? { key: `${kind}:${value}` } : { problem: t`凭据「${text.slice(0, 80)}」写不对：${ANCHOR_KINDS.get(kind).problem}` };
 }
 /**
  * 无主改动：改过的文件里，没有哪一项（没弃的）的凭据罩着的——回归罩不到的盲区，也是副作用常藏的地方。.yan/ 下是言自己的簿记，不算
@@ -75,9 +75,9 @@ async function anchorPrints(conversation, keys, signal, cadence = "answer") {
 }
 
 defineAnchor("file", {
-  hint: "文件路径",
+  hint: t("文件路径"),
   normalize: (value, workdir) => intentPath(value, workdir),
-  problem: "要一个文件路径",
+  problem: t("要一个文件路径"),
   label: value => value,
   cadence: "round",
   read: async (conversation, values, signal) =>
@@ -85,9 +85,9 @@ defineAnchor("file", {
   covers: (value, path) => value === path
 });
 defineAnchor("dir", {
-  hint: "dir:目录（底下整片，新增删除也算）",
+  hint: t("dir:目录（底下整片，新增删除也算）"),
   normalize: (value, workdir) => intentPath(value, workdir).replace(/\/+$/, "") || ".",
-  problem: "要一个目录",
+  problem: t("要一个目录"),
   label: value => `${value}/`,
   cadence: "round",
   read: async (conversation, values, signal) =>
@@ -97,9 +97,9 @@ defineAnchor("dir", {
 // 探针：比的是一条指令的输出（连同退出码）。跟着这段对话的档位走：问而后行里只自动跑明确只读的，别的这回不跑、不据它判；
 // 审而后行、径行照跑。超时给得短——每答开工都要跑，一条卡住的探针不该拖住整答
 defineAnchor("cmd", {
-  hint: "cmd:指令（比它的输出，宜选只读、输出稳定的）",
+  hint: t("cmd:指令（比它的输出，宜选只读、输出稳定的）"),
   normalize: value => (/\n/.test(value) ? "" : value.trim().slice(0, 300)),
-  problem: "指令只能一行",
+  problem: t("指令只能一行"),
   label: value => `探针「${value}」`,
   cadence: "answer",
   async read(conversation, values, signal) {

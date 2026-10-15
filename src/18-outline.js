@@ -76,7 +76,7 @@ function updateContextGauge() {
   gauge.style.setProperty("--ratio", window ? `${Math.min(100, Math.round((n / window) * 100))}%` : "0%");
   rollText(gauge.querySelector(".context-gauge-value"), formatTokens(n));
   gauge.querySelector(".context-gauge-window").textContent = window ? `/ ${formatTokens(window)}` : "";
-  gauge.title = `下一问约送出 ${formatTokens(n)} token${window ? `，占此模型窗口 ${formatTokens(window)} 的 ${Math.round((n / window) * 100)}%` : ""}（估算，含系统提示、工具定义与上次撮要以来的往来）${window ? "；过七成半自动撮要" : "；放不下时自动撮要"}${heavy ? "\n上下文已重，可撮要前文" : "\n撮要前文"}`;
+  gauge.title = t`下一问约送出 ${formatTokens(n)} token${window ? t`，占此模型窗口 ${formatTokens(window)} 的 ${Math.round((n / window) * 100)}%` : ""}（估算，含系统提示、工具定义与上次撮要以来的往来）${window ? t("；过七成半自动撮要") : t("；放不下时自动撮要")}${heavy ? t("\n上下文已重，可撮要前文") : t("\n撮要前文")}`;
 }
 function scheduleContextGauge(delay = 160) {
   clearTimeout(gaugeTimer);
@@ -88,20 +88,20 @@ async function openContextMenu(anchor) {
   if (!c || anchor.dataset.busy) return;
   const source = compactable(c),
     turns = source.filter(m => m.role === "user").length;
-  if (turns < 2) return toast(conversationRunning(c.id) || runningElsewhere(c.id) ? "作答中，稍后再撮" : "对话还短，不必撮要");
+  if (turns < 2) return toast(conversationRunning(c.id) || runningElsewhere(c.id) ? t("作答中，稍后再撮") : t("对话还短，不必撮要"));
   const ok = await askConfirm({
-    title: "撮要前文？",
-    body: `此前的 ${turns} 问 ${source.length - turns} 答会由模型撮要成一份（目标、事实、决定、改过的文件、待办），此后每一问只带这份撮要与其后的消息。页面上的记录都还在，只是折起来。`,
-    ok: "撮要"
+    title: t("撮要前文？"),
+    body: t`此前的 ${turns} 问 ${source.length - turns} 答会由模型撮要成一份（目标、事实、决定、改过的文件、待办），此后每一问只带这份撮要与其后的消息。页面上的记录都还在，只是折起来。`,
+    ok: t("撮要")
   });
   if (!ok) return;
   anchor.dataset.busy = "1";
-  anchor.querySelector(".context-gauge-label").textContent = "撮要中";
+  anchor.querySelector(".context-gauge-label").textContent = t("撮要中");
   try {
     await compactContext(c);
   } finally {
     delete anchor.dataset.busy;
-    anchor.querySelector(".context-gauge-label").textContent = "上下文";
+    anchor.querySelector(".context-gauge-label").textContent = t("上下文");
     updateContextGauge();
   }
 }
@@ -114,7 +114,7 @@ function outlineLabel(message) {
   const text = String(message.content || "")
     .replace(/\s+/g, " ")
     .trim();
-  return text || (message.attachments?.length ? `附件 ${message.attachments[0].name}` : message.quote?.text ? "就引文追问" : "…");
+  return text || (message.attachments?.length ? t`附件 ${message.attachments[0].name}` : message.quote?.text ? t("就引文追问") : "…");
 }
 function renderOutline() {
   const rail = $("#outline");
@@ -133,7 +133,7 @@ function renderOutline() {
   rail.innerHTML = users
     .map(
       (m, i) =>
-        `<button type="button" class="outline-item" data-target="${escapeHtml(m.id)}" title="第 ${i + 1} 问 · ${escapeHtml(outlineLabel(m).slice(0, 80))}"><span class="outline-label"><span>${escapeHtml(outlineLabel(m).slice(0, 16))}</span></span><span class="outline-tick" aria-hidden="true"></span></button>`
+        `<button type="button" class="outline-item" data-target="${escapeHtml(m.id)}" title="${t`第 ${i + 1} 问 · ${escapeHtml(outlineLabel(m).slice(0, 80))}`}"><span class="outline-label"><span>${escapeHtml(outlineLabel(m).slice(0, 16))}</span></span><span class="outline-tick" aria-hidden="true"></span></button>`
     )
     .join("");
   syncOutline();

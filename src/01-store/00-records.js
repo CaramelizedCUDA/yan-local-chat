@@ -8,7 +8,7 @@ const NEW_DRAFT_ID = "__new__";
 const defaultStore = {
   version: STORE_VERSION,
   settings: {
-    name: "访客",
+    name: t("访客"),
     theme: "light",
     inkMotion: "on",
     font: "mixed",
@@ -82,7 +82,7 @@ function normalizeStoreData(value) {
       .filter(group => group && typeof group === "object" && group.id)
       .map(group => ({
         id: String(group.id),
-        name: String(group.name || "").trim() || "未命名",
+        name: String(group.name || "").trim() || t("未命名"),
         createdAt: String(group.createdAt || new Date().toISOString()),
         presetId: String(group.presetId || ""),
         workdir: String(group.workdir || "")
@@ -109,7 +109,7 @@ function normalizePreset(value) {
   const names = list => (Array.isArray(list) ? [...new Set(list.map(String))] : null);
   return {
     id: String(value.id || uid()),
-    name: String(value.name || "").trim() || "未命名",
+    name: String(value.name || "").trim() || t("未命名"),
     prompt: String(value.prompt || ""),
     tools: names(value.tools),
     mcp: names(value.mcp),

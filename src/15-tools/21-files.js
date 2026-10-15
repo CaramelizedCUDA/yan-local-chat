@@ -4,7 +4,7 @@ const WRITTEN_KEEP_CHARS = 4000;
 defineTool({
   name: "write_file",
   group: "work",
-  label: "写入",
+  label: t("写入"),
   offer: ctx => ctx.files,
   sideEffect: true,
   writes: true,
@@ -24,11 +24,11 @@ defineTool({
       return {
         ok: false,
         content: prompt("work.stale", { path: data.path, who: changedBy(conversation, step, data.sig) }),
-        display: "读后已被改过"
+        display: t("读后已被改过")
       };
     step.sig = data.sig;
     step.root = workRoot(conversation);
-    step.note = `${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? " · 覆盖" : ""}`;
+    step.note = t`${data.lines} 行 · ${formatFileSize(data.bytes)}${data.existed ? t(" · 覆盖") : ""}`;
     // 覆盖时的增删由桥接按前后两版逐行比出（旧桥接只给原有行数，退回整删整增）；lines 是写后这件的行数，新建的件按它算净增
     step.change = {
       path: data.path,
@@ -40,14 +40,14 @@ defineTool({
     // 写下的内容与覆盖掉的原文各留一份给改动清单点开看（见 changeDiffHtml）；太长只留开头，免得对话记录跟着胖
     const keep = text =>
       text.length > WRITTEN_KEEP_CHARS
-        ? `${text.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${text.length - WRITTEN_KEEP_CHARS} 字未留存）`
+        ? t`${text.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${text.length - WRITTEN_KEEP_CHARS} 字未留存）`
         : text;
     step.written = keep(String(args.content));
     if (data.previous) step.previous = String(data.previous);
     return {
       ok: true,
-      content: `已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? `，覆盖了原${data.binary ? "有的二进制" : ""}文件` : ""}${data.converted ? "；原文件是 GBK，已存成 UTF-8" : ""}）`,
-      display: data.existed ? "已覆盖" : "已写入"
+      content: t`已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? t`，覆盖了原${data.binary ? t("有的二进制") : ""}文件` : ""}${data.converted ? t("；原文件是 GBK，已存成 UTF-8") : ""}）`,
+      display: data.existed ? t("已覆盖") : t("已写入")
     };
   }
 });
@@ -55,7 +55,7 @@ defineTool({
 defineTool({
   name: "edit_file",
   group: "work",
-  label: "修改",
+  label: t("修改"),
   offer: ctx => ctx.files && ctx.work,
   sideEffect: true,
   writes: true,
@@ -64,7 +64,7 @@ defineTool({
   async run(step, args, { conversation, signal }) {
     step.title = args.path;
     if (!seenBefore(conversation, step, args.path))
-      return { ok: false, content: prompt("work.unread", { path: args.path }), display: "需先读取" };
+      return { ok: false, content: prompt("work.unread", { path: args.path }), display: t("需先读取") };
     const seen = seenSig(conversation, step, args.path),
       data = await bridge(
         "/api/work/edit",
@@ -88,8 +88,8 @@ defineTool({
     step.change = { path: data.path, added: counts.added * data.replaced, removed: counts.removed * data.replaced, lines: data.lines };
     return {
       ok: true,
-      content: `已修改 ${data.path}：第 ${data.line} 行起替换 ${data.replaced} 处，文件现为 ${data.lines} 行${step.drifted ? prompt("work.drift", { who: step.drifted }) : ""}`,
-      display: `第 ${data.line} 行 · ${data.replaced} 处`
+      content: t`已修改 ${data.path}：第 ${data.line} 行起替换 ${data.replaced} 处，文件现为 ${data.lines} 行${step.drifted ? prompt("work.drift", { who: step.drifted }) : ""}`,
+      display: t`第 ${data.line} 行 · ${data.replaced} 处`
     };
   }
 });
@@ -97,7 +97,7 @@ defineTool({
 defineTool({
   name: "read_file",
   group: "work",
-  label: "读取",
+  label: t("读取"),
   offer: ctx => ctx.files,
   parallel: true,
   html: workStepHtml,
@@ -115,11 +115,11 @@ defineTool({
     const encoding =
       data.encoding === "utf-8"
         ? ""
-        : `；文件是 ${data.encoding === "gbk" ? "GBK" : data.encoding.toUpperCase()} 编码${data.encoding === "gbk" ? "，edit_file 改不了它" : ""}`;
+        : t`；文件是 ${data.encoding === "gbk" ? "GBK" : data.encoding.toUpperCase()} 编码${data.encoding === "gbk" ? t("，edit_file 改不了它") : ""}`;
     return {
       ok: true,
-      content: `${data.path}（共 ${data.totalLines} 行，此处第 ${data.offset}–${data.offset + data.shown - 1} 行${encoding}）\n${data.text}`,
-      display: `${data.shown}/${data.totalLines} 行`
+      content: t`${data.path}（共 ${data.totalLines} 行，此处第 ${data.offset}–${data.offset + data.shown - 1} 行${encoding}）\n${data.text}`,
+      display: t`${data.shown}/${data.totalLines} 行`
     };
   }
 });
@@ -127,7 +127,7 @@ defineTool({
 defineTool({
   name: "list_files",
   group: "work",
-  label: "览目录",
+  label: t("览目录"),
   offer: ctx => ctx.files,
   parallel: true,
   html: workStepHtml,
@@ -145,11 +145,11 @@ defineTool({
     return {
       ok: true,
       content: data.entries.length
-        ? `${data.entries.join("\n")}${data.truncated ? "\n…（条目过多已截断，深处的没列全；请指定子目录）" : ""}`
+        ? `${data.entries.join("\n")}${data.truncated ? t("\n…（条目过多已截断，深处的没列全；请指定子目录）") : ""}`
         : args.pattern
-          ? `（没有匹配 ${args.pattern} 的文件）`
-          : "（空目录）",
-      display: `${data.entries.length} 项`
+          ? t`（没有匹配 ${args.pattern} 的文件）`
+          : t("（空目录）"),
+      display: t`${data.entries.length} 项`
     };
   }
 });
@@ -157,7 +157,7 @@ defineTool({
 defineTool({
   name: "search_files",
   group: "work",
-  label: "搜索",
+  label: t("搜索"),
   offer: ctx => ctx.files && ctx.work,
   parallel: true,
   html: workStepHtml,
@@ -179,21 +179,21 @@ defineTool({
     const lines = data.matches.map(match => `${match.file}:${match.line}: ${match.text}`);
     step.output = trimOutput(lines.join("\n"));
     // 桥接替模型圆过的（正则写不成，按字面搜了）：说在结果前头
-    step.note = data.note || (lines.length ? "" : "无匹配");
+    step.note = data.note || (lines.length ? "" : t("无匹配"));
     // 搜得不全的照实说：扫到文件上限、没进去的大目录。零命中时模型最容易据此断言「没有」
     const partial = [
-        data.limited && `只扫了前 ${data.limited} 个文件，其余未搜；请缩小 path 或加 glob`,
-        data.skipped?.length && `未进入 ${data.skipped.join("、")}；要搜其中的，把 path 指进去`
+        data.limited && t`只扫了前 ${data.limited} 个文件，其余未搜；请缩小 path 或加 glob`,
+        data.skipped?.length && t`未进入 ${data.skipped.join("、")}；要搜其中的，把 path 指进去`
       ]
         .filter(Boolean)
         .join("；"),
       found = lines.length
-        ? `${lines.join("\n")}${data.truncated && !data.limited ? "\n…（结果已截断，请缩小范围或加 glob）" : ""}${partial ? `\n（${partial}）` : ""}`
-        : `扫描的 ${data.scanned} 个文件里未找到匹配「${args.query}」的内容${partial ? `（${partial}）` : ""}`;
+        ? `${lines.join("\n")}${data.truncated && !data.limited ? t("\n…（结果已截断，请缩小范围或加 glob）") : ""}${partial ? `\n（${partial}）` : ""}`
+        : t`扫描的 ${data.scanned} 个文件里未找到匹配「${args.query}」的内容${partial ? `（${partial}）` : ""}`;
     return {
       ok: true,
       content: data.note ? `（${data.note}）\n${found}` : found,
-      display: `${lines.length} 处 · ${data.files} 文件`
+      display: t`${lines.length} 处 · ${data.files} 文件`
     };
   }
 });
@@ -202,7 +202,7 @@ defineTool({
 defineTool({
   name: "download_file",
   group: "web",
-  label: "下载",
+  label: t("下载"),
   offer: ctx => ctx.files,
   sideEffect: true,
   writes: true,
@@ -217,7 +217,7 @@ defineTool({
     step.change = { path: data.path, added: 0, removed: 0, created: true }; // 计入这一答的改动摘要
     return {
       ok: true,
-      content: `已存为 ${data.path}（${formatFileSize(data.bytes)}${data.type ? `，${data.type}` : ""}）`,
+      content: t`已存为 ${data.path}（${formatFileSize(data.bytes)}${data.type ? `，${data.type}` : ""}）`,
       display: formatFileSize(data.bytes)
     };
   }
@@ -275,10 +275,10 @@ function changedBy(conversation, step, sig) {
   const mine = step.scope || "",
     steps = conversation.messages.flatMap(message => allSteps(message)),
     by = steps.findLast(s => s.sig === sig && (s.name === "write_file" || s.name === "edit_file") && (s.scope || "") !== mine);
-  if (!by) return lastSeen(conversation, step, step.title)?.drifted || "别处（指令、编辑器或别的对话）";
-  if (!by.scope) return "主对话";
+  if (!by) return lastSeen(conversation, step, step.title)?.drifted || t("别处（指令、编辑器或别的对话）");
+  if (!by.scope) return t("主对话");
   const helper = steps.find(s => s.sub?.id === by.scope);
-  return `帮手「${helper?.title || "?"}」`;
+  return t`帮手「${helper?.title || "?"}」`;
 }
 // 「读过没有」按同一个文件认：读时写相对路径、改时写完整路径，或 Windows 上大小写不同，都是同一个文件
 /** @param {Conversation} conversation */
@@ -312,19 +312,19 @@ async function ensureWorkReady(conversation) {
         "/api/work/prepare",
         { workdir: `${archive}${archive.includes("/") && !archive.includes("\\") ? "/" : "\\"}${scratchRel(conversation)}` },
         AbortSignal.timeout(8000)
-      ).catch(error => toast(`卷宗目录不可用：${String(error.message || error)}`));
+      ).catch(error => toast(t`卷宗目录不可用：${String(error.message || error)}`));
     return true;
   }
   if (activeProfile()?.tools === false) {
-    toast("当前模型已关闭本机工具，请在模型高级配置中开启");
+    toast(t("当前模型已关闭本机工具，请在模型高级配置中开启"));
     return false;
   }
   try {
     const prepared = await bridge("/api/work/prepare", { workdir: conversation.workdir }, AbortSignal.timeout(8000));
-    if (prepared.created) toast("工作目录不存在，已新建");
+    if (prepared.created) toast(t("工作目录不存在，已新建"));
     conversation.workdir = prepared.workdir;
   } catch (error) {
-    toast(bridgeTimedOut(error) ? "本机桥接响应超时，未能寄出，文字仍在输入框" : `工作目录不可用：${String(error.message || error)}`);
+    toast(bridgeTimedOut(error) ? t("本机桥接响应超时，未能寄出，文字仍在输入框") : t`工作目录不可用：${String(error.message || error)}`);
     return false;
   }
   return true;

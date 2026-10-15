@@ -8,11 +8,11 @@ function openHistoryMenu(id, anchor) {
   openMenu(
     anchor,
     [
-      { id: "pin", label: c.pinned ? "取消置顶" : "置顶", run: () => togglePin(id) },
-      { id: "rename", label: "改名", run: () => startRename(id) },
+      { id: "pin", label: c.pinned ? t("取消置顶") : t("置顶"), run: () => togglePin(id) },
+      { id: "rename", label: t("改名"), run: () => startRename(id) },
       {
         id: "bind",
-        label: isWork(c) ? "更换目录" : "绑定目录",
+        label: isWork(c) ? t("更换目录") : t("绑定目录"),
         run: () =>
           openWorkdirPop({
             anchor: row,
@@ -24,9 +24,9 @@ function openHistoryMenu(id, anchor) {
             onCommit: dir => void bindWorkdir(c, dir)
           })
       },
-      { id: "group", label: groupOf(c) ? "移至他组" : "移入分组", run: () => openMoveMenu(c, row) },
-      { id: "export", label: "导出", note: "存入卷宗", run: () => void exportConversationMarkdown(c) },
-      { id: "delete", label: "删除", danger: true, run: () => deleteConversation(id) }
+      { id: "group", label: groupOf(c) ? t("移至他组") : t("移入分组"), run: () => openMoveMenu(c, row) },
+      { id: "export", label: t("导出"), note: t("存入卷宗"), run: () => void exportConversationMarkdown(c) },
+      { id: "delete", label: t("删除"), danger: true, run: () => deleteConversation(id) }
     ],
     { kind: "history", key: id }
   );
@@ -70,8 +70,9 @@ async function deleteConversation(id) {
   const removed = store.conversations.find(c => c.id === id);
   if (!removed) return;
   // 那一处还在写，删了它也会写回来
-  if (runningElsewhere(id)) return toast("此对话正在另一页面作答，暂不能删除");
-  if (!(await askConfirm({ title: "删除这段对话？", body: `「${removed.title}」将连同其附件一起移除，无法撤销。`, ok: "删除" }))) return;
+  if (runningElsewhere(id)) return toast(t("此对话正在另一页面作答，暂不能删除"));
+  if (!(await askConfirm({ title: t("删除这段对话？"), body: t`「${removed.title}」将连同其附件一起移除，无法撤销。`, ok: t("删除") })))
+    return;
   // 主答、旁注、后台的帮手一并停下，后台指令连进程收掉
   haltConversation(id, { removing: true });
   if (currentId === id) closeSidePanel();
@@ -87,7 +88,7 @@ async function deleteConversation(id) {
   }
   saveStore();
   render();
-  toast("对话已删除");
+  toast(t("对话已删除"));
 }
 function togglePin(id) {
   const c = store.conversations.find(item => item.id === id);
@@ -164,7 +165,7 @@ function syncChatScrollGrabber() {
 }
 function syncDocumentTitle() {
   const c = currentConversation();
-  document.title = view === "library" ? "卷宗 · 言" : view === "groups" ? "分组 · 言" : c ? `${c.title} · 言` : "言";
+  document.title = view === "library" ? t("卷宗 · 言") : view === "groups" ? t("分组 · 言") : c ? t`${c.title} · 言` : t("言");
   renderRunningHead(); // 标题改了（手改、拟题），书眉跟着换
 }
 

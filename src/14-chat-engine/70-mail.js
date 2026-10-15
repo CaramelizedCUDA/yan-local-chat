@@ -79,7 +79,7 @@ function sleepUntilMail(box) {
   return new Promise((resolve, reject) => {
     const stop = () => {
       box.wake = null;
-      reject(Object.assign(Error("已停止"), { name: "AbortError" }));
+      reject(Object.assign(Error(t("已停止")), { name: "AbortError" }));
     };
     if (signal.aborted) return stop();
     signal.addEventListener("abort", stop, { once: true });
@@ -127,7 +127,7 @@ function wakeWithReports(conversation, items) {
   saveStore();
   if (currentId === conversation.id && view === "chat") renderConversation();
   else renderHistory();
-  toast(profile ? "余墨已尽，帮手的回报先记下了" : "没有可用的模型，帮手的回报先记下了");
+  toast(profile ? t("余墨已尽，帮手的回报先记下了") : t("没有可用的模型，帮手的回报先记下了"));
 }
 // 断着时记下的回报交给开工的这一答：行迹里落一步「回报」，随后当即递上。派它的那一步已不在眼前这条路上的（重答把那一答收成了版本）不递，
 // 免得张冠李戴。返回交出去的几项，这一答一个字没等到就又断了，原样还回去

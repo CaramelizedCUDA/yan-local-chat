@@ -24,7 +24,7 @@ async function askApproval(step, { conversation, assistant, signal }) {
     };
     const onAbort = () => {
       pendingApprovals.delete(step.id);
-      reject(Object.assign(Error("已停止"), { name: "AbortError" }));
+      reject(Object.assign(Error(t("已停止")), { name: "AbortError" }));
     };
     signal.addEventListener("abort", onAbort, { once: true });
     pendingApprovals.set(step.id, { conversationId: conversation.id, resolve: done, step });
@@ -82,7 +82,7 @@ function approveByEnter(entry) {
   if (page < total - 1) return formPage(bar, page + 1);
   const answers = collectForm(bar);
   if (answers?.some(Boolean)) return settleApproval(entry.step.id, answers);
-  toast("请先在上方作答");
+  toast(t("请先在上方作答"));
 }
 
 // 请示条：批与不批、ask_user 的表单；输入框旁的权限档位切换（切宽了，这段对话里等着的请示一并放行）

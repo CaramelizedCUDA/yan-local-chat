@@ -19,18 +19,18 @@ function attachmentCard(file, index, sent = false, drop = false) {
       : fileFigure(file.name);
   const body = `${figure}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-size">${formatFileSize(file.size)}</span>`;
   const save = file.id
-    ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="收入卷宗" aria-label="收入卷宗">藏</button>`
+    ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="${t(`收入卷宗`)}" aria-label="${t(`收入卷宗`)}">${t(`藏`)}</button>`
     : "";
   // 附件点开是看：图进图片查看器，文、表、PDF、网页、音视频进预览器——自己刚拖进来、刚发出去的东西再下载一遍没有道理；
   // 只有预览不了的（压缩包之类）：发出去的落到下载，案上的就不必点了
   const view =
     file.id && file.kind === "image"
-      ? `data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
+      ? t`data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(title)}"`
       : file.id && fileKind(file.name).view
-        ? `data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
+        ? t`data-open-attachment="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" title="预览 ${escapeHtml(title)}"`
         : "";
   if (sent && file.id) {
-    const action = view || `data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
+    const action = view || t`data-download-attachment="${escapeHtml(file.id)}" title="下载 ${escapeHtml(title)}"`;
     return `<div class="attachment-card sent" role="button" tabindex="0" data-kind="${file.kind}" ${action}>${body}${save}</div>`;
   }
   const remove = drop
@@ -38,7 +38,7 @@ function attachmentCard(file, index, sent = false, drop = false) {
     : index !== null
       ? `data-remove-attachment="${index}"`
       : "";
-  return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${remove ? `<button class="attachment-tool attachment-remove" ${remove} title="移除 ${escapeHtml(file.name)}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ""}</div>`;
+  return `<div class="attachment-card pending" data-kind="${file.kind}" ${view ? `role="button" tabindex="0" ${view}` : `title="${escapeHtml(title)}"`}>${body}${save}${remove ? `<button class="attachment-tool attachment-remove" ${remove} title="${t`移除 ${escapeHtml(file.name)}`}" aria-label="${t`移除 ${escapeHtml(file.name)}`}">×</button>` : ""}</div>`;
 }
 // 随引文的那幅画面画在引文里，不进附件栏（序号仍按 pendingAttachments 算，移除时对得上）
 function renderAttachments() {
@@ -80,7 +80,7 @@ function quoteImageOf(file, quote) {
 }
 // 引文里的那幅画面：与行迹里工具交回的画面同一张折角小纸，点开进图片查看器
 function quoteShotHtml(id, text) {
-  return `<span class="fi fi-thumb quote-shot" role="button" tabindex="0" data-open-image="${escapeHtml(id)}" title="查看画面 · ${escapeHtml(text || "")}"><img data-thumb="${escapeHtml(id)}" alt=""></span>`;
+  return `<span class="fi fi-thumb quote-shot" role="button" tabindex="0" data-open-image="${escapeHtml(id)}" title="${t`查看画面 · ${escapeHtml(text || "")}`}"><img data-thumb="${escapeHtml(id)}" alt=""></span>`;
 }
 // 划选的这段在正文里是第几次出现：同一条回复里同样的词可能出现不止一次，重画后单靠 indexOf 会落到第一处。
 // 数的是划选起点之前出现过几回，空白全去掉再数——与 markAnchor 里的找法一致

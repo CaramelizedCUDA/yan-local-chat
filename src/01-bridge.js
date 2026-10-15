@@ -24,7 +24,7 @@ async function connectBridge(candidates, timeout = 1400) {
       const next = await response.json();
       bootstrap = next;
       apiBase = candidate;
-      if (next.stale) toast("本机桥接已更新，请关闭桥接窗口后重新运行 start.cmd", 8000);
+      if (next.stale) toast(t("本机桥接已更新，请关闭桥接窗口后重新运行 start.cmd"), 8000);
       return true;
     } catch {}
   }
@@ -147,7 +147,7 @@ async function bridgeFetch(path, body, signal) {
         finish();
         // 桥接那头这一页的流恰好断了：这一次改为直接 fetch
         if (status === 409) return direct().then(resolve, reject);
-        reject(Error(data.error || `请求失败（${status}）`));
+        reject(Error(data.error || t`请求失败（${status}）`));
       },
       error => job.fail(error)
     );
@@ -162,7 +162,7 @@ function bridgeTimedOut(error) {
 async function bridge(path, payload, signal) {
   const response = await bridgeFetch(path, JSON.stringify(payload), signal);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
+  if (!response.ok) throw Object.assign(Error(data.error || t`请求失败（${response.status}）`), { status: response.status, data });
   return data;
 }
 
@@ -174,7 +174,7 @@ async function describeResponseError(response) {
   try {
     error = JSON.parse(raw)?.error;
   } catch {
-    return raw.trim().slice(0, 300) || `请求失败（${response.status}）`;
+    return raw.trim().slice(0, 300) || t`请求失败（${response.status}）`;
   }
-  return (typeof error === "string" && error) || `请求失败（${response.status}）`;
+  return (typeof error === "string" && error) || t`请求失败（${response.status}）`;
 }

@@ -106,7 +106,7 @@ function saveConfigNow({ force = false } = {}) {
     .then(async response => {
       const data = await response.json().catch(() => ({}));
       if (response.status === 409 && data.config) return reconcileConfig(data.config, Number(data.savedAt) || 0);
-      if (!response.ok) throw Error(data.error || `请求失败（${response.status}）`);
+      if (!response.ok) throw Error(data.error || t`请求失败（${response.status}）`);
       configSaveFailures = 0;
       // 路上已从别处认过更新的一份（对齐时认出了这份，或已合并了更新的）：基准不往回退
       const written = Number(data.savedAt) || savedAt;
@@ -118,8 +118,8 @@ function saveConfigNow({ force = false } = {}) {
       if (!configSaveFailures)
         toast(
           bridgeTimedOut(error)
-            ? "本机桥接响应超时，配置仍在本页，稍后自动重试"
-            : `配置尚未写入存储目录，稍后重试：${String(error.message || error).slice(0, 60)}`
+            ? t("本机桥接响应超时，配置仍在本页，稍后自动重试")
+            : t`配置尚未写入存储目录，稍后重试：${String(error.message || error).slice(0, 60)}`
         );
       configSaveFailures += 1;
       clearTimeout(configSaveTimer);
@@ -297,9 +297,9 @@ async function syncConfigWithDisk() {
     try {
       localStorage.setItem(STORE_ROOT_KEY, info.root || "");
     } catch {}
-    if (strayed) toast(`存储落在了 ${pathTail(info.root || "")}，上回用的是 ${met}；在设置 → 通用的「存储位置」填回去即可`, 8000);
+    if (strayed) toast(t`存储落在了 ${pathTail(info.root || "")}，上回用的是 ${met}；在设置 → 通用的「存储位置」填回去即可`, 8000);
   } catch (error) {
-    toast(`配置未能与存储目录对齐：${String(error.message || error).slice(0, 60)}`);
+    toast(t`配置未能与存储目录对齐：${String(error.message || error).slice(0, 60)}`);
   }
 }
 // 从后台切回来：另一个浏览器可能改过配置，与磁盘上的对一对（这边有没写下去的改动也不丢，见 reconcileConfig）

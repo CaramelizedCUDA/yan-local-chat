@@ -27,10 +27,10 @@ async function maybeAutoTitle(conversation, profile) {
   conversation.titleTries = (conversation.titleTries || 0) + 1;
   try {
     const firstId = first.id,
-      user = String(first.content || (first.attachments || []).map(a => a.name).join("、") || "（附件）");
+      user = String(first.content || (first.attachments || []).map(a => a.name).join("、") || t("（附件）"));
     const ask = prompt("assistant.title", {
       user: user.slice(0, 1200),
-      assistant: reply ? `\n\n助手：${String(reply.content).slice(0, 1200)}` : ""
+      assistant: reply ? t`\n\n助手：${String(reply.content).slice(0, 1200)}` : ""
     });
     // 题目只有几个字，可它是与一答并行发出的：接口忙、模型慢起（会思考的先想再写）时三十秒常常不够，三次都超时就再也拟不上题。
     // 超时给到两分钟；输出上限不能只按题目本身算——会思考的模型把思考也计在 max_tokens 里；开了思考档位的降到最低一档，拟题用不着深想
@@ -63,7 +63,7 @@ async function maybeAutoTitle(conversation, profile) {
     const currentFirst = conversation.messages.find(m => m.role === "user");
     if (
       currentFirst?.id !== firstId ||
-      String(currentFirst.content || (currentFirst.attachments || []).map(a => a.name).join("、") || "（附件）") !== user
+      String(currentFirst.content || (currentFirst.attachments || []).map(a => a.name).join("、") || t("（附件）")) !== user
     )
       return void titleRetries.add(conversation.id);
     conversation.title = title;

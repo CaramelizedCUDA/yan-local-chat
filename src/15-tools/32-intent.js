@@ -3,12 +3,12 @@
 defineTool({
   name: "update_intent",
   group: "work",
-  label: "意",
+  label: t("意"),
   offer: ctx => ctx.work,
   mainOnly: true,
   sideEffect: true,
   html: step => intentStepHtml(step, "update_intent"),
-  digest: step => `意 → ${step.title || ""}`,
+  digest: step => t`意 → ${step.title || ""}`,
   // 凭据的写法出自登记表（见 19-intent/05-anchors.js）：加一种凭据，这里的说明随之多一样
   params: parameters => {
     const out = structuredClone(parameters),
@@ -40,8 +40,8 @@ defineTool({
     if (!outcome.next)
       return {
         ok: false,
-        content: `意没有改：\n${outcome.problems.map(p => `- ${p}`).join("\n")}\n改正后这一批重给。`,
-        display: "未改"
+        content: t`意没有改：\n${outcome.problems.map(p => `- ${p}`).join("\n")}\n改正后这一批重给。`,
+        display: t("未改")
       };
     // 此刻的指纹：便宜的几种现取；探针不再跑一遍——刚标的用刚取的，其余用这一答开工时取的
     const next = outcome.next,
@@ -52,11 +52,11 @@ defineTool({
       },
       { live, standing } = intentTally(next, now),
       unread = outcome.unread.length
-        ? `\n\n这几条凭据此刻取不到指纹，未记下，日后也不据它判：${outcome.unread.map(anchorLabel).join("、")}（问而后行里探针只自动跑明确只读的指令）`
+        ? t`\n\n这几条凭据此刻取不到指纹，未记下，日后也不据它判：${outcome.unread.map(anchorLabel).join("、")}（问而后行里探针只自动跑明确只读的指令）`
         : "",
-      tidied = outcome.tidied.length ? `\n\n名字照规矩改写了：${outcome.tidied.map(([said, id]) => `「${said}」→ ${id}`).join("、")}` : "";
+      tidied = outcome.tidied.length ? t`\n\n名字照规矩改写了：${outcome.tidied.map(([said, id]) => `「${said}」→ ${id}`).join("、")}` : "";
     keepIntent(conversation, next, now);
-    step.title = `已立 ${standing} / ${live} · ${outcome.ops.map(intentOpId).join("、")}`.slice(0, 80);
+    step.title = t`已立 ${standing} / ${live} · ${outcome.ops.map(intentOpId).join("、")}`.slice(0, 80);
     return { ok: true, content: `${intentText(next, now, { path: INTENT_FILE })}${unread}${tidied}`, display: `${standing}/${live}` };
   }
 });
@@ -64,7 +64,7 @@ defineTool({
 // coda：对照完没再动手就收尾的，之前那段话仍作答复，这一步画在它之后、不进行迹（见 08-trail/00-timeline.js 的 trailCoda）
 defineTool({
   name: "intent_gate",
-  label: "意",
+  label: t("意"),
   offer: false,
   coda: true,
   html: step => intentStepHtml(step, "intent_gate"),
@@ -75,5 +75,5 @@ defineTool({
 function intentStepHtml(step, name) {
   const status = step.status || "done",
     open = status === "done";
-  return `<div class="tool-step tool-step-intent" data-tool="${name}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${open ? ` data-intent-open role="button" tabindex="0" title="打开意"` : ""}><span class="tool-label">意</span><span class="tool-title">${escapeHtml(step.title || "")}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "") : ""}">${escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-intent" data-tool="${name}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${open ? t` data-intent-open role="button" tabindex="0" title="打开意"` : ""}><span class="tool-label">${t(`意`)}</span><span class="tool-title">${escapeHtml(step.title || "")}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "") : ""}">${escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div></div>`;
 }

@@ -80,12 +80,12 @@ function branchFor(message) {
 function paintAssistant(article, message, { steps = true, side = !!article.closest("#sideMessages"), branch = undefined } = {}) {
   if (branch === undefined) branch = side ? null : branchFor(message);
   const status = message.status || "complete",
-    meta = `<div class="message-meta"><span class="meta-seal" aria-hidden="true">言</span><span>${escapeHtml(message.modelName || "模型")} · ${formatTime(message.timestamp)}</span>${side ? "" : noteMarkHtml(message)}</div>`,
+    meta = `<div class="message-meta"><span class="meta-seal" aria-hidden="true">${t(`言`)}</span><span>${escapeHtml(message.modelName || t("模型"))} · ${formatTime(message.timestamp)}</span>${side ? "" : noteMarkHtml(message)}</div>`,
     // 旁注里的答：复制、重新生成（不分叉，直接换掉）；出错或停止了也能重来
     actions = side
       ? status === "streaming"
         ? ""
-        : `${message.content ? actionIcon("copy", "复制答复") : ""}${actionIcon("regenerate", status === "complete" ? "重写" : "重试")}`
+        : `${message.content ? actionIcon("copy", t("复制答复")) : ""}${actionIcon("regenerate", status === "complete" ? t("重写") : t("重试"))}`
       : assistantActionsHtml(message) + branchNavHtml(branch),
     bar = actions ? `<div class="message-actions${branch ? " has-branch" : ""}">${actions}</div>` : "";
   /** @type {Part[]} */
@@ -138,8 +138,8 @@ function paintBlock(block, message, o) {
     if (stack) parts.push(stack);
   }
   // 正文：执事生成中，最后一步之后的话还在行迹里「进行中」那组（见 paintTimeline），写完才落到这里
-  if (streaming && !visible) parts.push(placeholderPart("正在凝神"));
-  else if (!content && message.status === "stopped") parts.push(placeholderPart("搁笔于此"));
+  if (streaming && !visible) parts.push(placeholderPart(t("正在凝神")));
+  else if (!content && message.status === "stopped") parts.push(placeholderPart(t("搁笔于此")));
   else {
     const text = work ? (streaming ? "" : content.slice(trailBase(message), cut).trim()) : visible;
     if (text)
@@ -212,7 +212,7 @@ function draftingLabel(source) {
     })
     .join("、");
   const chars = drafting.reduce((sum, call) => sum + call.arguments.length, 0);
-  return `正在拟 ${label}${chars > 200 ? ` · ${chars} 字` : ""}`;
+  return t`正在拟 ${label}${chars > 200 ? t` · ${chars} 字` : ""}`;
 }
 // 思绪块（正文区里的那一块）：开合记在消息上——用户亲手开合过的就不替他动；写完了收起（收尾时不看读者在不在看）
 /** @param {Message} message */
@@ -223,7 +223,7 @@ function thoughtPart(key, text, live, message) {
     sig: `${streaming}|${live}|${text}`,
     enter: true,
     html: () =>
-      `<details class="reasoning"${(message.reasoningTouched ? message.reasoningOpen : live) ? " open" : ""} data-state="${live ? "live" : "done"}"><summary>思绪</summary><div class="reasoning-body"></div></details>`,
+      `<details class="reasoning"${(message.reasoningTouched ? message.reasoningOpen : live) ? " open" : ""} data-state="${live ? "live" : "done"}"><summary>${t(`思绪`)}</summary><div class="reasoning-body"></div></details>`,
     paint: el => paintThought(el, text, live, { touched: !!message.reasoningTouched, force: !streaming })
   };
 }
@@ -460,7 +460,7 @@ function paintTrailGroup(el, g, source, o) {
       sig: `${o.live}|${g.thinking}|${g.thought}`,
       enter: tail,
       html: () =>
-        `<details class="reasoning trail-reasoning"${g.thinking ? " open" : ""} data-state="${g.thinking ? "live" : "done"}"><summary>思绪</summary><div class="reasoning-body"></div></details>`,
+        `<details class="reasoning trail-reasoning"${g.thinking ? " open" : ""} data-state="${g.thinking ? "live" : "done"}"><summary>${t(`思绪`)}</summary><div class="reasoning-body"></div></details>`,
       // 写着的时候读者停在这块上就先不收；整段写完了不再等
       paint: node => paintThought(node, g.thought, g.thinking, { touched: !!node.dataset.touched, force: !o.live })
     });
@@ -505,7 +505,7 @@ function paintTrailGroup(el, g, source, o) {
           }
     );
   if (g.drafting) parts.push(draftingPart(g.drafting));
-  if (g.idle) parts.push({ key: "idle", sig: "", html: () => `<div class="sub-idle">帮手正在凝神</div>` });
+  if (g.idle) parts.push({ key: "idle", sig: "", html: () => `<div class="sub-idle">${t(`帮手正在凝神`)}</div>` });
   syncParts(el, parts, o.animate);
 }
 
@@ -522,7 +522,7 @@ function paintHelperTrail(trail, step, animate) {
       key: "fold",
       sig: "",
       html: () =>
-        `<button type="button" class="sub-fold"><span class="sub-fold-label">行迹</span><span class="sub-fold-meta"></span></button>`
+        `<button type="button" class="sub-fold"><span class="sub-fold-label">${t(`行迹`)}</span><span class="sub-fold-meta"></span></button>`
     });
   parts.push({
     key: "timeline",

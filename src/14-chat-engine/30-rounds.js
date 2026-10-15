@@ -48,7 +48,7 @@ async function runRounds(target, history, run) {
     retrying = false;
   overrides.onRetry = n => {
     retrying = true;
-    status(`网络不稳 · 再试第 ${n} 回`);
+    status(t`网络不稳 · 再试第 ${n} 回`);
   };
   // 这一轮开了头又没写完（断线、补言停下）：花的墨按估算记上
   const chargePartial = said => {
@@ -95,7 +95,7 @@ async function runRounds(target, history, run) {
       );
       // 每轮都要有新正文或工具调用；之前的进度说明不能让工具之后的空回复冒充收尾
       if (!target.content.slice(roundStart).trim() && !target.toolCalls?.some(call => call.name))
-        throw Object.assign(Error("模型本轮未返回正文或工具调用，答复尚未写完"), { midStream: true });
+        throw Object.assign(Error(t("模型本轮未返回正文或工具调用，答复尚未写完")), { midStream: true });
     } catch (error) {
       // 写到一半断了：已写的留着，稍候请它从断处接着写（半截的工具调用作废，这一轮重来），同一轮最多接两回，再断才算中断
       if (error.midStream && !signal.aborted && resumed < AUTO_RESUMES) {
@@ -105,7 +105,7 @@ async function runRounds(target, history, run) {
         chargePartial(said);
         target.toolCalls = null;
         if (said.trim()) history.push({ role: "assistant", content: said }, { role: "user", content: prompt("assistant.resume") });
-        status(error.finish === "length" ? "写到输出上限 · 接着写" : "网络不稳 · 稍候接着写");
+        status(error.finish === "length" ? t("写到输出上限 · 接着写") : t("网络不稳 · 稍候接着写"));
         if (error.finish !== "length") await restFor(2000 * resumed, signal);
         status();
         continue;
@@ -311,7 +311,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
     const sent = reasoningFields(profile, overrides.reasoning).reasoning_effort;
     if (!retried && sent && learnReasoningLevels(profile, message, sent)) {
       const level = nearestReasoning(profile, overrides.reasoning);
-      toast(`此模型的思考档位为 ${profileReasoningLevels(profile).map(reasoningLabel).join(" / ")}，已改用「${reasoningLabel(level)}」`);
+      toast(t`此模型的思考档位为 ${profileReasoningLevels(profile).map(reasoningLabel).join(" / ")}，已改用「${reasoningLabel(level)}」`);
       renderModelTriggers();
       return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
     }
@@ -363,7 +363,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
   const data = await response.json(),
     message = data?.choices?.[0]?.message;
   // 回 200 却是一份报错（有的中转站这样回）：把它说的原因交出去，不报成「模型未返回正文」
-  if (data?.error && !data.choices) throw Error((typeof data.error === "string" ? data.error : data.error.message) || "接口返回了错误");
+  if (data?.error && !data.choices) throw Error((typeof data.error === "string" ? data.error : data.error.message) || t("接口返回了错误"));
   target.content += extractContent(data);
   // 与流式一致：有的接口把思考放在 reasoning 而不是 reasoning_content
   target.reasoning = normalizeContent(message?.reasoning_content ?? message?.reasoning) || target.reasoning;
@@ -395,7 +395,7 @@ const retryableStatus = status => status === 408 || status === 409 || status ===
 /** 等 ms 毫秒（断网就等到网回来；local：本机模型不靠外网，不等）；中途停止即抛 AbortError */
 function restFor(ms, signal, local = false) {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(Object.assign(Error("已停止"), { name: "AbortError" }));
+    if (signal?.aborted) return reject(Object.assign(Error(t("已停止")), { name: "AbortError" }));
     const done = () => {
       clearTimeout(timer);
       removeEventListener("online", wake);
@@ -407,7 +407,7 @@ function restFor(ms, signal, local = false) {
     };
     const stop = () => {
       done();
-      reject(Object.assign(Error("已停止"), { name: "AbortError" }));
+      reject(Object.assign(Error(t("已停止")), { name: "AbortError" }));
     };
     const timer = setTimeout(() => (navigator.onLine || local ? wake() : addEventListener("online", wake, { once: true })), ms);
     signal?.addEventListener("abort", stop, { once: true });
@@ -463,6 +463,6 @@ function accountUsage(
   const live = spendTokens(profile, Math.max(0, consumed - spent));
   assistant.tokenCount = consumed;
   assistant.tokenEstimated = !(exact > 0) || partialRound || steered;
-  if (quotaExhausted(live)) toast("此答写毕，余墨已尽；换个模型可续");
+  if (quotaExhausted(live)) toast(t("此答写毕，余墨已尽；换个模型可续"));
   renderQuota();
 }

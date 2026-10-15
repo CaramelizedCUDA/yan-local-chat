@@ -29,13 +29,9 @@
 npm start
 ```
 
-浏览器会打开 `http://127.0.0.1:8787`。在「设置 → 模型」中填写显示名称、模型 ID、Base URL 与 API Key 即可开始。`start.cmd` 打开的窗口即本机桥接，须保持开启。界面里的用法见「设置 → 文档」；VS Code 内使用、直接打开 `index.html`、环境变量见 [启动与运行](docs/start.md)。
+浏览器会打开 `http://127.0.0.1:8787`。在「设置 → 模型」中填写显示名称、模型 ID、Base URL 与 API Key 即可开始；界面可在「设置 → 通用 → 语言」切换为英文。`start.cmd` 打开的窗口即本机桥接，须保持开启。界面里的用法见「设置 → 文档」；VS Code 内使用、直接打开 `index.html`、环境变量见 [启动与运行](docs/start.md)。
 
 macOS 上双击 `start.command`（头一回若被拦，在访达里右键选「打开」）。「环境」工具包只备了 Windows 版；沙箱规则按 PowerShell 写，在 macOS 上拦得较松。
-
-## 合作伙伴
-
-[硅基流动 SiliconFlow](https://siliconflow.cn)：DeepSeek、Qwen、GLM、Kimi 等模型一处可用。在「设置 → 模型」的接口里选「硅基流动」，填上自己的 API Key 即可，地址已填好，模型列表只列对话模型，思考档位按各模型所认换算。
 
 ## 许可与致谢
 

@@ -41,12 +41,12 @@ function stageKey(type, e, text = "") {
 function stageRenderSteps() {
   const now = Date.now();
   $("#stageSteps").innerHTML =
-    `<span class="stage-steps-head">执事近几步</span>` +
+    `<span class="stage-steps-head">${t(`执事近几步`)}</span>` +
     [...stage.trail]
       .reverse()
       .map((step, i) => {
         const ago = Math.round((now - step.at) / 1000),
-          when = i === 0 && stage.busy ? "此刻" : ago < 60 ? `${Math.max(1, ago)} 秒` : `${Math.round(ago / 60)} 分`;
+          when = i === 0 && stage.busy ? t("此刻") : ago < 60 ? t`${Math.max(1, ago)} 秒` : t`${Math.round(ago / 60)} 分`;
         return `<span class="stage-step${i === 0 ? " cur" : ""}"><small>${when}</small>${escapeHtml(step.text)}</span>`;
       })
       .join("");
@@ -104,7 +104,7 @@ function stageGo(raw) {
   if (!url || !stage.ws) return;
   // 一页都没开着：新开一页去
   const go = stage.session ? stageSend("Page.navigate", { url }, stage.session) : stageSend("Target.createTarget", { url });
-  void go.catch(error => toast(`打开失败：${String(error.message || error).slice(0, 80)}`));
+  void go.catch(error => toast(t`打开失败：${String(error.message || error).slice(0, 80)}`));
 }
 // 地址栏里输的话换成网址：本机路径、本机服务、带协议的照走；像网址的（有点、没空格）补 https；余下当成要搜的话，交给纸签里选的那家
 /** @param {string} raw */
@@ -194,7 +194,7 @@ async function stageFindRun(step) {
     stage.session
   ).catch(() => null);
   const { n = 0, at = 0 } = result?.result?.value || {};
-  $("#stageFindCount").textContent = !q ? "" : n ? `${at} / ${n}` : "无";
+  $("#stageFindCount").textContent = !q ? "" : n ? `${at} / ${n}` : t("无");
 }
 function bindStageFind() {
   const input = /** @type {HTMLInputElement} */ ($("#stageFindInput"));

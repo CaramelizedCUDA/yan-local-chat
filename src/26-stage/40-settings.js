@@ -10,7 +10,7 @@ function stageBuiltinConfig() {
   if (!s?.enabled) return null;
   return {
     stage: { browser: s.browser || "msedge" },
-    note: "我说「打开浏览器」即指这个",
+    note: t("我说「打开浏览器」即指这个"),
     timeout: 60
   };
 }
@@ -22,7 +22,7 @@ let stageInstalling = "",
 const STAGE_BROWSERS = /** @type {const} */ ([
   ["msedge", "Edge"],
   ["chrome", "Chrome"],
-  ["chromium", "自带内核"]
+  ["chromium", t("自带内核")]
 ]);
 // 本机没装 Edge / Chrome 时，「去下载」交给系统浏览器开官网（装系统浏览器要管理员权限，言不代装）
 const STAGE_BROWSER_SITES = {
@@ -40,46 +40,46 @@ function stageSettingsHtml() {
     missing = !!at && browser !== "chromium" && !at.browsers[browser],
     code = (/** @type {string} */ text) => `<code title="${escapeHtml(text)}">${escapeHtml(text)}</code>`,
     seg = (/** @type {string} */ key, /** @type {[string, string, boolean?][]} */ items, /** @type {string} */ active) =>
-      `<div class="segmented">${items.map(([value, label, off]) => `<button type="button" data-stage-opt="${key}" data-value="${value}" class="${value === active ? "active" : ""}${off ? " off" : ""}"${off ? ` title="本机未装"` : ""}>${label}</button>`).join("")}</div>`;
+      `<div class="segmented">${items.map(([value, label, off]) => `<button type="button" data-stage-opt="${key}" data-value="${value}" class="${value === active ? "active" : ""}${off ? " off" : ""}"${off ? t` title="本机未装"` : ""}>${label}</button>`).join("")}</div>`;
   const state = !on
-    ? "已关闭"
+    ? t("已关闭")
     : !at
       ? "……"
       : !at.installed
-        ? "尚缺驱动"
+        ? t("尚缺驱动")
         : browser === "chromium" && !at.browsers.chromium
-          ? "尚缺内核"
+          ? t("尚缺内核")
           : missing
-            ? `本机未装 ${browserLabel}`
+            ? t`本机未装 ${browserLabel}`
             : stage.ws
-              ? "浏览器已开"
-              : "执事的浏览器，随用随启";
-  const deps = !at ? "……" : at.installed ? `Playwright MCP · ${escapeHtml(at.version)} 版` : "未安装";
+              ? t("浏览器已开")
+              : t("执事的浏览器，随用随启");
+  const deps = !at ? "……" : at.installed ? t`Playwright MCP · ${escapeHtml(at.version)} 版` : t("未安装");
   const installing = (/** @type {string} */ what, /** @type {string} */ label) =>
     `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? stageInstallLabel() : label}</button>`;
   return (
-    `<h2>游目</h2>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>游目</strong><small>${state}</small></div>${seg(
+    `<h2>${t(`游目`)}</h2>` +
+    `<div class="setting-row"><div class="setting-copy"><strong>${t(`游目`)}</strong><small>${state}</small></div>${seg(
       "enabled",
       [
-        ["true", "开"],
-        ["false", "关"]
+        ["true", t("开")],
+        ["false", t("关")]
       ],
       String(on)
     )}</div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>浏览器</strong><small>${
+    `<div class="setting-row"><div class="setting-copy"><strong>${t(`浏览器`)}</strong><small>${
       browser === "chromium"
-        ? `独立的 Chromium 内核${at && !at.browsers.chromium ? " · 尚未安装" : ""}`
+        ? t`独立的 Chromium 内核${at && !at.browsers.chromium ? t(" · 尚未安装") : ""}`
         : missing
-          ? `本机未装 ${browserLabel}`
-          : `借本机 ${browserLabel} 另起一份，不扰日常浏览`
-    }</small></div><div class="setting-actions">${missing ? `<button type="button" class="outline-btn" data-stage-get="${browser}">前往下载</button>` : ""}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", "安装内核") : ""}${seg(
+          ? t`本机未装 ${browserLabel}`
+          : t`借本机 ${browserLabel} 另起一份，不扰日常浏览`
+    }</small></div><div class="setting-actions">${missing ? `<button type="button" class="outline-btn" data-stage-get="${browser}">${t(`前往下载`)}</button>` : ""}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", t("安装内核")) : ""}${seg(
       "browser",
       STAGE_BROWSERS.map(([value, label]) => [value, label, !!at && value !== "chromium" && !at.browsers[value]]),
       browser
     )}</div></div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>驱动</strong><small>${deps}</small></div>${installing("deps", at?.installed ? "更新" : "安装")}</div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>存储</strong><small>登录、收藏与下载 · ${at ? code(at.home) : "……"}</small></div><button type="button" class="outline-btn" id="stageRevealHome">打开文件夹</button></div>`
+    `<div class="setting-row"><div class="setting-copy"><strong>${t(`驱动`)}</strong><small>${deps}</small></div>${installing("deps", at?.installed ? t("更新") : t("安装"))}</div>` +
+    `<div class="setting-row"><div class="setting-copy"><strong>${t(`存储`)}</strong><small>${t`登录、收藏与下载 · ${at ? code(at.home) : "……"}`}</small></div><button type="button" class="outline-btn" id="stageRevealHome">${t(`打开文件夹`)}</button></div>`
   );
 }
 async function stageLoadHome() {
@@ -98,7 +98,7 @@ function stageSetOptions(patch) {
   renderSettings();
 }
 function stageInstallLabel() {
-  return stageProgress === null ? "安装中…" : `安装中 ${stageProgress}%`;
+  return stageProgress === null ? t("安装中…") : t`安装中 ${stageProgress}%`;
 }
 /** @param {"deps" | "chromium"} what */
 async function stageInstall(what) {
@@ -115,7 +115,7 @@ async function stageInstall(what) {
   }, 2000);
   try {
     stageHomeState = await bridge("/api/stage/install", { what }, AbortSignal.timeout(15 * 60000));
-    toast(what === "deps" ? "驱动已安装" : "内核已安装");
+    toast(what === "deps" ? t("驱动已安装") : t("内核已安装"));
     if (store.settings.stage?.enabled) stageSetOptions({});
   } catch (error) {
     toast(String(/** @type {any} */ (error).message || error).slice(0, 160), 6000);

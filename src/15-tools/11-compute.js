@@ -3,7 +3,7 @@
 defineTool({
   name: "run_js",
   group: "compute",
-  label: "计算",
+  label: t("计算"),
   lookup: true,
   parallel: true,
   async run(step, args, { signal }) {
@@ -15,7 +15,7 @@ defineTool({
         .find(line => line.trim())
         ?.trim()
         .slice(0, 80) || "";
-    if (!code) return { ok: false, content: "code 为空", display: "代码为空" };
+    if (!code) return { ok: false, content: t("code 为空"), display: t("代码为空") };
     const timeout = clampNumber(Number(args.timeout) * 1000, 10000, 1000, 60000);
     const result = await computeInSandbox(code, timeout, signal);
     const parts = [];
@@ -27,12 +27,12 @@ defineTool({
     return {
       ok: !!result.ok,
       content: result.ok
-        ? `${result.logs ? `输出：\n${result.logs}\n` : ""}返回值：${result.value === undefined ? "（无；用 return 交回结果）" : result.value}`.slice(
+        ? t`${result.logs ? t`输出：\n${result.logs}\n` : ""}返回值：${result.value === undefined ? t("（无；用 return 交回结果）") : result.value}`.slice(
             0,
             60000
           )
-        : `运行出错：${result.error || "未知错误"}${result.logs ? `\n出错前的输出：\n${result.logs}` : ""}`,
-      display: result.ok ? (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`) : "出错"
+        : t`运行出错：${result.error || t("未知错误")}${result.logs ? t`\n出错前的输出：\n${result.logs}` : ""}`,
+      display: result.ok ? (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`) : t("出错")
     };
   }
 });
@@ -60,9 +60,9 @@ function computeInSandbox(code, timeoutMs, signal) {
         iframe.contentWindow.postMessage({ type: "yan-compute", id, code, timeout: timeoutMs }, "*");
       else if (event.data.type === "yan-compute-result") finish(resolve, event.data);
     };
-    const onAbort = () => finish(reject, Object.assign(Error("已停止"), { name: "AbortError" }));
+    const onAbort = () => finish(reject, Object.assign(Error(t("已停止")), { name: "AbortError" }));
     // 那头没回话（页没起来、Worker 起不来）：多等 5 秒就算了
-    const guard = setTimeout(() => finish(resolve, { ok: false, error: "沙箱没有回话" }), timeoutMs + 5000);
+    const guard = setTimeout(() => finish(resolve, { ok: false, error: t("沙箱没有回话") }), timeoutMs + 5000);
     window.addEventListener("message", onMessage);
     if (signal.aborted) return onAbort();
     signal.addEventListener("abort", onAbort, { once: true });

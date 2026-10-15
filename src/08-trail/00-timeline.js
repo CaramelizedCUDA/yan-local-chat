@@ -1,7 +1,7 @@
 // 言 · 行迹 · 时间线：用了工具的答画成一条时间线——分组、题头与用时，帮手各轮的折叠
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function toolStackLabel() {
-  return "行迹";
+  return t("行迹");
 }
 // 撮要不算一步：它是言替模型删繁就简，另记「撮要 n 回」
 const isFold = step => step.name === "fold";
@@ -14,8 +14,8 @@ function toolStackMeta(all = []) {
     skipped = steps.filter(step => step.status === "skipped").length,
     reused = steps.filter(step => step.cached).length;
   return running
-    ? `进行中${reused ? ` · ${reused} 复用` : ""}`
-    : `${steps.length} 步${reused ? ` · ${reused} 复用` : ""}${skipped ? ` · ${skipped} 跳过` : ""}${failed ? ` · ${failed} 失败` : ""}${folds ? ` · 撮要 ${folds} 回` : ""}`;
+    ? t`进行中${reused ? t` · ${reused} 复用` : ""}`
+    : t`${steps.length} 步${reused ? t` · ${reused} 复用` : ""}${skipped ? t` · ${skipped} 跳过` : ""}${failed ? t` · ${failed} 失败` : ""}${folds ? t` · 撮要 ${folds} 回` : ""}`;
 }
 // 等待确认是阻塞式的提问，无论用户之前有没有收起，都把折叠区展开，别让生成静静停在看不见的地方
 // 用了工具的答（行与言都是）画成一条时间线：模型边做边说的话与各步穿插排列，做的时候摊开看过程，做完整条收起，只留最后的总结在外——
@@ -97,11 +97,11 @@ function subStepsLabel(steps) {
   return [...counts].map(([label, n]) => (n > 1 ? `${label} ${n}` : label)).join(" · ");
 }
 function subStepsMeta(sub, steps) {
-  if (subStepsRunning(sub, steps)) return "进行中";
+  if (subStepsRunning(sub, steps)) return t("进行中");
   steps = steps.filter(step => !isFold(step));
   const failed = steps.filter(step => step.status === "error").length,
     skipped = steps.filter(step => step.status === "skipped").length;
-  return `${steps.length} 步${skipped ? ` · ${skipped} 跳过` : ""}${failed ? ` · ${failed} 失败` : ""}`;
+  return t`${steps.length} 步${skipped ? t` · ${skipped} 跳过` : ""}${failed ? t` · ${failed} 失败` : ""}`;
 }
 // 折叠行的外壳：标题、计数与各步由 syncSubSteps 与 syncStepList 填
 /** @param {SubAgent} sub */
@@ -131,12 +131,12 @@ function trailLabel(message) {
   if (!trailWork(message)) return toolStackLabel();
   if (message.status === "streaming") {
     const live = message.startedAt ? spentText(Date.now() - message.startedAt) : "";
-    return live ? `行进中 · ${live}` : "行进中";
+    return live ? t`行进中 · ${live}` : t("行进中");
   }
   const spent = spentText(message.durationMs);
-  if (message.status === "complete") return spent ? `行迹 · ${spent}` : "行迹";
+  if (message.status === "complete") return spent ? t`行迹 · ${spent}` : t("行迹");
   // 停下、断了的也记着做了多久：续写时接着这个数走
-  return `${message.status === "stopped" ? "已搁笔" : "已中断"}${spent ? ` · ${spent}` : ""}`;
+  return `${message.status === "stopped" ? t("已搁笔") : t("已中断")}${spent ? ` · ${spent}` : ""}`;
 }
 // 作答途中每秒一跳：只换行迹题头那一行字，不重画整答
 /** @param {Message} message */
@@ -152,12 +152,12 @@ function trailMeta(message) {
   // 帮手不随这一答收尾：这一答写完了、它还在后台做，收起的行迹题头上也看得见
   const helpers = runningDelegates(message);
   if (helpers.length > 1)
-    return `${helpers.length} 名帮手 · ${helpers.reduce((sum, h) => sum + (h.sub?.steps.length || 0), 0)} 步 · 进行中`;
-  if (helpers.length) return `帮手「${String(helpers[0].title || "").slice(0, 20)}」· ${helpers[0].sub?.steps.length || 0} 步 · 进行中`;
+    return t`${helpers.length} 名帮手 · ${helpers.reduce((sum, h) => sum + (h.sub?.steps.length || 0), 0)} 步 · 进行中`;
+  if (helpers.length) return t`帮手「${String(helpers[0].title || "").slice(0, 20)}」· ${helpers[0].sub?.steps.length || 0} 步 · 进行中`;
   const changed = new Set(
     allSteps(message)
       .filter(step => step.change && step.status === "done")
       .map(step => step.change.path)
   ).size;
-  return changed ? `${base} · 改 ${changed} 个文件` : base;
+  return changed ? t`${base} · 改 ${changed} 个文件` : base;
 }

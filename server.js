@@ -189,7 +189,7 @@ const BUNDLES = {
   "/app.css": { build: () => currentBundler().bundleStyles(), type: "text/css; charset=utf-8" }
 };
 // 静态服务只开放页面运行真正需要的文件。仓库根目录里还有桥接源码、测试、.git 与用户可能临时放入的配置，
-// 不能因为它们恰好位于 ROOT 下就一并交给浏览器；vendor/ 是随页面分发的纯前端资源；提示词随页面脚本拼进 /support.js。
+// 不能因为它们恰好位于 ROOT 下就一并交给浏览器；vendor/ 是随页面分发的纯前端资源，i18n/ 是界面的译文表；提示词随页面脚本拼进 /support.js。
 const PUBLIC_STATIC_FILES = new Set(["index.html", "theme-boot.js", "icon.svg", "preview.html", "preview-runtime.js"]);
 const REAL_ROOT = fs.realpathSync(ROOT);
 function publicStaticTarget(requested) {
@@ -197,7 +197,7 @@ function publicStaticTarget(requested) {
   const webPath = requested.replace(/\\/g, "/"),
     normalized = path.posix.normalize(webPath);
   if (normalized !== webPath || normalized.startsWith("../") || path.posix.isAbsolute(normalized)) return null;
-  if (!PUBLIC_STATIC_FILES.has(normalized) && !normalized.startsWith("vendor/")) return null;
+  if (!PUBLIC_STATIC_FILES.has(normalized) && !normalized.startsWith("vendor/") && !normalized.startsWith("i18n/")) return null;
   const candidate = path.resolve(ROOT, ...normalized.split("/"));
   if (!fs.existsSync(candidate)) return null;
   // 白名单目录中若出现指向仓库外的符号链接，也不能跟出去。

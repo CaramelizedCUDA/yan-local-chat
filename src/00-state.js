@@ -188,6 +188,7 @@
  * @typedef {Object} Settings
  * @property {string} name
  * @property {"light"|"dark"|"system"} theme
+ * @property {"zh"|"en"} [language] 界面语言；没选过的随浏览器
  * @property {"on"|"off"|"system"} inkMotion
  * @property {"sans"|"serif"|"mixed"|"kai"|"fangsong"} font
  * @property {string} accent

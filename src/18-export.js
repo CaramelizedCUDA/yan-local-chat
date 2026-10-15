@@ -21,14 +21,14 @@ function exportToolTrail(message) {
     )
     .join("\n");
   const fence = "`".repeat(Math.max(3, ...Array.from(text.matchAll(/`+/g), match => match[0].length + 1)));
-  return `行迹：\n\n${fence}text\n${text}\n${fence}`;
+  return t`行迹：\n\n${fence}text\n${text}\n${fence}`;
 }
 /** @param {Conversation} c */
 function conversationMarkdown(c) {
   const lines = [
     `# ${exportMarkdownLabel(c.title)}`,
     "",
-    `${formatDay(c.createdAt)}${isWork(c) ? ` · 工作目录 ${exportMarkdownLabel(c.workdir)}` : ""}`,
+    `${formatDay(c.createdAt)}${isWork(c) ? t` · 工作目录 ${exportMarkdownLabel(c.workdir)}` : ""}`,
     ""
   ];
   for (const m of c.messages) {
@@ -36,20 +36,20 @@ function conversationMarkdown(c) {
       lines.push(
         "---",
         "",
-        m.summary ? `> **前文撮要**\n>\n> ${String(m.summary).replace(/\n/g, "\n> ")}` : "*（上下文由此重新开始）*",
+        m.summary ? t`> **前文撮要**\n>\n> ${String(m.summary).replace(/\n/g, "\n> ")}` : t("*（上下文由此重新开始）*"),
         ""
       );
       continue;
     }
     if (m.role === "user" && m.relay) {
       lines.push(
-        `*${m.relay.map(item => (item.kind === "bg" ? `后台 ${item.title} 已结束 · 退出码 ${item.exitCode ?? "?"}` : `帮手「${exportMarkdownLabel(item.title)}」${item.ok ? "回报" : "未完成"}`)).join(" · ")}*`,
+        `*${m.relay.map(item => (item.kind === "bg" ? t`后台 ${item.title} 已结束 · 退出码 ${item.exitCode ?? "?"}` : t`帮手「${exportMarkdownLabel(item.title)}」${item.ok ? t("回报") : t("未完成")}`)).join(" · ")}*`,
         ""
       );
       continue;
     }
     if (m.role === "user") {
-      lines.push("## 问", "");
+      lines.push(t("## 问"), "");
       if (m.quote?.text)
         lines.push(
           ...String(m.quote.text)
@@ -57,14 +57,14 @@ function conversationMarkdown(c) {
             .map(line => `> ${line}`),
           ""
         );
-      if (m.attachments?.length) lines.push(`*附件：${m.attachments.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
+      if (m.attachments?.length) lines.push(t`*附件：${m.attachments.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
       lines.push(String(m.content || ""), "");
     } else if (m.role === "assistant" && m.status !== "error") {
-      lines.push(`## 答${m.modelName ? ` · ${exportMarkdownLabel(m.modelName)}` : ""}`, "");
+      lines.push(t`## 答${m.modelName ? ` · ${exportMarkdownLabel(m.modelName)}` : ""}`, "");
       const trail = exportToolTrail(m);
       if (trail) lines.push(trail, "");
       lines.push(String(m.content || ""), "");
-      if (m.deliverables?.length) lines.push(`*成品：${m.deliverables.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
+      if (m.deliverables?.length) lines.push(t`*成品：${m.deliverables.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
     }
   }
   // 不能全局合并空行：代码、HTML 与模板字符串里的换行本身就是内容。
@@ -82,23 +82,23 @@ async function exportConversationMarkdown(c) {
       ]
         .slice(0, 60)
         .join("")
-        .trim() || "对话"
+        .trim() || t("对话")
     }.md`,
     original = conversationMarkdown(c);
   try {
     const sources = markdownVisuals(original),
       files = [];
-    if (sources.length) toast("正在打包交互可视化…");
+    if (sources.length) toast(t("正在打包交互可视化…"));
     for (const [index, source] of sources.entries())
-      files.push({ name: `${name.slice(0, -3)}-可视化-${index + 1}.html`, text: await standaloneHtmlApp(source) });
+      files.push({ name: t`${name.slice(0, -3)}-可视化-${index + 1}.html`, text: await standaloneHtmlApp(source) });
     const savedFiles = [];
     for (const file of files) savedFiles.push(await putArchiveFile(file.name, dataUrlFromText(file.text, "text/html;charset=utf-8")));
     const text = original + markdownAssetLinks(savedFiles);
     const saved = await putArchiveFile(name, dataUrlFromText(text, "text/markdown"));
     void refreshArchive();
-    toast(`已存入卷宗：${saved.name}${files.length ? `（附 ${files.length} 个交互作品）` : ""}`);
+    toast(t`已存入卷宗：${saved.name}${files.length ? t`（附 ${files.length} 个交互作品）` : ""}`);
   } catch (error) {
-    toast(`导出失败：${String(error.message || error).slice(0, 160)}`);
+    toast(t`导出失败：${String(error.message || error).slice(0, 160)}`);
   }
 }
 // Markdown 保留可编辑源码，交互作品另附离线 HTML，一并存进卷宗
@@ -121,7 +121,7 @@ function markdownVisuals(text) {
 }
 function markdownAssetLinks(files) {
   if (!files.length) return "";
-  return `\n## 交互可视化\n\n源码保留在正文中；下列 HTML 文件可离线打开并交互，请与本文一起保留。\n\n${files
-    .map((file, index) => `- [可视化 ${index + 1}](<${encodeURIComponent(file.name)}>)`)
+  return t`\n## 交互可视化\n\n源码保留在正文中；下列 HTML 文件可离线打开并交互，请与本文一起保留。\n\n${files
+    .map((file, index) => `${t`- [可视化 ${index + 1}](`}<${encodeURIComponent(file.name)}>)`)
     .join("\n")}\n`;
 }

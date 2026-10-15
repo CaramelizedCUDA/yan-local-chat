@@ -103,7 +103,7 @@ function formatTokens(value) {
 // 把这一问换成最接近的一档重发一次，此后菜单只列它认的。菜单上没有「关」：愿意接 Key 的人不至于连思考都不愿开，
 // 要它少想就选「低」，旧数据里存的「关」按「默认」看
 const REASONING_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-  REASONING_NAMES = { "": "默认", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" },
+  REASONING_NAMES = { "": t("默认"), minimal: t("极低"), low: t("低"), medium: t("中"), high: t("高"), xhigh: t("极高"), max: t("最高") },
   REASONING_DEFAULT_LEVELS = ["low", "medium", "high", "max"];
 function reasoningLabel(level) {
   return REASONING_NAMES[level || ""] || level;
@@ -294,10 +294,10 @@ function finishFault(reason) {
   if (!reason || NORMAL_FINISH.has(reason)) return null;
   const why =
     reason === "length"
-      ? "模型达到输出长度上限，答复尚未写完"
+      ? t("模型达到输出长度上限，答复尚未写完")
       : REFUSED_FINISH.test(reason)
-        ? `接口拦下了这一轮（finish_reason: ${reason}）`
-        : `接口异常收尾（finish_reason: ${reason}），答复尚未写完`;
+        ? t`接口拦下了这一轮（finish_reason: ${reason}）`
+        : t`接口异常收尾（finish_reason: ${reason}），答复尚未写完`;
   return Object.assign(Error(why), { finish: reason });
 }
 /** @param {Message} assistant 主消息、帮手，或拟题 / 压缩用的临时消息 */
@@ -400,7 +400,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reader.cancel().catch(() => {});
-        reject(Error("接口静默超过五分钟，连接已中断"));
+        reject(Error(t("接口静默超过五分钟，连接已中断")));
       }, SSE_IDLE_MS);
       reader
         .read()
@@ -411,7 +411,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   try {
     await pump();
     flushThink();
-    if (!ended) throw Error("接口未发送结束标志，连接已中断");
+    if (!ended) throw Error(t("接口未发送结束标志，连接已中断"));
     const fault = finishFault(finishReason);
     if (fault) throw fault;
   } catch (error) {
@@ -446,7 +446,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
           const json = JSON.parse(data);
           // 流里夹着的报错（限流、上游掐线、桥接补的「连接中断」）：不能当没看见让半截话冒充写完了——按中断处理，已写的留着、可续写
           if (json.error && !json.choices)
-            failure = (typeof json.error === "string" ? json.error : json.error?.message) || "接口在作答途中返回了错误";
+            failure = (typeof json.error === "string" ? json.error : json.error?.message) || t("接口在作答途中返回了错误");
           const delta = json.choices?.[0]?.delta;
           if (json.choices?.[0]?.finish_reason) {
             finishReason = json.choices[0].finish_reason;
@@ -506,6 +506,6 @@ function extractContent(data) {
 }
 function friendlyError(message) {
   if (/Failed to fetch|NetworkError|Load failed/i.test(message))
-    return "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
-  return String(message).slice(0, 500);
+    return t("本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。");
+  return tr(String(message).slice(0, 500));
 }

@@ -20,17 +20,17 @@ function renderHelperBar() {
     return;
   }
   const changes = stats.files.length
-      ? `<button type="button" class="work-changes" aria-expanded="${workFilesOpen}" title="这一答改过的文件"><span class="seal change-seal" aria-hidden="true">改</span><span>改 ${stats.files.length} 件</span><span class="change-count">${changeCountHtml(stats)}</span></button>`
+      ? `<button type="button" class="work-changes" aria-expanded="${workFilesOpen}" title="${t(`这一答改过的文件`)}"><span class="seal change-seal" aria-hidden="true">${t(`改`)}</span><span>${t`改 ${stats.files.length} 件`}</span><span class="change-count">${changeCountHtml(stats)}</span></button>`
       : "",
     // 题目逐次取：条子常在步骤刚入册、runDelegate 还没把题目填上时就搭好了
     who =
       helpers.length > 1
-        ? `${helpers.length} 名帮手 · 进行中`
+        ? t`${helpers.length} 名帮手 · 进行中`
         : helpers.length
-          ? `帮手「${String(helpers[0].title || "").slice(0, 24)}」· ${delegateDoing(helpers[0])}`
+          ? t`帮手「${String(helpers[0].title || "").slice(0, 24)}」· ${delegateDoing(helpers[0])}`
           : "",
     helper = helpers.length
-      ? `<button type="button" class="work-helpers" data-helper="${escapeHtml(helpers[0].id)}" title="打开差遣面板"><span class="seal helper-seal" aria-hidden="true">帮</span><span class="work-helpers-text">${escapeHtml(who)}</span><span class="work-helpers-go" aria-hidden="true">›</span></button>`
+      ? `<button type="button" class="work-helpers" data-helper="${escapeHtml(helpers[0].id)}" title="${t(`打开差遣面板`)}"><span class="seal helper-seal" aria-hidden="true">${t(`帮`)}</span><span class="work-helpers-text">${escapeHtml(who)}</span><span class="work-helpers-go" aria-hidden="true">›</span></button>`
       : "",
     html = `${changes}${notice ? `<span class="work-notice" role="status">${escapeHtml(notice)}</span>` : ""}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
   // 帮手每 350ms 刷一次，没变就不动，免得清单里的滚动位置被重画冲掉
@@ -103,7 +103,7 @@ function renderHelperList() {
   host.innerHTML = all
     .map((step, i) => {
       const { status, meta } = delegateSubState(step);
-      return `<button type="button" class="helper-list-item${step.id === helperStepId ? " here" : ""}" data-helper-pick="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><span class="helper-list-no">${i + 1}</span><span class="helper-list-title">${escapeHtml(step.title || "领命中")}</span><span class="helper-list-meta">${escapeHtml(meta)}</span></button>`;
+      return `<button type="button" class="helper-list-item${step.id === helperStepId ? " here" : ""}" data-helper-pick="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><span class="helper-list-no">${i + 1}</span><span class="helper-list-title">${escapeHtml(step.title || t("领命中"))}</span><span class="helper-list-meta">${escapeHtml(meta)}</span></button>`;
     })
     .join("");
 }
@@ -117,11 +117,11 @@ function syncSubFold(trail, step) {
   if (!head || !sub) return;
   const folded = helperFolded.has(step.id),
     rounds = trailGroups(sub).length,
-    meta = live ? `${steps.length} 步 · 进行中` : `${rounds} 轮 · ${steps.length} 步`;
+    meta = live ? t`${steps.length} 步 · 进行中` : t`${rounds} 轮 · ${steps.length} 步`;
   trail.classList.toggle("folded", folded);
   head.setAttribute("aria-expanded", String(!folded));
   rollText(head.querySelector(".sub-fold-meta"), meta);
-  head.title = folded ? "展开帮手的行迹" : "收起帮手的行迹，只看回报";
+  head.title = folded ? t("展开帮手的行迹") : t("收起帮手的行迹，只看回报");
   syncHelperFoldHead();
 }
 function toggleSubFold(fold) {
@@ -165,10 +165,10 @@ function renderHelperPanel(fresh = false) {
     at = all.findIndex(s => s.id === helperStepId);
   $("#helperModal").dataset.status = status;
   const title = $("#helperTitle");
-  if (title && title.textContent !== (step.title || "领命中")) title.textContent = step.title || "领命中";
+  if (title && title.textContent !== (step.title || t("领命中"))) title.textContent = step.title || t("领命中");
   // 题下接着写帮手耗的墨：各轮请求一回来就记上，做着时也跟着跳
   const ink = Number(sub?.usage?.total_tokens || 0);
-  rollText($("#helperPanelSub"), ink ? `${meta} · 耗墨 ${formatTokens(ink)}` : meta);
+  rollText($("#helperPanelSub"), ink ? t`${meta} · 耗墨 ${formatTokens(ink)}` : meta);
   // ‹ n/m ›：只有一次差遣时不画
   const nav = $("#helperNav"),
     navKey = `${at + 1}/${all.length}`;
@@ -176,7 +176,7 @@ function renderHelperPanel(fresh = false) {
     nav.dataset.key = navKey;
     nav.innerHTML =
       all.length > 1
-        ? `<button class="message-action" data-helper-step="-1" title="上一次差遣" aria-label="上一次差遣"${at <= 0 ? " disabled" : ""}>‹</button><button type="button" class="helper-nav-count" data-helper-list title="所有差遣">${navKey}</button><button class="message-action" data-helper-step="1" title="下一次差遣" aria-label="下一次差遣"${at >= all.length - 1 ? " disabled" : ""}>›</button>`
+        ? `<button class="message-action" data-helper-step="-1" title="${t(`上一次差遣`)}" aria-label="${t(`上一次差遣`)}"${at <= 0 ? " disabled" : ""}>‹</button><button type="button" class="helper-nav-count" data-helper-list title="${t(`所有差遣`)}">${navKey}</button><button class="message-action" data-helper-step="1" title="${t(`下一次差遣`)}" aria-label="${t(`下一次差遣`)}"${at >= all.length - 1 ? " disabled" : ""}>›</button>`
         : "";
   }
   if (!$("#helperList").classList.contains("hidden")) renderHelperList();

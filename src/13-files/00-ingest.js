@@ -22,15 +22,15 @@ async function addFiles(fileList) {
     added = 0;
   for (const file of files) {
     if (count >= 10) {
-      toast("一次最多置入 10 件附件");
+      toast(t("一次最多置入 10 件附件"));
       break;
     }
     if (file.size > MAX_FILE_BYTES) {
-      toast(`${file.name} 超过 ${limitLabel(MAX_FILE_BYTES)}，未置入`);
+      toast(t`${file.name} 超过 ${limitLabel(MAX_FILE_BYTES)}，未置入`);
       continue;
     }
     if (total + file.size > MAX_PENDING_BYTES) {
-      toast(`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`);
+      toast(t`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`);
       break;
     }
     try {
@@ -39,12 +39,12 @@ async function addFiles(fileList) {
       count += 1;
       added += 1;
     } catch {
-      toast(`${file.name} 读取失败`);
+      toast(t`${file.name} 读取失败`);
     }
   }
   persistDraft();
   renderAttachments();
-  if (added) toast(`已置入 ${added} 件附件`);
+  if (added) toast(t`已置入 ${added} 件附件`);
 }
 // 读好的一件放上案：案上（pendingAttachments）此刻若已换成别段的草稿，就记进原来那段的草稿里，回去时还在
 function placeAttachment(key, file) {
@@ -88,7 +88,7 @@ async function sendableImage(file) {
   const name =
     blob.type === file.type
       ? file.name
-      : `${String(file.name || "图片").replace(/\.[^.]+$/, "")}.${blob.type === "image/png" ? "png" : "jpg"}`;
+      : `${String(file.name || t("图片")).replace(/\.[^.]+$/, "")}.${blob.type === "image/png" ? "png" : "jpg"}`;
   return new File([blob], name, { type: blob.type, lastModified: file.lastModified });
 }
 async function ingestFile(original) {
@@ -97,7 +97,7 @@ async function ingestFile(original) {
   if (original.type.startsWith("image/") || /\.(heic|heif|avif|bmp|tiff?)$/i.test(original.name)) {
     const sendable = await sendableImage(original);
     if (sendable) file = sendable;
-    else unreadable = "浏览器解不开这种图片（HEIC 之类），没法转成模型收的格式；可先另存成 JPG 再置入";
+    else unreadable = t("浏览器解不开这种图片（HEIC 之类），没法转成模型收的格式；可先另存成 JPG 再置入");
   }
   /** @type {Attachment["kind"]} */
   const kind =
@@ -111,7 +111,7 @@ async function ingestFile(original) {
   const metadata = {
     id,
     kind,
-    name: file.name || "未命名文件",
+    name: file.name || t("未命名文件"),
     mime: file.type || "application/octet-stream",
     size: file.size,
     modifiedAt: file.lastModified || Date.now()
@@ -133,17 +133,17 @@ async function ingestFile(original) {
 async function downloadAttachment(id) {
   try {
     const file = await getAttachment(id);
-    if (!file) return toast("附件原件已找不到");
+    if (!file) return toast(t("附件原件已找不到"));
     const anchor = document.createElement("a");
     let objectUrl = "";
     if (file.kind === "text") {
       objectUrl = URL.createObjectURL(new Blob([file.data], { type: file.mime || "text/plain" }));
       anchor.href = objectUrl;
     } else anchor.href = file.data;
-    anchor.download = file.name || "附件";
+    anchor.download = file.name || t("附件");
     anchor.click();
     if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   } catch {
-    toast("附件读取失败");
+    toast(t("附件读取失败"));
   }
 }

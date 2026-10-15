@@ -4,6 +4,7 @@
 
 // ---- 随项目本地分发的库与提示词：挂在 window 上，按 any 看待 ----
 declare var YAN_ANTHROPIC: any;
+declare var YAN_EN: Record<string, string> | undefined;
 declare const marked: any;
 declare const DOMPurify: any;
 declare const hljs: any;

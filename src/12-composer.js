@@ -6,7 +6,7 @@ function composerHasContent() {
 }
 // 发送键是一方印：印文「寄」即发送，生成中换成「止」；只在变化时重写，免得每次刷新都打断动效
 function sealGlyph(button, running) {
-  const glyph = running ? "止" : "寄";
+  const glyph = running ? t("止") : t("寄");
   if (button.dataset.glyph === glyph) return;
   button.dataset.glyph = glyph;
   button.innerHTML = `<span class="seal-glyph" aria-hidden="true">${glyph}</span>`;
@@ -23,23 +23,23 @@ function renderSendButtons() {
   document.querySelectorAll(".send-trigger").forEach(b => {
     sealGlyph(b, stop);
     b.title = sendPreparing
-      ? "正在备寄"
+      ? t("正在备寄")
       : elsewhere
-        ? "另一个页面正在这段对话里作答，这里跟着看"
+        ? t("另一个页面正在这段对话里作答，这里跟着看")
         : stop
           ? crew
-            ? "叫停后台的帮手"
-            : "搁笔"
+            ? t("叫停后台的帮手")
+            : t("搁笔")
           : running
-            ? "插言引路：模型说到落点便读这句，可就此改道"
-            : "寄出";
+            ? t("插言引路：模型说到落点便读这句，可就此改道")
+            : t("寄出");
     b.classList.toggle("stop-btn", stop);
     b.classList.toggle("empty", !running && !has);
     b.disabled = sendPreparing || (!running && !crew && ended);
     b.setAttribute("aria-busy", String(sendPreparing));
   });
   const input = $("#chatInput");
-  if (input && !input.disabled) input.placeholder = "续言于此"; // 生成中也不换提示语，能插言这件事由印上的「寄」示意
+  if (input && !input.disabled) input.placeholder = t("续言于此"); // 生成中也不换提示语，能插言这件事由印上的「寄」示意
 }
 
 // 输入：欢迎页的提示词、两处输入框（回车发送、粘贴图片）、输入区高度、引文
@@ -56,8 +56,10 @@ function bindComposerEvents() {
         grow(welcomeInput);
         persistDraft();
         welcomeInput.focus();
-        const start = prompt.indexOf("（"),
-          end = start < 0 ? prompt.length : prompt.indexOf("）", start) + 1;
+        // 留给人填的那一处：中文是全角括号，英文是方括号
+        const [open, close] = LANG === "en" ? ["[", "]"] : ["（", "）"],
+          start = prompt.indexOf(open),
+          end = start < 0 ? prompt.length : prompt.indexOf(close, start) + 1;
         welcomeInput.setSelectionRange(start < 0 ? prompt.length : start, end);
       };
       // 预览只占一行：取提示词首句并加省略号，不撑高输入框、不推挤按钮
@@ -104,7 +106,7 @@ function bindComposerEvents() {
           (file, index) =>
             new File(
               [file],
-              `粘贴图片-${stamp}${images.length > 1 ? `-${index + 1}` : ""}.${file.type.split("/")[1]?.replace("jpeg", "jpg") || "png"}`,
+              t`粘贴图片-${stamp}${images.length > 1 ? `-${index + 1}` : ""}.${file.type.split("/")[1]?.replace("jpeg", "jpg") || "png"}`,
               { type: file.type }
             )
         )
@@ -137,7 +139,7 @@ function bindComposerEvents() {
     if (block.dataset.quoteUrl) return stageRevisit(block.dataset.quoteUrl);
     const source =
       block.dataset.quoteSource && document.querySelector(`#messages [data-message="${CSS.escape(block.dataset.quoteSource)}"]`);
-    if (!source) return toast("出处已不在当前页面");
+    if (!source) return toast(t("出处已不在当前页面"));
     scrollChatTo(source, "center");
     source.classList.remove("flash");
     void source.offsetWidth;

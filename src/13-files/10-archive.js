@@ -63,7 +63,7 @@ async function refreshArchive() {
       if (libraryDir && !archiveDirs.some(dir => dir.path === libraryDir)) libraryDir = "";
     })
     .catch(error => {
-      if (archiveEntries === null) toast(`卷宗目录不可用：${String(error.message || error).slice(0, 80)}`);
+      if (archiveEntries === null) toast(t`卷宗目录不可用：${String(error.message || error).slice(0, 80)}`);
     })
     .finally(() => {
       archiveLoading = null;
@@ -125,7 +125,7 @@ function renderLibraryCount() {
 // 名目一格：平时是名字（平铺查找时下注所在的那一层），改名时换成一个输入框
 function libraryNameCell(item, where = "") {
   if (libraryRenaming === item.path)
-    return `<span class="strip-name"><input class="strip-rename" value="${escapeHtml(item.name)}" maxlength="200" spellcheck="false" autocomplete="off" aria-label="新名称"></span>`;
+    return `<span class="strip-name"><input class="strip-rename" value="${escapeHtml(item.name)}" maxlength="200" spellcheck="false" autocomplete="off" aria-label="${t(`新名称`)}"></span>`;
   return `<span class="strip-name"><strong title="${escapeHtml(item.path)}">${escapeHtml(item.name)}</strong>${where ? `<small>${escapeHtml(where)}</small>` : ""}</span>`;
 }
 function libraryRowHtml(file, showDir = true) {
@@ -134,26 +134,26 @@ function libraryRowHtml(file, showDir = true) {
   return `<div class="strip file" data-library-disk="${path}" data-library-item="${path}" draggable="${!renaming}" tabindex="0"><span>${fileFigure(file.name, file.path)}</span>${libraryNameCell(
     file,
     showDir ? parentDir(file.path) : ""
-  )}<span>${formatFileSize(file.size)}</span><span class="strip-date"><span class="strip-when">${escapeHtml(formatDay(file.modifiedAt))}</span><span class="strip-acts"><button type="button" data-library-action="view">预览</button><button type="button" data-library-action="download">下载</button><button type="button" data-library-action="rename">改名</button><button type="button" class="danger" data-library-action="remove">删除</button></span></span></div>`;
+  )}<span>${formatFileSize(file.size)}</span><span class="strip-date"><span class="strip-when">${escapeHtml(formatDay(file.modifiedAt))}</span><span class="strip-acts"><button type="button" data-library-action="view">${t(`预览`)}</button><button type="button" data-library-action="download">${t(`下载`)}</button><button type="button" data-library-action="rename">${t(`改名`)}</button><button type="button" class="danger" data-library-action="remove">${t(`删除`)}</button></span></span></div>`;
 }
 // 一个夹：里头共几件（连同更深的层）、有几个子夹、最近一件的日子
 function libraryFolderHtml(dir) {
   const inside = (archiveEntries || []).filter(file => file.path.startsWith(`${dir.path}/`)),
     subs = archiveDirs.filter(other => parentDir(other.path) === dir.path).length,
     latest = inside.reduce((last, file) => (file.modifiedAt > last ? file.modifiedAt : last), ""),
-    note = inside.length || subs ? [`${inside.length} 件`, subs ? `${subs} 夹` : ""].filter(Boolean).join(" · ") : "空",
+    note = inside.length || subs ? [t`${inside.length} 件`, subs ? t`${subs} 夹` : ""].filter(Boolean).join(" · ") : t("空"),
     path = escapeHtml(dir.path),
     renaming = libraryRenaming === dir.path;
-  return `<div class="strip dir" role="button" tabindex="0" data-library-dir="${path}" data-library-item="${path}" draggable="${!renaming}" title="打开 ${escapeHtml(dir.name)}"><span>${caseFigure()}</span>${libraryNameCell(dir)}<span class="strip-note">${note}</span><span class="strip-date"><span class="strip-when">${latest ? escapeHtml(formatDay(latest)) : ""}</span><span class="strip-acts"><button type="button" data-library-action="rename">改名</button><button type="button" class="danger" data-library-action="remove">删除</button></span></span></div>`;
+  return `<div class="strip dir" role="button" tabindex="0" data-library-dir="${path}" data-library-item="${path}" draggable="${!renaming}" title="${t`打开 ${escapeHtml(dir.name)}`}"><span>${caseFigure()}</span>${libraryNameCell(dir)}<span class="strip-note">${note}</span><span class="strip-date"><span class="strip-when">${latest ? escapeHtml(formatDay(latest)) : ""}</span><span class="strip-acts"><button type="button" data-library-action="rename">${t(`改名`)}</button><button type="button" class="danger" data-library-action="remove">${t(`删除`)}</button></span></span></div>`;
 }
 // 路径：卷宗 › 课程 › 深度学习。点哪一级回哪一级；各级也接得住拖来的条子（挪回上一层）
 function renderLibraryCrumbs(show) {
   const crumbs = $("#libraryCrumbs");
   crumbs.classList.toggle("hidden", !show);
   if (!show) return (crumbs.innerHTML = "");
-  if (!libraryDir) return (crumbs.innerHTML = `<span class="here">卷宗</span>`);
+  if (!libraryDir) return (crumbs.innerHTML = `<span class="here">${t(`卷宗`)}</span>`);
   const parts = libraryDir.split("/");
-  crumbs.innerHTML = `<button type="button" data-library-dir="">卷宗</button>${parts
+  crumbs.innerHTML = `<button type="button" data-library-dir="">${t(`卷宗`)}</button>${parts
     .map((part, index) =>
       index === parts.length - 1
         ? `<span class="sep" aria-hidden="true">›</span><span class="here">${escapeHtml(part)}</span>`
@@ -183,10 +183,10 @@ function renderLibrary() {
   renderLibraryCrumbs(browsing);
   const total = libraryTotal(),
     bytes = (archiveEntries || []).reduce((sum, file) => sum + Number(file.size || 0), 0);
-  $("#libraryCountText").textContent = total ? `现存 ${total} 件 · ${formatFileSize(bytes)}` : "";
+  $("#libraryCountText").textContent = total ? t`现存 ${total} 件 · ${formatFileSize(bytes)}` : "";
   $("#libraryLead").innerHTML = `<span title="${escapeHtml(archiveDir())}">${escapeHtml(archiveDir())}</span>${
     archiveScratch?.count
-      ? `<span class="library-scratch">草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}<button type="button" id="libraryCleanScratch" title="清理模型留下的脚本与中间文件（${escapeHtml(bootstrap.work?.scratch || ".草稿")}）">清理</button></span>`
+      ? `<span class="library-scratch">${t`草稿 ${archiveScratch.count} 处 · ${formatFileSize(archiveScratch.bytes)}`}<button type="button" id="libraryCleanScratch" title="${t(`清理模型留下的脚本与中间文件（`)}${escapeHtml(bootstrap.work?.scratch || ".草稿")}${LANG === "en" ? ")" : "）"}">${t(`清理`)}</button></span>`
       : ""
   }`;
   $("#libraryCleanScratch")?.addEventListener("click", () => void cleanScratch(null));
@@ -204,22 +204,22 @@ function renderLibrary() {
   // 簿头「名目」左边一枚 ‹ 回上一层（在根上不显）；它也接得住拖来的条子
   const back =
     browsing && libraryDir
-      ? `<button type="button" class="strip-back" data-library-dir="${escapeHtml(parentDir(libraryDir))}" title="回上一层" aria-label="回上一层">‹</button>`
+      ? `<button type="button" class="strip-back" data-library-dir="${escapeHtml(parentDir(libraryDir))}" title="${t(`回上一层`)}" aria-label="${t(`回上一层`)}">‹</button>`
       : "";
   libraryRepainting = true;
   $("#libraryGrid").innerHTML =
     folders.length || diskItems.length
-      ? `<div class="strip-cols"><span>${back}</span><span>名目</span><span>大小</span><span>日期</span></div>${folders.map(libraryFolderHtml).join("")}${diskItems
+      ? `<div class="strip-cols"><span>${back}</span><span>${t(`名目`)}</span><span>${t(`大小`)}</span><span>${t(`日期`)}</span></div>${folders.map(libraryFolderHtml).join("")}${diskItems
           .map(file => libraryRowHtml(file, !browsing))
           .join("")}`
       : `${back ? `<div class="strip-cols"><span>${back}</span></div>` : ""}<div class="library-empty">${
           browsing && libraryDir
-            ? "此夹尚空<br>拖入文件即收于此夹"
+            ? t("此夹尚空") + "<br>" + t("拖入文件即收于此夹")
             : total
-              ? "没有匹配的卷宗"
+              ? t("没有匹配的卷宗")
               : archiveEntries === null
-                ? "正在翻开卷宗…"
-                : "卷宗尚空<br>拖入文件即收入"
+                ? t("正在翻开卷宗…")
+                : t("卷宗尚空") + "<br>" + t("拖入文件即收入")
         }</div>`;
   libraryRepainting = false;
   const field = /** @type {HTMLInputElement|null} */ ($("#libraryGrid .strip-rename"));
@@ -251,7 +251,7 @@ async function commitLibraryRename(value) {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, name }, AbortSignal.timeout(20000));
     rebaseDeliverables(path, moved.path);
   } catch (error) {
-    toast(`改名失败：${String(error.message || error).slice(0, 80)}`);
+    toast(t`改名失败：${String(error.message || error).slice(0, 80)}`);
   }
   await refreshArchive();
 }
@@ -262,14 +262,14 @@ function cancelLibraryRename() {
 // 新建夹：落在此刻这一层，建好即就地起名。正在查找或筛选时先收起，不然新夹不在眼前
 async function newArchiveFolder() {
   try {
-    const made = await bridge("/api/archive/mkdir", { root: archiveDir(), dir: libraryDir, name: "新建夹" }, AbortSignal.timeout(8000));
+    const made = await bridge("/api/archive/mkdir", { root: archiveDir(), dir: libraryDir, name: t("新建夹") }, AbortSignal.timeout(8000));
     libraryQuery = "";
     libraryKind = "all";
     /** @type {HTMLInputElement} */ ($("#librarySearch")).value = "";
     libraryRenaming = made.path;
     await refreshArchive();
   } catch (error) {
-    toast(`新建失败：${String(error.message || error).slice(0, 80)}`);
+    toast(t`新建失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
 // 文本以 UTF-8 编成 data: URL；二进制附件本就是 data: URL
@@ -299,14 +299,14 @@ function rebaseDeliverables(from, to) {
 // 条子拖到夹上、或拖回路径里的上一级：挪进那一层（件与夹一样）；那一层有同名的就另取名
 async function moveArchiveItem(path, dir) {
   if (parentDir(path) === dir || dir === path) return;
-  if (dir.startsWith(`${path}/`)) return toast("夹不能移入其自身");
+  if (dir.startsWith(`${path}/`)) return toast(t("夹不能移入其自身"));
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
       renamed = moved.name !== path.split("/").pop();
     rebaseDeliverables(path, moved.path);
-    toast(`已移入「${dir ? dir.split("/").pop() : "卷宗"}」${renamed ? `，同名已有，改作 ${moved.name}` : ""}`);
+    toast(t`已移入「${dir ? dir.split("/").pop() : t("卷宗")}」${renamed ? t`，同名已有，改作 ${moved.name}` : ""}`);
   } catch (error) {
-    toast(`移动失败：${String(error.message || error).slice(0, 80)}`);
+    toast(t`移动失败：${String(error.message || error).slice(0, 80)}`);
   }
   await refreshArchive();
 }
@@ -316,7 +316,7 @@ async function cleanScratch(conversation) {
   if (conversation && isWork(conversation)) return;
   if (
     !conversation &&
-    !(await askConfirm({ title: "清理全部草稿？", body: "模型在卷宗里留下的脚本与中间文件将被删除，成品不受影响。", ok: "清理" }))
+    !(await askConfirm({ title: t("清理全部草稿？"), body: t("模型在卷宗里留下的脚本与中间文件将被删除，成品不受影响。"), ok: t("清理") }))
   )
     return;
   try {
@@ -326,11 +326,11 @@ async function cleanScratch(conversation) {
       AbortSignal.timeout(30000)
     );
     if (!conversation) {
-      toast("草稿已清理");
+      toast(t("草稿已清理"));
       await refreshArchive();
     }
   } catch (error) {
-    if (!conversation) toast(`清理失败：${String(error.message || error).slice(0, 80)}`);
+    if (!conversation) toast(t`清理失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
 async function addLibraryFiles(fileList, dir = libraryDir) {
@@ -338,18 +338,18 @@ async function addLibraryFiles(fileList, dir = libraryDir) {
   let added = 0;
   for (const file of files) {
     if (file.size > MAX_ARCHIVE_FILE_BYTES) {
-      toast(`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
+      toast(t`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
       continue;
     }
     try {
       await putArchiveFile(file.name, await readFile(file, "data"), dir);
       added += 1;
     } catch (error) {
-      toast(`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
+      toast(t`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
     }
   }
   await refreshArchive();
-  if (added) toast(`已收入 ${added} 件`);
+  if (added) toast(t`已收入 ${added} 件`);
 }
 // 附件上的「藏」：原件落进卷宗目录
 async function saveToLibrary(id) {
@@ -360,43 +360,45 @@ async function saveToLibrary(id) {
       .flatMap(m => m.attachments || [])
       .find(file => file.id === id);
   const file = metadata && (await getAttachment(id));
-  if (!file) return toast("附件原件已找不到");
+  if (!file) return toast(t("附件原件已找不到"));
   try {
     const saved = await putArchiveFile(metadata.name, file.kind === "text" ? dataUrlFromText(file.data, file.mime) : file.data);
     void refreshArchive();
-    toast(`${saved.name} 已收入卷宗`);
+    toast(t`${saved.name} 已收入卷宗`);
   } catch (error) {
-    toast(`收入失败：${String(error.message || error).slice(0, 80)}`);
+    toast(t`收入失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
 // 删一项：夹连同里头的一并删，确认时说清有多少
 async function removeArchiveItem(path) {
   const dir = archiveDirs.find(item => item.path === path);
-  let ask = { title: "删除这件卷宗？", body: `将从本机目录删除「${path}」，无法撤销。`, ok: "删除" };
+  let ask = { title: t("删除这件卷宗？"), body: t`将从本机目录删除「${path}」，无法撤销。`, ok: t("删除") };
   if (dir) {
     const files = (archiveEntries || []).filter(file => file.path.startsWith(`${path}/`)).length,
       subs = archiveDirs.filter(item => item.path.startsWith(`${path}/`)).length;
     ask = {
-      title: `删除夹「${dir.name}」？`,
+      title: t`删除夹「${dir.name}」？`,
       body:
-        files || subs ? `连同其中 ${files} 件${subs ? `、${subs} 夹` : ""}，将从本机目录删除，无法撤销。` : "将从本机目录删除这个空夹。",
-      ok: "删除"
+        files || subs
+          ? t`连同其中 ${files} 件${subs ? t`、${subs} 夹` : ""}，将从本机目录删除，无法撤销。`
+          : t("将从本机目录删除这个空夹。"),
+      ok: t("删除")
     };
   }
   if (!(await askConfirm(ask))) return;
   try {
     await bridge("/api/archive/remove", { root: archiveDir(), path }, AbortSignal.timeout(20000));
-    toast("已删除");
+    toast(t("已删除"));
   } catch (error) {
-    toast(`删除失败：${String(error.message || error).slice(0, 80)}`);
+    toast(t`删除失败：${String(error.message || error).slice(0, 80)}`);
   }
   await refreshArchive();
 }
 function canPlaceAttachment(size) {
-  if (pendingAttachments.length >= 10) return toast("一次最多置入 10 件附件"), false;
-  if (size > MAX_FILE_BYTES) return toast(`单个附件不超过 ${limitLabel(MAX_FILE_BYTES)}`), false;
+  if (pendingAttachments.length >= 10) return toast(t("一次最多置入 10 件附件")), false;
+  if (size > MAX_FILE_BYTES) return toast(t`单个附件不超过 ${limitLabel(MAX_FILE_BYTES)}`), false;
   const total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0);
-  if (total + Number(size || 0) > MAX_PENDING_BYTES) return toast(`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`), false;
+  if (total + Number(size || 0) > MAX_PENDING_BYTES) return toast(t`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`), false;
   return true;
 }
 // 磁盘上的卷宗置于案上：取回原件，按普通附件收进浏览器（图片、可提取的文档照常处理）
@@ -406,22 +408,22 @@ async function placeFromArchive(path) {
     await refreshArchive();
     entry = (archiveEntries || []).find(file => file.path === path);
   }
-  if (!entry) return toast("卷宗里已没有这件");
+  if (!entry) return toast(t("卷宗里已没有这件"));
   if (!canPlaceAttachment(entry.size)) return;
   const key = draftKey();
   try {
     const response = await fetch(archiveFileUrl(path), { signal: AbortSignal.timeout(60000) });
-    if (!response.ok) throw Error("取回失败");
+    if (!response.ok) throw Error(t("取回失败"));
     const blob = await response.blob(),
       file = new File([blob], entry.name, { type: blob.type || "", lastModified: Date.parse(entry.modifiedAt) || Date.now() });
     placeAttachment(key, await ingestFile(file));
     persistDraft();
-    if (draftKey() !== key) return toast(`${entry.name} 已置于原对话的案上`);
+    if (draftKey() !== key) return toast(t`${entry.name} 已置于原对话的案上`);
     closeLibrary();
-    toast(`${entry.name} 已置于案上`);
+    toast(t`${entry.name} 已置于案上`);
     setTimeout(() => (currentConversation() ? $("#chatInput") : $("#welcomeInput")).focus(), 0);
   } catch (error) {
-    toast(`置入失败：${String(error.message || error).slice(0, 80)}`);
+    toast(t`置入失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
 
@@ -549,12 +551,12 @@ function bindLibraryEvents() {
   const showDropVeil = () => {
     clearTimeout(dragHideTimer);
     const toLibrary = view === "library";
-    $("#dropTitle").textContent = toLibrary ? "松手，收入卷宗" : "松手，置于案上";
+    $("#dropTitle").textContent = toLibrary ? t("松手，收入卷宗") : t("松手，置于案上");
     $("#dropHint").textContent = toLibrary
       ? libraryDir
-        ? `任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
-        : "任何文件 · 落到本机的卷宗目录"
-      : `图片、文档与代码文件 · 单次共 ${limitLabel(MAX_PENDING_BYTES)}`;
+        ? t`任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
+        : t("任何文件 · 落到本机的卷宗目录")
+      : t`图片、文档与代码文件 · 单次共 ${limitLabel(MAX_PENDING_BYTES)}`;
     $("#dropVeil").classList.remove("hidden");
   };
   const hideDropVeil = () => {
@@ -593,7 +595,7 @@ function bindLibraryEvents() {
     if (target && (await archiveFileExists(target))) return downloadArchiveFile(target.path, target.root);
     if (archiveEntries === null) await refreshArchive();
     const entry = (archiveEntries || []).find(file => file.name === name || file.path === name);
-    if (!entry) return toast(`找不到「${name}」`);
+    if (!entry) return toast(t`找不到「${name}」`);
     downloadArchiveFile(entry.path);
   });
   $("#messages").addEventListener("click", event => {
@@ -601,7 +603,7 @@ function bindLibraryEvents() {
     if (!button) return;
     const path = button.closest("[data-deliver]")?.dataset.deliver;
     if (!path) return;
-    if (deliverableMissing(path)) return toast("这件已从卷宗移除");
+    if (deliverableMissing(path)) return toast(t("这件已从卷宗移除"));
     if (button.dataset.deliverAction === "download") downloadArchiveFile(path);
     else void openFileViewer(path, "", button);
   });

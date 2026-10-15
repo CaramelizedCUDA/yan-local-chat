@@ -11,8 +11,8 @@ function renderChips(work) {
   const dirChip = $("#workdirChip"),
     pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
   dirChip.classList.remove("hidden");
-  dirChip.querySelector(".chip-text").textContent = pending ? pathTail(pending) : "卷宗";
-  dirChip.title = pending ? `${pending}\n行：指令与改动落在此目录` : `言：产出收入卷宗（${archiveDir()}）`;
+  dirChip.querySelector(".chip-text").textContent = pending ? pathTail(pending) : t("卷宗");
+  dirChip.title = pending ? t`${pending}\n行：指令与改动落在此目录` : t`言：产出收入卷宗（${archiveDir()}）`;
   dirChip.classList.toggle("on", !!pending);
   const approve = $("#approveChip");
   const policy = normalizeCommandPolicy(store.settings.commandPolicyDefault),
@@ -20,7 +20,7 @@ function renderChips(work) {
   approve.classList.remove("hidden");
   approve.querySelector(".chip-text").textContent = meta[0];
   approve.classList.toggle("on", policy !== "ask");
-  approve.title = `${meta[0]}：${meta[1]}（新对话默认）`;
+  approve.title = t`${meta[0]}：${meta[1]}（新对话默认）`;
   renderGroupTags();
 }
 // 附件签「＋」：展开后二选一——外件（本机文件）或卷宗（已收入的文件，点选即置于案上，在这张菜单里接着选）
@@ -29,13 +29,13 @@ function openAttachMenu(anchor) {
   openMenu(
     anchor,
     [
-      { id: "file", label: "外件", note: "本机文件", run: () => $("#fileInput").click() },
+      { id: "file", label: t("外件"), note: t("本机文件"), run: () => $("#fileInput").click() },
       {
         id: "archive",
-        label: "卷宗",
-        note: total ? `${total} 件` : "尚空",
+        label: t("卷宗"),
+        note: total ? t`${total} 件` : t("尚空"),
         keep: true,
-        run: (button, pop) => (total ? renderArchivePicker(pop, anchor) : toast("卷宗尚空"))
+        run: (button, pop) => (total ? renderArchivePicker(pop, anchor) : toast(t("卷宗尚空")))
       }
     ],
     { align: "left", kind: "attach" }
@@ -47,7 +47,7 @@ function renderArchivePicker(pop, anchor) {
   const files = archiveEntries || [];
   let at = "";
   pop.classList.add("attach-picker");
-  pop.innerHTML = `<input class="field" placeholder="按文件名查找" aria-label="查找卷宗"><div class="chip-pop-list"></div>`;
+  pop.innerHTML = `<input class="field" placeholder="${t(`按文件名查找`)}" aria-label="${t(`查找卷宗`)}"><div class="chip-pop-list"></div>`;
   const input = pop.querySelector("input"),
     list = pop.querySelector(".chip-pop-list");
   const fileHtml = (file, flat) => {
@@ -56,7 +56,7 @@ function renderArchivePicker(pop, anchor) {
   };
   const folderHtml = dir => {
     const count = files.filter(file => file.path.startsWith(`${dir.path}/`)).length;
-    return `<button type="button" class="picker-dir" data-dir="${escapeHtml(dir.path)}" title="打开 ${escapeHtml(dir.path)}"><span>${escapeHtml(dir.name)}<i aria-hidden="true">›</i></span><small>${count ? `${count} 件` : "空"}</small></button>`;
+    return `<button type="button" class="picker-dir" data-dir="${escapeHtml(dir.path)}" title="${t`打开 ${escapeHtml(dir.path)}`}"><span>${escapeHtml(dir.name)}<i aria-hidden="true">›</i></span><small>${count ? t`${count} 件` : t("空")}</small></button>`;
   };
   // 清单的高随层而变：每画一回重新贴一次锚点（向上翻的，底边贴住锚点）
   const place = () => {
@@ -72,14 +72,14 @@ function renderArchivePicker(pop, anchor) {
     let html;
     if (query) {
       const shown = files.filter(file => file.path.toLowerCase().includes(query));
-      html = shown.length ? shown.map(file => fileHtml(file, true)).join("") : `<div class="chip-pop-label">没有匹配的卷宗</div>`;
+      html = shown.length ? shown.map(file => fileHtml(file, true)).join("") : `<div class="chip-pop-label">${t(`没有匹配的卷宗`)}</div>`;
     } else {
       const folders = archiveDirs.filter(dir => parentDir(dir.path) === at).sort((a, b) => a.name.localeCompare(b.name, "zh-CN")),
         here = files.filter(file => parentDir(file.path) === at),
         up = at
-          ? `<button type="button" class="picker-up" data-dir="${escapeHtml(parentDir(at))}" title="回上一层"><span>‹ ${escapeHtml(["卷宗", ...at.split("/")].join(" › "))}</span></button>`
+          ? `<button type="button" class="picker-up" data-dir="${escapeHtml(parentDir(at))}" title="${t(`回上一层`)}"><span>‹ ${escapeHtml([t("卷宗"), ...at.split("/")].join(" › "))}</span></button>`
           : "";
-      html = `${up}${folders.map(folderHtml).join("")}${here.map(file => fileHtml(file, false)).join("")}${folders.length || here.length ? "" : `<div class="chip-pop-label">此夹尚空</div>`}`;
+      html = `${up}${folders.map(folderHtml).join("")}${here.map(file => fileHtml(file, false)).join("")}${folders.length || here.length ? "" : `<div class="chip-pop-label">${t(`此夹尚空`)}</div>`}`;
     }
     list.innerHTML = html;
     list.scrollTop = 0;
@@ -112,7 +112,7 @@ function renderArchivePicker(pop, anchor) {
 // floating：不挂在 host 里而是浮在锚点旁（侧栏历史条目的「绑定目录」用），其余一样
 function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating = false }) {
   if ((floating ? document : host).querySelector(".chip-pop[data-kind=workdir]")) return closeChipPop();
-  const html = `<div class="chip-pop-row"><input id="workdirInput" class="field" spellcheck="false" autocomplete="off" placeholder="${live ? "留空则为言" : "输入或选择目录"}" value="${escapeHtml(value || "")}"><button id="workdirPick" class="outline-btn" type="button">选择…</button>${live ? "" : `<button id="workdirCommit" class="outline-btn" type="button">${bound ? "更换" : "绑定"}</button>`}</div>${bound ? `<button type="button" class="chip-pop-unbind" data-unbind>解开目录，回到言</button>` : live ? `<button type="button" class="chip-pop-unbind${value ? "" : " hidden"}" data-unbind>不绑目录，回到言</button>` : ""}`;
+  const html = `<div class="chip-pop-row"><input id="workdirInput" class="field" spellcheck="false" autocomplete="off" placeholder="${live ? t("留空则为言") : t("输入或选择目录")}" value="${escapeHtml(value || "")}"><button id="workdirPick" class="outline-btn" type="button">${t(`选择…`)}</button>${live ? "" : `<button id="workdirCommit" class="outline-btn" type="button">${bound ? t("更换") : t("绑定")}</button>`}</div>${bound ? `<button type="button" class="chip-pop-unbind" data-unbind>${t(`解开目录，回到言`)}</button>` : live ? `<button type="button" class="chip-pop-unbind${value ? "" : " hidden"}" data-unbind>${t(`不绑目录，回到言`)}</button>` : ""}`;
   const pop = floating ? openFloatingPop(anchor, html, { align: "right", menu: false }) : openChipPop(anchor, host, html);
   pop.dataset.kind = "workdir";
   const input = pop.querySelector("#workdirInput"),
@@ -136,7 +136,7 @@ function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating =
   pop.querySelector("#workdirPick").onclick = async () => {
     const button = pop.querySelector("#workdirPick");
     button.disabled = true;
-    button.textContent = "择取中…";
+    button.textContent = t("择取中…");
     try {
       const data = await bridge("/api/work/pick", { current: input.value.trim() }, AbortSignal.timeout(300000));
       if (data.path) {
@@ -147,7 +147,7 @@ function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating =
       toast(String(error.message || error).slice(0, 80));
     } finally {
       button.disabled = false;
-      button.textContent = "择目录…";
+      button.textContent = t("择目录…");
     }
   };
   setTimeout(() => input.focus(), 0);
@@ -161,10 +161,10 @@ async function bindWorkdir(c, dir) {
     c.workdir = "";
     saveStore();
     render();
-    toast("已解开目录，回到言");
+    toast(t("已解开目录，回到言"));
     return;
   }
-  if (activeProfile()?.tools === false) return toast("当前模型已关闭本机工具，请在模型高级配置中开启");
+  if (activeProfile()?.tools === false) return toast(t("当前模型已关闭本机工具，请在模型高级配置中开启"));
   try {
     const prepared = await bridge("/api/work/prepare", { workdir: dir }, AbortSignal.timeout(8000));
     if (prepared.workdir === c.workdir) return;
@@ -172,9 +172,9 @@ async function bindWorkdir(c, dir) {
     c.commandPolicy = commandPolicyOf(c);
     saveStore();
     render();
-    toast(`已绑定 ${pathTail(prepared.workdir)}${prepared.created ? "（新建）" : ""}，此后为行`);
+    toast(t`已绑定 ${pathTail(prepared.workdir)}${prepared.created ? t("（新建）") : ""}，此后为行`);
   } catch (error) {
-    toast(`工作目录不可用：${String(error.message || error)}`);
+    toast(t`工作目录不可用：${String(error.message || error)}`);
   }
 }
 function setupChips() {

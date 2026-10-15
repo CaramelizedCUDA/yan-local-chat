@@ -52,7 +52,7 @@ function intentGlanceHtml(conversation, short = false) {
   if (!views.length) return "";
   const { standing } = intentTally(intent, now),
     rest = views.length - INTENT_GLANCE_MARKS;
-  return `<button type="button" class="intent-glance" data-intent-open title="意：进度 ${standing} / ${views.length}，点开看图"><span class="seal intent-seal" aria-hidden="true">意</span><span>${short ? `<b>${standing}</b>/${views.length}` : `进度 <b>${standing}</b> / ${views.length}`}</span><span class="intent-glance-run" aria-hidden="true">${views
+  return `<button type="button" class="intent-glance" data-intent-open title="${t`意：进度 ${standing} / ${views.length}，点开看图`}"><span class="seal intent-seal" aria-hidden="true">${t(`意`)}</span><span>${short ? `<b>${standing}</b>/${views.length}` : `${t(`进度`)} <b>${standing}</b> / ${views.length}`}</span><span class="intent-glance-run" aria-hidden="true">${views
     .slice(0, INTENT_GLANCE_MARKS)
     .map(view => intentMark(view))
     .join("")}${rest > 0 ? `<i>+${rest}</i>` : ""}</span></button>`;

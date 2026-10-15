@@ -105,12 +105,12 @@ function memoryItemHtml(item) {
   const editing = item.id === memoryItemEditing,
     source =
       item.source?.conversationId && store.conversations.some(c => c.id === item.source.conversationId)
-        ? `<button type="button" class="memory-source" data-memory-open="${escapeHtml(item.source.conversationId)}" title="打开来源对话">${escapeHtml(item.source.title || "来源对话")}</button>`
-        : `<span>${escapeHtml(item.source?.title || "手记")}</span>`,
+        ? `<button type="button" class="memory-source" data-memory-open="${escapeHtml(item.source.conversationId)}" title="${t(`打开来源对话`)}">${escapeHtml(item.source.title || t("来源对话"))}</button>`
+        : `<span>${escapeHtml(item.source?.title || t("手记"))}</span>`,
     body = editing
-      ? `<textarea class="memory-text" rows="1" spellcheck="false" aria-label="记忆内容">${escapeHtml(item.text)}</textarea>`
-      : `<div class="memory-body" data-memory-toggle title="收起">${memoryRichText(item.text)}</div>`;
-  return `<div class="memory-item open" data-memory="${id}">${body}<div class="memory-meta">${day}${source}<span class="memory-spacer"></span><span class="memory-ops"><button type="button" data-memory-edit title="${editing ? "完成" : "修改"}">${brushIcon("edit")}</button><button type="button" data-memory-move title="归入别类" aria-haspopup="menu">${brushIcon("groups")}</button><button type="button" class="memory-del" data-memory-delete title="删除">${brushIcon("strike")}</button></span></div></div>`;
+      ? `<textarea class="memory-text" rows="1" spellcheck="false" aria-label="${t(`记忆内容`)}">${escapeHtml(item.text)}</textarea>`
+      : `<div class="memory-body" data-memory-toggle title="${t(`收起`)}">${memoryRichText(item.text)}</div>`;
+  return `<div class="memory-item open" data-memory="${id}">${body}<div class="memory-meta">${day}${source}<span class="memory-spacer"></span><span class="memory-ops"><button type="button" data-memory-edit title="${editing ? t("完成") : t("修改")}">${brushIcon("edit")}</button><button type="button" data-memory-move title="${t(`归入别类`)}" aria-haspopup="menu">${brushIcon("groups")}</button><button type="button" class="memory-del" data-memory-delete title="${t(`删除`)}">${brushIcon("strike")}</button></span></div></div>`;
 }
 // 分栏：左一列类目（选着的左缘一道朱、名字加重），末尾「另起一类」；右边这一类的条目，右栏顶上类名就地可改，
 // 「手记一条」「删去此类」两枚小画都对着这一类
@@ -121,8 +121,8 @@ function memorySplitHtml(categories, open) {
         cat =>
           `<button type="button" class="memory-cat${cat === open ? " active" : ""}" data-memory-cat="${escapeHtml(cat.name)}"><span>${escapeHtml(cat.name)}</span><em>${cat.items.length}</em></button>`
       )
-      .join("")}<button type="button" id="newMemoryCat" class="memory-cat memory-cat-new">另起一类</button></div>` +
-    `<div class="memory-pane"><div class="memory-pane-head"><input id="memoryCatName" class="memory-cat-name" value="${escapeHtml(open.name)}" maxlength="24" spellcheck="false" aria-label="分类名" title="分类名；与已有分类同名即并为一类"><span class="memory-cat-count">${open.items.length} 条</span><span class="memory-spacer"></span><span class="memory-ops"><button type="button" id="addMemory" title="手记一条">${brushIcon("add")}</button><button type="button" id="dropMemoryCat" class="memory-del" title="删去此类">${brushIcon("strike")}</button></span></div>` +
+      .join("")}<button type="button" id="newMemoryCat" class="memory-cat memory-cat-new">${t(`另起一类`)}</button></div>` +
+    `<div class="memory-pane"><div class="memory-pane-head"><input id="memoryCatName" class="memory-cat-name" value="${escapeHtml(open.name)}" maxlength="24" spellcheck="false" aria-label="${t(`分类名`)}" title="${t(`分类名；与已有分类同名即并为一类`)}"><span class="memory-cat-count">${t`${open.items.length} 条`}</span><span class="memory-spacer"></span><span class="memory-ops"><button type="button" id="addMemory" title="${t(`手记一条`)}">${brushIcon("add")}</button><button type="button" id="dropMemoryCat" class="memory-del" title="${t(`删去此类`)}">${brushIcon("strike")}</button></span></div>` +
     `<div class="memory-list">${open.items.map(memoryItemHtml).join("")}</div></div></div>`
   );
 }
@@ -132,13 +132,13 @@ function memorySettingsHtml() {
     open = categories.find(cat => cat.name === memoryCategoryOpen) || categories[0];
   memoryCategoryOpen = open?.name ?? null;
   return (
-    `<div class="settings-head">${brushIcon("memory", "settings-mark")}<h2>记忆</h2><span class="settings-meta">${store.memory.items.length} / ${MAX_MEMORY_ITEMS} 条${categories.length ? ` · ${categories.length} 类` : ""}</span></div>` +
+    `<div class="settings-head">${brushIcon("memory", "settings-mark")}<h2>${t(`记忆`)}</h2><span class="settings-meta">${t`${store.memory.items.length} / ${MAX_MEMORY_ITEMS} 条`}${categories.length ? t` · ${categories.length} 类` : ""}</span></div>` +
     // 「清空记忆」管的是全部，与总开关同一行，不挤在哪一类底下
-    `<div class="setting-row"><div class="setting-copy"><strong>启用记忆</strong><small>关闭后条目仍保留</small></div><div class="setting-actions">${
-      store.memory.items.length ? `<button id="clearMemory" class="outline-btn" type="button">清空记忆</button>` : ""
+    `<div class="setting-row"><div class="setting-copy"><strong>${t(`启用记忆`)}</strong><small>${t(`关闭后条目仍保留`)}</small></div><div class="setting-actions">${
+      store.memory.items.length ? `<button id="clearMemory" class="outline-btn" type="button">${t(`清空记忆`)}</button>` : ""
     }<div class="segmented">${[
-      ["true", "开"],
-      ["false", "关"]
+      ["true", t("开")],
+      ["false", t("关")]
     ]
       .map(
         ([value, label]) =>
@@ -147,7 +147,7 @@ function memorySettingsHtml() {
       .join("")}</div></div></div>` +
     (open
       ? memorySplitHtml(categories, open)
-      : `<p class="memory-empty">尚无一条</p><div class="memory-foot"><button id="addMemory" class="outline-btn" type="button">手记一条</button></div>`)
+      : `<p class="memory-empty">${t(`尚无一条`)}</p><div class="memory-foot"><button id="addMemory" class="outline-btn" type="button">${t(`手记一条`)}</button></div>`)
   );
 }
 function fileMemory(item, category) {
@@ -157,7 +157,7 @@ function fileMemory(item, category) {
   item.updatedAt = now();
   memoryItemEditing = "";
   saveStore();
-  toast(`已归入「${to}」`);
+  toast(t`已归入「${to}」`);
   renderSettings();
 }
 /** @param {string | null} name @param {string} [item] 换过去后摊开着的那一条 */
@@ -205,7 +205,7 @@ function bindMemoryEvents() {
         grow(area);
         const text = cleanMemoryText(area.value);
         const tooLong = text.length > MEMORY_TEXT_CHARS;
-        area.setCustomValidity(tooLong ? `记忆最多 ${MEMORY_TEXT_CHARS} 字，当前内容尚未保存，请缩短后再完成` : "");
+        area.setCustomValidity(tooLong ? t`记忆最多 ${MEMORY_TEXT_CHARS} 字，当前内容尚未保存，请缩短后再完成` : "");
         area.setAttribute("aria-invalid", String(tooLong));
         if (tooLong) {
           area.reportValidity();
@@ -259,12 +259,12 @@ function bindMemoryEvents() {
         ...others.map(name => ({ id: name, label: name, run: () => fileMemory(item, name) })),
         {
           id: "new",
-          label: "另起一类…",
+          label: t("另起一类…"),
           run: () => {
             // 另起一类：就地换成一个输入框，回车落定，Esc 作罢
             const field = document.createElement("input");
             field.className = "memory-move";
-            field.placeholder = "新类名";
+            field.placeholder = t("新类名");
             field.maxLength = 24;
             move.replaceWith(field);
             field.focus();
@@ -299,7 +299,7 @@ function bindMemoryEvents() {
   });
   // 手记一条：记在选着的那一类里（还没有一类时归「未分类」），就地摊开着改
   const jot = category => {
-    if (store.memory.items.length >= MAX_MEMORY_ITEMS) return toast(`记忆已满 ${MAX_MEMORY_ITEMS} 条，请先删去一些`);
+    if (store.memory.items.length >= MAX_MEMORY_ITEMS) return toast(t`记忆已满 ${MAX_MEMORY_ITEMS} 条，请先删去一些`);
     const item = { id: memoryId(), text: "", category, createdAt: now(), updatedAt: now(), source: null };
     store.memory.items.push(item);
     memoryCategoryOpen = category;
@@ -313,7 +313,7 @@ function bindMemoryEvents() {
   $("#newMemoryCat")?.addEventListener("click", e => {
     const field = document.createElement("input");
     field.className = "memory-cat memory-cat-new";
-    field.placeholder = "新类名";
+    field.placeholder = t("新类名");
     field.maxLength = 24;
     e.currentTarget.replaceWith(field);
     field.focus();
@@ -339,7 +339,11 @@ function bindMemoryEvents() {
     const name = memoryCategoryOpen,
       count = store.memory.items.filter(item => memoryCategoryOf(item) === name).length;
     if (
-      !(await askConfirm({ title: `删去「${name}」这一类？`, body: `其中 ${count} 条记忆将被移除，无法撤销；对话不受影响。`, ok: "删去" }))
+      !(await askConfirm({
+        title: t`删去「${name}」这一类？`,
+        body: t`其中 ${count} 条记忆将被移除，无法撤销；对话不受影响。`,
+        ok: t("删去")
+      }))
     )
       return;
     store.memory.items = store.memory.items.filter(item => memoryCategoryOf(item) !== name);
@@ -349,15 +353,15 @@ function bindMemoryEvents() {
   $("#clearMemory")?.addEventListener("click", async () => {
     if (
       !(await askConfirm({
-        title: "清空记忆？",
-        body: `${store.memory.items.length} 条记忆将被移除，无法撤销；对话不受影响。`,
-        ok: "清空"
+        title: t("清空记忆？"),
+        body: t`${store.memory.items.length} 条记忆将被移除，无法撤销；对话不受影响。`,
+        ok: t("清空")
       }))
     )
       return;
     store.memory.items = [];
     saveStore();
     renderSettings();
-    toast("记忆已清空");
+    toast(t("记忆已清空"));
   });
 }
