@@ -531,7 +531,7 @@ var YAN_EN = {
   联网检索: "Web search",
   经本机桥接: "Via the local bridge",
   测试联网: "Test search",
-  个性化: "Personalization",
+  个性化: "Appearance",
   主题: "Theme",
   随系统或固定明暗: "Follow the system or pick light/dark",
   亮: "Light",
@@ -780,6 +780,7 @@ var YAN_EN = {
   "此前的 {0} 问 {1} 答会由模型撮要成一份（目标、事实、决定、改过的文件、待办），此后每一问只带这份撮要与其后的消息。页面上的记录都还在，只是折起来。":
     "The model will summarize the previous {0} {0|question|questions} and {1} {1|answer|answers} (goals, facts, decisions, changed files, to-dos). Later messages only carry this summary and what follows. Everything stays on the page, just collapsed.",
   就引文追问: "Ask about the quote",
+  "附件 {0}": "Attachment {0}",
   "第 {0} 问 · {1}": "Q{0} · {1}",
 
   // ---- 分组 ----
@@ -818,6 +819,7 @@ var YAN_EN = {
   播放: "Play",
   下一首: "Next",
   音量: "Volume",
+  听音: "Listen",
   暂停: "Pause",
   回整页: "Back to full view",
   停止: "Stop",
@@ -973,7 +975,7 @@ var YAN_EN = {
   不入正文: "Kept out of the main chat",
   所领之命: "Task",
   言之有物: "Local chat and agent",
-  字字留痕: "Everything stays on your disk",
+  字字留痕: "Every word kept",
   "图片、文档与代码文件 · 单次共 64 MB": "Images, documents and code · up to 64 MB total",
   "当前为言 · 对谈": "Current mode: Chat",
   另起一段对话: "New chat",
@@ -1289,6 +1291,7 @@ var YAN_EN = {
   或: "or",
   打开模块: "Open module",
   意的结构图: "Intent map",
+  文件: "File",
   目录: "Folder",
   探针: "Probe",
   验收: "Check",
@@ -1466,7 +1469,9 @@ var YAN_EN = {
 
   // ---- 欢迎页（问候另写在 src/06-mode-welcome/10-welcome.js；推荐语里留给人填的写在方括号里） ----
   "以目录为案，言起而事行": "Work in a folder: plan, edit, run",
-  "长问慢答，尽付纸墨": "Ask anything. Everything stays on your machine",
+  "长问慢答，尽付纸墨": "Ask at length, read at leisure",
+  "对话、卷宗、附件与配置同在本机的一个存储目录，言没有自己的服务器；复制即是备份。":
+    "Chats, files, attachments and settings live in one folder on this machine; Yan has no server of its own. Copy the folder to back it up.",
   "尚未接入模型。OpenAI 兼容与 Anthropic 接口皆可，配置只存于本机、不经云端。":
     "No model yet. Any OpenAI-compatible or Anthropic API works; settings stay on this machine.",
   "前往设置 →": "Open settings →",
