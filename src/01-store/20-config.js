@@ -202,7 +202,6 @@ function mergeConfig3(base, mine, theirs, unsettled = null) {
     settings.presets = byId(baseSettings.presets, mineSettings.presets, theirSettings.presets, (b, m, t) => keyed(b, m, t));
   if (has("groups")) settings.groups = byId(baseSettings.groups, mineSettings.groups, theirSettings.groups, (b, m, t) => keyed(b, m, t));
   if (has("mcpServers")) settings.mcpServers = keyed(baseSettings.mcpServers, mineSettings.mcpServers, theirSettings.mcpServers);
-  if (has("skills")) settings.skills = keyed(baseSettings.skills, mineSettings.skills, theirSettings.skills);
   if (has("env")) {
     const oldEnv = { ...defaultStore.settings.env, ...(baseSettings.env || {}) },
       myEnv = mineSettings.env || {},

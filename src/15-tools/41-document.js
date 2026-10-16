@@ -49,7 +49,7 @@ defineTool({
       }
     } else if (doc.skill) {
       try {
-        text = await skillDocumentText(doc, conversation);
+        text = await skillDocumentText(doc);
       } catch (error) {
         return { ok: false, content: t`技能文件读取失败：${String(error.message || error).slice(0, 120)}`, display: "读取失败" };
       }
@@ -124,7 +124,7 @@ function availableDocuments(conversation) {
       if (seen.has(entry.name) || !(fileKind(entry.name).extract || isTextFile({ name: entry.name, type: "" }))) continue;
       seen.set(entry.name, { name: entry.name, archive: entry.path, size: entry.size, modifiedAt: entry.modifiedAt, kind: "archive" });
     }
-  for (const doc of skillDocuments(conversation)) if (!seen.has(doc.name)) seen.set(doc.name, doc);
+  for (const doc of skillDocuments()) if (!seen.has(doc.name)) seen.set(doc.name, doc);
   return [...seen.values()];
 }
 // 磁盘卷宗里的文档：取回原件，文本直接用，PDF / Office 在本机抽正文；按路径与修改时间缓存几份

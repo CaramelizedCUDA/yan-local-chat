@@ -100,7 +100,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     // 先把这一答预计的用量记到预留里（提示 + 最大输出），别的对话同时开工时看得见；收尾时换成实际用量
     // 预留只是估个数：一答的输出按八千算，不必与接口实际的上限一致
     releaseQuota = reserveTokens(profile, estimateTokens(history) + (Number(profile.maxTokens) || 8192));
-    if (profile.tools !== false) await Promise.all([mcpForTurn(), refreshSkills(conversation)]);
+    if (profile.tools !== false) await Promise.all([mcpForTurn(), refreshSkills()]);
     const tools = profile.tools !== false ? toolDefinitions(conversation, { profile }) : null;
     const overrides = {
       systemPrompt: systemPrompt(conversation, tools),
