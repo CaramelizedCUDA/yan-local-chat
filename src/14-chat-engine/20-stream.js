@@ -149,6 +149,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       );
     assistant.status = "complete";
     conversation.updatedAt = now();
+    if (watch.kept) void intentSettleKeeps(conversation);
     // 言里动过文件的，卷宗目录多半有了新东西：重新翻一遍，新出的、改过的成品挂在答末，侧栏的件数跟着更新
     if (archiveBefore && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) {
       await refreshArchive();

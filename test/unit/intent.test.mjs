@@ -531,3 +531,35 @@ test("待定：等人拍板的一项，note 写等谁、定什么；不算立住
   assert.equal(intent.log.at(-1).text, "待定 提交规范：等官方通知：篇幅与提交渠道");
   assert.equal(f.asIntent(JSON.parse(JSON.stringify(intent))).nodes["提交规范"].state, "waiting", "存盘读回仍是待定");
 });
+
+test("守：一直要守的条件——不算根、不孤悬、不计进度；不挂前提、不作前提、不归模块；立时记下原话，读给模型时另列一节", () => {
+  let intent = change(
+    empty(),
+    [
+      { id: "上线", claim: "博客打得开", check: "首页 200", root: true },
+      { id: "测过", claim: "改完测试要过", check: "npm test 退出码 0", anchors: ["test:npm test"], keep: true, state: "done" }
+    ],
+    { ask: "往后收尾前都跑测试", prints: { "test:npm test": "过" } }
+  );
+  assert.equal(intent.nodes["测过"].keep, true);
+  assert.equal(intent.nodes["测过"].root.ask, "往后收尾前都跑测试");
+  assert.deepEqual(f.intentRoots(intent), ["上线"]);
+  assert.deepEqual(f.intentStrays(intent), []);
+  assert.deepEqual(f.intentTally(intent, {}), { live: 1, standing: 0 });
+  assert.equal(f.intentState(intent, "测过", { "test:npm test": "不过" }), "stale");
+  const text = f.intentText(intent, { "test:npm test": "不过" });
+  assert.match(text, /已立 0 \/ 1/);
+  assert.match(
+    text,
+    /守（一直要守的，不计进度）：\n- \[待复核\] 测过：改完测试要过\n  验收：npm test 退出码 0\n  缘由：测试「npm test」不过/
+  );
+  assert.ok(!/- \[[^\]]+\] 测过（/.test(text), "守不当根或孤悬写进目标那几行");
+  assert.ok(
+    problems(intent, [{ id: "部署", claim: "推上去", check: "跑起来", needs: ["测过"] }]).some(p => p.includes("是守：守不作前提"))
+  );
+  assert.ok(problems(intent, [{ id: "测过", needs: ["上线"] }]).some(p => p.includes("是守，不挂前提")));
+  assert.ok(problems(intent, [{ id: "测过", in: "上线" }]).some(p => p.includes("是守，守在全局")));
+  // 撤去守的身份即回到目标那一套
+  intent = change(intent, [{ id: "测过", keep: false, needs: [] }]);
+  assert.equal(intent.nodes["测过"].keep, undefined);
+});

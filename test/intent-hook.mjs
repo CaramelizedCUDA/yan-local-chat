@@ -1,5 +1,6 @@
-// 意里挂测试作常驻条件：立一项「测过」、凭据 test:node check.js、标成立（记下「过」）。此后哪一答动过手、测试转为不过，
-// 收尾前对照就拦一次，把它列为本答内转待复核，模型接着改；动了手而测试照旧过的，照常收尾，不多费一轮
+// 意里的守（言的钩子）：立一项目标「上线」、一条守「测过」（凭据 test:node check.js，标成立时记下「过」）。守不上图、不计进度，
+// 卡片里在簿录之后另起一节。此后哪一答动过手、测试转为不过，收尾前对照就拦一次——那一步右侧朱字写「测过 · 测试不过」，模型接着改，
+// 收尾后再取一回，书眉不挂着「守」；动了手而测试照旧过的，照常收尾，不多费一轮
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { connect, check, sleep, PAGE, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, close } = await connect();
@@ -32,12 +33,32 @@ try {
   const one = await ask("HOOK1 立一条：改完测试要过", 0),
     saved = JSON.parse(readFileSync(`${dir}/.yan/意.json`, "utf8"));
   check(
-    "a test: anchor seals as 过",
-    saved.nodes["测过"]?.seal?.prints?.["test:node check.js"] === "过",
+    "a keep with a test: anchor seals as 过 and records the ask",
+    saved.nodes["测过"]?.keep === true &&
+      saved.nodes["测过"]?.seal?.prints?.["test:node check.js"] === "过" &&
+      /HOOK1/.test(saved.nodes["测过"]?.root?.ask || ""),
     JSON.stringify(saved.nodes["测过"]) + " " + one.content
+  );
+  await waitFor(`!!document.querySelector("#chatMeta .intent-glance")`);
+  check(
+    "the glance counts goals only, with no 守 while it holds",
+    await evalJs(
+      `(g => g.textContent.includes("0/1") || g.textContent.includes("0 / 1"))(document.querySelector("#chatMeta .intent-glance")) && !document.querySelector(".intent-glance-keep")`
+    )
   );
 
   const two = await ask("HOOK2 改一下 a.txt", 1);
+  const gate = await evalJs(`JSON.stringify(${answers}[1].steps.find(s => s.name === "intent_gate"))`).then(JSON.parse);
+  check(
+    "the stopped step says which keep broke and why, in 朱",
+    gate?.result === "测过 · 测试不过" && gate?.keep === true,
+    JSON.stringify(gate)
+  );
+  await waitFor(`!document.querySelector(".intent-glance-keep")`, 15000).catch(() => {});
+  check(
+    "after the fix the keep is rechecked, so the glance does not hang on 守",
+    await evalJs(`!document.querySelector(".intent-glance-keep")`)
+  );
   check(
     "breaking the test stops the answer before it ends, and the gate names 测过 as bounced",
     /HOOK2 fixed\|bounced/.test(two.content),
@@ -55,6 +76,15 @@ try {
     "acting without breaking the test ends normally, no extra round",
     /HOOK3 done\|gated:no/.test(three.content) && !three.steps.includes("intent_gate"),
     JSON.stringify(three)
+  );
+  // 卡片：守不上图，簿录之后另起「守」一节
+  await evalJs(`document.querySelector("#chatMeta .intent-glance").click(); true`);
+  await waitFor(`!!document.querySelector(".intent-card .intent-keep-head")`, 20000);
+  check(
+    "the card leaves 守 off the graph and lists it in its own section after the roll",
+    await evalJs(
+      `!document.querySelector('.intent-svg [data-intent-node="测过"]') && !!document.querySelector('.intent-svg [data-intent-node="上线"]') && document.querySelector(".intent-keep-head + .intent-roll [data-intent-node]")?.dataset.intentNode === "测过" && /进度\\s*0\\s*\\/\\s*1/.test(document.querySelector(".intent-card .page-facts").textContent)`
+    )
   );
 } finally {
   close();

@@ -917,7 +917,7 @@ http
       if (typeof lastUser === "string" && lastUser.includes("INTENTB"))
         return sse(res, [delta({ content: `INTENTB|${lastUser}` }), delta({}, { usage: { total_tokens: 5 } })]);
       // INTENTA：立意（一根一前提，前提依托 src/a.js）并写出那个文件；第二轮标前提成立、再改根的说法；第三轮回显各结果
-      // 意里挂测试作常驻条件（见 test/intent-hook.mjs）：HOOK1 立一项挂 test: 并标成立；HOOK2 把 a.txt 改坏后想收尾，
+      // 意里的守（见 test/intent-hook.mjs）：HOOK1 立一项目标、一条守（挂 test:）并把守标成立；HOOK2 把 a.txt 改坏后想收尾，
       // 收尾前对照拦下就改回（覆写已有文件得先读过）；HOOK3 只改一个无关的文件，不该被拦。轮次按这一问之后的工具结果数
       // 认哪一问：跳过收尾对照递来的话；问里附的意带着 HOOK1 的原问，所以后来的问先认
       const hookAt = msgs.findLastIndex(
@@ -941,7 +941,10 @@ http
         if (!ask.includes("HOOK2 改一下") && !ask.includes("HOOK3 加个")) {
           if (n === 0)
             return call("update_intent", {
-              nodes: [{ id: "测过", claim: "改完测试要过", check: "node check.js 退出码为 0", anchors: ["test:node check.js"], root: true }]
+              nodes: [
+                { id: "上线", claim: "博客打得开", check: "首页回 200", root: true },
+                { id: "测过", claim: "改完测试要过", check: "node check.js 退出码为 0", anchors: ["test:node check.js"], keep: true }
+              ]
             });
           if (n === 1) return call("update_intent", { nodes: [{ id: "测过", state: "done" }] });
           return say(`HOOK1|${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 120)}`);

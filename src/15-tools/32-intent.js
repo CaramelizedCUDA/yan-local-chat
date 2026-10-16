@@ -71,10 +71,10 @@ defineTool({
   html: step => intentStepHtml(step, "intent_gate"),
   replay: replayReport
 });
-// 行迹里「意」的那一步只一行，点开即意的卡片（见 19-intent/40-card.js）；改不成的照常一行报错，点不开
+// 行迹里「意」的那一步只一行，点开即意的卡片（见 19-intent/40-card.js）；改不成的照常一行报错，点不开。因守而拦的，右侧事由是朱字
 /** @param {Step} step @param {string} name */
 function intentStepHtml(step, name) {
   const status = step.status || "done",
     open = status === "done";
-  return `<div class="tool-step tool-step-intent" data-tool="${name}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${open ? t` data-intent-open role="button" tabindex="0" title="打开意"` : ""}><span class="tool-label">${t(`意`)}</span><span class="tool-title">${escapeHtml(stepText(step.title))}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result)) : ""}">${escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-intent" data-tool="${name}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${open ? t` data-intent-open role="button" tabindex="0" title="打开意"` : ""}><span class="tool-label">${t(`意`)}</span><span class="tool-title">${escapeHtml(stepText(step.title))}</span><span class="tool-meta${step.keep ? " intent-keep-why" : ""}" title="${status === "error" ? escapeHtml(stepText(step.result)) : ""}">${escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;
 }

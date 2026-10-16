@@ -57,6 +57,24 @@
   color: var(--ink-3);
   font: normal 10px var(--body);
 }
+/* 守出了事：那一排末尾隔一道丝栏、写「守」跟它的记号——混进那一排就与目标的待复核认不出（设计稿/81 一） */
+.intent-glance-keep {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-3);
+  font: 10px var(--title);
+}
+.intent-glance-keep i {
+  width: 1px;
+  height: 10px;
+  margin: 0 4px 0 1px;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.intent-glance-keep .intent-mk {
+  width: 10px;
+  height: 9px;
+}
 .running-head-intent .intent-glance {
   flex: none;
   color: var(--ink-3);
@@ -596,4 +614,23 @@ button.intent-ink-name:hover {
 .intent-ink-item[data-kind="弃"] .intent-ink-name,
 .intent-ink-item[data-kind="撤"] .intent-ink-name {
   color: var(--ink-2);
+}
+/* 守：簿录之后另起一节（设计稿/80 卡片乙），行同目标那几行 */
+.intent-keep-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 26px 6px 4px;
+  color: var(--ink-2);
+  font: 600 13px var(--title);
+  letter-spacing: 0.2em;
+}
+.intent-keep-head small {
+  color: var(--ink-3);
+  font: normal 11px var(--body);
+  letter-spacing: 0;
+}
+/* 行迹里因守而拦的那一步：右侧事由是朱字（设计稿/80 行迹乙） */
+.tool-step-intent .tool-meta.intent-keep-why {
+  color: var(--accent);
 }

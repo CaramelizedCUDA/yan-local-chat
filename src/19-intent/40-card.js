@@ -68,7 +68,9 @@ function intentGraphSvg(intent, now, selected, level = "") {
   // 弃了的不上图（列在图下「已弃」）；孤悬的不当根画
   const strays = new Set(intentStrays(intent)),
     roots = new Set(intentRoots(intent).filter(id => !strays.has(id))),
-    ids = Object.keys(intent.nodes).filter(id => (intent.nodes[id].in || "") === level && !intentGone(intent, id)),
+    ids = Object.keys(intent.nodes).filter(
+      id => !intent.nodes[id].keep && (intent.nodes[id].in || "") === level && !intentGone(intent, id)
+    ),
     drawing = drawGraphLayout([
       ...ids.map(id => {
         const node = intent.nodes[id],
@@ -194,6 +196,7 @@ function intentRowSay(intent, now, id, view) {
 /** 簿录：这一层一项一行，点中的那一行就地摊开 @param {Intent} intent @param {IntentPrints} now @param {string[]} order @param {string} selected @param {string} level */
 function intentRollHtml(intent, now, order, selected, level) {
   const roots = new Set(intentRoots(intent));
+  if (!order.length) return "";
   return `<div class="intent-roll">${order
     .map(id => {
       if (id === selected) return `<div class="intent-roll-open">${intentDetailHtml(intent, now, id)}</div>`;
@@ -205,6 +208,13 @@ function intentRollHtml(intent, now, order, selected, level) {
       }</span><span class="intent-row-say${tone ? ` ${tone}` : ""}">${escapeHtml(say)}</span></div>`;
     })
     .join("")}</div>`;
+}
+// 守：簿录之后另起一节（设计稿/80 卡片乙），行同目标那几行，出了事的说法换成事由；只在全局那一层
+/** @param {Intent} intent @param {IntentPrints} now @param {string} selected */
+function intentKeepHtml(intent, now, selected) {
+  const keeps = intentKeeps(intent);
+  if (!keeps.length) return "";
+  return `<div class="intent-keep-head">${t(`守`)}<small>${t(`一直要守的，不计进度`)}</small></div>${intentRollHtml(intent, now, keeps, selected, "")}`;
 }
 /** 墨痕：新的在上，同一时刻的几笔并作一组；每笔写是哪一种（弃、撤、改意、归入……）。弃的带灰叉、写弃时的缘由，假定的带泥金勾；还在图上的名可点 @param {Intent} intent */
 function intentInkHtml(intent) {
@@ -267,15 +277,15 @@ function intentCrumbHtml(intent, now, level) {
  * @param {{ selected?: string, level?: string, name?: string, ink?: boolean }} [options] level：眼前是哪个模块里的一层；name：目录名；ink：图下换成墨痕
  */
 function intentCardHtml(intent, now, { selected = "", level = "", name = "", ink = false } = {}) {
-  const live = Object.keys(intent.nodes).filter(id => !intentGone(intent, id));
-  if (!live.length) return `<div class="intent-card"><div class="file-viewer-empty">${t(`此目录尚未立意`)}</div></div>`;
-  const { standing } = intentTally(intent, now),
+  if (!Object.keys(intent.nodes).some(id => !intentGone(intent, id)))
+    return `<div class="intent-card"><div class="file-viewer-empty">${t(`此目录尚未立意`)}</div></div>`;
+  const { standing, live } = intentTally(intent, now),
     borrowed = [...new Set(intentRoots(intent).flatMap(id => intentBorrowed(intent, id)))].length,
     { svg, order } = intentGraphSvg(intent, now, selected, level),
     inked = ink && intent.log.length > 0;
   // 页头：目录名、一行事实，右端墨痕。原问不上卡片，它是给模型对照用的
   const facts = [
-    `<span class="intent-meta">${t(`进度`)} <b>${standing}</b> / ${live.length}</span>`,
+    live ? `<span class="intent-meta">${t(`进度`)} <b>${standing}</b> / ${live}</span>` : "",
     borrowed ? `<span class="intent-borrow">${t`假定 ${borrowed}`}</span>` : "",
     intent.updated ? `<span class="intent-updated">${t`更新于 ${escapeHtml(intentTime(intent.updated))}`}</span>` : ""
   ].join("");
@@ -284,7 +294,9 @@ function intentCardHtml(intent, now, { selected = "", level = "", name = "", ink
       ? `<div class="page-acts"><button type="button" data-intent-ink aria-pressed="${inked}"${inked ? ` class="on"` : ""}>${t`墨痕 ${intent.log.length}`}</button></div>`
       : ""
   }</div>${intentCrumbHtml(intent, now, level)}<div class="intent-graph">${svg}</div>${
-    inked ? intentInkHtml(intent) : intentRollHtml(intent, now, order, selected, level)
+    inked
+      ? intentInkHtml(intent)
+      : `${intentRollHtml(intent, now, order, selected, level)}${level ? "" : intentKeepHtml(intent, now, selected)}`
   }</div>`;
 }
 /** 本地时刻「10-11 16:41」；不是今年的带上年份 @param {string|undefined} at ISO */
