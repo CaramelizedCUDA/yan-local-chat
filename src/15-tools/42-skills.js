@@ -73,6 +73,7 @@ function skillsSettingsHtml() {
     dir = roots.find(root => root.source === open)?.dir || "",
     list = skills.filter(skill => skill.source === open),
     tally = items => `${items.filter(skillEnabled).length}/${items.length}`;
+  skillSourceOpen = open;
   return (
     `<div class="settings-head">${brushIcon("skills", "settings-mark")}<h2>${t(`技能`)}</h2><span class="settings-meta">${t`${skills.length} 份 · 开 ${skills.filter(skillEnabled).length} 份`}</span></div>` +
     `<div class="memory-split"><div class="memory-cats">${sources

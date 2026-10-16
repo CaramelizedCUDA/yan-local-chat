@@ -8,7 +8,7 @@ defineTool({
   label: t("翻阅文档"),
   offer: ctx => ctx.docs.length > 0,
   vars: ctx => {
-    const attached = ctx.docs.filter(d => !d.archive).map(d => d.name);
+    const attached = ctx.docs.filter(d => !d.archive && !d.skill).map(d => d.name);
     return { docs: attached.length ? t`本段附件：${attached.join("、")}。` : "", skills: skillCatalog(ctx.conversation) };
   },
   lookup: true,

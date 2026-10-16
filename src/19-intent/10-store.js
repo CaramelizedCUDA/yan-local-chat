@@ -76,8 +76,6 @@ async function intentGate(conversation, assistant, watch, signal) {
   const touched = (assistant.steps || []).some(step => step.name === "update_intent" && step.status === "done") || watch.bounces.size > 0;
   const rechecked = touched ? null : await intentRecheck(conversation, assistant, watch, signal);
   if (!touched && !rechecked) return null;
-  const broken = rechecked?.fresh || [];
-  watch.kept = broken.length > 0;
   watch.gated = true;
   // 别的对话这一答期间也可能改过：重读一回，以文件为准
   let intent = intents.get(conversation.id).intent;
@@ -97,6 +95,12 @@ async function intentGate(conversation, assistant, watch, signal) {
     ...rechecked?.prints
   };
   keepIntent(conversation, intent, now);
+  // 已动过意时走上面的整体验证，也要据最终指纹记下守的失败；先重查过的那几条不重复算一回。
+  const broken = intentKeeps(intent).filter(id => intentState(intent, id, now) === "stale");
+  for (const id of broken)
+    if (!watch.stale.has(id) && !rechecked?.fresh.includes(id)) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
+  watch.kept = broken.length > 0;
+  watch.stale = new Set(intentStaleIds(intent, now));
   const unowned = intentUnowned(intent, changedPaths(assistant)),
     report = [
       prompt("work.intentGate", { intent: intentText(intent, now, { path: INTENT_FILE, asks: true }) }),
@@ -161,10 +165,15 @@ function keepAnchors(intent) {
  */
 async function intentSettleKeeps(conversation) {
   const held = intents.get(conversation.id),
+    key = glanceKey(conversation),
+    shown = intentGlances.get(key),
     keys = held ? keepAnchors(held.intent) : [];
-  if (!keys.length) return;
+  if (!keys.length || (shown && shown.intent !== held.intent)) return;
   try {
-    held.now = { ...held.now, ...(await intentPrints(conversation, keys)) };
+    const prints = await intentPrints(conversation, keys);
+    // 测试可能跑很久：下一答、同目录的另一段对话或改绑目录后，旧结果不能盖回新的记录。
+    if (intents.get(conversation.id) !== held || glanceKey(conversation) !== key || intentGlances.get(key) !== shown) return;
+    held.now = { ...held.now, ...prints };
     noteIntentGlance(conversation, held.intent, held.now);
   } catch {
     // 桥接不在、指令跑不成：照旧挂着，下一问开工再取
