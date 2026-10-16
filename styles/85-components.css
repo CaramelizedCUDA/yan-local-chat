@@ -303,8 +303,7 @@ button.source-local {
   z-index: 90;
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--paper) 91%, transparent);
-  backdrop-filter: blur(12px);
+  background: var(--grain), var(--wash), var(--paper);
   animation: fadeIn 0.18s ease;
 }
 .image-viewer-head {
@@ -375,15 +374,14 @@ button.source-local {
   margin: auto;
 }
 
-/* 卷宗文件的悬浮预览：与图片查看器同一张纸，中间按文件类型换内容 */
+/* 卷宗文件的悬浮预览：与图片查看器同一张纸，中间按文件类型换内容。纸是实的，文本直接写在页上、不另垫卡片（设计稿/83 乙） */
 .file-viewer {
   position: fixed;
   inset: 0;
   z-index: 92;
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--paper) 92%, transparent);
-  backdrop-filter: blur(12px);
+  background: var(--grain), var(--wash), var(--paper);
   animation: fadeIn 0.18s ease;
 }
 .file-viewer-head {
@@ -472,13 +470,9 @@ button.source-local {
   align-self: flex-start;
   height: fit-content;
   padding: 26px 30px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l);
-  background: var(--paper);
   color: var(--ink);
   font-size: 14px;
   line-height: 1.85;
-  box-shadow: 0 10px 40px rgba(35, 30, 22, 0.08);
 }
 .file-viewer-code {
   margin: 0;

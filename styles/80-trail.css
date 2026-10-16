@@ -732,16 +732,16 @@
 }
 
 /* ---------- 差遣的窗：与文件预览同一路 ----------
-   真·全屏铺满、亮底纸洗（不是压暗的遮罩），中间一张纸按阅读宽度居中——
-   帮手那条时间线里有 diff、有命令输出、有嵌套步骤，给它整个屏幕才看得下去 */
+   真·全屏铺满——帮手那条时间线里有 diff、有命令输出、有嵌套步骤，给它整个屏幕才看得下去。
+   纸是实的、不透底下的字，内容直接写在这页上（设计稿/83 乙「一页」）；落选：半透纸洗上再垫一张带影的卡片（短内容只占顶上一条、两层纸），
+   甲「展卷」（右侧展开一卷、左边留着对话） */
 .helper-viewer {
   position: fixed;
   inset: 0;
   z-index: 88;
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--paper) 92%, transparent);
-  backdrop-filter: blur(12px);
+  background: var(--grain), var(--wash), var(--paper);
   animation: fadeIn 0.18s ease;
 }
 .helper-viewer-head {
@@ -857,19 +857,15 @@
   overflow: auto;
   padding: 24px;
 }
-/* 中间那张纸：「代人行事」的金落在纸顶一道线上，不铺两侧——
+/* 页上那一栏：按阅读宽度居中，不另垫纸；「代人行事」的金落在栏顶一道线上，不铺两侧——
    原先两侧铺 7% 的金，暗色里混进深底成了一片棕（色只上笔画，不上面）。落选的：只留印与纸边（认不出是差遣的窗）；
    两侧深一档的纸（见 设计稿/35） */
 .helper-sheet {
   width: min(100%, 940px);
   align-self: flex-start;
   height: fit-content;
-  padding: 24px 30px 28px;
-  border: 1px solid color-mix(in srgb, var(--gold) 22%, var(--line));
+  padding: 22px 30px 28px;
   border-top: 2px solid color-mix(in srgb, var(--gold) 70%, transparent);
-  border-radius: var(--radius-l);
-  background: var(--paper);
-  box-shadow: 0 10px 40px rgba(35, 30, 22, 0.08);
 }
 /* 所领之命：主模型交给帮手的原话。默认收着只露一行，点开看全——
    不标出来，它就成了一段没头没尾、看不懂的背景文字 */
@@ -1050,8 +1046,6 @@
     width: 100%;
     padding: 18px 16px 22px;
     border: 0;
-    border-radius: 0;
-    box-shadow: none;
   }
 }
 
