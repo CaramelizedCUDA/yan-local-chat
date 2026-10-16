@@ -1,0 +1,136 @@
+// 言 · 桥接 · 技能：照 Claude Code 的写法认技能——一个目录里有 SKILL.md 即一份技能，头上 name / description 两项，其余文件随它走。
+// 认三处：工作目录/.claude/skills（给了工作目录才认）、存储根/技能、~/.claude/skills；同名的前者为准。
+// 列：各技能的名字、说明、目录与目录里的文件；读：只读列得出的技能目录之内的文件，不经链接出界。页面怎么用见 src/15-tools/42-skills.js
+"use strict";
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { jsonRoute, errorText } = require("./http.js");
+const { WORK_SKIP, resolveWorkdir, resolveInside, pathIsInside, relPath, describeFsError } = require("./work/paths.js");
+
+const SKILL_FILE = "SKILL.md";
+// 技能放在几层之内：~/.claude/skills 底下还可能隔着一层同步用的目录
+const SKILL_DEPTH = 3,
+  SKILL_FILE_LIMIT = 200,
+  SKILL_READ_LIMIT = 2 * 1024 * 1024,
+  DESCRIPTION_LIMIT = 1024;
+
+// SKILL.md 头上那段 YAML 只认用得着的几种写法：key: 值、引号里的值、| 与 > 的块、缩进续行
+function parseSkill(text) {
+  const match = /^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  if (!match) return { meta: {}, body: text.replace(/^﻿/, "") };
+  const meta = {},
+    lines = match[1].split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const kv = /^([A-Za-z][\w-]*):[ \t]*(.*)$/.exec(lines[i]);
+    if (!kv) continue;
+    let value = kv[2].trim();
+    if (/^[|>][+-]?$/.test(value)) {
+      const block = [];
+      while (i + 1 < lines.length && (/^\s/.test(lines[i + 1]) || !lines[i + 1].trim())) block.push(lines[++i].trim());
+      value = value[0] === "|" ? block.join("\n") : block.join(" ");
+    } else if (value[0] === '"') {
+      try {
+        value = JSON.parse(value);
+      } catch {
+        value = value.slice(1, -1);
+      }
+    } else if (value[0] === "'") value = value.slice(1, -1).replace(/''/g, "'");
+    else while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) value += ` ${lines[++i].trim()}`;
+    meta[kv[1]] = String(value).trim();
+  }
+  return { meta, body: text.slice(match[0].length) };
+}
+
+module.exports = function createSkills({ skillsHome, claudeHome = () => path.join(os.homedir(), ".claude", "skills") }) {
+  const failed = error => errorText(error, 300);
+  /** @returns {{ source: string, dir: string }[]} 先后即同名时谁为准 */
+  function skillRoots(workdir) {
+    const roots = [];
+    if (String(workdir || "").trim()) roots.push({ source: "项目", dir: path.join(resolveWorkdir(workdir), ".claude", "skills") });
+    roots.push({ source: "言", dir: skillsHome() }, { source: "Claude", dir: claudeHome() });
+    return roots;
+  }
+  // 链到别处的技能目录也认（常见把仓库里的技能链进 ~/.claude/skills），只是不再往下钻点开头的与 node_modules 之类
+  async function findSkillDirs(dir, depth, out) {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => []);
+    if (entries.some(entry => entry.name === SKILL_FILE && !entry.isDirectory())) return void out.push(dir);
+    if (depth >= SKILL_DEPTH) return;
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || WORK_SKIP.has(entry.name)) continue;
+      const full = path.join(dir, entry.name),
+        stat = entry.isSymbolicLink() ? await fs.promises.stat(full).catch(() => null) : entry;
+      if (stat?.isDirectory()) await findSkillDirs(full, depth + 1, out);
+    }
+  }
+  async function listFiles(root, dir, out) {
+    for (const entry of await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+      if (out.length >= SKILL_FILE_LIMIT) return;
+      if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!WORK_SKIP.has(entry.name)) await listFiles(root, full, out);
+        continue;
+      }
+      const stat = await fs.promises.stat(full).catch(() => null);
+      if (stat) out.push({ path: relPath(root, full), size: stat.size, modifiedAt: stat.mtime.toISOString() });
+    }
+  }
+  async function listSkills(workdir) {
+    const skills = [],
+      seen = new Set();
+    for (const { source, dir } of skillRoots(workdir)) {
+      const dirs = [];
+      await findSkillDirs(dir, 0, dirs);
+      for (const skillDir of dirs.sort()) {
+        const text = await fs.promises.readFile(path.join(skillDir, SKILL_FILE), "utf8").catch(() => null);
+        if (text === null) continue;
+        const { meta, body } = parseSkill(text),
+          name = (meta.name || path.basename(skillDir)).trim();
+        if (!name || seen.has(name.toLowerCase())) continue;
+        seen.add(name.toLowerCase());
+        const files = [];
+        await listFiles(skillDir, skillDir, files);
+        skills.push({
+          name,
+          description: (meta.description || body.split(/\r?\n/).find(line => line.trim() && !line.startsWith("#")) || "")
+            .trim()
+            .slice(0, DESCRIPTION_LIMIT),
+          source,
+          dir: skillDir,
+          files
+        });
+      }
+    }
+    return skills;
+  }
+  const handleList = jsonRoute(async body => {
+    const home = skillsHome();
+    // 言自己那一处先建好：设置里指给人看的目录，点开就在
+    await fs.promises.mkdir(home, { recursive: true }).catch(() => {});
+    return { home, skills: await listSkills(body.workdir) };
+  }, failed);
+  // 读一件：dir 须是此刻列得出的某份技能，path 在它之内；SKILL.md 去掉头上那段（名字与说明目录里已给过）
+  const handleRead = jsonRoute(async body => {
+    const skill = (await listSkills(body.workdir)).find(item => item.dir === String(body.dir || ""));
+    if (!skill) throw Error(`没有这份技能：${body.dir}`);
+    const file = resolveInside(skill.dir, String(body.path || "").trim() || SKILL_FILE),
+      [realDir, realFile] = await Promise.all([fs.promises.realpath(skill.dir), fs.promises.realpath(file)]).catch(error => {
+        throw Error(describeFsError(error, String(body.path || "")));
+      });
+    if (!pathIsInside(realDir, realFile)) throw Error(`路径经过链接越出了技能目录：${body.path}`);
+    const stat = await fs.promises.stat(realFile);
+    if (!stat.isFile()) throw Error(`不是文件：${body.path}`);
+    if (stat.size > SKILL_READ_LIMIT) throw Error(`文件过大（${Math.round(stat.size / 1024)} KB）`);
+    const text = await fs.promises.readFile(realFile, "utf8"),
+      main = path.relative(skill.dir, file).toLowerCase() === SKILL_FILE.toLowerCase();
+    return { text: main ? parseSkill(text).body.trim() : text };
+  }, failed);
+  return {
+    parseSkill,
+    routes: {
+      "POST /api/skills/list": handleList,
+      "POST /api/skills/read": handleRead
+    }
+  };
+};

@@ -1186,6 +1186,30 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      if (typeof lastUser === "string" && lastUser.includes("SKILLTEST")) {
+        // 技能：read_document 的说明里列着「写信」，凭技能名翻到它的 SKILL.md，把目录与读到的回出来
+        const doc = (payload.tools || []).find(t => t.function.name === "read_document");
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_skill",
+                  type: "function",
+                  function: { name: "read_document", arguments: JSON.stringify({ name: "写信" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({
+            content: `SKILL|listed:${/- 写信：照格式写信/.test(doc?.function.description || "") ? "yes" : "no"}|${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       if (typeof lastUser === "string" && lastUser.includes("DOC")) {
         // 翻卷宗里的文档：read_document 读磁盘上的报表，再把读到的回出来
         if (!toolResults.length)

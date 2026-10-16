@@ -47,6 +47,7 @@ async function boot() {
   // MCP 服务起得慢（起进程、握手）：先起着，头一问发出前会等它；环境备没备好也问一声，系统提示里要说
   void mcpReady();
   void refreshEnv();
+  void refreshSkills(null);
   if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
   // 先问一声别处在作答什么，那几段不当成中断
   await syncLeases();

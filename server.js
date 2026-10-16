@@ -135,6 +135,8 @@ const WORK = require("./server/work/index.js")({
   toolEnv: ENV.apply,
   playable: VIDEO.playable
 });
+// 技能：照 Claude Code 的 SKILL.md 写法，认存储根/技能、~/.claude/skills 与工作目录/.claude/skills（见 server/skills.js）
+const SKILLS = require("./server/skills.js")({ skillsHome: () => STORE.paths().skills });
 const CHATS = require("./server/chats.js")({ chatsHome: () => STORE.paths().chats });
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable });
 const STAGE_LIB = require("./server/stage.js");
@@ -167,6 +169,7 @@ const OPEN_ROUTES = {
   TRUSTED_ROUTES = {
     ...WEB.routes,
     ...WORK.routes,
+    ...SKILLS.routes,
     ...CHATS.routes,
     ...STORE.routes,
     ...FILES.routes,

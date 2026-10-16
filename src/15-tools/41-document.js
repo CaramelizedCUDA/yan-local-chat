@@ -1,6 +1,7 @@
-// 言 · 翻阅文档：对话附件，以及（设置允许时）磁盘卷宗里的文本与 Office / PDF——后者用到时才取回并抽正文。
+// 言 · 翻阅文档：对话附件，以及（设置允许时）磁盘卷宗里的文本与 Office / PDF——后者用到时才取回并抽正文；技能的说明与附属文件也从这里翻（见 42-skills.js）。
 // 长文档按页码或关键词只取片段。说明里（{{docs}}）只列这段对话的附件：卷宗会越攒越多，整份目录写进说明，每一问都得背着；
-// 卷宗里的按文件名或路径找，不知道有什么就 name 留空，列给它看。对话里有附件、或卷宗里有可读的文档时才给
+// 卷宗里的按文件名或路径找，不知道有什么就 name 留空，列给它看。技能的目录（{{skills}}）是例外：不知道有它，模型想不到去翻。
+// 对话里有附件、卷宗里有可读的文档、或认得技能时才给
 defineTool({
   name: "read_document",
   group: "docs",
@@ -8,7 +9,7 @@ defineTool({
   offer: ctx => ctx.docs.length > 0,
   vars: ctx => {
     const attached = ctx.docs.filter(d => !d.archive).map(d => d.name);
-    return { docs: attached.length ? t`本段附件：${attached.join("、")}。` : "" };
+    return { docs: attached.length ? t`本段附件：${attached.join("、")}。` : "", skills: skillCatalog(ctx.conversation) };
   },
   lookup: true,
   parallel: true,
@@ -26,7 +27,8 @@ defineTool({
         .replace(/\\/g, "/")
         .toLowerCase();
     if (!wanted) return documentList(step, docs);
-    const keys = d => [d.name.toLowerCase(), String(d.archive || "").toLowerCase()].filter(Boolean);
+    // 技能的 SKILL.md 凭技能名即可找到
+    const keys = d => [d.name, d.archive, d.main && d.skill].filter(Boolean).map(key => String(key).toLowerCase());
     const doc =
       docs.find(d => keys(d).includes(wanted)) ||
       docs.find(d => keys(d).some(key => key.includes(wanted))) ||
@@ -42,6 +44,12 @@ defineTool({
         text = await archiveDocumentText(doc);
       } catch (error) {
         return { ok: false, content: t`卷宗文档读取失败：${String(error.message || error).slice(0, 120)}`, display: "读取失败" };
+      }
+    } else if (doc.skill) {
+      try {
+        text = await skillDocumentText(doc, conversation);
+      } catch (error) {
+        return { ok: false, content: t`技能文件读取失败：${String(error.message || error).slice(0, 120)}`, display: "读取失败" };
       }
     } else {
       const record = await getAttachment(doc.id);
@@ -82,15 +90,17 @@ defineTool({
     };
   }
 });
-// name 留空（或没找到）时列给模型：附件在前，卷宗里的按新近排，带路径与大小；太多只列最近的
+// name 留空（或没找到）时列给模型：附件在前，技能的文件其次，卷宗里的按新近排，带路径与大小；太多只列最近的
 const DOCUMENT_LIST_LIMIT = 60;
 /** @param {Step} step */
 function documentList(step, docs) {
-  const attached = docs.filter(d => !d.archive),
+  const attached = docs.filter(d => !d.archive && !d.skill),
+    skills = docs.filter(d => d.skill),
     archived = docs.filter(d => d.archive).sort((a, b) => new Date(b.modifiedAt || 0).getTime() - new Date(a.modifiedAt || 0).getTime());
   step.title ||= t("可读文档");
   const lines = [
     ...attached.map(d => t`附件 ${d.name}`),
+    ...skills.slice(0, DOCUMENT_LIST_LIMIT).map(d => t`技能 ${d.name}`),
     ...archived.slice(0, DOCUMENT_LIST_LIMIT).map(d => t`卷宗 ${d.archive}（${formatFileSize(d.size || 0)}）`)
   ];
   const more =
@@ -111,6 +121,7 @@ function availableDocuments(conversation) {
       if (seen.has(entry.name) || !(fileKind(entry.name).extract || isTextFile({ name: entry.name, type: "" }))) continue;
       seen.set(entry.name, { name: entry.name, archive: entry.path, size: entry.size, modifiedAt: entry.modifiedAt, kind: "archive" });
     }
+  for (const doc of skillDocuments(conversation)) if (!seen.has(doc.name)) seen.set(doc.name, doc);
   return [...seen.values()];
 }
 // 磁盘卷宗里的文档：取回原件，文本直接用，PDF / Office 在本机抽正文；按路径与修改时间缓存几份

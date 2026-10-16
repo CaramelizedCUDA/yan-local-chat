@@ -2,6 +2,7 @@
 //   对话/      一段对话一个 JSON 文件（见 server/chats.js）
 //   卷宗/      模型写出的成品与用户收进来的文件（见 server/work/archive.js）
 //   附件/      对话里附件的原件，一件一个原件加一份元数据（见 server/files.js）
+//   技能/      言自己认的技能，一份一个目录、内有 SKILL.md（见 server/skills.js）
 //   配置.json  设置、模型配置（含 API Key）、记忆与草稿——几个浏览器共用这一份，不再各存一套
 // 在设置里换了位置，整份拷到新处，%APPDATA%\言\位置.json 写明搬去了哪（旧数据原样留着，确认无误后可自行删去）。
 // 条子不放在 ~/.yan 里：旧处是叫人自行删去的，条子若在里头，删了旧数据也就删了条子，下次开又回到默认处。
@@ -59,6 +60,7 @@ module.exports = function createStore() {
     files: path.join(root, "附件"),
     env: path.join(root, "环境"),
     work: path.join(root, "工作"),
+    skills: path.join(root, "技能"),
     config: path.join(root, CONFIG_FILE)
   });
   function ensureRoot() {
