@@ -135,7 +135,7 @@ function intentAnchorsHtml(node, now) {
     .map(key => {
       const [kind] = anchorParts(key),
         changed = !!node.seal && key in node.seal.prints && key in now && now[key] !== node.seal.prints[key];
-      return `<span class="intent-anchor${changed ? " changed" : ""}" title="${escapeHtml(key)}"><em>${{ file: t("文件"), dir: t("目录"), cmd: t("探针") }[kind] || kind}</em>${escapeHtml(anchorLabel(key).replace(/^探针「([\s\S]*)」$/, "$1"))}</span>`;
+      return `<span class="intent-anchor${changed ? " changed" : ""}" title="${escapeHtml(key)}"><em>${{ file: t("文件"), dir: t("目录"), cmd: t("探针"), test: t("测试") }[kind] || kind}</em>${escapeHtml(anchorLabel(key).replace(/^(?:探针|测试)「([\s\S]*)」$/, "$1"))}</span>`;
     })
     .join("")}</span>`;
 }
