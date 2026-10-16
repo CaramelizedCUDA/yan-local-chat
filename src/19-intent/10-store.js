@@ -54,6 +54,8 @@ async function intentRound(conversation, watch, signal) {
   return intentRoundText(held.intent, held.now, fresh, watch.bounces);
 }
 // 收尾前对照：这一答动过意（改过它，或它所挂的凭据在这一答里变过），模型说完要收尾时拦一次——只一次，拦完即放。
+// 要跑指令的凭据（探针、测试）作答途中不跑：这一答动过手，收尾前先重取一回，有项因此转待复核也算动过——
+// 「收尾前跑测试、不过接着改」这类按任务设的常驻条件就是意里挂着测试的一项，不另设钩子。没变就照常收尾，不多费一轮。
 // 摆出此刻的意（重读一回，探针也跑）、这一答里转待复核过的、改了而无凭据罩着的文件，请它对照各根的原话自己判：能收就收，未尽的接着做。
 // 不替它验、不复验、不再拦：要不要派帮手核对由它定。递的话记作行迹里的一步，往后重装这一答照原处插回（replay）
 const INTENT_UNOWNED_SHOWN = 8;
@@ -70,8 +72,10 @@ function changedPaths(assistant) {
  */
 async function intentGate(conversation, assistant, watch, signal) {
   if (watch.gated) return null;
+  if (!intents.has(conversation.id)) return null;
   const touched = (assistant.steps || []).some(step => step.name === "update_intent" && step.status === "done") || watch.bounces.size > 0;
-  if (!touched || !intents.has(conversation.id)) return null;
+  const rechecked = touched ? null : await intentRecheck(conversation, assistant, watch, signal);
+  if (!touched && !rechecked) return null;
   watch.gated = true;
   // 别的对话这一答期间也可能改过：重读一回，以文件为准
   let intent = intents.get(conversation.id).intent;
@@ -81,7 +85,15 @@ async function intentGate(conversation, assistant, watch, signal) {
     if (error.name === "AbortError") throw error;
   }
   if (!Object.keys(intent.nodes).length) return null;
-  const now = await intentPrints(conversation, intentSealedAnchors(intent), signal);
+  // 刚重跑过的（测试可能跑上几分钟）不再跑一遍
+  const now = {
+    ...(await intentPrints(
+      conversation,
+      intentSealedAnchors(intent).filter(key => !rechecked || !(key in rechecked)),
+      signal
+    )),
+    ...rechecked
+  };
   keepIntent(conversation, intent, now);
   const unowned = intentUnowned(intent, changedPaths(assistant)),
     report = [
@@ -113,6 +125,24 @@ async function intentGate(conversation, assistant, watch, signal) {
   refreshSteps(assistant);
   saveStoreSoon();
   return { role: "user", content: report };
+}
+/**
+ * 动过手的那一答（写过、改过文件，或跑过指令——帮手做的也算），收尾前重取要跑指令的凭据；有项新转待复核就记进 bounces（收尾对照里列出），
+ * 交回重取到的指纹，否则 null
+ * @param {Conversation} conversation @param {Message} assistant @param {ReturnType<typeof intentWatch>} watch @param {AbortSignal} [signal]
+ */
+async function intentRecheck(conversation, assistant, watch, signal) {
+  const held = intents.get(conversation.id),
+    keys = intentSealedAnchors(held.intent).filter(key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer"),
+    acted = allSteps(assistant).some(
+      step => step.status === "done" && TOOLS.get(step.name)?.group === "work" && TOOLS.get(step.name)?.sideEffect
+    );
+  if (!keys.length || !acted) return null;
+  const prints = await intentPrints(conversation, keys, signal);
+  held.now = { ...held.now, ...prints };
+  const fresh = intentStaleIds(held.intent, held.now).filter(id => !watch.stale.has(id));
+  for (const id of fresh) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
+  return fresh.length ? prints : null;
 }
 /** 这一答里改过意：记下改完的那份，往后几轮据它比（作答途中压了前文要重装时，附的也是它）；题下与书眉跟着换 @param {Conversation} conversation @param {Intent} intent @param {IntentPrints} now */
 function keepIntent(conversation, intent, now) {

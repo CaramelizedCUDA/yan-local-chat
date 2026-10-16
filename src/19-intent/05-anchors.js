@@ -1,8 +1,8 @@
 // 言 · 意 · 凭据：一项成立凭的是什么。一种凭据一份登记：怎么规整写法、多久取一回指纹、怎么取、怎么说给人听、罩不罩得住某个改过的文件。
 // 程序只比指纹变没变，不判对错——变了，凭它成立（或凭它假定）的那项就转待复核，由模型再判。先例：需求追溯的「可疑链接」
 // （记下链接时上游的哈希，上游一变即可疑，复核后清除）、构建系统 Shake 的 oracle（外部状态每回问一遍，答案没变就不往上传）。
-// 现有三种，由弱到强：文件（模型本就知道哪些文件要紧）、目录（整片，新增删除也算）、探针（一条指令的输出——部署、服务、依赖版本这类
-// 外部状态与事件也罩得住）。往后可加符号、测试、时效……加一种只加一份登记，写法随之出现在 anchors 的参数说明里（见 15-tools/32-intent.js）
+// 现有四种，由弱到强：文件（模型本就知道哪些文件要紧）、目录（整片，新增删除也算）、探针（一条指令的输出——部署、服务、依赖版本这类
+// 外部状态与事件也罩得住）、测试（一条指令过没过）。往后可加符号、时效……加一种只加一份登记，写法随之出现在 anchors 的参数说明里（见 15-tools/32-intent.js）
 /**
  * @typedef {Object} AnchorKind
  * @property {string} hint 写法，列在 anchors 的参数说明里；文件是裸写的，不带前缀
@@ -112,6 +112,32 @@ defineAnchor("cmd", {
         try {
           const data = await bridge("/api/work/run", { ...workScope(conversation), command, timeout: 15 }, signal);
           prints[command] = hashText(`${data.exitCode}\u0000${data.stdout || ""}\u0000${data.stderr || ""}`);
+        } catch (error) {
+          if (error.name === "AbortError") throw error;
+        }
+      })
+    );
+    return prints;
+  }
+});
+// 测试：只比过没过（退出码是否为 0），输出里的耗时、行号变了不算——「收尾前跑一遍测试、不过接着改」这类常驻的条件挂在它上面。
+// 跟探针一样随档位：问而后行里只自动跑明确只读的。超时给得宽；改过文件的那一答收尾前会重跑（见 10-store.js 的 intentGate）
+defineAnchor("test", {
+  hint: t("test:指令（只比过没过：退出码为 0 即过；改过文件的那一答收尾前重跑）"),
+  normalize: value => (/\n/.test(value) ? "" : value.trim().slice(0, 300)),
+  problem: t("指令只能一行"),
+  label: value => `测试「${value}」`,
+  cadence: "answer",
+  async read(conversation, values, signal) {
+    const policy = commandPolicyOf(conversation),
+      /** @type {Record<string, string|null>} */
+      prints = {};
+    await Promise.all(
+      values.map(async command => {
+        if (policy === "ask" && !isReadOnlyCommand(command)) return;
+        try {
+          const data = await bridge("/api/work/run", { ...workScope(conversation), command, timeout: 300 }, signal);
+          prints[command] = data.exitCode === 0 ? "过" : "不过";
         } catch (error) {
           if (error.name === "AbortError") throw error;
         }
