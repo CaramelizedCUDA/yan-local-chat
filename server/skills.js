@@ -1,11 +1,12 @@
 // 言 · 桥接 · 技能：照 Claude Code 的写法认技能——一个目录里有 SKILL.md 即一份技能，头上 name / description 两项，其余文件随它走。
 // 认三处：工作目录/.claude/skills（给了工作目录才认）、存储根/技能、~/.claude/skills；同名的前者为准。
-// 列：各技能的名字、说明、目录与目录里的文件；读：只读列得出的技能目录之内的文件，不经链接出界。页面怎么用见 src/15-tools/42-skills.js
+// 列：各技能的名字、说明、目录与目录里的文件，连同三处各在哪；读：只读列得出的技能目录之内的文件，不经链接出界；开：以本机文件管理器打开某一处。页面怎么用见 src/15-tools/42-skills.js
 "use strict";
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { jsonRoute, errorText } = require("./http.js");
+const { openPath } = require("./platform.js");
 const { WORK_SKIP, resolveWorkdir, resolveInside, pathIsInside, relPath, describeFsError } = require("./work/paths.js");
 
 const SKILL_FILE = "SKILL.md";
@@ -108,7 +109,16 @@ module.exports = function createSkills({ skillsHome, claudeHome = () => path.joi
     const home = skillsHome();
     // 言自己那一处先建好：设置里指给人看的目录，点开就在
     await fs.promises.mkdir(home, { recursive: true }).catch(() => {});
-    return { home, skills: await listSkills(body.workdir) };
+    return { home, roots: skillRoots(body.workdir), skills: await listSkills(body.workdir) };
+  }, failed);
+  // 打开某一处：言自己那处没有就建，另两处没有就说一声（不替人往 ~/.claude 或项目里建目录）
+  const handleOpen = jsonRoute(async body => {
+    const root = skillRoots(body.workdir).find(item => item.source === body.source);
+    if (!root) throw Error(`没有这一处：${body.source}`);
+    if (root.dir === skillsHome()) await fs.promises.mkdir(root.dir, { recursive: true });
+    else if (!(await fs.promises.stat(root.dir).catch(() => null))?.isDirectory()) throw Error(`目录还不存在：${root.dir}`);
+    openPath(root.dir);
+    return { opened: root.dir };
   }, failed);
   // 读一件：dir 须是此刻列得出的某份技能，path 在它之内；SKILL.md 去掉头上那段（名字与说明目录里已给过）
   const handleRead = jsonRoute(async body => {
@@ -130,7 +140,8 @@ module.exports = function createSkills({ skillsHome, claudeHome = () => path.joi
     parseSkill,
     routes: {
       "POST /api/skills/list": handleList,
-      "POST /api/skills/read": handleRead
+      "POST /api/skills/read": handleRead,
+      "POST /api/skills/open": handleOpen
     }
   };
 };

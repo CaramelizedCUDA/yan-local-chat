@@ -53,6 +53,7 @@
  * @property {string} arguments 模型给的参数原文（JSON）
  * @property {StepStatus} status
  * @property {string} [title] 标题行：指令、路径、关键词……
+ * @property {string} [label] 这一步另有名目时的标签（存中文原文），盖过工具自己的（翻技能记作「技能」）
  * @property {string} [result] 标题行右侧的一句结果
  * @property {string} [note]
  * @property {string} [url]

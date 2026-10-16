@@ -37,7 +37,9 @@ defineTool({
       const listed = documentList(step, docs);
       return { ok: false, content: t`未找到文档「${args.name}」。${listed.content}`, display: "未找到" };
     }
-    step.title = doc.name;
+    // 翻技能的一步标作「技能」，题写技能名（附属文件写全名）
+    if (doc.skill) step.label = "技能";
+    step.title = doc.main ? doc.skill : doc.name;
     let text = "";
     if (doc.archive) {
       try {

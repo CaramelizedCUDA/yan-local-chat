@@ -179,10 +179,11 @@ function stableToolJson(value) {
     );
   return typeof value === "string" ? value.trim() : value;
 }
-// 复用结果时连同呈现一起搬过来：标题、网址、备注、命中
+// 复用结果时连同呈现一起搬过来：标签、标题、网址、备注、命中
 /** @param {Step} step */
 function toolPresentation(step) {
   return {
+    label: step.label,
     title: step.title || "",
     url: step.url || "",
     note: step.note || "",

@@ -106,6 +106,12 @@ check(
   /技能目录：.*写信 先写称谓，再写正文。/.test(skillText) && !/description:/.test(skillText),
   skillText
 );
+check(
+  "the step reads 技能 · 写信 in the trail, not 翻阅文档 · 写信/SKILL.md",
+  await evalJs(
+    `[...document.querySelectorAll(".tool-step")].some(s => s.querySelector(".tool-label")?.textContent === "技能" && s.querySelector(".tool-title")?.textContent === "写信")`
+  )
+);
 // 存成 Markdown 入卷宗
 await evalJs(
   `document.querySelector('.history-item.active [data-history-action="menu"]').click(); document.querySelector('.chip-pop [data-menu="export"]').click(); true`

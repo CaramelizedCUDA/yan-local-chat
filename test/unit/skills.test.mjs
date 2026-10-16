@@ -62,6 +62,10 @@ test("三处都认：工作目录的为准，隔一层的也找得到；读 SKIL
 
   const listed = await call(routes["POST /api/skills/list"], { workdir: work });
   assert.equal(listed.status, 200);
+  assert.deepEqual(
+    listed.data.roots.map(root => root.source),
+    ["项目", "言", "Claude"]
+  );
   const byName = Object.fromEntries(listed.data.skills.map(skill => [skill.name, skill]));
   assert.deepEqual(Object.keys(byName).sort(), ["docx", "pdf", "写信"]);
   assert.equal(byName.pdf.description, "项目里的");
