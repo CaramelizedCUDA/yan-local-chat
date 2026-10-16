@@ -120,6 +120,42 @@
   border-radius: var(--radius-m);
   font-size: 11.5px;
 }
+/* 连着的同类只读并成的一行（设计稿/85 甲，见 07-paint.js 的 stepRuns）：题头同一步，标题前一枚细折角（同行迹题头），
+   「等 n 件」淡一档；点开在下面列出各步，左缘一道淡痕 */
+.tool-run > summary {
+  display: block;
+  cursor: pointer;
+  list-style: none;
+}
+.tool-run > summary::-webkit-details-marker {
+  display: none;
+}
+.tool-run > summary:hover {
+  background: color-mix(in srgb, var(--paper-2) 70%, transparent);
+}
+.tool-run > summary .tool-title:before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin: 0 7px 1px 1px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.tool-run[open] > summary .tool-title:before {
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.tool-run-more {
+  color: color-mix(in srgb, var(--ink-3) 75%, transparent);
+}
+.tool-run > .tool-steps {
+  display: grid;
+  margin: 0 0 3px 50px;
+  padding-left: 9px;
+  border-left: 1px solid var(--line);
+}
 /* 收尾前对照放了行：那一步照实际的先后落在答复之后（见 07-paint.js 的 coda），与行迹里一步同一副样子，左缘对齐正文 */
 .trail-coda {
   margin: 8px 0 2px -7px;

@@ -163,6 +163,20 @@ check(
 );
 await shot("trail-change-bar.png");
 
+// 连着的 24 步读取并成一行（设计稿/85 甲）：「读取 · src/m0.js 等 24 件」，点开列出各步
+check(
+  "two dozen reads in a row fold into one line that opens to list them",
+  (await evalJs(
+    `(r => r && r.querySelector(".tool-meta").textContent + "|" + r.querySelector(".tool-title").textContent + "|" + r.querySelectorAll(":scope > .tool-steps > .tool-step").length + "|" + r.open)(document.querySelector(".message.assistant .tool-run"))`
+  )) === "24 件|src/m0.js 等 24 件|24|false"
+);
+await evalJs(`document.querySelector(".message.assistant .tool-run > summary").click(); true`);
+check("clicking the folded line opens it", await evalJs(`document.querySelector(".message.assistant .tool-run").open`));
+await evalJs(`document.querySelector(".message.assistant .tool-run").scrollIntoView({ block: "start" }); true`);
+await sleep(300);
+await shot("trail-run.png");
+await evalJs(`document.querySelector(".message.assistant .tool-run > summary").click(); true`);
+
 // 翻到行迹中间：顶栏右侧、对话列右缘处浮出「收起行迹」；左边的书眉照旧是题名
 const foldShown = () => evalJs(`document.querySelector("#trailFold").classList.contains("shown")`);
 await evalJs(`(h => { h.scrollTop = 0; h.dispatchEvent(new Event("scroll")); })(document.querySelector("#chatScroll")); true`);
