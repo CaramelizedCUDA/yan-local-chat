@@ -12,7 +12,8 @@ const WIN = process.platform === "win32",
 // 交给系统、不等它回：找不到程序（ENOENT）也只当没开成，不能让未接的 error 事件把桥接带崩
 function launch(file, args) {
   try {
-    const child = spawn(file, args, { detached: true, stdio: "ignore", windowsHide: true });
+    // 交出去的都是要露面的（资源管理器、浏览器）：不加 windowsHide——加了 explorer 照这个显示方式开窗，窗是藏着的，点了「打开」什么也看不见
+    const child = spawn(file, args, { detached: true, stdio: "ignore" });
     child.on("error", () => {});
     child.unref();
   } catch {}
