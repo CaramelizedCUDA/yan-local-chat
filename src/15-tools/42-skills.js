@@ -81,8 +81,7 @@ function skillsSettingsHtml() {
     `<div class="settings-head">${brushIcon("skills", "settings-mark")}<h2>${t(`技能`)}</h2><span class="settings-meta">${t`${skills.length} 份`}</span></div>` +
     `<div class="skill-head"><span class="skill-dir" title="${escapeHtml(home)}">${escapeHtml(home)}</span><span class="memory-spacer"></span><span class="memory-ops"><button type="button" id="addSkill" title="${t(`新建一份`)}">${brushIcon("add")}</button></span><button type="button" class="skill-open" data-skill-open>${t(`打开`)}</button></div>` +
     `<div class="skill-list">${adding ? skillEditorHtml(skillEditing) : ""}${
-      rows ||
-      (adding ? "" : `<p class="skill-empty">${t(`尚无一份。点「＋」写一份，或把现成的技能文件夹放进来——也可叫模型去找、拷进来`)}</p>`)
+      rows || (adding ? "" : `<p class="skill-empty">${t(`尚无一份`)}</p>`)
     }</div>`
   );
 }

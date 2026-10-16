@@ -537,8 +537,7 @@ var YAN_EN = {
   "脚本 {0}": "{0} {0|script|scripts}",
   "参考 {0}": "{0} {0|reference|references}",
   新建一份: "New skill",
-  "尚无一份。点「＋」写一份，或把现成的技能文件夹放进来——也可叫模型去找、拷进来":
-    "None yet. Click “＋” to write one, or drop an existing skill folder in — or ask the model to find one and copy it here",
+  尚无一份: "None yet",
   名字: "Name",
   何时用: "When to use",
   "何时用：做什么、遇到什么样的事该翻它（模型只先看到这一句）":
