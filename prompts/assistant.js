@@ -73,6 +73,7 @@ window.YAN_PROMPTS.order = [
   { key: "assistant.search", tool: "search_web" },
   { key: "memory.hint", tool: "remember" },
   { key: "mcp.hint" },
+  { key: "skills.hint", tool: "read_document" },
   { key: "assistant.drawing", roles: ["main", "side"] },
   { key: "assistant.manner", mode: "chat", roles: ["main", "side"] },
   { key: "side.passage", roles: ["side"] },

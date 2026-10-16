@@ -100,7 +100,7 @@ await waitFor(
   `document.querySelectorAll(".message.assistant").length === 3 && [...document.querySelectorAll(".message.assistant")].at(-1).dataset.status === "complete"`
 );
 const skillText = await evalJs(`[...document.querySelectorAll(".message.assistant .assistant-block > .markdown")].at(-1).textContent`);
-check("a skill in the storage root is listed in read_document's description", /SKILL\|listed:yes/.test(skillText), skillText);
+check("a skill in the storage root is listed in the system prompt, not in read_document's description", /SKILL\|listed:yes/.test(skillText), skillText);
 check(
   "reading a skill by name returns SKILL.md without its front matter, headed by the skill folder",
   /技能目录：.*写信 先写称谓，再写正文。/.test(skillText) && !/description:/.test(skillText),
@@ -111,6 +111,19 @@ check(
   await evalJs(
     `[...document.querySelectorAll(".tool-step")].some(s => s.querySelector(".tool-label")?.textContent === "技能" && s.querySelector(".tool-title")?.textContent === "写信")`
   )
+);
+// 人点名：问话以「/写信」开头，那份说明作一件附件随问附上，问话里不留点名
+await evalJs(
+  `document.querySelector("#chatInput").value = "/写信 SKILLCMD 给房东"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
+);
+await waitFor(
+  `document.querySelectorAll(".message.assistant").length === 4 && [...document.querySelectorAll(".message.assistant")].at(-1).dataset.status === "complete"`
+);
+const cmdText = await evalJs(`[...document.querySelectorAll(".message.assistant .assistant-block > .markdown")].at(-1).textContent`);
+check("/写信 at the start attaches the skill's instructions and drops the slash name", /CMD\|body:yes\|slash:no/.test(cmdText), cmdText);
+check(
+  "the question shows the skill as an attachment",
+  await evalJs(`[...document.querySelectorAll(".message.user")].at(-1).textContent.includes("写信.md")`)
 );
 // 存成 Markdown 入卷宗
 await evalJs(
@@ -167,10 +180,10 @@ await evalJs(
   `document.querySelector("#chatInput").value = "BIND 继续"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
 await waitFor(
-  `document.querySelectorAll(".message.assistant").length === 4 && document.querySelectorAll(".message.assistant")[3].dataset.status === "complete"`
+  `document.querySelectorAll(".message.assistant").length === 5 && document.querySelectorAll(".message.assistant")[4].dataset.status === "complete"`
 );
-const text2 = await evalJs(`document.querySelectorAll(".message.assistant")[3].querySelector(".assistant-block > .markdown").textContent`);
-check("after binding the prompt is the 执事 one and history is intact", /work:yes\|archive:no\|n:8/.test(text2), text2);
+const text2 = await evalJs(`document.querySelectorAll(".message.assistant")[4].querySelector(".assistant-block > .markdown").textContent`);
+check("after binding the prompt is the 执事 one and history is intact", /work:yes\|archive:no\|n:10/.test(text2), text2);
 check("stored conversation carries the workdir", await evalJs(`__yanState().conversations[0].workdir.toLowerCase().endsWith("work")`));
 
 // ---- 解开：回到言

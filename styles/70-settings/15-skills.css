@@ -66,3 +66,48 @@
   color: var(--ink-3);
   font-size: 12px;
 }
+/* 存储根那一处：一行右端一枚「改」，平时淡着，行上悬停才显 */
+.skill-item {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 13%, var(--line));
+}
+.skill-item:first-child {
+  border-top: 0;
+}
+.skill-item .skill-row {
+  flex: 1;
+  min-width: 0;
+  border-top: 0;
+}
+.skill-item .memory-ops {
+  flex: none;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+}
+.skill-item:hover .memory-ops,
+.skill-item .memory-ops:focus-within {
+  opacity: 1;
+}
+/* 摊开改着的一份：同记忆页摊开的一条（左侧一道淡墨竖痕）；名字、何时用、正文上下三段 */
+.skill-editor {
+  display: grid;
+  gap: 8px;
+  border-bottom: 0;
+}
+.skill-edit-name {
+  justify-self: start;
+  font-size: 14px;
+}
+.skill-edit-desc {
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.skill-edit-desc::placeholder,
+.skill-edit-body::placeholder,
+.skill-edit-name::placeholder {
+  color: var(--ink-3);
+}
+.skill-editor .memory-meta .skill-dir {
+  flex: 0 1 auto;
+}

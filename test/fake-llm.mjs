@@ -1233,9 +1233,18 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // 人点名的技能：问话里「/写信」已换成一件附件，说明正文随问附上
+      const userText = Array.isArray(lastUser) ? lastUser.map(part => part.text || "").join("\n") : String(lastUser);
+      if (userText.includes("SKILLCMD"))
+        return sse(res, [
+          delta({ content: `CMD|body:${userText.includes("先写称谓") ? "yes" : "no"}|slash:${userText.includes("/写信") ? "yes" : "no"}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
       if (typeof lastUser === "string" && lastUser.includes("SKILLTEST")) {
-        // 技能：read_document 的说明里列着「写信」，凭技能名翻到它的 SKILL.md，把目录与读到的回出来
-        const doc = (payload.tools || []).find(t => t.function.name === "read_document");
+        // 技能：系统提示里列着「写信」（不在 read_document 的说明里），凭技能名翻到它的 SKILL.md，把目录与读到的回出来
+        const doc = (payload.tools || []).find(t => t.function.name === "read_document"),
+          sys = String(msgs[0]?.role === "system" ? msgs[0].content : ""),
+          listed = sys.includes("- 写信：照格式写信") && !String(doc?.function.description || "").includes("写信");
         if (!toolResults.length)
           return sse(res, [
             delta({
@@ -1252,7 +1261,7 @@ http
           ]);
         return sse(res, [
           delta({
-            content: `SKILL|listed:${/- 写信：照格式写信/.test(doc?.function.description || "") ? "yes" : "no"}|${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}`
+            content: `SKILL|listed:${listed ? "yes" : "no"}|${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}`
           }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);

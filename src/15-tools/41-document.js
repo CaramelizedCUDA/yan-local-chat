@@ -1,6 +1,6 @@
 // 言 · 翻阅文档：对话附件，以及（设置允许时）磁盘卷宗里的文本与 Office / PDF——后者用到时才取回并抽正文；技能的说明与附属文件也从这里翻（见 42-skills.js）。
 // 长文档按页码或关键词只取片段。说明里（{{docs}}）只列这段对话的附件：卷宗会越攒越多，整份目录写进说明，每一问都得背着；
-// 卷宗里的按文件名或路径找，不知道有什么就 name 留空，列给它看。技能的目录（{{skills}}）是例外：不知道有它，模型想不到去翻。
+// 卷宗里的按文件名或路径找，不知道有什么就 name 留空，列给它看。技能的目录在系统提示里（skills.hint）：不知道有它，模型想不到去翻。
 // 对话里有附件、卷宗里有可读的文档、或认得技能时才给
 defineTool({
   name: "read_document",
@@ -9,7 +9,7 @@ defineTool({
   offer: ctx => ctx.docs.length > 0,
   vars: ctx => {
     const attached = ctx.docs.filter(d => !d.archive && !d.skill).map(d => d.name);
-    return { docs: attached.length ? t`本段附件：${attached.join("、")}。` : "", skills: skillCatalog(ctx.conversation) };
+    return { docs: attached.length ? t`本段附件：${attached.join("、")}。` : "" };
   },
   lookup: true,
   parallel: true,
@@ -80,7 +80,8 @@ defineTool({
         ? { ok: true, content: hits.map((hit, i) => t`片段 ${i + 1}：…${hit}…`).join("\n\n"), display: `${hits.length} 处匹配` }
         : { ok: true, content: t`全文未出现「${args.query}」`, display: "无匹配" };
     }
-    const limit = 12000;
+    // 技能的说明与参考是写给模型照做的，截了后半便照不全（长的有三万来字）；按页码翻对 md 也无从说起
+    const limit = doc.skill ? 60000 : 12000;
     step.note = `${text.length} 字${pageCount ? ` · ${pageCount} 页` : ""}`;
     return {
       ok: true,

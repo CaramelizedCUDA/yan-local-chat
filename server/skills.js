@@ -136,12 +136,67 @@ module.exports = function createSkills({ skillsHome, claudeHome = () => path.joi
       main = path.relative(skill.dir, file).toLowerCase() === SKILL_FILE.toLowerCase();
     return { text: main ? parseSkill(text).body.trim() : text };
   }, failed);
+  // 言自己那一处的某份：dir 须在存储根/技能之内、真有 SKILL.md（另两处是别家的目录，只读不写）
+  async function ownSkillDir(dir) {
+    const home = skillsHome(),
+      target = path.resolve(String(dir || ""));
+    const [realHome, realDir] = await Promise.all([fs.promises.realpath(home), fs.promises.realpath(target)]).catch(() => []);
+    if (!realDir || realDir === realHome || !pathIsInside(realHome, realDir)) throw Error(`不在言的技能目录里：${dir}`);
+    if (!(await fs.promises.stat(path.join(realDir, SKILL_FILE)).catch(() => null))?.isFile()) throw Error(`没有这份技能：${dir}`);
+    return realDir;
+  }
+  // 存一份（新建或改）：只写言自己那一处。名字即目录名；改名时目录跟着改。头上除名字与说明外别的几项（license 之类）原样留着
+  const handleSave = jsonRoute(async body => {
+    const name = String(body.name || "").trim(),
+      description = String(body.description || "")
+        .replace(/\s+/g, " ")
+        .trim(),
+      text = String(body.body || "").replace(/\r\n?/g, "\n");
+    if (!name) throw Error("技能要有名字");
+    if (name.length > 64 || /[<>:"/\\|?*\x00-\x1f]/.test(name) || /^\.|[. ]$/.test(name))
+      throw Error("名字里不能有 < > : \" / \\ | ? *，不以点开头，不以点或空格结尾，至多 64 字");
+    if (description.length > DESCRIPTION_LIMIT) throw Error(`何时用至多 ${DESCRIPTION_LIMIT} 字`);
+    await fs.promises.mkdir(skillsHome(), { recursive: true });
+    const home = await fs.promises.realpath(skillsHome()),
+      from = body.dir ? await ownSkillDir(body.dir) : "",
+      clash = (await listSkills("")).find(skill => skill.source === "言" && skill.name.toLowerCase() === name.toLowerCase());
+    if (clash && (await fs.promises.realpath(clash.dir)) !== from) throw Error(`已有一份叫「${name}」`);
+    let dir = from || path.join(home, name);
+    if (!from && (await fs.promises.stat(dir).catch(() => null))) throw Error(`目录已在：${dir}`);
+    // 改名：目录名原本就是旧名字的，跟着改；挪不动（别处占着、正被打开）就留在原处，名字照改
+    if (from && path.basename(from) !== name && path.dirname(from) === home) {
+      const to = path.join(home, name);
+      if (!(await fs.promises.stat(to).catch(() => null)))
+        dir = await fs.promises.rename(from, to).then(
+          () => to,
+          () => from
+        );
+    }
+    const old = from ? await fs.promises.readFile(path.join(dir, SKILL_FILE), "utf8").catch(() => "") : "",
+      head = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(old)?.[1] || "",
+      // 留下的几项：按「顶格的 key:」分段，name / description 连同它们的续行一并换掉
+      kept = head
+        .split(/\r?\n(?=[A-Za-z][\w-]*:)/)
+        .filter(entry => entry.trim() && !/^(name|description):/.test(entry));
+    const file = `---\nname: ${JSON.stringify(name)}\ndescription: ${JSON.stringify(description)}\n${kept.map(entry => `${entry}\n`).join("")}---\n\n${text.trim()}\n`;
+    await fs.promises.mkdir(dir, { recursive: true });
+    await fs.promises.writeFile(path.join(dir, SKILL_FILE), file);
+    return { dir };
+  }, failed);
+  // 删一份：整个目录连同附带的脚本与参考（页面先问过人）
+  const handleRemove = jsonRoute(async body => {
+    const dir = await ownSkillDir(body.dir);
+    await fs.promises.rm(dir, { recursive: true, force: true });
+    return { removed: dir };
+  }, failed);
   return {
     parseSkill,
     routes: {
       "POST /api/skills/list": handleList,
       "POST /api/skills/read": handleRead,
-      "POST /api/skills/open": handleOpen
+      "POST /api/skills/open": handleOpen,
+      "POST /api/skills/save": handleSave,
+      "POST /api/skills/remove": handleRemove
     }
   };
 };

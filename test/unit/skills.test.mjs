@@ -83,3 +83,46 @@ test("三处都认：工作目录的为准，隔一层的也找得到；读 SKIL
   assert.equal((await call(read, { dir: byName["写信"].dir, path: "../../secret.txt" })).status, 400);
   assert.equal((await call(read, { dir: base, path: "secret.txt" })).status, 400);
 });
+
+test("在言里写技能：新建、改名带着目录走、头上别的几项留着；同名、别处的、越界的都不写不删", async () => {
+  const parent = path.resolve("test/.tmp");
+  fs.mkdirSync(parent, { recursive: true });
+  const base = fs.mkdtempSync(path.join(parent, "skills-save-")),
+    home = path.join(base, "技能"),
+    claude = path.join(base, "claude");
+  put(path.join(claude, "docx/SKILL.md"), "---\nname: docx\n---\nWord");
+  const { routes, parseSkill } = createSkills({ skillsHome: () => home, claudeHome: () => claude }),
+    save = routes["POST /api/skills/save"],
+    remove = routes["POST /api/skills/remove"];
+
+  const made = await call(save, { name: "写信", description: "给人写信时：照格式\n写", body: "抬头、正文、落款。" });
+  assert.equal(made.status, 200);
+  const file = path.join(home, "写信", "SKILL.md");
+  const first = parseSkill(fs.readFileSync(file, "utf8"));
+  assert.deepEqual(first.meta, { name: "写信", description: "给人写信时：照格式 写" });
+  assert.equal(first.body.trim(), "抬头、正文、落款。");
+  assert.equal((await call(save, { name: "写信", body: "又一份" })).status, 400, "同名不另建");
+  assert.equal((await call(save, { name: "a/b", body: "x" })).status, 400);
+  assert.equal((await call(save, { name: "", body: "x" })).status, 400);
+
+  // 别人拷进来的那份带着 license 与多行的 metadata：改了名字与正文，这几项原样留着
+  fs.writeFileSync(file, '---\nname: 写信\ndescription: >\n  旧的\n  说明\nlicense: MIT\nmetadata:\n  author: x\n---\n旧正文');
+  const renamed = await call(save, { dir: made.data.dir, name: "书信", description: "新说明", body: "新正文" });
+  assert.equal(renamed.status, 200);
+  assert.equal(path.basename(renamed.data.dir), "书信");
+  assert.equal(fs.existsSync(path.join(home, "写信")), false);
+  const text = fs.readFileSync(path.join(home, "书信", "SKILL.md"), "utf8"),
+    second = parseSkill(text);
+  assert.equal(second.meta.name, "书信");
+  assert.equal(second.meta.description, "新说明");
+  assert.equal(second.meta.license, "MIT");
+  assert.match(text, /metadata:\n  author: x\n/);
+  assert.equal(second.body.trim(), "新正文");
+
+  assert.equal((await call(save, { dir: path.join(claude, "docx"), name: "docx", body: "改" })).status, 400, "别处的只读");
+  assert.equal((await call(remove, { dir: path.join(claude, "docx") })).status, 400);
+  assert.equal((await call(remove, { dir: home })).status, 400);
+  assert.equal(fs.existsSync(path.join(claude, "docx/SKILL.md")), true);
+  assert.equal((await call(remove, { dir: renamed.data.dir })).status, 200);
+  assert.equal(fs.existsSync(path.join(home, "书信")), false);
+});

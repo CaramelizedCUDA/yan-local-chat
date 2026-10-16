@@ -14,6 +14,7 @@ const PROMPT_VARS = {
     return { categories: names.length ? t`，分作${names.map(name => `「${name}」`).join("")}` : "" };
   },
   "mcp.hint": ctx => mcpHintVars(ctx.tools, ctx.preset),
+  "skills.hint": ctx => skillCatalog(ctx.conversation),
   "side.passage": ctx => (ctx.anchor ? {} : null),
   "side.whole": ctx => (ctx.anchor ? null : {}),
   "side.noTools": ctx => (ctx.tools.size ? null : {})
