@@ -154,7 +154,7 @@ module.exports = function createSkills({ skillsHome, claudeHome = () => path.joi
       text = String(body.body || "").replace(/\r\n?/g, "\n");
     if (!name) throw Error("技能要有名字");
     if (name.length > 64 || /[<>:"/\\|?*\x00-\x1f]/.test(name) || /^\.|[. ]$/.test(name))
-      throw Error("名字里不能有 < > : \" / \\ | ? *，不以点开头，不以点或空格结尾，至多 64 字");
+      throw Error('名字里不能有 < > : " / \\ | ? *，不以点开头，不以点或空格结尾，至多 64 字');
     if (description.length > DESCRIPTION_LIMIT) throw Error(`何时用至多 ${DESCRIPTION_LIMIT} 字`);
     await fs.promises.mkdir(skillsHome(), { recursive: true });
     const home = await fs.promises.realpath(skillsHome()),
@@ -175,9 +175,7 @@ module.exports = function createSkills({ skillsHome, claudeHome = () => path.joi
     const old = from ? await fs.promises.readFile(path.join(dir, SKILL_FILE), "utf8").catch(() => "") : "",
       head = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(old)?.[1] || "",
       // 留下的几项：按「顶格的 key:」分段，name / description 连同它们的续行一并换掉
-      kept = head
-        .split(/\r?\n(?=[A-Za-z][\w-]*:)/)
-        .filter(entry => entry.trim() && !/^(name|description):/.test(entry));
+      kept = head.split(/\r?\n(?=[A-Za-z][\w-]*:)/).filter(entry => entry.trim() && !/^(name|description):/.test(entry));
     const file = `---\nname: ${JSON.stringify(name)}\ndescription: ${JSON.stringify(description)}\n${kept.map(entry => `${entry}\n`).join("")}---\n\n${text.trim()}\n`;
     await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.writeFile(path.join(dir, SKILL_FILE), file);
@@ -189,9 +187,22 @@ module.exports = function createSkills({ skillsHome, claudeHome = () => path.joi
     await fs.promises.rm(dir, { recursive: true, force: true });
     return { removed: dir };
   }, failed);
+  // 拷一份到言自己那一处：别处的（项目里的、~/.claude/skills 里别家同步来的）不在原处改，拷过来改副本；同名的言这一处为准，原份照旧
+  const handleCopy = jsonRoute(async body => {
+    const skill = (await listSkills(body.workdir)).find(item => item.dir === String(body.dir || ""));
+    if (!skill) throw Error(`没有这份技能：${body.dir}`);
+    if (skill.source === "言") throw Error("这份已在存储根里");
+    await fs.promises.mkdir(skillsHome(), { recursive: true });
+    const to = path.join(skillsHome(), skill.name);
+    if (await fs.promises.stat(to).catch(() => null)) throw Error(`存储根里已有「${skill.name}」`);
+    // 链着的照内容拷，点开头的（.git 之类）不带
+    await fs.promises.cp(skill.dir, to, { recursive: true, dereference: true, filter: from => !path.basename(from).startsWith(".") });
+    return { dir: to };
+  }, failed);
   return {
     parseSkill,
     routes: {
+      "POST /api/skills/copy": handleCopy,
       "POST /api/skills/list": handleList,
       "POST /api/skills/read": handleRead,
       "POST /api/skills/open": handleOpen,

@@ -52,7 +52,10 @@ async function sendOrStop() {
     // 「/技能名」开头：那份说明先作一件附件放上案（见 takeSkillCommand）。不是斜杠起头就不等这一下，案上的附件照旧在下面一并攥住
     if (
       text.startsWith("/") &&
-      !(await takeSkillCommand(input, currentConversation()?.workdir ?? ((store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "")))
+      !(await takeSkillCommand(
+        input,
+        currentConversation()?.workdir ?? ((store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "")
+      ))
     )
       return;
     // 案上的东西在点发送这一刻就定下：下面要等工作目录立起来，这期间用户可能已换到别的对话，

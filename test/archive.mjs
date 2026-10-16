@@ -100,7 +100,11 @@ await waitFor(
   `document.querySelectorAll(".message.assistant").length === 3 && [...document.querySelectorAll(".message.assistant")].at(-1).dataset.status === "complete"`
 );
 const skillText = await evalJs(`[...document.querySelectorAll(".message.assistant .assistant-block > .markdown")].at(-1).textContent`);
-check("a skill in the storage root is listed in the system prompt, not in read_document's description", /SKILL\|listed:yes/.test(skillText), skillText);
+check(
+  "a skill in the storage root is listed in the system prompt, not in read_document's description",
+  /SKILL\|listed:yes/.test(skillText),
+  skillText
+);
 check(
   "reading a skill by name returns SKILL.md without its front matter, headed by the skill folder",
   /技能目录：.*写信 先写称谓，再写正文。/.test(skillText) && !/description:/.test(skillText),

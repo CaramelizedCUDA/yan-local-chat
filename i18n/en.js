@@ -538,10 +538,12 @@ var YAN_EN = {
   "脚本 {0}": "{0} {0|script|scripts}",
   "参考 {0}": "{0} {0|reference|references}",
   新建一份: "New skill",
-  "尚无一份。点右上的「＋」写一份，或把现成的技能文件夹放进来": "None yet. Click “＋” at the top right to write one, or drop an existing skill folder in",
+  "尚无一份。点右上的「＋」写一份，或把现成的技能文件夹放进来":
+    "None yet. Click “＋” at the top right to write one, or drop an existing skill folder in",
   名字: "Name",
   何时用: "When to use",
-  "何时用：做什么、遇到什么样的事该翻它（模型只先看到这一句）": "When to use: what it does and when to reach for it (the model sees only this line up front)",
+  "何时用：做什么、遇到什么样的事该翻它（模型只先看到这一句）":
+    "When to use: what it does and when to reach for it (the model sees only this line up front)",
   正文: "Instructions",
   "正文：怎么做": "Instructions: how to do it",
   新的一份: "New skill",
@@ -550,7 +552,11 @@ var YAN_EN = {
   "连同目录里的脚本与参考一并删去：{0}": "Its scripts and references go with it: {0}",
   "技能「{0}」的说明没取到：{1}": "Couldn't load skill “{0}”: {1}",
   "已有一份叫「{0}」": "There's already a skill named “{0}”",
-  "名字里不能有 < > : \" / \\ | ? *，不以点开头，不以点或空格结尾，至多 64 字":
+  "拷到存储根，在那里改": "Copy to the storage root to edit it there",
+  "已拷到存储根：{0}": "Copied to the storage root: {0}",
+  这份已在存储根里: "This one is already in the storage root",
+  "存储根里已有「{0}」": "The storage root already has “{0}”",
+  '名字里不能有 < > : " / \\ | ? *，不以点开头，不以点或空格结尾，至多 64 字':
     "Names can't contain < > : \" / \\ | ? *, start with a dot, or end with a dot or space; 64 characters at most",
   存储根: "Storage root",
   工具轮次上限: "Tool round limit",

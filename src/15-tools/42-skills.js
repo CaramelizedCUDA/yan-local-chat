@@ -121,7 +121,7 @@ function skillsSettingsHtml() {
     }</div></div></div>`
   );
 }
-/** @param {Skill} skill @param {boolean} own 言自己那一处的，右端多一枚「改」 */
+/** @param {Skill} skill @param {boolean} own 言自己那一处的，右端「改」「删」；别处的右端一枚「拷到存储根」 */
 function skillRowHtml(skill, own = false) {
   const on = skillEnabled(skill),
     gist = String(skill.description).match(/^.+?(?:[。！？]|[.!?](?=\s|$))/)?.[0] || skill.description,
@@ -130,9 +130,11 @@ function skillRowHtml(skill, own = false) {
     refs = count(/\.md$/i) - 1,
     extra = [scripts && t`脚本 ${scripts}`, refs > 0 && t`参考 ${refs}`].filter(Boolean).join(" · ");
   const row = `<button type="button" class="skill-row${on ? " on" : ""}" data-skill="${escapeHtml(skill.name)}" aria-pressed="${on}" title="${escapeHtml(skill.description)}">${planMarkHtml(on ? "done" : "pending")}<span class="skill-name">${escapeHtml(skill.name)}</span><span class="skill-gist">${escapeHtml(gist)}</span>${extra ? `<span class="skill-extra">${extra}</span>` : ""}</button>`;
-  return own
-    ? `<div class="skill-item${on ? " on" : ""}">${row}<span class="memory-ops"><button type="button" data-skill-edit="${escapeHtml(skill.dir)}" title="${t(`修改`)}">${brushIcon("edit")}</button></span></div>`
-    : row;
+  const dir = escapeHtml(skill.dir),
+    ops = own
+      ? `<button type="button" data-skill-edit="${dir}" title="${t(`修改`)}">${brushIcon("edit")}</button><button type="button" class="memory-del" data-skill-remove="${dir}" title="${t(`删去`)}">${brushIcon("strike")}</button>`
+      : `<button type="button" data-skill-copy="${dir}" title="${t(`拷到存储根，在那里改`)}">${brushIcon("copy")}</button>`;
+  return `<div class="skill-item${on ? " on" : ""}">${row}<span class="memory-ops">${ops}</span></div>`;
 }
 // 摊开的一份：名字一行，何时用（进系统提示的就是这一句）一段，正文一段；底下注目录，右边「完成」「删去」
 /** @param {NonNullable<typeof skillEditing>} draft */
@@ -259,21 +261,43 @@ function bindSkillSettings() {
       if (!editor.contains(/** @type {Node|null} */ (/** @type {FocusEvent} */ (e).relatedTarget))) void settleSkillEditor(workdir);
     });
     $("[data-skill-done]")?.addEventListener("click", () => void settleSkillEditor(workdir));
-    $("[data-skill-delete]")?.addEventListener("click", async () => {
-      const draft = skillEditing;
-      if (!draft?.dir) return;
-      const ok = await askConfirm({ title: t`删去技能「${draft.name}」？`, body: t`连同目录里的脚本与参考一并删去：${draft.dir}`, ok: t("删去") });
-      if (!ok) return;
+    $("[data-skill-delete]")?.addEventListener("click", () => {
+      if (skillEditing?.dir) void removeSkill(skillEditing.dir, skillEditing.name);
+    });
+  }
+  // 删一份：先问，连同目录里的脚本与参考一并删
+  const removeSkill = async (dir, name) => {
+    const ok = await askConfirm({ title: t`删去技能「${name}」？`, body: t`连同目录里的脚本与参考一并删去：${dir}`, ok: t("删去") });
+    if (!ok) return;
+    try {
+      await bridge("/api/skills/remove", { dir }, AbortSignal.timeout(15000));
+    } catch (error) {
+      return toast(tr(String(error.message || error)));
+    }
+    if (skillEditing?.dir === dir) skillEditing = null;
+    await refreshSkills({ workdir });
+    renderSettings();
+  };
+  for (const button of document.querySelectorAll("[data-skill-remove]"))
+    button.addEventListener("click", () => {
+      const skill = skillSets.get(workdir)?.skills.find(item => item.dir === /** @type {HTMLElement} */ (button).dataset.skillRemove);
+      if (skill) void removeSkill(skill.dir, skill.name);
+    });
+  // 拷到存储根：拷过去即换到存储根那一栏，摊开那一份就地改
+  for (const button of document.querySelectorAll("[data-skill-copy]"))
+    button.addEventListener("click", async () => {
+      const skill = skillSets.get(workdir)?.skills.find(item => item.dir === /** @type {HTMLElement} */ (button).dataset.skillCopy);
+      if (!skill) return;
       try {
-        await bridge("/api/skills/remove", { dir: draft.dir }, AbortSignal.timeout(15000));
+        await bridge("/api/skills/copy", { workdir, dir: skill.dir }, AbortSignal.timeout(30000));
       } catch (error) {
         return toast(tr(String(error.message || error)));
       }
-      skillEditing = null;
       await refreshSkills({ workdir });
+      skillSourceOpen = "言";
       renderSettings();
+      toast(t`已拷到存储根：${skill.name}`);
     });
-  }
   // 认到的随开随取：刚放进目录的，翻到这一页就看得见；与先前一样就不重画（摊开改着的时候不重画，免得吞了正写的字）
   const before = JSON.stringify(skillSets.get(workdir));
   void refreshSkills(conversation).then(() => {

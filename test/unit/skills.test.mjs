@@ -106,7 +106,7 @@ test("在言里写技能：新建、改名带着目录走、头上别的几项�
   assert.equal((await call(save, { name: "", body: "x" })).status, 400);
 
   // 别人拷进来的那份带着 license 与多行的 metadata：改了名字与正文，这几项原样留着
-  fs.writeFileSync(file, '---\nname: 写信\ndescription: >\n  旧的\n  说明\nlicense: MIT\nmetadata:\n  author: x\n---\n旧正文');
+  fs.writeFileSync(file, "---\nname: 写信\ndescription: >\n  旧的\n  说明\nlicense: MIT\nmetadata:\n  author: x\n---\n旧正文");
   const renamed = await call(save, { dir: made.data.dir, name: "书信", description: "新说明", body: "新正文" });
   assert.equal(renamed.status, 200);
   assert.equal(path.basename(renamed.data.dir), "书信");
@@ -125,4 +125,21 @@ test("在言里写技能：新建、改名带着目录走、头上别的几项�
   assert.equal(fs.existsSync(path.join(claude, "docx/SKILL.md")), true);
   assert.equal((await call(remove, { dir: renamed.data.dir })).status, 200);
   assert.equal(fs.existsSync(path.join(home, "书信")), false);
+
+  // 别处的拷到存储根改副本：整个目录（点开头的不带）拷过来，原份不动；再拷一回、拷言自己的都不行
+  put(path.join(claude, "docx/scripts/a.py"), "print(1)");
+  put(path.join(claude, "docx/.git/x"), "x");
+  const copy = routes["POST /api/skills/copy"],
+    copied = await call(copy, { dir: path.join(claude, "docx") });
+  assert.equal(copied.status, 200);
+  assert.equal(fs.readFileSync(path.join(home, "docx/scripts/a.py"), "utf8"), "print(1)");
+  assert.equal(fs.existsSync(path.join(home, "docx/.git")), false);
+  assert.equal(fs.existsSync(path.join(claude, "docx/SKILL.md")), true);
+  const after = (await call(routes["POST /api/skills/list"], {})).data.skills.filter(skill => skill.name === "docx");
+  assert.deepEqual(
+    after.map(skill => skill.source),
+    ["言"],
+    "同名的言这一处为准"
+  );
+  assert.equal((await call(copy, { dir: copied.data.dir })).status, 400);
 });
