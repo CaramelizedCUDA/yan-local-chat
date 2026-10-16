@@ -4,6 +4,8 @@ function renderWelcome() {
   const work = workMode();
   $("#welcome .seal").textContent = work ? "行" : "言";
   $("#welcomeSub").textContent = work ? t("以目录为案，言起而事行") : t("长问慢答，尽付纸墨");
+  // 节气名只在中文界面注（见 12-season.js）
+  $("#welcomeTerm").textContent = LANG === "en" ? "" : solarTerm();
   renderChips(work);
   renderSuggestions(work);
   renderWelcomeNotice();
@@ -70,6 +72,33 @@ const GREETINGS_ZH = {
     "竹幽听雨落"
   ]
 };
+// 当令的句子（设计稿/84）：每个节气两句，掺进上面按时辰挑的池里，所以不写灯、晨、夜这些时辰；写景在前、落到笔墨在后
+const TERM_GREETINGS_ZH = {
+  小寒: ["冰在檐下，墨在砚中", "小寒天气，呵笔成字"],
+  大寒: ["大寒封河，案上犹暖", "炭火微红，墨香不散"],
+  立春: ["东风解冻，砚水先融", "柳眼初开，纸上生春"],
+  雨水: ["檐溜如丝，案头微润", "雨落无声，墨色转柔"],
+  惊蛰: ["春雷乍动，万物初醒", "雷动土中，笔亦思动"],
+  春分: ["昼夜平分，墨分浓淡", "燕子来时，窗前半暖"],
+  清明: ["杏花疏雨，案头清明", "新茶初焙，墨亦清香"],
+  谷雨: ["牡丹将放，砚边添香", "雨生百谷，字生百意"],
+  立夏: ["绿荫初满，日影渐长", "立夏风来，帘幕轻摇"],
+  小满: ["麦穗初黄，砚池将满", "小满不满，字有余地"],
+  芒种: ["栀子初开，香入墨池", "雨意连日，纸上有潮"],
+  夏至: ["蝉声满树，纸上生凉", "昼最长时，落笔从容"],
+  小暑: ["竹簟清凉，砚水微温", "荷风过院，墨气清新"],
+  大暑: ["暑气蒸人，扇底生风", "冰盘在案，字字清凉"],
+  立秋: ["梧桐叶落，秋意入窗", "暑退三分，墨色添深"],
+  处暑: ["暑气渐收，笔意转清", "蝉声稀了，纸上安静"],
+  白露: ["草头凝露，案前生凉", "秋虫唧唧，墨色清寒"],
+  秋分: ["桂子飘香，砚中亦香", "秋色平分，纸墨各半"],
+  寒露: ["寒露初凝，砚池微凉", "雁过檐头，墨色渐深"],
+  霜降: ["霜降枫丹，纸上添色", "草木摇落，笔意渐瘦"],
+  立冬: ["冬意初临，炉火将红", "落叶满阶，案头清旷"],
+  小雪: ["小雪微茫，纸色更白", "天欲雪，砚欲冰"],
+  大雪: ["雪满前庭，墨暖如春", "窗外琼瑶，案上素笺"],
+  冬至: ["日短至极，墨意回长", "冬至数九，砚边围炉"]
+};
 const WORK_GREETINGS_ZH = [
   "言毕，即行",
   "墨未干，事已行",
@@ -93,7 +122,10 @@ const greetingPick = Math.random();
 function greeting() {
   if (workMode()) return WORK_GREETINGS[Math.floor(greetingPick * WORK_GREETINGS.length)];
   const h = new Date().getHours(),
-    pool = GREETINGS[h < 6 || h >= 22 ? "night" : h < 11 ? "morning" : h < 18 ? "day" : "evening"];
+    pool = [
+      ...GREETINGS[h < 6 || h >= 22 ? "night" : h < 11 ? "morning" : h < 18 ? "day" : "evening"],
+      ...(LANG === "en" ? [] : TERM_GREETINGS_ZH[solarTerm()] || [])
+    ];
   return pool[Math.floor(greetingPick * pool.length)];
 }
 // 推荐语是给头一回来的人看言能做什么的：言是画在正文里的图、后台定时、读材料、生成文件；行是通读项目立意、帮手分头调研、

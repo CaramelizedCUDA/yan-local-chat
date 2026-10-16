@@ -17,6 +17,15 @@
   font: 11px var(--title);
   letter-spacing: 0.16em;
 }
+/* 「对谈」后注当下的节气（设计稿/84）：隔一粒淡点，与前面同字同色 */
+.welcome-term:empty {
+  display: none;
+}
+.welcome-term:before {
+  content: "·";
+  margin: 0 8px 0 -2px;
+  opacity: 0.6;
+}
 .seal {
   width: 28px;
   height: 28px;

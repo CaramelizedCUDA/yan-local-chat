@@ -506,6 +506,27 @@ html[data-sidebar="collapsed"] .sidebar .wide {
     radial-gradient(ellipse at 32% 55%, transparent 39%, var(--ink) 40% 41%, transparent 42%);
   transform: rotate(-12deg);
 }
+/* 时令那一件（设计稿/84 丙，画见 src/12-season.js）：贴右下角，墨色作底、画作遮罩，浓淡同上面那两道圈；
+   亮色里替掉两道圈，暗色里右上那轮月照旧（月下一枝） */
+.main:after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  right: -6px;
+  bottom: -8px;
+  width: 240px;
+  height: 272px;
+  pointer-events: none;
+  opacity: 0.075;
+  background: var(--ink);
+  mask: var(--season-mark) right bottom / contain no-repeat;
+}
+:root:not([data-season-mark]) .main:after {
+  display: none;
+}
+:root[data-theme="light"][data-season-mark] .main:before {
+  display: none;
+}
 .topbar {
   height: 55px;
   flex: none;

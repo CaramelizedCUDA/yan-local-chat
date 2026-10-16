@@ -53,6 +53,7 @@ async function boot() {
   await syncLeases();
   recoverInterruptedMessages();
   rewatchBackground();
+  paintSeason();
   applyAppearance();
   bindEvents();
   // 模型所用的浏览器若已开着（页面刷新过、桥接重启过），看台直接接上

@@ -255,6 +255,32 @@ input[type="number"]::-webkit-outer-spin-button {
   --code-blue: #9aa3cc;
   --shadow: 0 22px 64px rgba(0, 0, 0, 0.36);
 }
+/* 时令（设计稿/84 丙）：纸色随季偏一丝——春微青、夏最白、秋微暖、冬微冷；只动 --paper，差在一两分之内，并排看得出、单看不扎眼。
+   季节由 theme-boot.js 开页前写在 <html> 上 */
+:root[data-theme="light"][data-season="spring"] {
+  --paper: #f8faf3;
+}
+:root[data-theme="light"][data-season="summer"] {
+  --paper: #fcfbf8;
+}
+:root[data-theme="light"][data-season="autumn"] {
+  --paper: #fcf8ef;
+}
+:root[data-theme="light"][data-season="winter"] {
+  --paper: #f7f7f5;
+}
+:root[data-theme="dark"][data-season="spring"] {
+  --paper: #1e201c;
+}
+:root[data-theme="dark"][data-season="summer"] {
+  --paper: #22211e;
+}
+:root[data-theme="dark"][data-season="autumn"] {
+  --paper: #221f1a;
+}
+:root[data-theme="dark"][data-season="winter"] {
+  --paper: #1e1f1f;
+}
 body {
   overflow: hidden;
   background: var(--paper-2);
