@@ -1,6 +1,7 @@
 // 言 · 技能：照 Claude Code 的写法，一个目录里有 SKILL.md 即一份技能。不另设工具——技能是翻阅文档的又一路来源（见 41-document.js 的 availableDocuments）：
 // 名字与说明列在 read_document 的说明里，模型做到相关的事先翻 SKILL.md，同目录的附属文件以「技能名/路径」翻；执事里脚本照技能目录跑。
-// 认三处（桥接那头扫，见 server/skills.js）：工作目录/.claude/skills、存储根/技能、~/.claude/skills；设置 → 工具里可逐份关掉
+// 认三处（桥接那头扫，见 server/skills.js）：工作目录/.claude/skills、存储根/技能、~/.claude/skills；设置 → 工具里逐份开关。
+// ~/.claude/skills 里的默认不给：那里多是给别家写的（Claude 桌面端的工具言没有），说明又长，每一问都背着；要用的勾上。另两处是特意放进来的，默认给
 /** @typedef {{ name: string, description: string, source: string, dir: string, files: { path: string, size: number, modifiedAt: string }[] }} Skill */
 const SKILL_FILE = "SKILL.md";
 // 设置里每份后面注一个小字：从哪一处认来的
@@ -18,10 +19,13 @@ async function refreshSkills(conversation) {
     skillSets.set(workdir, data.skills || []);
   } catch {}
 }
-/** @param {Conversation|null} conversation @returns {Skill[]} 这段对话认得的、没在设置里关掉的 */
+/** @param {Skill} skill 设置里亲手开关过的照它，否则看从哪一处认来的 */
+function skillEnabled(skill) {
+  return store.settings.skills?.[skill.name] ?? skill.source !== "Claude";
+}
+/** @param {Conversation|null} conversation @returns {Skill[]} 这段对话认得的、开着的 */
 function skillsOf(conversation) {
-  const off = new Set(store.settings.skillsOff || []);
-  return (skillSets.get(conversation?.workdir || "") || []).filter(skill => !off.has(skill.name));
+  return (skillSets.get(conversation?.workdir || "") || []).filter(skillEnabled);
 }
 // 当作文档的几件：只收文本（脚本、参考、模板）；SKILL.md 另可凭技能名找到
 /** @param {Conversation|null} conversation */
@@ -61,26 +65,22 @@ async function skillDocumentText(doc, conversation) {
 
 // 设置 → 工具里的一段：认到的技能逐份列出，不勾的不给模型；言自己那一处的目录写在说明里
 function skillsSettingsHtml() {
-  const skills = skillSets.get("") || [],
-    off = new Set(store.settings.skillsOff || []);
+  const skills = skillSets.get("") || [];
   const list = skills.length
     ? `<div class="preset-checks skill-checks">${skills
         .map(
           skill =>
-            `<label class="check" title="${escapeHtml(`${skill.description}\n${skill.dir}`)}"><input type="checkbox" data-skill="${escapeHtml(skill.name)}"${off.has(skill.name) ? "" : " checked"}>${escapeHtml(skill.name)}<span class="skill-source">${escapeHtml(SKILL_SOURCES[skill.source] || skill.source)}</span></label>`
+            `<label class="check" title="${escapeHtml(`${skill.description}\n${skill.dir}`)}"><input type="checkbox" data-skill="${escapeHtml(skill.name)}"${skillEnabled(skill) ? " checked" : ""}>${escapeHtml(skill.name)}<span class="skill-source">${escapeHtml(SKILL_SOURCES[skill.source] || skill.source)}</span></label>`
         )
         .join("")}</div>`
     : "";
-  return `<div class="setting-row${skills.length ? " setting-row-lead" : ""}"><div class="setting-copy"><strong>${t(`技能`)}</strong><small title="${escapeHtml(skillsHome)}">${t`放进 ${escapeHtml(skillsHome || t("存储根/技能"))}、~/.claude/skills 或工作目录的 .claude/skills；不勾的不给模型`}</small></div></div>${list}`;
+  return `<div class="setting-row${skills.length ? " setting-row-lead" : ""}"><div class="setting-copy"><strong>${t(`技能`)}</strong><small title="${escapeHtml(skillsHome)}">${t`放进 ${escapeHtml(skillsHome || t("存储根/技能"))}、~/.claude/skills 或工作目录的 .claude/skills；勾上的给模型，~/.claude/skills 里的默认不勾`}</small></div></div>${list}`;
 }
 function bindSkillSettings() {
   for (const box of document.querySelectorAll("[data-skill]"))
     box.addEventListener("change", e => {
-      const input = /** @type {HTMLInputElement} */ (e.target),
-        off = new Set(store.settings.skillsOff || []);
-      if (input.checked) off.delete(input.dataset.skill);
-      else off.add(input.dataset.skill);
-      store.settings.skillsOff = [...off];
+      const input = /** @type {HTMLInputElement} */ (e.target);
+      store.settings.skills = { ...store.settings.skills, [input.dataset.skill]: input.checked };
       saveStoreSoon();
     });
 }

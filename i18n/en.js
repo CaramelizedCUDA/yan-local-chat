@@ -532,8 +532,8 @@ var YAN_EN = {
   卷宗对模型可读: "Model can read Files",
   模型可翻阅卷宗里的文档: "The model can read documents in Files",
   技能: "Skills",
-  "放进 {0}、~/.claude/skills 或工作目录的 .claude/skills；不勾的不给模型":
-    "Put skills in {0}, ~/.claude/skills or the working folder's .claude/skills; unchecked ones are hidden from the model",
+  "放进 {0}、~/.claude/skills 或工作目录的 .claude/skills；勾上的给模型，~/.claude/skills 里的默认不勾":
+    "Put skills in {0}, ~/.claude/skills or the working folder's .claude/skills; checked ones go to the model, and those in ~/.claude/skills start unchecked",
   "存储根/技能": "storage root/技能",
   存储根: "Storage root",
   工具轮次上限: "Tool round limit",

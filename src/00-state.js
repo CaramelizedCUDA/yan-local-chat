@@ -207,7 +207,7 @@
  * @property {boolean} [stageFit] 游目「适应页面」：执事定死的视口等它歇手后放开（默认开）
  * @property {"bing"|"baidu"|"google"} [stageSearch] 游目地址栏里输的不像网址时交给哪家搜（默认必应）
  * @property {boolean} archiveRead
- * @property {string[]} [skillsOff] 设置里关掉的技能（按名字）：不给模型
+ * @property {Record<string, boolean>} [skills] 设置里亲手开关过的技能（按名字）；没动过的照默认（见 skillEnabled）
  * @property {number} toolRounds
  * @property {number} subRounds
  * @property {"chat"|"library"|"groups"} [lastView] 上次停在哪一页，刷新后回到原处
