@@ -167,7 +167,7 @@ function renderHelperPanel(fresh = false) {
   const title = $("#helperTitle");
   if (title && title.textContent !== (step.title || t("领命中"))) title.textContent = step.title || t("领命中");
   // 题下接着写帮手耗的墨：各轮请求一回来就记上，做着时也跟着跳
-  const ink = Number(sub?.usage?.total_tokens || 0);
+  const ink = Number((sub?.usage || (sub && liveHelperUsage.get(sub)))?.total_tokens || 0);
   rollText($("#helperPanelSub"), ink ? t`${meta} · 耗墨 ${formatTokens(ink)}` : meta);
   // ‹ n/m ›：只有一次差遣时不画
   const nav = $("#helperNav"),

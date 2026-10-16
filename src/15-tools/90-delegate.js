@@ -329,8 +329,8 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
   let painted = "";
   const paint = () => {
-    // 用量边做边记在帮手身上：差遣面板的题下跟着跳（收工后照旧是这一份）
-    if (tally.usageKnown) sub.usage = tally.usage;
+    // 用量边做边给差遣面板看（见 liveHelperUsage）；收工时才记到帮手身上
+    if (tally.usageKnown) liveHelperUsage.set(sub, tally.usage);
     const sig = `${tally.usage.total_tokens}|${sub.content.length}|${sub.reasoning.length}|${sub.status}|${sub.steps.map(s => s.status).join("")}|${Math.floor((Date.now() - sub.startedAt) / 1000)}`;
     if (sig === painted) return;
     painted = sig;
