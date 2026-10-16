@@ -617,11 +617,11 @@ function intentText(intent, now = {}, { path = t(".yan/意.json"), asks = false 
   };
   /** @param {string} parent @param {string} pad */
   const level = (parent, pad) => order.filter(id => (intent.nodes[id].in || "") === parent).flatMap(id => item(id, pad));
-  // 守：守着的只留一行，转待复核的写验收与缘由；原问只在收尾前对照时附
+  // 守：常驻的约束，没有态——平常只一行，测试不过、凭据变了的写验收与缘由；原问只在收尾前对照时附
   const kept = keeps.flatMap(id => {
     const node = intent.nodes[id],
       state = intentState(intent, id, now),
-      head = `- [${state === "stale" ? INTENT_STATE_TEXT.stale : t("守着")}] ${id}：${node.claim}${node.when ? t`（情形：${node.when}）` : ""}`,
+      head = `- ${state === "stale" ? `[${INTENT_STATE_TEXT.stale}] ` : ""}${id}：${node.claim}${node.when ? t`（情形：${node.when}）` : ""}`,
       ask = asks && node.root?.ask ? [t`  原问：${node.root.ask.slice(0, 600)}`] : [];
     if (state !== "stale") return [head, ...ask];
     return [head, t`  验收：${node.check}`, ...(state === "stale" ? [t`  缘由：${intentStaleWhy(intent, id, now)}`] : []), ...ask];
@@ -629,7 +629,7 @@ function intentText(intent, now = {}, { path = t(".yan/意.json"), asks = false 
   return [
     t`［意 ${path}］已立 ${standing} / ${live}${dropped.length ? t`，已弃（走过不通的）：${dropped.join("、")}` : ""}`,
     ...level("", ""),
-    ...(kept.length ? [t("守（一直要守的，不计进度）："), ...kept] : [])
+    ...(kept.length ? [t("守（常驻的约束）："), ...kept] : [])
   ].join("\n");
 }
 // ---------- 一答之内的回归：每轮工具做完重取指纹，新转待复核的当场告诉它；同一项来回被打回即相持，只提醒 ----------

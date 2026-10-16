@@ -52,7 +52,7 @@ function intentGlanceHtml(conversation, short = false) {
       .sort((a, b) => INTENT_GLANCE_ORDER.indexOf(a) - INTENT_GLANCE_ORDER.indexOf(b)),
     keeps = intentKeeps(intent),
     // 只立了守、没有目标的：守都列出来，不然这一枚就不见了，卡片也点不开
-    broken = views.length ? keeps.filter(id => !["holds", "assumed"].includes(intentView(intent, id, now))) : keeps;
+    broken = views.length ? keeps.filter(id => intentView(intent, id, now) === "stale") : keeps;
   if (!views.length && !broken.length) return "";
   const { standing } = intentTally(intent, now),
     rest = views.length - INTENT_GLANCE_MARKS;

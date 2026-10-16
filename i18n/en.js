@@ -1336,7 +1336,6 @@ var YAN_EN = {
   "{0} 条，收尾前都重查": "{0}, all rechecked before wrapping up",
   "{0} 条，{1} 条收尾前重查": "{0}, {1} rechecked before wrapping up",
   "{0} 条，未挂测试": "{0}, no tests attached",
-  守着: "Kept",
   "守：{0} 待复核": "Keep: {0} needs recheck",
   "守：{0}": "Keep: {0}",
   测试不过: "test failing",

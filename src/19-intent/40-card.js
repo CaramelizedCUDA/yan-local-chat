@@ -8,7 +8,7 @@
 // 嵌套：图只画一层。模块在图上与簿录里带「里面已立几项 ›」，点它即进模块：整张图换成模块里的，以模块自己收尾（最右那一项，淡些），
 // 页头下一行写所在（可点回上层）、右边写模块的前提与撑起什么。
 // 由程序照 .yan/意.json 画，与文件一字不差，不请模型另画；展开的因果（支撑、缘由、哪条凭据变了）也是程序从图与指纹推出的，不经模型。
-/** @typedef {"holds"|"premised"|"stale"|"assumed"|"doing"|"waiting"|"open"|"dropped"} IntentView 画出来的状态：成立的再按前提分已立与前提未立 */
+/** @typedef {"holds"|"premised"|"stale"|"assumed"|"doing"|"waiting"|"open"|"dropped"|"kept"} IntentView 画出来的状态：成立的再按前提分已立与前提未立；kept：守，没出事 */
 const INTENT_VIEW_TEXT = {
     holds: t("已立"),
     premised: t("存疑 · 前提未立"),
@@ -17,7 +17,8 @@ const INTENT_VIEW_TEXT = {
     doing: t("进行中"),
     waiting: t("待定"),
     open: t("未做"),
-    dropped: t("已弃")
+    dropped: t("已弃"),
+    kept: ""
   },
   INTENT_CHECK_STROKE = [1.4, 6, 2.9, 7.6, 4.3, 9.3, 6.8, 5, 10.8, 1.4];
 // 记号是符号，同一支笔写：已立一勾石绿，假定一勾泥金（算作已立，是借来的），存疑（自称成立而前提未立）一个泥金问号，
@@ -42,7 +43,9 @@ const INTENT_PENS = {
   waiting: () =>
     brushStroke([4.1, 2.3, 4.25, 5.6, 4.1, 8.9], 1.35, { tone: "ink", tail: 0.3 }) +
     brushStroke([7.9, 2.3, 8.05, 5.6, 7.9, 8.9], 1.35, { tone: "ink", tail: 0.3 }),
-  open: () => brushDot(6, 5.6, 1.4, "ink2")
+  open: () => brushDot(6, 5.6, 1.4, "ink2"),
+  // 守是常驻的约束，有就行、无所谓成没成：不画记号，只在测试不过、凭据变了时画朱圈
+  kept: () => ""
 };
 /** @param {string} state @param {number} [x] @param {number} [y] 给了坐标即嵌进图里 */
 const intentMark = (state, x, y) =>
@@ -50,6 +53,7 @@ const intentMark = (state, x, y) =>
 /** @param {Intent} intent @param {string} id @param {IntentPrints} now @returns {IntentView} */
 function intentView(intent, id, now) {
   const state = intentState(intent, id, now);
+  if (intent.nodes[id].keep) return state === "stale" ? "stale" : "kept";
   return state === "done" ? (intentEstablished(intent, id, now) ? "holds" : "premised") : state;
 }
 /** 模块里已立几项 @param {Intent} intent @param {IntentPrints} now @param {string} id @returns {string} 不是模块即空 */
@@ -182,7 +186,7 @@ function intentDetailHtml(intent, now, id) {
     ]);
   const kids = intentChildren(intent, id);
   if (kids.length) rows.push([t("内含"), chips(kids), "", true]);
-  return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head" data-intent-node="${escapeHtml(id)}" role="button" tabindex="0" title="${t(`收起`)}">${intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${node.keep && view === "holds" ? t("守着") : INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim"><span class="intent-when">${node.keep ? t("守") : escapeHtml(intentWhere(intent, id))}</span>${escapeHtml(node.claim)}</p><div class="intent-fields">${rows
+  return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head" data-intent-node="${escapeHtml(id)}" role="button" tabindex="0" title="${t(`收起`)}">${intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim"><span class="intent-when">${node.keep ? t("守") : escapeHtml(intentWhere(intent, id))}</span>${escapeHtml(node.claim)}</p><div class="intent-fields">${rows
     .map(
       ([k, v, tone, wide]) =>
         `<div class="intent-field${wide ? " w" : ""}"><span class="k${tone ? ` ${tone}` : ""}">${k}</span><div class="v">${v}</div></div>`
