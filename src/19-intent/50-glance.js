@@ -44,7 +44,7 @@ function intentGlanceHtml(conversation, short = false) {
   const key = glanceKey(conversation);
   if (!key) return "";
   const held = intentGlances.get(key);
-  if (!held) return (void glanceIntent(conversation), "");
+  if (!held) return void glanceIntent(conversation), "";
   const { intent, now } = held,
     views = Object.keys(intent.nodes)
       .filter(id => !intent.nodes[id].keep && !intentGone(intent, id))
