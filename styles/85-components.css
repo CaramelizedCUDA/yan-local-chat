@@ -381,7 +381,7 @@ button.source-local {
   z-index: 92;
   display: flex;
   flex-direction: column;
-  background: var(--grain), var(--wash), var(--paper);
+  background: var(--grain), var(--desk);
   animation: fadeIn 0.18s ease;
 }
 .file-viewer-head {
@@ -465,11 +465,20 @@ button.source-local {
 .file-viewer-media audio {
   width: min(100%, 520px);
 }
+/* 文本、文档、表格、改动都写在一条通到窗底的纸上（设计稿/86 丙）：两侧发丝边、不投影，长短内容同一条纸——
+   短的读来是一页起头，不是漂在顶上的一张卡；长代码有个版心。落选：有框有影的卡片（短内容漂着）、实纸无边（长代码悬着）、只两道界栏 */
+.file-viewer-stage:has(> .file-viewer-text) {
+  padding-bottom: 0;
+}
 .file-viewer-text {
   width: min(100%, var(--read));
   align-self: flex-start;
+  min-height: 100%;
   height: fit-content;
   padding: 26px 30px;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: var(--grain), var(--paper);
   color: var(--ink);
   font-size: 14px;
   line-height: 1.85;

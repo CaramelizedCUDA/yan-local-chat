@@ -777,7 +777,7 @@
   z-index: 88;
   display: flex;
   flex-direction: column;
-  background: var(--grain), var(--wash), var(--paper);
+  background: var(--grain), var(--desk);
   animation: fadeIn 0.18s ease;
 }
 .helper-viewer-head {
@@ -891,17 +891,20 @@
   display: flex;
   justify-content: center;
   overflow: auto;
-  padding: 24px;
+  padding: 24px 24px 0;
 }
-/* 页上那一栏：按阅读宽度居中，不另垫纸；「代人行事」的金落在栏顶一道线上，不铺两侧——
-   原先两侧铺 7% 的金，暗色里混进深底成了一片棕（色只上笔画，不上面）。落选的：只留印与纸边（认不出是差遣的窗）；
-   两侧深一档的纸（见 设计稿/35） */
+/* 案上通到窗底的一条纸（同文件预览，设计稿/86 丙）；「代人行事」的金落在纸顶一道线上，不铺两侧——
+   原先两侧铺 7% 的金，暗色里混进深底成了一片棕（色只上笔画，不上面）。落选的：只留印与纸边（认不出是差遣的窗） */
 .helper-sheet {
   width: min(100%, 940px);
   align-self: flex-start;
+  min-height: 100%;
   height: fit-content;
   padding: 22px 30px 28px;
   border-top: 2px solid color-mix(in srgb, var(--gold) 70%, transparent);
+  border-right: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  background: var(--grain), var(--paper);
 }
 /* 所领之命：主模型交给帮手的原话。默认收着只露一行，点开看全——
    不标出来，它就成了一段没头没尾、看不懂的背景文字 */

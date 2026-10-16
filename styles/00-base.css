@@ -90,6 +90,8 @@ input[type="number"]::-webkit-outer-spin-button {
   /* 函套的布面与题签：卷宗与分组里的夹、组画成一只小函，夹条左缘包一道这色的布边 */
   --cloth: color-mix(in srgb, var(--keep) 78%, var(--ink));
   --slip: #f6f1e4;
+  /* 案：整窗浮层（差遣、文件预览）的底，比纸深一档；纸是通到窗底的一条（设计稿/86 丙）。只引别的色，明暗各随其值 */
+  --desk: color-mix(in srgb, var(--paper-3) 55%, var(--paper-2));
   /* 石绿：意里已立的那一勾与名字。原先借 --code-green（#536d62）浅色下偏墨，勾了也像灰的（见 设计稿/61 一·乙；
      落选：只染勾——名字仍淡墨认不出立住；连出去的线也染——线多了一图都绿，反倒不分） */
   --stone-green: #3b8a5a;
