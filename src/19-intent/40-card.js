@@ -159,9 +159,17 @@ function intentDetailHtml(intent, now, id) {
     // 键名在上、值在下，两栏：验收与备注占满一行，前提与支撑、凭据与缘由各并一行
     rows = [
       [t("验收"), escapeHtml(node.check), "", true],
-      [t("前提"), `${chips(node.needs)}${node.any && node.needs.length > 1 ? `<span class="intent-none">${t(`任一即可`)}</span>` : ""}`],
-      [t("支撑"), chips(intentDependents(intent, id))],
-      [t("凭据"), intentAnchorsHtml(node, now)]
+      // 守不挂前提也不作前提，这两栏不列
+      ...(node.keep
+        ? []
+        : [
+            [
+              t("前提"),
+              `${chips(node.needs)}${node.any && node.needs.length > 1 ? `<span class="intent-none">${t(`任一即可`)}</span>` : ""}`
+            ],
+            [t("支撑"), chips(intentDependents(intent, id))]
+          ]),
+      [t("凭据"), intentAnchorsHtml(node, now), "", !!node.keep]
     ];
   if (node.when) rows.push([t("情形"), escapeHtml(node.when), "", true]);
   if (view === "stale") rows.push([t("缘由"), escapeHtml(intentStaleWhy(intent, id, now)), "zhu"]);
@@ -174,7 +182,7 @@ function intentDetailHtml(intent, now, id) {
     ]);
   const kids = intentChildren(intent, id);
   if (kids.length) rows.push([t("内含"), chips(kids), "", true]);
-  return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head" data-intent-node="${escapeHtml(id)}" role="button" tabindex="0" title="${t(`收起`)}">${intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim"><span class="intent-when">${escapeHtml(intentWhere(intent, id))}</span>${escapeHtml(node.claim)}</p><div class="intent-fields">${rows
+  return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head" data-intent-node="${escapeHtml(id)}" role="button" tabindex="0" title="${t(`收起`)}">${intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${node.keep && view === "holds" ? t("守着") : INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim"><span class="intent-when">${node.keep ? t("守") : escapeHtml(intentWhere(intent, id))}</span>${escapeHtml(node.claim)}</p><div class="intent-fields">${rows
     .map(
       ([k, v, tone, wide]) =>
         `<div class="intent-field${wide ? " w" : ""}"><span class="k${tone ? ` ${tone}` : ""}">${k}</span><div class="v">${v}</div></div>`
@@ -209,12 +217,16 @@ function intentRollHtml(intent, now, order, selected, level) {
     })
     .join("")}</div>`;
 }
-// 守：簿录之后另起一节（设计稿/80 卡片乙），行同目标那几行，出了事的说法换成事由；只在全局那一层
+// 守：簿录之后另起一节（设计稿/80 卡片乙），行同目标那几行，出了事的说法换成事由；只在全局那一层。
+// 题旁一行事实：几条，几条挂着测试、探针收尾前重查——余下的只凭模型自己守，看得出哪些有程序把关
 /** @param {Intent} intent @param {IntentPrints} now @param {string} selected */
 function intentKeepHtml(intent, now, selected) {
   const keeps = intentKeeps(intent);
   if (!keeps.length) return "";
-  return `<div class="intent-keep-head">${t(`守`)}<small>${t(`一直要守的，不计进度`)}</small></div>${intentRollHtml(intent, now, keeps, selected, "")}`;
+  const checked = keeps.filter(id =>
+    intent.nodes[id].anchors.some(key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer")
+  ).length;
+  return `<div class="intent-keep-head">${t(`守`)}<small>${checked === keeps.length ? t`${keeps.length} 条，收尾前都重查` : checked ? t`${keeps.length} 条，${checked} 条收尾前重查` : t`${keeps.length} 条，未挂测试`}</small></div>${intentRollHtml(intent, now, keeps, selected, "")}`;
 }
 /** 墨痕：新的在上，同一时刻的几笔并作一组；每笔写是哪一种（弃、撤、改意、归入……）。弃的带灰叉、写弃时的缘由，假定的带泥金勾；还在图上的名可点 @param {Intent} intent */
 function intentInkHtml(intent) {

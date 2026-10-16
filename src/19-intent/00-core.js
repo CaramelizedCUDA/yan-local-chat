@@ -125,6 +125,8 @@ function asIntent(raw) {
     else delete intent.nodes[id].in;
     if (node.keep === true) intent.nodes[id].keep = true;
     else delete intent.nodes[id].keep;
+    // 守没有进度：旧版里标过假定、未做的，一律当守着
+    if (intent.nodes[id].keep) intent.nodes[id].state = "done";
     if (node.seal !== undefined) {
       const record = value => (value && typeof value === "object" && !Array.isArray(value) ? value : {});
       intent.nodes[id].seal = {
@@ -278,8 +280,8 @@ function intentStaleWhy(intent, id, now = {}) {
       if (seal.premises[need] !== intent.nodes[need].rev) return t`前提「${need}」说法已改`;
     }
   const touched = Object.keys(seal.prints).filter(key => key in now && now[key] !== seal.prints[key]),
-    // 测试只比过没过：没过就直说没过
-    failing = touched.filter(key => anchorParts(key)[0] === "test" && now[key] === "不过"),
+    // 测试只比过没过：没过就直说没过——记下时就不过的也算，重记一回凭据抹不平
+    failing = Object.keys(seal.prints).filter(key => anchorParts(key)[0] === "test" && now[key] === "不过"),
     changed = touched.filter(key => !failing.includes(key));
   return [
     failing.length ? t`${failing.map(anchorLabel).join("、")}不过` : "",
@@ -409,6 +411,12 @@ function normalizeIntentOps(intent, raw, workdir = "") {
         mark = INTENT_MARKS.has(state) ? state : Object.hasOwn(INTENT_MARK_ALIASES, state) ? INTENT_MARK_ALIASES[state] : undefined;
       if (!mark) problems.push(t`${id} 的 state「${item.state}」不认得：只有 open / doing / waiting / done / assumed / dropped / removed`);
       else op.state = /** @type {IntentMark} */ (mark);
+    }
+    // 守没有进度可标：立起、改过都即作数、重记凭据（测试不过照旧算不过，见 intentStaleWhy）
+    if (op.keep ?? !!(intent.nodes[id]?.keep || known?.keep)) {
+      if (op.state && op.state !== "done")
+        problems.push(t`${id} 是守，没有进度可标：立起即作数，复核过再写一回即重记凭据；不守了 state 给 removed`);
+      else op.state = "done";
     }
     if (!known) {
       if (!op.claim || !op.check) {
@@ -613,9 +621,9 @@ function intentText(intent, now = {}, { path = t(".yan/意.json"), asks = false 
   const kept = keeps.flatMap(id => {
     const node = intent.nodes[id],
       state = intentState(intent, id, now),
-      head = `- [${INTENT_STATE_TEXT[state]}] ${id}：${node.claim}${node.when ? t`（情形：${node.when}）` : ""}`,
+      head = `- [${state === "stale" ? INTENT_STATE_TEXT.stale : t("守着")}] ${id}：${node.claim}${node.when ? t`（情形：${node.when}）` : ""}`,
       ask = asks && node.root?.ask ? [t`  原问：${node.root.ask.slice(0, 600)}`] : [];
-    if (state === "done" || state === "assumed") return [head, ...ask];
+    if (state !== "stale") return [head, ...ask];
     return [head, t`  验收：${node.check}`, ...(state === "stale" ? [t`  缘由：${intentStaleWhy(intent, id, now)}`] : []), ...ask];
   });
   return [
