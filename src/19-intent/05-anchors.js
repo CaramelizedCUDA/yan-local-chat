@@ -123,7 +123,7 @@ defineAnchor("cmd", {
 // 测试：只比过没过（退出码是否为 0），输出里的耗时、行号变了不算——「收尾前跑一遍测试、不过接着改」这类常驻的条件挂在它上面。
 // 跟探针一样随档位：问而后行里只自动跑明确只读的。超时给得宽；改过文件的那一答收尾前会重跑（见 10-store.js 的 intentGate）
 defineAnchor("test", {
-  hint: t("test:指令（只比过没过：退出码为 0 即过；动过手的那一答收尾前重跑）"),
+  hint: t("test:指令（只比过没过：退出码为 0 即过）"),
   normalize: value => (/\n/.test(value) ? "" : value.trim().slice(0, 300)),
   problem: t("指令只能一行"),
   label: value => `测试「${value}」`,

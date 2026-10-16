@@ -1314,8 +1314,7 @@ var YAN_EN = {
   "dir:目录（底下整片，新增删除也算）": "dir:folder (everything under it, including adds and deletes)",
   要一个目录: "Needs a folder",
   "cmd:指令（比它的输出，宜选只读、输出稳定的）": "cmd:command (compares its output; pick a read-only command with stable output)",
-  "test:指令（只比过没过：退出码为 0 即过；动过手的那一答收尾前重跑）":
-    "test:command (only pass or fail: exit code 0 passes; rerun before finishing any answer that did work)",
+  "test:指令（只比过没过：退出码为 0 即过）": "test:command (only pass or fail: exit code 0 passes)",
   指令只能一行: "Command must be one line",
   "探针「{0}」": 'Probe "{0}"',
   "{0} {1} 回": "{0} {1}×",
