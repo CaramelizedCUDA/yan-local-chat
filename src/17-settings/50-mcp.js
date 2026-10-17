@@ -76,6 +76,34 @@ function mcpMask(config) {
     object && Object.fromEntries(Object.entries(object).map(([key, value]) => [key, SECRET_KEY.test(key) && value ? SECRET_MASK : value]));
   return { ...config, ...(config.env ? { env: hide(config.env) } : {}), ...(config.headers ? { headers: hide(config.headers) } : {}) };
 }
+// 显示/遮住只换值、不重画（重画会冲掉在填的）：遮着的换回原值；遮时只遮没改过的原值——新填的遮了就找不回，照旧露着
+function mcpSwapSecret(name, part, key, value) {
+  const original = mcpUserConfigs()[name]?.[part]?.[key];
+  if (mcpRevealed) return value === SECRET_MASK && original !== undefined ? original : value;
+  return SECRET_KEY.test(key) && value && value === original ? SECRET_MASK : value;
+}
+// 表单里的键值对一行一个（env 用「=」、请求头用「: 」）
+function mcpSwapLines(area, name, part, sep) {
+  if (!area) return;
+  area.value = area.value
+    .split("\n")
+    .map(line => {
+      const at = line.indexOf(sep),
+        value = line.slice(at + 1).trim(),
+        next = at < 0 ? value : mcpSwapSecret(name, part, line.slice(0, at).trim(), value);
+      return next === value ? line : `${line.slice(0, at + 1)}${part === "headers" ? " " : ""}${next}`;
+    })
+    .join("\n");
+}
+function mcpSwapJson(textarea) {
+  const parsed = JSON.parse(textarea.value || "{}"),
+    servers = parsed.mcpServers ?? parsed;
+  for (const [name, config] of Object.entries(servers || {}))
+    for (const part of ["env", "headers"])
+      for (const [key, value] of Object.entries(config?.[part] || {}))
+        if (typeof value === "string") config[part][key] = mcpSwapSecret(name, part, key, value);
+  textarea.value = JSON.stringify(parsed, null, 2);
+}
 // 存的时候：还是遮着的值换回原来的；原来没有这个值（改了名、新添的键却填了占位）就请用户重填
 function mcpUnmask(name, config, previous) {
   for (const part of ["env", "headers"])
@@ -174,17 +202,27 @@ function bindMcpEvents() {
     renderMcpSettings();
     $('#mcpList [data-f="name"]')?.focus();
   });
+  // 只开合，不重画：在改的卡片与框里没存的字都留着
   $("#mcpJson").addEventListener("click", () => {
     mcpJsonOpen = !mcpJsonOpen;
-    renderMcpSettings();
+    $("#mcpJsonBox").classList.toggle("hidden", !mcpJsonOpen);
+    $("#mcpJson").textContent = mcpJsonOpen ? t("收起 JSON") : t("以 JSON 编辑");
   });
   // 整页一个委托：设置页每画一回，这一页连同监听一起换新
   $("#mcpPage").addEventListener("click", event => {
     const target = event.target.closest("button");
     if (!target) return;
     if (target.id === "mcpJsonReveal") {
-      mcpRevealed = !mcpRevealed;
-      return renderMcpSettings();
+      try {
+        mcpRevealed = !mcpRevealed;
+        mcpSwapJson($("#mcpConfig"));
+        $("#mcpError").textContent = "";
+      } catch {
+        mcpRevealed = !mcpRevealed;
+        $("#mcpError").textContent = t("JSON 有误，改好再切");
+      }
+      target.textContent = mcpRevealed ? t("遮住密钥") : t("显示密钥");
+      return;
     }
     if (target.id === "mcpJsonSave") {
       try {
@@ -214,12 +252,18 @@ function bindMcpEvents() {
     }
     const form = target.closest("[data-mcp-edit]");
     if (!form) return;
-    // 切接法：换一套栏，已填的名称留着
+    // 切接法：换一套栏，两套共有的几栏（名称、等多久、交给模型、免请示、给模型的话）已填的留着
     if (target.dataset.mcpKind) {
       mcpFormKind = /** @type {"local"|"remote"} */ (target.dataset.mcpKind);
-      const typed = form.querySelector('[data-f="name"]').value;
+      const typed = [...form.querySelectorAll("input[data-f]:not([type=checkbox]), textarea[data-f]")].map(el => [el.dataset.f, el.value]),
+        load = form.querySelector("[data-mcp-load].active")?.dataset.mcpLoad;
       form.outerHTML = mcpFormHtml(form.dataset.mcpEdit);
-      $(`#mcpList [data-mcp-edit="${CSS.escape(form.dataset.mcpEdit)}"] [data-f="name"]`).value = typed;
+      const fresh = $(`#mcpList [data-mcp-edit="${CSS.escape(form.dataset.mcpEdit)}"]`);
+      for (const [key, value] of typed) {
+        const el = fresh.querySelector(`[data-f="${key}"]`);
+        if (el) el.value = value;
+      }
+      fresh.querySelectorAll("[data-mcp-load]").forEach(b => b.classList.toggle("active", b.dataset.mcpLoad === load));
       return;
     }
     if (target.dataset.mcpLoad) return form.querySelectorAll("[data-mcp-load]").forEach(b => b.classList.toggle("active", b === target));
@@ -231,7 +275,10 @@ function bindMcpEvents() {
     }
     if (action === "reveal") {
       mcpRevealed = !mcpRevealed;
-      return (form.outerHTML = mcpFormHtml(before));
+      mcpSwapLines(form.querySelector('[data-f="env"]'), before, "env", "=");
+      mcpSwapLines(form.querySelector('[data-f="headers"]'), before, "headers", ":");
+      target.textContent = mcpRevealed ? t("遮住密钥") : t("显示密钥");
+      return;
     }
     if (action === "delete") {
       const { [before]: _gone, ...rest } = mcpUserConfigs();

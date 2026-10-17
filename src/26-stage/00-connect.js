@@ -221,6 +221,7 @@ function stagePageEvent(method, params) {
   } else if (method === "Page.fileChooserOpened" && params.backendNodeId) {
     stage.dialog = { type: "file", message: "", multiple: params.mode === "selectMultiple", node: params.backendNodeId };
     stageRenderDialog();
+    void stageWatchChooser(stage.dialog);
   } else if (method === "Page.downloadWillBegin") {
     // 下载：浏览器在屏幕外存，游目只记一笔（名、来处、多大、到哪一步）；存到哪由 MCP 的结果补上（见 stageNoteDownload）
     stage.downloads = [
@@ -305,6 +306,34 @@ function stageAnswer(accept) {
   void stageSend("Page.handleJavaScriptDialog", { accept, ...(input ? { promptText: input.value } : {}) }, stage.session).catch(() => {});
   stage.dialog = null;
   stageRenderDialog();
+}
+// 选文件没有「关了」的事件：模型那头（playwright）替人选了、网页换了页、那个 <input> 没了，卡片都得自己收——隔一会儿看一眼它
+/** @param {{ node?: number }} dialog */
+async function stageWatchChooser(dialog) {
+  const session = stage.session;
+  const look = async () => {
+    const { object } = await stageSend("DOM.resolveNode", { backendNodeId: dialog.node }, session);
+    const { result } = await stageSend(
+      "Runtime.callFunctionOn",
+      {
+        objectId: object.objectId,
+        functionDeclaration: "function () { return this.isConnected ? [...this.files].map(f => f.name + ':' + f.size).join('/') : null; }",
+        returnByValue: true
+      },
+      session
+    );
+    void stageSend("Runtime.releaseObject", { objectId: object.objectId }, session).catch(() => {});
+    return result.value ?? null;
+  };
+  const before = await look().catch(() => null);
+  if (before === null) return;
+  while (stage.dialog === dialog && stage.session === session) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    if (stage.dialog !== dialog) return;
+    if ((await look().catch(() => null)) === before) continue;
+    stage.dialog = null;
+    stageRenderDialog();
+  }
 }
 // 选文件用言这边的窗（点「选文件」那一下即是人手的动作，浏览器才许开窗）；选好的落到桥接的临时目录，路径交给网页里那个 <input type=file>
 /** @param {{ multiple?: boolean, node?: number }} dialog */

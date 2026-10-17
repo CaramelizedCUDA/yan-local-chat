@@ -579,7 +579,9 @@ var YAN_EN = {
   答复与标题用的字: "Font for replies and titles",
   沿用该处原有数据: "Using the data already there",
   旧处原样保留: "The old location is left as is",
-  "存储已迁至 {0}；{1}": "Storage moved to {0}; {1}",
+  "存储已迁至 {0}；{1}{2}": "Storage moved to {0}; {1}{2}",
+  "；{0} 个文件正被占用未拷（如 {1}），可从旧处补拷":
+    "; {0} {0|file was|files were} in use and not copied (e.g. {1}); copy them over from the old location",
   "清空全部对话？": "Clear all chats?",
   "{0} 段对话将被移除，无法撤销；模型配置、个性化与卷宗将保留。":
     "{0} {0|chat|chats} will be removed. This can't be undone; models, personalization and Files are kept.",
@@ -763,6 +765,7 @@ var YAN_EN = {
   保存: "Save",
   遮住密钥: "Hide secrets",
   显示密钥: "Show secrets",
+  "JSON 有误，改好再切": "Fix the JSON before switching",
   "整份配置 · mcpServers 格式；遮蔽的密钥原样保留即沿用": "Full config in mcpServers format; leave masked secrets as is to keep them",
   保存并连接: "Save and connect",
   "「{0}」的 {1} 仍是遮蔽占位，原值已不可寻，请重填": '{1} of "{0}" is still a masked placeholder and the original is gone. Enter it again',

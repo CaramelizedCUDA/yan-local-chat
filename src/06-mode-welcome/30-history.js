@@ -4,7 +4,9 @@
 function openHistoryMenu(id, anchor) {
   const c = store.conversations.find(item => item.id === id);
   if (!c) return;
-  const row = anchor.closest(".history-item") || anchor;
+  // 菜单开着时侧栏可能重画过（别段作答、拟题），旧行已脱页、量出 (0, 0)：子浮层点下去那一刻再找这一行
+  const row = () =>
+    document.querySelector(`#history .history-item[data-conversation="${CSS.escape(id)}"]`) || anchor.closest(".history-item") || anchor;
   openMenu(
     anchor,
     [
@@ -15,7 +17,7 @@ function openHistoryMenu(id, anchor) {
         label: isWork(c) ? t("更换目录") : t("绑定目录"),
         run: () =>
           openWorkdirPop({
-            anchor: row,
+            anchor: row(),
             host: null,
             value: c.workdir || "",
             live: false,
@@ -24,7 +26,7 @@ function openHistoryMenu(id, anchor) {
             onCommit: dir => void bindWorkdir(c, dir)
           })
       },
-      { id: "group", label: groupOf(c) ? t("移至他组") : t("移入分组"), run: () => openMoveMenu(c, row) },
+      { id: "group", label: groupOf(c) ? t("移至他组") : t("移入分组"), run: () => openMoveMenu(c, row()) },
       { id: "export", label: t("导出"), note: t("存入卷宗"), run: () => void exportConversationMarkdown(c) },
       { id: "delete", label: t("删除"), danger: true, run: () => deleteConversation(id) }
     ],

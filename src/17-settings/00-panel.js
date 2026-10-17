@@ -191,7 +191,11 @@ function bindGeneralSettings() {
       archiveEntries = null;
       await refreshArchive();
       renderSettings();
-      toast(t`存储已迁至 ${pathTail(data.root)}；${data.adopted ? t("沿用该处原有数据") : t("旧处原样保留")}`);
+      toast(
+        t`存储已迁至 ${pathTail(data.root)}；${data.adopted ? t("沿用该处原有数据") : t("旧处原样保留")}${
+          data.busyCount ? t`；${data.busyCount} 个文件正被占用未拷（如 ${data.busy[0]}），可从旧处补拷` : ""
+        }`
+      );
     };
   };
   storeInput?.addEventListener("change", e => commitStore(e.target.value));
@@ -281,9 +285,10 @@ function bindSettingRows() {
       (button.onclick = () => {
         const key = button.dataset.setting,
           value = button.dataset.value;
+        // 主题要等动效盖满才写进设置，这时重画会照旧值点亮；选中态就地先挪过来
         if (key === "theme") {
+          button.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("active", b === button));
           switchTheme(value, button);
-          renderSettings();
           return;
         }
         // 换语言：译文表在开页时载入（见 theme-boot.js），存下即重新载入
