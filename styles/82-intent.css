@@ -107,7 +107,9 @@
   background: color-mix(in srgb, var(--qing) 7%, transparent);
   color: var(--qing);
 }
+/* 舞台是横排 flex，卡默认被拉成舞台高，长内容溢出卡外、底边距落空，滚到底贴着窗沿：按内容取高 */
 .intent-card {
+  align-self: flex-start;
   width: min(860px, 100%);
   margin: 0 auto;
   padding: 40px 26px;
