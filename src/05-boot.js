@@ -65,9 +65,9 @@ async function boot() {
   delete document.documentElement.dataset.sidebar;
   restorePlace();
   render();
-  // 低频的全量巡检：哪段改了没标到也兜得住；页面藏起来时也巡一趟（手机切走常常就不回来了）
+  // 低频巡检：哪段改了没标到也兜得住——前台轮着巡，页面藏起来时整份巡一趟（手机切走常常就不回来了）
   setInterval(() => {
-    sweepConversations();
+    sweepSomeConversations();
     // 开页时对话目录没读成（桥接闪断、目录大到超时）：巡检时再试，不然整个会话都只存进浏览器
     if (chatsBroken) resyncWithDisk();
   }, 45000);
