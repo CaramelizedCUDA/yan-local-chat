@@ -63,9 +63,12 @@ test("接法由言补齐：在人写的 --config 上合并，人写了的照人�
   assert.equal(prepareBrowser(other, where), other);
   // 没有 --config：补一份
   const bare = prepareBrowser({ command: "npx", args: ["-y", "@playwright/mcp@latest", "--browser", "msedge"] }, where),
-    file = path.join(root, "游目", "playwright.json");
-  assert.deepEqual(bare.args.slice(-2), ["--config", file]);
-  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).browser.launchOptions.args, [
+    launched = config => JSON.parse(readFileSync(config.args.at(-1), "utf8")).browser;
+  // 合并好的那份按内容取名，落在「游目」里
+  assert.equal(bare.args.at(-2), "--config");
+  assert.equal(path.dirname(bare.args.at(-1)), path.join(root, "游目"));
+  assert.match(path.basename(bare.args.at(-1)), /^playwright-[0-9a-f]{8}[.]json$/);
+  assert.deepEqual(launched(bare).launchOptions.args, [
     "--remote-debugging-port=9288",
     "--remote-allow-origins=http://127.0.0.1:8787,http://127.0.0.1:9288",
     "--window-position=-32000,-32000"
@@ -84,8 +87,11 @@ test("接法由言补齐：在人写的 --config 上合并，人写了的照人�
     { command: "node", args: ["E:/MCP/playwright/node_modules/@playwright/mcp/cli.js", "--config", "stage.json", "--x"], cwd },
     where
   );
-  assert.deepEqual(merged.args, ["E:/MCP/playwright/node_modules/@playwright/mcp/cli.js", "--x", "--config", file]);
-  const browser = JSON.parse(readFileSync(file, "utf8")).browser;
+  assert.deepEqual(merged.args, ["E:/MCP/playwright/node_modules/@playwright/mcp/cli.js", "--x", "--config", merged.args.at(-1)]);
+  // 两个服务的接法不同：各写各的，后起的不盖掉先起的
+  assert.notEqual(merged.args.at(-1), bare.args.at(-1));
+  assert.equal(launched(bare).launchOptions.args[0], "--remote-debugging-port=9288");
+  const browser = launched(merged);
   assert.equal(browser.userDataDir, "D:/p");
   assert.deepEqual(browser.launchOptions.args, [
     "--remote-debugging-port=9300",
@@ -93,11 +99,17 @@ test("接法由言补齐：在人写的 --config 上合并，人写了的照人�
     "--window-position=0,0"
   ]);
   // 接别处起好的浏览器（--cdp-endpoint）：它的启动参数言管不着，不补
-  prepareBrowser({ command: "npx", args: ["@playwright/mcp", "--cdp-endpoint", "http://127.0.0.1:9333"] }, where);
-  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).browser.launchOptions.args, []);
+  assert.deepEqual(
+    launched(prepareBrowser({ command: "npx", args: ["@playwright/mcp", "--cdp-endpoint", "http://127.0.0.1:9333"] }, where)).launchOptions
+      .args,
+    []
+  );
   // 无头的不挪窗口
-  prepareBrowser({ command: "npx", args: ["@playwright/mcp", "--headless"] }, where);
-  assert.ok(!JSON.parse(readFileSync(file, "utf8")).browser.launchOptions.args.some(a => a.startsWith("--window-position")));
+  assert.ok(
+    !launched(prepareBrowser({ command: "npx", args: ["@playwright/mcp", "--headless"] }, where)).launchOptions.args.some(a =>
+      a.startsWith("--window-position")
+    )
+  );
 });
 
 test("游目自己的浏览器：几项选择拼成整条，家当都在存储根的「游目」里，再补接法", () => {
@@ -123,7 +135,8 @@ test("游目自己的浏览器：几项选择拼成整条，家当都在存储�
   const ready = prepareMcp({ stage: { browser: "msedge" }, note: "说明" }, { root, bridgePort: 8787 });
   assert.equal(ready.note, "说明");
   assert.ok(!("stage" in ready));
-  assert.deepEqual(ready.args.slice(-2), ["--config", path.join(home, "playwright.json")]);
+  assert.equal(ready.args.at(-2), "--config");
+  assert.equal(path.dirname(ready.args.at(-1)), home);
   // 页面问调试口、收藏时递几项选择，认得出配置目录
   assert.equal(browserOf(builtinConfig({}, root).args, home).dir, path.join(home, "浏览器"));
 });

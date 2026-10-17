@@ -2,6 +2,8 @@
 // 一件工具包可以有这几样（都可省）：
 //   pip / npm   装进环境里的 Python（uv 管的 3.12）与 Node 全局目录的包
 //   links       在 环境/bin 立的入口：{ 名字: 路径 } 或 { 名字: [路径, 固定参数…] }，路径相对环境根、末段可带 *
+//   exe         入口另立一个同名 .exe（硬链接）：Python 的 subprocess 这类不经 shell 起程序的只认 .exe、不认 .cmd。
+//               程序得自成一体才行——zig 照自己所在的位置找库，挪个位置就起不来
 //   fetch       自己下载解压的（不在 PyPI / npm 上的工具链）：async ({ home, mirror, download, unpack, run, say }) => {}
 //   dir         fetch 装在环境根下的哪个目录，卸载时整个删掉
 //   path / vars 环境备好后给桥接起的进程接上：PATH 前面加的几处（相对环境根），与另设的环境变量
@@ -39,7 +41,8 @@ module.exports = [
     tag: "Python",
     note: "读写 Word、PowerPoint、Excel、PDF；pandoc 转换文档格式",
     pip: ["python-docx", "python-pptx", "openpyxl", "pypdf", "pdfplumber", "reportlab", "markdown", "pypandoc-binary"],
-    links: { pandoc: "py/Lib/site-packages/pypandoc/files/pandoc.exe" }
+    links: { pandoc: "py/Lib/site-packages/pypandoc/files/pandoc.exe" },
+    exe: true
   },
   {
     id: "web",
@@ -61,7 +64,8 @@ module.exports = [
     tag: "Python",
     note: "ffmpeg 与音频处理；卷宗里封装不合的视频（如实为 TS 的 mp4）预览时也借它换壳来放",
     pip: ["imageio-ffmpeg", "pydub"],
-    links: { ffmpeg: "py/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-*.exe" }
+    links: { ffmpeg: "py/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-*.exe" },
+    exe: true
   },
   {
     id: "node",

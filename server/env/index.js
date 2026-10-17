@@ -177,7 +177,10 @@ module.exports = function createEnv({ envHome }) {
       }
       for (const pack of dropped) {
         for (const name of Object.keys(pack.links || {}))
-          if (!chosen.some(other => other.links?.[name])) fs.rmSync(path.join(d.bin, `${name}.cmd`), { force: true });
+          if (!chosen.some(other => other.links?.[name])) {
+            fs.rmSync(path.join(d.bin, `${name}.cmd`), { force: true });
+            if (pack.exe) unlinkExe(name, say);
+          }
         if (pack.dir) {
           step(`卸 ${pack.name}`);
           fs.rmSync(path.join(d.home, pack.dir), { recursive: true, force: true });
@@ -208,7 +211,7 @@ module.exports = function createEnv({ envHome }) {
           throw error;
         }
       }
-      for (const pack of chosen) for (const [name, target] of Object.entries(pack.links || {})) link(name, target, say);
+      for (const pack of chosen) for (const [name, target] of Object.entries(pack.links || {})) link(name, target, say, pack.exe);
       const version = execFileSync(python, ["--version"], { encoding: "utf8", windowsHide: true }).trim();
       const state = { 言: "环境", python: version, packs: chosen.map(pack => pack.id), pip, npm, mirror, at: new Date().toISOString() };
       fs.writeFileSync(path.join(d.home, STATE_FILE), JSON.stringify(state, null, 1));
@@ -247,7 +250,7 @@ module.exports = function createEnv({ envHome }) {
   }
   // 在 bin 里立一个同名的 .cmd 入口：装在包里、名字不规整的可执行文件（如 ffmpeg-win-x86_64-v7.1.exe），
   // 或带固定参数的（cc → zig cc）。target 是路径，或 [路径, 固定参数…]；路径末段可带 *
-  function link(name, target, say) {
+  function link(name, target, say, exe = false) {
     const [pattern, ...fixed] = [].concat(target),
       { home, bin } = dirs(),
       dir = path.join(home, path.dirname(pattern)),
@@ -262,6 +265,23 @@ module.exports = function createEnv({ envHome }) {
     if (!found) return say(`（没找到 ${name}，跳过）`);
     fs.writeFileSync(path.join(bin, `${name}.cmd`), `@"${path.join(dir, found)}"${fixed.map(arg => ` ${arg}`).join("")} %*\r\n`);
     say(`${name} → ${[found, ...fixed].join(" ")}`);
+    // 包升级后原件换了，旧的硬链接还指着旧的：每回先拆再立；不同盘立不了硬链接就整份拷
+    if (exe && !fixed.length && unlinkExe(name, say))
+      try {
+        fs.linkSync(path.join(dir, found), path.join(bin, `${name}.exe`));
+      } catch {
+        fs.copyFileSync(path.join(dir, found), path.join(bin, `${name}.exe`));
+      }
+  }
+  // 正在跑的 exe 拆不掉（如预览视频时的 ffmpeg）：留着旧的，下回准备再换
+  function unlinkExe(name, say) {
+    try {
+      fs.rmSync(path.join(dirs().bin, `${name}.exe`), { force: true });
+      return true;
+    } catch (error) {
+      say(`（${name}.exe 正被占用，未换：${error.code || error.message}）`);
+      return false;
+    }
   }
 
   // 环境里某件工具的程序本身（照 link 立的入口读回路径）；没装、或入口不是这种形状的返回 ""。
