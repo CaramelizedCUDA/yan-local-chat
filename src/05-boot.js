@@ -38,6 +38,8 @@ function recoverInterruptedMessages() {
   if (changed) saveStore();
 }
 async function boot() {
+  // 时令那一件只看日子：先画上，等桥接那一阵角上就是它，不先露出底下那两道圈
+  paintSeason();
   await awaitBridge();
   // 浏览器里暂存的（桥接中途断过时没落成盘的对话、上次离页兜住的最新状态）先读回，再与存储根（默认 ~/.yan）里的正本合一次
   await hydrateStore();
@@ -53,7 +55,6 @@ async function boot() {
   await syncLeases();
   recoverInterruptedMessages();
   rewatchBackground();
-  paintSeason();
   applyAppearance();
   bindEvents();
   // 模型所用的浏览器若已开着（页面刷新过、桥接重启过），看台直接接上

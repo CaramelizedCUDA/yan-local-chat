@@ -9,6 +9,8 @@ if (location.protocol === "file:") {
   document.head.append(style);
 }
 (() => {
+  // 头一回画好之前不露 index.html 里写死的初稿（见 styles/00-base.css 与 src/99-start.js）
+  if (location.protocol !== "file:") document.documentElement.dataset.booting = "";
   try {
     const settings = JSON.parse(localStorage.getItem("yan-chat-v1") || "{}").settings || {},
       html = document.documentElement;

@@ -293,6 +293,10 @@ body {
 ::selection {
   background: var(--accent-soft);
 }
+/* 开页等桥接、读存储那一阵：index.html 写死的初稿（固定标语、「访客」、欢迎页）不露面，只留纸与框，头一回画好即撤 */
+:root[data-booting] :is(.main > *, .history, .sidebar-footer) {
+  visibility: hidden;
+}
 /* 接不上本机桥接时的一页：盖住整个界面，接上即撤 */
 .bridge-gate {
   display: none;
