@@ -7,10 +7,11 @@ const legacyViz = (language, text) =>
 defineEmbed({
   name: "html",
   fence: (language, text) => ["html", "interactive", "app"].includes(language) || legacyViz(language, text),
-  // 流式尾段尚未闭合时先立一个占位框，框里是一页草图（见 pendingSketchHtml）
+  // 流式尾段尚未闭合时先立一个占位框，框里是将要画的东西的草图（见 pendingSketchHtml）
   pending(text, language) {
-    const lines = String(text || "").split("\n").length;
-    return `<div class="viz viz-pending" data-viz-pending="html" data-lines="${lines}" style="--phase:${vizPhase()}" role="status" aria-label="${t`交互内容仍在生成，已写 ${lines} 行`}"><div class="code-head"><span class="code-lang">${language}</span><span class="viz-pending-signal" aria-hidden="true"></span></div><div class="viz-pending-body" aria-hidden="true">${pendingSketchHtml()}</div></div>\n`;
+    const lines = String(text || "").split("\n").length,
+      kind = sketchKind(language, text);
+    return `<div class="viz viz-pending" data-viz-pending="${kind}" data-lines="${lines}" style="--phase:${vizPhase()}" role="status" aria-label="${t`交互内容仍在生成，已写 ${lines} 行`}"><div class="code-head"><span class="code-lang">${language}</span><span class="viz-pending-signal" aria-hidden="true"></span></div><div class="viz-pending-body" aria-hidden="true">${pendingSketchHtml(kind)}</div></div>\n`;
   },
   html(text, language) {
     const source = legacyViz(language, text) ? legacyVizHtml(language, text) : text;
@@ -21,20 +22,45 @@ defineEmbed({
 });
 // 占位框里的动效在逐帧重画的尾段里会随节点重建从头再来，看着像定住了：把相位记在节点上（负的 animation-delay），重建也接着原来的拍子走
 const vizPhase = () => `-${Math.round(performance.now())}ms`;
-// 占位框里是一页草图：将要画的东西的底稿（一页版式）——
+// 占位框里是一页草图：将要画的东西的底稿——图表是柱与折线，流程图是框与箭头，别的是一页版式；
 // 用淡墨一笔一笔勾出来，勾完停一停、淡去、再勾（pathLength 归一，stroke-dashoffset 从 1 走到 0 就是「画出来」，各笔按 --i 错开）。
 // 每来一行，草图上有一笔蘸朱（见 pulseInkStroke，由 paintTail 点）：流着时朱笔此起彼伏，流停了草图只剩自己勾着，看得出还在写还是卡住了
-const VIZ_SKETCH = [
-  "M8 6h144a3 3 0 0 1 3 3v54a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3z",
-  "M5 18h150",
-  "M12 25h30a2 2 0 0 1 2 2v30a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V27a2 2 0 0 1 2-2z",
-  "M52 28h92",
-  "M52 36h72",
-  "M52 44h84",
-  "M52 52h26a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H52a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z"
-];
-function pendingSketchHtml() {
-  const strokes = VIZ_SKETCH;
+const VIZ_SKETCHES = {
+  echarts: [
+    "M16 6v56h136",
+    "M32 62V42",
+    "M52 62V30",
+    "M72 62V48",
+    "M92 62V20",
+    "M112 62V36",
+    "M132 62V28",
+    "M24 46C40 22 56 50 72 36S104 14 136 24"
+  ],
+  mermaid: [
+    "M10 24h32a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V28a4 4 0 0 1 4-4z",
+    "M46 36h14M56 32l4 4-4 4",
+    "M64 24h32a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H64a4 4 0 0 1-4-4V28a4 4 0 0 1 4-4z",
+    "M100 36h14M110 32l4 4-4 4",
+    "M118 24h32a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4h-32a4 4 0 0 1-4-4V28a4 4 0 0 1 4-4z"
+  ],
+  html: [
+    "M8 6h144a3 3 0 0 1 3 3v54a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3z",
+    "M5 18h150",
+    "M12 25h30a2 2 0 0 1 2 2v30a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V27a2 2 0 0 1 2-2z",
+    "M52 28h92",
+    "M52 36h72",
+    "M52 44h84",
+    "M52 52h26a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H52a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z"
+  ]
+};
+// 照已写出的内容认将要画的是什么：一页 HTML 里引了 echarts 是图表、有 mermaid 块是流程图；认出来之前先按版式勾，认出了 paintTail 自会换草图
+function sketchKind(language, text) {
+  if (language === "echarts" || /yan:echarts|echarts\.init/.test(text)) return "echarts";
+  if (legacyViz(language, text) || /class=["']mermaid["']|yan:mermaid/.test(text)) return "mermaid";
+  return "html";
+}
+function pendingSketchHtml(kind) {
+  const strokes = VIZ_SKETCHES[kind] || VIZ_SKETCHES.html;
   return `<svg class="viz-sketch" viewBox="0 0 160 72" aria-hidden="true">${strokes.map((d, i) => `<path d="${d}" pathLength="1" style="--i:${i}"/>`).join("")}</svg>`;
 }
 // 新来一行：草图上轮到的那一笔蘸一口朱墨，随即褪回淡墨
