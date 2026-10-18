@@ -68,6 +68,9 @@ const stage = {
   // 指针形状跟着网页：上一回问的时刻、是否还在问
   cursorAt: 0,
   cursorAsking: false,
+  // 输入法：正在组字（组字当中不挪隐藏输入框）、量光标的计时
+  composing: false,
+  caretTimer: 0,
   // 浏览器的调试口（桥接从配置里读出来的：报错、开发者工具用）
   port: 0,
   seen: false,
