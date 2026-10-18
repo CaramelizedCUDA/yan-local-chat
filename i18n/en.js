@@ -1126,7 +1126,7 @@ var YAN_EN = {
   出错: "Error",
   "后台 {0} · {1}{2}": "Background {0} · {1}{2}",
   "已结束 · 退出码 {0}": "Finished · exit code {0}",
-  "超时终止 · {0}": "Timed out · {0}",
+  "转入后台 {0} · {1}{2}": "Moved to background {0} · {1}{2}",
   "完成 · {0}": "Done · {0}",
   "退出码 {0} · {1}": "Exit code {0} · {1}",
   后台: "Background",

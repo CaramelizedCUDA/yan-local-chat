@@ -589,10 +589,12 @@ http
           250
         );
       // BGWAKE / BGRELOAD：挂一条先睡一会儿的后台指令就收尾；它结束时另起一答（前面冠着上一答的行迹），据结果收尾。
-      // BGBUSY：挂上后自己接着干四轮（每轮约一秒），后台指令在这期间结束，回报就递进这一答里
-      const bgKey = ["BGWAKE", "BGRELOAD", "BGBUSY"].find(k => firstUser.includes(k));
+      // BGBUSY：挂上后自己接着干四轮（每轮约一秒），后台指令在这期间结束，回报就递进这一答里。
+      // FGWAIT / FGSTEER：前台起指令，等满 timeout（1 秒）或被补言叫转，转入后台；收尾时把工具结果与补言到没到写出来
+      const bgKey = ["BGWAKE", "BGRELOAD", "BGBUSY", "FGWAIT", "FGSTEER"].find(k => firstUser.includes(k));
       if (bgKey) {
-        const sleepFor = bgKey === "BGRELOAD" ? 6 : 3,
+        const sleepFor = bgKey === "BGRELOAD" ? 6 : bgKey === "FGSTEER" ? 4 : 3,
+          runArgs = bgKey === "FGWAIT" ? { timeout: 1 } : bgKey === "FGSTEER" ? {} : { background: true },
           heard = msgs.find(m => m.role === "user" && String(m.content).includes("后台指令 bg") && String(m.content).includes("已结束"));
         if (firstTurn && !toolResults.length)
           return sse(res, [
@@ -604,7 +606,7 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: `Start-Sleep -Seconds ${sleepFor}; Write-Output wake-ok`, background: true })
+                    arguments: JSON.stringify({ command: `Start-Sleep -Seconds ${sleepFor}; Write-Output wake-ok`, ...runArgs })
                   }
                 }
               ]
@@ -637,7 +639,15 @@ http
             ],
             400
           );
-        return sse(res, [delta({ content: "挂上了，等它。" }), delta({}, { usage: { total_tokens: 5 } })]);
+        const steered = msgs.some(m => m.role === "user" && String(m.content).includes("FGSTEER-NOTE"));
+        return sse(res, [
+          delta({
+            content: bgKey.startsWith("FG")
+              ? `挂上了，等它。｜${steered ? "steer" : "-"}｜${String(toolResults.at(-1)?.content || "").slice(0, 160)}`
+              : "挂上了，等它。"
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
       }
       // HELPERAGAIN：主模型差一名慢帮手，等它回报后续派它再做一回（它该记得上一回），两份回报都到了收尾
       if (firstUser.includes("HELPERAGAIN")) {

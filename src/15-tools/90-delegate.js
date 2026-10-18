@@ -135,6 +135,7 @@ function tellHelper(step, args, ctx) {
     step.noteId = note.id;
     box.queue.push({ report: prompt("delegate.note", { text }), note });
     if (box.reading) watchSteer(box, sub);
+    releaseForeground(ctx.conversation.id, sub.id);
     // 睡着等后台的：叫醒它读这句
     box.wake?.();
     refreshSteps(box.host);

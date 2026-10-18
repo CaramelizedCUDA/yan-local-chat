@@ -134,7 +134,7 @@
       type: "object",
       properties: {
         command: { type: "string", description: "要执行的指令" },
-        timeout: { type: "number", description: "超时秒数，默认 120，不设上限" },
+        timeout: { type: "number", description: "前台最多等几秒，默认 120，最多 600；到时还没结束就转入后台接着跑，不会被终止" },
         background: {
           type: "boolean",
           description:

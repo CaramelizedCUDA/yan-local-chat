@@ -128,10 +128,14 @@ module.exports = function createShell({ toolEnv }) {
   // 编号在桥接重启后从 bg1 重数：另记一个带这次启动标记的 key，页面刷新后重新等上时按它认，不会等到别的指令上
   const BOOT = Date.now().toString(36);
   function startBackground(command, workdir, boxed) {
+    return enlist(spawnJob(command, workdir, boxed));
+  }
+  // 起进程、接住两路输出，先不编号：前台指令也这样起，跑完了就不占编号与名额，转入后台时才登记（enlist）
+  function spawnJob(command, workdir, boxed) {
     const child = spawnShell(command, workdir, { boxed }),
       job = {
-        id: `bg${++backgroundSeq}`,
-        key: `${BOOT}-${backgroundSeq}`,
+        id: "",
+        key: "",
         command,
         child,
         exitCode: null,
@@ -165,9 +169,46 @@ module.exports = function createShell({ toolEnv }) {
       child.once("close", resolve);
       child.once("error", resolve);
     });
+    return job;
+  }
+  function enlist(job) {
+    job.id = `bg${++backgroundSeq}`;
+    job.key = `${BOOT}-${backgroundSeq}`;
     for (const [id, old] of backgroundJobs) if (backgroundJobs.size >= BACKGROUND_KEEP && old.exitCode !== null) backgroundJobs.delete(id);
     backgroundJobs.set(job.id, job);
     return job;
+  }
+  // ---- 前台指令（run_command 不带 background）：起法同后台指令，等它结束再回话。等满 waitMs 还没完、或页面说有话要递
+  // （用户补言、主模型递话给帮手，见 releaseForeground），就编号转入后台接着跑，不掐——模型当即拿回结果去做别的、读插话，
+  // 结束时照后台指令的路子叫醒它。页面停止生成（signal）才连整棵进程树收掉
+  const releases = new Map();
+  async function runForeground(command, workdir, boxed, waitMs, signal, ticket) {
+    const job = spawnJob(command, workdir, boxed);
+    let timer, onAbort;
+    const why = await Promise.race([
+      job.ended.then(() => "ended"),
+      new Promise(resolve => {
+        timer = setTimeout(resolve, waitMs, "waited");
+        releases.set(ticket, () => resolve("released"));
+        onAbort = () => resolve("aborted");
+        if (signal?.aborted) onAbort();
+        else signal?.addEventListener("abort", onAbort, { once: true });
+      })
+    ]);
+    clearTimeout(timer);
+    releases.delete(ticket);
+    signal?.removeEventListener("abort", onAbort);
+    if (why === "aborted") {
+      killTree(job.child);
+      return { job, report: null };
+    }
+    if (why !== "ended") enlist(job);
+    return { job, report: { ...(await backgroundReport(job, 0)), ...(why === "ended" ? {} : { handedOff: why }) } };
+  }
+  function releaseForeground(ticket) {
+    const release = releases.get(String(ticket || ""));
+    release?.();
+    return { released: !!release };
   }
   // 等到指令结束、输出停了一会儿（服务器起好了往往就不再出声）或时间到；交出去的是上次取过之后的新输出
   async function backgroundReport(job, waitMs) {
@@ -237,5 +278,15 @@ module.exports = function createShell({ toolEnv }) {
     job.reported = true;
     return { ...(await backgroundReport(job, 0)), command: job.command };
   }
-  return { WORK_SHELL, runShell, startBackground, backgroundReport, discardBackground, checkBackground, watchBackground };
+  return {
+    WORK_SHELL,
+    runShell,
+    runForeground,
+    releaseForeground,
+    startBackground,
+    backgroundReport,
+    discardBackground,
+    checkBackground,
+    watchBackground
+  };
 };

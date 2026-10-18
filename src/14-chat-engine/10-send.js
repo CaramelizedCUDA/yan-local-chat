@@ -208,8 +208,10 @@ function sendSupplement() {
   refreshSteps(assistant);
   renderSendButtons();
   if (followBottom) scrollBottom();
-  // 模型正写着：盯着它说到落点再停这一轮，streamReply 的循环接手——已写的留下，补言递上，随即再请它开口
+  // 模型正写着：盯着它说到落点再停这一轮，streamReply 的循环接手——已写的留下，补言递上，随即再请它开口；
+  // 正跑着指令：转入后台接着跑，结果当即交回，补言随之递上
   if (job.reading) watchSteer(job, assistant);
+  releaseForeground(c.id);
 }
 // 补言那一步上的折箭头：不等落点，当场停下这一轮递上，已写的正文与思绪都留着——留给特殊情况，平时仍等自然落点。
 // 工具正跑着时本就没有这一轮可停，结果一交回就递
