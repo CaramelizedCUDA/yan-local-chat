@@ -250,6 +250,19 @@ http
       // 长活：轮内压缩的请求（开头是 fold 提示）回一份笔记；其余按任务里的记号分派
       const firstUser = String(msgs.find(m => m.role === "user")?.content || ""),
         longKey = ["LONGSUB", "LONGMAIN"].find(k => firstUser.includes(k) && !firstUser.includes("LONGRUN"));
+      // OFFICECHAT：用户在游目里开着文档时，这一问末尾附着那一句（列出文件）；慢慢说完，好在作答当中看文档是否锁着
+      const whole = JSON.stringify(msgs);
+      if (whole.includes("OFFICECHAT"))
+        return sse(
+          res,
+          [
+            delta({ content: "OFFICE｜" }),
+            delta({ content: whole.includes("用户正在游目里看、改这几份文件") ? "seen｜" : "none｜" }),
+            delta({ content: whole.includes("测试.docx") ? "测试.docx" : "-" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ],
+          1200
+        );
       // LEDGER：账本只接在这一问之后另起一段（首段是问本身；缓存标记桥接只给 Claude 留着，这里看不到，由单元测试管）、系统提示里有立账本那句；第一问不读就改账本（附着全文即算读过），第二问看到的是改后的那份
       // LEDGERBIG：账本远超这台模型每一问能附的量——只附开头、写明共几行，末尾不附；附的是截过的，不读就改应被挡下
       if (firstUser.includes("LEDGERBIG")) {

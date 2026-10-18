@@ -15,6 +15,7 @@ const { fasterSide, pickSource } = require("./mirror.js");
 const path = require("node:path");
 const { sendJson, readJson } = require("./http.js");
 const platform = require("./platform.js");
+const office = require("./office.js");
 
 // 参数里哪一项都没写调试口时的默认（见 docs/stage.md：避开常被端口转发占着的 9222 / 9223）
 const DEFAULT_PORT = 9288;
@@ -105,6 +106,7 @@ const bookmarksFile = dir => path.join(dir, "Default", "Bookmarks");
 //   浏览器/  登录状态、收藏（--user-data-dir）
 //   下载/  下载落在这里（--output-dir）
 //   内核/  本机没有 Edge / Chrome 时，Playwright 自带的那个浏览器装在这里（PLAYWRIGHT_BROWSERS_PATH）
+//   依赖/office/  Office 引擎（现装现构建，见 server/office.js）
 //   playwright-*.json  接法（prepareBrowser 写的，按内容取名）
 const BROWSERS = ["msedge", "chrome", "chromium"];
 /** @param {string} root 存储根 */
@@ -300,7 +302,8 @@ function stageState(root) {
     output: at.output,
     installed: fs.existsSync(at.cli),
     version,
-    browsers: localBrowsers(root)
+    browsers: localBrowsers(root),
+    office: office.officeState(root)
   };
 }
 
@@ -358,15 +361,18 @@ module.exports = function createStage({ root = () => "" } = {}) {
   const installing = {};
   /** 内核下到几成（页面装着时隔一会儿问一次） @type {Record<string, number>} */
   const progress = {};
-  // 装依赖（@playwright/mcp）或自带内核：跑完才回，一两分钟
+  // 装依赖（@playwright/mcp）、自带内核或 Office 引擎：跑完才回——前两样一两分钟，Office 引擎要取源码、构建，十分钟上下
   async function install(req, res) {
     const body = await readJson(req),
-      what = body.what === "chromium" ? "chromium" : "deps";
+      what = ["chromium", "office"].includes(body.what) ? body.what : "deps",
+      report = (/** @type {number} */ percent) => (progress[what] = percent);
     try {
-      await (installing[what] ||= installStage(what, root(), percent => (progress[what] = percent)).finally(() => {
-        delete installing[what];
-        delete progress[what];
-      }));
+      await (installing[what] ||= (what === "office" ? office.installOffice(root(), report) : installStage(what, root(), report)).finally(
+        () => {
+          delete installing[what];
+          delete progress[what];
+        }
+      ));
       sendJson(res, 200, stageState(root()));
     } catch (error) {
       sendJson(res, 500, { error: `没装上：${String(/** @type {any} */ (error).message || error).slice(0, 300)}` });

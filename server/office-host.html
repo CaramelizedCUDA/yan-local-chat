@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Office</title>
+<style>
+  /* 言 · 游目 · Office 宿主页：编辑器装在 iframe 里；这页只管开、存、锁，以及顶上一条细签 */
+  html, body { margin: 0; height: 100%; background: #f5f2ea; }
+  body { display: flex; flex-direction: column; font: 13px "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif; color: #3a352d; }
+  iframe { flex: 1; width: 100%; border: 0; }
+  #note { display: none; align-items: center; gap: 12px; padding: 6px 14px; border-bottom: 1px solid #d9d2c3; background: #efe9dc; }
+  #note.show { display: flex; }
+  #note .mark { width: 2px; height: 14px; background: #b5432f; }
+  #note button { margin-left: auto; font: inherit; color: #b5432f; background: none; border: 1px solid #c9b9a6; border-radius: 3px; padding: 2px 10px; cursor: pointer; }
+  #note button:not(.show) { display: none; }
+  body.dark { background: #1f1d1a; color: #d9d2c3; }
+  body.dark #note { background: #2a2723; border-color: #3a362f; }
+</style>
+</head>
+<body>
+<div id="note"><i class="mark"></i><span id="noteText"></span><button id="noteAct" type="button"></button></div>
+<script>
+  const params = new URLSearchParams(location.search),
+    token = params.get("t") || "",
+    zh = params.get("locale") !== "en",
+    tr = (cn, en) => (zh ? cn : en);
+  if (params.get("theme") === "dark") document.body.classList.add("dark");
+  // 编辑器与本页同源，明暗跟着言（它认 localStorage 里的 ran-theme）
+  try { localStorage.setItem("ran-theme", params.get("theme") === "dark" ? "dark" : "light"); } catch {}
+  const frame = document.createElement("iframe");
+  frame.src = `/editor?embed=1&locale=${params.get("locale") === "en" ? "en" : "zh-CN"}`;
+  frame.title = "Office";
+  document.body.append(frame);
+
+  const state = { name: "", sig: "", dirty: false, locked: false, saving: null, timer: 0, ready: false };
+  const note = (text, act = "", onAct = null) => {
+    document.getElementById("note").classList.toggle("show", !!text);
+    document.getElementById("noteText").textContent = text;
+    const button = document.getElementById("noteAct");
+    button.textContent = act;
+    button.classList.toggle("show", !!act);
+    button.onclick = onAct;
+  };
+  // 与编辑器的嵌入接口说话：一问一答按 id 配对
+  let seq = 0;
+  const waiting = new Map();
+  const ask = (type, payload = {}) =>
+    new Promise((resolve, reject) => {
+      const id = `y${++seq}`;
+      waiting.set(id, { resolve, reject });
+      frame.contentWindow.postMessage({ id, type, payload }, location.origin);
+    });
+  window.addEventListener("message", e => {
+    if (e.origin !== location.origin) return;
+    const { type, id, payload } = e.data || {};
+    if (!String(type || "").startsWith("document:")) return;
+    if (type === "document:ready") return void load();
+    if (type === "document:dirty-changed") {
+      state.dirty = !!payload?.dirty;
+      if (state.dirty) saveSoon();
+    }
+    const waiter = id && waiting.get(id);
+    if (!waiter) return;
+    waiting.delete(id);
+    type === "document:error" ? waiter.reject(Error(payload?.message || "编辑器出错")) : waiter.resolve(payload || {});
+  });
+
+  // 开：从桥接取这份文件（带着它此刻的指纹），交给编辑器
+  async function load() {
+    const response = await fetch(`/yan/file?t=${encodeURIComponent(token)}`);
+    if (!response.ok) return note((await response.json().catch(() => ({}))).error || tr("打不开这份文件", "Cannot open this file"));
+    state.name = decodeURIComponent(response.headers.get("X-Yan-Name") || "document.docx");
+    state.sig = response.headers.get("X-Yan-Sig") || "";
+    document.title = state.name;
+    await ask("document:open-buffer", { fileName: state.name, buffer: await response.arrayBuffer(), readonly: state.locked });
+    state.ready = true;
+    state.dirty = false;
+    if (!state.locked) note("");
+  }
+  // 存：有改动、没锁着，停手几秒就存回原文件——不必按保存
+  function saveSoon() {
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => void save(), 4000);
+  }
+  async function save() {
+    if (state.saving) return state.saving;
+    if (!state.ready || !state.dirty) return;
+    state.saving = (async () => {
+      const { file } = await ask("document:save", {});
+      const response = await fetch(`/yan/file?t=${encodeURIComponent(token)}&seen=${state.sig}`, { method: "POST", body: await file.arrayBuffer() });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 409) {
+        // 读过之后文件被别处改了：不覆盖，请人决定
+        note(tr("这份文件在别处被改过，你这几秒的改动没有存进去", "This file changed elsewhere; your latest edits were not saved"), tr("重新载入", "Reload"), () => void load());
+        return;
+      }
+      if (!response.ok) throw Error(data.error || `HTTP ${response.status}`);
+      state.sig = data.sig;
+    })()
+      .catch(error => note(tr(`没存上：${error.message}`, `Not saved: ${error.message}`)))
+      .finally(() => {
+        state.saving = null;
+        if (state.dirty && !state.locked) saveSoon();
+      });
+    return state.saving;
+  }
+  // 言的吩咐：执事作答前存盘、锁住；答完放开，文件被执事改过就重新载入
+  async function obey(cmd) {
+    if (cmd === "save") {
+      clearTimeout(state.timer);
+      await save();
+    } else if (cmd === "lock") {
+      state.locked = true;
+      clearTimeout(state.timer);
+      await save();
+      if (state.ready) await ask("document:set-readonly", { readonly: true }).catch(() => {});
+      note(tr("执事正在作答，文档暂且只读", "The assistant is answering; read-only for now"));
+    } else if (cmd === "unlock") {
+      state.locked = false;
+      const now = await fetch(`/yan/sig?t=${encodeURIComponent(token)}`).then(r => r.json()).catch(() => ({}));
+      if (now.sig && now.sig !== state.sig) await load();
+      else if (state.ready) await ask("document:set-readonly", { readonly: false }).catch(() => {});
+      note("");
+    }
+    return { dirty: state.dirty, sig: state.sig, locked: state.locked };
+  }
+  const events = new EventSource(`/yan/events?t=${encodeURIComponent(token)}`);
+  events.onmessage = async e => {
+    const { id, cmd } = JSON.parse(e.data);
+    const answer = await obey(cmd).catch(error => ({ error: error.message }));
+    fetch(`/yan/ack?t=${encodeURIComponent(token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...answer }) });
+  };
+  // 关页、切走前把没存的存上
+  addEventListener("pagehide", () => void save());
+  document.addEventListener("visibilitychange", () => document.hidden && void save());
+</script>
+</body>
+</html>

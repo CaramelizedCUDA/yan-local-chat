@@ -63,6 +63,9 @@ async function openFileViewer(target, name = "", trigger = null) {
         .pop() ||
       t("附件"),
     kind = fileKind(title).view || "none";
+  // Office 文件：游目开着、装了引擎，就进游目原生编辑，不在这里抽正文
+  if (await officeInstead(source, title)) return;
+  if (revision !== viewerRevision) return;
   viewerPath = source.path || "";
   viewerSource = source;
   viewerReturnFocus = trigger || document.activeElement;

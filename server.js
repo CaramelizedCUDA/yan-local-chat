@@ -152,6 +152,8 @@ const MCP = require("./server/mcp/index.js")({
 });
 // 看台：替页面问出模型所用浏览器的调试地址，其余页面直连（见 server/stage.js）
 const STAGE = STAGE_LIB({ root: () => STORE.paths().root });
+// 游目里的 Office 引擎：另起一个本机端口服务编辑器与宿主页，言的页面领凭据开文件、作答前后吩咐存盘与锁（见 server/office.js）
+const OFFICE = require("./server/office.js").createOffice({ root: () => STORE.paths().root, bridgePort: PORT });
 // 总线：长请求的响应从页面的一条事件流回去，不再一个请求占一条浏览器连接（见 server/bus.js）
 const BUS = require("./server/bus.js")({ dispatch });
 // 模型转发：测试连接、列模型、对话；各家接口的差异都在 server/model/ 的登记表里（ChatGPT 订阅的登录凭证随存储根）
@@ -176,6 +178,7 @@ const OPEN_ROUTES = {
     ...MCP.routes,
     ...ENV.routes,
     ...STAGE.routes,
+    ...OFFICE.routes,
     ...MODEL.routes
   };
 const ROUTES = new Map(Object.entries({ ...OPEN_ROUTES, ...TRUSTED_ROUTES }));
