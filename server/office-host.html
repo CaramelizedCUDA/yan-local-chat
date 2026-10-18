@@ -19,6 +19,7 @@
 </head>
 <body>
 <div id="note"><i class="mark"></i><span id="noteText"></span><button id="noteAct" type="button"></button></div>
+<script src="/yan/compat.js"></script>
 <script>
   const params = new URLSearchParams(location.search),
     token = params.get("t") || "",
@@ -32,7 +33,9 @@
   frame.title = "Office";
   document.body.append(frame);
 
-  const state = { name: "", sig: "", dirty: false, locked: false, saving: null, timer: 0, ready: false };
+  // dirty 代表尚未落盘；引擎的 dirty:false 只说明导出过，不能替桥接确认保存。
+  const state = { name: "", sig: "", dirty: false, revision: 0, locked: false, lockRevision: 0,
+    saving: null, pending: null, conflict: false, error: "", timer: 0, ready: false, loadRevision: 0 };
   const note = (text, act = "", onAct = null) => {
     document.getElementById("note").classList.toggle("show", !!text);
     document.getElementById("noteText").textContent = text;
@@ -47,92 +50,161 @@
   const ask = (type, payload = {}) =>
     new Promise((resolve, reject) => {
       const id = `y${++seq}`;
-      waiting.set(id, { resolve, reject });
+      const timer = setTimeout(() => { waiting.delete(id); reject(Error(tr("编辑器未能及时响应", "The editor did not respond in time"))); }, 180000);
+      waiting.set(id, { resolve, reject, timer });
       frame.contentWindow.postMessage({ id, type, payload }, location.origin);
     });
   window.addEventListener("message", e => {
-    if (e.origin !== location.origin) return;
+    if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
     const { type, id, payload } = e.data || {};
     if (!String(type || "").startsWith("document:")) return;
-    if (type === "document:ready") return void load();
-    if (type === "document:dirty-changed") {
-      state.dirty = !!payload?.dirty;
-      if (state.dirty) saveSoon();
+    if (type === "document:ready") return void load().catch(showError);
+    if (type === "document:dirty-changed" && payload?.dirty) {
+      state.dirty = true;
+      state.revision++;
+      if (!state.locked && !state.conflict) saveSoon();
     }
     const waiter = id && waiting.get(id);
     if (!waiter) return;
     waiting.delete(id);
+    clearTimeout(waiter.timer);
     type === "document:error" ? waiter.reject(Error(payload?.message || "编辑器出错")) : waiter.resolve(payload || {});
   });
 
   // 开：从桥接取这份文件（带着它此刻的指纹），交给编辑器
-  async function load() {
+  async function load(discard = false) {
+    if (state.dirty && !discard) return;
+    const request = ++state.loadRevision, revision = state.revision;
     const response = await fetch(`/yan/file?t=${encodeURIComponent(token)}`);
-    if (!response.ok) return note((await response.json().catch(() => ({}))).error || tr("打不开这份文件", "Cannot open this file"));
-    state.name = decodeURIComponent(response.headers.get("X-Yan-Name") || "document.docx");
+    if (!response.ok) throw Error((await response.json().catch(() => ({}))).error || tr("打不开这份文件", "Cannot open this file"));
+    const name = decodeURIComponent(response.headers.get("X-Yan-Name") || "document.docx");
+    state.locked ||= response.headers.get("X-Yan-Locked") === "1";
+    const bytes = await officePrepare(await response.arrayBuffer(), name, "open");
+    if (request !== state.loadRevision || revision !== state.revision) return;
+    await ask("document:open-buffer", { fileName: name, buffer: bytes, readonly: state.locked });
+    if (request !== state.loadRevision) return;
+    state.name = name;
     state.sig = response.headers.get("X-Yan-Sig") || "";
-    document.title = state.name;
-    await ask("document:open-buffer", { fileName: state.name, buffer: await response.arrayBuffer(), readonly: state.locked });
+    document.title = name;
     state.ready = true;
-    state.dirty = false;
+    state.dirty = state.revision !== revision;
+    state.pending = null;
+    state.conflict = false;
+    state.error = "";
+    if (state.dirty && !state.locked) saveSoon();
     if (!state.locked) note("");
   }
   // 存：有改动、没锁着，停手几秒就存回原文件——不必按保存
   function saveSoon() {
     clearTimeout(state.timer);
-    state.timer = setTimeout(() => void save(), 4000);
+    state.timer = setTimeout(() => void save().catch(() => {}), 4000);
+  }
+  function showError(error) {
+    state.error = error.message;
+    note(tr(`没存上：${error.message}`, `Not saved: ${error.message}`),
+      state.conflict ? tr("另存副本", "Save a copy") : tr("重试", "Retry"),
+      () => void (state.conflict ? saveCopy() : save()).catch(showError));
+  }
+  async function saveCopy() {
+    const bytes = state.pending?.revision === state.revision
+      ? state.pending.bytes
+      : await officePrepare(await (await ask("document:save", {})).file.arrayBuffer(), state.name, "save");
+    const url = URL.createObjectURL(new Blob([bytes]));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = state.name.replace(/(\.[^.]+)?$/, tr("（未保存副本）", " (unsaved copy)") + "$1");
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    note(tr("副本已下载；重新载入将采用磁盘上的版本", "Copy downloaded; reloading will use the version on disk"),
+      tr("重新载入", "Reload"), () => void load(true).catch(showError));
   }
   async function save() {
     if (state.saving) return state.saving;
     if (!state.ready || !state.dirty) return;
     state.saving = (async () => {
-      const { file } = await ask("document:save", {});
-      const response = await fetch(`/yan/file?t=${encodeURIComponent(token)}&seen=${state.sig}`, { method: "POST", body: await file.arrayBuffer() });
+      if (state.conflict) throw Error(tr("这份文件在别处被改过，你的改动还未存盘，请先另存副本", "This file changed elsewhere; save a copy of your edits first"));
+      if (!state.pending || state.pending.revision !== state.revision) {
+        const revision = state.revision;
+        const { file, dirty } = await ask("document:save", {});
+        const bytes = await officePrepare(await file.arrayBuffer(), state.name, "save");
+        state.pending = { bytes, revision };
+        if (dirty && state.revision === revision) state.revision++;
+      }
+      const pending = state.pending;
+      const response = await fetch(`/yan/file?t=${encodeURIComponent(token)}&seen=${state.sig}`, { method: "POST", body: pending.bytes });
       const data = await response.json().catch(() => ({}));
       if (response.status === 409) {
-        // 读过之后文件被别处改了：不覆盖，请人决定
-        note(tr("这份文件在别处被改过，你这几秒的改动没有存进去", "This file changed elsewhere; your latest edits were not saved"), tr("重新载入", "Reload"), () => void load());
-        return;
+        state.conflict = true;
+        throw Error(tr("这份文件在别处被改过，你这几秒的改动没有存进去", "This file changed elsewhere; your latest edits were not saved"));
       }
       if (!response.ok) throw Error(data.error || `HTTP ${response.status}`);
       state.sig = data.sig;
+      state.pending = null;
+      state.dirty = state.revision !== pending.revision;
+      state.error = "";
+      if (!state.locked) note("");
     })()
-      .catch(error => note(tr(`没存上：${error.message}`, `Not saved: ${error.message}`)))
+      .catch(error => { state.dirty = true; showError(error); throw error; })
       .finally(() => {
         state.saving = null;
-        if (state.dirty && !state.locked) saveSoon();
+        if (state.dirty && !state.locked && !state.conflict) saveSoon();
       });
     return state.saving;
   }
   // 言的吩咐：执事作答前存盘、锁住；答完放开，文件被执事改过就重新载入
-  async function obey(cmd) {
+  async function obey(cmd, locked = false) {
     if (cmd === "save") {
       clearTimeout(state.timer);
       await save();
     } else if (cmd === "lock") {
+      const revision = ++state.lockRevision;
       state.locked = true;
       clearTimeout(state.timer);
+      // 先阻止继续编辑，再导出并落盘；只读失败和保存失败都不能向言回报成功。
+      if (state.ready) await ask("document:set-readonly", { readonly: true });
       await save();
-      if (state.ready) await ask("document:set-readonly", { readonly: true }).catch(() => {});
+      if (revision !== state.lockRevision || !state.locked) throw Error(tr("这次文档锁已取消", "This document lock was cancelled"));
       note(tr("执事正在作答，文档暂且只读", "The assistant is answering; read-only for now"));
     } else if (cmd === "unlock") {
+      state.lockRevision++;
       state.locked = false;
+      if (state.ready) await ask("document:set-readonly", { readonly: false });
+      // 冲突或 Windows 原件被占用时仍有待保存编辑，不能自动载入磁盘把它冲掉。
+      if (state.dirty) {
+        if (state.error) showError(Error(state.error));
+        else if (!state.conflict) saveSoon();
+        return { dirty: true, sig: state.sig, locked: false };
+      }
       const now = await fetch(`/yan/sig?t=${encodeURIComponent(token)}`).then(r => r.json()).catch(() => ({}));
       if (now.sig && now.sig !== state.sig) await load();
-      else if (state.ready) await ask("document:set-readonly", { readonly: false }).catch(() => {});
       note("");
+    } else if (cmd === "sync") {
+      state.lockRevision++;
+      state.locked = locked;
+      if (state.ready) await ask("document:set-readonly", { readonly: locked });
+      if (locked) clearTimeout(state.timer);
+      else if (state.dirty && !state.conflict) saveSoon();
+      if (!state.dirty) note(locked ? tr("执事正在作答，文档暂且只读", "The assistant is answering; read-only for now") : "");
     }
     return { dirty: state.dirty, sig: state.sig, locked: state.locked };
   }
-  const events = new EventSource(`/yan/events?t=${encodeURIComponent(token)}`);
-  events.onmessage = async e => {
-    const { id, cmd } = JSON.parse(e.data);
-    const answer = await obey(cmd).catch(error => ({ error: error.message }));
-    fetch(`/yan/ack?t=${encodeURIComponent(token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...answer }) });
-  };
+  let events;
+  function connectEvents() {
+    events?.close();
+    events = new EventSource(`/yan/events?t=${encodeURIComponent(token)}`);
+    events.onmessage = async e => {
+      const { id, cmd, locked } = JSON.parse(e.data);
+      const answer = await obey(cmd, locked).catch(error => ({ error: error.message }));
+      if (id) fetch(`/yan/ack?t=${encodeURIComponent(token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...answer }) }).catch(() => {});
+    };
+  }
+  connectEvents();
+  // 离页即不再算“开着”；从浏览器前进后退缓存回来时重新同步，避免冻结页攥着过期的文档关联。
+  addEventListener("pagehide", () => events.close());
+  addEventListener("pageshow", e => { if (e.persisted) connectEvents(); });
   // 关页、切走前把没存的存上
-  addEventListener("pagehide", () => void save());
-  document.addEventListener("visibilitychange", () => document.hidden && void save());
+  addEventListener("beforeunload", e => { if (state.dirty) { e.preventDefault(); e.returnValue = ""; } });
+  document.addEventListener("visibilitychange", () => document.hidden && !state.locked && void save().catch(() => {}));
 </script>
 </body>
 </html>

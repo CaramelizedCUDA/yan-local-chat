@@ -25,11 +25,18 @@ const conv = `__yanState().conversations.find(c => c.messages[0]?.content === "O
 await evalJs(
   `document.querySelector("#newChat").click(); setTimeout(() => { document.querySelector("#welcomeInput").value = "OFFICECHAT 一"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); }, 300); true`
 );
-await waitFor(`${conv}?.messages[1]?.status === "complete"`, 15000);
+await waitFor(`${conv}?.messages[1]?.status === "complete"`, 15000).catch(async error => {
+  console.log("  [office-preflight]", JSON.stringify(await evalJs(`${conv}`)));
+  throw error;
+});
 check(
   "with nothing open the model is told nothing",
   await evalJs(`${conv}.messages[1].content.includes("OFFICE｜none")`),
   await evalJs(`${conv}.messages[1].content`)
+);
+check(
+  "the installed Office editor is explained to the model even before a document is open",
+  await evalJs(`${conv}.messages[1].content.includes("capable")`)
 );
 
 // 领凭据，在测试浏览器里另开一页去宿主页
@@ -104,6 +111,24 @@ check(
   await host(note)
 );
 check("the other change on disk is kept", disk() === "别处改的", disk());
+check(
+  "the rejected save remains dirty with an exported copy for retry or recovery",
+  await host(`state.dirty && !!state.pending && state.conflict`)
+);
+// 失败的同步不能让模型带着“已存盘”的前提开工；清理锁时也不能冲掉用户刚才的编辑。
+await evalJs(`(i => { i.value = "OFFICECHAT 三"; i.dispatchEvent(new Event("input")); })(document.querySelector("#chatInput")); true`);
+await evalJs(
+  `document.querySelector("#chatInput").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); true`
+);
+await waitFor(`${conv}?.messages[5]?.status === "error"`, 15000);
+check(
+  "a failed document sync stops the answer before calling the model",
+  await evalJs(`${conv}.messages[5].error.includes("在别处被改过")`)
+);
+check(
+  "failed preflight cleanup preserves the user's edit and restores editability",
+  await hostWait(`${box}?.value === "人又改" && !${box}?.readOnly && state.dirty`)
+);
 
 // 凭据不对拿不到；别的域名借 127.0.0.1 进不来
 const port = new URL(opened.url).port;

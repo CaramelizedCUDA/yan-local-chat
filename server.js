@@ -129,11 +129,14 @@ const VIDEO = require("./server/video.js")({
   cacheHome: () => path.join(STORE.paths().env, "cache", "视频"),
   ffmpeg: () => ENV.toolPath("ffmpeg")
 });
+// Office 存回与执事文件工具共用真实路径上的写锁。
+const { lockFile } = require("./server/work/locks.js")();
 const WORK = require("./server/work/index.js")({
   archiveHome: () => STORE.paths().archive,
   workHome: () => STORE.paths().work,
   toolEnv: ENV.apply,
-  playable: VIDEO.playable
+  playable: VIDEO.playable,
+  lockFile
 });
 // 技能：照 Claude Code 的 SKILL.md 写法，认存储根/技能、~/.claude/skills 与工作目录/.claude/skills（见 server/skills.js）
 const SKILLS = require("./server/skills.js")({ skillsHome: () => STORE.paths().skills });
@@ -153,7 +156,12 @@ const MCP = require("./server/mcp/index.js")({
 // 看台：替页面问出模型所用浏览器的调试地址，其余页面直连（见 server/stage.js）
 const STAGE = STAGE_LIB({ root: () => STORE.paths().root });
 // 游目里的 Office 引擎：另起一个本机端口服务编辑器与宿主页，言的页面领凭据开文件、作答前后吩咐存盘与锁（见 server/office.js）
-const OFFICE = require("./server/office.js").createOffice({ root: () => STORE.paths().root, bridgePort: PORT });
+const OFFICE = require("./server/office.js").createOffice({
+  root: () => STORE.paths().root,
+  bridgePort: PORT,
+  lockFile,
+  resolvePath: WORK.resolveFile
+});
 // 总线：长请求的响应从页面的一条事件流回去，不再一个请求占一条浏览器连接（见 server/bus.js）
 const BUS = require("./server/bus.js")({ dispatch });
 // 模型转发：测试连接、列模型、对话；各家接口的差异都在 server/model/ 的登记表里（ChatGPT 订阅的登录凭证随存储根）

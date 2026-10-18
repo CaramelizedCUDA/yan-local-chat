@@ -54,6 +54,8 @@
   bgStarted:
     "后台指令 {{id}} 已开始（头 {{seconds}} 秒的输出如下）。它结束时结果会作为一条消息送到，不必轮询；要看中途输出或提前结束，用 check_command。",
   // 用户在游目里用 Office 引擎开着的文档：附在这一问末尾（见 src/26-stage/60-office.js 的 officeNote）
+  officeAvailable:
+    "游目已安装 Office 编辑引擎。docx、xlsx、pptx、odt、ods、odp 可在浏览器里编辑并自动存回原件；提供 open_office 时用它打开，用户也可点卷宗预览。普通 HTML、Markdown 展示页只负责展示，旧格式和宏文件交给本机 Office。",
   officeOpen:
     "用户正在游目里看、改这几份文件（已存盘；你作答期间锁着，答完会重新载入给用户看）。说「这份文档」多半指它；要改就直接改文件本身：\n{{files}}",
   // 前台指令转入后台：等满 timeout 还没完（bgWaited），或有人插话（bgReleased）

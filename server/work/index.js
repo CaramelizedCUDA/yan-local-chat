@@ -16,7 +16,7 @@ const createFiles = require("./files.js");
 const createFind = require("./find.js");
 const createIntent = require("./intent.js");
 
-module.exports = function createWork({ archiveHome, workHome, toolEnv, playable }) {
+module.exports = function createWork({ archiveHome, workHome, toolEnv, playable, lockFile = createLocks().lockFile }) {
   // ---- 执事模式：给模型一个工作目录，能跑指令、读写文件 ----
   // 只做四件事：跑一条指令、写文件、读文件、列目录。路径默认限定在工作目录之内（页面放开后绝对路径可指向目录之外）；指令在工作目录里用本机 shell 执行。
   // 不做进程隔离——这是用户自己的机器，页面上每条指令都看得见，并按问而后行 / 审而后行 / 径行三档处理。
@@ -29,19 +29,18 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
   const failed = error => errorText(error, 4000);
   const resolveWorkdir = raw => paths.resolveWorkdir(raw, workHome);
   const {
-      WORK_SHELL,
-      runShell,
-      runForeground,
-      releaseForeground,
-      startBackground,
-      backgroundReport,
-      discardBackground,
-      checkBackground,
-      watchBackground
-    } = createShell({
-      toolEnv
-    }),
-    { lockFile } = createLocks();
+    WORK_SHELL,
+    runShell,
+    runForeground,
+    releaseForeground,
+    startBackground,
+    backgroundReport,
+    discardBackground,
+    checkBackground,
+    watchBackground
+  } = createShell({
+    toolEnv
+  });
   // 沙箱分两档：问而后行（或没说档位的请求）用严的；审而后行、径行用宽的——文件工具在宽档里不设防，指令只守系统本身（见 server/sandbox.js）
   const looseTier = body => body.permission === "review" || body.permission === "auto";
   const strictBox = body => body.sandbox === true && !looseTier(body);
@@ -195,6 +194,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
 
   return {
     workHome,
+    resolveFile: async body => targetOf(resolveWorkdir(body.workdir), body, { write: true }),
     SCRATCH_DIR,
     WORK_SHELL,
     // 都碰本机磁盘或本机进程：只受理本站页面与 VS Code Webview（见 server.js 的接口表）

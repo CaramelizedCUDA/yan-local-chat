@@ -50,6 +50,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   // 用户在游目里开着的文档（这段对话开的）：开工前存盘锁住，收尾放开（见 src/26-stage/60-office.js）
   /** @type {string[]} */
   let officeDocs = [];
+  const officeOwner = `${PAGE_ID}:${uid()}`;
+  let officePreparing = Promise.resolve([]);
   try {
     const budget = inlineTextBudget(profile),
       // 续写：这一答开工前的样子（已写的话与那时的行迹）。作答途中压了前文要重装时，照的仍是这一份，这一截新做的在历史后段
@@ -96,10 +98,11 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }
       return head;
     };
+    officePreparing = officeLock(conversation, officeOwner, job.controller.signal);
     [, , officeDocs] = await Promise.all([
       loadLedger(conversation, job.controller.signal),
       loadIntent(conversation, job.controller.signal),
-      officeLock(conversation)
+      officePreparing
     ]);
     history = await buildHead();
     const watch = intentWatch(conversation);
@@ -218,7 +221,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }
     }
     if (requestJobs.get(conversation.id) === job) requestJobs.delete(conversation.id);
-    if (officeDocs.length) officeUnlock(conversation);
+    // 别的准备任务先失败，也要收好已经发出的锁；迟到完成和部分成功都释放同一张作答凭据。
+    await officePreparing.catch(() => {});
+    await officeUnlock(conversation, officeOwner);
     settleSupplements(conversation, assistant, job, profile);
     if (currentId !== conversation.id || view !== "chat") conversation.unread = true;
     markDirty(conversation.id);

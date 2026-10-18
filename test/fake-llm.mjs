@@ -259,6 +259,7 @@ http
             delta({ content: "OFFICE｜" }),
             delta({ content: whole.includes("用户正在游目里看、改这几份文件") ? "seen｜" : "none｜" }),
             delta({ content: whole.includes("测试.docx") ? "测试.docx" : "-" }),
+            delta({ content: whole.includes("游目已安装 Office 编辑引擎") ? "｜capable" : "｜unavailable" }),
             delta({}, { usage: { total_tokens: 5 } })
           ],
           1200

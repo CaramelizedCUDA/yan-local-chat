@@ -1553,6 +1553,14 @@ var YAN_EN = {
     "Use the browser to [a task on the web, e.g. compare prices across a few sites and put them in a table, enter this list into an admin panel]. Check with me whenever a judgment call comes up.",
   原型演示: "Build a prototype",
   "在这个目录里从零做一个（一个小作品，比如番茄钟、记账本、贪吃蛇），一个网页就行，做好映射到浏览器里，检查无误后向我汇报。":
-    "Build [a small project, e.g. a pomodoro timer, an expense tracker, snake] from scratch in this folder as a single web page. Open it in the browser, check it works, then report back."
+    "Build [a small project, e.g. a pomodoro timer, an expense tracker, snake] from scratch in this folder as a single web page. Open it in the browser, check it works, then report back.",
+  打开文档: "Open document",
+  "文档未能存盘并锁定，请检查游目中的文档后再试": "The document could not be saved and locked. Check it in the browser stage and retry.",
+  "内嵌编辑支持 docx、xlsx、pptx、odt、ods、odp；HTML 和 Markdown 展示页不会自动变成编辑器":
+    "Embedded editing supports docx, xlsx, pptx, odt, ods and odp. HTML and Markdown preview pages are not editors.",
+  "已在游目打开可编辑的 Office 文档。本答期间暂为只读，作答结束后恢复编辑；用户编辑会存回原文件，无需另建编辑服务。":
+    "The editable Office document is open in the browser stage. It is read-only during this answer; editing resumes afterwards and saves to the original file.",
+  已在游目打开: "Opened in browser stage",
+  格式不支持: "Unsupported format"
 };
 if (typeof module === "object") module.exports = YAN_EN;
