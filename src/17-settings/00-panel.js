@@ -138,7 +138,7 @@ function appearanceSettingsHtml() {
       ["off", t("关")]
     ],
     s.inkMotion || "on"
-  )}${fontRow(s.font)}<div class="setting-row"><div class="setting-copy"><strong>${t(`印色`)}</strong><small>${t(`界面中的点睛之色`)}</small></div><div class="segmented">${["#9b5540", "#536d62", "#5c6386", "#75644f"].map(v => `<button data-setting="accent" data-value="${v}" class="${s.accent === v ? "active" : ""}" style="color:${v}">●</button>`).join("")}</div></div>`;
+  )}${fontRow(s.font)}<div class="setting-row"><div class="setting-copy"><strong>${t(`印色`)}</strong><small>${t(`界面中的点睛之色`)}</small></div><div class="segmented accent-segmented">${["#9b5540", "#536d62", "#5c6386", "#75644f"].map(v => `<button data-setting="accent" data-value="${v}" class="${s.accent === v ? "active" : ""}" style="color:${v}">●</button>`).join("")}</div></div>`;
 }
 // 字体一行：每个钮用自己那种字写自己的名字，一眼看出气质
 function fontRow(active = "mixed") {

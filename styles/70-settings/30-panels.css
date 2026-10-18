@@ -310,28 +310,46 @@
   color: var(--ink-3);
   font-size: 11px;
 }
+/* 分段钮（设置各栏、模型卡片、预设、MCP、游目、模型菜单的思考深度共用）：只留字，字间一道短丝栏，选中的墨色加粗、未选的淡墨——
+   与请示条「运行 · 跳过 · 径行」、输入框上方「目录」那一排同式，不添颜色。
+   落选的（见 设计稿/87）：灰槽里一块白滑块带投影（iOS 的画法）；字下一道朱线（同卷宗分类，但设置一屏六七道朱线）；
+   丝栏同此、选中的字下点一粒朱「圈点」（朱留给要人注意的，选中某档只是静态属性） */
 .segmented {
   display: flex;
-  padding: 3px;
-  border-radius: var(--radius-m);
-  background: var(--paper-2);
+  align-items: center;
 }
 .segmented button {
+  padding: 4px 11px;
   white-space: nowrap;
-  min-width: 62px;
-  padding: 6px 9px;
-  border-radius: var(--radius-m);
   color: var(--ink-3);
-  font-size: 11px;
+  font: 12px var(--title);
+  letter-spacing: 0.06em;
+  transition: color 0.15s;
+}
+.segmented button + button {
+  background: linear-gradient(var(--line), var(--line)) left center / 1px 11px no-repeat;
+}
+.segmented button:hover {
+  color: var(--ink-2);
 }
 .segmented button.active {
-  background: var(--paper);
   color: var(--ink);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+  font-weight: 600;
+}
+/* 钮靠右（设置行）末一格不留右空、靠左（题在上的栅格里）头一格不留左空，字与两边对齐 */
+.setting-row .segmented button:last-child {
+  padding-right: 1px;
+}
+.profile-grid .segmented button:first-child {
+  padding-left: 1px;
 }
 .font-segmented button {
-  min-width: 54px;
   font-size: 13px;
+  letter-spacing: 0.04em;
+}
+/* 印色：未选的几粒淡一些 */
+.accent-segmented button:not(.active) {
+  opacity: 0.6;
 }
 .close-modal {
   position: absolute;
