@@ -1,25 +1,12 @@
-/* 代码块：纸上淡染一块，不框、题头不画横线；语言与「复制」靠右一行，复制常显（好复制是这一块的本分，不为统一藏起来）。
-   亮色用纸色淡染（墨调的底偏冷偏灰）；暗色里 paper-2 与纸只差一点、几乎看不出，改用墨提一丝。
-   落选的（见 设计稿/88）：不框不衬底、工具条指到才浮（同交互内容，但代码混进正文、没了辨识度）；上下两道淡墨线（同三线表，代码一多横线就乱）；
-   更进一步的晕开边缘、加行号也没做——变化大了，是拿局部的好用去换整体的统一 */
+/* 代码块：衬底加框、题头一道线写语言，右边一枚复制小画（与回复下的复制同一笔）。代码要一眼认出边界，框留着。
+   试过又撤回的（见 设计稿/88）：去框去题头线、只留纸上淡染一块（丙）——实用起来边界发虚，不如有框的清楚；
+   不框不衬底、工具条指到才浮（甲，代码混进正文）；上下两道淡墨线（乙，代码一多横线就乱） */
 .code-block {
   margin: 1em 0;
   overflow: hidden;
-  border-radius: var(--radius-s);
-  background: color-mix(in srgb, var(--paper-2) 75%, transparent);
-}
-:root[data-theme="dark"] .code-block {
-  background: color-mix(in srgb, var(--ink) 4.5%, transparent);
-}
-.code-block > .code-head {
-  flex-direction: row-reverse;
-  justify-content: flex-start;
-  gap: 4px;
-  padding: 5px 6px 0;
-  border-bottom: 0;
-}
-.markdown .code-block > pre {
-  padding-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--paper-2);
 }
 .code-head {
   display: flex;
