@@ -1127,19 +1127,9 @@ var YAN_EN = {
   "后台 {0} · {1}{2}": "Background {0} · {1}{2}",
   "已结束 · 退出码 {0}": "Finished · exit code {0}",
   "转入后台 {0} · {1}{2}": "Moved to background {0} · {1}{2}",
-  "Office 办公底座": "Office suite",
   "已收入 {0} 个夹、{1} 件": "Added {0} {0|folder|folders} and {1} {1|file|files}",
   "文件夹未能收入：{0}": "Could not add the folder: {0}",
   "文件夹请拖进卷宗：案上只放文件": "Drop folders into the archive; attachments take files only",
-  "docx、xlsx、pptx 在游目里原生编辑 · 已装好": "Edit docx, xlsx and pptx natively in the browser pane · installed",
-  "docx、xlsx、pptx 在游目里原生编辑 · 有新版，点「更新」重新构建":
-    "Edit docx, xlsx and pptx natively in the browser pane · a newer version is available; Update rebuilds it",
-  "docx、xlsx、pptx 在游目里原生编辑；现场构建，约十分钟，占约 370 MB":
-    "Edit docx, xlsx and pptx natively in the browser pane. Built on this machine: about 10 minutes, about 370 MB",
-  已是最新版: "Already up to date",
-  "Office 办公底座已装好": "Office suite installed",
-  游目的浏览器没能打开: "Could not open the browser pane",
-  "游目里没能打开：{0}": "Could not open in the browser pane: {0}",
   "完成 · {0}": "Done · {0}",
   "退出码 {0} · {1}": "Exit code {0} · {1}",
   后台: "Background",
@@ -1553,14 +1543,6 @@ var YAN_EN = {
     "Use the browser to [a task on the web, e.g. compare prices across a few sites and put them in a table, enter this list into an admin panel]. Check with me whenever a judgment call comes up.",
   原型演示: "Build a prototype",
   "在这个目录里从零做一个（一个小作品，比如番茄钟、记账本、贪吃蛇），一个网页就行，做好映射到浏览器里，检查无误后向我汇报。":
-    "Build [a small project, e.g. a pomodoro timer, an expense tracker, snake] from scratch in this folder as a single web page. Open it in the browser, check it works, then report back.",
-  打开文档: "Open document",
-  "文档未能存盘并锁定，请检查游目中的文档后再试": "The document could not be saved and locked. Check it in the browser stage and retry.",
-  "内嵌编辑支持 docx、xlsx、pptx、odt、ods、odp；HTML 和 Markdown 展示页不会自动变成编辑器":
-    "Embedded editing supports docx, xlsx, pptx, odt, ods and odp. HTML and Markdown preview pages are not editors.",
-  "已在游目打开可编辑的 Office 文档。本答期间暂为只读，作答结束后恢复编辑；用户编辑会存回原文件，无需另建编辑服务。":
-    "The editable Office document is open in the browser stage. It is read-only during this answer; editing resumes afterwards and saves to the original file.",
-  已在游目打开: "Opened in browser stage",
-  格式不支持: "Unsupported format"
+    "Build [a small project, e.g. a pomodoro timer, an expense tracker, snake] from scratch in this folder as a single web page. Open it in the browser, check it works, then report back."
 };
 if (typeof module === "object") module.exports = YAN_EN;

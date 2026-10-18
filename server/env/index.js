@@ -403,6 +403,3 @@ function findFile(dir, name) {
   }
   return null;
 }
-
-// 解压也给游目的 Office 引擎用（server/office.js）
-module.exports.unpack = unpack;

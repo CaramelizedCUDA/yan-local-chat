@@ -346,16 +346,6 @@
     }
   },
 
-  open_office: {
-    description:
-      "在游目里打开本机 Office 文件，供用户编辑并自动存回原件：支持 docx、xlsx、pptx、odt、ods、odp。本答期间文档只读，答完恢复编辑。HTML、Markdown 展示页不属于 Office 编辑器。",
-    parameters: {
-      type: "object",
-      properties: { path: { type: "string", description: "相对当前工作目录（对谈为卷宗）的文件路径；允许出目录时可用完整绝对路径" } },
-      required: ["path"]
-    }
-  },
-
   read_document: {
     description:
       "读对话附件、卷宗里的文档（PDF、Office、文本）或技能的说明，全文或片段；长文档按页码或关键词只取片段。{{docs}}卷宗里有什么不清楚时，name 留空即列出。",

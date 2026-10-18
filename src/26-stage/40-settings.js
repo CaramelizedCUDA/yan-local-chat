@@ -14,9 +14,9 @@ function stageBuiltinConfig() {
     timeout: 60
   };
 }
-/** @type {{ home: string, output: string, installed: boolean, version: string, browsers: Record<string, boolean>, office?: { installed: boolean, commit: string, current: boolean }, installing?: string, progress?: number | null } | null} */
+/** @type {{ home: string, output: string, installed: boolean, version: string, browsers: Record<string, boolean>, installing?: string, progress?: number | null } | null} */
 let stageHomeState = null;
-// 正在装的：驱动 deps / 内核 chromium / Office 办公底座 office；内核下到几成（装着时隔两秒问一次桥接）
+// 正在装的：驱动 deps / 内核 chromium；内核下到几成（装着时隔两秒问一次桥接）
 let stageInstalling = "",
   /** @type {number | null} */ stageProgress = null;
 const STAGE_BROWSERS = /** @type {const} */ ([
@@ -55,13 +55,6 @@ function stageSettingsHtml() {
               ? t("浏览器已开")
               : t("执事的浏览器，随用随启");
   const deps = !at ? "……" : at.installed ? t`Playwright MCP · ${escapeHtml(at.version)} 版` : t("未安装");
-  const office = !at
-    ? "……"
-    : at.office?.installed
-      ? at.office.current
-        ? t("docx、xlsx、pptx 在游目里原生编辑 · 已装好")
-        : t("docx、xlsx、pptx 在游目里原生编辑 · 有新版，点「更新」重新构建")
-      : t("docx、xlsx、pptx 在游目里原生编辑；现场构建，约十分钟，占约 370 MB");
   const installing = (/** @type {string} */ what, /** @type {string} */ label) =>
     `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? stageInstallLabel() : label}</button>`;
   return (
@@ -86,7 +79,6 @@ function stageSettingsHtml() {
       browser
     )}</div></div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>${t(`驱动`)}</strong><small>${deps}</small></div>${installing("deps", at?.installed ? t("更新") : t("安装"))}</div>` +
-    `<div class="setting-row"><div class="setting-copy"><strong>${t(`Office 办公底座`)}</strong><small>${office}</small></div>${installing("office", at?.office?.installed ? t("更新") : t("安装"))}</div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>${t(`存储`)}</strong><small>${t`登录、收藏与下载 · ${at ? code(at.home) : "……"}`}</small></div><button type="button" class="outline-btn" id="stageRevealHome">${t(`打开文件夹`)}</button></div>`
   );
 }
@@ -94,7 +86,7 @@ async function stageLoadHome() {
   stageHomeState = await bridge("/api/stage/home", {}).catch(() => null);
   // 页面刷新前点过「安装」、桥接那边还在装：接着等那一趟（桥接不另起一个），装完照常报
   const going = stageHomeState?.installing;
-  if ((going === "deps" || going === "chromium" || going === "office") && !stageInstalling) return void stageInstall(going);
+  if ((going === "deps" || going === "chromium") && !stageInstalling) return void stageInstall(going);
   if (stageHomeState && settingsTab === "stage" && !$("#settingsModal").classList.contains("hidden")) renderSettings();
 }
 /** @param {Partial<NonNullable<typeof store.settings.stage>>} patch */
@@ -108,7 +100,7 @@ function stageSetOptions(patch) {
 function stageInstallLabel() {
   return stageProgress === null ? t("安装中…") : t`安装中 ${stageProgress}%`;
 }
-/** @param {"deps" | "chromium" | "office"} what */
+/** @param {"deps" | "chromium"} what */
 async function stageInstall(what) {
   stageInstalling = what;
   stageProgress = null;
@@ -122,10 +114,9 @@ async function stageInstall(what) {
     if (button) button.textContent = stageInstallLabel();
   }, 2000);
   try {
-    // Office 引擎要取源码、装依赖、构建，网慢时半小时也是有的
-    stageHomeState = await bridge("/api/stage/install", { what }, AbortSignal.timeout((what === "office" ? 60 : 15) * 60000));
-    toast(what === "deps" ? t("驱动已安装") : what === "office" ? t("Office 办公底座已装好") : t("内核已安装"));
-    if (what !== "office" && store.settings.stage?.enabled) stageSetOptions({});
+    stageHomeState = await bridge("/api/stage/install", { what }, AbortSignal.timeout(15 * 60000));
+    toast(what === "deps" ? t("驱动已安装") : t("内核已安装"));
+    if (store.settings.stage?.enabled) stageSetOptions({});
   } catch (error) {
     toast(String(/** @type {any} */ (error).message || error).slice(0, 160), 6000);
   } finally {
@@ -149,9 +140,7 @@ function bindStageSettings() {
       return void bridge("/api/stage/open", {
         url: STAGE_BROWSER_SITES[/** @type {"msedge" | "chrome"} */ (target.dataset.stageGet)]
       }).catch(error => toast(String(error.message || error).slice(0, 80)));
-    // 办公底座钉死一版：已是这一版就不白白重新构建十分钟
-    if (target.dataset.stageInstall === "office" && stageHomeState?.office?.current) return void toast(t("已是最新版"));
-    if (target.dataset.stageInstall) return void stageInstall(/** @type {"deps" | "chromium" | "office"} */ (target.dataset.stageInstall));
+    if (target.dataset.stageInstall) return void stageInstall(/** @type {"deps" | "chromium"} */ (target.dataset.stageInstall));
     if (target.id === "stageRevealHome" && stageHomeState)
       return void bridge("/api/stage/reveal", { path: stageHomeState.home }).catch(error =>
         toast(String(error.message || error).slice(0, 80))

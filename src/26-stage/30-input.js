@@ -269,7 +269,6 @@ function bindStageFind() {
 }
 
 function bindStage() {
-  window.addEventListener("pagehide", releaseOfficeTurns);
   // 入口那一笔朱竖：12 × 64 的画幅，自页顶垂下、收笔出锋
   $("#stagePin svg").innerHTML = brushStroke([6, 0, 5.4, 32, 6.3, 62], 4.2, { tone: "zhu", tail: 0, head: 1 });
   $("#stagePin").addEventListener("click", openStage);

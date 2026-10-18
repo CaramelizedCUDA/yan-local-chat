@@ -17,7 +17,6 @@ function setup(replies = []) {
       saveStoreSoon = saveStore = renderSendButtons = renderHistory =
         setJobLabel = refreshSteps = markDirty = accountUsage = renderQuota = () => {};
       keepInWindow = mcpForTurn = maybeAutoCompact = maybeAutoTitle = async () => {};
-      officeLock = async () => []; officeUnlock = async () => {};
       reserveTokens = () => () => {};
       restFor = async () => {};
       systemPrompt = () => '';

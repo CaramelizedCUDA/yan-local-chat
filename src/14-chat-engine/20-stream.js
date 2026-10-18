@@ -47,11 +47,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
   let releaseQuota = () => {};
   /** @type {ReturnType<typeof takeHeldReports>} */
   let held = [];
-  // 用户在游目里开着的文档（这段对话开的）：开工前存盘锁住，收尾放开（见 src/26-stage/60-office.js）
-  /** @type {string[]} */
-  let officeDocs = [];
-  const officeOwner = `${PAGE_ID}:${uid()}`;
-  let officePreparing = Promise.resolve([]);
   try {
     const budget = inlineTextBudget(profile),
       // 续写：这一答开工前的样子（已写的话与那时的行迹）。作答途中压了前文要重装时，照的仍是这一份，这一截新做的在历史后段
@@ -79,14 +74,12 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       // 意也一样（见 19-intent/10-store.js）
       const ask = head.findLast(entry => entry.role === "user"),
         ledger = ledgerNote(conversation, "main", profile),
-        intent = intentNote(conversation),
-        office = officeNote(officeDocs);
+        intent = intentNote(conversation);
       if (ask) {
         if (typeof ask.content === "string") ask.content = [{ type: "text", text: ask.content }];
         ask.content[0].cache_control = { type: "ephemeral" };
         if (ledger) ask.content.push({ type: "text", text: ledger.trimEnd() });
         if (intent) ask.content.push({ type: "text", text: intent.trimEnd() });
-        if (office) ask.content.push({ type: "text", text: office });
       }
       // 续写：已写的话连同途中递进来的补言、回报照原处排上（与下一问装上一答同一个写法，见 answerParts），
       // 做过的步骤也得让它知道（另发一句「继续」时上一答的行迹本就随着去），不然从头再做一遍。只做了几步、一个字没写就断的也一样
@@ -98,12 +91,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }
       return head;
     };
-    officePreparing = officeLock(conversation, officeOwner, job.controller.signal);
-    [, , officeDocs] = await Promise.all([
-      loadLedger(conversation, job.controller.signal),
-      loadIntent(conversation, job.controller.signal),
-      officePreparing
-    ]);
+    await Promise.all([loadLedger(conversation, job.controller.signal), loadIntent(conversation, job.controller.signal)]);
     history = await buildHead();
     const watch = intentWatch(conversation);
     // 上一答断着时回来的回报（见 wakeWithReports）：开工即递上，模型续写时就知道帮手怎样了
@@ -221,9 +209,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }
     }
     if (requestJobs.get(conversation.id) === job) requestJobs.delete(conversation.id);
-    // 别的准备任务先失败，也要收好已经发出的锁；迟到完成和部分成功都释放同一张作答凭据。
-    await officePreparing.catch(() => {});
-    await officeUnlock(conversation, officeOwner);
     settleSupplements(conversation, assistant, job, profile);
     if (currentId !== conversation.id || view !== "chat") conversation.unread = true;
     markDirty(conversation.id);
