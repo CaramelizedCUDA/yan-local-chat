@@ -369,6 +369,9 @@ function createOffice({ root, bridgePort }) {
       sendJson(res, 400, { error: String(/** @type {any} */ (error).message || error) });
     }
   }
+  // 这份归不归这段对话：卷宗页开的不归哪段（conversation 为空），哪段作答都算它的
+  const belongs = (/** @type {{ conversation: string }} */ doc, /** @type {string} */ conversation) =>
+    !conversation || !doc.conversation || doc.conversation === conversation;
   // 吩咐某段对话开着的各份（作答前 save+lock、答完 unlock）；不给 conversation 就是全部
   async function relay(/** @type {http.IncomingMessage} */ req, /** @type {http.ServerResponse} */ res) {
     const body = await readJson(req),
@@ -377,8 +380,7 @@ function createOffice({ root, bridgePort }) {
     if (!cmd) return sendJson(res, 400, { error: "不认得的吩咐" });
     const out = [];
     for (const [token, doc] of docs)
-      if (doc.hosts.size && (!conversation || doc.conversation === conversation))
-        out.push({ path: doc.path, ...(await command(token, cmd)) });
+      if (doc.hosts.size && belongs(doc, conversation)) out.push({ path: doc.path, ...(await command(token, cmd)) });
     sendJson(res, 200, { docs: out });
   }
   // 此刻开着（有宿主页连着）的几份：作答时告诉模型用户在看哪份
@@ -387,7 +389,7 @@ function createOffice({ root, bridgePort }) {
       conversation = String(body.conversation || "");
     sendJson(res, 200, {
       docs: [...docs.values()]
-        .filter(doc => doc.hosts.size && (!conversation || doc.conversation === conversation))
+        .filter(doc => doc.hosts.size && belongs(doc, conversation))
         .map(doc => ({ path: doc.path, name: path.basename(doc.path) }))
     });
   }

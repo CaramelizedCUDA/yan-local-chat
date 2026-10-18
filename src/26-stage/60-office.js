@@ -12,7 +12,8 @@ function isOfficeFile(name) {
 async function openInOffice(path) {
   const data = await bridge("/api/office/open", {
     path,
-    conversation: currentConversation()?.id || "",
+    // 在对话里开的（成品卡）归那段对话；卷宗页开的不归哪段，哪段作答都锁
+    conversation: view === "chat" ? currentConversation()?.id || "" : "",
     locale: LANG === "en" ? "en" : "zh",
     theme: document.documentElement.dataset.theme === "dark" ? "dark" : "light"
   });
@@ -24,7 +25,8 @@ async function openInOffice(path) {
 // 预览器先问这里：Office 文件、游目开着，就进游目编辑；打不开（没装引擎）退回预览，别的错报一声也退回
 /** @param {{ path?: string }} source @param {string} name @returns {Promise<boolean>} 已在游目里开了 */
 async function officeInstead(source, name) {
-  if (!source.path || !isOfficeFile(name) || !store.settings.stage?.enabled || !archiveDir()) return false;
+  // 游目可用：连着浏览器，或配了浏览器服务（言自带的游目、人自己接的 Playwright 都算）
+  if (!source.path || !isOfficeFile(name) || !(stage.ws || stageConfig()) || !archiveDir()) return false;
   try {
     await openInOffice(`${archiveDir()}/${source.path}`);
     return true;
