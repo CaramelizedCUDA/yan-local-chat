@@ -382,7 +382,7 @@ function createOffice({ root, bridgePort, lockFile = createLocks().lockFile, com
         requested = body.workdir
           ? await (resolvePath ? resolvePath(body) : Promise.reject(Error("未接入文档路径权限检查")))
           : path.resolve(String(body.path || ""));
-      if (!officeState(root()).installed) throw Error("Office 引擎还没装：设置 → 游目里安装");
+      if (!officeState(root()).installed) throw Error("Office 办公底座还没装：设置 → 游目里安装");
       if (!OFFICE_EXTS.has(path.extname(requested).slice(1).toLowerCase()))
         throw Error("这种格式请用本机 Office 打开；内嵌编辑支持 docx、xlsx、pptx、odt、ods、odp");
       const canonical = await fs.promises.realpath(requested);
