@@ -167,7 +167,6 @@ html.work-mode .chat-scroll-grabber {
   align-items: center;
   padding: 1px 3px 2px;
   border: 1px solid var(--line);
-  border-top: 2px solid var(--accent);
   border-radius: var(--radius-s);
   background: var(--paper);
   color: var(--ink-2);
@@ -176,7 +175,12 @@ html.work-mode .chat-scroll-grabber {
   animation: rise 0.16s ease-out;
   transform: translate(-50%, 0);
 }
-/* 纸签的样子与「回到最新」同一处说明，见 styles/90-motion-responsive.css */
+/* 划选浮起的「引用 | 旁注」：方角纸签，两枚只用字、短丝栏相隔，与分段钮同式（设计稿/87 甲）。
+   落选的：顶上一道朱（设计稿/90 甲，像给小块扣了个盖）；字前一粒朱（两个选项各点一粒、或只点一个都怪，见 设计稿/91 丙——那粒给了提示条） */
+:root[data-theme="dark"] .quote-tip {
+  background: var(--paper-3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
 .quote-tip button {
   padding: 3px 9px;
   border-radius: 0;
@@ -186,11 +190,11 @@ html.work-mode .chat-scroll-grabber {
   letter-spacing: 0.04em;
 }
 .quote-tip button:hover {
-  color: var(--accent);
+  color: var(--ink);
 }
 .quote-tip-sep {
   width: 1px;
-  height: 12px;
+  height: 11px;
   margin: 0 1px;
   background: var(--line);
 }
