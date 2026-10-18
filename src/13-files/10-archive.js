@@ -8,6 +8,8 @@ let archiveEntries = null,
   archiveDirs = [],
   archiveScratch = null,
   archiveLoading = null,
+  /** @type {Promise<void> | null} 排在正取着的那一趟后面的下一趟 */
+  archiveQueued = null,
   // 卷宗页此刻站在哪一层（相对卷宗根，"" 即根）：只列这一层的夹与件，拖进来的文件也落在这一层
   libraryDir = "",
   // 正在就地改名的那一项（文件或夹的路径）；空即没有
@@ -53,7 +55,13 @@ async function archiveFileExists({ root, path }) {
   }
 }
 async function refreshArchive() {
-  if (archiveLoading) return archiveLoading;
+  // 正取着的那一趟可能早于刚才的改动（新建夹、改名、收入）：复用它就拿回改动前的列表，重画时冲掉新夹与改名框。
+  // 排一趟在它后面再取，几处同时要的并成这一趟
+  if (archiveLoading)
+    return (archiveQueued ||= archiveLoading.then(() => {
+      archiveQueued = null;
+      return refreshArchive();
+    }));
   archiveLoading = bridge("/api/archive/list", { root: archiveDir() }, AbortSignal.timeout(8000))
     .then(data => {
       archiveEntries = data.entries || [];

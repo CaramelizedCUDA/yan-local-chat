@@ -58,7 +58,9 @@ function stageSettingsHtml() {
   const office = !at
     ? "……"
     : at.office?.installed
-      ? t`docx、xlsx、pptx 在游目里原生编辑 · ${escapeHtml(at.office.commit)}${at.office.current ? "" : t(" · 有新版")}`
+      ? at.office.current
+        ? t("docx、xlsx、pptx 在游目里原生编辑 · 已装好")
+        : t("docx、xlsx、pptx 在游目里原生编辑 · 有新版，点「更新」重新构建")
       : t("docx、xlsx、pptx 在游目里原生编辑；现场构建，约十分钟，占约 370 MB");
   const installing = (/** @type {string} */ what, /** @type {string} */ label) =>
     `<button type="button" class="outline-btn" data-stage-install="${what}"${stageInstalling ? " disabled" : ""}>${stageInstalling === what ? stageInstallLabel() : label}</button>`;

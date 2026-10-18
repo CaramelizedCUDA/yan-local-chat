@@ -382,9 +382,33 @@ check(
     !existsSync(`${ARCHIVE}/课程/场景示例/.git`) &&
     !existsSync(`${ARCHIVE}/课程/场景示例/git`)
 );
+// Markdown 里的相对图片照这份文件所在的那一层去卷宗里取（先写好，下一回拖入时卷宗刷新就列出来）
+mkdirSync(`${ARCHIVE}/课程/场景示例/images`, { recursive: true });
+writeFileSync(
+  `${ARCHIVE}/课程/场景示例/images/点 1.png`,
+  Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/eL9GtQAAAABJRU5ErkJggg==", "base64")
+);
+writeFileSync(`${ARCHIVE}/课程/场景示例/读我.md`, "# 读我\n\n![](images/点%201.png)\n\n![](./images/../images/点%201.png)\n");
 await evalJs(dropFolder);
 await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程/场景示例 (2)"]')`, 8000).catch(() => {});
 check("dropping it again makes a second folder instead of merging", existsSync(`${ARCHIVE}/课程/场景示例 (2)/图/a.txt`));
+await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程/场景示例"]').click(); true`);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="课程/场景示例/读我.md"] [data-library-action="view"]')`, 8000);
+await evalJs(
+  `document.querySelector('#libraryGrid [data-library-disk="课程/场景示例/读我.md"] [data-library-action="view"]').click(); true`
+);
+await waitFor(`document.querySelectorAll("#fileViewerStage .markdown img").length === 2`, 8000).catch(() => {});
+await waitFor(`[...document.querySelectorAll("#fileViewerStage .markdown img")].every(img => img.complete)`, 8000).catch(() => {});
+check(
+  "relative images in an archived Markdown file load from beside it",
+  await evalJs(
+    `(imgs => imgs.length === 2 && imgs.every(img => img.naturalWidth === 1 && img.src.includes("/api/archive/file")))([...document.querySelectorAll("#fileViewerStage .markdown img")])`
+  ),
+  await evalJs(`[...document.querySelectorAll("#fileViewerStage .markdown img")].map(img => img.src + " " + img.naturalWidth).join(" | ")`)
+);
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+await evalJs(`document.querySelector("#libraryGrid .strip-back").click(); true`);
+await waitFor(`document.querySelector("#libraryCrumbs").textContent === "卷宗›课程"`, 8000);
 const dragCard = (path, dir) =>
   evalJs(
     `(() => { const dt = new DataTransfer(), fire = (type, node) => node.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt })),

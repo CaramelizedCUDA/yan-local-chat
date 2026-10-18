@@ -193,10 +193,42 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
     return `<div class="file-viewer-text markdown">${note}${renderMarkdown(text)}</div>`;
   }
   const text = await reader.text();
-  if (kind === "markdown") return `<div class="file-viewer-text markdown">${renderMarkdown(text.slice(0, 200000))}</div>`;
+  if (kind === "markdown")
+    return `<div class="file-viewer-text markdown">${rebaseMarkdownImages(renderMarkdown(text.slice(0, 200000)), viewerSource?.path || "")}</div>`;
   return `<div class="file-viewer-text"><pre class="file-viewer-code">${escapeHtml(text.slice(0, 200000))}</pre>${text.length > 200000 ? `<p class="file-viewer-note">${t(`仅显示前 20 万字`)}</p>` : ""}</div>`;
 }
 // CSV / TSV：引号里的换行仍属于同一个字段，显示上限按记录计。
+// Markdown 里的相对图片（![](images/a.png)）：照这份文件所在的那一层去卷宗里取，与 VS Code 一样——不然渲染进言的页面，
+// 相对地址落到言自己的根上。消毒时本地的图已摘了 src、原路记在 data-path（见 04-markdown 的钩子），从那里取回；
+// 本机盘符不动，/ 开头的从卷宗根算。附件里的 Markdown 没有「所在的那一层」，不改
+/** @param {string} html @param {string} path 这份 Markdown 在卷宗里的路径 */
+function rebaseMarkdownImages(html, path) {
+  if (!path || !html.includes("data-path")) return html;
+  const box = document.createElement("template");
+  box.innerHTML = html;
+  for (const img of box.content.querySelectorAll("img[data-path]")) {
+    const ref = img.getAttribute("data-path") || "";
+    if (/^([a-z][a-z0-9+.-]*:|\/\/)/i.test(ref)) continue;
+    img.setAttribute("src", archiveFileUrl(archiveRelative(ref.startsWith("/") ? "" : parentDir(path), ref)));
+    img.removeAttribute("data-path");
+    img.removeAttribute("data-file");
+  }
+  return box.innerHTML;
+}
+/** @param {string} base 卷宗里的一层（"" 即根） @param {string} ref 相对的路，可带 ./ ../ 与 %20 一类转义 */
+function archiveRelative(base, ref) {
+  let clean = ref.replace(/[?#].*$/, "").replace(/\\/g, "/");
+  try {
+    clean = decodeURI(clean);
+  } catch {}
+  const parts = base ? base.split("/") : [];
+  for (const part of clean.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return parts.join("/");
+}
 function parseDelimited(text, split, limit = Infinity) {
   const rows = [];
   let row = [];

@@ -1131,8 +1131,9 @@ var YAN_EN = {
   "已收入 {0} 个夹、{1} 件": "Added {0} {0|folder|folders} and {1} {1|file|files}",
   "文件夹未能收入：{0}": "Could not add the folder: {0}",
   "文件夹请拖进卷宗：案上只放文件": "Drop folders into the archive; attachments take files only",
-  "docx、xlsx、pptx 在游目里原生编辑 · {0}{1}": "Edit docx, xlsx and pptx natively in the browser pane · {0}{1}",
-  " · 有新版": " · update available",
+  "docx、xlsx、pptx 在游目里原生编辑 · 已装好": "Edit docx, xlsx and pptx natively in the browser pane · installed",
+  "docx、xlsx、pptx 在游目里原生编辑 · 有新版，点「更新」重新构建":
+    "Edit docx, xlsx and pptx natively in the browser pane · a newer version is available; Update rebuilds it",
   "docx、xlsx、pptx 在游目里原生编辑；现场构建，约十分钟，占约 370 MB":
     "Edit docx, xlsx and pptx natively in the browser pane. Built on this machine: about 10 minutes, about 370 MB",
   重装: "Reinstall",
