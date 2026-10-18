@@ -13,8 +13,10 @@
 // 节点不分类型：事件、功能、文件都是一句要成立的结论，粒度由模型拆到有凭据可挂为止，混着也无妨。
 // 守：按任务设、一直要守的条件（收尾前测试要过、对外接口不改）标 keep——不是要交付的结论：不上图、不计进度、不挂前提也不作前提，只在全局；
 // 立时也记下用户那一问的原话。挂测试、探针的，动过手的那一答收尾前重查（见 10-store.js 的 intentRecheck），不过即拦下——言的钩子就是它。
-// 嵌套：一项做的事拆开还有许多步，就是模块——细项写 in 指向它，至多两层（全局 › 模块 › 子模块）。前提只连同一层，跨模块的写在模块上；
+// 嵌套：一项做的事拆开还有许多步，就是模块——细项写 in 指向它，至多两层（全局 › 模块 › 子模块）。
 // 模块以里面收口的几项（同层没人以它为前提的）为前提，所以里面立住它才算立住，传播、回归照旧，不另写判定。
+// 前提可跨模块：依的是哪一项就连哪一项（评测依的是训练里那一步，不是整个训练模块）；模块只是分组，图仍是一张 DAG，查环时连模块到收口项那几条一并算。
+// 一项不成图：新立意时只有一项要立的，退回——一答之内做得完的活用不着意。
 // 本文件只放纯函数：理顺模型交来的改动、判状态、写成给模型读的字。读写与附着见 10-store.js，工具登记见 15-tools/32-intent.js
 /**
  * @typedef {"open"|"doing"|"waiting"|"done"|"assumed"|"dropped"} IntentMark 模型标的；waiting：待定，卡在人手里、等人拍板
@@ -187,17 +189,17 @@ function intentRoots(intent) {
 /** 守：没弃的几条 @param {Intent} intent */
 const intentKeeps = intent => Object.keys(intent.nodes).filter(id => intent.nodes[id].keep && !intentGone(intent, id));
 /**
- * 孤悬的：在全局、没声明为根，既无前提、也没有谁以它为前提，而图里另有根——多半是手上的一步忘了挂进它所服务的模块。
- * 只有它一项、或声明过的根不算
+ * 孤悬的：没声明为根、也没有谁以它为前提，而图里另有根——多半是手上的一步忘了连到它所撑的那一项，悄悄成了又一个根。
+ * 只有它一个根、或声明过的根不算
  * @param {Intent} intent
  */
 function intentStrays(intent) {
   const roots = intentRoots(intent);
   if (roots.length < 2) return [];
-  return roots.filter(id => !intent.nodes[id].root && !intent.nodes[id].in && !liveNeeds(intent, id).length);
+  return roots.filter(id => !intent.nodes[id].root);
 }
 /**
- * 嵌套的规矩：所属的模块要在、不成环、不过两层；前提只连同一层；根在全局；一层不宜过多
+ * 嵌套的规矩：所属的模块要在、不成环、不过两层；根在全局；一层不宜过多
  * @param {Intent} intent @returns {string[]}
  */
 function intentNestProblems(intent) {
@@ -210,9 +212,6 @@ function intentNestProblems(intent) {
     if (top && intent.nodes[top].in !== undefined && intent.nodes[intent.nodes[top].in])
       problems.push(t`${id} 的所属成了环：${[id, ...up, intent.nodes[top].in].join(" → ")}`);
     else if (up.length > INTENT_DEPTH) problems.push(t`${id} 嵌得太深：至多两层（全局 › 模块 › 子模块）`);
-    for (const need of node.needs)
-      if (intent.nodes[need] && (intent.nodes[need].in || "") !== (node.in || ""))
-        problems.push(t`${id} 的前提 ${need} 不在同一层：前提只连同一层，跨模块的写在模块上`);
     if (node.root && node.in) problems.push(t`${id} 是根，根在全局，不归模块`);
     if (node.keep && node.in) problems.push(t`${id} 是守，守在全局，不归模块`);
     if (node.keep && node.needs.length) problems.push(t`${id} 是守，不挂前提`);
@@ -240,7 +239,7 @@ function intentOrder(intent) {
   for (const id of Object.keys(intent.nodes)) visit(id);
   return out;
 }
-/** @param {Intent} intent @returns {string[]|null} 成环的一圈 */
+/** 成环的一圈：写明的前提，连同模块到它收口的几项（所以以自己所属的模块为前提也是环） @param {Intent} intent @returns {string[]|null} */
 function intentCycle(intent) {
   const state = new Map(),
     path = [];
@@ -249,7 +248,7 @@ function intentCycle(intent) {
     if (state.get(id) === 1) return [...path.slice(path.indexOf(id)), id];
     state.set(id, 1);
     path.push(id);
-    for (const need of intent.nodes[id]?.needs || []) {
+    for (const need of [...(intent.nodes[id]?.needs || []), ...intentTops(intent, id)]) {
       if (!intent.nodes[need]) continue;
       const found = visit(need);
       if (found) return found;
@@ -412,10 +411,10 @@ function normalizeIntentOps(intent, raw, workdir = "") {
       if (!mark) problems.push(t`${id} 的 state「${item.state}」不认得：只有 open / doing / waiting / done / assumed / dropped / removed`);
       else op.state = /** @type {IntentMark} */ (mark);
     }
-    // 守没有进度可标：立起、改过都即作数、重记凭据（测试不过照旧算不过，见 intentStaleWhy）
+    // 守没有进度可标：立起、改过都即作数、重记凭据（测试不过照旧算不过，见 intentStaleWhy）。
+    // 顺手带的 open、doing 之类不退回、照作数：退回过一回，模型就把守改成了寻常一项塞进模块；只有弃要说清——不守了是撤
     if (op.keep ?? !!(intent.nodes[id]?.keep || known?.keep)) {
-      if (op.state && op.state !== "done")
-        problems.push(t`${id} 是守，没有进度可标：立起即作数，复核过再写一回即重记凭据；不守了 state 给 removed`);
+      if (op.state === "dropped") problems.push(t`${id} 是守，不守了 state 给 removed`);
       else op.state = "done";
     }
     if (!known) {
@@ -453,16 +452,26 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     if (inside.length) problems.push(t`撤 ${op.id} 前，里面的 ${inside.join("、")} 先撤或挪出（同一批写上即可）`);
   }
   const cycle = intentCycle(trial);
-  if (cycle) problems.push(t`前提成了环：${cycle.join(" → ")}`);
+  if (cycle)
+    problems.push(
+      t`前提成了环：${cycle.join(" → ")}${cycle.some((id, i) => i && trial.nodes[id]?.in === cycle[i - 1]) ? t("（模块以里面收口的项为前提）") : ""}`
+    );
   // 嵌套的毛病只报这一批新添的：手编出的旧毛病不拦别的改动
   const nested = new Set(intentNestProblems(base));
   problems.push(...intentNestProblems(trial).filter(problem => !nested.has(problem)));
-  const strays = new Set(intentStrays(base));
+  // 孤悬只报这一批写到的：别的根原先就没标，不拿它拦这一批
+  const strays = new Set(intentStrays(base)),
+    written = new Set(ops.map(intentOpId));
   for (const id of intentStrays(trial))
-    if (!strays.has(id))
+    if (!strays.has(id) && written.has(id))
       problems.push(
-        t`${id} 孤悬在全局：既无前提，也没有谁以它为前提。手上的一步归进它所服务的模块（in），或写进它所撑那一项的 needs；本就是整件事要立的另一条结论，新立时标 root`
+        t`${id} 孤悬：没有谁以它为前提，也没标根。它撑的是哪一项，就写进那一项的 needs（可跨模块），或归进它所服务的模块（in）；用户定的、一直作数的界限标 keep；本就是整件事要立的另一条结论，新立时标 root`
       );
+  const goals = /** @param {Intent} at */ at => Object.keys(at.nodes).filter(id => !at.nodes[id].keep && !intentGone(at, id)).length;
+  if (!goals(intent) && goals(trial) === 1)
+    problems.push(
+      t`意是几项结论连成的图，只有一项不必立：一答之内做得完的活用不着意。真是跨多答的长活，把它要先立住的几项一并写上（needs 或 in）`
+    );
   for (const id of ops.map(intentOpId)) {
     if (trial.nodes[id]?.state === "assumed" && !trial.nodes[id].note) problems.push(t`${id} 标了假定，note 里写明借的是什么、出处在哪`);
     if (trial.nodes[id]?.state === "waiting" && !trial.nodes[id].note) problems.push(t`${id} 标了待定，note 里写明等谁、定什么`);

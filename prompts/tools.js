@@ -99,7 +99,7 @@
               claim: { type: "string", description: "要成立的那句话" },
               check: { type: "string", description: "怎么算成立" },
               when: { type: "string", description: "只在什么情形下须成立（文字说明，不是表达式）；空串撤去" },
-              needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
+              needs: { type: "array", items: { type: "string" }, description: "前提的 id，可跨模块" },
               any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
               in: { type: "string", description: "所属模块的 id：一项拆开还有许多步即作模块，细项写 in 指向它；不写即全局，至多两层" },
               anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },

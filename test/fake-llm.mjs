@@ -952,7 +952,8 @@ http
           if (n === 0)
             return call("update_intent", {
               nodes: [
-                { id: "上线", claim: "博客打得开", check: "首页回 200", root: true },
+                { id: "上线", claim: "博客打得开", check: "首页回 200", root: true, needs: ["部署"] },
+                { id: "部署", claim: "推到服务器", check: "服务器上看得到新文件" },
                 { id: "测过", claim: "改完测试要过", check: "node check.js 退出码为 0", anchors: ["test:node check.js"], keep: true }
               ]
             });

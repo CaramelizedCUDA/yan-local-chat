@@ -1,4 +1,4 @@
-// 意里的守（言的钩子）：立一项目标「上线」、一条守「测过」（凭据 test:node check.js，标成立时记下「过」）。守不上图、不计进度，
+// 意里的守（言的钩子）：立一项目标「上线」（以「部署」为前提）、一条守「测过」（凭据 test:node check.js，标成立时记下「过」）。守不上图、不计进度，
 // 卡片里在簿录之后另起一节。此后哪一答动过手、测试转为不过，收尾前对照就拦一次——那一步右侧朱字写「测过 · 测试不过」，模型接着改，
 // 收尾后再取一回，书眉不挂着「守」；动了手而测试照旧过的，照常收尾，不多费一轮
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
@@ -43,7 +43,7 @@ try {
   check(
     "the glance counts goals only, with no 守 while it holds",
     await evalJs(
-      `(g => g.textContent.includes("0/1") || g.textContent.includes("0 / 1"))(document.querySelector("#chatMeta .intent-glance")) && !document.querySelector(".intent-glance-keep")`
+      `(g => g.textContent.includes("0/2") || g.textContent.includes("0 / 2"))(document.querySelector("#chatMeta .intent-glance")) && !document.querySelector(".intent-glance-keep")`
     )
   );
 
@@ -83,7 +83,7 @@ try {
   check(
     "the card leaves 守 off the graph and lists it in its own section after the roll",
     await evalJs(
-      `!document.querySelector('.intent-svg [data-intent-node="测过"]') && !!document.querySelector('.intent-svg [data-intent-node="上线"]') && document.querySelector(".intent-keep-head + .intent-roll [data-intent-node]")?.dataset.intentNode === "测过" && /进度\\s*0\\s*\\/\\s*1/.test(document.querySelector(".intent-card .page-facts").textContent)`
+      `!document.querySelector('.intent-svg [data-intent-node="测过"]') && !!document.querySelector('.intent-svg [data-intent-node="上线"]') && document.querySelector(".intent-keep-head + .intent-roll [data-intent-node]")?.dataset.intentNode === "测过" && /进度\\s*0\\s*\\/\\s*2/.test(document.querySelector(".intent-card .page-facts").textContent)`
     )
   );
 } finally {
