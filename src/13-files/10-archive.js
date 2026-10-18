@@ -334,9 +334,12 @@ async function cleanScratch(conversation) {
   }
 }
 async function addLibraryFiles(fileList, dir = libraryDir) {
-  const files = Array.from(fileList || []);
+  await storeLibraryFiles(Array.from(fileList || []).map(file => ({ file, dir })));
+}
+/** @param {{ file: File, dir: string }[]} items @param {number} [folders] 一并建了几个夹（只为最后那句报数） */
+async function storeLibraryFiles(items, folders = 0) {
   let added = 0;
-  for (const file of files) {
+  for (const { file, dir } of items) {
     if (file.size > MAX_ARCHIVE_FILE_BYTES) {
       toast(t`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
       continue;
@@ -349,7 +352,48 @@ async function addLibraryFiles(fileList, dir = libraryDir) {
     }
   }
   await refreshArchive();
-  if (added) toast(t`已收入 ${added} 件`);
+  if (folders) toast(t`已收入 ${folders} 个夹、${added} 件`);
+  else if (added) toast(t`已收入 ${added} 件`);
+}
+// ---------- 拖进文件夹 ----------
+// 浏览器交来的 files 里，文件夹只是一个读不出内容的空条目：得在 drop 当下从 items 取出条目（过了这一刻就取不到了），再一层层往下走
+/** @param {DataTransfer} data @returns {FileSystemEntry[]} */
+function droppedEntries(data) {
+  return Array.from(data.items || [])
+    .map(item => (item.kind === "file" ? item.webkitGetAsEntry?.() : null))
+    .filter(entry => !!entry);
+}
+/** @param {FileSystemDirectoryEntry} entry @returns {Promise<FileSystemEntry[]>} 一次只给一批（Chromium 一百条），读到空为止 */
+async function folderChildren(entry) {
+  const reader = entry.createReader(),
+    all = [];
+  for (;;) {
+    const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+    if (!batch.length) return all;
+    all.push(...batch);
+  }
+}
+/** @param {FileSystemFileEntry} entry @returns {Promise<File>} */
+const entryFile = entry => new Promise((resolve, reject) => entry.file(resolve, reject));
+// 收进卷宗：夹照原样建（同名的另取名，与文件一样不覆盖），文件落进各自的夹。点开头的（.git、.DS_Store）跳过——卷宗里它们本就是藏着的
+/** @param {FileSystemEntry[]} entries */
+async function addLibraryEntries(entries) {
+  /** @type {{ file: File, dir: string }[]} */
+  const items = [];
+  let folders = 0;
+  const walk = async (/** @type {FileSystemEntry} */ entry, /** @type {string} */ dir) => {
+    if (entry.name.startsWith(".")) return;
+    if (entry.isFile) return void items.push({ file: await entryFile(/** @type {FileSystemFileEntry} */ (entry)), dir });
+    const made = await bridge("/api/archive/mkdir", { root: archiveDir(), dir, name: entry.name }, AbortSignal.timeout(20000));
+    folders += 1;
+    for (const child of await folderChildren(/** @type {FileSystemDirectoryEntry} */ (entry))) await walk(child, made.path);
+  };
+  try {
+    for (const entry of entries) await walk(entry, libraryDir);
+  } catch (error) {
+    toast(t`文件夹未能收入：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
+  }
+  await storeLibraryFiles(items, folders);
 }
 // 附件上的「藏」：原件落进卷宗目录
 async function saveToLibrary(id) {
@@ -582,7 +626,13 @@ function bindLibraryEvents() {
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
     hideDropVeil();
-    void (view === "library" ? addLibraryFiles : addFiles)(event.dataTransfer.files);
+    const entries = droppedEntries(event.dataTransfer);
+    if (view === "library") return void (entries.length ? addLibraryEntries(entries) : addLibraryFiles(event.dataTransfer.files));
+    // 案上只放文件：拖来的夹不展开（一个夹动辄几百件），请它进卷宗
+    const folders = entries.filter(entry => entry.isDirectory);
+    if (folders.length) toast(t("文件夹请拖进卷宗：案上只放文件"));
+    const files = Array.from(event.dataTransfer.files).filter(file => !folders.some(entry => entry.name === file.name));
+    if (files.length) void addFiles(files);
   });
   // 正文里指向本地文件的链接（模型写的「下载《x.docx》」）：页面上没有那样的路。先按原路在这段对话的落脚处取，
   // 取不到（sandbox:/ 之类、或路写错了层）再到卷宗里找同名的那件

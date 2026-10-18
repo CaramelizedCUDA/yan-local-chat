@@ -1128,6 +1128,9 @@ var YAN_EN = {
   "已结束 · 退出码 {0}": "Finished · exit code {0}",
   "转入后台 {0} · {1}{2}": "Moved to background {0} · {1}{2}",
   "Office 引擎": "Office engine",
+  "已收入 {0} 个夹、{1} 件": "Added {0} {0|folder|folders} and {1} {1|file|files}",
+  "文件夹未能收入：{0}": "Could not add the folder: {0}",
+  "文件夹请拖进卷宗：案上只放文件": "Drop folders into the archive; attachments take files only",
   "docx、xlsx、pptx 在游目里原生编辑 · {0}{1}": "Edit docx, xlsx and pptx natively in the browser pane · {0}{1}",
   " · 有新版": " · update available",
   "docx、xlsx、pptx 在游目里原生编辑；现场构建，约十分钟，占约 370 MB":

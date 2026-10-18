@@ -361,6 +361,30 @@ await evalJs(
 );
 await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="课程/新.txt"]')`, 8000);
 check("files dropped in land in the folder being viewed", existsSync(`${ARCHIVE}/课程/新.txt`));
+// 拖进一个文件夹：照原样建夹、文件落进各层，点开头的跳过；同名的夹另取名，不并进旧的。
+// 真的文件夹拖放合成不出来，这里照浏览器的目录条目接口（webkitGetAsEntry / createReader / readEntries 分批）造一个
+const dropFolder = `(() => {
+  const file = (name, text) => ({ name, isFile: true, isDirectory: false, file: ok => ok(new File([text], name)) });
+  const dir = (name, children) => ({ name, isFile: false, isDirectory: true, createReader: () => { let given = false; return { readEntries: ok => setTimeout(() => ok(given ? [] : ((given = true), children))) }; } });
+  const tree = dir("场景示例", [file("说明.md", "# 说明"), file(".DS_Store", "x"), dir("图", [file("a.txt", "A")]), dir(".git", [file("HEAD", "ref")])]);
+  const event = new Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: { types: ["Files"], files: [], items: [{ kind: "file", webkitGetAsEntry: () => tree }] } });
+  window.dispatchEvent(event);
+  return true;
+})()`;
+await evalJs(dropFolder);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程/场景示例"]')`, 8000).catch(() => {});
+check(
+  "a dropped folder comes in with its structure, skipping dot entries",
+  existsSync(`${ARCHIVE}/课程/场景示例/说明.md`) &&
+    readFileSync(`${ARCHIVE}/课程/场景示例/图/a.txt`, "utf8") === "A" &&
+    !existsSync(`${ARCHIVE}/课程/场景示例/.DS_Store`) &&
+    !existsSync(`${ARCHIVE}/课程/场景示例/.git`) &&
+    !existsSync(`${ARCHIVE}/课程/场景示例/git`)
+);
+await evalJs(dropFolder);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程/场景示例 (2)"]')`, 8000).catch(() => {});
+check("dropping it again makes a second folder instead of merging", existsSync(`${ARCHIVE}/课程/场景示例 (2)/图/a.txt`));
 const dragCard = (path, dir) =>
   evalJs(
     `(() => { const dt = new DataTransfer(), fire = (type, node) => node.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt })),
@@ -427,7 +451,7 @@ await evalJs(`document.querySelector('.chip-pop.attach-picker [data-dir="课程"
 await waitFor(`!!document.querySelector('.chip-pop.attach-picker .picker-up')`);
 check(
   "clicking a folder in the picker enters it, with a way back up",
-  (await pickerRows()) === "‹,夹:课程/空夹,夹:课程/深度学习,课程/新.txt,课程/成品.txt" &&
+  (await pickerRows()) === "‹,夹:课程/场景示例,夹:课程/场景示例 (2),夹:课程/空夹,夹:课程/深度学习,课程/新.txt,课程/成品.txt" &&
     (await evalJs(`!!document.querySelector(".chip-pop.attach-picker")`))
 );
 await evalJs(
