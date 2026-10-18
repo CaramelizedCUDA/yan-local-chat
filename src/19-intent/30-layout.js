@@ -7,9 +7,10 @@
 // 这只是少画，意本身照完整的前提算。已立住的照样摊开不并（原先并作「+n」，审阅时看不到走过的路）。
 // 本段只算坐标与路径，不碰 DOM；字宽由调用方给（页面用画布量，测试按字数估）
 /**
- * @typedef {{ id: string, label: string, when?: string, needs: string[], any?: boolean, state: string, tag?: string, num?: string, root?: boolean }} DrawNode
+ * @typedef {{ id: string, label: string, when?: string, needs: string[], soft?: string[], any?: boolean, state: string, tag?: string, num?: string, root?: boolean, ghost?: string }} DrawNode
+ *   soft：前提里画淡线的几条（从下层提上来的）；ghost：这一层之外的前提画成的淡影，值是它在哪
  * @typedef {{ id: string, x: number, y: number, w: number, node: DrawNode }} PlacedNode
- * @typedef {{ from: string, to: string, d: string, state: string }} PlacedEdge
+ * @typedef {{ from: string, to: string, d: string, state: string, soft?: boolean }} PlacedEdge
  * @typedef {{ x: number, y: number, any: boolean, to: string }} PlacedKnot
  * @typedef {{ width: number, height: number, nodes: PlacedNode[], edges: PlacedEdge[], knots: PlacedKnot[], boxes: number[][] }} Drawing
  */
@@ -40,19 +41,20 @@ function drawNodeWidth(node, measure = graphMeasure) {
   if (node.label) w += node.root ? measure(node.label, 13.5, 600, true) : measure(node.label, 12, strong ? 600 : 400, true);
   if (node.num) w += measure(node.num, 10, 600) + 3;
   if (node.tag) w += measure(node.tag, 10) + 6;
+  if (node.ghost) w += measure(node.ghost, 10) + 6;
   return Math.ceil(w);
 }
-// 删繁：能经别的前提走到的直连线不画
+// 删繁：能经别的前提走到的直连线不画。只沿实线走：提上来的淡线只说「里面有一项依它」，不能替整项的直连作数
 /** @param {Record<string, DrawNode>} nodes @returns {Record<string, string[]>} 每一项要画出来的前提 */
 function reducedNeeds(nodes) {
-  const reach = new Map();
-  /** @param {string} id @returns {Set<string>} 经前提能走到的全部 */
+  const reach = new Map(),
+    hard = id => (nodes[id]?.needs || []).filter(k => nodes[k] && !nodes[id].soft?.includes(k));
+  /** @param {string} id @returns {Set<string>} 经实线能走到的全部 */
   const below = id => {
     if (reach.has(id)) return reach.get(id);
     const out = new Set();
     reach.set(id, out);
-    for (const k of nodes[id]?.needs || []) {
-      if (!nodes[k]) continue;
+    for (const k of hard(id)) {
       out.add(k);
       for (const j of below(k)) out.add(j);
     }
@@ -60,8 +62,9 @@ function reducedNeeds(nodes) {
   };
   return Object.fromEntries(
     Object.entries(nodes).map(([id, node]) => {
-      const needs = node.needs.filter(k => nodes[k]);
-      return [id, needs.filter(k => !needs.some(other => other !== k && below(other).has(k)))];
+      const needs = node.needs.filter(k => nodes[k]),
+        firm = hard(id);
+      return [id, needs.filter(k => !firm.some(other => other !== k && below(other).has(k)))];
     })
   );
 }
@@ -241,7 +244,13 @@ function drawGraphLayout(list, { measure = graphMeasure } = {}) {
     for (const d of chain.slice(1, -1)) pts.push([colX[lay[d]] - 4, y[d]], [colEnd(lay[d]), y[d]]);
     // 汇点：结在记号前一个结宽处；择一的结是一个写着「或」的圈，线到圈边止，否则汇到结心
     pts.push(knotted(to) ? [colX[lay[to]] - knot + 1 - (all[to].any ? 6 : 0), y[to]] : [colX[lay[to]] - 5, y[to]]);
-    edges.push({ from, to, d: curve(pts.filter((p, i) => !i || p[0] > pts[i - 1][0] - 0.1)), state: all[from].state });
+    edges.push({
+      from,
+      to,
+      d: curve(pts.filter((p, i) => !i || p[0] > pts[i - 1][0] - 0.1)),
+      state: all[from].state,
+      ...(all[to].soft?.includes(from) ? { soft: true } : {})
+    });
   }
   for (const id of ids)
     if (knotted(id)) {

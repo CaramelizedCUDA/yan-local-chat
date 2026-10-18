@@ -282,6 +282,14 @@
 .intent-node[data-state="waiting"] .intent-label {
   fill: color-mix(in srgb, var(--st) 82%, var(--ink));
 }
+/* 从下层提上来的线（里面细项跨模块的依赖）：淡一档 */
+.intent-edge.soft {
+  stroke-opacity: 0.55;
+}
+/* 这一层之外的前提：淡影，名后小字写它在哪 */
+.intent-node.ghost {
+  opacity: 0.6;
+}
 /* 模块里那一层：模块自己作收尾那一项，淡些（设计稿/63 甲） */
 .intent-node.sink {
   opacity: 0.75;

@@ -64,6 +64,35 @@ function intentInside(intent, now, id) {
 /** 所在：「全局」或一层层的模块名 @param {Intent} intent @param {string} id */
 const intentWhere = (intent, id) => intentAncestors(intent, id).reverse().join(" › ") || t("全局");
 /**
+ * 一层图上的线：前提可跨模块，画一层时把这一层以下各项的前提都提到这一层——两头各取它在这一层的那一项（自己，或它所在的模块）。
+ * 两头落在同一项的是那一项里面的事，这一层不画；提上来的（不是这两项直连的）画淡些；前提在这一层之外的，画成左侧一个淡影
+ * @param {Intent} intent @param {string} level
+ * @returns {{ needs: Record<string, string[]>, soft: Record<string, string[]>, ghosts: string[] }}
+ */
+function intentLevelEdges(intent, level) {
+  const at = id => [id, ...intentAncestors(intent, id)].find(k => (intent.nodes[k].in || "") === level && !intent.nodes[k].keep),
+    /** @type {Record<string, Set<string>>} */ direct = {},
+    /** @type {Record<string, Set<string>>} */ lifted = {},
+    ghosts = new Set();
+  for (const id of Object.keys(intent.nodes)) {
+    const to = intentGone(intent, id) ? undefined : at(id);
+    if (!to) continue;
+    for (const need of writtenNeeds(intent, id)) {
+      if (need === level) continue;
+      const from = at(need) || need;
+      if (from === to) continue;
+      if (from === need && !at(need)) ghosts.add(need);
+      ((id === to && need === from ? direct : lifted)[to] ||= new Set()).add(from);
+    }
+  }
+  const ids = Object.keys(intent.nodes).filter(id => at(id) === id);
+  return {
+    needs: Object.fromEntries(ids.map(id => [id, [...new Set([...(direct[id] || []), ...(lifted[id] || [])])]])),
+    soft: Object.fromEntries(ids.map(id => [id, [...(lifted[id] || [])].filter(k => !direct[id]?.has(k))])),
+    ghosts: [...ghosts]
+  };
+}
+/**
  * 图：前提在左、根在右。只画一层：全局，或某个模块里的（模块自己作收尾那一项）
  * @param {Intent} intent @param {IntentPrints} now @param {string} selected @param {string} [level] 模块的 id；空即全局
  * @returns {{ svg: string, order: string[] }} order：簿录的次序——根在先，余者随图自右而左、自上而下
@@ -75,6 +104,7 @@ function intentGraphSvg(intent, now, selected, level = "") {
     ids = Object.keys(intent.nodes).filter(
       id => !intent.nodes[id].keep && (intent.nodes[id].in || "") === level && !intentGone(intent, id)
     ),
+    { needs, soft, ghosts } = intentLevelEdges(intent, level),
     drawing = drawGraphLayout([
       ...ids.map(id => {
         const node = intent.nodes[id],
@@ -82,7 +112,8 @@ function intentGraphSvg(intent, now, selected, level = "") {
         return {
           id,
           label: id,
-          needs: node.needs,
+          needs: needs[id],
+          soft: soft[id],
           any: node.any,
           state: intentView(intent, id, now),
           root: roots.has(id),
@@ -91,7 +122,9 @@ function intentGraphSvg(intent, now, selected, level = "") {
       }),
       ...(level && intent.nodes[level]
         ? [{ id: level, label: level, needs: intentTops(intent, level), state: intentView(intent, level, now), root: true }]
-        : [])
+        : []),
+      // 这一层之外的前提：淡影，名后小字写它在哪；点它跳到它那一层
+      ...ghosts.map(id => ({ id, label: id, needs: [], state: intentView(intent, id, now), ghost: intentWhere(intent, id) }))
     ]);
   if (!drawing.nodes.length) return { svg: "", order: [] };
   const kind = state =>
@@ -104,7 +137,7 @@ function intentGraphSvg(intent, now, selected, level = "") {
           : state === "dropped"
             ? " gone"
             : "";
-  const edges = drawing.edges.map(e => `<path class="intent-edge${kind(e.state)}" d="${e.d}"/>`).join(""),
+  const edges = drawing.edges.map(e => `<path class="intent-edge${kind(e.state)}${e.soft ? " soft" : ""}" d="${e.d}"/>`).join(""),
     knots = drawing.knots
       .map(k =>
         k.any
@@ -122,13 +155,18 @@ function intentGraphSvg(intent, now, selected, level = "") {
       // 模块的进度可点：点了进模块（点名仍是选中）
       if (node.tag)
         inner += `<text class="intent-more intent-go" data-intent-level="${escapeHtml(id)}" x="${(cx + 6).toFixed(1)}" y="${(y + 4).toFixed(1)}"><title>${t(`打开模块`)}</title>${escapeHtml(node.tag)}</text>`;
+      if (node.ghost)
+        inner += `<text class="intent-more" x="${(cx + 6).toFixed(1)}" y="${(y + 4).toFixed(1)}">${escapeHtml(node.ghost)}</text>`;
       // 状态只凭记号、情形不画小格，图上不另注字；悬停时写出来
       const { claim = "", when = "" } = intent.nodes[id] || {},
         said = `${INTENT_VIEW_TEXT[node.state] || ""} · ${when ? `${when}：` : ""}${claim}`;
-      return `<g class="intent-node${node.root ? " root" : ""}${id === level ? " sink" : ""}${id === selected ? " on" : ""}" data-intent-node="${escapeHtml(id)}" data-state="${escapeHtml(node.state)}" tabindex="0" role="button" aria-label="${escapeHtml(`${id}：${said}`)}"><title>${escapeHtml(said)}</title><rect class="intent-hit" x="${(x - 4).toFixed(1)}" y="${(y - 11).toFixed(1)}" width="${(w + 8).toFixed(1)}" height="22" rx="3"/>${intentMark(node.state, x, y - 5.5)}${inner}</g>`;
+      return `<g class="intent-node${node.root ? " root" : ""}${id === level ? " sink" : ""}${node.ghost ? " ghost" : ""}${id === selected ? " on" : ""}" data-intent-node="${escapeHtml(id)}" data-state="${escapeHtml(node.state)}" tabindex="0" role="button" aria-label="${escapeHtml(`${id}：${said}`)}"><title>${escapeHtml(said)}</title><rect class="intent-hit" x="${(x - 4).toFixed(1)}" y="${(y - 11).toFixed(1)}" width="${(w + 8).toFixed(1)}" height="22" rx="3"/>${intentMark(node.state, x, y - 5.5)}${inner}</g>`;
     })
     .join("");
-  const order = [...drawing.nodes].sort((a, b) => +!!b.node.root - +!!a.node.root || b.x - a.x || a.y - b.y).map(n => n.id);
+  // 淡影是别层的，不进这一层的簿录
+  const order = [...drawing.nodes.filter(n => !n.node.ghost)]
+    .sort((a, b) => +!!b.node.root - +!!a.node.root || b.x - a.x || a.y - b.y)
+    .map(n => n.id);
   return {
     svg: `<svg class="intent-svg" width="${drawing.width}" height="${drawing.height}" viewBox="0 0 ${drawing.width} ${drawing.height}" role="img" aria-label="${t(`意的结构图`)}">${edges}${knots}${nodes}</svg>`,
     order
