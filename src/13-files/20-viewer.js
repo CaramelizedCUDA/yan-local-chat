@@ -219,7 +219,7 @@ function rebaseMarkdownImages(html, path) {
 function archiveRelative(base, ref) {
   let clean = ref.replace(/[?#].*$/, "").replace(/\\/g, "/");
   try {
-    clean = decodeURI(clean);
+    clean = decodeURIComponent(clean).replace(/\\/g, "/");
   } catch {}
   const parts = base ? base.split("/") : [];
   for (const part of clean.split("/")) {

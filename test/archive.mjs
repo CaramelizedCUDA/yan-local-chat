@@ -389,6 +389,8 @@ writeFileSync(
   Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/eL9GtQAAAABJRU5ErkJggg==", "base64")
 );
 writeFileSync(`${ARCHIVE}/课程/场景示例/读我.md`, "# 读我\n\n![](images/点%201.png)\n\n![](./images/../images/点%201.png)\n");
+writeFileSync(`${ARCHIVE}/课程/场景示例/images/点#2.png`, readFileSync(`${ARCHIVE}/课程/场景示例/images/点 1.png`));
+writeFileSync(`${ARCHIVE}/课程/场景示例/读我.md`, "\n![](images/点%232.png)\n", { flag: "a" });
 await evalJs(dropFolder);
 await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程/场景示例 (2)"]')`, 8000).catch(() => {});
 check("dropping it again makes a second folder instead of merging", existsSync(`${ARCHIVE}/课程/场景示例 (2)/图/a.txt`));
@@ -397,12 +399,12 @@ await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="课程
 await evalJs(
   `document.querySelector('#libraryGrid [data-library-disk="课程/场景示例/读我.md"] [data-library-action="view"]').click(); true`
 );
-await waitFor(`document.querySelectorAll("#fileViewerStage .markdown img").length === 2`, 8000).catch(() => {});
+await waitFor(`document.querySelectorAll("#fileViewerStage .markdown img").length === 3`, 8000).catch(() => {});
 await waitFor(`[...document.querySelectorAll("#fileViewerStage .markdown img")].every(img => img.complete)`, 8000).catch(() => {});
 check(
   "relative images in an archived Markdown file load from beside it",
   await evalJs(
-    `(imgs => imgs.length === 2 && imgs.every(img => img.naturalWidth === 1 && img.src.includes("/api/archive/file")))([...document.querySelectorAll("#fileViewerStage .markdown img")])`
+    `(imgs => imgs.length === 3 && imgs.every(img => img.naturalWidth === 1 && img.src.includes("/api/archive/file")))([...document.querySelectorAll("#fileViewerStage .markdown img")])`
   ),
   await evalJs(`[...document.querySelectorAll("#fileViewerStage .markdown img")].map(img => img.src + " " + img.naturalWidth).join(" | ")`)
 );

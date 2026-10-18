@@ -288,8 +288,8 @@ function dataUrlFromText(text, mime = "text/plain") {
   return `data:${mime};base64,${btoa(binary)}`;
 }
 /** dir：落进卷宗的哪一层，缺省为根（导出、附件上的「藏」都落在根上；卷宗页上拖入的落在此刻所在的那一层） */
-async function putArchiveFile(name, data, dir = "") {
-  return bridge("/api/archive/put", { root: archiveDir(), name, data, dir }, AbortSignal.timeout(120000));
+async function putArchiveFile(name, data, dir = "", root = archiveDir()) {
+  return bridge("/api/archive/put", { root, name, data, dir }, AbortSignal.timeout(120000));
 }
 // 答末成品条记的是路径：件挪了、改了名，或它所在的夹挪了、改了名，条子跟着改，不然就成了「已移出卷宗」
 function rebaseDeliverables(from, to) {
@@ -345,7 +345,7 @@ async function addLibraryFiles(fileList, dir = libraryDir) {
   await storeLibraryFiles(Array.from(fileList || []).map(file => ({ file, dir })));
 }
 /** @param {{ file: File, dir: string }[]} items @param {number} [folders] 一并建了几个夹（只为最后那句报数） */
-async function storeLibraryFiles(items, folders = 0) {
+async function storeLibraryFiles(items, folders = 0, root = archiveDir()) {
   let added = 0;
   for (const { file, dir } of items) {
     if (file.size > MAX_ARCHIVE_FILE_BYTES) {
@@ -353,7 +353,7 @@ async function storeLibraryFiles(items, folders = 0) {
       continue;
     }
     try {
-      await putArchiveFile(file.name, await readFile(file, "data"), dir);
+      await putArchiveFile(file.name, await readFile(file, "data"), dir, root);
       added += 1;
     } catch (error) {
       toast(t`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
@@ -386,22 +386,24 @@ const entryFile = entry => new Promise((resolve, reject) => entry.file(resolve, 
 // 收进卷宗：夹照原样建（同名的另取名，与文件一样不覆盖），文件落进各自的夹。点开头的（.git、.DS_Store）跳过——卷宗里它们本就是藏着的
 /** @param {FileSystemEntry[]} entries */
 async function addLibraryEntries(entries) {
+  // 一批拖入固定落点；枚举目录、读取文件期间，人可以继续翻卷宗或更换存储位置。
+  const root = archiveDir(), targetDir = libraryDir;
   /** @type {{ file: File, dir: string }[]} */
   const items = [];
   let folders = 0;
   const walk = async (/** @type {FileSystemEntry} */ entry, /** @type {string} */ dir) => {
     if (entry.name.startsWith(".")) return;
     if (entry.isFile) return void items.push({ file: await entryFile(/** @type {FileSystemFileEntry} */ (entry)), dir });
-    const made = await bridge("/api/archive/mkdir", { root: archiveDir(), dir, name: entry.name }, AbortSignal.timeout(20000));
+    const made = await bridge("/api/archive/mkdir", { root, dir, name: entry.name }, AbortSignal.timeout(20000));
     folders += 1;
     for (const child of await folderChildren(/** @type {FileSystemDirectoryEntry} */ (entry))) await walk(child, made.path);
   };
   try {
-    for (const entry of entries) await walk(entry, libraryDir);
+    for (const entry of entries) await walk(entry, targetDir);
   } catch (error) {
     toast(t`文件夹未能收入：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
   }
-  await storeLibraryFiles(items, folders);
+  await storeLibraryFiles(items, folders, root);
 }
 // 附件上的「藏」：原件落进卷宗目录
 async function saveToLibrary(id) {
