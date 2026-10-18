@@ -277,7 +277,7 @@ function intentInkHtml(intent) {
   for (const entry of [...intent.log].reverse()) {
     const time = intentTime(entry.at);
     if (groups.at(-1)?.time !== time) groups.push({ time, items: [] });
-    const said = entry.text.match(/^(弃|撤|改意|改根|假定|待定|复立|改名) ([^：]+?)(?:：([\s\S]*))?$/),
+    const said = entry.text.match(/^(弃|撤|改意|改根|立根|假定|待定|复立|改名) ([^：]+?)(?:：([\s\S]*))?$/),
       moved = !said && entry.text.match(/^(.+?) 归入(.+)$/);
     let [kind, name, rest] = said
       ? [said[1], said[2], said[3] || ""]

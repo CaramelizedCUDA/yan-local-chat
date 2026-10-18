@@ -17,6 +17,8 @@
 // 模块以里面收口的几项（同层没人以它为前提的）为前提，所以里面立住它才算立住，传播、回归照旧，不另写判定。
 // 前提可跨模块：依的是哪一项就连哪一项（评测依的是训练里那一步，不是整个训练模块）；模块只是分组，图仍是一张 DAG，查环时连模块到收口项那几条一并算。
 // 一项不成图：新立意时只有一项要立的，退回——一答之内做得完的活用不着意。
+// 标成立要前提先立住（同一批一起标也算，模块即里面收口的几项）：自己做完而前提未立的仍是进行中。凭据变了转待复核是事后的，不在此拦。
+// 根可补标：当初没标、后来看清它就是整件事要立的，补标时记下那一问的原话；已是别项前提的不能标根。
 // 本文件只放纯函数：理顺模型交来的改动、判状态、写成给模型读的字。读写与附着见 10-store.js，工具登记见 15-tools/32-intent.js
 /**
  * @typedef {"open"|"doing"|"waiting"|"done"|"assumed"|"dropped"} IntentMark 模型标的；waiting：待定，卡在人手里、等人拍板
@@ -422,8 +424,8 @@ function normalizeIntentOps(intent, raw, workdir = "") {
         problems.push(t`${id} 是新的一项，claim 与 check 都要写`);
         continue;
       }
-      if (item.root === true || item.root === "true") op.root = true;
     } else if (op.claim === "" || op.check === "") problems.push(t`${id} 的 claim、check 不能改成空的`);
+    if (item.root === true || item.root === "true") op.root = true;
     ops.push(op);
   }
   // 同一批里别处仍写旧名的（前提、所属、再改那一项）：照新名认
@@ -465,13 +467,32 @@ function normalizeIntentOps(intent, raw, workdir = "") {
   for (const id of intentStrays(trial))
     if (!strays.has(id) && written.has(id))
       problems.push(
-        t`${id} 孤悬：没有谁以它为前提，也没标根。它撑的是哪一项，就写进那一项的 needs（可跨模块），或归进它所服务的模块（in）；用户定的、一直作数的界限标 keep；本就是整件事要立的另一条结论，新立时标 root`
+        t`${id} 孤悬：没有谁以它为前提，也没标根。它撑的是哪一项，就写进那一项的 needs（可跨模块），或归进它所服务的模块（in）；用户定的、一直作数的界限标 keep；本就是整件事要立的另一条结论，标 root`
       );
   const goals = /** @param {Intent} at */ at => Object.keys(at.nodes).filter(id => !at.nodes[id].keep && !intentGone(at, id)).length;
   if (!goals(intent) && goals(trial) === 1)
     problems.push(
       t`意是几项结论连成的图，只有一项不必立：一答之内做得完的活用不着意。真是跨多答的长活，把它要先立住的几项一并写上（needs 或 in）`
     );
+  for (const op of ops) {
+    const id = intentOpId(op),
+      node = trial.nodes[id];
+    if (!node || op.remove) continue;
+    if (op.root && intentDependents(trial, id).length)
+      problems.push(t`${id} 是 ${intentDependents(trial, id).join("、")} 的前提，不是根：根是没有谁以它为前提的`);
+    if (op.state !== "done" || node.keep) continue;
+    // 前提照这一批改完的算；此刻取不到指纹，凭据变没变不在此判
+    const holds = k => intentEstablished(trial, k),
+      written = writtenNeeds(trial, id),
+      stuck = [
+        ...(node.any && written.length && written.some(holds) ? [] : written.filter(k => !holds(k))),
+        ...intentTops(trial, id).filter(k => !holds(k))
+      ];
+    if (stuck.length)
+      problems.push(
+        t`${id} 还不能标成立：${stuck.join("、")} 没立住。前提先立住（同一批一起标即可）；这一项自己做完而前提未立的，先标 doing`
+      );
+  }
   for (const id of ops.map(intentOpId)) {
     if (trial.nodes[id]?.state === "assumed" && !trial.nodes[id].note) problems.push(t`${id} 标了假定，note 里写明借的是什么、出处在哪`);
     if (trial.nodes[id]?.state === "waiting" && !trial.nodes[id].note) problems.push(t`${id} 标了待定，note 里写明等谁、定什么`);
@@ -516,6 +537,10 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
       node = next.nodes[id] = { claim: "", check: "", needs: [], anchors: [], state: "open", rev: 0 };
       // 守也记下原问：「往后收尾前都跑测试」这句话本身就是它的依据
       if (op.root || op.keep) node.root = { ask: String(ask).slice(0, 2000), at };
+    } else if (op.root && !node.root) {
+      // 补标的根：记下的是补标这一问——当初那一问已不在手边，这一问正是看清它是根的时候
+      node.root = { ask: String(ask).slice(0, 2000), at };
+      log(`立根 ${id}：${node.claim}`);
     }
     const before = `${node.claim}\u0001${node.check}\u0001${node.when || ""}`;
     for (const key of /** @type {const} */ (["claim", "check", "when", "note"])) if (op[key] !== undefined) node[key] = op[key];

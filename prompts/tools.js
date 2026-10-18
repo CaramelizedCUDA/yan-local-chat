@@ -111,7 +111,7 @@
               note: { type: "string", description: "假定写出处；待定写等谁、定什么；弃写为何不通" },
               root: {
                 type: "boolean",
-                description: "整件工程最终要立住的结论（用户要的结果，不是手上这一步），新立时标；说法只照用户的意思改"
+                description: "整件工程最终要立住的结论（用户要的结果，不是手上这一步），新立时标，漏了可补标；说法只照用户的意思改"
               },
               keep: {
                 type: "boolean",

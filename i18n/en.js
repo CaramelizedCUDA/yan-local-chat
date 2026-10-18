@@ -1298,6 +1298,7 @@ var YAN_EN = {
   撤: "Removed",
   改意: "Revised",
   改根: "Root revised",
+  立根: "Marked root",
   假定: "Assumed",
   待定: "Waiting",
   复立: "Restored",

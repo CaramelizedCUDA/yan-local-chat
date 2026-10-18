@@ -68,26 +68,32 @@ test("结构：新的一项要写全，前提要在、不成环；有错整批�
   assert.equal(f.normalizeIntentOps(intent, [{ id: "乙", state: "complete" }]).ops[0].state, "done");
 });
 
-test("传播：前提没立住，上面的就不算立住；any 的一项立住即可", () => {
+test("传播：标成立要前提先立住（同一批也算），事后前提退回去，上面的就不算立住；any 的一项立住即可", () => {
   let intent = change(empty(), [
     { id: "上线", claim: "可在公网访问", check: "外网打得开", needs: ["甲", "乙"], root: true },
     { id: "甲", claim: "A", check: "a" },
     { id: "乙", claim: "B", check: "b" }
   ]);
+  assert.deepEqual(
+    problems(intent, [
+      { id: "上线", state: "done" },
+      { id: "甲", state: "done" }
+    ]),
+    ["上线 还不能标成立：乙 没立住。前提先立住（同一批一起标即可）；这一项自己做完而前提未立的，先标 doing"]
+  );
   intent = change(intent, [
     { id: "上线", state: "done" },
-    { id: "甲", state: "done" }
+    { id: "甲", state: "done" },
+    { id: "乙", state: "done" }
   ]);
-  assert.ok(!f.intentEstablished(intent, "上线"));
-  assert.match(f.intentText(intent), /\[成立·前提未立\] 上线（根）/);
-  intent = change(intent, [{ id: "乙", state: "done" }]);
   assert.ok(f.intentEstablished(intent, "上线"));
   assert.deepEqual(f.intentTally(intent), { live: 3, standing: 3 });
-  intent = change(intent, [
-    { id: "乙", state: "doing" },
-    { id: "上线", any: true }
-  ]);
+  intent = change(intent, [{ id: "乙", state: "doing" }]);
+  assert.ok(!f.intentEstablished(intent, "上线"));
+  assert.match(f.intentText(intent), /\[成立·前提未立\] 上线（根）/);
+  intent = change(intent, [{ id: "上线", any: true }]);
   assert.ok(f.intentEstablished(intent, "上线"), "任一即可：甲立住就够");
+  assert.deepEqual(problems(intent, [{ id: "上线", state: "done" }]), [], "任一即可的，重标成立也只要一项立住");
 });
 
 test("回归：标成立后凭据变了，转待复核；没变的、不知道的不算；再标成立即换一份凭据", () => {
@@ -346,8 +352,7 @@ test("嵌套：模块以里面收口的几项为前提——里面立住它才�
   assert.deepEqual(f.intentRoots(intent), ["成品"]);
   assert.deepEqual(f.intentTops(intent, "训练"), ["二号"]);
   assert.deepEqual(f.intentDependents(intent, "二号"), ["训练"], "收口的一项撑起所属模块");
-  intent = change(intent, [{ id: "训练", state: "done" }]);
-  assert.ok(!f.intentEstablished(intent, "训练"), "里面没立住，模块不算立住");
+  assert.match(problems(intent, [{ id: "训练", state: "done" }])[0], /训练 还不能标成立：二号 没立住/, "里面没立住，模块标不了成立");
   intent = change(intent, [
     { id: "一号", state: "done" },
     { id: "二号", state: "done" },
@@ -404,9 +409,11 @@ test("跨模块的前提：传播照常；画一层时提到这一层的两头�
     { id: "质量", claim: "质量更好", check: "c" },
     { id: "锁定收益", claim: "独立测试保有收益", check: "c", in: "质量", needs: ["结构候选"] }
   ]);
-  intent = change(intent, [{ id: "锁定收益", state: "done" }]);
-  assert.ok(!f.intentEstablished(intent, "锁定收益"), "依的那一项没立，它就没立");
-  intent = change(intent, [{ id: "结构候选", state: "done" }]);
+  assert.match(problems(intent, [{ id: "锁定收益", state: "done" }])[0], /锁定收益 还不能标成立：结构候选 没立住/);
+  intent = change(intent, [
+    { id: "结构候选", state: "done" },
+    { id: "锁定收益", state: "done" }
+  ]);
   assert.ok(f.intentEstablished(intent, "锁定收益"), "只依那一项，不必等整个模块");
   assert.ok(!f.intentEstablished(intent, "增算"));
   assert.deepEqual(f.intentDependents(intent, "结构候选").sort(), ["增算", "锁定收益"].sort());
@@ -488,6 +495,21 @@ test("一项不成图：新立意时只有一项要立的退回；守不算，�
     { id: "甲", claim: "A", check: "a" }
   ]);
   assert.deepEqual(problems(change(two, [{ id: "甲", state: "removed" }]), [{ id: "根", state: "doing" }]), [], "已有的意撤剩一项不拦");
+});
+
+test("补标根：当初没标的可补标，记下补标那一问、留一笔痕；已是别项前提的不能标根", () => {
+  let intent = change(empty(), [
+    { id: "终局", claim: "交付", check: "c", needs: ["保留"] },
+    { id: "保留", claim: "能力不退", check: "c" }
+  ]);
+  assert.equal(intent.nodes["终局"].root, undefined);
+  assert.match(problems(intent, [{ id: "保留", root: true }])[0], /保留 是 终局 的前提，不是根/);
+  intent = change(intent, [{ id: "终局", root: true }], { ask: "这个才是要交的" });
+  assert.equal(intent.nodes["终局"].root.ask, "这个才是要交的");
+  assert.equal(intent.log.at(-1).text, "立根 终局：交付");
+  assert.deepEqual(problems(intent, [{ id: "另一根", claim: "另立", check: "c" }]).length, 1, "标过根后，再添没标的仍算孤悬");
+  const again = change(intent, [{ id: "终局", root: true }], { ask: "又说一遍" });
+  assert.equal(again.nodes["终局"].root.ask, "这个才是要交的", "已标过的不重记");
 });
 
 test("孤悬：没声明为根、又没人以它为前提的一项（有无前提都算），这一批写到的即退回；旧有的不拦别的改动，读给模型时标出", () => {
