@@ -44,6 +44,24 @@ test("真的结束标签紧接正文、或流到头只剩标签", async () => {
   assert.deepEqual([a.reasoning, a.content], ["想一想", ""]);
 });
 
+test("没有开头标签：这一轮正文里裸的 </think> 之前都是思考，接在思考字段后", async () => {
+  for (const chunks of [[`Let me check ${THOUGHT}.</think>\n\n模板看清了`], [..."Let me check.</think>\n\n模板看清了"]]) {
+    const assistant = { id: "a", role: "assistant", content: "上一轮的话\n\n", reasoning: "原生思考" };
+    const wire = chunks.map(event).join("") + done;
+    await f.readSse(new Response(wire, { headers: { "content-type": "text/event-stream" } }), assistant);
+    assert.equal(assistant.content, "上一轮的话\n\n模板看清了");
+    assert.match(assistant.reasoning, /^原生思考\n\nLet me check/);
+  }
+});
+
+test("没有开头标签：引号里的、代码围栏里的、流到头都没有真的结束标签的，正文不动", async () => {
+  for (const text of [`答复里讲 ${THOUGHT}`, "示例：\n```\n</think>\n```\n完"]) {
+    const a = await stream([text]);
+    assert.equal(a.content, text);
+    assert.equal(a.reasoning, "");
+  }
+});
+
 test("整段拆开（旧消息、撮要）：同样跳过提到的标签", () => {
   assert.deepEqual({ ...f.parseInlineThink(`<think>${THOUGHT}</think>\n正文`) }, { reasoning: THOUGHT, content: "正文" });
   assert.equal(f.parseInlineThink("正文里说到 <think>"), null);

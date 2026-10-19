@@ -378,7 +378,11 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
   // 有些接口或中转站不走 reasoning_content，而是把思考直接写进正文开头的 <think>…</think>；这里把它剥出来，与 reasoning_content 一样归入折叠区。
   // 标签可能被分块切开：开头先攥着几个字符看清是不是标签，思考期间末尾留一截等结束标签（连同它前后各一个字，见 thinkCloser）。
   // 每次请求都从头看：工具循环的第二轮、续写时正文已有字，模型照样先写一段 <think>
-  const think = { mode: "probe", held: "", last: "" };
+  // 还有一种没有开头标签的：模板替模型写好了 <think>（DeepSeek 一类），或思考字段写完又在正文里接着想，正文里只见「思考…</think>答复」。
+  // 与 vLLM 拆 DeepSeek 的规矩一样：这一轮正文里先出现一个裸的 </think>、前面没有 <think>，它之前的都是思考（bare）。
+  // 挪走的思考不进历史，免得下一轮模型照着正文里的思考接着往正文里想
+  const roundStart = assistant.content.length;
+  const think = { mode: "probe", held: "", last: "", bare: true, scan: roundStart };
   const ingest = text => {
     // 刚收住思考：结束标签后的空行可能分几块到，正文从头一个字起
     if (think.mode === "gap") {
@@ -388,6 +392,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     }
     if (think.mode === "body") {
       assistant.content += text;
+      takeBareThink(false);
       return;
     }
     if (think.mode === "probe") {
@@ -395,14 +400,16 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       const lead = think.held.replace(/^\s+/, "");
       if (lead.startsWith("<think>")) {
         think.mode = "think";
+        think.bare = false;
         think.held = "";
         ingest(lead.slice(7));
         return;
       }
       if ("<think>".startsWith(lead)) return;
       think.mode = "body";
-      assistant.content += think.held;
+      const held = think.held;
       think.held = "";
+      ingest(held);
       return;
     }
     think.held += text;
@@ -429,12 +436,42 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     ingest(rest);
     return true;
   };
+  // 这一轮正文里找裸的 </think>：找到就把这一轮它之前的正文挪进思绪（接在思考字段之后，空一行），余下的照常是正文。一轮只认一次
+  const takeBareThink = final => {
+    while (think.bare) {
+      const from = think.scan,
+        at = thinkCloser(assistant.content.slice(from), assistant.content[from - 1] || "", final);
+      if (at < 0) {
+        // 末尾留一截再看：可能是切开的标签，或整个标签还等下一个字
+        think.scan = Math.max(think.scan, assistant.content.length - 8);
+        return;
+      }
+      const end = from + at,
+        said = assistant.content.slice(roundStart, end);
+      // 写着的是一段带标签的代码（围栏还开着）：跳过这一个接着找
+      if ((said.match(/^\s*```/gm) || []).length % 2) {
+        think.scan = end + 8;
+        continue;
+      }
+      think.bare = false;
+      if (said.includes("<think>")) return;
+      const thought = said.trim(),
+        before = String(assistant.reasoning || "");
+      if (thought) assistant.reasoning = `${before}${before && !before.endsWith("\n\n") ? "\n\n" : ""}${thought}`;
+      const rest = assistant.content.slice(end + 8);
+      assistant.content = assistant.content.slice(0, roundStart);
+      shown = Math.min(shown, assistant.content.length);
+      think.mode = "gap";
+      ingest(rest);
+      return;
+    }
+  };
   const flushThink = () => {
     if (think.mode === "think" && closeThink(true)) return;
-    if (!think.held || think.mode === "gap") return void (think.mode = "body");
-    if (think.mode === "think") assistant.reasoning = (assistant.reasoning || "") + think.held;
-    else assistant.content += think.held;
+    if (think.held && think.mode === "think") assistant.reasoning = (assistant.reasoning || "") + think.held;
+    else if (think.held) assistant.content += think.held;
     think.held = "";
+    if (think.mode !== "think") takeBareThink(true);
     think.mode = "body";
   };
   // 流静默太久（桥接那头 Node 自带五分钟的读超时）：五分钟一个字节都没有就当断了，按中断处理、可续写
