@@ -205,7 +205,19 @@ function rethemeHtmlApps(root = document) {
 function sizeHtmlApp(el, height) {
   const stage = el.querySelector(".html-app-stage");
   if (!stage) return;
-  stage.style.height = `${Math.round(Math.min(Math.max(height, 48), Math.max(520, innerHeight * 0.8)))}px`;
+  const cap = Math.max(520, innerHeight * 0.8);
+  stage.style.height = `${Math.round(Math.min(Math.max(height, 48), cap))}px`;
+  el.dataset.appCapped = height > cap ? "1" : "";
+  syncAppScroll(el);
+}
+// 块里竖向滚不滚：封顶了或全屏着才滚，否则块随内容长高、不留滚动条（见 preview-runtime.js 的 setScrollable）
+function syncAppScroll(el) {
+  const id = el.dataset.appId;
+  if (id)
+    el.querySelector("iframe")?.contentWindow?.postMessage(
+      { type: "yan-preview-scroll", id, scroll: !!el.dataset.appCapped || el.classList.contains("work-expanded") },
+      "*"
+    );
 }
 function mountHtmlApp(el) {
   const id = `app${uid().replace(/[^a-z0-9]/gi, "")}`;
@@ -240,6 +252,7 @@ function closeExpandedWork(except = null) {
   for (const item of document.querySelectorAll(".work-expanded"))
     if (item !== except) {
       item.classList.remove("work-expanded");
+      syncAppScroll(item);
       const trigger = item.querySelector("[data-work-expand]");
       if (trigger) labelTool(trigger, t("全屏"));
     }
@@ -249,6 +262,7 @@ function toggleWorkExpanded(el, button) {
   const open = !el.classList.contains("work-expanded");
   closeExpandedWork(open ? el : null);
   el.classList.toggle("work-expanded", open);
+  syncAppScroll(el);
   labelTool(button, open ? t("收起") : t("全屏"));
   document.documentElement.classList.toggle("work-mode", open);
 }

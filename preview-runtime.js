@@ -73,6 +73,13 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
   }
   const sizeObserver = new ResizeObserver(reportSize);
   addEventListener("resize", reportSize);
+  // 块随内容长高时不要竖滚动条：块在长高的半途内容会暂时溢出，滚动条一出、页面窄一截，图随宽缩矮，
+  // 报上去的就是窄时的高——块定在这个高，滚动条去掉又溢出一点，便卡着一根拖不动的滚动条。
+  // 所以竖向默认不滚，父页把这一块封顶了（太长）或全屏了才放开；文件预览整页摊开、独立导出的页没有父页管，照常滚
+  function setScrollable(on) {
+    document.documentElement.style.overflowY = on ? "" : "hidden";
+  }
+  if (!standalone) setScrollable(false);
 
   // ---- 本地的库：<script src="yan:echarts"> / yan:mermaid 换成随项目分发的那份，只载一次
   const LIBS = { echarts: "./vendor/echarts.min.js", mermaid: "./vendor/mermaid.min.js" },
@@ -478,9 +485,11 @@ self.postMessage({ type: "loaded" });
   window.addEventListener("message", event => {
     if (event.source !== parent || event.data?.id !== previewId) return;
     if (event.data.type === "yan-preview-render") {
+      if (event.data.scroll) setScrollable(true);
       applyTheme(event.data.theme);
       run(event.data.html).catch(showError);
     } else if (event.data.type === "yan-preview-theme") applyTheme(event.data.theme);
+    else if (event.data.type === "yan-preview-scroll") setScrollable(event.data.scroll);
     else if (event.data.type === "yan-compute") compute(event.data);
   });
   // 焦点在这块里时，Esc 到不了父页：转告一声，父页若正全屏着这一块就收起（没全屏时父页不理，块里自己的 Esc 照常）

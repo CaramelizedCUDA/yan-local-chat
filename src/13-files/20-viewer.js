@@ -140,7 +140,7 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
         "load",
         () => {
           if (revision === viewerRevision && frame.isConnected && frame.getAttribute("sandbox") === "allow-scripts")
-            frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source, theme }, "*");
+            frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source, theme, scroll: true }, "*");
         },
         { once: true }
       );
