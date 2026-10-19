@@ -43,22 +43,23 @@ function skillCatalog() {
 }
 // 人点名用：问话以「/技能名」开头，发出前把那份说明作一件附件随这一问附上，模型不必再去翻。
 // 名字对不上的照原话发（/usr/bin 之类的路径也是斜杠起头）
-/** @param {HTMLTextAreaElement} input @returns {Promise<boolean>} false：没取到说明，这一问先不发 */
-async function takeSkillCommand(input) {
-  const typed = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(input.value.trim());
+/** @param {ReturnType<typeof composerSnapshot>} snapshot @returns {Promise<boolean>} false：没取到说明或案上放不下，这一问先不发 */
+async function takeSkillCommand(snapshot) {
+  const typed = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(snapshot.content.trim());
   if (!typed) return true;
   if (!skillSet) await refreshSkills();
   const skill = skillList().find(item => item.name.toLowerCase() === typed[1].toLowerCase());
   if (!skill) return true;
   try {
-    const text = await skillDocumentText({ skillDir: skill.dir, path: SKILL_FILE, main: true });
-    pendingAttachments.push(await ingestFile(new File([text], `${skill.name}.md`, { type: "text/markdown" })));
+    const text = await skillDocumentText({ skillDir: skill.dir, path: SKILL_FILE, main: true }),
+      file = new File([text], `${skill.name}.md`, { type: "text/markdown" });
+    if (!canPlaceAttachment(file.size, snapshot.attachments)) return false;
+    snapshot.attachments.push(await ingestFile(file));
   } catch (error) {
     toast(t`技能「${skill.name}」的说明没取到：${tr(String(error.message || error)).slice(0, 80)}`);
     return false;
   }
-  input.value = typed[2] || "";
-  renderAttachments();
+  snapshot.content = typed[2] || "";
   return true;
 }
 // 翻一件：SKILL.md 开头注明技能目录——里头说的相对路径、要跑的脚本都照它
@@ -115,12 +116,14 @@ async function settleSkillEditor() {
   const draft = skillEditing;
   if (!draft || skillSaving) return;
   const name = draft.name.trim(),
-    body = draft.body.trim();
+    description = draft.description.trim(),
+    body = draft.body.trim(),
+    sent = JSON.stringify([name, description, body]);
   if (!draft.dir && !name && !body && !draft.description.trim()) {
     skillEditing = null;
     return renderSettings();
   }
-  if (draft.dir && draft.from === JSON.stringify([name, draft.description.trim(), body])) {
+  if (draft.dir && draft.from === sent) {
     skillEditing = null;
     return renderSettings();
   }
@@ -130,14 +133,21 @@ async function settleSkillEditor() {
   }
   skillSaving = true;
   try {
-    await bridge("/api/skills/save", { dir: draft.dir, name, description: draft.description, body }, AbortSignal.timeout(15000));
-    skillEditing = null;
+    const saved = await bridge("/api/skills/save", { dir: draft.dir, name, description, body }, AbortSignal.timeout(15000));
+    // 新建与改名后的目录由桥接定：等待期间继续改的仍属这一份，下一次写须用新目录。
+    draft.dir = saved.dir || draft.dir;
+    draft.from = sent;
     await refreshSkills();
   } catch (error) {
     toast(tr(String(error.message || error)));
     return;
   } finally {
     skillSaving = false;
+  }
+  if (skillEditing === draft) {
+    // 保存与重翻目录期间编辑框还在：有新字就接着存，不能拿先前那份的回音收掉它。
+    if (sent !== JSON.stringify([draft.name.trim(), draft.description.trim(), draft.body.trim()])) return settleSkillEditor();
+    skillEditing = null;
   }
   renderSettings();
 }

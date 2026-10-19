@@ -71,7 +71,7 @@ await evalJs(`(() => {
     return original(...args);
   };
   const input = document.querySelector("#chatInput");
-  input.value = "甲的话";
+  input.value = "PLAIN 甲的话";
   input.dispatchEvent(new Event("input"));
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   return true;
@@ -84,7 +84,7 @@ await waitFor(`__yanState().conversations.find(c => c.id === "switch-a").message
 check(
   "switching away while the send waits still sends the first conversation's words there",
   await evalJs(
-    `(() => { const s = __yanState(), a = s.conversations.find(c => c.id === "switch-a"), b = s.conversations.find(c => c.id === "switch-b"); return a.messages[0].content === "甲的话" && !a.messages[0].quote && b.messages.length === 0; })()`
+    `(() => { const s = __yanState(), a = s.conversations.find(c => c.id === "switch-a"), b = s.conversations.find(c => c.id === "switch-b"); return a.messages[0].content === "PLAIN 甲的话" && !a.messages[0].quote && b.messages.length === 0; })()`
   )
 );
 check(
@@ -145,4 +145,63 @@ for (const ready of [false, true]) {
   }
   await evalJs(`window.fetch = window.__preflight.original; true`);
 }
+
+// 技能读取也是发送前的等待：期间换会话不能把问题与另一段的附件一并寄走。
+const skillName = "slow-skill";
+const created = await fetch(`${PAGE}api/skills/save`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ name: skillName, description: "发送归属回归", body: "只按这一问所说的作答。" })
+});
+if (!created.ok) throw Error(await created.text());
+await waitFor(`!__yanState().conversations.some(c => c.messages.some(m => m.status === "streaming"))`);
+await evalJs(`document.querySelector("#openSettings").click(); document.querySelector('.tab-btn[data-tab="skills"]').click(); true`);
+await waitFor(`[...document.querySelectorAll(".skill-name")].some(n => n.textContent === ${JSON.stringify(skillName)})`);
+await evalJs(`document.querySelector("#closeSettings").click(); true`);
+await evalJs(`(() => {
+  const input = document.querySelector("#chatInput");
+  input.value = "乙的私有草稿"; input.dispatchEvent(new Event("input"));
+  const dt = new DataTransfer();
+  dt.items.add(new File(["乙的私有附件"], "乙.txt", { type:"text/plain" }));
+  window.dispatchEvent(new DragEvent("drop", { bubbles:true, cancelable:true, dataTransfer:dt }));
+})(); true`);
+await waitFor(`__yanState().drafts["switch-b"]?.attachments.length === 1`);
+await evalJs(`document.querySelector('#history [data-conversation="switch-a"] .history-open').click(); true`);
+await waitFor(`__yanState().settings.lastConversationId === "switch-a"`);
+await evalJs(`(() => {
+  const original = window.fetch.bind(window);
+  let release;
+  const gate = new Promise(resolve => release = resolve);
+  window.__preflight = { calls:0, release, original };
+  window.fetch = (...args) => {
+    const read = String(args[0]).includes("/api/skills/read") || String(args[1]?.body || "").includes('"path":"/api/skills/read"');
+    if (read && ++window.__preflight.calls === 1) return gate.then(() => original(...args));
+    return original(...args);
+  };
+  const input = document.querySelector("#chatInput");
+  input.value = "/${skillName} PLAIN 技能请求"; input.dispatchEvent(new Event("input"));
+  input.dispatchEvent(new KeyboardEvent("keydown", { key:"Enter", bubbles:true }));
+})(); true`);
+await waitFor(`window.__preflight.calls === 1`);
+await evalJs(`document.querySelector('#history [data-conversation="switch-b"] .history-open').click(); true`);
+await waitFor(`document.querySelector("#chatInput").value === "乙的私有草稿"`);
+const before = await evalJs(`__yanState().conversations.find(c => c.id === "switch-b").messages.length`);
+await evalJs(`window.__preflight.release(); true`);
+await waitFor(
+  `__yanState().conversations.find(c => c.id === "switch-a").messages.some(m => m.role === "user" && m.content === "PLAIN 技能请求")`
+);
+check(
+  "switching during a skill read sends the skill and question to the original conversation",
+  await evalJs(`(() => {
+    const a = __yanState().conversations.find(c => c.id === "switch-a"), user = a.messages.findLast(m => m.role === "user");
+    return user.content === "PLAIN 技能请求" && user.attachments.length === 1 && user.attachments[0].name === "${skillName}.md";
+  })()`)
+);
+check(
+  "the other conversation keeps its words and private attachment after a delayed skill read",
+  await evalJs(
+    `__yanState().settings.lastConversationId === "switch-b" && document.querySelector("#chatInput").value === "乙的私有草稿" && __yanState().drafts["switch-b"].attachments[0].name === "乙.txt" && __yanState().conversations.find(c => c.id === "switch-b").messages.length === ${before}`
+  )
+);
+await evalJs(`window.fetch = window.__preflight.original; true`);
 close();

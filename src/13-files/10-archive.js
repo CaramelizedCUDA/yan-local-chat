@@ -402,7 +402,8 @@ const entryFile = entry => new Promise((resolve, reject) => entry.file(resolve, 
 /** @param {FileSystemEntry[]} entries */
 async function addLibraryEntries(entries) {
   // 一批拖入固定落点；枚举目录、读取文件期间，人可以继续翻卷宗或更换存储位置。
-  const root = archiveDir(), targetDir = libraryDir;
+  const root = archiveDir(),
+    targetDir = libraryDir;
   /** @type {{ file: File, dir: string }[]} */
   const items = [];
   let folders = 0;
@@ -463,10 +464,10 @@ async function removeArchiveItem(path) {
   }
   await refreshArchive();
 }
-function canPlaceAttachment(size) {
-  if (pendingAttachments.length >= 10) return toast(t("一次最多置入 10 件附件")), false;
+function canPlaceAttachment(size, attachments = pendingAttachments) {
+  if (attachments.length >= 10) return toast(t("一次最多置入 10 件附件")), false;
   if (size > MAX_FILE_BYTES) return toast(t`单个附件不超过 ${limitLabel(MAX_FILE_BYTES)}`), false;
-  const total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0);
+  const total = attachments.reduce((sum, file) => sum + Number(file.size || 0), 0);
   if (total + Number(size || 0) > MAX_PENDING_BYTES) return toast(t`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`), false;
   return true;
 }
@@ -485,7 +486,7 @@ async function placeFromArchive(path) {
     if (!response.ok) throw Error(t("取回失败"));
     const blob = await response.blob(),
       file = new File([blob], entry.name, { type: blob.type || "", lastModified: Date.parse(entry.modifiedAt) || Date.now() });
-    placeAttachment(key, await ingestFile(file));
+    if (!placeAttachment(key, await ingestFile(file))) return;
     persistDraft();
     if (draftKey() !== key) return toast(t`${entry.name} 已置于原对话的案上`);
     closeLibrary();

@@ -53,6 +53,32 @@ await evalJs(`document.querySelector("[data-skill-done]").click(); true`);
 await waitFor(`!document.querySelector("[data-skill-editor]") && !!${row("复信")}`, 8000);
 check("renaming moves the folder", existsSync(`${SKILLS}/复信/SKILL.md`) && !existsSync(`${SKILLS}/回信`));
 
+// 保存请求还在路上时回到正文接着写，失焦也不能丢掉后改的这一版。
+await evalJs(`${row("复信")}.click(); true`);
+await waitFor(`!!document.querySelector('[data-skill-field="body"]')`);
+await fill("body", "保存的第一版");
+await evalJs(`(() => {
+  const original = window.fetch.bind(window);
+  let release;
+  const gate = new Promise(resolve => release = resolve);
+  window.__skillSave = { calls:0, release, original };
+  window.fetch = (...args) => {
+    const save = String(args[0]).includes("/api/skills/save") || String(args[1]?.body || "").includes('"path":"/api/skills/save"');
+    if (save && ++window.__skillSave.calls === 1) return gate.then(() => original(...args));
+    return original(...args);
+  };
+  document.querySelector("[data-skill-done]").click();
+})(); true`);
+await waitFor(`window.__skillSave.calls === 1`);
+await fill("body", "保存期间补充的第二版");
+await evalJs(`document.activeElement.blur(); window.__skillSave.release(); true`);
+await waitFor(`!document.querySelector("[data-skill-editor]") && window.__skillSave.calls === 2`, 8000);
+check(
+  "edits made while the save waits are saved next before the editor closes",
+  readFileSync(`${SKILLS}/复信/SKILL.md`, "utf8").includes("保存期间补充的第二版")
+);
+await evalJs(`window.fetch = window.__skillSave.original; true`);
+
 // 删去：行上那枚「删」，先问，连同目录一并删
 await evalJs(`${row("复信")}.parentElement.querySelector("[data-skill-remove]").click(); true`);
 await waitFor(`!document.querySelector("#confirmModal").classList.contains("hidden")`);

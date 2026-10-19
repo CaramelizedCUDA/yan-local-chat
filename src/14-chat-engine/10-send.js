@@ -37,7 +37,8 @@ async function sendOrStop() {
   if (!text && !pendingAttachments.length && !pendingQuote) return;
   sendPreparing = true;
   renderSendButtons();
-  let releaseAttachments = () => {};
+  let releaseAttachments = () => {},
+    releaseSkillAttachments = () => {};
   try {
     const profile = activeProfile();
     if (!profile) {
@@ -49,16 +50,14 @@ async function sendOrStop() {
       toast(quotaExhausted(profile) ? t("余墨已尽，请调高上限或更换模型") : t("余墨不足：进行中的对话已占去余量，请稍候或调高上限"));
       return;
     }
-    // 「/技能名」开头：那份说明先作一件附件放上案（见 takeSkillCommand）。不是斜杠起头就不等这一下，案上的附件照旧在下面一并攥住
-    if (text.startsWith("/") && !(await takeSkillCommand(input))) return;
-    // 案上的东西在点发送这一刻就定下：下面要等工作目录立起来，这期间用户可能已换到别的对话，
+    // 案上的东西与所属对话在点发送这一刻就定下：读技能、等工作目录的工夫里用户可能已换到别的对话，
     // 输入框、待发的附件与引文都换成了那一段的草稿，不能等完了再去读
     const sendingDraftKey = draftKey(),
-      snapshot = composerSnapshot(input);
+      snapshot = composerSnapshot(input),
+      sending = { ...snapshot, attachments: [...snapshot.attachments] };
     releaseAttachments = holdAttachments(snapshot.attachments);
     let c = currentConversation(),
-      fresh = false;
-    if (c && !(await prepareTurn(c))) return;
+      fresh = !c;
     if (!c) {
       const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
       // 行：先把工作目录立起来，立不起来就不发
@@ -68,7 +67,7 @@ async function sendOrStop() {
       }
       c = {
         id: uid(),
-        title: titleFrom(snapshot.content || pendingQuote?.text || "", snapshot.attachments),
+        title: titleFrom(snapshot.content || snapshot.quote?.text || "", snapshot.attachments),
         forks: [],
         threads: [],
         createdAt: now(),
@@ -81,9 +80,14 @@ async function sendOrStop() {
         commandPolicy: normalizeCommandPolicy(presetOf(null)?.policy || store.settings.commandPolicyDefault),
         reasoning: normalizeReasoning(profile.reasoning)
       };
-      if (!(await ensureWorkReady(c))) return;
-      fresh = true;
     }
+    // 技能只改待发的这一份，不碰眼前的输入框；扣草稿仍用原快照，等待时接着写的字与新放的附件留下。
+    if (text.startsWith("/") && !(await takeSkillCommand(sending))) return;
+    releaseSkillAttachments = holdAttachments(sending.attachments.slice(snapshot.attachments.length));
+    if (fresh) {
+      c.title = titleFrom(sending.content || snapshot.quote?.text || "", sending.attachments);
+      if (!(await ensureWorkReady(c))) return;
+    } else if (!(await prepareTurn(c))) return;
     // 还在点发送的那个输入框前：照常收走案上的东西；已换走了：发的是当时那份，那份草稿里减去发出的、等待时接着写的留着，
     // 眼前这段的输入框不动，也不把人拉回来
     const stayed = draftKey() === sendingDraftKey;
@@ -102,9 +106,12 @@ async function sendOrStop() {
       if (rest.text || rest.attachments.length || rest.quote) store.drafts[sendingDraftKey] = { ...rest, updatedAt: now() };
       else delete store.drafts[sendingDraftKey];
     }
+    user.content = sending.content;
+    user.attachments = sending.attachments;
     return startTurn(c, user, profile);
   } finally {
     releaseAttachments();
+    releaseSkillAttachments();
     sendPreparing = false;
     renderSendButtons();
   }

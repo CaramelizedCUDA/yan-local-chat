@@ -47,14 +47,15 @@ test("问话以「/技能名」开头：说明作附件放上案，问话去掉�
     }`
   ]);
   f.setup();
-  const input = { value: "/demo 给房东写一封" };
+  const input = { content: "/demo 给房东写一封", attachments: [], quote: null };
   assert.equal(await f.takeSkillCommand(input), true);
-  assert.equal(input.value, "给房东写一封");
-  assert.equal(f.pending().length, 1);
-  assert.equal(f.pending()[0].name, "Demo.md");
-  assert.match(f.pending()[0].text, /^技能目录：E:\/skills\/demo\n\n照格式写信$/);
-  const other = { value: "/usr/bin 是什么" };
+  assert.equal(input.content, "给房东写一封");
+  assert.equal(input.attachments.length, 1);
+  assert.equal(input.attachments[0].name, "Demo.md");
+  assert.match(input.attachments[0].text, /^技能目录：E:\/skills\/demo\n\n照格式写信$/);
+  assert.deepEqual(f.pending(), [], "发送快照不改眼前的待发附件");
+  const other = { content: "/usr/bin 是什么", attachments: [], quote: null };
   assert.equal(await f.takeSkillCommand(other), true);
-  assert.equal(other.value, "/usr/bin 是什么");
-  assert.equal(f.pending().length, 1);
+  assert.equal(other.content, "/usr/bin 是什么");
+  assert.deepEqual(other.attachments, []);
 });
