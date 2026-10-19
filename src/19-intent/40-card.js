@@ -6,7 +6,7 @@
 // 墨痕（原「留痕」：改意、弃、撤、归入的记录）只为查考，平时只是页头一个字；点开图下换成墨痕。弃了的不上图，就记在墨痕里（带灰叉、写弃时的缘由），不再单立一节。
 // 卡片只给看、不给改：要改的往往不是一两个字，直接告诉模型。
 // 嵌套：图只画一层。模块在图上与簿录里带「里面已立几项 ›」，点它即进模块：整张图换成模块里的，以模块自己收尾（最右那一项，淡些），
-// 页头下一行写所在（可点回上层）、右边写模块的前提与撑起什么。
+// 页头下一行写所在（可点回上层）；模块的前提与撑起什么点开它那一项即见，不在这行另列。
 // 由程序照 .yan/意.json 画，与文件一字不差，不请模型另画；展开的因果（支撑、缘由、哪条凭据变了）也是程序从图与指纹推出的，不经模型。
 /** @typedef {"holds"|"premised"|"stale"|"assumed"|"doing"|"waiting"|"open"|"dropped"|"kept"} IntentView 画出来的状态：成立的再按前提分已立与前提未立；kept：守，没出事 */
 const INTENT_VIEW_TEXT = {
@@ -309,21 +309,13 @@ function intentInkHtml(intent) {
     .map(g => `<div class="intent-ink-group"><time>${escapeHtml(g.time)}</time><div>${g.items.join("")}</div></div>`)
     .join("")}</div>`;
 }
-/** 模块里那一层的顶上一行：所在（上层可点回），模块的前提与撑起什么 @param {Intent} intent @param {IntentPrints} now @param {string} level */
-function intentCrumbHtml(intent, now, level) {
+/** 模块里那一层的顶上一行：所在（上层可点回）。前提与撑起什么不另列——点开模块那一项，笺上就有 @param {Intent} intent @param {string} level */
+function intentCrumbHtml(intent, level) {
   if (!level || !intent.nodes[level]) return "";
-  const path = ["", ...intentAncestors(intent, level).reverse()],
-    link = k =>
-      `<button type="button" class="intent-link" data-intent-node="${escapeHtml(k)}" data-state="${intentView(intent, k, now)}">${intentMark(intentView(intent, k, now))}${escapeHtml(k)}</button>`,
-    needs = writtenNeeds(intent, level),
-    up = intentDependents(intent, level);
+  const path = ["", ...intentAncestors(intent, level).reverse()];
   return `<div class="intent-crumb"><span class="intent-crumb-path">${path
     .map(k => `<button type="button" data-intent-level="${escapeHtml(k)}">${escapeHtml(k || t("全局"))}</button><i>›</i>`)
-    .join(
-      ""
-    )}<b>${escapeHtml(level)}</b></span><span class="intent-crumb-ctx">${needs.length ? `<span>${t(`前提`)}</span>${needs.map(link).join("")}` : ""}${
-    up.length ? `<span>${t(`撑起`)}</span>${up.map(link).join("")}` : ""
-  }</span></div>`;
+    .join("")}<b>${escapeHtml(level)}</b></span></div>`;
 }
 /**
  * 整张卡片
@@ -347,7 +339,7 @@ function intentCardHtml(intent, now, { selected = "", level = "", name = "", ink
     intent.log.length
       ? `<div class="page-acts"><button type="button" data-intent-ink aria-pressed="${inked}"${inked ? ` class="on"` : ""}>${t`墨痕 ${intent.log.length}`}</button></div>`
       : ""
-  }</div>${intentCrumbHtml(intent, now, level)}<div class="intent-graph">${svg}</div>${
+  }</div>${intentCrumbHtml(intent, level)}<div class="intent-graph">${svg}</div>${
     inked
       ? intentInkHtml(intent)
       : `${intentRollHtml(intent, now, order, selected, level)}${level ? "" : intentKeepHtml(intent, now, selected)}`
@@ -417,13 +409,17 @@ async function openIntentCard(conversation, trigger = null) {
 /** 点中一项：图上、簿录里再点一下（或点笺的题）收起；别层的（前提、支撑、内含、墨痕里点的）跳到它那一层，墨痕收起 @param {string} id @param {boolean} toggle */
 function pickIntentNode(id, toggle) {
   if (!intentCard?.intent.nodes[id]) return;
+  const { level, ink } = intentCard;
   intentCard.ink = false;
   if (toggle && intentCard.selected === id) intentCard.selected = "";
   else {
     if (id !== intentCard.level) intentCard.level = intentCard.intent.nodes[id].in || "";
     intentCard.selected = id;
   }
-  paintIntentCard();
+  // 同一层里摊开、收起一张笺：簿录从旧高动到新高，与别处的展开同一种；换了层、从墨痕回来是整张换过，不动
+  const stage = $("#fileViewerStage");
+  if (ink || level !== intentCard.level) return paintIntentCard();
+  morphHeight(stage.querySelector(".intent-roll"), paintIntentCard, 320, () => stage.querySelector(".intent-roll"));
 }
 /** 点了就开合（再点收起）的：图上一项、簿录一行、摊开的笺的题；别处的名（前提、支撑、墨痕）是跳过去 */
 const INTENT_TOGGLES = "g[data-intent-node], .intent-row, .intent-detail-head";

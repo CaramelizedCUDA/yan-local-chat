@@ -333,19 +333,6 @@
   color: var(--ink);
   font: 600 13px var(--title);
 }
-.intent-crumb-ctx {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  margin-left: auto;
-}
-.intent-crumb-ctx .intent-link {
-  font-size: 12px;
-}
-.intent-crumb-ctx > span:not(:first-child) {
-  margin-left: 8px;
-}
 
 /* 点中一项：图下展开（设计稿/60 二·丙 · 一张笺）。铺在一张淡底小笺上、右上折角（与撮要同式）：题一行（记号、名、态），说法，
    再是各栏——键名在上、值在下，两栏：验收、备注占满一行，前提与支撑、凭据与缘由各并一行。前提、支撑写成带记号的名字。
