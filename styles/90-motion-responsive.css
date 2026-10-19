@@ -115,11 +115,13 @@
 #settingsContent.tab-fade {
   animation: fadeIn 0.18s ease;
 }
+/* 展开与收起一律同一种：高度从零滑开、内容淡入，曲线与时长同思绪、行迹（setProcessDetails）。
+   思绪、行迹、出处由脚本动（流式里自动开合要能半途掉头），这里不叠第二层；不是 details 的（侧栏的组、意的簿录）走 morphHeight */
 @supports selector(details::details-content) {
-  .profile-advanced {
+  details {
     interpolate-size: allow-keywords;
   }
-  .profile-advanced::details-content {
+  details:not(.reasoning, .tool-stack, .source-stack)::details-content {
     block-size: 0;
     overflow: clip;
     opacity: 0;
@@ -128,9 +130,12 @@
       opacity 0.28s ease,
       content-visibility 0.42s allow-discrete;
   }
-  .profile-advanced[open]::details-content {
+  details:not(.reasoning, .tool-stack, .source-stack)[open]::details-content {
     block-size: auto;
     opacity: 1;
+  }
+  :root[data-ink-motion="off"] details::details-content {
+    transition: none !important;
   }
 }
 .reasoning.is-closing summary:before,
@@ -518,9 +523,7 @@ button:focus:not(:focus-visible) {
   #settingsContent.tab-fade {
     animation: none !important;
   }
-  .reasoning::details-content,
-  .tool-stack::details-content,
-  .profile-advanced::details-content {
+  details::details-content {
     transition: none !important;
   }
   .chat-scroll {

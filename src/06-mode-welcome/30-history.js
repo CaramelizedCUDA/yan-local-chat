@@ -199,7 +199,8 @@ function bindHistoryEvents() {
       set.has(dir) ? set.delete(dir) : set.add(dir);
       store.settings.collapsedRepos = [...set];
       saveStoreSoon();
-      renderHistory();
+      const at = `.history-repo-group[data-repo="${CSS.escape(dir)}"]`;
+      morphHeight(toggle.closest(".history-repo-group"), renderHistory, 300, () => $("#history").querySelector(at));
       return;
     }
     const repo = e.target.closest("[data-history-workdir]");

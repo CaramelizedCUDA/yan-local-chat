@@ -286,7 +286,8 @@ $("#history").addEventListener("click", event => {
     set.has(key) ? set.delete(key) : set.add(key);
     store.settings.collapsedRepos = [...set];
     saveStoreSoon();
-    return renderHistory();
+    const at = `.history-repo-group[data-group="${CSS.escape(toggle.dataset.groupToggle)}"]`;
+    return morphHeight(toggle.closest(".history-repo-group"), renderHistory, 300, () => $("#history").querySelector(at));
   }
   const add = target.closest("[data-group-new]");
   if (add) return newChatInGroup(add.dataset.groupNew);

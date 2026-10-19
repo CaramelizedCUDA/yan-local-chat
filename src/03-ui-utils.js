@@ -400,11 +400,14 @@ function setProcessDetails(details, open, animate = true) {
   };
 }
 // 就地改内容时高度平滑过渡（先量旧高，改完量新高，再从旧高动到新高）：步骤输出的折起摊开、「展开全部」都走这里，
-// 别让一块内容凭空出现又凭空消失。动效关掉时直接改
-function morphHeight(el, mutate, duration = 360) {
+// 别让一块内容凭空出现又凭空消失。动效关掉时直接改。
+// 整块重画（innerHTML）的，旧节点改完就不在了：find 取重画后的那一个，从旧高动到它的新高
+function morphHeight(el, mutate, duration = 360, find = () => el) {
   if (!el || inkMotionOff() || typeof el.animate !== "function") return mutate();
   const from = el.getBoundingClientRect().height;
   mutate();
+  el = find();
+  if (!el) return;
   const to = el.getBoundingClientRect().height;
   if (Math.abs(to - from) < 2) return;
   el._morph?.cancel();
