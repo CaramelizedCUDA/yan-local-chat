@@ -301,6 +301,31 @@ function finishFault(reason) {
   return Object.assign(Error(why), { finish: reason });
 }
 /** @param {Message} assistant 主消息、帮手，或拟题 / 压缩用的临时消息 */
+// 思考写进正文开头 <think>…</think> 的接口：思考里提到这个标签本身（「`</think>` 标记」「"</think>"」）不是收尾。
+// 真的结束标签后面跟换行或正文，不会被引号、反引号括着；紧挨着它们的跳过，不然后半截思考全落进正文
+const THINK_QUOTES = "`'\"“”‘’「」";
+/**
+ * 第一个真的结束标签在哪，没有回 -1
+ * @param {string} text @param {string} [before] text 之前的那一个字（流式里前面的已归入思绪）
+ * @param {boolean} [final] text 之后不会再有字；不然标签恰在末尾时要等下一个字才认得清
+ */
+function thinkCloser(text, before = "", final = true) {
+  for (let from = 0; ; ) {
+    const end = text.indexOf("</think>", from),
+      next = text[end + 8];
+    if (end < 0 || (next === undefined && !final)) return -1;
+    if (!THINK_QUOTES.includes((end ? text[end - 1] : before) || " ") && !THINK_QUOTES.includes(next || " ")) return end;
+    from = end + 8;
+  }
+}
+/** 整段的正文开头带 <think>…</think>：拆成思考与正文；不是这样的回 null @param {string} text */
+function parseInlineThink(text) {
+  const open = /^\s*<think>/.exec(text);
+  if (!open) return null;
+  const body = text.slice(open[0].length),
+    end = thinkCloser(body);
+  return end < 0 ? null : { reasoning: body.slice(0, end).trim(), content: body.slice(end + 8).replace(/^\s+/, "") };
+}
 async function readSse(response, assistant, { onFrame = null } = {}) {
   const reader = response.body.getReader(),
     decoder = new TextDecoder();
@@ -351,10 +376,16 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     schedule();
   };
   // 有些接口或中转站不走 reasoning_content，而是把思考直接写进正文开头的 <think>…</think>；这里把它剥出来，与 reasoning_content 一样归入折叠区。
-  // 标签可能被分块切开：开头先攥着几个字符看清是不是标签，思考期间末尾留 7 个字符等结束标签。
+  // 标签可能被分块切开：开头先攥着几个字符看清是不是标签，思考期间末尾留一截等结束标签（连同它前后各一个字，见 thinkCloser）。
   // 每次请求都从头看：工具循环的第二轮、续写时正文已有字，模型照样先写一段 <think>
-  const think = { mode: "probe", held: "" };
+  const think = { mode: "probe", held: "", last: "" };
   const ingest = text => {
+    // 刚收住思考：结束标签后的空行可能分几块到，正文从头一个字起
+    if (think.mode === "gap") {
+      text = text.replace(/^\s+/, "");
+      if (!text) return;
+      think.mode = "body";
+    }
     if (think.mode === "body") {
       assistant.content += text;
       return;
@@ -375,21 +406,32 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       return;
     }
     think.held += text;
-    const end = think.held.indexOf("</think>");
-    if (end >= 0) {
-      assistant.reasoning = (assistant.reasoning || "") + think.held.slice(0, end);
-      think.mode = "body";
-      const rest = think.held.slice(end + 8).replace(/^\s+/, "");
-      think.held = "";
-      if (rest) assistant.content += rest;
-      return;
-    }
-    const keep = Math.min(think.held.length, 7);
-    assistant.reasoning = (assistant.reasoning || "") + think.held.slice(0, think.held.length - keep);
-    think.held = think.held.slice(think.held.length - keep);
+    if (closeThink(false)) return;
+    // 留下末尾一截：可能是被切开的结束标签，或一个整的、还要看下一个字才知道是不是被引号括着；再多留一个字给它前面那个
+    const keep = Math.min(think.held.length, 9);
+    moveThink(think.held.length - keep);
+  };
+  /** @param {number} upto 攥着的前这么多字归入思绪 */
+  const moveThink = upto => {
+    if (upto <= 0) return;
+    assistant.reasoning = (assistant.reasoning || "") + think.held.slice(0, upto);
+    think.last = think.held[upto - 1];
+    think.held = think.held.slice(upto);
+  };
+  // 找真的那个结束标签，找到就收住思绪、余下的归正文。final：流到头了，标签后面不会再有字
+  const closeThink = final => {
+    const end = thinkCloser(think.held, think.last, final);
+    if (end < 0) return false;
+    moveThink(end);
+    const rest = think.held.slice(8);
+    think.held = "";
+    think.mode = "gap";
+    ingest(rest);
+    return true;
   };
   const flushThink = () => {
-    if (!think.held) return;
+    if (think.mode === "think" && closeThink(true)) return;
+    if (!think.held || think.mode === "gap") return void (think.mode = "body");
     if (think.mode === "think") assistant.reasoning = (assistant.reasoning || "") + think.held;
     else assistant.content += think.held;
     think.held = "";
