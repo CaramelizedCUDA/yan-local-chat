@@ -108,7 +108,8 @@ async function stageInstall(what) {
   // 只改按钮上的字，不整页重画（免得打断别的点按）
   const ticker = setInterval(async () => {
     const at = await bridge("/api/stage/home", {}).catch(() => null);
-    if (typeof at?.progress !== "number") return;
+    // 装完那一刻还在路上的一问：回来时已不在装这一样，不再把按钮写回「安装中」
+    if (typeof at?.progress !== "number" || stageInstalling !== what) return;
     stageProgress = at.progress;
     const button = document.querySelector(`#settingsContent [data-stage-install="${what}"]`);
     if (button) button.textContent = stageInstallLabel();

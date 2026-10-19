@@ -102,23 +102,10 @@ defineAnchor("cmd", {
   problem: t("指令只能一行"),
   label: value => `探针「${value}」`,
   cadence: "answer",
-  async read(conversation, values, signal) {
-    const policy = commandPolicyOf(conversation),
-      /** @type {Record<string, string|null>} */
-      prints = {};
-    await Promise.all(
-      values.map(async command => {
-        if (policy === "ask" && !isReadOnlyCommand(command)) return;
-        try {
-          const data = await bridge("/api/work/run", { ...workScope(conversation), command, timeout: 15 }, signal);
-          prints[command] = hashText(`${data.exitCode}\u0000${data.stdout || ""}\u0000${data.stderr || ""}`);
-        } catch (error) {
-          if (error.name === "AbortError") throw error;
-        }
-      })
-    );
-    return prints;
-  }
+  read: (conversation, values, signal) =>
+    readAnchorCommands(conversation, values, signal, 15, data =>
+      hashText(`${data.exitCode}\u0000${data.stdout || ""}\u0000${data.stderr || ""}`)
+    )
 });
 // 测试：只比过没过（退出码是否为 0），输出里的耗时、行号变了不算——「收尾前跑一遍测试、不过接着改」这类常驻的条件挂在它上面。
 // 跟探针一样随档位：问而后行里只自动跑明确只读的。超时给得宽；改过文件的那一答收尾前会重跑（见 10-store.js 的 intentGate）
@@ -128,21 +115,25 @@ defineAnchor("test", {
   problem: t("指令只能一行"),
   label: value => `测试「${value}」`,
   cadence: "answer",
-  async read(conversation, values, signal) {
-    const policy = commandPolicyOf(conversation),
-      /** @type {Record<string, string|null>} */
-      prints = {};
-    await Promise.all(
-      values.map(async command => {
-        if (policy === "ask" && !isReadOnlyCommand(command)) return;
-        try {
-          const data = await bridge("/api/work/run", { ...workScope(conversation), command, timeout: 300 }, signal);
-          prints[command] = data.exitCode === 0 ? "过" : "不过";
-        } catch (error) {
-          if (error.name === "AbortError") throw error;
-        }
-      })
-    );
-    return prints;
-  }
+  read: (conversation, values, signal) =>
+    readAnchorCommands(conversation, values, signal, 300, data => (data.exitCode === 0 ? "过" : "不过"))
 });
+// 探针与测试都是跑一条指令取个指纹：随档位，问而后行里只自动跑明确只读的；没跑、跑不成的这回不记、不据它判，停止照常抛出。
+// 不带 ticket，到时即掐（转入后台只给模型自己的 run_command）
+/** @param {number} timeout 秒 @param {(data: any) => string} digest */
+async function readAnchorCommands(conversation, values, signal, timeout, digest) {
+  const policy = commandPolicyOf(conversation),
+    /** @type {Record<string, string|null>} */
+    prints = {};
+  await Promise.all(
+    values.map(async command => {
+      if (policy === "ask" && !isReadOnlyCommand(command)) return;
+      try {
+        prints[command] = digest(await bridge("/api/work/run", { ...workScope(conversation), command, timeout }, signal));
+      } catch (error) {
+        if (error.name === "AbortError") throw error;
+      }
+    })
+  );
+  return prints;
+}

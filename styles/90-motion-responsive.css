@@ -158,7 +158,20 @@
 .stage-panel.leaving {
   animation: laySideOut 0.17s ease forwards !important;
 }
-:root[data-ink-motion="off"] :is(.modal, .modal-panel, .confirm-panel, .file-viewer, .file-viewer-stage, .helper-viewer, .helper-sheet, .image-viewer, .image-viewer-stage, .side-panel, .stage-panel) {
+:root[data-ink-motion="off"]
+  :is(
+    .modal,
+    .modal-panel,
+    .confirm-panel,
+    .file-viewer,
+    .file-viewer-stage,
+    .helper-viewer,
+    .helper-sheet,
+    .image-viewer,
+    .image-viewer-stage,
+    .side-panel,
+    .stage-panel
+  ) {
   animation: none !important;
 }
 /* 展开与收起一律同一种：高度从零滑开、内容淡入，曲线与时长同思绪、行迹（setProcessDetails）。

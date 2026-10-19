@@ -389,9 +389,7 @@ try {
   );
   check(
     "opening the module swaps in its own graph, closed by the module itself, with only the path on top (premises live in its slip)",
-    /^全局›训练$/.test(inside.crumb || "") &&
-      inside.nodes === "一号实验,二号实验,训练*,配方冻结" &&
-      inside.where === "训练",
+    /^全局›训练$/.test(inside.crumb || "") && inside.nodes === "一号实验,二号实验,训练*,配方冻结" && inside.where === "训练",
     JSON.stringify(inside)
   );
   await send("Page.captureScreenshot", { format: "png" }).then(shot =>

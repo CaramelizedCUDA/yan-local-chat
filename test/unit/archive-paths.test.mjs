@@ -4,7 +4,8 @@ import { load } from "./harness.mjs";
 
 test("目录拖入期间导航和更换卷宗根：整批目录和文件仍落在原处", async () => {
   const requests = [];
-  let root = "original-root", release;
+  let root = "original-root",
+    release;
   const paused = new Promise(resolve => (release = resolve));
   const f = load([
     "addLibraryEntries",
@@ -15,24 +16,42 @@ test("目录拖入期间导航和更换卷宗根：整批目录和文件仍落�
       refreshArchive = async () => {}; toast = () => {};
     }`
   ]);
-  f.setup(async (route, body) => {
-    requests.push({ route, ...body });
-    if (requests.length === 1) await paused;
-    return { path: `${body.dir}/${body.name}` };
-  }, () => root);
+  f.setup(
+    async (route, body) => {
+      requests.push({ route, ...body });
+      if (requests.length === 1) await paused;
+      return { path: `${body.dir}/${body.name}` };
+    },
+    () => root
+  );
   const file = name => ({ name, isFile: true, file: ok => ok({ name, size: 1, data: "data:text/plain;base64,QQ==" }) });
-  const folder = name => ({ name, isFile: false, createReader: () => {
-    let read = false;
-    return { readEntries: ok => { ok(read ? [] : [file("child.txt")]); read = true; } };
-  } });
+  const folder = name => ({
+    name,
+    isFile: false,
+    createReader: () => {
+      let read = false;
+      return {
+        readEntries: ok => {
+          ok(read ? [] : [file("child.txt")]);
+          read = true;
+        }
+      };
+    }
+  });
   const importing = f.addLibraryEntries([folder("one"), folder("two")]);
-  f.navigate("elsewhere"); root = "new-root"; release(); await importing;
-  assert.deepEqual(requests.map(({ route, root, dir, name }) => ({ route, root, dir, name })), [
-    { route: "/api/archive/mkdir", root: "original-root", dir: "original", name: "one" },
-    { route: "/api/archive/mkdir", root: "original-root", dir: "original", name: "two" },
-    { route: "/api/archive/put", root: "original-root", dir: "original/one", name: "child.txt" },
-    { route: "/api/archive/put", root: "original-root", dir: "original/two", name: "child.txt" }
-  ]);
+  f.navigate("elsewhere");
+  root = "new-root";
+  release();
+  await importing;
+  assert.deepEqual(
+    requests.map(({ route, root, dir, name }) => ({ route, root, dir, name })),
+    [
+      { route: "/api/archive/mkdir", root: "original-root", dir: "original", name: "one" },
+      { route: "/api/archive/mkdir", root: "original-root", dir: "original", name: "two" },
+      { route: "/api/archive/put", root: "original-root", dir: "original/one", name: "child.txt" },
+      { route: "/api/archive/put", root: "original-root", dir: "original/two", name: "child.txt" }
+    ]
+  );
 });
 
 test("Markdown 相对图片先去查询片段，再解码文件名中的保留字符", () => {
