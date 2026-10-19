@@ -54,7 +54,9 @@ for (const next of ["attachment", "archive", "close"])
       release(image("A"));
       await loading;
       assert.equal(node("#imageViewerImage").src, expected);
-      assert.equal(node("#imageViewer").classList.contains("hidden"), next === "close");
+      // 收起是先退场（leaving，纸沉下去）再藏：两样都算收着
+      const { classList } = node("#imageViewer");
+      assert.equal(classList.contains("hidden") || classList.contains("leaving"), next === "close");
     } finally {
       release(image("A"));
       restore();

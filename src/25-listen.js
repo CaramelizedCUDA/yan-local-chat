@@ -410,7 +410,7 @@ function listenRenderPendant() {
 
 // ---------- 两面何时各现：都由喇叭此刻的样子推出来 ----------
 function listenPageLive() {
-  return !$("#fileViewer").classList.contains("hidden") && !!$("#fileViewerStage .listen-page") && listenShown?.key === listenTrack?.key;
+  return isShown("#fileViewer") && !!$("#fileViewerStage .listen-page") && listenShown?.key === listenTrack?.key;
 }
 function listenSync() {
   const box = $("#listenPendant"),

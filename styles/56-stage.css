@@ -10,7 +10,6 @@
   min-height: 0;
   border-left: 1px solid var(--line);
   background: var(--paper);
-  animation: fadeIn 0.18s ease;
 }
 /* 旁注也在右侧：它开着时游目让位，收起便回来 */
 .side-panel:not(.hidden) ~ .stage-panel {

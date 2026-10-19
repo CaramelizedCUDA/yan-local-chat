@@ -69,6 +69,8 @@ check(
   )) === "报表.csv|a,b"
 );
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+// 纸先沉下去、底淡掉，淡完才藏起、清台面
+await sleep(260);
 check(
   "preview closed",
   await evalJs(

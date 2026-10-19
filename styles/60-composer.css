@@ -785,7 +785,6 @@
   border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: var(--shadow);
-  animation: rise 0.2s ease-out;
 }
 .confirm-panel h3 {
   margin: 16px 0 6px;

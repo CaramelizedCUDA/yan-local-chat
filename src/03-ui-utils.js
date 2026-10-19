@@ -136,9 +136,10 @@ function closeTopLayer() {
   return !!top;
 }
 // 带 hidden 类开合的那几层：在页上、且没藏着
+// 正在退场（leaving）的算已关：关了还在淡出的那一拍里，Esc 该落到下一层
 function isShown(selector) {
   const el = $(selector);
-  return !!el && !el.classList.contains("hidden");
+  return !!el && !el.classList.contains("hidden") && !el.classList.contains("leaving");
 }
 // ---------- 浮着的小菜单与弹层：挂在 body 上、按锚点定位，点别处、Esc、锚点所在容器滚动都收 ----------
 function closeChipPop() {
@@ -302,7 +303,7 @@ function showNow(el) {
 function hideWithFade(el, duration = 170) {
   if (!el || el.classList.contains("hidden")) return;
   clearTimeout(el._leaveTimer);
-  if (reducedMotion.matches) {
+  if (reducedMotion.matches || inkMotionOff()) {
     el.classList.add("hidden");
     return;
   }

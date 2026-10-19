@@ -37,14 +37,39 @@
     transform: none;
   }
 }
-@keyframes panelIn {
+/* 开层：盖上一层（设置、确认、文件预览与 diff、意、差遣、看图）一律「纸落案上」——底淡出来，纸从下方起来停定；
+   关时纸沉下、底淡掉（.leaving，见 hideWithFade）。右侧的旁注、游目是纸从右边进来。
+   落选（设计稿/93）：各自淡入（现状，看不出是一层纸）；从点的那一处长出、关时收回（起点会随生成滚走或被重画，找不到时要另退一路，两套不如一套） */
+@keyframes layIn {
   from {
     opacity: 0;
-    transform: scale(0.986);
+    transform: translateY(18px);
   }
   to {
     opacity: 1;
     transform: none;
+  }
+}
+@keyframes layOut {
+  to {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@keyframes laySideIn {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes laySideOut {
+  to {
+    opacity: 0;
+    transform: translateX(12px);
   }
 }
 @keyframes blink {
@@ -114,6 +139,27 @@
 }
 #settingsContent.tab-fade {
   animation: fadeIn 0.18s ease;
+}
+.modal-panel,
+.confirm-panel,
+.file-viewer-stage,
+.helper-sheet,
+.image-viewer-stage {
+  animation: layIn 0.38s cubic-bezier(0.22, 0.72, 0.2, 1) 0.04s backwards;
+}
+.side-panel,
+.stage-panel {
+  animation: laySideIn 0.32s cubic-bezier(0.22, 0.72, 0.2, 1);
+}
+.leaving :is(.modal-panel, .confirm-panel, .file-viewer-stage, .helper-sheet, .image-viewer-stage) {
+  animation: layOut 0.17s ease forwards !important;
+}
+.side-panel.leaving,
+.stage-panel.leaving {
+  animation: laySideOut 0.17s ease forwards !important;
+}
+:root[data-ink-motion="off"] :is(.modal, .modal-panel, .confirm-panel, .file-viewer, .file-viewer-stage, .helper-viewer, .helper-sheet, .image-viewer, .image-viewer-stage, .side-panel, .stage-panel) {
+  animation: none !important;
 }
 /* 展开与收起一律同一种：高度从零滑开、内容淡入，曲线与时长同思绪、行迹（setProcessDetails）。
    思绪、行迹、出处由脚本动（流式里自动开合要能半途掉头），这里不叠第二层；不是 details 的（侧栏的组、意的簿录）走 morphHeight */
@@ -516,6 +562,15 @@ button:focus:not(:focus-visible) {
   .model-menu,
   .modal,
   .modal-panel,
+  .confirm-panel,
+  .file-viewer,
+  .file-viewer-stage,
+  .helper-viewer,
+  .helper-sheet,
+  .image-viewer,
+  .image-viewer-stage,
+  .side-panel,
+  .stage-panel,
   .history-search-wrap,
   .chat:not(.hidden),
   .library-page:not(.hidden),

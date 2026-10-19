@@ -67,7 +67,7 @@ async function openFileViewer(target, name = "", trigger = null) {
   viewerSource = source;
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
-  viewer.classList.remove("hidden");
+  showNow(viewer);
   setViewerSeal();
   $("#fileViewerDownload").classList.remove("hidden");
   $("#fileViewerName").textContent = title;
@@ -279,10 +279,14 @@ function closeFileViewer(stop = false) {
   viewerSource = null;
   viewerReturnFocus = null;
   revokeViewerUrls();
-  $("#fileViewer")?.classList.add("hidden");
-  $("#fileViewerStage").innerHTML = "";
-  // 预览里全屏着的作品随预览一起没了：页上的 work-mode 也得撤，不然对话区滚不动
-  if (!document.querySelector(".work-expanded")) closeExpandedWork();
+  // 纸沉下去、底淡掉（见 90-motion-responsive.css 的「开层」），淡完再清台面；其间又开了别的（revision 变了）就不清
+  const revision = viewerRevision;
+  hideWithFade($("#fileViewer"));
+  setTimeout(() => {
+    if (revision === viewerRevision) $("#fileViewerStage").innerHTML = "";
+    // 预览里全屏着的作品随预览一起没了：页上的 work-mode 也得撤，不然对话区滚不动
+    if (!document.querySelector(".work-expanded")) closeExpandedWork();
+  }, 180);
   if (target?.isConnected) target.focus();
 }
 // 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起
@@ -298,7 +302,7 @@ function showInFileViewer(title, html, trigger = null, seal = t("览")) {
   viewerSource = null;
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
-  $("#fileViewer").classList.remove("hidden");
+  showNow($("#fileViewer"));
   setViewerSeal(seal);
   $("#fileViewerDownload").classList.add("hidden");
   $("#fileViewerName").textContent = title;
@@ -322,7 +326,7 @@ function showImageViewer(src, name, label, trigger) {
   image.src = src;
   image.alt = name || t("图片预览");
   setImageViewerZoom(false);
-  $("#imageViewer").classList.remove("hidden");
+  showNow($("#imageViewer"));
   $("#imageViewerClose").focus();
 }
 function downloadArchiveFile(path, root = archiveDir()) {
@@ -385,12 +389,16 @@ function setImageViewerZoom(actual) {
 let imageViewerAttachmentId = null,
   imageViewerReturnFocus = null;
 function closeImageViewer() {
-  imageViewerRevision++;
+  const revision = ++imageViewerRevision;
   const viewer = $("#imageViewer");
-  if (viewer.classList.contains("hidden")) return;
-  viewer.classList.add("hidden");
-  $("#imageViewerImage").removeAttribute("src");
-  setImageViewerZoom(false);
+  if (!isShown("#imageViewer")) return;
+  hideWithFade(viewer);
+  // 图随纸沉下去，淡完再撤
+  setTimeout(() => {
+    if (revision !== imageViewerRevision) return;
+    $("#imageViewerImage").removeAttribute("src");
+    setImageViewerZoom(false);
+  }, 180);
   imageViewerAttachmentId = null;
   const target = imageViewerReturnFocus;
   imageViewerReturnFocus = null;
