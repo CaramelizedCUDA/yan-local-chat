@@ -14,6 +14,17 @@ let archiveEntries = null,
   libraryDir = "",
   // 正在就地改名的那一项（文件或夹的路径）；空即没有
   libraryRenaming = "";
+// 页面这头（人）收入、改名、挪动的件与夹：路径 → 何时。答末认成品照的是开工前后卷宗的差，作答途中人收进来的也在差里，得凭这份剔掉
+/** @type {Map<string, number>} */
+const archiveOwnWrites = new Map();
+function noteOwnArchiveWrite(path) {
+  if (path) archiveOwnWrites.set(path, Date.now());
+}
+/** 这件（或它所在的夹）是不是 since 之后人在页面上放进来、挪过来的 */
+function ownArchiveWriteSince(path, since) {
+  for (const [own, at] of archiveOwnWrites) if (at >= since && (path === own || path.startsWith(`${own}/`))) return true;
+  return false;
+}
 const ARCHIVE_DRAG = "application/x-yan-archive";
 function parentDir(path) {
   const at = String(path).lastIndexOf("/");
@@ -257,6 +268,7 @@ async function commitLibraryRename(value) {
   if (!path || !name || name === path.split("/").pop()) return renderLibrary();
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, name }, AbortSignal.timeout(20000));
+    noteOwnArchiveWrite(moved.path);
     rebaseDeliverables(path, moved.path);
   } catch (error) {
     toast(t`改名失败：${String(error.message || error).slice(0, 80)}`);
@@ -289,7 +301,9 @@ function dataUrlFromText(text, mime = "text/plain") {
 }
 /** dir：落进卷宗的哪一层，缺省为根（导出、附件上的「藏」都落在根上；卷宗页上拖入的落在此刻所在的那一层） */
 async function putArchiveFile(name, data, dir = "", root = archiveDir()) {
-  return bridge("/api/archive/put", { root, name, data, dir }, AbortSignal.timeout(120000));
+  const saved = await bridge("/api/archive/put", { root, name, data, dir }, AbortSignal.timeout(120000));
+  noteOwnArchiveWrite(saved.path);
+  return saved;
 }
 // 答末成品条记的是路径：件挪了、改了名，或它所在的夹挪了、改了名，条子跟着改，不然就成了「已移出卷宗」
 function rebaseDeliverables(from, to) {
@@ -311,6 +325,7 @@ async function moveArchiveItem(path, dir) {
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
       renamed = moved.name !== path.split("/").pop();
+    noteOwnArchiveWrite(moved.path);
     rebaseDeliverables(path, moved.path);
     toast(t`已移入「${dir ? dir.split("/").pop() : t("卷宗")}」${renamed ? t`，同名已有，改作 ${moved.name}` : ""}`);
   } catch (error) {

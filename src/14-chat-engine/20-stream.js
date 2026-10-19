@@ -33,7 +33,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     tickTrailClock(assistant);
   }, 1000);
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
-  const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
+  const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null,
+    archiveSince = Date.now();
   // 用量在 finally 里结算：停止、断网、工具链中途出错，前面几轮已经花掉的墨也得记上，不能只在整答顺利收尾时记账
   const tally = newTally(),
     stepsBefore = (assistant.steps || []).length,
@@ -154,7 +155,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     if (archiveBefore && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) {
       await refreshArchive();
       assistant.deliverables = (archiveEntries || [])
-        .filter(entry => archiveBefore.get(entry.path) !== entry.modifiedAt)
+        .filter(entry => archiveBefore.get(entry.path) !== entry.modifiedAt && !ownArchiveWriteSince(entry.path, archiveSince))
         .map(entry => ({ path: entry.path, name: entry.name, size: entry.size }));
       if (!assistant.deliverables.length) delete assistant.deliverables;
     }
