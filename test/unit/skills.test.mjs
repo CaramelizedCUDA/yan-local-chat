@@ -74,7 +74,7 @@ test("只认存储根/技能：隔一层的也找得到，同名先到的为准�
   assert.equal((await call(read, { dir: base, path: "secret.txt" })).status, 400);
 });
 
-test("头上认 disable-model-invocation、user-invocable、argument-hint；附属多到截断时 SKILL.md 仍在", async () => {
+test("头上认 disable-model-invocation、user-invocable；附属多到截断时 SKILL.md 仍在", async () => {
   const parent = path.resolve("test/.tmp");
   fs.mkdirSync(parent, { recursive: true });
   const home = path.join(fs.mkdtempSync(path.join(parent, "skills-")), "技能");
@@ -84,7 +84,7 @@ test("头上认 disable-model-invocation、user-invocable、argument-hint；附�
   put(path.join(home, "字体/SKILL.md"), "---\nname: 字体\n---\n");
   const { routes } = createSkills({ skillsHome: () => home });
   const byName = Object.fromEntries((await call(routes["POST /api/skills/list"], {})).data.skills.map(skill => [skill.name, skill]));
-  assert.deepEqual([byName["周报"].manual, byName["周报"].hidden, byName["周报"].hint], [true, false, "[哪一周]"]);
+  assert.deepEqual([byName["周报"].manual, byName["周报"].hidden], [true, false]);
   assert.deepEqual([byName["暗记"].manual, byName["暗记"].hidden], [false, true]);
   assert.equal(byName["字体"].files.length, 200);
   assert.equal(byName["字体"].files[0].path, "SKILL.md");

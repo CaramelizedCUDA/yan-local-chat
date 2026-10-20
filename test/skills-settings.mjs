@@ -101,28 +101,36 @@ check("the skill folder is gone from disk", !existsSync(`${SKILLS}/复信`));
 
 await evalJs(`document.querySelector("#closeSettings")?.click(); true`);
 
-// 「/」联想：头上写了 disable-model-invocation 的只凭点名、不进模型的目录；user-invocable: false 的不列；argument-hint 跟在名字后
+// 「＋」→「技能」：挑一份，说明作附件置于案上。user-invocable: false 的不列；查找也认何时用
 const put = (name, head) => {
   mkdirSync(`${SKILLS}/${name}`, { recursive: true });
-  writeFileSync(`${SKILLS}/${name}/SKILL.md`, `---\nname: ${name}\n${head}---\n\n照 $ARGUMENTS 写。\n`);
+  writeFileSync(`${SKILLS}/${name}/SKILL.md`, `---\nname: ${name}\n${head}---\n\n照格式写。\n`);
 };
-put("周报", 'description: 写周报时用。其余略\ndisable-model-invocation: true\nargument-hint: "[哪一周]"\n');
+put("周报", "description: 写周报时用。其余略\ndisable-model-invocation: true\n");
 put("周记", "description: 记一周的事\n");
 put("暗记", "description: 背景知识\nuser-invocable: false\n");
-await evalJs(`(() => { const i = document.querySelector("#welcomeInput"); i.focus(); i.value = "/"; i.dispatchEvent(new Event("input")); return true; })()`);
-await waitFor(`[...document.querySelectorAll(".skill-menu button span")].some(s => s.textContent.startsWith("/周报"))`, 8000);
-const items = await evalJs(`[...document.querySelectorAll(".skill-menu button span")].map(s => s.textContent)`);
-check("typing / lists the skills, hiding user-invocable: false", items.includes("/周报 [哪一周]") && items.includes("/周记") && !items.some(s => s.includes("暗记")), items);
-const key = k => evalJs(`document.querySelector("#welcomeInput").dispatchEvent(new KeyboardEvent("keydown", { key: "${k}", bubbles: true, cancelable: true })); true`);
-await evalJs(`(() => { const i = document.querySelector("#welcomeInput"); i.value = "/周"; i.dispatchEvent(new Event("input")); return true; })()`);
+// 点看得见的那枚：先跑了别的用例时停在对话页，欢迎页藏着
+const plus = `[...document.querySelectorAll(".attach-trigger")].find(b => b.offsetParent)`;
+// 头一回点开时现取技能，再开一回才见新放进来的
+await evalJs(`${plus}.click(); true`);
+await waitFor(`!!document.querySelector('[data-menu="skill"]')`);
+await evalJs(`document.body.click(); true`);
+await sleep(300);
+await evalJs(`${plus}.click(); true`);
+await waitFor(`document.querySelector('[data-menu="skill"] small')?.textContent === "2 份"`, 8000);
+await evalJs(`document.querySelector('[data-menu="skill"]').click(); true`);
+await waitFor(`!!document.querySelector(".attach-picker [data-pick]")`);
+const names = await evalJs(`[...document.querySelectorAll(".attach-picker [data-pick] span")].map(s => s.textContent)`);
+check("the + menu lists skills, hiding user-invocable: false", names.join() === "周报,周记", names);
+await evalJs(`(i => { i.value = "一周的事"; i.dispatchEvent(new Event("input")); return true; })(document.querySelector(".attach-picker input"))`);
 await shot("skills-picker.png");
-await key("ArrowDown");
-await key("Enter");
 check(
-  "↓ then Enter fills the second match and keeps the question unsent",
-  (await evalJs(`document.querySelector("#welcomeInput").value`)) === "/周记 " && !(await evalJs(`!!document.querySelector(".skill-menu")`)),
-  await evalJs(`document.querySelector("#welcomeInput").value`)
+  "searching matches the when-to-use line too",
+  (await evalJs(`[...document.querySelectorAll(".attach-picker [data-pick] span")].map(s => s.textContent).join()`)) === "周记"
 );
-await evalJs(`(() => { const i = document.querySelector("#welcomeInput"); i.value = ""; i.dispatchEvent(new Event("input")); return true; })()`);
+await evalJs(`document.querySelector(".attach-picker [data-pick]").click(); true`);
+await waitFor(`[...document.querySelectorAll(".attachment-list")].some(l => l.offsetParent && l.textContent.includes("周记.md"))`, 8000);
+check("picking a skill puts its instructions on the desk as an attachment", !(await evalJs(`!!document.querySelector(".attach-picker")`)));
+await evalJs(`[...document.querySelectorAll(".attachment-list")].find(l => l.offsetParent)?.querySelector("[data-remove-attachment]")?.click(); true`);
 for (const name of ["周报", "周记", "暗记"]) rmSync(`${SKILLS}/${name}`, { recursive: true, force: true });
 close();

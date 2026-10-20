@@ -9,67 +9,6 @@ const deferred = () => {
 };
 const turn = () => new Promise(resolve => setImmediate(resolve));
 
-for (const switchAway of [false, true])
-  test(
-    switchAway ? "技能读取期间换会话：问题与附件只发进原会话，眼前草稿原样留下" : "技能读取期间接着写：只发送点发送时的内容，新增文字留下",
-    async () => {
-      const gate = deferred();
-      const field = { value: "/demo 原来的问题", style: {} };
-      const f = load([
-        "sendOrStop",
-        "doc: () => document",
-        "state: () => store",
-        "pending: () => pendingAttachments",
-        `setup: (field, gate) => {
-        store.conversations = [{ id:'A', messages:[] }, { id:'B', messages:[] }];
-        store.drafts = {}; currentId = 'A'; pendingQuote = null;
-        pendingAttachments = [{ id:'A-file', name:'A.txt', kind:'text', size:1 }];
-        document.querySelector = () => field;
-        renderSendButtons = renderAttachments = renderQuote = saveStoreSoon = () => {};
-        activeProfile = () => ({ id:'p', name:'model' }); quotaBlocked = () => false;
-        skillSet = { skills:[{ name:'demo', dir:'E:/skills/demo' }] };
-        bridge = async () => { await gate; return { text:'技能正文' }; };
-        ingestFile = async file => ({ id:'skill', name:file.name, kind:'text', size:file.size });
-        prepareTurn = async () => true;
-        startTurn = async (c, user) => { c.messages.push(user); };
-        deleteAttachment = async () => {};
-      }`,
-        `change: (field, away) => {
-        if (away) {
-          persistDraft(); currentId = 'B';
-          field.value = 'B 的私有草稿';
-          pendingAttachments = [{ id:'B-file', name:'B.txt', kind:'text', size:1 }];
-          persistDraft();
-        } else { field.value += ' 新增的文字'; persistDraft(); }
-      }`
-      ]);
-      const query = f.doc().querySelector;
-      try {
-        f.setup(field, gate.promise);
-        const sending = f.sendOrStop();
-        f.change(field, switchAway);
-        gate.resolve();
-        await sending;
-        const [a, b] = f.state().conversations;
-        assert.equal(a.messages.length, 1);
-        assert.equal(a.messages[0].content, "原来的问题");
-        assert.deepEqual(
-          a.messages[0].attachments.map(file => file.id),
-          ["A-file", "skill"]
-        );
-        assert.deepEqual(b.messages, []);
-        assert.equal(field.value, switchAway ? "B 的私有草稿" : "新增的文字");
-        assert.deepEqual(
-          f.pending().map(file => file.id),
-          switchAway ? ["B-file"] : []
-        );
-      } finally {
-        gate.resolve();
-        f.doc().querySelector = query;
-      }
-    }
-  );
-
 test("技能保存期间继续编辑并改名：后续内容接着落盘，使用桥接返回的新目录", async () => {
   const gate = deferred(),
     writes = [];

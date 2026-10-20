@@ -82,12 +82,8 @@ function bindComposerEvents() {
       grow(input);
       persistDraft();
       renderSendButtons();
-      paintSkillPicker(input);
-      // 刚敲下「/」：现取一回技能，刚放进目录的也列得出
-      if (input.value === "/") void refreshSkills().then(() => paintSkillPicker(input));
     });
     input.addEventListener("keydown", e => {
-      if (skillPickerKey(e)) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         // 按住不放的那几下不算：请示条一换位，没读过的下一条就被连着批了

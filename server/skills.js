@@ -86,7 +86,7 @@ module.exports = function createSkills({ skillsHome }) {
       seen.add(name.toLowerCase());
       const files = [];
       await listFiles(skillDir, skillDir, files);
-      // 头上另认 Claude Code 的三项：disable-model-invocation 只凭人点名、不进模型的目录；user-invocable: false 不列进「/」；argument-hint 点名时后头跟什么
+      // 头上另认 Claude Code 的两项：disable-model-invocation 只凭人点名、不进模型的目录；user-invocable: false 不列进「＋」里供人点名
       skills.push({
         name,
         description: (meta.description || body.split(/\r?\n/).find(line => line.trim() && !line.startsWith("#")) || "")
@@ -95,8 +95,7 @@ module.exports = function createSkills({ skillsHome }) {
         dir: skillDir,
         files,
         manual: /^true$/i.test(meta["disable-model-invocation"] || ""),
-        hidden: /^false$/i.test(meta["user-invocable"] || ""),
-        hint: (meta["argument-hint"] || "").slice(0, 80)
+        hidden: /^false$/i.test(meta["user-invocable"] || "")
       });
     }
     return skills;

@@ -630,36 +630,6 @@ html.work-mode .chat-scroll-grabber {
 .chip-menu button.danger:hover {
   color: var(--danger);
 }
-/* 「/」联想：同一副菜单面孔，键盘挑中的一项与悬停同色；何时用只留头一句、一行截断；逐字重画时不再起落 */
-.chip-pop.floating.chip-menu.skill-menu {
-  width: min(360px, calc(100vw - 20px));
-  max-width: none;
-  max-height: 300px;
-  overflow: auto;
-}
-.chip-pop.skill-menu.steady {
-  animation: none;
-}
-.chip-pop.skill-menu button {
-  gap: 12px;
-}
-.chip-pop.skill-menu button span {
-  flex: none;
-  white-space: nowrap;
-}
-.chip-pop.floating.chip-menu.skill-menu button small {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin-left: 0;
-  overflow: hidden;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chip-menu button.picked {
-  background: var(--paper-2);
-  color: var(--ink);
-}
 .chip-pop.attach-picker {
   width: min(320px, calc(100vw - 20px));
   padding: 8px;

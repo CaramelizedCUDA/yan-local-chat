@@ -35,59 +35,28 @@ test("技能只把名字和说明带进系统提示，参考按需翻；对话�
   assert.equal(outcome.content, "参考正文");
 });
 
-test("问话以「/技能名」开头：说明作附件放上案，问话去掉点名；对不上的照原话", async () => {
+test("「＋」里点一份技能：说明作附件放上案，开头写明点名用它；只凭点名的不进系统提示", async () => {
   const f = load([
-    "takeSkillCommand",
+    "placeSkill",
+    "skillCatalog",
     "pending: () => pendingAttachments",
     `setup: () => {
-      pendingAttachments = []; renderAttachments = () => {};
-      skillSet = { home: 'E:/skills', skills: [{ name: 'Demo', description: '写信', dir: 'E:/skills/demo', files: [{ path: 'SKILL.md' }] }] };
-      bridge = async () => ({ text: '照格式写信' });
-      ingestFile = async file => ({ id: 'a', name: file.name, kind: 'text', text: await file.text() });
-    }`
-  ]);
-  f.setup();
-  const input = { content: "/demo 给房东写一封", attachments: [], quote: null };
-  assert.equal(await f.takeSkillCommand(input), true);
-  assert.equal(input.content, "给房东写一封");
-  assert.equal(input.attachments.length, 1);
-  assert.equal(input.attachments[0].name, "Demo.md");
-  assert.match(input.attachments[0].text, /^点名用技能「Demo」，照它做。\n技能目录：E:\/skills\/demo\n\n照格式写信$/);
-  assert.deepEqual(f.pending(), [], "发送快照不改眼前的待发附件");
-  const other = { content: "/usr/bin 是什么", attachments: [], quote: null };
-  assert.equal(await f.takeSkillCommand(other), true);
-  assert.equal(other.content, "/usr/bin 是什么");
-  assert.deepEqual(other.attachments, []);
-});
-
-test("只凭点名的技能不进系统提示；名字带空格取最长的那份；说明里的 $ARGUMENTS 换成点名后的话", async () => {
-  const f = load([
-    "skillCatalog",
-    "takeSkillCommand",
-    `setup: () => {
+      store.conversations = []; store.drafts = {}; currentId = null;
+      pendingAttachments = []; renderAttachments = () => {}; saveStoreSoon = () => {};
       skillSet = { home: 'E:/skills', skills: [
-        { name: 'weekly', description: '写周报', dir: 'E:/skills/weekly', files: [{ path: 'SKILL.md' }], manual: true },
-        { name: 'week', description: '记一周', dir: 'E:/skills/week', files: [{ path: 'SKILL.md' }] },
-        { name: 'week plan', description: '排一周', dir: 'E:/skills/week plan', files: [{ path: 'SKILL.md' }] }
+        { name: 'Demo', description: '写信', dir: 'E:/skills/demo', files: [{ path: 'SKILL.md' }] },
+        { name: 'weekly', description: '写周报', dir: 'E:/skills/weekly', files: [{ path: 'SKILL.md' }], manual: true }
       ] };
-      bridge = async (route, body) => ({ text: '为 $ARGUMENTS 排：' + body.dir });
-      ingestFile = async file => ({ id: 'a', name: file.name, kind: 'text', text: await file.text() });
+      bridge = async () => ({ text: '照格式写信' });
+      ingestFile = async file => ({ id: 'a', name: file.name, kind: 'text', size: file.size, text: await file.text() });
     }`
   ]);
   f.setup();
+  await f.placeSkill({ name: "Demo", dir: "E:/skills/demo" });
+  const [placed] = f.pending();
+  assert.equal(placed.name, "Demo.md");
+  assert.match(placed.text, /^点名用技能「Demo」，照它做。\n技能目录：E:\/skills\/demo\n\n照格式写信$/);
   const catalog = f.skillCatalog().list;
+  assert.match(catalog, /- Demo：写信/);
   assert.ok(!catalog.includes("weekly"), "manual 的不列给模型");
-  assert.match(catalog, /- week：记一周/);
-  const spaced = { content: "/week plan 下周三", attachments: [], quote: null };
-  await f.takeSkillCommand(spaced);
-  assert.equal(spaced.content, "下周三");
-  assert.equal(spaced.attachments[0].name, "week plan.md");
-  assert.match(spaced.attachments[0].text, /为 下周三 排：E:\/skills\/week plan$/);
-  const manual = { content: "/weekly", attachments: [], quote: null };
-  await f.takeSkillCommand(manual);
-  assert.equal(manual.content, "");
-  assert.equal(manual.attachments[0].name, "weekly.md", "只凭点名的仍可点名");
-  const prefix = { content: "/weeks", attachments: [], quote: null };
-  await f.takeSkillCommand(prefix);
-  assert.equal(prefix.content, "/weeks", "名字只对上前半截的不算");
 });

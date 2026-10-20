@@ -37,8 +37,7 @@ async function sendOrStop() {
   if (!text && !pendingAttachments.length && !pendingQuote) return;
   sendPreparing = true;
   renderSendButtons();
-  let releaseAttachments = () => {},
-    releaseSkillAttachments = () => {};
+  let releaseAttachments = () => {};
   try {
     const profile = activeProfile();
     if (!profile) {
@@ -50,11 +49,10 @@ async function sendOrStop() {
       toast(quotaExhausted(profile) ? t("余墨已尽，请调高上限或更换模型") : t("余墨不足：进行中的对话已占去余量，请稍候或调高上限"));
       return;
     }
-    // 案上的东西与所属对话在点发送这一刻就定下：读技能、等工作目录的工夫里用户可能已换到别的对话，
+    // 案上的东西与所属对话在点发送这一刻就定下：等工作目录的工夫里用户可能已换到别的对话，
     // 输入框、待发的附件与引文都换成了那一段的草稿，不能等完了再去读
     const sendingDraftKey = draftKey(),
-      snapshot = composerSnapshot(input),
-      sending = { ...snapshot, attachments: [...snapshot.attachments] };
+      snapshot = composerSnapshot(input);
     releaseAttachments = holdAttachments(snapshot.attachments);
     let c = currentConversation(),
       fresh = !c;
@@ -81,11 +79,7 @@ async function sendOrStop() {
         reasoning: normalizeReasoning(profile.reasoning)
       };
     }
-    // 技能只改待发的这一份，不碰眼前的输入框；扣草稿仍用原快照，等待时接着写的字与新放的附件留下。
-    if (text.startsWith("/") && !(await takeSkillCommand(sending))) return;
-    releaseSkillAttachments = holdAttachments(sending.attachments.slice(snapshot.attachments.length));
     if (fresh) {
-      c.title = titleFrom(sending.content || snapshot.quote?.text || "", sending.attachments);
       if (!(await ensureWorkReady(c))) return;
     } else if (!(await prepareTurn(c))) return;
     // 还在点发送的那个输入框前：照常收走案上的东西；已换走了：发的是当时那份，那份草稿里减去发出的、等待时接着写的留着，
@@ -106,12 +100,9 @@ async function sendOrStop() {
       if (rest.text || rest.attachments.length || rest.quote) store.drafts[sendingDraftKey] = { ...rest, updatedAt: now() };
       else delete store.drafts[sendingDraftKey];
     }
-    user.content = sending.content;
-    user.attachments = sending.attachments;
     return startTurn(c, user, profile);
   } finally {
     releaseAttachments();
-    releaseSkillAttachments();
     sendPreparing = false;
     renderSendButtons();
   }
