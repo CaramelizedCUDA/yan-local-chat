@@ -33,7 +33,9 @@ const HINTS = {
   subscription_sharing_usage_limit_exceeded: "ChatGPT 订阅给言的额度用完了，可在 ChatGPT 设置 → 用量里查看或调整",
   subscription_sharing_user_not_eligible: "这个 ChatGPT 账号的套餐不能把额度用在别的应用里",
   subscription_sharing_invalid_user: "ChatGPT 的授权已被收回，请到「设置 → 模型」里重新登录",
-  subscription_sharing_unsupported_capability: "ChatGPT 订阅不支持这一问里的某样东西（模型、工具或附件）"
+  subscription_sharing_unsupported_capability: "ChatGPT 订阅不支持这一问里的某样东西（模型、工具或附件）",
+  // 桥接直连到了不支持的地区：浏览器走了代理、桥接没走
+  unsupported_country_region_territory: "OpenAI 不受理当前地区的连接：请开代理（系统代理或 TUN）后重启桥接再登录"
 };
 
 const base64url = buffer => Buffer.from(buffer).toString("base64url");
@@ -78,10 +80,17 @@ module.exports = function createChatgpt({ home }) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ ...form, resource: RESOURCE }),
       signal: AbortSignal.timeout(20000)
+    }).catch(error => {
+      throw Error(`连不上 OpenAI 授权端（${error.cause?.code || error.cause?.message || error.message}）：多半是桥接没走代理，开着代理就重启桥接再试`);
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok)
-      throw Object.assign(Error(data.error_description || data.error || `换令牌失败（${response.status}）`), { code: data.error });
+    if (!response.ok) {
+      // 两种样子：OAuth 的 { error: "invalid_grant", error_description }，与接口那种 { error: { code, message } }（地区被拒就是这种）；另有 { detail }
+      const nested = data.error && typeof data.error === "object" ? data.error : null,
+        code = nested ? nested.code || nested.type : data.error;
+      const message = nested?.message || data.error_description || data.detail || code || `换令牌失败（${response.status}）`;
+      throw Object.assign(Error(hinted(code, String(message))), { code });
+    }
     return data;
   }
 

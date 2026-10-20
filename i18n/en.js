@@ -1463,6 +1463,10 @@ var YAN_EN = {
   "ChatGPT 订阅不支持这一问里的某样东西（模型、工具或附件）":
     "The ChatGPT subscription doesn't support something in this message (model, tool or attachment)",
   "换令牌失败（{0}）": "Token exchange failed ({0})",
+  "OpenAI 不受理当前地区的连接：请开代理（系统代理或 TUN）后重启桥接再登录":
+    "OpenAI doesn't accept connections from this region. Turn on a proxy (system proxy or TUN), restart the bridge, then sign in again",
+  "连不上 OpenAI 授权端（{0}）：多半是桥接没走代理，开着代理就重启桥接再试":
+    "Can't reach the OpenAI sign-in server ({0}). The bridge is probably not using your proxy; with the proxy on, restart the bridge and try again",
   "还没登录 ChatGPT：到「设置 → 模型」里点「登录」": "Not signed in to ChatGPT. Click Sign in under Settings → Models",
   "ChatGPT 的登录凭证没能换新：{0}": "Could not refresh the ChatGPT credentials: {0}",
   "ChatGPT 的登录已失效，请到「设置 → 模型」里重新登录": "The ChatGPT sign-in expired. Sign in again under Settings → Models",
