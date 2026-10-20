@@ -537,6 +537,7 @@ var YAN_EN = {
   "{0} 份": "{0} {0|skill|skills}",
   "脚本 {0}": "{0} {0|script|scripts}",
   "参考 {0}": "{0} {0|reference|references}",
+  只凭点名: "Only when called",
   新建一份: "New skill",
   尚无一份: "None yet",
   名字: "Name",

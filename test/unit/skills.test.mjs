@@ -74,6 +74,22 @@ test("只认存储根/技能：隔一层的也找得到，同名先到的为准�
   assert.equal((await call(read, { dir: base, path: "secret.txt" })).status, 400);
 });
 
+test("头上认 disable-model-invocation、user-invocable、argument-hint；附属多到截断时 SKILL.md 仍在", async () => {
+  const parent = path.resolve("test/.tmp");
+  fs.mkdirSync(parent, { recursive: true });
+  const home = path.join(fs.mkdtempSync(path.join(parent, "skills-")), "技能");
+  put(path.join(home, "周报/SKILL.md"), '---\nname: 周报\ndisable-model-invocation: true\nargument-hint: "[哪一周]"\n---\n照写');
+  put(path.join(home, "暗记/SKILL.md"), "---\nname: 暗记\nuser-invocable: false\n---\n");
+  for (let i = 0; i < 210; i++) put(path.join(home, `字体/assets/f${i}.ttf`), "");
+  put(path.join(home, "字体/SKILL.md"), "---\nname: 字体\n---\n");
+  const { routes } = createSkills({ skillsHome: () => home });
+  const byName = Object.fromEntries((await call(routes["POST /api/skills/list"], {})).data.skills.map(skill => [skill.name, skill]));
+  assert.deepEqual([byName["周报"].manual, byName["周报"].hidden, byName["周报"].hint], [true, false, "[哪一周]"]);
+  assert.deepEqual([byName["暗记"].manual, byName["暗记"].hidden], [false, true]);
+  assert.equal(byName["字体"].files.length, 200);
+  assert.equal(byName["字体"].files[0].path, "SKILL.md");
+});
+
 test("写技能：新建、改名带着目录走、头上别的几项留着；同名、技能目录之外的都不写不删", async () => {
   const parent = path.resolve("test/.tmp");
   fs.mkdirSync(parent, { recursive: true });

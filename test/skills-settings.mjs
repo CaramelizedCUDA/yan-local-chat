@@ -1,5 +1,5 @@
 // 设置 → 技能：只一处（存储根/技能），就地写一份；点行摊开看（不成框），「改」才成输入框、改名（目录跟着走）、删去
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect, check, sleep, PAGE, HOME } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
 const SKILLS = `${HOME}/技能`;
@@ -100,4 +100,29 @@ await waitFor(`!${row("复信")} && !${view("复信")}`, 8000);
 check("the skill folder is gone from disk", !existsSync(`${SKILLS}/复信`));
 
 await evalJs(`document.querySelector("#closeSettings")?.click(); true`);
+
+// 「/」联想：头上写了 disable-model-invocation 的只凭点名、不进模型的目录；user-invocable: false 的不列；argument-hint 跟在名字后
+const put = (name, head) => {
+  mkdirSync(`${SKILLS}/${name}`, { recursive: true });
+  writeFileSync(`${SKILLS}/${name}/SKILL.md`, `---\nname: ${name}\n${head}---\n\n照 $ARGUMENTS 写。\n`);
+};
+put("周报", 'description: 写周报时用。其余略\ndisable-model-invocation: true\nargument-hint: "[哪一周]"\n');
+put("周记", "description: 记一周的事\n");
+put("暗记", "description: 背景知识\nuser-invocable: false\n");
+await evalJs(`(() => { const i = document.querySelector("#welcomeInput"); i.focus(); i.value = "/"; i.dispatchEvent(new Event("input")); return true; })()`);
+await waitFor(`[...document.querySelectorAll(".skill-menu button span")].some(s => s.textContent.startsWith("/周报"))`, 8000);
+const items = await evalJs(`[...document.querySelectorAll(".skill-menu button span")].map(s => s.textContent)`);
+check("typing / lists the skills, hiding user-invocable: false", items.includes("/周报 [哪一周]") && items.includes("/周记") && !items.some(s => s.includes("暗记")), items);
+const key = k => evalJs(`document.querySelector("#welcomeInput").dispatchEvent(new KeyboardEvent("keydown", { key: "${k}", bubbles: true, cancelable: true })); true`);
+await evalJs(`(() => { const i = document.querySelector("#welcomeInput"); i.value = "/周"; i.dispatchEvent(new Event("input")); return true; })()`);
+await shot("skills-picker.png");
+await key("ArrowDown");
+await key("Enter");
+check(
+  "↓ then Enter fills the second match and keeps the question unsent",
+  (await evalJs(`document.querySelector("#welcomeInput").value`)) === "/周记 " && !(await evalJs(`!!document.querySelector(".skill-menu")`)),
+  await evalJs(`document.querySelector("#welcomeInput").value`)
+);
+await evalJs(`(() => { const i = document.querySelector("#welcomeInput"); i.value = ""; i.dispatchEvent(new Event("input")); return true; })()`);
+for (const name of ["周报", "周记", "暗记"]) rmSync(`${SKILLS}/${name}`, { recursive: true, force: true });
 close();

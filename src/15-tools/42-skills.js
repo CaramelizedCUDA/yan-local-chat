@@ -3,7 +3,7 @@
 // 人也可点名：问话以「/技能名」开头，那份说明作附件随问附上（takeSkillCommand）。
 // 只认存储根/技能一处（桥接那头扫，见 server/skills.js），放进来的都给模型、不设开合；别处的要用就拷进来——
 // 有执事时系统提示里写着这个目录（skills.home），叫模型去找、拷过来即可。设置 → 技能里就地写、改、删
-/** @typedef {{ name: string, description: string, dir: string, files: { path: string, size: number, modifiedAt: string }[] }} Skill */
+/** @typedef {{ name: string, description: string, dir: string, files: { path: string, size: number, modifiedAt: string }[], manual?: boolean, hidden?: boolean, hint?: string }} Skill */
 const SKILL_FILE = "SKILL.md";
 /** @type {{ home: string, skills: Skill[] }|null} */
 let skillSet = null;
@@ -36,30 +36,96 @@ function skillDocuments() {
   );
 }
 // 系统提示里的目录（skills.hint）：一份一行，名字与它自己写的何时用。放在系统提示而不在 read_document 的说明里——
-// 模型定下怎么做时读的是系统提示，藏在一件工具的说明末尾，只有它已想翻文档时才看得见。一份都没有就不带这段
+// 模型定下怎么做时读的是系统提示，藏在一件工具的说明末尾，只有它已想翻文档时才看得见。只凭点名的（manual）不列；一份都没有就不带这段
 function skillCatalog() {
-  const skills = skillList().filter(skill => skill.files.some(file => file.path.toLowerCase() === SKILL_FILE.toLowerCase()));
+  const skills = skillList().filter(skill => !skill.manual);
   return skills.length ? { list: skills.map(skill => `- ${skill.name}：${skill.description}`).join("\n") } : null;
 }
+// 「/」点的是哪一份：名字可带空格，取问话开头对得上的最长一个（后头须是空白或到头）
+/** @param {string} text @returns {Skill|undefined} */
+function typedSkill(text) {
+  const head = text.toLowerCase();
+  return skillList()
+    .filter(skill => head.startsWith(`/${skill.name.toLowerCase()}`) && !/\S/.test(head[skill.name.length + 1] || ""))
+    .sort((a, b) => b.name.length - a.name.length)[0];
+}
 // 人点名用：问话以「/技能名」开头，发出前把那份说明作一件附件随这一问附上，模型不必再去翻。
-// 名字对不上的照原话发（/usr/bin 之类的路径也是斜杠起头）
+// 名字对不上的照原话发（/usr/bin 之类的路径也是斜杠起头）。说明里写了 $ARGUMENTS 的（同 Claude Code），换成名字后头那段话
 /** @param {ReturnType<typeof composerSnapshot>} snapshot @returns {Promise<boolean>} false：没取到说明或案上放不下，这一问先不发 */
 async function takeSkillCommand(snapshot) {
-  const typed = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(snapshot.content.trim());
-  if (!typed) return true;
+  const content = snapshot.content.trim();
   if (!skillSet) await refreshSkills();
-  const skill = skillList().find(item => item.name.toLowerCase() === typed[1].toLowerCase());
+  const skill = typedSkill(content);
   if (!skill) return true;
+  const rest = content.slice(skill.name.length + 1).trim();
   try {
-    const text = await skillDocumentText({ skillDir: skill.dir, path: SKILL_FILE, main: true }),
-      file = new File([text], `${skill.name}.md`, { type: "text/markdown" });
+    const text = (await skillDocumentText({ skillDir: skill.dir, path: SKILL_FILE, main: true })).replaceAll("$ARGUMENTS", rest),
+      // 只点了名、后头没话时，消息里只剩一件附件：开头写明是点名用它，免得被当成递来一份文档要看
+      file = new File([t`点名用技能「${skill.name}」，照它做。\n${text}`], `${skill.name}.md`, { type: "text/markdown" });
     if (!canPlaceAttachment(file.size, snapshot.attachments)) return false;
     snapshot.attachments.push(await ingestFile(file));
   } catch (error) {
     toast(t`技能「${skill.name}」的说明没取到：${tr(String(error.message || error)).slice(0, 80)}`);
     return false;
   }
-  snapshot.content = typed[2] || "";
+  snapshot.content = rest;
+  return true;
+}
+// 「/」联想：问话只写了「/」与名字的头几个字（还没敲空格）时，在输入框旁列出对得上的技能——名字开头对得上的在前，
+// 名字或何时用里含着的其次；↑↓ 挑，Enter / Tab 填成「/名字 」接着写，Esc 或接着敲别的即收。不列 user-invocable: false 的
+let skillPickAt = 0;
+/** @param {HTMLTextAreaElement} input */
+function paintSkillPicker(input) {
+  const typed = /^\/([^\s/]*)$/.exec(input.value),
+    open = document.querySelector(".chip-pop.skill-menu");
+  if (!typed || input.selectionEnd !== input.value.length) return void (open && closeChipPop());
+  const query = typed[1].toLowerCase(),
+    rank = skill =>
+      skill.name.toLowerCase().startsWith(query) ? 0 : `${skill.name} ${skill.description}`.toLowerCase().includes(query) ? 1 : 2;
+  const shown = skillList()
+    .filter(skill => !skill.hidden && rank(skill) < 2)
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, "zh-CN"))
+    .slice(0, 8);
+  if (!shown.length) return void (open && closeChipPop());
+  skillPickAt = 0;
+  // 已开着时逐字重画：不再从头起落一回
+  const steady = open ? " steady" : "";
+  // 贴着整个输入框的外沿，不盖住底下那排附件、模型与「寄」
+  const pop = openMenu(
+    input.closest(".composer") || input,
+    shown.map(skill => ({
+      id: skill.dir,
+      label: skill.hint ? `/${skill.name} ${skill.hint}` : `/${skill.name}`,
+      note: String(skill.description).match(/^.+?(?:[。！？]|[.!?](?=\s|$))/)?.[0] || skill.description,
+      run: () => pickSkill(input, skill)
+    })),
+    { align: "left", className: `skill-menu${steady}` }
+  );
+  pop?.querySelector("button")?.classList.add("picked");
+}
+/** @param {HTMLTextAreaElement} input @param {Skill} skill */
+function pickSkill(input, skill) {
+  closeChipPop();
+  input.value = `/${skill.name} `;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  input.dispatchEvent(new Event("input"));
+}
+// 联想开着时接走 ↑↓、Enter、Tab：认了这一下回 true，输入框就不再当发送
+/** @param {KeyboardEvent} e */
+function skillPickerKey(e) {
+  const pop = document.querySelector(".chip-pop.skill-menu");
+  if (!pop || e.isComposing || !["ArrowUp", "ArrowDown", "Enter", "Tab"].includes(e.key) || e.shiftKey) return false;
+  const buttons = [...pop.querySelectorAll("button")];
+  e.preventDefault();
+  if (e.key === "Enter" || e.key === "Tab") {
+    /** @type {HTMLElement} */ (buttons[skillPickAt])?.click();
+    return true;
+  }
+  buttons[skillPickAt]?.classList.remove("picked");
+  skillPickAt = (skillPickAt + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+  buttons[skillPickAt].classList.add("picked");
+  buttons[skillPickAt].scrollIntoView({ block: "nearest" });
   return true;
 }
 // 翻一件：SKILL.md 开头注明技能目录——里头说的相对路径、要跑的脚本都照它
@@ -102,7 +168,7 @@ function skillRowHtml(skill) {
     count = re => skill.files.filter(file => re.test(file.path)).length,
     scripts = count(/\.(py|js|mjs|cjs|ts|sh|ps1|bat|cmd)$/i),
     refs = count(/\.md$/i) - 1,
-    extra = [scripts && t`脚本 ${scripts}`, refs > 0 && t`参考 ${refs}`].filter(Boolean).join(" · "),
+    extra = [skill.manual && t("只凭点名"), scripts && t`脚本 ${scripts}`, refs > 0 && t`参考 ${refs}`].filter(Boolean).join(" · "),
     dir = escapeHtml(skill.dir);
   const row = `<button type="button" class="skill-row" data-skill-edit="${dir}" title="${escapeHtml(skill.description)}"><span class="skill-name">${escapeHtml(skill.name)}</span><span class="skill-gist">${escapeHtml(gist)}</span>${extra ? `<span class="skill-extra">${extra}</span>` : ""}</button>`;
   return `<div class="skill-item">${row}<span class="memory-ops"><button type="button" class="memory-del" data-skill-remove="${dir}" title="${t(`删去`)}">${brushIcon("strike")}</button></span></div>`;

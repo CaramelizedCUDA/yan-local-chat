@@ -56,8 +56,10 @@ module.exports = function createSkills({ skillsHome }) {
       if (stat?.isDirectory()) await findSkillDirs(full, depth + 1, out);
     }
   }
+  // 每层先列件、后进夹：附属多到截断时，SKILL.md 与顶层的参考不被深处的素材挤掉
   async function listFiles(root, dir, out) {
-    for (const entry of await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries.sort((a, b) => Number(a.isDirectory()) - Number(b.isDirectory()))) {
       if (out.length >= SKILL_FILE_LIMIT) return;
       if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
       const full = path.join(dir, entry.name);
@@ -84,13 +86,17 @@ module.exports = function createSkills({ skillsHome }) {
       seen.add(name.toLowerCase());
       const files = [];
       await listFiles(skillDir, skillDir, files);
+      // 头上另认 Claude Code 的三项：disable-model-invocation 只凭人点名、不进模型的目录；user-invocable: false 不列进「/」；argument-hint 点名时后头跟什么
       skills.push({
         name,
         description: (meta.description || body.split(/\r?\n/).find(line => line.trim() && !line.startsWith("#")) || "")
           .trim()
           .slice(0, DESCRIPTION_LIMIT),
         dir: skillDir,
-        files
+        files,
+        manual: /^true$/i.test(meta["disable-model-invocation"] || ""),
+        hidden: /^false$/i.test(meta["user-invocable"] || ""),
+        hint: (meta["argument-hint"] || "").slice(0, 80)
       });
     }
     return skills;
