@@ -98,7 +98,8 @@ async function extractPdfText(data) {
   if (chars < pages.length * 10) throw Error(t("PDF 没有文字层（多半是扫描件），原件照发"));
   return pages.join("\n\n");
 }
-async function unzipSelected(bytes, wanted) {
+// 取包里选中的几份：默认解成文字，raw 给原字节（图）
+async function unzipSelected(bytes, wanted, raw = false) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
     decoder = new TextDecoder(),
     minimum = Math.max(0, bytes.length - 65557);
@@ -136,7 +137,7 @@ async function unzipSelected(bytes, wanted) {
         output = new Uint8Array(await new Response(stream).arrayBuffer());
       }
       if (output) {
-        entries.set(name, decoder.decode(output));
+        entries.set(name, raw ? output : decoder.decode(output));
         extractedBytes += output.length;
       }
     }
@@ -151,7 +152,7 @@ function parseXml(value) {
 }
 // ---------- 文档抽成 Markdown：标题、加粗、列表、表格照原样，预览交给现成的 Markdown 渲染，送给模型的也是这一份 ----------
 // 早先只抽一串字（段落换行、表格用 Tab 连），结构全丢，预览挤成一片、模型也读不出行列。
-// 只还原结构，不还原版式（字体、配色、图片、合并单元格）；要看原样，预览里「以本机程序打开」
+// 只还原结构与图，不还原版式（字体、配色、图的位置大小、合并单元格）；要看原样，预览里「以本机程序打开」
 const MD_TABLE_ROWS = 500,
   MD_TABLE_COLS = 40;
 const xmlKids = (node, name) => [...node.children].filter(child => child.localName === name);
@@ -199,13 +200,84 @@ function mdRuns(segments) {
     .join("");
 }
 
+// ---------- 文档里的图：抽取时只记成包里的路（![说明](word/media/image1.png)），模型知道此处有图；预览时照路从原件取出画上（见 withZipImages）----------
+// rels 里某类关系（默认图片）：Id → 包里的路；base 是这份 rels 所属那份 XML 所在的一层（word、ppt/slides、xl/drawings）
+function zipRels(relsXml, base, type = "image") {
+  const targets = new Map();
+  if (relsXml)
+    for (const rel of xmlDeep(parseXml(relsXml), "Relationship"))
+      if (String(rel.getAttribute("Type") || "").endsWith(`/${type}`) && rel.getAttribute("TargetMode") !== "External") {
+        const target = String(rel.getAttribute("Target") || "");
+        targets.set(rel.getAttribute("Id"), archiveRelative(target.startsWith("/") ? "" : base, target));
+      }
+  return targets;
+}
+const relsOf = path => path.replace(/([^/]+)$/, "_rels/$1.rels");
+const mdImage = (alt, path) =>
+  path
+    ? `![${
+        String(alt || "")
+          .replace(/[\s[\]]+/g, " ")
+          .trim() || t("图片")
+      }](${path.replace(/ /g, "%20")})`
+    : "";
+// OOXML 的一处图（blip 的 r:embed、旧式 Word 的 imagedata r:id；说明在 docPr / cNvPr 的 descr 上）
+const ooxmlImage = (node, images) => {
+  const blip = xmlDeep(node, "blip")[0],
+    legacy = xmlDeep(node, "imagedata")[0];
+  return mdImage(
+    (xmlDeep(node, "docPr")[0] || xmlDeep(node, "cNvPr")[0])?.getAttribute("descr") || legacy?.getAttribute("o:title"),
+    images.get(blip ? blip.getAttribute("r:embed") : legacy?.getAttribute("r:id"))
+  );
+};
+const ZIP_IMAGE_TYPES = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  svg: "image/svg+xml"
+};
+// 画好的预览里，照 img 记下的路从原件包里取图换成 data: 地址；取不到的、浏览器画不了的（EMF、WMF、TIFF）留一行字
+async function withZipImages(html, dataUrl) {
+  if (!dataUrl || !html.includes("data-path")) return html;
+  const box = document.createElement("template");
+  box.innerHTML = html;
+  const imgs = [...box.content.querySelectorAll("img[data-path]")],
+    pathOf = img => archiveRelative("", img.getAttribute("data-path") || ""),
+    wanted = new Set(imgs.map(pathOf)),
+    media = await unzipSelected(bytesFromDataUrl(dataUrl), name => wanted.has(name), true).catch(() => new Map());
+  for (const img of imgs) {
+    const path = pathOf(img),
+      type = ZIP_IMAGE_TYPES[fileExtension(path)];
+    img.removeAttribute("data-path");
+    img.removeAttribute("data-file");
+    if (media.has(path) && type) img.setAttribute("src", await readFile(new Blob([media.get(path)], { type }), "data"));
+    else img.replaceWith(t`[图片 ${path.split("/").pop()} 预览不了]`);
+  }
+  return box.innerHTML;
+}
+
 // docx：正文按块走（段落、表格，内容控件等容器往里钻）；标题认样式名（styles.xml 里的 heading n / Title，中文版 Word 的样式 id 是数字）
-function docxMarkdown(documentXml, stylesXml) {
-  const styleNames = new Map();
+function docxMarkdown(documentXml, stylesXml, relsXml) {
+  const styleNames = new Map(),
+    images = zipRels(relsXml, "word");
   if (stylesXml)
     for (const style of xmlDeep(parseXml(stylesXml), "style"))
       styleNames.set(style.getAttribute("w:styleId"), String(xmlKids(style, "name")[0]?.getAttribute("w:val") || "").toLowerCase());
   const flag = node => !!node && !["0", "false"].includes(String(node.getAttribute("w:val")));
+  // 图在 run 里：新式 drawing、旧式 pict / object；AlternateContent 两份都有，ooxmlImage 只取头一份
+  const image = part => ooxmlImage(part, images);
+  const runText = run => {
+    let text = "";
+    for (const part of run.children)
+      if (part.localName === "t") text += part.textContent;
+      else if (part.localName === "tab") text += " ";
+      else if (part.localName === "br" || part.localName === "cr") text += "\n";
+      else if (/^(drawing|pict|object|AlternateContent)$/.test(part.localName)) text += image(part);
+    return text;
+  };
   const paragraph = p => {
     const props = xmlKids(p, "pPr")[0],
       styleId = props && xmlKids(props, "pStyle")[0]?.getAttribute("w:val"),
@@ -215,12 +287,7 @@ function docxMarkdown(documentXml, stylesXml) {
       depth = Number(numbering && xmlKids(numbering, "ilvl")[0]?.getAttribute("w:val")) || 0;
     const segments = xmlDeep(p, "r").map(run => {
       const rp = xmlKids(run, "rPr")[0];
-      let text = "";
-      for (const part of run.children)
-        if (part.localName === "t") text += part.textContent;
-        else if (part.localName === "tab") text += " ";
-        else if (part.localName === "br" || part.localName === "cr") text += "\n";
-      return { text, bold: !level && flag(rp && xmlKids(rp, "b")[0]), italic: flag(rp && xmlKids(rp, "i")[0]) };
+      return { text: runText(run), bold: !level && flag(rp && xmlKids(rp, "b")[0]), italic: flag(rp && xmlKids(rp, "i")[0]) };
     });
     // 段首的记号转义施在原字上（施在拼好的「**…**」上会把加粗本身转掉）
     const first = segments.find(seg => seg.text.trim());
@@ -234,11 +301,7 @@ function docxMarkdown(documentXml, stylesXml) {
   };
   const cellText = cell =>
     xmlDeep(cell, "p")
-      .map(p =>
-        xmlDeep(p, "t")
-          .map(t => t.textContent)
-          .join("")
-      )
+      .map(p => xmlDeep(p, "r").map(runText).join(""))
       .join(" ");
   const out = [];
   const walk = node => {
@@ -255,11 +318,12 @@ function docxMarkdown(documentXml, stylesXml) {
     .filter(Boolean)
     .reduce((text, block, i, all) => text + (i ? (/^\s*- /.test(block) && /^\s*- /.test(all[i - 1]) ? "\n" : "\n\n") : "") + block, "");
 }
-// pptx：一页一节「## 第 n 页 · 标题」，其余文字按层级列成要点，页上的表格照表格
+// pptx：一页一节「## 第 n 页 · 标题」，其余文字按层级列成要点，页上的表格照表格、图片照图片
 function pptxMarkdown(slides) {
   return slides
-    .map((xml, index) => {
-      const doc = parseXml(xml);
+    .map(({ xml, rels }, index) => {
+      const doc = parseXml(xml),
+        images = zipRels(rels, "ppt/slides");
       let title = "";
       const points = [],
         tables = [];
@@ -290,7 +354,10 @@ function pptxMarkdown(slides) {
             )
           )
         );
-      return [t`## 第 ${index + 1} 页${title ? ` · ${title}` : ""}`, points.join("\n"), ...tables].filter(Boolean).join("\n\n");
+      const pictures = xmlDeep(doc, "pic").map(pic => ooxmlImage(pic, images));
+      return [t`## 第 ${index + 1} 页${title ? ` · ${title}` : ""}`, points.join("\n"), ...tables, ...pictures]
+        .filter(Boolean)
+        .join("\n\n");
     })
     .join("\n\n");
 }
@@ -299,6 +366,12 @@ function xlsxColumn(ref) {
   let n = 0;
   for (const ch of String(ref || "").replace(/\d+/g, "")) n = n * 26 + ch.charCodeAt(0) - 64;
   return n - 1;
+}
+// 反过来：零起的列、行 → C5
+function xlsxRef(col, row) {
+  let letters = "";
+  for (let n = col + 1; n > 0; n = Math.floor((n - 1) / 26)) letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+  return letters && Number.isFinite(row) ? `${letters}${row + 1}` : "";
 }
 function xlsxMarkdown(entries) {
   const sharedXml = entries.get("xl/sharedStrings.xml"),
@@ -353,7 +426,21 @@ function xlsxMarkdown(entries) {
         }
         return Array.from(cells, cell => cell ?? "");
       });
-      return `## ${name}\n\n${mdTable(rows) || t("（空表）")}`;
+      // 图挂在绘图层上：表的 rels → drawingN.xml → 它的 rels → media；每张注上锚在哪一格
+      const pictures = [...zipRels(entries.get(relsOf(file)), parentDir(file), "drawing").values()]
+        .filter(drawing => entries.has(drawing))
+        .flatMap(drawing => {
+          const images = zipRels(entries.get(relsOf(drawing)), parentDir(drawing));
+          return [...parseXml(entries.get(drawing)).documentElement.children].map(anchor => {
+            const pic = xmlKids(anchor, "pic")[0],
+              from = xmlKids(anchor, "from")[0],
+              picture = pic ? ooxmlImage(pic, images) : "",
+              at = from ? xlsxRef(Number(xmlKids(from, "col")[0]?.textContent), Number(xmlKids(from, "row")[0]?.textContent)) : "";
+            return picture && at ? `${at}：${picture}` : picture;
+          });
+        })
+        .filter(Boolean);
+      return [`## ${name}`, mdTable(rows) || (pictures.length ? "" : t("（空表）")), ...pictures].filter(Boolean).join("\n\n");
     })
     .join("\n\n");
 }
@@ -363,11 +450,20 @@ function odfMarkdown(contentXml) {
   let pages = 0;
   const text = node => node.textContent.replace(/\s+/g, " ").trim();
   const repeat = (node, name) => Math.min(50, Number(node.getAttribute(name)) || 1);
+  // 图在 draw:frame 里，路直指包内的 Pictures/…；一个框可并列几份同图（SVG 与 PNG 替身），取头一份
+  const picture = frame => {
+    const href = xmlKids(frame, "image")[0]?.getAttribute("xlink:href");
+    if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href)) return "";
+    return mdImage(xmlKids(frame, "desc")[0]?.textContent || xmlKids(frame, "title")[0]?.textContent, archiveRelative("", href));
+  };
   const walk = (node, depth = 0) => {
     for (const child of node.children) {
       const name = child.localName;
       if (name === "h") out.push(`${"#".repeat(Math.min(6, Number(child.getAttribute("text:outline-level")) || 1))} ${text(child)}`);
-      else if (name === "p") text(child) && out.push(mdLine(text(child)));
+      else if (name === "p") {
+        text(child) && out.push(mdLine(text(child)));
+        out.push(...xmlDeep(child, "frame").map(picture));
+      } else if (name === "frame" && xmlKids(child, "image").length) out.push(picture(child));
       else if (name === "list")
         for (const item of xmlKids(child, "list-item")) {
           const line = xmlKids(item, "p").map(text).join(" ");
@@ -404,7 +500,9 @@ function odfMarkdown(contentXml) {
 }
 async function extractZipDocumentText(extension, bytes) {
   if (extension === "docx") {
-    const entries = await unzipSelected(bytes, name => /^word\/(document|styles|footnotes|endnotes)\.xml$/.test(name)),
+    const entries = await unzipSelected(bytes, name =>
+        /^word\/(document|styles|footnotes|endnotes)\.xml$|^word\/_rels\/document\.xml\.rels$/.test(name)
+      ),
       notes = ["word/footnotes.xml", "word/endnotes.xml"]
         .filter(name => entries.has(name))
         .map(name =>
@@ -417,18 +515,21 @@ async function extractZipDocumentText(extension, bytes) {
         )
         .flat()
         .filter(Boolean);
-    return `${entries.has("word/document.xml") ? docxMarkdown(entries.get("word/document.xml"), entries.get("word/styles.xml")) : ""}${notes.length ? `\n\n---\n\n${notes.join("\n\n")}` : ""}`;
+    return `${entries.has("word/document.xml") ? docxMarkdown(entries.get("word/document.xml"), entries.get("word/styles.xml"), entries.get("word/_rels/document.xml.rels")) : ""}${notes.length ? `\n\n---\n\n${notes.join("\n\n")}` : ""}`;
   }
   if (extension === "pptx") {
-    const entries = await unzipSelected(bytes, name => /^ppt\/slides\/slide\d+\.xml$/.test(name));
+    const entries = await unzipSelected(bytes, name => /^ppt\/slides\/(_rels\/)?slide\d+\.xml(\.rels)?$/.test(name));
     return pptxMarkdown(
-      [...entries.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).map(([, xml]) => xml)
+      [...entries.keys()]
+        .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+        .map(name => ({ xml: entries.get(name), rels: entries.get(relsOf(name)) }))
     );
   }
   if (extension === "xlsx")
     return xlsxMarkdown(
       await unzipSelected(bytes, name =>
-        /^xl\/(sharedStrings|workbook)\.xml$|^xl\/_rels\/workbook\.xml\.rels$|^xl\/worksheets\/sheet\d+\.xml$/.test(name)
+        /^xl\/(sharedStrings|workbook)\.xml$|^xl\/_rels\/workbook\.xml\.rels$|^xl\/(worksheets|drawings)\/(_rels\/)?(sheet|drawing)\d+\.xml(\.rels)?$/.test(name)
       )
     );
   const entries = await unzipSelected(bytes, name => name === "content.xml");

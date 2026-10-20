@@ -160,10 +160,12 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
       .join("")}</tbody></table>${rows.length > 400 ? `<p class="file-viewer-note">${t(`仅显示前 400 行`)}</p>` : ""}</div>`;
   }
   if (kind === "doc") {
-    // 每回从原件现抽（按结构抽成 Markdown）；原件取不到时才用附件上传时抽下的那份
-    let text = "";
+    // 每回从原件现抽（按结构抽成 Markdown）；原件取不到时才用附件上传时抽下的那份。文中的图照抽出的路再从原件里取（见 withZipImages）
+    let text = "",
+      data = "";
     try {
-      text = trimExtractedText(await extractDocumentText(name, reader.dataUrl || (await readFile(await reader.blob(), "data"))));
+      data = reader.dataUrl || (await readFile(await reader.blob(), "data"));
+      text = trimExtractedText(await extractDocumentText(name, data));
     } catch {
       text = trimExtractedText(reader.extracted);
     }
@@ -174,7 +176,7 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
       // 按「## 」分节：表格一张表一节，演示一页一节
       sections = text.split(/^(?=## )/m).filter(part => part.trim());
     if (sort === "sheet" && sections.length)
-      return `<div class="file-viewer-text file-viewer-wide">${note}<div class="viewer-tabs">${sections
+      return withZipImages(`<div class="file-viewer-text file-viewer-wide">${note}<div class="viewer-tabs">${sections
         .map(
           (part, i) =>
             `<button type="button" class="${i ? "" : "active"}" data-viewer-tab="${i}">${escapeHtml(part.match(/^## (.*)/)?.[1] || t`工作表 ${i + 1}`)}</button>`
@@ -184,10 +186,13 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
           (part, i) =>
             `<div class="viewer-sheet markdown${i ? " hidden" : ""}" data-viewer-panel="${i}">${renderMarkdown(part.replace(/^## .*\n+/, ""))}</div>`
         )
-        .join("")}</div>`;
+        .join("")}</div>`, data);
     if (sort === "slides" && sections.length)
-      return `<div class="file-viewer-slides">${note}${sections.map(part => `<div class="viewer-slide markdown">${renderMarkdown(part)}</div>`).join("")}</div>`;
-    return `<div class="file-viewer-text markdown">${note}${renderMarkdown(text)}</div>`;
+      return withZipImages(
+        `<div class="file-viewer-slides">${note}${sections.map(part => `<div class="viewer-slide markdown">${renderMarkdown(part)}</div>`).join("")}</div>`,
+        data
+      );
+    return withZipImages(`<div class="file-viewer-text markdown">${note}${renderMarkdown(text)}</div>`, data);
   }
   const text = await reader.text();
   if (kind === "markdown")
