@@ -7,14 +7,15 @@
 // 在设置里换了位置，整份拷到新处，%APPDATA%\言\位置.json 写明搬去了哪（旧数据原样留着，确认无误后可自行删去）。
 // 条子不放在 ~/.yan 里：旧处是叫人自行删去的，条子若在里头，删了旧数据也就删了条子，下次开又回到默认处。
 // 测试用 YAN_HOME 直接指定根目录，不读也不写位置条子
-// 由 server.js 装配：require("./server/store.js")()
+// 由 server.js 装配：require("./server/store.js")({ working })——working 报各页正作答的有几段（见 server/chats.js）
 "use strict";
 const { sendJson, readJson, jsonRoute, errorText, writeAtomic, parseJsonText } = require("./http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-module.exports = function createStore() {
+/** @param {{ working?: () => number }} [options] */
+module.exports = function createStore({ working = () => 0 } = {}) {
   const HOME_ROOT = path.join(os.homedir(), ".yan"),
     POINTER = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "言", "位置.json"),
     CONFIG_FILE = "配置.json";
@@ -161,18 +162,21 @@ module.exports = function createStore() {
       const next = path.basename(parent).toLowerCase() === ".yan" ? parent : path.join(parent, ".yan");
       if (next.toLowerCase() === root.toLowerCase()) return { ...describe(), moved: false };
       if (inside(root, next)) throw Error("新存储位置不能位于当前存储目录内");
+      // 有对话正作答（哪一页都算）：拷到一半它还往旧处写，搬过去的就缺了这一截；等答完再换
+      const busy = working();
+      if (busy) throw Error(`${busy} 段对话正在作答，等答完再换`);
       const existing = fs.existsSync(path.join(next, CONFIG_FILE));
-      let busy = [];
+      let locked = [];
       if (!existing) {
         fs.mkdirSync(next, { recursive: true });
         // 环境不拷：虚拟环境里记着绝对路径，搬过去就坏了；到新处重新准备一遍（有缓存时很快）
-        ({ busy } = copyInto(root, next, new Set(["位置.json", "环境"])));
+        ({ busy: locked } = copyInto(root, next, new Set(["位置.json", "环境"])));
       }
       const previous = root;
       root = next;
       ensureRoot();
       if (!process.env.YAN_HOME) writePointer(root);
-      return { ...describe(), moved: true, adopted: existing, previous, busy: busy.slice(0, 20), busyCount: busy.length };
+      return { ...describe(), moved: true, adopted: existing, previous, busy: locked.slice(0, 20), busyCount: locked.length };
     },
     error => `存储位置未能更换：${errorText(error, 200)}`
   );

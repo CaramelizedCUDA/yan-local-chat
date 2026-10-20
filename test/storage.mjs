@@ -151,6 +151,27 @@ const nestedMove = await fetch(PAGE + "api/store/move", {
   body: JSON.stringify({ parent: native(nested) })
 });
 check("moving storage below its current root is rejected before creating directories", nestedMove.status === 400 && !existsSync(nested));
+// 有对话正在作答（哪一页的都算）：不换，等答完——拷到一半那边还往旧处写
+const lease = ids =>
+  fetch(PAGE + "api/chats/lease", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner: "test-busy-page", ids })
+  });
+await lease(["busy-chat"]);
+const busyTarget = `${TMP}/busy-move`;
+const busyMove = await fetch(PAGE + "api/store/move", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ parent: native(busyTarget) })
+});
+const busyText = await busyMove.text();
+await lease([]);
+check(
+  "storage move waits while any page is answering",
+  busyMove.status === 400 && busyText.includes("正在作答") && !existsSync(busyTarget),
+  `${busyMove.status} ${busyText.slice(0, 160)}`
+);
 await evalJs(`document.querySelector("#openSettings").click(); true`);
 await sleep(200);
 await evalJs(`document.querySelector('[data-tab="env"]').click(); true`);
