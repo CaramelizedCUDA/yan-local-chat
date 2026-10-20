@@ -421,8 +421,11 @@ function noteBreak(target, why, auto = false) {
   target.breaks = [...(target.breaks || []), { at: now(), why: String(why || "").slice(0, 200), ...(auto ? { auto } : {}) }].slice(-10);
 }
 // 网络一晃就断太脆：接口没接下请求时（连不上、限流、5xx、过载）等一等再试，间隔渐长，接口给了 Retry-After 就照它等；
-// 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」
-const RETRY_DELAYS = [1000, 2000, 4000, 8000];
+// 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」。
+// 远端撑五分钟上下（对方一阵 5xx、代理换线都扛得过去，无人值守的长活不至于就此停住；「止」随时收回）；本机的只试前四回——
+// 本机服务停了是人自己关的，干等没有用
+const RETRY_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000, 60000, 60000, 60000, 60000],
+  LOCAL_RETRIES = 4;
 const retryableStatus = status => status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 /** 等 ms 毫秒（断网就等到网回来；local：本机模型不靠外网，不等）；中途停止即抛 AbortError */
 function restFor(ms, signal, local = false) {
@@ -452,7 +455,7 @@ const QUOTA_GONE = /insufficient_quota|quota|billing|balance|credit|余额|欠�
 async function requestPatiently(profile, history, signal, overrides) {
   const local = /^https?:\/\/(localhost|127\.|\[::1\]|0\.0\.0\.0|192\.168\.|10\.)/i.test(String(profile.baseUrl || ""));
   for (let attempt = 0; ; attempt++) {
-    let wait = RETRY_DELAYS[attempt];
+    let wait = local && attempt >= LOCAL_RETRIES ? undefined : RETRY_DELAYS[attempt];
     try {
       const response = await requestChat(profile, history, signal, overrides);
       if (response.ok || !retryableStatus(response.status) || wait === undefined) return response;
