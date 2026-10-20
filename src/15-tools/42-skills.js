@@ -70,13 +70,23 @@ async function skillDocumentText(doc) {
 }
 
 // 设置 → 技能：一栏簿录（设计稿/78 乙，只一处、不分段）——段头写技能目录，右端「＋」新建、「打开」；
-// 一份一行：名、说明的头一句（全文悬停可见）、带几件脚本与参考。点一行就地摊开改名字、何时用、正文（同记忆页摊开的一条），
-// 焦点离开即存成那份 SKILL.md；行末悬停一枚「删」
+// 一份一行：名、说明的头一句（全文悬停可见）、带几件脚本与参考。看与改分开，同记忆页：点一行就地摊开看全文（再点收起），
+// 底下「改」才换成输入框改名字、何时用、正文，焦点离开即存成那份 SKILL.md、回到看；新建的直接是改。行末悬停一枚「删」
 /** @type {{ dir: string, name: string, description: string, body: string, from: string }|null} 正摊开改着的一份（新建的 dir 为空） */
 let skillEditing = null;
+/** @type {{ dir: string, body: string }|null} 摊开着看的一份，正文是 SKILL.md 去了头的那段 */
+let skillViewing = null;
 function skillsSettingsHtml() {
   const { home = "", skills = [] } = skillSet || {};
-  const rows = skills.map(skill => (skillEditing?.dir === skill.dir ? skillEditorHtml(skillEditing) : skillRowHtml(skill))).join("");
+  const rows = skills
+    .map(skill =>
+      skillEditing?.dir === skill.dir
+        ? skillEditorHtml(skillEditing)
+        : skillViewing?.dir === skill.dir
+          ? skillViewHtml(skill, skillViewing.body)
+          : skillRowHtml(skill)
+    )
+    .join("");
   const adding = skillEditing && !skillEditing.dir;
   return (
     `<div class="settings-head">${brushIcon("skills", "settings-mark")}<h2>${t(`技能`)}</h2><span class="settings-meta">${t`${skills.length} 份`}</span></div>` +
@@ -97,7 +107,19 @@ function skillRowHtml(skill) {
   const row = `<button type="button" class="skill-row" data-skill-edit="${dir}" title="${escapeHtml(skill.description)}"><span class="skill-name">${escapeHtml(skill.name)}</span><span class="skill-gist">${escapeHtml(gist)}</span>${extra ? `<span class="skill-extra">${extra}</span>` : ""}</button>`;
   return `<div class="skill-item">${row}<span class="memory-ops"><button type="button" class="memory-del" data-skill-remove="${dir}" title="${t(`删去`)}">${brushIcon("strike")}</button></span></div>`;
 }
-// 摊开的一份：名字一行，何时用（进系统提示的就是这一句）一段，正文一段；底下注目录，右边「完成」「删去」
+// 摊开着看的一份：与改时同样三段（名字、何时用、正文），只是字不是框，点不出光标；点字收起，底下「改」「删去」
+/** @param {Skill} skill @param {string} body */
+function skillViewHtml(skill, body) {
+  const dir = escapeHtml(skill.dir);
+  return (
+    `<div class="memory-item open skill-editor" data-skill-view="${dir}"><div class="skill-view" data-skill-collapse title="${t(`收起`)}">` +
+    `<div class="skill-view-name">${escapeHtml(skill.name)}</div>` +
+    `<div class="memory-body skill-edit-desc">${escapeHtml(skill.description)}</div>` +
+    `<div class="memory-body">${escapeHtml(String(body).trim())}</div></div>` +
+    `<div class="memory-meta"><span class="skill-dir" title="${dir}">${dir}</span><span class="memory-spacer"></span><span class="memory-ops"><button type="button" data-skill-modify title="${t(`修改`)}">${brushIcon("edit")}</button><button type="button" class="memory-del" data-skill-remove="${dir}" title="${t(`删去`)}">${brushIcon("strike")}</button></span></div></div>`
+  );
+}
+// 摊开改着的一份：名字一行，何时用（进系统提示的就是这一句）一段，正文一段；底下注目录，右边「完成」「删去」
 /** @param {NonNullable<typeof skillEditing>} draft */
 function skillEditorHtml(draft) {
   return (
@@ -110,7 +132,7 @@ function skillEditorHtml(draft) {
     }</span></div></div>`
   );
 }
-// 存下摊开的那一份：没改就只收起；新建的什么都没写就作罢
+// 存下摊开的那一份，回到看着它：没改就只回到看；新建的什么都没写就作罢
 let skillSaving = false;
 async function settleSkillEditor() {
   const draft = skillEditing;
@@ -125,6 +147,7 @@ async function settleSkillEditor() {
   }
   if (draft.dir && draft.from === sent) {
     skillEditing = null;
+    skillViewing = { dir: draft.dir, body };
     return renderSettings();
   }
   if (!name) {
@@ -148,6 +171,7 @@ async function settleSkillEditor() {
     // 保存与重翻目录期间编辑框还在：有新字就接着存，不能拿先前那份的回音收掉它。
     if (sent !== JSON.stringify([draft.name.trim(), draft.description.trim(), draft.body.trim()])) return settleSkillEditor();
     skillEditing = null;
+    skillViewing = { dir: draft.dir, body };
   }
   renderSettings();
 }
@@ -161,11 +185,12 @@ function bindSkillSettings() {
   $("#addSkill")?.addEventListener("click", async () => {
     await settleSkillEditor();
     if (skillEditing) return;
+    skillViewing = null;
     skillEditing = { dir: "", name: "", description: "", body: "", from: "" };
     renderSettings();
     focusEditor();
   });
-  // 改一份：正文现取（SKILL.md 去了头的那段），取到才摊开
+  // 看一份：正文现取（SKILL.md 去了头的那段），取到才摊开
   for (const button of document.querySelectorAll("[data-skill-edit]"))
     button.addEventListener("click", async () => {
       await settleSkillEditor();
@@ -174,14 +199,33 @@ function bindSkillSettings() {
       if (!skill) return;
       try {
         const { text } = await bridge("/api/skills/read", { dir: skill.dir, path: SKILL_FILE }, AbortSignal.timeout(15000));
-        skillEditing = { dir: skill.dir, name: skill.name, description: skill.description, body: text, from: "" };
-        skillEditing.from = JSON.stringify([skill.name, skill.description, String(text).trim()]);
+        skillViewing = { dir: skill.dir, body: String(text) };
       } catch (error) {
         return toast(tr(String(error.message || error)));
       }
       renderSettings();
-      focusEditor();
     });
+  // 看着的那份：点字收起（划选字时不收），「改」换成输入框
+  $("[data-skill-collapse]")?.addEventListener("click", () => {
+    if (String(window.getSelection()).trim()) return;
+    skillViewing = null;
+    renderSettings();
+  });
+  $("[data-skill-modify]")?.addEventListener("click", () => {
+    const skill = skillList().find(item => item.dir === skillViewing?.dir);
+    if (!skill || !skillViewing) return;
+    const body = skillViewing.body;
+    skillEditing = {
+      dir: skill.dir,
+      name: skill.name,
+      description: skill.description,
+      body,
+      from: JSON.stringify([skill.name, skill.description, body.trim()])
+    };
+    skillViewing = null;
+    renderSettings();
+    focusEditor();
+  });
   const editor = $("[data-skill-editor]");
   if (editor) {
     const grow = area => {
@@ -220,6 +264,7 @@ function bindSkillSettings() {
       return toast(tr(String(error.message || error)));
     }
     if (skillEditing?.dir === dir) skillEditing = null;
+    if (skillViewing?.dir === dir) skillViewing = null;
     await refreshSkills();
     renderSettings();
   };

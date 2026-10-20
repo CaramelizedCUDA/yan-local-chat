@@ -1,4 +1,4 @@
-/* 技能一页（设计稿/78 乙，只一处不分段）：段头写技能目录，下面一份一行，行间淡朱丝栏，点一行就地摊开改 */
+/* 技能一页（设计稿/78 乙，只一处不分段）：段头写技能目录，下面一份一行，行间淡朱丝栏，点一行就地摊开看，「改」才成输入框 */
 .skill-head {
   display: flex;
   align-items: center;
@@ -104,6 +104,17 @@
 .skill-edit-body::placeholder,
 .skill-edit-name::placeholder {
   color: var(--ink-3);
+}
+/* 摊开着看的一份：与改时同样三段、同样的字，只是不成框——点不出光标，点字收起 */
+.skill-view {
+  display: grid;
+  gap: 8px;
+  cursor: default;
+}
+.skill-view-name {
+  padding: 0 2px;
+  color: var(--ink);
+  font: 600 14px var(--title);
 }
 .skill-editor .memory-meta .skill-dir {
   flex: 0 1 auto;
