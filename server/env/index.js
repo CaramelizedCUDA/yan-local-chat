@@ -229,9 +229,9 @@ module.exports = function createEnv({ envHome }) {
       uv = path.join(bin, "uv.exe");
     if (fs.existsSync(uv)) return uv;
     const index = `${mirror.pypi}/uv/`;
-    const list = await (
-      await fetch(index, { headers: { Accept: "application/vnd.pypi.simple.v1+json" }, signal: AbortSignal.timeout(60000) })
-    ).json();
+    const list = /** @type {any} */ (
+      await (await fetch(index, { headers: { Accept: "application/vnd.pypi.simple.v1+json" }, signal: AbortSignal.timeout(60000) })).json()
+    );
     const wheel = list.files
       .filter(file => /^uv-[\d.]+-py3-none-win_amd64\.whl$/.test(file.filename) && !file.yanked)
       .map(file => ({ ...file, version: file.filename.split("-")[1].split(".").map(Number) }))

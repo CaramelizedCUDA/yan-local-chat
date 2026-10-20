@@ -21,7 +21,9 @@ class StdioTransport {
     this.cwd = cwd;
     this.env = env;
     this.stderr = "";
+    /** @type {(message: any) => void} */
     this.onmessage = () => {};
+    /** @type {(error: Error) => void} */
     this.onclose = () => {};
   }
   start() {
@@ -139,7 +141,9 @@ class HttpTransport {
     this.headers = headers;
     this.session = "";
     this.protocol = "";
+    /** @type {(message: any) => void} */
     this.onmessage = () => {};
+    /** @type {(error: Error) => void} */
     this.onclose = () => {};
     this.aborts = new Set();
   }
@@ -204,10 +208,13 @@ class HttpTransport {
 }
 
 class SseTransport {
+  /** @param {{ url?: string, headers?: Record<string, string> }} config */
   constructor({ url, headers = {} }) {
     this.url = url;
     this.headers = headers;
+    /** @type {(message: any) => void} */
     this.onmessage = () => {};
+    /** @type {(error: Error) => void} */
     this.onclose = () => {};
     this.abort = new AbortController();
   }

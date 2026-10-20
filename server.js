@@ -29,10 +29,11 @@ const PROXY = (() => {
     https || plain
       ? { HTTPS_PROXY: https || plain, HTTP_PROXY: plain || https, NO_PROXY: env.NO_PROXY || env.no_proxy || "" }
       : systemProxy();
-  if (!proxy || typeof http.setGlobalProxyFromEnv !== "function") return "";
+  const setProxy = /** @type {any} */ (http).setGlobalProxyFromEnv;
+  if (!proxy || typeof setProxy !== "function") return "";
   // 本机的几处（假服务、本地模型、游目调试口）无论如何直连
   proxy.NO_PROXY = [proxy.NO_PROXY, "localhost", "127.0.0.1", "::1"].filter(Boolean).join(",");
-  http.setGlobalProxyFromEnv(proxy);
+  setProxy(proxy);
   return proxy.HTTPS_PROXY;
 })();
 // 联网：地址门禁、翻网页、检索、调接口
@@ -136,8 +137,8 @@ function handleBootstrap(req, res) {
     }
   });
 }
-// 存储根（默认 ~/.yan）：对话、卷宗、配置都在里面，换位置后下面两处跟着走
-const STORE = require("./server/store.js")();
+// 存储根（默认 ~/.yan）：对话、卷宗、配置都在里面，换位置后下面两处跟着走；有对话正作答时不换（问 CHATS 的租约，换时才问）
+const STORE = require("./server/store.js")({ working: () => CHATS.working() });
 // 沙箱环境：存储根里的 环境/，桥接起的进程（指令、MCP 服务）都接上它
 const ENV = require("./server/env/index.js")({ envHome: () => STORE.paths().env });
 // 视频换壳：浏览器认不得的封装（如扩展名写作 mp4 的 MPEG-TS），预览时借环境里的 ffmpeg 原样换进 MP4（见 server/video.js）
@@ -151,7 +152,7 @@ const WORK = require("./server/work/index.js")({
   toolEnv: ENV.apply,
   playable: VIDEO.playable
 });
-// 技能：照 Claude Code 的 SKILL.md 写法，认存储根/技能、~/.claude/skills 与工作目录/.claude/skills（见 server/skills.js）
+// 技能：照 Claude Code 的 SKILL.md 写法，只认存储根/技能一处（见 server/skills.js）
 const SKILLS = require("./server/skills.js")({ skillsHome: () => STORE.paths().skills });
 const CHATS = require("./server/chats.js")({ chatsHome: () => STORE.paths().chats });
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable });
@@ -309,12 +310,12 @@ async function dispatch(req, res) {
   }
 }
 const server = http.createServer(dispatch);
-server.on("error", error => {
+server.on("error", (/** @type {NodeJS.ErrnoException} */ error) => {
   if (error.code === "EADDRINUSE") console.error(`端口 ${PORT} 已被占用，可设置 YAN_PORT 后重试。`);
   else console.error(error);
   process.exitCode = 1;
 });
-server.on("clientError", (error, socket) => {
+server.on("clientError", (/** @type {NodeJS.ErrnoException} */ error, socket) => {
   if (DEBUG) console.log(`${stamp()} 客户端连接错误：${error.code || error.message}`);
   if (!socket.destroyed) socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
 });
@@ -330,7 +331,9 @@ process.on("unhandledRejection", error => console.error(`${stamp()} 桥接内部
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) process.on(signal, () => process.exit(signal === "SIGINT" ? 130 : 0));
 server.listen(PORT, HOST, () => {
   const address = `http://${HOST}:${PORT}`;
-  console.log(`\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  存储    ${STORE.paths().root}\n${PROXY ? `  代理    ${PROXY.replace(/\/\/[^@/]*@/, "//")}\n` : ""}`);
+  console.log(
+    `\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  存储    ${STORE.paths().root}\n${PROXY ? `  代理    ${PROXY.replace(/\/\/[^@/]*@/, "//")}\n` : ""}`
+  );
   console.log("  请保持此窗口开启；关闭后页面刷新、模型转发、联网与执事都会停止。按 Ctrl+C 退出。");
   console.log("  此窗口不会显示 API Key。\n");
   if (process.argv.includes("--open")) openUrl(address);

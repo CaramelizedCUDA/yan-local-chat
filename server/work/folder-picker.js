@@ -120,7 +120,7 @@ function pickFolder(current) {
       out += chunk.toString("utf8");
     });
     const timer = setTimeout(() => child.kill(), 300000);
-    child.on("error", error => {
+    child.on("error", (/** @type {NodeJS.ErrnoException} */ error) => {
       clearTimeout(timer);
       resolve({ error: `无法打开文件夹对话框（${error.code === "ENOENT" ? `缺少 ${cmd}` : error.message}），请直接填写路径` });
     });

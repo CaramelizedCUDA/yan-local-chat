@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js --open",
     "serve": "node server.js",
-    "check": "npx -y -p typescript@5.6.3 tsc -p jsconfig.json",
+    "check": "npm i --no-save --no-package-lock typescript@5.6.3 @types/node@22 && tsc -p jsconfig.json && tsc -p jsconfig.server.json",
     "unit": "node --test \"test/unit/*.test.mjs\"",
     "test": "node --test \"test/unit/*.test.mjs\" && node test/run.mjs",
     "format": "npx prettier@3.3.3 --write .",

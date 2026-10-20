@@ -24,6 +24,7 @@ const ITEM_WRITERS = String.raw`(?:New|Set|Remove|Clear|Rename|Copy|Move)-Item(?
 // 定义别名等于给写动词换个名字，静态筛查就认不出来了；与 Invoke-Expression 同属「藏字」
 const ALIASING = /\b(?:Set|New)-Alias\b|(^|[\s;&|({])(?:sal|nal)\s/i;
 // 指令里禁用的写法：[正则, 一句原因]。逐条对整段指令文本查，命中即拒
+/** @type {[RegExp, string][]} */
 const FORBIDDEN = [
   [cmd("reg", String.raw`(?:\.exe)?\s+(?:add|delete|import|restore|load|unload|copy|save)\b`), "不动注册表"],
   // 注册表：查看放行（启动项、已装软件、驱动版本都在里头，是电脑检查的常规去处），改则拒绝
@@ -89,6 +90,7 @@ const DIRECT_FILE_MUTATION = new RegExp(
 // 审而后行不是第二个沙箱：常规开发、安装、Git（含回退与清理）、本机进程、联网、整机查看、写到目录之外都放行，
 // 只拦明确会伤及宿主机或难以恢复的动作：改系统、提权、藏字的指令、整目录与磁盘级删除、往系统目录里写。
 // 它不向用户请示；拿不准而确实需要做时，模型可以换用结构化工具，或用户切到「问而后行 / 径行」。沙箱开着时沙箱先筛，这一档再筛。
+/** @type {[RegExp, string][]} */
 const REVIEW_FORBIDDEN = [
   [cmd("reg", String.raw`(?:\.exe)?\s+(?:add|delete|import|restore|load|unload|copy|save)\b`), "不代为修改注册表"],
   [

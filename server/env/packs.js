@@ -104,7 +104,9 @@ module.exports = [
         const list = await (await fetch(mirror.go, { signal: AbortSignal.timeout(60000) })).text();
         file = newest([...list.matchAll(/go(\d+)\.(\d+)(?:\.(\d+))?\.windows-amd64\.zip/g)]);
       } else {
-        const releases = await (await fetch("https://go.dev/dl/?mode=json", { signal: AbortSignal.timeout(60000) })).json();
+        const releases = /** @type {any} */ (
+          await (await fetch("https://go.dev/dl/?mode=json", { signal: AbortSignal.timeout(60000) })).json()
+        );
         file = releases
           .find(release => release.stable)
           ?.files.find(f => f.os === "windows" && f.arch === "amd64" && f.kind === "archive")?.filename;

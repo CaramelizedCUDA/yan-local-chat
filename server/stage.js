@@ -311,7 +311,8 @@ module.exports = function createStage({ root = () => "" } = {}) {
       service = serviceOf(body, root()),
       { port, dir, output } = browserOf(service.args, service.cwd);
     const marks = !!dir && fs.existsSync(bookmarksFile(dir));
-    const get = path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(1500) }).then(r => r.json());
+    const get = path =>
+      fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(1500) }).then(r => /** @type {any} */ (r.json()));
     try {
       const [version, list] = await Promise.all([get("/json/version"), get("/json/list")]);
       // /json/list 按最近活动排，头一个页面即浏览器前台的那一页——多半就是模型正在用的

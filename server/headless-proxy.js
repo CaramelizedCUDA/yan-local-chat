@@ -75,11 +75,11 @@ module.exports = async function createPublicProxy(resolve = url => require("./we
   });
   await new Promise((ok, fail) => {
     server.once("error", fail);
-    server.listen(0, "127.0.0.1", ok);
+    server.listen(0, "127.0.0.1", () => ok());
   });
   let closed = false;
   return {
-    url: `http://127.0.0.1:${server.address().port}`,
+    url: `http://127.0.0.1:${/** @type {import("node:net").AddressInfo} */ (server.address()).port}`,
     close() {
       if (closed) return;
       closed = true;
