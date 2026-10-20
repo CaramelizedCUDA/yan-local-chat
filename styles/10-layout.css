@@ -53,10 +53,6 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   color: var(--accent);
   font: 500 22px/1 var(--title);
 }
-.brand-name {
-  font: 500 14px var(--title);
-  letter-spacing: 0.18em;
-}
 .icon-btn {
   width: 30px;
   height: 30px;

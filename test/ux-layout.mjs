@@ -45,7 +45,7 @@ const quote = await evalJs(
 );
 check("the quote's rule ends with its text", quote < 4, String(quote));
 
-// 电脑上把窗口拉窄（分屏）：快捷键提示藏了，右下角的上下文计数仍整个在窗口里
+// 电脑上把窗口拉窄（分屏）：右下角的上下文计数仍整个在窗口里
 await send("Emulation.setDeviceMetricsOverride", { width: 700, height: 800, deviceScaleFactor: 1, mobile: false });
 await waitFor(`!document.querySelector("#contextGauge").classList.contains("hidden")`, 5000).catch(() => {});
 await sleep(400);

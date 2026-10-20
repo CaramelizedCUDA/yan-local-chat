@@ -231,12 +231,6 @@
   font-size: 12px;
   line-height: 1.6;
 }
-.settings-note {
-  margin-top: 14px;
-  color: var(--ink-3);
-  font-size: 12px;
-  line-height: 1.8;
-}
 .settings-sub {
   margin: 22px 0 0;
   color: var(--ink-2);

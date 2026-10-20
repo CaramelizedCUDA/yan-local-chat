@@ -106,8 +106,3 @@
   font-family: var(--title);
   letter-spacing: 0.06em;
 }
-.work-setup {
-  border-color: color-mix(in srgb, var(--accent) 13%, var(--line));
-  border-radius: var(--radius-m) var(--radius-l) var(--radius-l) var(--radius-l);
-  background: color-mix(in srgb, var(--paper-2) 58%, transparent);
-}

@@ -35,7 +35,6 @@ const f = load([
   "normalizeDraft",
   "reasoningLive",
   "estimateText",
-  "splitDelimited",
   "legacyVizHtml",
   "titleFrom",
   "quotedText",
@@ -236,10 +235,6 @@ test("estimateText：汉字一字一 token，其余四字一 token", () => {
   assert.equal(f.estimateText("你好"), 2);
   assert.equal(f.estimateText("abcdefgh"), 2);
   assert.equal(f.estimateText("你好ab"), 3);
-});
-test("splitDelimited：引号里的分隔符与转义引号", () => {
-  assert.deepEqual(f.splitDelimited('a,"b,c","d""e"', ","), ["a", "b,c", 'd"e']);
-  assert.deepEqual(f.splitDelimited("a\tb", "\t"), ["a", "b"]);
 });
 test("legacyVizHtml：旧 echarts 围栏的 option 原样当 JS 跑——注释、尾逗号、单引号、裸键名都认，</script> 不截断", () => {
   const run = text => {

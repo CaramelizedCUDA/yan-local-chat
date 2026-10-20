@@ -363,23 +363,6 @@
   font: 10px var(--title);
   letter-spacing: 0.08em;
 }
-/* 目录收尾：一道短线与一句怎样起注，列表短时这一页也有个落处 */
-.side-index-foot {
-  margin: 22px 0 0;
-  padding-top: 14px;
-  color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.12em;
-  text-align: center;
-  opacity: 0.8;
-}
-.side-index-foot::before {
-  content: "";
-  display: block;
-  width: 28px;
-  margin: 0 auto 12px;
-  border-top: 1px solid var(--line);
-}
 .side-panel.wide .side-index-head h2 {
   display: block;
 }
@@ -401,9 +384,6 @@
   width: 18px;
   margin-top: 3px;
   font-size: 12px;
-}
-.side-panel.wide .side-index-foot {
-  margin-top: 40px;
 }
 .side-empty {
   padding: 34px 8px;

@@ -176,17 +176,20 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
       // 按「## 」分节：表格一张表一节，演示一页一节
       sections = text.split(/^(?=## )/m).filter(part => part.trim());
     if (sort === "sheet" && sections.length)
-      return withZipImages(`<div class="file-viewer-text file-viewer-wide">${note}<div class="viewer-tabs">${sections
-        .map(
-          (part, i) =>
-            `<button type="button" class="${i ? "" : "active"}" data-viewer-tab="${i}">${escapeHtml(part.match(/^## (.*)/)?.[1] || t`工作表 ${i + 1}`)}</button>`
-        )
-        .join("")}</div>${sections
-        .map(
-          (part, i) =>
-            `<div class="viewer-sheet markdown${i ? " hidden" : ""}" data-viewer-panel="${i}">${renderMarkdown(part.replace(/^## .*\n+/, ""))}</div>`
-        )
-        .join("")}</div>`, data);
+      return withZipImages(
+        `<div class="file-viewer-text file-viewer-wide">${note}<div class="viewer-tabs">${sections
+          .map(
+            (part, i) =>
+              `<button type="button" class="${i ? "" : "active"}" data-viewer-tab="${i}">${escapeHtml(part.match(/^## (.*)/)?.[1] || t`工作表 ${i + 1}`)}</button>`
+          )
+          .join("")}</div>${sections
+          .map(
+            (part, i) =>
+              `<div class="viewer-sheet markdown${i ? " hidden" : ""}" data-viewer-panel="${i}">${renderMarkdown(part.replace(/^## .*\n+/, ""))}</div>`
+          )
+          .join("")}</div>`,
+        data
+      );
     if (sort === "slides" && sections.length)
       return withZipImages(
         `<div class="file-viewer-slides">${note}${sections.map(part => `<div class="viewer-slide markdown">${renderMarkdown(part)}</div>`).join("")}</div>`,
@@ -271,9 +274,6 @@ function parseDelimited(text, split, limit = Infinity) {
   }
   finish();
   return rows;
-}
-function splitDelimited(row, split) {
-  return parseDelimited(row, split)[0] || [""];
 }
 /** @param {boolean} [stop] 点的是 ×：摊着的若是正放的那一曲，一并停下；别的关法只收起，正放着的挂上顶栏接着放 */
 function closeFileViewer(stop = false) {
