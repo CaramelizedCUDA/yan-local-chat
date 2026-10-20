@@ -47,13 +47,13 @@ function skillGist(skill) {
   return String(skill.description).match(/^.+?(?:[。！？]|[.!?](?=\s|$))/)?.[0] || skill.description;
 }
 // 人点名用：「＋」→「技能」挑一份，那份说明作一件附件置于案上、随这一问附上，模型不必再去翻。
-// 开头写明是点名用它：问话里只放了它、没写话时，免得被当成递来一份文档要看
+// 开头写明是点名用它：问话里只放了它、没写话时，免得被当成递来一份文档要看（这句是给模型的，不随界面译）
 /** @param {Skill} skill */
 async function placeSkill(skill) {
   const key = draftKey();
   try {
     const text = await skillDocumentText({ skillDir: skill.dir, path: SKILL_FILE, main: true }),
-      file = new File([t`点名用技能「${skill.name}」，照它做。\n${text}`], `${skill.name}.md`, { type: "text/markdown" });
+      file = new File([`点名用技能「${skill.name}」，照它做。\n${text}`], `${skill.name}.md`, { type: "text/markdown" });
     if (!canPlaceAttachment(file.size) || !placeAttachment(key, await ingestFile(file))) return;
     persistDraft();
     renderAttachments();

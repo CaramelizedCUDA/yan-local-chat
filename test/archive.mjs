@@ -118,15 +118,23 @@ check(
     `[...document.querySelectorAll(".tool-step")].some(s => s.querySelector(".tool-label")?.textContent === "技能" && s.querySelector(".tool-title")?.textContent === "写信")`
   )
 );
-// 人点名：问话以「/写信」开头，那份说明作一件附件随问附上，问话里不留点名
+// 人点名：「＋」→「技能」挑「写信」，那份说明作一件附件置于案上、随问附上
+await evalJs(`[...document.querySelectorAll(".attach-trigger")].find(b => b.offsetParent).click(); true`);
+await waitFor(`!!document.querySelector('[data-menu="skill"]')`);
+await evalJs(`document.querySelector('[data-menu="skill"]').click(); true`);
+await waitFor(`[...document.querySelectorAll(".attach-picker [data-pick] span")].some(s => s.textContent === "写信")`);
 await evalJs(
-  `document.querySelector("#chatInput").value = "/写信 SKILLCMD 给房东"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
+  `[...document.querySelectorAll(".attach-picker [data-pick]")].find(b => b.querySelector("span").textContent === "写信").click(); true`
+);
+await waitFor(`[...document.querySelectorAll(".attachment-list")].some(l => l.offsetParent && l.textContent.includes("写信.md"))`, 8000);
+await evalJs(
+  `document.querySelector("#chatInput").value = "SKILLCMD 给房东"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
 await waitFor(
   `document.querySelectorAll(".message.assistant").length === 4 && [...document.querySelectorAll(".message.assistant")].at(-1).dataset.status === "complete"`
 );
 const cmdText = await evalJs(`[...document.querySelectorAll(".message.assistant .assistant-block > .markdown")].at(-1).textContent`);
-check("/写信 at the start attaches the skill's instructions and drops the slash name", /CMD\|body:yes\|slash:no/.test(cmdText), cmdText);
+check("a skill picked from + goes with the question as its instructions", /CMD\|body:yes\|slash:no/.test(cmdText), cmdText);
 check(
   "the question shows the skill as an attachment",
   await evalJs(`[...document.querySelectorAll(".message.user")].at(-1).textContent.includes("写信.md")`)
