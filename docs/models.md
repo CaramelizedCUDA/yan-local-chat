@@ -4,7 +4,7 @@
 
 ## 接入模型
 
-接 Anthropic 时页面与桥接内部仍是 OpenAI 的格式，只在最外面换一层：请求换成 Messages API 的（system 单列、工具结果并进 user、工具定义换成 input_schema、思考档位换算成思考预算，开了思考时不传 temperature），事件流换回 OpenAI 风格的分块（思考块带签名回传给下一轮，带工具调用的那一轮 Anthropic 要求如此）；图片与 PDF 原件照送，别的文件只留一行说明。
+接 Anthropic 时页面与桥接内部仍是 OpenAI 的格式，只在最外面换一层：请求换成 Messages API 的（system 单列、工具结果并进 user、工具定义换成 input_schema、思考档位老模型换算成思考预算、4.6 起换成 adaptive 与 effort，开了思考时不传 temperature），事件流换回 OpenAI 风格的分块（思考块带签名回传给下一轮，带工具调用的那一轮 Anthropic 要求如此；新一代的签名记着它之前的整段前文，一答之内改了较早的往来——旧截图换成一行字、撮要压掉前几轮——改处之后的思考块就不再送回，免得被拒）；图片与 PDF 原件照送，别的文件只留一行说明。
 
 接 ChatGPT 订阅（接口选「ChatGPT 订阅」）走 OpenAI 给开源与本机应用开的「Sign in with ChatGPT」：卡片上点「登录」，桥接在 `127.0.0.1` 上临时开一个回调口、用系统浏览器打开 OpenAI 的授权页，用 ChatGPT 账号同意后回到言即可（头一回登记时 OpenAI 发下这台机器自己的 client_id，往后登录沿用它；在 ChatGPT 设置里能看到言、查用量、给它设每周上限）。凭证只在桥接里，存在存储根下的 `ChatGPT 登录.json`，不进页面、不进备份；访问令牌一小时，快过期时桥接用刷新令牌换新，换新被拒（登录已失效）才清掉、请你重新登录；「退出登录」向 OpenAI 吊销刷新令牌。请求直发公开的 Responses API（`api.openai.com/v1/responses`），带言自己的提示与工具，不经 Codex 那一层；桥接把请求换成 Responses 的、事件流换回 OpenAI 风格的分块。不填 Base URL 与 API Key，模型列表取这个账号可用的那几个，各模型认的思考档位随列表一起来（探档位不必真发请求）。带工具调用的那一轮，思考的加密原件随下一轮送回；同一段对话带固定的缓存键，前文走缓存。不收 temperature、输出上限，用量计入订阅额度；额度用完、套餐不支持这类拒绝换成中文说明。旧版的「Codex 订阅」（借 Codex CLI 的登录）已撤下，存着的这类模型自动改成 ChatGPT 订阅，点一回登录即可。
 
