@@ -99,4 +99,33 @@ function browserFiles() {
   };
 }
 
-module.exports = { WIN, MAC, openUrl, openPath, reveal, OWN_GROUP, killTree, killTreeSync, browserFiles };
+// 系统代理（Windows「设置 → 网络 → 代理」，Clash、v2rayN 开「系统代理」写的就是这里）：浏览器跟它走，Node 的 fetch 不认。
+// 不跟的话，授权页在浏览器里开得了，桥接去换令牌、调接口却是直连，国内连不上。只认手填的那种，PAC 脚本与仅 SOCKS 的不管。
+// 返回 setGlobalProxyFromEnv 认的样子；没开代理是 null
+function systemProxy() {
+  if (!WIN) return null;
+  let text = "";
+  try {
+    text = spawnSync("reg", ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"], {
+      windowsHide: true,
+      encoding: "utf8",
+      timeout: 3000
+    }).stdout;
+  } catch {}
+  const value = name => (text?.match(new RegExp(`^\\s*${name}\\s+REG_\\w+\\s+(.*)$`, "m"))?.[1] || "").trim();
+  if (!/^0x0*1$/i.test(value("ProxyEnable"))) return null;
+  // 「127.0.0.1:7890」或分协议的「http=…;https=…;socks=…」
+  const server = value("ProxyServer"),
+    parts = Object.fromEntries(server.split(";").map(part => (part.includes("=") ? part.split("=") : ["", part]).map(s => s.trim())));
+  const address = parts.https || parts[""] || parts.http;
+  if (!address) return null;
+  const proxy = /^\w+:\/\//.test(address) ? address : `http://${address}`;
+  // 例外：照写的主机名与「*.域名」留下；「192.168.*」这类网段、<local> Node 的 NO_PROXY 认不了，交给代理软件自己的直连规则
+  const bypass = value("ProxyOverride")
+    .split(";")
+    .map(entry => entry.trim().replace(/^\*\./, "."))
+    .filter(entry => entry && !entry.includes("*") && !entry.includes("<"));
+  return { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: [...new Set(["localhost", "127.0.0.1", "::1", ...bypass])].join(",") };
+}
+
+module.exports = { WIN, MAC, openUrl, openPath, reveal, OWN_GROUP, killTree, killTreeSync, browserFiles, systemProxy };

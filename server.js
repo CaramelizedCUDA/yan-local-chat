@@ -18,7 +18,23 @@ function currentBundler() {
   return bundler;
 }
 const { sendJson } = require("./server/http.js");
-const { openUrl } = require("./server/platform.js");
+const { openUrl, systemProxy } = require("./server/platform.js");
+// 出网跟代理走：环境变量里设了就用它，没设再看系统代理；只交给 Node 的 fetch 与 http 全局代理，不写进 process.env——
+// 模型跑的 pip、npm 照旧各凭各的。联网翻页（web.js）自带地址门禁、另起连接，不经这里。Node 24 起才有这个口子，旧版照旧直连
+const PROXY = (() => {
+  const env = process.env,
+    https = env.HTTPS_PROXY || env.https_proxy,
+    plain = env.HTTP_PROXY || env.http_proxy;
+  const proxy =
+    https || plain
+      ? { HTTPS_PROXY: https || plain, HTTP_PROXY: plain || https, NO_PROXY: env.NO_PROXY || env.no_proxy || "" }
+      : systemProxy();
+  if (!proxy || typeof http.setGlobalProxyFromEnv !== "function") return "";
+  // 本机的几处（假服务、本地模型、游目调试口）无论如何直连
+  proxy.NO_PROXY = [proxy.NO_PROXY, "localhost", "127.0.0.1", "::1"].filter(Boolean).join(",");
+  http.setGlobalProxyFromEnv(proxy);
+  return proxy.HTTPS_PROXY;
+})();
 // 联网：地址门禁、翻网页、检索、调接口
 const WEB = require("./server/web.js");
 const SEARCH = require("./server/search.js");
@@ -314,7 +330,7 @@ process.on("unhandledRejection", error => console.error(`${stamp()} 桥接内部
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) process.on(signal, () => process.exit(signal === "SIGINT" ? 130 : 0));
 server.listen(PORT, HOST, () => {
   const address = `http://${HOST}:${PORT}`;
-  console.log(`\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  存储    ${STORE.paths().root}\n`);
+  console.log(`\n  言 · 本机桥接${APP_VERSION ? `  v${APP_VERSION}` : ""}\n  页面    ${address}\n  存储    ${STORE.paths().root}\n${PROXY ? `  代理    ${PROXY.replace(/\/\/[^@/]*@/, "//")}\n` : ""}`);
   console.log("  请保持此窗口开启；关闭后页面刷新、模型转发、联网与执事都会停止。按 Ctrl+C 退出。");
   console.log("  此窗口不会显示 API Key。\n");
   if (process.argv.includes("--open")) openUrl(address);
