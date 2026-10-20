@@ -220,6 +220,21 @@ function thoughtEcho(target, from, profile) {
   const echo = ownCopy(thought);
   return { reasoning_content: echo, reasoning: echo };
 }
+// 一答之内改过较早的往来（旧截图换成一行字、撮要压掉前几轮、去图重发）：改处之后送回的思考块作废。Anthropic 新一代的签名记着
+// 它之前的整段前文，前文一变，这些块再送回就是 400（preserved thinking；新开的账号一律查）。送出前与上回送出的对一遍——
+// 逐条比对象与 content 引用，改过的就地换了新值、压掉的整段拼了新条——从第一处不同起去掉思考块，只去不改，此后照常往后接
+const sentHistories = new WeakMap();
+/** @param {Array<Record<string, any>>} history @param {Profile} profile */
+function dropStaleThoughts(history, profile) {
+  if (profile.api !== "anthropic") return;
+  const sent = sentHistories.get(history) || [],
+    from = sent.findIndex(([item, content], i) => history[i] !== item || item.content !== content);
+  if (from >= 0) for (const item of history.slice(from)) delete item.thinking_blocks;
+  sentHistories.set(
+    history,
+    history.map(item => [item, item.content])
+  );
+}
 /** 请求被拒、报错说起思考或多出的字段：去掉送回的思绪，有可去的才算数 @param {Profile} profile */
 function dropThoughtEcho(history, profile, message) {
   if (!/reasoning|thinking|signature|extra|unrecognized|additional|unknown|not permitted/i.test(message)) return false;
@@ -304,6 +319,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
   // 长活：这一答的工具往来快撑满窗口了，先压掉较早的几轮再发（见 14-chat-engine/60-context.js 的 keepInWindow）
   if (!retried) await keepInWindow(profile, history, signal, overrides, { target });
   if (blindProfiles.has(profile.id)) stripImages(history);
+  dropStaleThoughts(history, profile);
   const response = await requestPatiently(profile, history, signal, overrides);
   if (!response.ok) {
     const message = await describeResponseError(response);

@@ -45,7 +45,8 @@ const f = load([
   "PROMPTS",
   "mergeConfig3",
   "looksLikeMermaid",
-  "liftBareMermaid"
+  "liftBareMermaid",
+  "dropStaleThoughts"
 ]);
 // 各家接口的适配在桥接里（server/model/）
 const { createRequire: requireFrom } = await import("node:module");
@@ -772,4 +773,36 @@ test("结束原因：认不出的原样交出，由页面的白名单判半途�
   const incomplete = `data: ${JSON.stringify({ type: "response.incomplete", response: { usage: {}, incomplete_details: { reason: "content_filter" } } })}\n\n`;
   const cut = await new Response(new Blob([incomplete]).stream().pipeThrough(responsesToOpenAiStream("gpt"))).text();
   assert.equal(JSON.parse(cut.split("\n\n")[0].replace(/^data: /, "")).choices[0].finish_reason, "content_filter");
+});
+test("dropStaleThoughts：一答之内改过较早的往来，改处之后的思考块不再送回（Anthropic 的签名记着前文）", () => {
+  const claude = { api: "anthropic" };
+  const think = n => [{ thinking: `想${n}`, signature: `s${n}` }];
+  const round = n => [
+    { role: "assistant", content: "", thinking_blocks: think(n), tool_calls: [{ id: `t${n}`, function: { name: "f", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: `t${n}`, content: `结果${n}` }
+  ];
+  const history = [{ role: "user", content: "问" }, ...round(1)];
+  f.dropStaleThoughts(history, claude);
+  history.push(...round(2));
+  // 只往后接：都留着
+  f.dropStaleThoughts(history, claude);
+  assert.ok(history[1].thinking_blocks && history[3].thinking_blocks);
+  // 第 1 轮的结果换了字（旧截图过期）：它之前的第 1 轮思考还算数，之后的第 2 轮作废
+  history[2].content = "结果1（画面已过期）";
+  history.push(...round(3));
+  f.dropStaleThoughts(history, claude);
+  assert.ok(history[1].thinking_blocks);
+  assert.equal(history[3].thinking_blocks, undefined);
+  assert.equal(history[5].thinking_blocks, undefined);
+  // 前几轮压成笔记（splice）：笔记之后的一概不带
+  history.push(...round(4));
+  history.splice(1, 4, { role: "assistant", content: "笔记" }, { role: "user", content: "接着做" });
+  f.dropStaleThoughts(history, claude);
+  assert.ok(history.every(item => !item.thinking_blocks));
+  // 别家（ChatGPT 的加密推理不绑前文）不动
+  const other = [{ role: "user", content: "问" }, ...round(1)];
+  f.dropStaleThoughts(other, { api: "chatgpt" });
+  other[0].content = "改过的问";
+  f.dropStaleThoughts(other, { api: "chatgpt" });
+  assert.ok(other[1].thinking_blocks);
 });
