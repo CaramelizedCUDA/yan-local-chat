@@ -9,11 +9,13 @@ function renderHelperBar() {
   const c = currentConversation(),
     message = c && view === "chat" ? [...c.messages].reverse().find(m => m.role === "assistant" && m.status === "streaming") : null,
     helpers = c && view === "chat" ? (crews.get(c.id) || []).map(box => box.step) : [],
+    // 中辍的帮手：行迹折起后签就藏住了，在这儿挂着，直到续上（设计稿/98 甲）
+    held = c && view === "chat" ? heldHelpers(c) : [],
     stats = message ? changeStats(message) : { files: [], added: 0, removed: 0 },
     // 等待确认有请示条，不在这里重说
     label = c && requestJob(c.id)?.label,
     notice = label && label !== AWAITING ? label : "";
-  if (!helpers.length && !stats.files.length && !notice) {
+  if (!helpers.length && !held.length && !stats.files.length && !notice) {
     workFilesOpen = false;
     bar.dataset.sig = "";
     if (!bar.classList.contains("hidden")) hideWithFade(bar);
@@ -32,7 +34,21 @@ function renderHelperBar() {
     helper = helpers.length
       ? `<button type="button" class="work-helpers" data-helper="${escapeHtml(helpers[0].id)}" title="${t(`打开差遣面板`)}"><span class="seal helper-seal" aria-hidden="true">${t(`帮`)}</span><span class="work-helpers-text">${escapeHtml(who)}</span><span class="work-helpers-go" aria-hidden="true">›</span></button>`
       : "",
-    html = `${changes}${notice ? `<span class="work-notice" role="status">${escapeHtml(notice)}</span>` : ""}${helper}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
+    // 点字开面板看它停在哪，末尾那一笔续上（几名一并续）；缘由在悬停里
+    heldName = String(held[0]?.title || "").slice(0, 24),
+    heldSteps = held.length === 1 ? (held[0].sub?.steps || []).filter(s => !isFold(s)).length : 0,
+    heldWhat =
+      held.length > 1
+        ? t`${held.length} 名帮手中辍`
+        : heldSteps
+          ? t`帮手「${heldName}」中辍于第 ${heldSteps} 步`
+          : held.length
+            ? t`帮手「${heldName}」中辍`
+            : "",
+    heldHtml = held.length
+      ? `<span class="work-held"><button type="button" class="work-helpers held" data-helper="${escapeHtml(held[0].id)}" title="${escapeHtml(held.map(step => `「${step.title || ""}」${stepText(step.result) || ""}`).join("\n"))}"><span class="seal helper-seal" aria-hidden="true">${t(`帮`)}</span><span class="work-helpers-text">${escapeHtml(heldWhat)}</span></button><button type="button" class="tool-state goon" data-helper-resume="${held.length > 1 ? "" : escapeHtml(held[0].id)}" title="${t(`续上`)}" aria-label="${t(`续上`)}">${brushIcon("forward")}</button></span>`
+      : "",
+    html = `${changes}${notice ? `<span class="work-notice" role="status">${escapeHtml(notice)}</span>` : ""}${helper}${heldHtml}${stats.files.length ? changeFilesHtml(stats, workFilesOpen, " work-files") : ""}`;
   // 帮手每 350ms 刷一次，没变就不动，免得清单里的滚动位置被重画冲掉
   if (bar.dataset.sig !== html) {
     bar.dataset.sig = html;
@@ -233,6 +249,11 @@ function bindHelperEvents() {
       message =
         file && [...(currentConversation()?.messages || [])].reverse().find(m => m.role === "assistant" && m.status === "streaming");
     if (message) return openChangeDiff(message, file.dataset.changePath, file);
+    const goon = event.target.closest("[data-helper-resume]");
+    if (goon) {
+      const c = currentConversation();
+      return goon.dataset.helperResume ? resumeHelperStep(goon.dataset.helperResume) : c && void resumeHelpers(c);
+    }
     const id = event.target.closest(".work-helpers")?.dataset.helper;
     if (id) openHelperPanel(id);
   });

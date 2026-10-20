@@ -79,7 +79,7 @@ function delegateSubState(step) {
             sub?.waiting ? t("等后台") : ""
           ]
         : status === "interrupted"
-          ? [t("断着"), stepText(step.result), steps.length ? t`${steps.length} 步` : ""]
+          ? [t("中辍"), stepText(step.result), steps.length ? t`${steps.length} 步` : ""]
           : [stepText(step.result)]),
       sub?.effort ? t`思考${reasoningLabel(sub.effort)}` : ""
     ]

@@ -99,6 +99,26 @@
   flex: none;
   margin-left: auto;
 }
+/* 中辍的帮手挂在条上直到续上：字转正墨、不呼吸（不在做），末尾续写那一笔（同签上的那一笔）。设计稿/98 甲；
+   落选：折起的行迹题头上注一句（一答写长了，题头早翻出屏幕） */
+.work-held {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-left: auto;
+}
+.helper-bar.only-helpers .work-held {
+  flex: 1;
+  margin-left: 0;
+}
+.work-held .work-helpers.held {
+  flex: 1;
+  margin-left: 0;
+  color: var(--ink-2);
+}
+.work-helpers.held .work-helpers-text:before {
+  display: none;
+}
 .helper-seal {
   width: 18px;
   height: 18px;

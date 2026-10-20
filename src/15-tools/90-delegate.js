@@ -22,7 +22,7 @@ defineTool({
   sync: syncDelegateCard,
   // 断着的写明在等人续：主模型知道它没回来、也不会自己回来
   digest: step =>
-    t`差遣「${String(step.title || "").slice(0, 40)}」→ ${step.status === "interrupted" ? t`断着（${step.result || ""}），等用户续上` : step.result || step.status}${subChangedPaths(step).length ? t`，改了 ${subChangedPaths(step).slice(0, 8).join("、")}` : ""}`
+    t`差遣「${String(step.title || "").slice(0, 40)}」→ ${step.status === "interrupted" ? t`中辍（${step.result || ""}），等用户续上` : step.result || step.status}${subChangedPaths(step).length ? t`，改了 ${subChangedPaths(step).slice(0, 8).join("、")}` : ""}`
 });
 // 给帮手递话：正做着的，话进它的收件口，说到落点时读到（同补言，不掐断）；已收工的即续派，带着先前的经过接着做。
 // 叫停只停正做着的那一个，已做的照未完成回报。这一步在行迹里也是一枚签（续派 / 传话 / 叫停），点开是那名帮手

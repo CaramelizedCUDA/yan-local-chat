@@ -80,7 +80,7 @@ check(
     reload.goon &&
     reload.step === "interrupted" &&
     reload.sub === "interrupted" &&
-    reload.meta.includes("断着"),
+    reload.meta.includes("中辍"),
   JSON.stringify(reload)
 );
 // 点那一笔：续上（不是开面板），做完照常回报、叫醒主模型另起一答
@@ -148,10 +148,18 @@ await shot("helper-goon-panel.png");
 check("the helper panel ends with a resume note and mark", true);
 await evalJs(`document.querySelector("#helperClose").click(); true`);
 await sleep(300);
-await evalJs(`document.querySelector('#messages .tool-step-delegate[data-status="interrupted"] .tool-state.goon').click(); true`);
+// 行迹折着，签藏住了：工作条上挂着它，从那一笔续上
+const bar = await evalJs(`document.querySelector("#helperBar .work-held")?.textContent || ""`);
+check("with the trail folded, the work bar keeps the halted helper in sight", /帮手「会断的活」中辍于第 1 步/.test(bar), bar);
+await evalJs(`document.querySelector("#helperBar [data-helper-resume]").click(); true`);
 await waitFor(
   `[...document.querySelectorAll("#messages .message.assistant")].some(m => /HELPERBREAK got｜done/.test(m.textContent))`,
   20000
 );
 check("once resumed it finishes and the report wakes the main model", true);
+const gone = await waitFor(`document.querySelector("#helperBar").classList.contains("hidden") || !document.querySelector("#helperBar .work-held")`, 3000).then(
+  () => true,
+  () => false
+);
+check("once resumed the work bar lets it go", gone, gone ? "" : await evalJs(`document.querySelector("#helperBar").className + " | " + document.querySelector("#helperBar").textContent`));
 close();
