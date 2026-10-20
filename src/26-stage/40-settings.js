@@ -67,17 +67,21 @@ function stageSettingsHtml() {
       ],
       String(on)
     )}</div>` +
+    // 浏览器一行只管选；要装的内核、要去下的 Edge / Chrome 另起一行，与「驱动」一个样子，按钮不和选项挤在一处
     `<div class="setting-row"><div class="setting-copy"><strong>${t(`浏览器`)}</strong><small>${
-      browser === "chromium"
-        ? t`独立的 Chromium 内核${at && !at.browsers.chromium ? t(" · 尚未安装") : ""}`
-        : missing
-          ? t`本机未装 ${browserLabel}`
-          : t`借本机 ${browserLabel} 另起一份，不扰日常浏览`
-    }</small></div><div class="setting-actions">${missing ? `<button type="button" class="outline-btn" data-stage-get="${browser}">${t(`前往下载`)}</button>` : ""}${browser === "chromium" && at && !at.browsers.chromium ? installing("chromium", t("安装内核")) : ""}${seg(
+      browser === "chromium" ? t("独立的 Chromium 内核") : t`借本机 ${browserLabel} 另起一份，不扰日常浏览`
+    }</small></div>${seg(
       "browser",
       STAGE_BROWSERS.map(([value, label]) => [value, label, !!at && value !== "chromium" && !at.browsers[value]]),
       browser
-    )}</div></div>` +
+    )}</div>` +
+    (browser === "chromium"
+      ? `<div class="setting-row"><div class="setting-copy"><strong>${t(`内核`)}</strong><small>Chromium · ${
+          !at ? "……" : at.browsers.chromium ? t("已安装") : t("未安装")
+        }</small></div>${at && !at.browsers.chromium ? installing("chromium", t("安装")) : ""}</div>`
+      : missing
+        ? `<div class="setting-row"><div class="setting-copy"><strong>${browserLabel}</strong><small>${t(`本机未装`)}</small></div><button type="button" class="outline-btn" data-stage-get="${browser}">${t(`前往下载`)}</button></div>`
+        : "") +
     `<div class="setting-row"><div class="setting-copy"><strong>${t(`驱动`)}</strong><small>${deps}</small></div>${installing("deps", at?.installed ? t("更新") : t("安装"))}</div>` +
     `<div class="setting-row"><div class="setting-copy"><strong>${t(`存储`)}</strong><small>${t`登录、收藏与下载 · ${at ? code(at.home) : "……"}`}</small></div><button type="button" class="outline-btn" id="stageRevealHome">${t(`打开文件夹`)}</button></div>`
   );
