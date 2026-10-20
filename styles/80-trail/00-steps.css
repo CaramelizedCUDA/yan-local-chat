@@ -1,0 +1,337 @@
+.reasoning {
+  margin: -2px 0 9px;
+  padding: 0;
+  border: 0;
+  font-family: var(--body);
+}
+.reasoning summary {
+  display: inline-flex;
+  height: 23px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 5px 0 1px;
+  border-radius: var(--radius-m);
+  color: color-mix(in srgb, var(--ink-3) 90%, transparent);
+  font:
+    9.5px ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  letter-spacing: 0.06em;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.reasoning summary:hover {
+  background: var(--paper-2);
+  color: var(--ink-2);
+}
+.reasoning summary:before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.reasoning[open] summary:before {
+  content: "";
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.reasoning-body {
+  max-height: 210px;
+  margin: 2px 0 0 3px;
+  padding: 4px 11px 5px 12px;
+  border-left: 1px solid transparent;
+  border-image: linear-gradient(to bottom, transparent, var(--line) 13%, var(--line) 87%, transparent) 1;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.65;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink-3) 30%, transparent) transparent;
+}
+.thinking {
+  font: 12px/1.6 var(--body);
+  color: var(--ink-3);
+}
+.tool-stack {
+  margin: -1px 0 9px;
+  font-family: var(--body);
+}
+.tool-stack > summary {
+  display: inline-flex;
+  height: 23px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 5px 0 1px;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  list-style: none;
+  color: color-mix(in srgb, var(--ink-3) 90%, transparent);
+  font:
+    9.5px ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  letter-spacing: 0.06em;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.tool-stack > summary::-webkit-details-marker {
+  display: none;
+}
+.tool-stack > summary:hover {
+  background: var(--paper-2);
+  color: var(--ink-2);
+}
+.tool-stack > summary:before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.tool-stack[open] > summary:before {
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.tool-stack-meta {
+  color: var(--ink-3);
+  font: 9px var(--body);
+  letter-spacing: 0;
+}
+.tool-stack-body {
+  max-height: 230px;
+  margin: 2px 0 0 3px;
+  padding: 4px 8px 5px 11px;
+  overflow: auto;
+  border-left: 1px solid transparent;
+  border-image: linear-gradient(to bottom, transparent, var(--line) 13%, var(--line) 87%, transparent) 1;
+}
+.tool-steps {
+  margin: 0;
+  padding: 0;
+  gap: 2px;
+}
+.tool-step {
+  border-radius: var(--radius-m);
+  font-size: 11.5px;
+}
+/* 连着的同类只读并成的一行（设计稿/85 甲，见 07-paint.js 的 stepRuns）：题头同一步，标题前一枚细折角（同行迹题头），
+   「等 n 件」淡一档；点开在下面列出各步，左缘一道淡痕 */
+.tool-run > summary {
+  display: block;
+  cursor: pointer;
+  list-style: none;
+}
+.tool-run > summary::-webkit-details-marker {
+  display: none;
+}
+.tool-run > summary:hover {
+  background: color-mix(in srgb, var(--paper-2) 70%, transparent);
+}
+.tool-run > summary .tool-title:before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin: 0 7px 1px 1px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.tool-run[open] > summary .tool-title:before {
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.tool-run-more {
+  color: color-mix(in srgb, var(--ink-3) 75%, transparent);
+}
+.tool-run > .tool-steps {
+  display: grid;
+  margin: 0 0 3px 50px;
+  padding-left: 9px;
+  border-left: 1px solid var(--line);
+}
+/* 收尾前对照放了行：那一步照实际的先后落在答复之后（见 07-paint.js 的 coda），与行迹里一步同一副样子，左缘对齐正文 */
+.trail-coda {
+  margin: 8px 0 2px -7px;
+}
+.tool-step-head {
+  min-height: 25px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 7px;
+}
+.tool-label {
+  min-width: 36px;
+  color: var(--accent);
+  font-size: 9px;
+  text-align: left;
+}
+.tool-title {
+  color: var(--ink-3);
+}
+.tool-meta {
+  font-size: 9.5px;
+}
+.tool-state {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font:
+    12px/1 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+}
+.tool-state.spinning {
+  border: 1px solid color-mix(in srgb, var(--ink-3) 22%, transparent);
+  border-top-color: var(--accent);
+  animation: toolSpin 0.72s linear infinite;
+}
+.tool-state.done {
+  color: var(--code-green);
+}
+/* 补言待寄时转圈左边的折箭头：点了不等落点，即刻递上 */
+.note-now {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  margin-right: 2px;
+  border-radius: var(--radius-s);
+  color: var(--ink-3);
+  font:
+    13px/1 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.note-now:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--paper-3) 55%, transparent);
+}
+.tool-state.failed {
+  color: var(--danger);
+}
+.tool-step[data-status="running"] .tool-meta:after {
+  display: none;
+}
+.tool-results {
+  max-height: none;
+  padding: 0 9px 7px 50px;
+  overflow: visible;
+}
+.tool-results li {
+  padding: 4px 0;
+  border-top-color: color-mix(in srgb, var(--line) 72%, transparent);
+}
+.tool-results a {
+  font-size: 11.5px;
+}
+.tool-results span {
+  font-size: 10.5px;
+}
+.tool-note {
+  max-height: none;
+  padding: 0 9px 7px 50px;
+  overflow: visible;
+  font-size: 10.5px;
+}
+/* 工具交回的画面：一步几幅并排，折起时也露着（小纸的样子见 30-chat/00-thread.css 的 .tool-shot） */
+.tool-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 9px 8px 50px;
+}
+/* 计算：代码在上、输出在下，两块之间只留一线 */
+.tool-code {
+  margin-bottom: 4px;
+  color: var(--ink-3);
+}
+/* 计划卡：模型一路改着的一张单子。不再铺一张纸（分组靠线不靠块，铺底的块在行迹里像一张贴上去的散页），
+   清单左侧一道淡墨竖痕把它隔出来——行迹里没有横线，试过的三线框突兀；竖痕与听音那一缕同一语汇。
+   题头的事由用读的字、大一号（原是淡灰小字，常认不出是计划）。旧的几张只留题头一行（见 markStalePlans），
+   右侧那排小记号就是进度。落选：铺底的纸（现状）、专色（赭石离朱太近、花青是又一种色）、三线（见 设计稿/40–42） */
+.tool-step-plan {
+  margin: 4px 0;
+  padding-bottom: 2px;
+}
+.tool-step-plan > .tool-step-head .tool-title {
+  color: var(--ink-2);
+  font-family: var(--title);
+  font-size: 13.5px;
+}
+.tool-step-plan.plan-old > .tool-step-head .tool-title {
+  color: var(--ink-3);
+}
+.tool-step-plan.plan-old > .plan-list {
+  display: none;
+}
+.plan-list {
+  margin: 2px 9px 8px 52px;
+  padding: 0 0 0 10px;
+  border-left: 1.5px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.85;
+}
+.plan-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink-3);
+}
+.plan-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 1.85em;
+}
+.plan-svg {
+  width: 12px;
+  height: 11px;
+}
+.plan-svg[data-plan="pending"] circle {
+  fill: color-mix(in srgb, var(--ink) 42%, var(--paper));
+}
+.plan-item[data-plan="doing"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+.plan-item[data-plan="skipped"] .plan-text {
+  text-decoration: line-through;
+}
+.plan-row {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: -2px;
+}
+:root[data-ink-motion="on"] .tool-step-plan[data-status="running"] .plan-svg[data-plan="doing"] circle,
+:root[data-ink-motion="on"] .tool-stack[data-state="streaming"] .tool-step-plan:not(.plan-old) .plan-svg[data-plan="doing"] circle {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+/* 算一段 JS 用的隐形沙箱页 */
+.compute-frame {
+  position: fixed;
+  width: 0;
+  height: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}

@@ -588,7 +588,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .running-head-intent {
   display: contents;
 }
-/* 翻在一段摊开的行迹中间时，顶栏正中浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail.css），
+/* 翻在一段摊开的行迹中间时，顶栏正中浮出的「收起行迹」：一行字带朝上的折角（折角与行迹题头同一枚，画法见 80-trail/00-steps.css），
    对着对话那一列的中线；它浮出时，左边的书眉让到中线以左，长题名不压到它底下。
    落选的：贴对话列的右缘（离正在读的地方远，眼睛要横跨过去找）；书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
 .topbar:has(.trail-fold-head.shown) .running-head {

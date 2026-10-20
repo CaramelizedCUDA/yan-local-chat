@@ -1,0 +1,190 @@
+.chat-meta-notes {
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  letter-spacing: inherit;
+}
+.chat-meta-notes:hover {
+  text-decoration: underline;
+}
+.tool-cmd-preview {
+  max-height: 132px;
+  margin-bottom: 5px;
+  color: var(--ink);
+}
+.tool-diff {
+  margin: 0 9px 8px 7px;
+  display: grid;
+  gap: 3px;
+}
+.tool-diff .tool-output {
+  margin: 0;
+  max-height: 150px;
+  border-left: 2px solid var(--line);
+}
+.diff-del {
+  border-left-color: var(--danger) !important;
+  background: color-mix(in srgb, var(--danger) 10%, transparent) !important;
+  color: var(--ink-2) !important;
+}
+.diff-ins {
+  border-left-color: var(--code-green) !important;
+  background: color-mix(in srgb, var(--code-green) 13%, transparent) !important;
+  color: var(--ink-2) !important;
+}
+/* 并排红绿（见 splitDiffHtml）：旧在左、新在右，一行一格、折行时两边同高，中间一道丝线；
+   不铺整块的灰底（红绿叠在灰上发闷），直接落在纸上，左右两栏靠中间那道丝线分开（设计稿/43）；字用本来的墨色（红底红字、绿底绿字难读），红绿只在底色与左缘一道线上；未动的淡墨，改了的字同色加深一层（删的那侧试过再加划线，三层叠着脏），对面没有的那格留白——试过铺淡墨，红绿跟着发灰看不清；斜纹整段新增时一大片太抢眼（设计稿/39、41） */
+.tool-diff .split-diff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  padding: 7px 0;
+  max-height: none;
+  border-left: 0;
+  background: none;
+  white-space: normal;
+}
+.split-diff > span {
+  min-width: 0;
+  padding: 0 9px 0 7px;
+  border-left: 2px solid transparent;
+  white-space: pre-wrap;
+}
+/* 行迹里的：一行放不下只放写得下的，末尾省略，悬停看整行 */
+.split-diff.clip > span {
+  overflow: hidden;
+  white-space: pre;
+  text-overflow: ellipsis;
+}
+.split-diff > span:nth-child(even of :not(.gap)) {
+  box-shadow: inset 1px 0 0 var(--line);
+}
+.split-diff > .s {
+  color: var(--ink-3);
+}
+.split-diff > .d {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--ink-2);
+}
+.split-diff > .i {
+  border-left-color: var(--code-green);
+  background: color-mix(in srgb, var(--code-green) 13%, transparent);
+  color: var(--ink-2);
+}
+.split-diff mark {
+  border-radius: 2px;
+  color: inherit;
+}
+.split-diff > .d mark {
+  background: color-mix(in srgb, var(--danger) 26%, transparent);
+}
+.split-diff > .i mark {
+  background: color-mix(in srgb, var(--code-green) 30%, transparent);
+}
+.split-diff > .gap {
+  grid-column: 1 / -1;
+  height: 9px;
+  background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat;
+}
+.message-actions.has-branch {
+  opacity: 0.72;
+}
+.branch-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin: 0 2px;
+  color: var(--ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.branch-nav .message-action {
+  width: 20px;
+  height: 22px;
+  font-size: 13px;
+}
+.branch-nav .message-action:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.branch-nav span {
+  padding: 0 2px;
+  cursor: default;
+}
+.message-action {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--radius-m);
+  color: var(--ink-3);
+}
+.message-action svg {
+  width: 15px;
+  height: 15px;
+}
+/* 行间的笔意小画随按钮的字色：平时淡、指上去浓，与旁边的字一样安静（侧栏的查找同此） */
+.message-action .brush,
+.history-head .brush {
+  width: 17px;
+  height: 17px;
+}
+:is(.message-action, .history-head .icon-btn) .brush .ink {
+  fill: currentColor;
+}
+:is(.message-action, .history-head .icon-btn) .brush .ink2 {
+  fill: color-mix(in srgb, currentColor 75%, transparent);
+}
+:is(.message-action, .history-head .icon-btn) .brush .wash {
+  fill: color-mix(in srgb, currentColor 14%, transparent);
+}
+.message-action:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.message-editor {
+  width: 80%;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l) var(--radius-l) var(--radius-s) var(--radius-l);
+  background: var(--paper-2);
+}
+.message-editor textarea {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  max-height: 70vh;
+  overflow: auto;
+  resize: none;
+  field-sizing: content;
+  white-space: pre-wrap;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  line-height: 1.7;
+}
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.edit-actions button {
+  width: auto;
+  padding: 6px 10px;
+  border-radius: var(--radius-m);
+  font-size: 11px;
+}
+.edit-save {
+  background: var(--accent);
+  color: #fff;
+}
+.message-error {
+  padding: 11px 13px;
+  border-left: 2px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  color: var(--danger);
+  font: 13px/1.6 var(--body);
+}

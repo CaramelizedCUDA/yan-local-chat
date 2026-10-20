@@ -1,0 +1,140 @@
+/* ---------- 专色：按「这一步在做什么」分色 ----------
+   原先所有步骤的标签一律朱砂，等于谁都没被区分出来。加色不管用——多数得先安静下去，少数才认得出。
+
+   上色守四条，不然就是颜色污染：
+   一、色要有出处。不是「需要个绿的」，是这颜料本来就叫这名、本来就干这事：
+       墨灰＝只是看，纸上本色，占多数，安静；
+       朱砂＝钤印与朱批的色，所以标「在别处落了笔」——写入、修改、跑指令；
+       泥金＝敕诰所用，奉命而行，所以标差遣（见上）；
+       黛＝远山如黛，是「远」，但这里取它的**时间**之远——记忆跨出这段对话，存到别处去了；
+       石绿＝青绿山水里的水与坡，是「外」，取它的**空间**之外——出门到本机之外取东西。
+       黛与石绿都从「远」来，一个远在时间、一个远在空间，各占一头，不换岗。
+   二、一色只说一件事。同一个色在两处指两件事，立刻就成了污染。
+   三、与纸同调。色相对了而饱和度高一档，照样刺眼，几个色都压在同一条窄带里。
+   四、色只上笔画，不上面。上在字、线、印上是批注；铺成底色就是装饰。
+       所以这里只染标签与一道细线，没有一处填底——差遣做事时那层金是动的，另当别论。
+
+   请示与补言不列在内：它们是人的声音，留在朱砂里，另有自己的印 */
+.tool-step[data-tool="read_file"] .tool-label,
+.tool-step[data-tool="list_files"] .tool-label,
+.tool-step[data-tool="search_files"] .tool-label,
+.tool-step[data-tool="read_document"] .tool-label,
+.tool-step[data-tool="inspect_computer"] .tool-label,
+.tool-step[data-tool="run_js"] .tool-label,
+.tool-step[data-tool="update_plan"] .tool-label {
+  color: var(--ink-3);
+}
+/* 出门：到本机之外取东西回来 */
+.tool-step[data-tool="search_web"] .tool-label,
+.tool-step[data-tool="fetch_page"] .tool-label,
+.tool-step[data-tool="http_request"] .tool-label {
+  color: var(--reach);
+}
+/* 记忆五件：跨出这段对话，存到别处去了 */
+.tool-step[data-tool="remember"] .tool-label,
+.tool-step[data-tool="forget"] .tool-label,
+.tool-step[data-tool="recall"] .tool-label,
+.tool-step[data-tool="search_conversations"] .tool-label,
+.tool-step[data-tool="read_conversation"] .tool-label {
+  color: var(--keep);
+}
+/* 会在别处留下痕迹的，另加一道左线——扫一眼就知道这一答动了什么：
+   写入与修改落在磁盘上，记入与忘却落进长期记忆，下载把外头的东西搬了进来。
+   色与线各管一件事：色说「在哪儿动」，线说「有没有留痕」。9px 的标签承不住颜色，它本就只是耳语——
+   检索、翻记忆这些只看不改的不需要喊；要喊的交给线，所以线得有分量：2px、六成五，
+   比过去的 1.5px、三成四重一档，与差遣那枚签的金线同粗（签另有底色，仍在它上头）。
+   试过的别的路都不如它：带色的都挂线，13 步里 9 步有线就成了花纹；标题铺底色像选中的行，还抢了签的独门；
+   标签前加印是第三套符号；9px 的粗体糊成一团 */
+.tool-step[data-tool="write_file"],
+.tool-step[data-tool="edit_file"],
+.tool-step[data-tool="run_command"] {
+  border-left: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
+  padding-left: 7px;
+}
+.tool-step[data-tool="download_file"] {
+  border-left: 2px solid color-mix(in srgb, var(--reach) 68%, transparent);
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
+  padding-left: 7px;
+}
+.tool-step[data-tool="remember"],
+.tool-step[data-tool="forget"] {
+  border-left: 2px solid color-mix(in srgb, var(--keep) 68%, transparent);
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
+  padding-left: 7px;
+}
+/* 只读的指令没有后果，不挂线，标签也归于墨灰 */
+.tool-step[data-tool="run_command"].is-read-only {
+  border-left-color: transparent;
+}
+.tool-step[data-tool="run_command"].is-read-only .tool-label {
+  color: var(--ink-3);
+}
+
+/* 续派、传话的签：同一名帮手又有了新的一趟、新递去的话，标一枚「已更新」。小字金色，不加框——签本身已是金的，
+   再框一道就成了签上贴签。传话的签在任务名之后接着那句话，淡一档 */
+.helper-fresh {
+  flex: none;
+  margin-left: 6px;
+  color: var(--gold);
+  font: 10px/1 var(--title);
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+.helper-said {
+  margin-left: 8px;
+  color: var(--ink-3);
+  font-family: inherit;
+}
+/* 主模型递给帮手的话落在帮手的时间线里、作答途中回来的回报落在主行迹里：与补言同形，印用金（朱留给人自己说话）。
+   回报那一步可点，点开即那名帮手或挂那条后台指令的那一步 */
+.tool-step-relay > .tool-step-head {
+  cursor: pointer;
+}
+.tool-step-relay > .tool-step-head .tool-label,
+.tool-step-relay > .tool-step-head .tool-title {
+  color: var(--gold);
+}
+.tool-step-note[data-tool="relay_note"] .note-seal,
+.tool-step-note[data-tool="helper_note"] .note-seal {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* ---------- 回报另起的一问：一道细线 ----------
+   帮手做完时这段对话没在作答，回报就另起一答。它不是用户说的话，不画成气泡，只是一道细线中间点名，
+   与「前文已压成摘要」的分隔同一个写法；名字是金的，点开是那一趟的经过 */
+.message.relay {
+  margin: 4px 0 22px;
+}
+.relay-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font: 11px var(--title);
+  letter-spacing: 0.06em;
+}
+.relay-line:before,
+.relay-line:after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: color-mix(in srgb, var(--gold) 28%, var(--line));
+}
+.relay-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.relay-name:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.relay-sep {
+  color: var(--ink-3);
+}

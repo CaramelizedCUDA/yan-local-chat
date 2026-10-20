@@ -122,7 +122,7 @@
 .side-messages .message {
   margin-bottom: 16px;
 }
-/* 面板本就是旁注：答不再挂「言 模型 · 时间」一行；问句的复制 / 编辑同正文，浮在问句下方不占位（见 30-chat.css），问与答贴近 */
+/* 面板本就是旁注：答不再挂「言 模型 · 时间」一行；问句的复制 / 编辑同正文，浮在问句下方不占位（见 30-chat/00-thread.css），问与答贴近 */
 .side-messages > .message.assistant > .message-meta {
   display: none;
 }

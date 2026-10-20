@@ -1,0 +1,75 @@
+/* 游目的入口：自页顶垂下的一笔朱竖，起笔顿、收笔出锋（与余墨、听音同一套笔墨，见 设计稿/30 甲）。靠近时笔往下舒一点，笔尖下浮出「游目」两字；
+   模型正操作浏览器时笔尖下一粒朱一明一暗。挂在右缘内侧，离滚动条的命中层（.chat-scroll-grabber，贴右缘 14px、自顶栏下起）远远的。
+   落选的：圆角带影、左缘一道朱条的书口签（网页侧边抽屉的通用画法）；绸带（与余墨、听音不是一种画法） */
+.stage-pin {
+  position: absolute;
+  right: 24px;
+  top: 0;
+  z-index: 8;
+  width: 22px;
+  height: 74px;
+  padding: 0;
+}
+.stage-pin-ink {
+  position: absolute;
+  left: 5px;
+  top: 0;
+  width: 12px;
+  height: 64px;
+  overflow: visible;
+  transform-origin: top center;
+  transition: transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.stage-pin:hover .stage-pin-ink,
+.stage-pin:focus-visible .stage-pin-ink {
+  transform: scaleY(1.16);
+}
+/* 两字浮在笔尖之下（不往左浮：左边挂着听音那一缕） */
+.stage-pin-text {
+  position: absolute;
+  left: 50%;
+  top: 80px;
+  color: var(--ink-2);
+  font: 12px var(--title);
+  letter-spacing: 0.3em;
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition:
+    opacity 0.2s,
+    transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.stage-pin:hover .stage-pin-text,
+.stage-pin:focus-visible .stage-pin-text {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.stage-pin.busy::after {
+  content: "";
+  position: absolute;
+  left: 8.5px;
+  top: 70px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  animation: stageLine 1.6s ease-in-out infinite;
+}
+@keyframes stageLine {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-pin-ink,
+  .stage-pin-text {
+    transition: none;
+  }
+  .stage-nav.loading::after {
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
+  }
+}
