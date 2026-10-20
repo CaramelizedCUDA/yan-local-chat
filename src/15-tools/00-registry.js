@@ -241,12 +241,17 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
   return { outcomes, images };
 }
 // 生成结束（停止、出错或中断）时，还在转圈或等待确认的步骤一并收束，不留下永远转圈的卡片。
-// 后台还在做的帮手不归这一答管：它不随这一答收尾，做完自己收这一步（见 90-delegate.js）
+// 后台还在做的帮手不归这一答管：它不随这一答收尾，做完自己收这一步（见 90-delegate.js）；
+// 做它的那一处已不在了（页面刷新、连接中断）的帮手挂着等人续（见 holdHelper），按「止」的照旧收束
 /** @param {Message} assistant */
 function settleSteps(assistant, note) {
   const live = new Set([...crews.values()].flat().map(box => box.step));
   for (const step of assistant.steps || []) {
     if (live.has(step)) continue;
+    if (step.sub && step.status === "running" && note !== "已止") {
+      holdHelper(step, note);
+      continue;
+    }
     settleStepList([step, ...(step.sub?.steps || [])], note);
     if (step.sub?.status === "streaming") step.sub.status = "stopped";
   }

@@ -573,7 +573,7 @@ function paintTrailGroup(el, g, source, o) {
 // ---------- 差遣面板里帮手的那一条：题头（可收起）、时间线、回报 ----------
 /** @param {Element} trail @param {Step} step @param {boolean} animate */
 function paintHelperTrail(trail, step, animate) {
-  const { sub, live, report } = delegateSubState(step);
+  const { sub, live, report, status } = delegateSubState(step);
   if (live) trail.dataset.live = "true";
   else delete trail.dataset.live;
   /** @type {Part[]} */
@@ -603,6 +603,16 @@ function paintHelperTrail(trail, step, animate) {
   });
   if (report)
     parts.push({ key: "report", sig: report, html: () => `<div class="sub-report"></div>`, paint: el => paintMarkdown(el, report) });
+  // 断着：照主答断了的样子落一句、一枚续写（设计稿/97）——人多半是点开面板看它断在哪，看完就地续上
+  if (status === "interrupted") {
+    const why = tr(stepText(step.result) || "").replace(/[。.\s]+$/, "");
+    parts.push({
+      key: "goon",
+      sig: why,
+      html: () =>
+        `<div class="sub-goon"><div class="resume-note">${why ? `${escapeHtml(why)}${LANG === "en" ? ". " : "。"}` : ""}${t(`已做的都在，可由此续上。`)}</div><div class="message-actions"><button type="button" class="message-action" data-helper-resume="${escapeHtml(step.id)}" title="${t(`续上`)}" aria-label="${t(`续上`)}">${brushIcon("forward")}</button></div></div>`
+    });
+  }
   syncParts(trail, parts, animate);
   if (sub) syncSubFold(trail, step);
 }

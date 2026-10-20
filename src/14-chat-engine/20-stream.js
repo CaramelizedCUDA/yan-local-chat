@@ -185,9 +185,12 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       if ((i >= stepsBefore || helpersBefore.has(step)) && step.sub?.usage && step.sub.status !== "streaming" && !step.sub.charged) {
         step.sub.charged = true;
         tally.usageKnown = true;
-        for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(step.sub.usage[key] || 0);
+        // 断过又续上的帮手：断前那份已记过（billed），只算其后新耗的
+        const billed = /** @type {Partial<Usage>} */ (step.sub.billed || {});
+        delete step.sub.billed;
+        for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(step.sub.usage[key] || 0) - Number(billed[key] || 0);
         // 帮手各轮的墨已当场扣进余墨，这里只算进这一答
-        tally.spent += Number(step.sub.usage.total_tokens || 0);
+        tally.spent += Number(step.sub.usage.total_tokens || 0) - Number(billed.total_tokens || 0);
       }
     assistant.usage = tally.usageKnown ? tally.usage : null;
     releaseQuota();

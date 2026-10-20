@@ -226,6 +226,32 @@
 .tool-state.failed {
   color: var(--danger);
 }
+/* 帮手断着：状态位上是续写那一笔（与消息上的「续写」同一笔），淡墨，指上去转朱，点了续上。设计稿/97 甲；
+   落选：一个「续」字（状态位一向是记号，冒出一个字与旁边几枚签不是一路）、带朱线的词「续上」（占宽，挤了标题）、
+   静时两竖指上去才换（安静，但得指上去才知道能点） */
+.tool-state.goon {
+  width: 20px;
+  height: 20px;
+  margin: 0 -3px 0 1px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.tool-state.goon svg {
+  width: 15px;
+  height: 15px;
+}
+.tool-state.goon:hover,
+.tool-state.goon:focus-visible {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--paper-3) 55%, transparent);
+}
 .tool-step[data-status="running"] .tool-meta:after {
   display: none;
 }

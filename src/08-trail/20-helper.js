@@ -244,11 +244,14 @@ function bindHelperEvents() {
     // 后台指令结束的那一项：回到行迹里挂它的那一步
     const reveal = event.target.closest("[data-relay-reveal]");
     if (reveal) return revealStep(reveal.dataset.relayReveal || "");
+    // 签上的「续」是续上，不是开面板（见 bindTrailEvents）
+    if (event.target.closest("[data-helper-resume]")) return;
     const head = event.target.closest(".tool-step-delegate > .tool-step-head");
     if (head) openFromCard(head.parentElement);
   });
   $("#messages").addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.target.closest?.("button")) return;
     const head = event.target.closest?.(".tool-step-delegate > .tool-step-head");
     if (!head) return;
     event.preventDefault();

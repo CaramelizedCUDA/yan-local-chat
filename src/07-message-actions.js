@@ -61,6 +61,7 @@ const MESSAGE_ACTIONS = {
   "save-edit": {
     run: ({ c, index, button }) => saveEditedMessage(c, index, button.closest("[data-message]").querySelector(".message-edit-input").value)
   },
+  // 续写这一答，连同这段对话里断着的帮手一并续上（断网时多半一起断的）。帮手先起：这一答收尾时才认得出它们、墨记得上
   resume: {
     brush: "forward",
     run: async ({ c, message }) => {
@@ -68,6 +69,7 @@ const MESSAGE_ACTIONS = {
       const profile = activeProfile();
       if (!profile) return openSettings("models");
       if (quotaBlocked(profile)) return toast(t("余墨已尽，请调高上限或更换模型"));
+      await resumeHelpers(c);
       await resumeAnswer(c, message, profile);
     }
   },

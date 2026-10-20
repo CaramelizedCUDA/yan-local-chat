@@ -382,3 +382,10 @@
   max-height: 320px;
   overflow: auto;
 }
+/* 断着的帮手：时间线末尾照主答断了的样子落一句、一枚续写；不在消息下，那一排不等指上去才露 */
+.sub-goon {
+  margin-top: 6px;
+}
+.sub-goon .message-actions {
+  opacity: 1;
+}

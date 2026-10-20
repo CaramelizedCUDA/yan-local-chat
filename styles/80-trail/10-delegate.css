@@ -13,6 +13,11 @@
   border-left-color: var(--gold);
   background: color-mix(in srgb, var(--gold) 10%, transparent);
 }
+/* 断着：不在做、也没交差——金线退成淡墨，底色只留一丝 */
+.tool-step-delegate[data-status="interrupted"] {
+  border-left-color: color-mix(in srgb, var(--ink-3) 45%, transparent);
+  background: color-mix(in srgb, var(--gold) 4%, transparent);
+}
 .tool-step-delegate > .tool-step-head .tool-label {
   color: var(--gold);
 }

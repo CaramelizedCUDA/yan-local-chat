@@ -23,7 +23,7 @@
 /** @typedef {{ id: string, name: string, arguments: string }} ToolCall 流式拼出的一次工具调用 */
 /** @typedef {{ prompt_tokens: number, completion_tokens: number, total_tokens: number, cached_tokens?: number }} Usage cached_tokens：提示里读自缓存的部分 */
 /** @typedef {"ask"|"review"|"auto"} CommandPolicy 问而后行 / 审而后行 / 径行 */
-/** @typedef {"running"|"pending"|"done"|"error"|"skipped"} StepStatus */
+/** @typedef {"running"|"pending"|"done"|"error"|"skipped"|"interrupted"} StepStatus interrupted 只给差遣：帮手断着，等人续（见 holdHelper） */
 /** @typedef {{ question: string, header: string, multi: boolean, options: { label: string, description: string }[] }} AskQuestion */
 /**
  * @typedef {Object} SubAgent 差遣出去的帮手的一趟：自己的一段对话，步骤画在派它的那一答的差遣卡片里
@@ -33,8 +33,9 @@
  * @property {string} content
  * @property {string} reasoning
  * @property {Step[]} steps
- * @property {"streaming"|"complete"|"stopped"|"error"} status
+ * @property {"streaming"|"complete"|"stopped"|"error"|"interrupted"} status interrupted：断着等人续
  * @property {Usage|null} usage
+ * @property {Usage|null} [billed] 断过又续上的：断前已记进那一答的那份，那一答收尾时只算其后新耗的
  * @property {boolean} [charged] 用量已记进派它的那一答（帮手收工时自己记、或那一答收尾时并入），另一边不再记
  * @property {string} [effort] 这一趟的思考档位（模型实际认的那一档）；没有即不带字段、由接口定
  * @property {{ thinking?: string, signature?: string, redacted?: string }[]|null} [thinkingBlocks]

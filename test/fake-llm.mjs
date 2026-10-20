@@ -720,6 +720,60 @@ http
         if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
         return sse(res, [delta({ content: `BGWORK done｜reports:${helperReports.length}` }), delta({}, { usage: { total_tokens: 5 } })]);
       }
+      // BREAKSUB（帮手）：先说一句、算一步，再请求就被拒（断了）；人点「续」之后的那一回，看历史里有没有断前说的话与「接着做」，据此回报
+      if (firstUser.includes("BREAKSUB")) {
+        const resumed = msgs.some(m => m.role === "user" && String(m.content).includes("请仅从中断处继续"));
+        if (resumed)
+          return sse(res, [
+            delta({
+              content: `BREAKSUB done｜kept:${msgs.some(m => m.role === "assistant" && String(m.content).includes("断前写的一段"))}｜steps:${toolResults.length}`
+            }),
+            delta({}, { usage: { total_tokens: 7 } })
+          ]);
+        if (!toolResults.length)
+          return sse(res, [
+            delta({ content: "断前写的一段。" }),
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_bk0",
+                  type: "function",
+                  function: { name: "run_js", arguments: JSON.stringify({ code: "return 1 + 1" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 4 } })
+          ]);
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: { message: "upstream hiccup (fake)" } }));
+      }
+      // HELPERBREAK（主模型）：派一名会断的帮手就收尾；它断着时不该有回报来叫醒；人续上、它交差后醒来照回报收尾
+      if (firstUser.includes("HELPERBREAK")) {
+        if (helperReports.length)
+          return sse(res, [
+            delta({
+              content: `HELPERBREAK got｜${helperReports.map(r => (r.content.includes("BREAKSUB done") ? "done" : "other")).join(",")}`
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (!toolResults.length && !msgs.some(m => m.role === "assistant" && String(m.content).includes("派一名帮手")))
+          return sse(res, [
+            delta({ content: "派一名帮手。" }),
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_hb0",
+                  type: "function",
+                  function: { name: "delegate", arguments: JSON.stringify({ title: "会断的活", task: "BREAKSUB：做完回报。" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
       // RELAYWAKE：派一名慢帮手（约 3 秒）后这一答断了（接口报错）；回报到了，断着的那一答自己续上、回报递进去，据此收尾
       if (firstUser.includes("RELAYWAKE")) {
         if (helperReports.length)
