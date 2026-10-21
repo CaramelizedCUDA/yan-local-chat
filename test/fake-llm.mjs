@@ -985,9 +985,9 @@ http
       // 收尾前对照拦下就改回（覆写已有文件得先读过）；HOOK3 只改一个无关的文件，不该被拦。轮次按这一问之后的工具结果数
       // 认哪一问：跳过收尾对照递来的话；问里附的意带着 HOOK1 的原问，所以后来的问先认
       const hookAt = msgs.findLastIndex(
-        m => m.role === "user" && typeof m.content === "string" && /HOOK[123]/.test(m.content) && !m.content.startsWith("［收尾前对照意］")
+        m => m.role === "user" && typeof m.content === "string" && /HOOK[1234]/.test(m.content) && !m.content.startsWith("［收尾前对照意］")
       );
-      if (hookAt >= 0 && (/HOOK[123]/.test(String(lastUser)) || String(lastUser).includes("［收尾前对照意］"))) {
+      if (hookAt >= 0 && (/HOOK[1234]/.test(String(lastUser)) || String(lastUser).includes("［收尾前对照意］"))) {
         const ask = msgs[hookAt].content,
           after = msgs.slice(hookAt + 1),
           n = after.filter(m => m.role === "tool").length,
@@ -1002,6 +1002,19 @@ http
               delta({}, { usage: { total_tokens: 5 } })
             ]),
           say = text => sse(res, [delta({ content: text }), delta({}, { usage: { total_tokens: 5 } })]);
+        // HOOK4：立一条带钩子的守（on 对 deploy，测试 guard.js 见 YAN_TARGET 里有 prod 即不过），先推 prod 被拦、再推 staging 照跑
+        if (ask.includes("HOOK4 远端")) {
+          if (n === 0)
+            return call("update_intent", {
+              nodes: [{ id: "远端", claim: "只推测试机", check: "guard.js 过", keep: true, on: "deploy", anchors: ["test:node guard.js"] }]
+            });
+          if (n === 1) return call("run_command", { command: "echo deploy-prod" });
+          if (n === 2) return call("run_command", { command: "echo deploy-staging" });
+          const results = after.filter(m => m.role === "tool").map(m => String(m.content));
+          return say(
+            `HOOK4|prod:${/守「远端」拦下/.test(results[1]) ? "blocked" : "ran"}|staging:${/deploy-staging/.test(results[2]) ? "ran" : "blocked"}`
+          );
+        }
         if (!ask.includes("HOOK2 改一下") && !ask.includes("HOOK3 加个")) {
           if (n === 0)
             return call("update_intent", {

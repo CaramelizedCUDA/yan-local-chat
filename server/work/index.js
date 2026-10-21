@@ -160,8 +160,11 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       }
       // 探针、测试这类自己跑的：到时即掐。封顶在 2³¹−1 毫秒（约 24 天）只因 setTimeout 超过它会溢出、当作 1 毫秒
       const timeoutMs = clampNumber(Number(body.timeout) * 1000, 120000, 1000, 2147483647);
+      // 守的钩子跑测试：将要做的那一步交给它（见 src/19-intent/10-store.js 的 keepHook）
+      const hook = body.hook && typeof body.hook === "object" ? body.hook : null,
+        env = hook ? { YAN_TOOL: String(hook.tool || ""), YAN_TARGET: String(hook.target || "") } : {};
       const started = Date.now(),
-        result = await runShell(command, workdir, timeoutMs, signal, { boxed });
+        result = await runShell(command, workdir, timeoutMs, signal, { boxed, env });
       if (result.aborted) console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })}   已中止：${command.slice(0, 80)}`);
       if (!res.writableEnded && !res.destroyed) sendJson(res, 200, { ...result, durationMs: Date.now() - started });
     } catch (error) {

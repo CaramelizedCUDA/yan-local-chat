@@ -32,7 +32,7 @@ const shownOutput = (text, stderr = false) =>
   tail((stderr && process.platform === "win32" ? decodeClixml(text) : text).replace(ANSI, ""), WORK_OUTPUT_LIMIT);
 module.exports = function createShell({ toolEnv }) {
   // 起一个 shell 跑指令（Windows 上外面包一层，见 POWERSHELL_WRAPPER）；指令经环境变量递进去，比塞进命令行能长两倍多
-  function spawnShell(command, cwd, { boxed = false } = {}) {
+  function spawnShell(command, cwd, { boxed = false, env = {} } = {}) {
     const win = process.platform === "win32";
     const args = win
       ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(POWERSHELL_WRAPPER)]
@@ -54,6 +54,7 @@ module.exports = function createShell({ toolEnv }) {
         GIT_TERMINAL_PROMPT: "0",
         GIT_EDITOR: process.env.GIT_EDITOR || "true",
         GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND || "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+        ...env,
         ...(win ? { YAN_COMMAND: command } : {})
       }
     });
@@ -76,10 +77,10 @@ module.exports = function createShell({ toolEnv }) {
   }
   // 正在跑的 shell（前台与后台）：桥接退出时整棵收掉，不留在后台改文件、占端口
   const runningShells = new Set();
-  function runShell(command, cwd, timeoutMs, signal = null, { boxed = false } = {}) {
+  function runShell(command, cwd, timeoutMs, signal = null, { boxed = false, env = {} } = {}) {
     return new Promise(resolve => {
       const win = process.platform === "win32";
-      const child = spawnShell(command, cwd, { boxed });
+      const child = spawnShell(command, cwd, { boxed, env });
       let stdout = "",
         stderr = "",
         timedOut = false;

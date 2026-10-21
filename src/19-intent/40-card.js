@@ -260,15 +260,29 @@ function intentRollHtml(intent, now, order, selected, level) {
     .join("")}</div>`;
 }
 // 守：簿录之后另起一节（设计稿/80 卡片乙），行同目标那几行，出了事的说法换成事由；只在全局那一层。
-// 题旁一行事实：几条，几条挂着测试、探针收尾前重查——余下的只凭模型自己守，看得出哪些有程序把关
+// 题旁一行事实：几条走钩子动手前查、几条挂着测试或探针收尾前重查——余下的只凭模型自觉，看得出哪些有程序把关、在哪一步把关
 /** @param {Intent} intent @param {IntentPrints} now @param {string} selected */
 function intentKeepHtml(intent, now, selected) {
   const keeps = intentKeeps(intent);
   if (!keeps.length) return "";
-  const checked = keeps.filter(id =>
-    intent.nodes[id].anchors.some(key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer")
-  ).length;
-  return `<div class="intent-keep-head">${t(`守`)}<small>${checked === keeps.length ? t`${keeps.length} 条，收尾前都重查` : checked ? t`${keeps.length} 条，${checked} 条收尾前重查` : t`${keeps.length} 条，未挂测试`}</small></div>${intentRollHtml(intent, now, keeps, selected, "")}`;
+  const hooked = keeps.filter(id => intent.nodes[id].anchors.some(key => keepHookAnchor(intent.nodes[id], key))).length,
+    checked = keeps.filter(
+      id =>
+        !keepTrigger(intent.nodes[id]) && intent.nodes[id].anchors.some(key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer")
+    ).length,
+    trusted = keeps.length - hooked - checked,
+    n = keeps.length,
+    facts =
+      hooked === n
+        ? t`${n} 条，都动手前查`
+        : checked === n
+          ? t`${n} 条，收尾前都重查`
+          : trusted === n
+            ? t`${n} 条，未挂测试`
+            : [t`${n} 条`, hooked && t`${hooked} 条动手前查`, checked && t`${checked} 条收尾前重查`, trusted && t`${trusted} 条靠自觉`]
+                .filter(Boolean)
+                .join(t("，"));
+  return `<div class="intent-keep-head">${t(`守`)}<small>${facts}</small></div>${intentRollHtml(intent, now, keeps, selected, "")}`;
 }
 /** 墨痕：新的在上，同一时刻的几笔并作一组；每笔写是哪一种（弃、撤、改意、归入……）。弃的带灰叉、写弃时的缘由，假定的带泥金勾；还在图上的名可点 @param {Intent} intent */
 function intentInkHtml(intent) {

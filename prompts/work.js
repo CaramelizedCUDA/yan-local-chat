@@ -31,6 +31,8 @@
   intentGate: "［收尾前对照意］\n{{intent}}",
   intentGateBounced: "本答内转待复核过：{{list}}",
   intentGateUnowned: "本答改了、意里没有凭据罩着的：{{list}}",
+  // 守的钩子拦下一步时的工具结果（见 src/19-intent/10-store.js 的 keepHook）
+  keepHook: "守「{{id}}」拦下了这一步，没有执行：{{test}}不过（退出码 {{code}}）。\n{{output}}",
   // 放行后之前那段话仍作答复显示（见 08-trail/00-timeline.js 的 trailCoda），不叮嘱这句它会把整段答复再写一遍
   intentGateAsk:
     "对照各根的原问，看这一答能否就此收尾：未尽的可接着做；能收尾的，前面那段话仍是给用户的答复，不必复述，对照出要补的（如卡在要用户定夺的事）补上，没有就一句话收住。",
