@@ -93,12 +93,13 @@ defineTool({
     };
   }
 });
-// name 留空（或没找到）时列给模型：附件在前，技能的文件其次，卷宗里的按新近排，带路径与大小；太多只列最近的
+// name 留空（或没找到）时列给模型：附件在前，技能的文件其次，卷宗里的按新近排，带路径与大小；太多只列最近的。
+// 只凭点名的技能不列（同系统提示里的目录）：人点了名，说明已作附件附上，里头提到的件凭「技能名/路径」照样翻得到
 const DOCUMENT_LIST_LIMIT = 60;
 /** @param {Step} step */
 function documentList(step, docs) {
   const attached = docs.filter(d => !d.archive && !d.skill),
-    skills = docs.filter(d => d.skill),
+    skills = docs.filter(d => d.skill && !d.manual),
     archived = docs.filter(d => d.archive).sort((a, b) => new Date(b.modifiedAt || 0).getTime() - new Date(a.modifiedAt || 0).getTime());
   step.title ||= t("可读文档");
   const lines = [

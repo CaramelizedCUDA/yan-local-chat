@@ -29,6 +29,7 @@ function skillDocuments() {
         skillDir: skill.dir,
         path: file.path,
         main: file.path.toLowerCase() === SKILL_FILE.toLowerCase(),
+        manual: !!skill.manual,
         size: file.size,
         modifiedAt: file.modifiedAt,
         kind: "skill"
