@@ -467,7 +467,7 @@ function normalizeIntentOps(intent, raw, workdir = "") {
   for (const id of intentStrays(trial))
     if (!strays.has(id) && written.has(id))
       problems.push(
-        t`${id} 孤悬：没有谁以它为前提，也没标根。它撑的是哪一项，就写进那一项的 needs（可跨模块），或归进它所服务的模块（in）；用户定的、一直作数的界限标 keep；本就是整件事要立的另一条结论，标 root`
+        t`${id} 孤悬：没有谁以它为前提，也没标根。它撑的是哪一项，就写进那一项的 needs（可跨模块），或归进它所服务的模块（in）；一直要守住的条件标 keep；本就是整件事要立的另一条结论，标 root`
       );
   const goals = /** @param {Intent} at */ at => Object.keys(at.nodes).filter(id => !at.nodes[id].keep && !intentGone(at, id)).length;
   if (!goals(intent) && goals(trial) === 1)
