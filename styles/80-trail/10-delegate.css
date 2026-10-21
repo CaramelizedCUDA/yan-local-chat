@@ -183,13 +183,15 @@
   min-width: 0;
   font-size: 13px;
 }
-.sub-report h1,
-.sub-report h2,
-.sub-report h3 {
-  margin: 10px 0 4px;
-  font-size: 13.5px;
+/* 帮手的话与回报走 renderMarkdown 却不挂 .markdown（那是正文的标记，引用、旁注落点都认它）：列表、引文、链接、分隔线与正文共用（30-chat/40-markdown），
+   标题、表格、代码块、图片的收边在这里另定——行迹里的话是过程，标题只比本段略大、加粗，不照正文放大，免得比正文还抢眼 */
+:is(.trail-note, .sub-report) :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0 0 0.4em;
+  font: 600 1.05em/1.45 var(--title);
 }
-/* 帮手的话与回报走 renderMarkdown 却不挂 .markdown（那是正文的标记，引用、旁注落点都认它）：表格、代码块、图片的收边在这里补上 */
+:is(.trail-note, .sub-report) * + :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: 0.9em;
+}
 .trail-note table,
 .sub-report table {
   display: block;
@@ -207,11 +209,6 @@
   padding: 4px 14px 4px 2px;
   text-align: left;
   vertical-align: top;
-}
-.trail-note th,
-.sub-report th {
-  background: var(--paper-2);
-  font-weight: 600;
 }
 .trail-note pre,
 .sub-report pre {

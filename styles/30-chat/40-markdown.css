@@ -86,19 +86,17 @@
 .markdown h6 {
   font-size: 1em;
 }
-.markdown ul,
-.markdown ol {
+:is(.markdown, .trail-note, .sub-report) :is(ul, ol) {
   padding-left: 1.4em;
   margin: 0.6em 0 1em;
 }
-.markdown li {
+:is(.markdown, .trail-note, .sub-report) li {
   margin: 0.25em 0;
 }
-.markdown li > ul,
-.markdown li > ol {
+:is(.markdown, .trail-note, .sub-report) li > :is(ul, ol) {
   margin: 0.25em 0;
 }
-.markdown li > p {
+:is(.markdown, .trail-note, .sub-report) li > p {
   margin: 0 0 0.4em;
 }
 .markdown li:has(> input[type="checkbox"]) {
@@ -109,14 +107,17 @@
   margin: 0 0.5em 0 0;
   vertical-align: -1px;
 }
-.markdown blockquote {
+:is(.markdown, .trail-note, .sub-report) blockquote {
   margin: 1em 0;
   padding: 1px 0 1px 18px;
   border-left: 1px solid var(--line);
   color: var(--ink-2);
 }
-/* 引文里末一段的段后距留在竖线里，线就比字长出一截 */
-.markdown blockquote > :last-child {
+/* 引文里首段的段前距、末段的段后距留在竖线里，线就比字长出一截（帮手回报的段落带着浏览器默认的上下边距） */
+:is(.markdown, .trail-note, .sub-report) blockquote > :first-child {
+  margin-top: 0;
+}
+:is(.markdown, .trail-note, .sub-report) blockquote > :last-child {
   margin-bottom: 0;
 }
 .markdown code {
@@ -147,7 +148,7 @@
   font-size: 1em;
   line-height: inherit;
 }
-.markdown a {
+:is(.markdown, .trail-note, .sub-report) a {
   color: var(--accent);
   text-decoration: none;
   border-bottom: 1px solid var(--accent-soft);
@@ -180,7 +181,7 @@
 .markdown .fi.reply-shot:focus-visible {
   outline-color: var(--ink-3);
 }
-.markdown hr {
+:is(.markdown, .trail-note, .sub-report) hr {
   border: 0;
   border-top: 1px solid var(--line);
   margin: 1.5em 0;
@@ -189,7 +190,7 @@
   max-width: 100%;
   border-radius: var(--radius-m);
 }
-.markdown del {
+:is(.markdown, .trail-note, .sub-report) del {
   color: var(--ink-3);
 }
 .markdown table {
