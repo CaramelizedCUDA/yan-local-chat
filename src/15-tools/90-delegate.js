@@ -276,16 +276,14 @@ async function resumeHelpers(conversation, steps = heldHelpers(conversation)) {
   // 认领一回：几处页面同开时，只有一处续得上
   if (!(await claimConversation(conversation.id))) return toast(t("此对话正在另一页面作答，稍后再续"));
   if (!store.conversations.includes(conversation)) return;
-  for (const step of steps) {
+  for (const asked of steps) {
+    if (asked.status !== "interrupted") continue;
+    // 旧版记录里可能几趟都断着：只续最后一趟、先前断着的收掉；点的是旧签，续的也是最后那一趟，不另开一个自己
+    const runs = helperRuns(conversation).filter(run => helperKey(run) === helperKey(asked)),
+      step = runs.at(-1) || asked;
+    retireHeldRuns(conversation, step);
     const host = conversation.messages.find(message => (message.steps || []).includes(step));
     if (!host || step.status !== "interrupted") continue;
-    const runs = helperRuns(conversation).filter(run => helperKey(run) === helperKey(step)),
-      latest = runs.at(-1);
-    // 旧版记录里可能几趟都断着；只续最后一趟，旧签即使还露着续写入口也不另开一个自己。
-    if (latest && latest !== step) {
-      retireHeldRuns(conversation, latest);
-      continue;
-    }
     const past = runs[runs.indexOf(step) - 1] || null;
     step.status = "running";
     step.result = "";
@@ -442,6 +440,8 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
   crews.set(conversation.id, [...(crews.get(conversation.id) || []), box]);
   const tally = newTally(),
     started = performance.now();
+  // 回报从这回新说的算起：续上的一趟还没开轮就停了，断前的旧话不当作它最后说的
+  if (resume) tally.replyStart = sub.content.length;
   sub.startedAt = Date.now() - (prior?.ms || 0);
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
   let painted = "";

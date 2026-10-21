@@ -110,6 +110,46 @@ test("旧记录里同一名帮手几趟都断着：一并续写也只启动最�
   }
 });
 
+test("点了旧签的续：旧签收掉，续上的是这名帮手最后一趟", async () => {
+  const f = helperFixture({ rounds: untilStopped }),
+    next = {
+      id: "next",
+      name: "helper",
+      title: "helper",
+      arguments: "{}",
+      status: "interrupted",
+      sub: { ...f.old.sub, id: "sub-next", task: "new-task", steps: [] }
+    };
+  f.host.steps.push(next);
+  await f.resumeHelpers(f.c, [f.old]);
+  await tick();
+  try {
+    assert.equal(f.old.status, "error");
+    assert.equal(next.status, "running");
+    assert.deepEqual(f.started.map(item => item.task), ["new-task"]);
+  } finally {
+    f.stopGeneration(f.c.id);
+    await tick();
+  }
+});
+
+test("续写准备期间被主模型叫停：回报不把断前的旧话当作它最后说的", async () => {
+  const gate = deferred(),
+    f = helperFixture({ ledger: gate.promise, rounds: untilStopped });
+  await f.resumeHelpers(f.c, [f.old]);
+  await tick();
+  f.tellHelper(
+    { id: "stop", name: "helper", arguments: "{}", status: "running" },
+    { helper: "helper", stop: true },
+    { conversation: f.c, assistant: f.host }
+  );
+  gate.resolve();
+  await tick();
+  assert.equal(f.old.sub.status, "stopped");
+  assert.equal(f.old.sub.report, "");
+  assert.equal(f.reports.length, 1);
+});
+
 for (const phase of ["ledger", "history"])
   test(`帮手续写准备期间停止（${phase}）：不发模型请求，也不寄回报`, async () => {
     const gate = deferred(),
