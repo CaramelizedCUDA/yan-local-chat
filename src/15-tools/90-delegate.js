@@ -422,6 +422,8 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
     roundStart: 0,
     steerTimer: 0,
     halted: false,
+    // 人在差遣面板顶上叫停的：同主模型叫停，回报里写明是用户停的
+    byUser: false,
     // 睡着等后台时由 sleepUntilMail 挂上：来信（mailHelper、传话）或等的指令了结（settleBackground）即叫醒
     /** @type {(() => void)|null} */
     wake: null,
@@ -446,9 +448,7 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
   let painted = "";
   const paint = () => {
-    // 用量边做边给差遣面板看（见 liveHelperUsage）；收工时才记到帮手身上
-    if (tally.usageKnown) liveHelperUsage.set(sub, prior?.usage ? usageSum(prior.usage, tally.usage) : tally.usage);
-    const sig = `${tally.usage.total_tokens}|${sub.content.length}|${sub.reasoning.length}|${sub.status}|${sub.steps.map(s => s.status).join("")}|${Math.floor((Date.now() - sub.startedAt) / 1000)}`;
+    const sig = `${sub.content.length}|${sub.reasoning.length}|${sub.status}|${sub.steps.map(s => s.status).join("")}|${Math.floor((Date.now() - sub.startedAt) / 1000)}`;
     if (sig === painted) return;
     painted = sig;
     refreshSteps(assistant);
@@ -520,8 +520,8 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
     if (error.name === "AbortError") {
       sub.status = "stopped";
       if (box.halted) throw error;
-      // 主模型叫停的：照未完成回报，它已做的一并交回
-      failure = t("已按吩咐叫停");
+      // 主模型或人在差遣面板里叫停的：照未完成回报，它已做的一并交回
+      failure = box.byUser ? t("用户叫停") : t("已按吩咐叫停");
     } else {
       // 不是谁叫停的就是断了：挂着等人续（见 holdHelper）
       sub.status = "interrupted";

@@ -157,7 +157,6 @@ var YAN_EN = {
   " · {0} 字": " · {0} {0|char|chars}",
   "正在拟 {0}{1}": "Drafting {0}{1}",
   思绪: "Thinking",
-  帮手正在凝神: "Subagent is thinking",
   行迹: "Steps",
 
   // ---- 书眉、模型菜单 ----
@@ -238,6 +237,8 @@ var YAN_EN = {
   "（估算）": " (estimated)",
   "；上下文已重，可撮要前文": "; context is getting long, consider summarizing",
   "耗墨 {0}{1}": "{0}{1} {1|token|tokens}",
+  "耗墨 {0}": "{0} {0|token|tokens}",
+  "这一趟共耗约 {0} token": "This run used about {0} {0|token|tokens}",
 
   // ---- 行迹 ----
   " · {0} 复用": " · {0} reused",
@@ -291,14 +292,15 @@ var YAN_EN = {
   "{0} 轮 · {1} 步": "{0} {0|round|rounds} · {1} {1|step|steps}",
   展开帮手的行迹: "Show subagent steps",
   "收起帮手的行迹，只看回报": "Hide subagent steps, show only the report",
-  "{0} · 耗墨 {1}": "{0} · {1} {1|token|tokens}",
   上一名帮手: "Previous subagent",
   所有帮手: "All subagents",
   下一名帮手: "Next subagent",
   "{0} 趟": "{0} {0|run|runs}",
   "第 {0} 趟 · {1}": "Run {0} · {1}",
-  主: "Lead",
-  "主 · {0}": "Lead · {0}",
+  "帮手 · {0}": "Subagent · {0}",
+  复制回报: "Copy report",
+  "只停这一名帮手，已做的回报给主模型":"Stop only this subagent; what it has done is reported to the lead agent",
+  用户叫停: "Stopped by the user",
   主模型交的命: "Task from the lead agent",
   "不到 1 分钟": "Under 1 min",
   "候 · {0} 条": "Background · {0}",

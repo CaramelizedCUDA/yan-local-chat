@@ -142,7 +142,7 @@ check(
 await shot("helper-goon.png");
 // 面板末尾照主答断了的样子落一句、一枚续写；看过合上
 await evalJs(`document.querySelector('#messages .tool-step-delegate[data-status="interrupted"] .tool-step-head').click(); true`);
-await waitFor(`!!document.querySelector("#helperPanelBody .sub-goon [data-helper-resume]")`);
+await waitFor(`!!document.querySelector("#helperPanelBody .sub-foot [data-helper-resume]")`);
 await sleep(400);
 await shot("helper-goon-panel.png");
 check("the helper panel ends with a resume note and mark", true);

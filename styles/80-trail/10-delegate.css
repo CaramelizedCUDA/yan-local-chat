@@ -178,10 +178,6 @@
 .sub-said pre {
   font-size: 11px;
 }
-.sub-idle {
-  color: var(--ink-3);
-  font-style: italic;
-}
 .sub-report {
   margin-top: 6px;
   min-width: 0;

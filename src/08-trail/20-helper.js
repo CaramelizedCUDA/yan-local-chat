@@ -167,26 +167,66 @@ function renderHelperList() {
     .join("");
 }
 // 帮手行迹的收起：每趟一行题头（折角 · 行迹 · 几轮 · 几步，与主行迹题头同一枚折角，点它开合）。
-// 先前几趟默认收着只露回报，最近一趟摊开；点过的记在这里，翻到别的帮手再翻回来仍是那样。
+// 同主行迹：做着摊开、交了差就收，只露回报；最近一趟断了、没做成的摊着，好看清停在哪。点过的记在这里，翻到别的帮手再翻回来仍是那样。
 // 题头滚出面板顶上时，面板顶栏右侧浮出同一枚「收起行迹」，收的是此刻顶在上面的那一趟，与主对话的书眉一个意思
 const helperFolds = new Map(); // 趟 id → 收着与否
 /** @param {Step} step */
 function helperRunFolded(step) {
-  return helperFolds.get(step.id) ?? step !== openHelperRuns().at(-1);
+  return helperFolds.get(step.id) ?? !(step === openHelperRuns().at(-1) && step.status !== "done");
 }
 /** @param {Step} step */
 function syncSubFold(trail, step) {
   const { sub, steps, live } = delegateSubState(step);
   const head = trail?.querySelector(":scope > .sub-fold");
-  if (!head || !sub) return;
+  if (!sub) return;
+  // 眼看着它交差的那一刻：停一拍再收，先前亲手摊开过的也收（同主行迹，见 paintStack）
+  const was = trail._status;
+  trail._status = step.status;
+  // 没有题头（只说了话就交差）：时间线里那段话就是回报，收着不重出
+  if (!head) return foldSubTrail(trail, true, -1);
+  if (was === "running" && step.status === "done") helperFolds.delete(step.id);
   const folded = helperRunFolded(step),
     rounds = trailGroups(sub).length,
-    meta = live ? t`${steps.length} 步 · 进行中` : t`${rounds} 轮 · ${steps.length} 步`;
-  trail.classList.toggle("folded", folded);
+    meta = live ? (steps.length ? t`${steps.length} 步 · 进行中` : t("进行中")) : t`${rounds} 轮 · ${steps.length} 步`;
   head.setAttribute("aria-expanded", String(!folded));
   rollText(head.querySelector(".sub-fold-meta"), meta);
   head.title = folded ? t("展开帮手的行迹") : t("收起帮手的行迹，只看回报");
-  syncHelperFoldHead();
+  foldSubTrail(trail, folded, was === undefined ? -1 : was === "running" && step.status !== "running" ? SETTLE_DELAY : 0);
+}
+// 行迹的开合：时间线从零高滑开、淡入，收时反过来，同主行迹（setProcessDetails）；delay 为负即刚画出来，不动
+/** @param {HTMLElement} trail @param {boolean} folded @param {number} delay */
+function foldSubTrail(trail, folded, delay) {
+  if (trail._foldTo === folded || (trail._foldTo === undefined && trail.classList.contains("folded") === folded)) return;
+  trail._foldTo = folded;
+  clearTimeout(trail._foldTimer);
+  const body = /** @type {HTMLElement|null} */ (trail.querySelector(":scope > .sub-timeline")),
+    settle = () => {
+      trail._foldAnim = null;
+      trail._foldTo = undefined;
+      body?.style.removeProperty("overflow");
+      trail.classList.toggle("folded", folded);
+      syncHelperFoldHead();
+    },
+    run = () => {
+      trail._foldTimer = 0;
+      trail._foldAnim?.cancel();
+      if (!body || delay < 0 || !trail.isConnected || inkMotionOff() || typeof body.animate !== "function") return settle();
+      trail.classList.remove("folded");
+      const height = Math.max(1, body.getBoundingClientRect().height),
+        frames = [
+          { height: "0px", opacity: 0, transform: "translateY(-5px)" },
+          { height: `${height}px`, opacity: 1, transform: "translateY(0)" }
+        ];
+      body.style.overflow = "hidden";
+      const animation = body.animate(folded ? frames.reverse() : frames, {
+        duration: folded ? 380 : 420,
+        easing: "cubic-bezier(.22,.72,.2,1)"
+      });
+      trail._foldAnim = animation;
+      animation.onfinish = () => trail._foldAnim === animation && settle();
+    };
+  if (delay > 0) trail._foldTimer = setTimeout(run, delay);
+  else run();
 }
 /** @param {string} id 哪一趟 @param {boolean} [fold] */
 function toggleSubFold(id, fold) {
@@ -208,7 +248,7 @@ function syncHelperFoldHead() {
   const button = $("#helperFoldHead");
   if (!button) return;
   const top = $("#helperScroll").getBoundingClientRect().top,
-    trail = [...$("#helperPanelBody").querySelectorAll(".helper-run > .sub-trail:not(.folded)")].find(
+    trail = [...$("#helperPanelBody").querySelectorAll('.helper-run > .sub-trail:has(> .sub-fold[aria-expanded="true"])')].find(
       el =>
         el.querySelector(":scope > .sub-fold")?.getBoundingClientRect().bottom < top &&
         el.querySelector(":scope > .sub-timeline")?.getBoundingClientRect().bottom > top + 60
@@ -216,16 +256,17 @@ function syncHelperFoldHead() {
   button.dataset.run = trail?.parentElement.dataset.run || "";
   button.classList.toggle("shown", !!trail);
 }
-// 一趟的命：右侧淡底里一段，题「主 · 时刻」；长了只露两行，点开看全
-/** @param {Element} ask @param {Step} step */
-function paintHelperAsk(ask, step) {
+// 一趟一来一回，同正文：命是右侧淡底里一段（同人说的话，不另题），长了只露两行、点开看全；
+// 帮手那一答顶上一行「遣 帮手 · 时刻」（同主答的「言 模型 · 时刻」），做着时那枚印呼吸
+/** @param {Element} ask @param {Element} meta @param {Step} step */
+function paintHelperAsk(ask, meta, step) {
   const task = String(step.sub?.task || ""),
     text = ask.querySelector(".helper-ask-text"),
-    who = ask.querySelector(".helper-ask-who");
+    when = meta.querySelector(".helper-meta-text");
   // 早先存下的没记领命的时刻，取派它的那一答的
-  if (!who.textContent) {
+  if (!when.textContent) {
     const at = step.sub?.at || currentConversation()?.messages.find(message => (message.steps || []).includes(step))?.timestamp;
-    who.textContent = at ? t`主 · ${formatTime(at)}` : t("主");
+    when.textContent = at ? t`帮手 · ${formatTime(at)}` : t("帮手");
   }
   if (text.dataset.task === task) return;
   text.dataset.task = task;
@@ -251,10 +292,10 @@ function renderHelperPanel(fresh = false) {
   $("#helperModal").dataset.status = status;
   const title = $("#helperTitle");
   if (title && title.textContent !== (last.title || t("领命中"))) title.textContent = last.title || t("领命中");
-  // 题下接着写帮手耗的墨（几趟合计）：各轮请求一回来就记上，做着时也跟着跳
-  const ink = runs.reduce((sum, step) => sum + Number((step.sub.usage || liveHelperUsage.get(step.sub))?.total_tokens || 0), 0),
-    head = helperRunsMeta(runs);
-  rollText($("#helperPanelSub"), ink ? t`${head} · 耗墨 ${formatTokens(ink)}` : head);
+  // 耗墨不在题下合计：每趟交了差，那一答末尾自己写（同主答）
+  rollText($("#helperPanelSub"), helperRunsMeta(runs));
+  // 做着的才叫得停
+  $("#helperStop").classList.toggle("hidden", !helperBox(last));
   // ‹ n/m ›：只有一名帮手时不画
   const nav = $("#helperNav"),
     navKey = `${at + 1}/${all.length}`;
@@ -281,15 +322,27 @@ function renderHelperPanel(fresh = false) {
     if (blank) {
       host.insertAdjacentHTML(
         "beforeend",
-        `<section class="helper-run" data-run="${escapeHtml(step.id)}"><div class="helper-ask" title="${t(`主模型交的命`)}"><span class="helper-ask-who"></span><div class="user-bubble helper-ask-text"></div></div><div class="sub-trail"></div></section>`
+        `<section class="helper-run" data-run="${escapeHtml(step.id)}"><div class="helper-ask" title="${t(`主模型交的命`)}"><div class="user-bubble helper-ask-text"></div></div><div class="message-meta helper-meta"><span class="meta-seal" aria-hidden="true">${t(`遣`)}</span><span class="helper-meta-text"></span></div><div class="sub-trail"></div></section>`
       );
       run = host.lastElementChild;
     }
-    paintHelperAsk(run.firstElementChild, step);
+    run.dataset.status = step.status || "done";
+    paintHelperAsk(run.firstElementChild, run.children[1], step);
     if (!helperSeen.has(step.id)) helperSeen.set(step.id, new Map());
     paintHelperTrail(run.lastElementChild, step, !blank, helperSeen.get(step.id));
   });
   if (follow) stage.scrollTop = stage.scrollHeight;
+}
+/** 这一趟若正做着，它的收件口与中止器 @param {Step} [step] */
+function helperBox(step) {
+  return (crews.get(currentId) || []).find(box => box.step === step) || null;
+}
+// 人在面板顶上叫停：同主模型经 helper 叫停——只停这一名，已做的照未完成回报，借主模型的手接着办
+function stopOpenHelper() {
+  const box = helperBox(openHelperRuns().at(-1));
+  if (!box) return;
+  box.byUser = true;
+  box.controller.abort();
 }
 // 回到当前对话行迹里的那一步（行迹折着就摊开）；帮手手上的一步不在正文行迹里，就回到派它的那枚签
 function revealStep(id) {
@@ -308,6 +361,12 @@ function bindHelperEvents() {
   $("#helperPanelBody").addEventListener("click", event => {
     const fold = event.target.closest(".sub-fold");
     if (fold) return toggleSubFold(fold.closest(".helper-run")?.dataset.run || "");
+    // 那一趟末尾的「复制」：复制回报
+    const copy = event.target.closest("[data-helper-copy]");
+    if (copy) {
+      const report = String(helperStepById(copy.closest(".helper-run")?.dataset.run || "")?.sub?.report || "");
+      return void copyText(report).then(() => toast(t("已复制")));
+    }
     // 命长了截两行，点开看全、再点收起；在里面选字不算
     const ask = event.target.closest(".helper-ask-text");
     if (ask && (ask.classList.contains("more") || ask.classList.contains("open")) && !getSelection()?.toString()) {
@@ -316,6 +375,7 @@ function bindHelperEvents() {
     }
   });
   $("#helperFoldHead").addEventListener("click", event => toggleSubFold(event.currentTarget.dataset.run || "", true));
+  $("#helperStop").addEventListener("click", stopOpenHelper);
   $("#helperScroll").addEventListener("scroll", syncHelperFoldHead, { passive: true });
   // 工作条：左边的改动点开浮出清单，右边的帮手点开差遣面板
   $("#helperBar").addEventListener("click", event => {

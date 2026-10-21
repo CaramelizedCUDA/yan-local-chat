@@ -196,8 +196,9 @@
   border-left: 1px solid var(--line);
   background: var(--grain), var(--paper);
 }
-/* 一名帮手一页，每趟一来一回（设计稿/99 乙）：主模型交的命在右侧淡底里，与正文里人说的话同形，题「主 · 时刻」；
-   帮手的行迹与回报在下面作一答。落选的：甲每趟头上一行「所领之命 / 续派」收着命（几趟摞起来分不清谁说的）、
+/* 一名帮手一页，每趟一来一回（设计稿/99 乙）：主模型交的命在右侧淡底里，与正文里人说的话同形、不另题；
+   帮手的行迹与回报在下面作一答，同主答：顶上「遣 帮手 · 时刻」，末尾一排复制与耗墨。原先命上题「主 · 时刻」，一个「主」字孤零零的，
+   耗墨又是几趟合计挂在窗顶，看不出各趟花了多少。落选的：甲每趟头上一行「所领之命 / 续派」收着命（几趟摞起来分不清谁说的）、
    丙只摊最近一趟（续派正是接着上一趟的回报做，藏起来又看不清） */
 .helper-run + .helper-run {
   margin-top: 28px;
@@ -206,16 +207,21 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  margin: 0 0 12px;
+  margin: 0 0 18px;
 }
 .helper-ask.hidden {
   display: none;
 }
-.helper-ask-who {
-  margin: 0 4px 4px 0;
-  color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.1em;
+/* 帮手那一答的题：印用金（代人行事），做着时呼吸，同主答作答时那枚言印 */
+.helper-meta {
+  margin-bottom: 8px;
+}
+.helper-meta .meta-seal {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+:root[data-ink-motion="on"] .helper-run[data-status="running"] .helper-meta .meta-seal {
+  animation: sealBreathe 1.5s ease-in-out infinite;
 }
 /* 纸上是 --paper，正文那一档 --paper-2 的底在这里几乎看不出，深一档。
    上下留白用透明边框而非内边距：overflow 裁在内边距外沿，限两行时第三行会露半截在下内边距里；底色照铺到边框底下 */
@@ -270,7 +276,7 @@
   transform: rotate(45deg) translate(-1px, -1px);
   transition: transform 0.15s;
 }
-.sub-trail.folded > .sub-fold:before {
+.sub-fold[aria-expanded="false"]:before {
   transform: rotate(-45deg);
 }
 .sub-fold:hover {
@@ -388,10 +394,30 @@
   max-height: 320px;
   overflow: auto;
 }
-/* 断着的帮手：时间线末尾照主答断了的样子落一句、一枚续写；不在消息下，那一排不等指上去才露 */
-.sub-goon {
+/* 一趟的末尾，同主答那一排：复制回报、耗墨；平时淡着，指到这一趟上才浓。断着的先落一句，那一排是续写，不等指上去才露 */
+.sub-foot {
   margin-top: 6px;
 }
-.sub-goon .message-actions {
+.helper-run .message-actions {
+  opacity: 0.62;
+}
+.helper-run:hover .message-actions,
+.helper-run[data-status="interrupted"] .message-actions {
   opacity: 1;
+}
+/* 顶栏的「叫停」：只在这名帮手做着时露出，字同「收起行迹」，指上去转朱 */
+.helper-stop {
+  flex: none;
+  padding: 3px 7px;
+  border-radius: var(--radius-m);
+  color: var(--ink-3);
+  font: 10.5px var(--title);
+  letter-spacing: 0.1em;
+  transition:
+    color 0.16s,
+    background-color 0.16s;
+}
+.helper-stop:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }

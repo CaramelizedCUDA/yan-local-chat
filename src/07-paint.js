@@ -566,19 +566,21 @@ function paintTrailGroup(el, g, source, o) {
           }
     );
   if (g.drafting) parts.push(draftingPart(g.drafting));
-  if (g.idle) parts.push({ key: "idle", sig: "", html: () => `<div class="sub-idle">${t(`帮手正在凝神`)}</div>` });
+  // 还没开口：同主答的「正在凝神」
+  if (g.idle) parts.push({ key: "idle", sig: "", html: () => `<div class="thinking">${t(`正在凝神`)}</div>` });
   syncParts(el, parts, o.animate);
 }
 
 // ---------- 差遣面板里帮手的那一条：题头（可收起）、时间线、回报 ----------
 /** @param {Element} trail @param {Step} step @param {boolean} animate @param {Map<string, any>} seen 这一趟步骤的就地更新台账 */
 function paintHelperTrail(trail, step, animate, seen) {
-  const { sub, live, report, status } = delegateSubState(step);
+  const { sub, live, report, status, steps } = delegateSubState(step);
   if (live) trail.dataset.live = "true";
   else delete trail.dataset.live;
   /** @type {Part[]} */
   const parts = [];
-  if (sub)
+  // 没动过手、只说了话就交差的一趟没有行迹可看，题头不画（同主答：没有步骤就没有「行迹」那一行），说的话即回报
+  if (sub && (live || steps.length))
     parts.push({
       key: "fold",
       sig: "",
@@ -603,14 +605,23 @@ function paintHelperTrail(trail, step, animate, seen) {
   });
   if (report)
     parts.push({ key: "report", sig: report, html: () => `<div class="sub-report"></div>`, paint: el => paintMarkdown(el, report) });
-  // 断着：照主答断了的样子落一句、一枚续写（设计稿/97）——人多半是点开面板看它断在哪，看完就地续上
-  if (status === "interrupted") {
-    const why = tr(stepText(step.result) || "").replace(/[。.\s]+$/, "");
+  // 交了差（或断了）的一趟，末尾同主答一排：复制回报、这一趟耗的墨；做着时不露，同主答。
+  // 断着的照主答断了的样子先落一句，那一排是续写（设计稿/97）——人多半是点开面板看它断在哪，看完就地续上
+  if (sub && !live) {
+    const interrupted = status === "interrupted",
+      why = interrupted ? tr(stepText(step.result) || "").replace(/[。.\s]+$/, "") : "",
+      ink = Number(sub.usage?.total_tokens) || 0;
     parts.push({
-      key: "goon",
-      sig: why,
+      key: "foot",
+      sig: `${status}|${why}|${ink}|${!!report}`,
       html: () =>
-        `<div class="sub-goon"><div class="resume-note">${why ? `${escapeHtml(why)}${LANG === "en" ? ". " : "。"}` : ""}${t(`已做的都在，可由此续上。`)}</div><div class="message-actions"><button type="button" class="message-action" data-helper-resume="${escapeHtml(step.id)}" title="${t(`续上`)}" aria-label="${t(`续上`)}">${brushIcon("forward")}</button></div></div>`
+        `<div class="sub-foot">${interrupted ? `<div class="resume-note">${why ? `${escapeHtml(why)}${LANG === "en" ? ". " : "。"}` : ""}${t(`已做的都在，可由此续上。`)}</div>` : ""}<div class="message-actions">${
+          interrupted
+            ? `<button type="button" class="message-action" data-helper-resume="${escapeHtml(step.id)}" title="${t(`续上`)}" aria-label="${t(`续上`)}">${brushIcon("forward")}</button>`
+            : report
+              ? `<button type="button" class="message-action" data-helper-copy title="${t(`复制回报`)}" aria-label="${t(`复制回报`)}">${brushIcon("copy")}</button>`
+              : ""
+        }${ink ? `<span class="message-cost" title="${t`这一趟共耗约 ${formatTokens(ink)} token`}">${t`耗墨 ${formatTokens(ink)}`}</span>` : ""}</div></div>`
     });
   }
   syncParts(trail, parts, animate);

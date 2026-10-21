@@ -74,7 +74,8 @@ function delegateSubState(step) {
     meta: [
       ...(live
         ? [
-            steps.length ? t`${steps.length} 步` : t("领命中"),
+            // 还没动手：开了口就不再是「领命中」，只记用时
+            steps.length ? t`${steps.length} 步` : sub?.content || sub?.reasoning ? "" : t("领命中"),
             (sub?.startedAt && spentText(Date.now() - sub.startedAt)) || (steps.length ? t("进行中") : ""),
             sub?.waiting ? t("等后台") : ""
           ]
