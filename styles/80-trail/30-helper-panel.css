@@ -207,10 +207,12 @@
   font: 10.5px var(--title);
   letter-spacing: 0.1em;
 }
-/* 纸上是 --paper，正文那一档 --paper-2 的底在这里几乎看不出，深一档 */
+/* 纸上是 --paper，正文那一档 --paper-2 的底在这里几乎看不出，深一档。
+   上下留白用透明边框而非内边距：overflow 裁在内边距外沿，限两行时第三行会露半截在下内边距里；底色照铺到边框底下 */
 .helper-ask-text {
   max-width: 86%;
-  padding: 9px 13px;
+  padding: 0 13px;
+  border-block: 9px solid transparent;
   background: var(--paper-3);
   color: var(--ink-2);
   font-size: 12.5px;
