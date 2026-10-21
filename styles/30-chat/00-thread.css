@@ -97,11 +97,13 @@ html.work-mode .chat-scroll-grabber {
   flex-direction: column;
   align-items: flex-end;
 }
+/* 问句的底是叠在纸上的一层淡墨（设计稿/100 甲）：亮色深一档、暗色亮一档，纸随时令变、落在暗色右上的晕里、在旁注那张纸上都照样差出一档。
+   原先实底 paper-2 与主区纸面（纸 + 纹理 + 晕）几乎同色，暗色里问句气泡看不见；落选的：发丝边（问句成了框，长问句像输入框）、实底 paper-3（固定色，碰上晕与时令纸时差时大时小） */
 .user-bubble {
   max-width: 80%;
   padding: 12px 16px;
   border-radius: var(--radius-l) var(--radius-l) var(--radius-s) var(--radius-l);
-  background: var(--paper-2);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
   white-space: pre-wrap;
   line-height: 1.7;
   overflow-wrap: break-word;
