@@ -722,7 +722,7 @@ http
       }
       // BREAKSUB（帮手）：先说一句、算一步，再请求就被拒（断了）；人点「续」之后的那一回，看历史里有没有断前说的话与「接着做」，据此回报
       if (firstUser.includes("BREAKSUB")) {
-        const resumed = msgs.some(m => m.role === "user" && String(m.content).includes("请仅从中断处继续"));
+        const resumed = msgs.some(m => m.role === "user" && String(m.content).includes("从断处接着写"));
         if (resumed)
           return sse(res, [
             delta({
@@ -1103,10 +1103,10 @@ http
         ]);
       }
       // 断线后页面自动请它接着写：STREAMERR 那段每回都断（接满两回仍断，才算中断），别的接上一句收尾
-      if (typeof lastUser === "string" && lastUser.includes("上一条回复在此处中断")) {
+      if (typeof lastUser === "string" && lastUser.includes("上一条回复在此中断")) {
         const asked = [...msgs]
           .reverse()
-          .find(m => m.role === "user" && typeof m.content === "string" && !m.content.includes("上一条回复在此处中断"));
+          .find(m => m.role === "user" && typeof m.content === "string" && !m.content.includes("上一条回复在此中断"));
         if (String(asked?.content || "").includes("STREAMERR"))
           return sse(res, [{ error: { message: "rate limited again (fake)", type: "rate_limit_error" } }]);
         return sse(res, [delta({ content: "接着写完。" }), delta({}, { usage: { total_tokens: 5 } })]);
