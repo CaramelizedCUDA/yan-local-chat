@@ -54,11 +54,11 @@
 .helper-viewer {
   position: fixed;
   inset: 0;
-  z-index: 88;
+  z-index: var(--z-sheet);
   display: flex;
   flex-direction: column;
   background: var(--grain), var(--desk);
-  animation: fadeIn 0.18s ease;
+  animation: fadeIn var(--dur-rise) ease;
 }
 .helper-viewer-head {
   height: 54px;
@@ -120,8 +120,8 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
   transition:
-    color 0.16s,
-    background-color 0.16s;
+    color var(--dur-quick),
+    background-color var(--dur-quick);
 }
 .helper-nav-count:hover {
   color: var(--gold);
@@ -146,7 +146,7 @@
   color: var(--ink-2);
   font-size: var(--fs-small);
   text-align: left;
-  transition: background-color 0.16s;
+  transition: background-color var(--dur-quick);
 }
 .helper-list-item:hover {
   background: color-mix(in srgb, var(--gold) 12%, transparent);
@@ -274,7 +274,7 @@
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
   transform: rotate(45deg) translate(-1px, -1px);
-  transition: transform 0.15s;
+  transition: transform var(--dur-quick);
 }
 .sub-fold[aria-expanded="false"]:before {
   transform: rotate(-45deg);
@@ -307,8 +307,8 @@
   pointer-events: none;
   transform: translateY(3px);
   transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+    opacity var(--dur-quick) ease,
+    transform var(--dur-quick) ease;
 }
 .helper-fold-head:before,
 .trail-fold-head:before {

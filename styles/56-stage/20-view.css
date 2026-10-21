@@ -79,7 +79,7 @@
   inset: -7px;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-quick);
 }
 .stage-view.typing .stage-corners {
   opacity: 1;
@@ -145,7 +145,7 @@
   color: var(--ink-2);
   font: var(--fs-small) var(--title);
   letter-spacing: 0.2em;
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .stage-go:hover {
   color: var(--accent);

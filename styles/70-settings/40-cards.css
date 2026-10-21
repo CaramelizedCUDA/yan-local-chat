@@ -11,7 +11,7 @@
   padding: 11px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-s); /* 与卷宗的簿录长条同是方角；落选的 12px 圆角成块，见 设计稿/26 五 */
-  transition: border-color 0.2s;
+  transition: border-color var(--dur-quick);
 }
 .card-head {
   display: flex;
@@ -156,8 +156,8 @@
   border: 1px solid var(--ink-3);
   border-radius: var(--radius-s);
   transition:
-    border-color 0.18s,
-    background-color 0.18s;
+    border-color var(--dur-quick),
+    background-color var(--dur-quick);
 }
 .card.pickable[aria-checked="true"] .card-tick {
   border-color: var(--accent);

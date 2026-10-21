@@ -80,7 +80,7 @@
 .skill-item .memory-ops {
   flex: none;
   opacity: 0.35;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-quick);
 }
 .skill-item:hover .memory-ops,
 .skill-item .memory-ops:focus-within {

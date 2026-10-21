@@ -8,7 +8,7 @@
   color: var(--ink-2);
   font: var(--fs-small) var(--title);
   max-width: 260px;
-  transition: color 0.16s;
+  transition: color var(--dur-quick);
 }
 .chip + .chip {
   margin-left: 8px;
@@ -50,7 +50,7 @@
   background: var(--paper);
   box-shadow: var(--shadow);
   transform-origin: top left;
-  animation: menuIn 0.16s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: menuIn var(--dur-rise) var(--ease-ink);
 }
 .chip-pop .field {
   width: 100%;
@@ -135,8 +135,7 @@
   width: auto;
   min-width: 148px;
   max-width: min(320px, calc(100vw - 20px));
-  /* 设置窗（50）里也会弹（记忆条目的「改归别类」），要浮在它之上 */
-  z-index: 60;
+  z-index: var(--z-pop);
 }
 .chip-pop.floating.drop-up {
   transform-origin: bottom left;
@@ -157,8 +156,8 @@
   font-size: var(--fs-small);
   letter-spacing: 0.025em;
   transition:
-    background-color 0.16s,
-    color 0.16s;
+    background-color var(--dur-quick),
+    color var(--dur-quick);
 }
 .chip-pop.floating.chip-menu button small {
   margin-left: 18px;

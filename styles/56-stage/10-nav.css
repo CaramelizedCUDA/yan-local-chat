@@ -16,7 +16,7 @@
   display: grid;
   place-items: center;
   border-radius: var(--radius-m);
-  transition: background 0.15s;
+  transition: background var(--dur-quick);
 }
 .stage-nav > button .brush {
   width: 17px;

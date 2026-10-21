@@ -51,9 +51,9 @@
   color: var(--ink-2);
   text-align: left;
   transition:
-    border-color 0.16s,
-    background 0.16s,
-    color 0.16s;
+    border-color var(--dur-quick),
+    background var(--dur-quick),
+    color var(--dur-quick);
 }
 .ask-opt-copy {
   display: flex;
@@ -71,9 +71,9 @@
   border: 1px solid color-mix(in srgb, var(--ink-3) 60%, transparent);
   border-radius: 50%;
   transition:
-    border-color 0.16s,
-    background 0.16s,
-    box-shadow 0.16s;
+    border-color var(--dur-quick),
+    background var(--dur-quick),
+    box-shadow var(--dur-quick);
 }
 .ask-q[data-multi="true"] .ask-tick {
   border-radius: var(--radius-s);

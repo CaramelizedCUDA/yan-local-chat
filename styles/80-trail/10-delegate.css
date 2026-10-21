@@ -40,7 +40,7 @@
   margin-left: 2px;
   color: color-mix(in srgb, var(--gold) 70%, transparent);
   font-size: 13px;
-  transition: transform 0.18s ease;
+  transition: transform var(--dur-quick) ease;
 }
 .tool-step-delegate > .tool-step-head:hover:after {
   transform: translateX(2px);

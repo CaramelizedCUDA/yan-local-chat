@@ -27,7 +27,7 @@
   color: var(--ink-3);
   font: var(--fs-note) var(--title);
   letter-spacing: 0.06em;
-  animation: rise 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: rise var(--dur-rise) var(--ease-ink);
 }
 .work-changes,
 .work-helpers {
@@ -151,7 +151,7 @@
   border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: 0 8px 30px rgba(58, 45, 29, 0.08);
-  animation: rise 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: rise var(--dur-rise) var(--ease-ink);
 }
 .approval-head {
   display: flex;
@@ -211,7 +211,7 @@
   color: var(--ink-2);
   font: var(--fs-note) var(--title);
   letter-spacing: 0.1em;
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .approval-actions button:not(.ask-arrow):first-child,
 .tool-approve button:first-child {

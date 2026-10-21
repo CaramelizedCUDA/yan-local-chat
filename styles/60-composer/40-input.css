@@ -99,7 +99,7 @@
     background-color 0.25s,
     color 0.25s,
     box-shadow 0.25s,
-    transform 0.2s cubic-bezier(0.22, 0.72, 0.2, 1);
+    transform var(--dur-quick) var(--ease-lay);
 }
 /* 印边：内圈一道细线，是印章的边框 */
 .send-btn::before {
@@ -126,7 +126,7 @@
 .send-btn .seal-glyph {
   display: block;
   transform: rotate(-4deg);
-  transition: transform 0.25s cubic-bezier(0.22, 0.72, 0.2, 1);
+  transition: transform 0.25s var(--ease-lay);
 }
 .send-btn:hover {
   transform: rotate(-8deg);
@@ -202,9 +202,9 @@
   font-variant-numeric: tabular-nums;
   opacity: 0.8;
   transition:
-    color 0.2s,
-    background 0.15s,
-    opacity 0.15s;
+    color var(--dur-quick),
+    background var(--dur-quick),
+    opacity var(--dur-quick);
 }
 .context-gauge:hover {
   background: var(--paper-2);

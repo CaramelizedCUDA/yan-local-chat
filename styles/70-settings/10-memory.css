@@ -23,7 +23,7 @@
   color: var(--ink-2);
   font: var(--fs-mid) var(--title);
   text-align: left;
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .memory-cat span {
   min-width: 0;
@@ -111,7 +111,7 @@ input.memory-cat-new {
   font-size: var(--fs-mid);
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .memory-row:hover .memory-gist {
   color: var(--ink);
@@ -170,7 +170,7 @@ input.memory-cat-new {
   color: var(--ink-3);
   font: inherit;
   letter-spacing: inherit;
-  transition: color 0.16s;
+  transition: color var(--dur-quick);
 }
 .memory-source:hover {
   color: var(--accent);
@@ -190,7 +190,7 @@ input.memory-cat-new {
   width: 24px;
   height: 24px;
   border-radius: var(--radius-s);
-  transition: background 0.15s;
+  transition: background var(--dur-quick);
 }
 .memory-ops button:hover {
   background: color-mix(in srgb, var(--ink) 7%, transparent);

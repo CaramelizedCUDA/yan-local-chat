@@ -1,13 +1,13 @@
 .modal {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 42px;
   background: rgba(30, 28, 24, 0.22);
   backdrop-filter: blur(3px);
-  animation: fadeIn 0.18s ease;
+  animation: fadeIn var(--dur-rise) ease;
 }
 .modal-panel {
   position: relative;

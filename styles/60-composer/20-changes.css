@@ -85,8 +85,8 @@
   font: inherit;
   text-align: left;
   transition:
-    color 0.18s,
-    background-color 0.18s;
+    color var(--dur-quick),
+    background-color var(--dur-quick);
 }
 .change-files > button:before {
   content: "";
@@ -98,7 +98,7 @@
   border-radius: 1px;
   background: var(--rouge);
   transform: scaleY(0);
-  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform 0.22s var(--ease-ink);
 }
 .change-files > button:hover,
 .change-files > button:focus-visible {
@@ -119,7 +119,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform 0.22s var(--ease-ink);
 }
 .change-files > button:hover .path,
 .change-files > button:focus-visible .path {
@@ -128,7 +128,7 @@
 /* 目录淡、文件名浓：一眼先落在改的是哪一件 */
 .change-files .dir {
   color: var(--ink-3);
-  transition: color 0.18s;
+  transition: color var(--dur-quick);
 }
 .change-files > button:hover .dir {
   color: var(--ink-2);
@@ -154,10 +154,10 @@
 }
 /* 点开时清单轻轻浮起、各行依次落定；生成中清单整段重画不重放（只有点开那一下带 .opening） */
 .change-files.opening {
-  animation: changeFilesRise 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: changeFilesRise 0.22s var(--ease-ink);
 }
 .change-files.opening > button {
-  animation: changeFileIn 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: changeFileIn 0.28s var(--ease-ink) both;
   animation-delay: calc(var(--i, 0) * 18ms);
 }
 @keyframes changeFilesRise {

@@ -11,7 +11,7 @@
   padding: 11px 2px;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
   text-align: left;
-  transition: background-color 0.16s;
+  transition: background-color var(--dur-quick);
 }
 .guide-row:hover {
   background: color-mix(in srgb, var(--paper-3) 45%, transparent);

@@ -13,7 +13,7 @@
   cursor: default;
   transition:
     width 0.25s ease,
-    color 0.2s;
+    color var(--dur-quick);
 }
 .mode-seal .rail-icon {
   display: none;
@@ -68,7 +68,7 @@
     monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  animation: rise 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) 0.08s backwards;
+  animation: rise 0.3s var(--ease-ink) 0.08s backwards;
 }
 .tool-approve {
   display: flex;

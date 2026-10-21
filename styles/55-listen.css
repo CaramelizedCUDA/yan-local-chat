@@ -90,7 +90,7 @@
   box-shadow:
     inset 0 0 0 2px var(--accent),
     inset 0 0 0 3px color-mix(in srgb, var(--paper) 55%, transparent);
-  transition: transform 0.16s;
+  transition: transform var(--dur-quick);
 }
 .listen-play:hover {
   transform: rotate(-3deg);
@@ -226,8 +226,8 @@
   visibility: hidden;
   transform: translateY(-4px);
   transition:
-    opacity 0.18s,
-    transform 0.18s,
+    opacity var(--dur-quick),
+    transform var(--dur-quick),
     visibility 0s 0.18s;
 }
 .listen-pendant.open .listen-card {
@@ -235,8 +235,8 @@
   visibility: visible;
   transform: none;
   transition:
-    opacity 0.18s,
-    transform 0.18s;
+    opacity var(--dur-quick),
+    transform var(--dur-quick);
 }
 .listen-name {
   max-width: 220px;

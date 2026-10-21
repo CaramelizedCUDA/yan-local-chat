@@ -7,7 +7,7 @@
   cursor: pointer;
   text-align: center;
   color: var(--ink-3);
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .context-summary > summary::-webkit-details-marker {
   display: none;
@@ -16,7 +16,7 @@
   content: "›";
   display: inline-block;
   margin-right: 6px;
-  transition: transform 0.18s ease;
+  transition: transform var(--dur-quick) ease;
 }
 .context-summary[open] > summary:before {
   transform: rotate(90deg);

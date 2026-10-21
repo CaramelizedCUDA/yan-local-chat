@@ -103,21 +103,21 @@
 .tool-step.is-new,
 .tool-stack.is-new,
 .reasoning.is-new {
-  animation: rise 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: rise 0.35s var(--ease-ink);
 }
 .tool-step.is-new .tool-results,
 .tool-step.is-new .tool-note,
 .tool-step.body-new .tool-results,
 .tool-step.body-new .tool-note {
-  animation: rise 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) 0.08s backwards;
+  animation: rise 0.3s var(--ease-ink) 0.08s backwards;
 }
 .send-btn,
 .text-btn {
   transition:
-    transform 0.16s cubic-bezier(0.2, 0.7, 0.2, 1),
-    background-color 0.2s,
-    color 0.2s,
-    border-color 0.2s;
+    transform var(--dur-quick) var(--ease-ink),
+    background-color var(--dur-quick),
+    color var(--dur-quick),
+    border-color var(--dur-quick);
 }
 .send-btn:active,
 .icon-btn:active,
@@ -135,28 +135,28 @@
 .chat:not(.hidden),
 .library-page:not(.hidden),
 .welcome:not(.hidden) {
-  animation: fadeIn 0.22s ease;
+  animation: fadeIn var(--dur-rise) ease;
 }
 #settingsContent.tab-fade {
-  animation: fadeIn 0.18s ease;
+  animation: fadeIn var(--dur-rise) ease;
 }
 .modal-panel,
 .confirm-panel,
 .file-viewer-stage,
 .helper-sheet,
 .image-viewer-stage {
-  animation: layIn 0.38s cubic-bezier(0.22, 0.72, 0.2, 1) 0.04s backwards;
+  animation: layIn var(--dur-lay) var(--ease-lay) 0.04s backwards;
 }
 .side-panel,
 .stage-panel {
-  animation: laySideIn 0.32s cubic-bezier(0.22, 0.72, 0.2, 1);
+  animation: laySideIn 0.32s var(--ease-lay);
 }
 .leaving :is(.modal-panel, .confirm-panel, .file-viewer-stage, .helper-sheet, .image-viewer-stage) {
-  animation: layOut 0.17s ease forwards !important;
+  animation: layOut var(--dur-out) ease forwards !important;
 }
 .side-panel.leaving,
 .stage-panel.leaving {
-  animation: laySideOut 0.17s ease forwards !important;
+  animation: laySideOut var(--dur-out) ease forwards !important;
 }
 :root[data-ink-motion="off"]
   :is(
@@ -185,7 +185,7 @@
     overflow: clip;
     opacity: 0;
     transition:
-      block-size 0.42s cubic-bezier(0.22, 0.72, 0.2, 1),
+      block-size 0.42s var(--ease-lay),
       opacity 0.28s ease,
       content-visibility 0.42s allow-discrete;
   }
@@ -348,7 +348,7 @@ html.theme-fade * {
   }
 }
 .chat-scroll {
-  transition: padding-bottom 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: padding-bottom 0.35s var(--ease-ink);
 }
 .send-btn.empty {
   opacity: 0.85;
@@ -413,7 +413,7 @@ button:focus:not(:focus-visible) {
   background: color-mix(in srgb, var(--ink-3) 45%, transparent);
   transition:
     width 0.2s ease,
-    background 0.2s;
+    background var(--dur-quick);
 }
 .outline-item:hover .outline-tick {
   width: 18px;
@@ -440,8 +440,8 @@ button:focus:not(:focus-visible) {
   letter-spacing: 0.06em;
   pointer-events: none;
   transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+    opacity var(--dur-quick) ease,
+    transform var(--dur-quick) ease;
 }
 .outline:hover .outline-label,
 .outline-item:focus-visible .outline-label {
@@ -484,7 +484,7 @@ button:focus:not(:focus-visible) {
   font-size: 14px;
   line-height: 1;
   box-shadow: 0 3px 10px rgba(61, 49, 32, 0.1);
-  animation: rise 0.2s ease-out;
+  animation: rise var(--dur-rise) ease-out;
 }
 .jump-bottom:hover {
   border-color: var(--accent);
@@ -493,10 +493,10 @@ button:focus:not(:focus-visible) {
 .sidebar-scrim {
   position: fixed;
   inset: 0;
-  z-index: 29;
+  z-index: calc(var(--z-panel) - 1);
   background: rgba(30, 28, 24, 0.26);
   backdrop-filter: blur(2px);
-  animation: fadeIn 0.2s ease;
+  animation: fadeIn var(--dur-rise) ease;
 }
 @media (min-width: 761px) {
   .sidebar-scrim {
@@ -512,17 +512,17 @@ button:focus:not(:focus-visible) {
 .change-bar.is-new,
 .message-error.is-new,
 .resume-note.is-new {
-  animation: rise 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: rise 0.3s var(--ease-ink);
 }
 .tool-step.status-new .tool-state {
-  animation: popIn 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: popIn 0.28s var(--ease-ink);
 }
 .leaving {
-  animation: fadeOut 0.17s ease forwards !important;
+  animation: fadeOut var(--dur-out) ease forwards !important;
   pointer-events: none;
 }
 .toast.leaving {
-  animation: sink 0.18s ease forwards !important;
+  animation: sink var(--dur-out) ease forwards !important;
 }
 .math-pending code {
   padding: 0;
@@ -616,7 +616,7 @@ button:focus:not(:focus-visible) {
   }
   .sidebar {
     position: absolute;
-    z-index: 30;
+    z-index: var(--z-panel);
     height: 100%;
     box-shadow: var(--shadow);
   }
@@ -632,7 +632,7 @@ button:focus:not(:focus-visible) {
     right: 0;
     top: 0;
     bottom: 0;
-    z-index: 30;
+    z-index: var(--z-panel);
     width: min(400px, 92vw);
     box-shadow: var(--shadow);
   }
@@ -738,7 +738,7 @@ body {
   z-index: 1;
   display: block;
   pointer-events: none;
-  transition: opacity 0.14s;
+  transition: opacity var(--dur-quick);
 }
 .history-state.running {
   width: 9px;

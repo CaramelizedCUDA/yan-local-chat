@@ -243,7 +243,7 @@
   border-right: 1px solid var(--ink-3);
   border-bottom: 1px solid var(--ink-3);
   transform: rotate(-45deg);
-  transition: transform 0.15s;
+  transition: transform var(--dur-quick);
 }
 .profile-card[open] > .profile-head:before {
   transform: rotate(45deg) translate(-1px, -1px);
@@ -258,7 +258,7 @@
   font: 500 14px var(--title);
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .profile-gist {
   flex: 1;
@@ -324,7 +324,7 @@
   color: var(--ink-3);
   font: var(--fs-small) var(--title);
   letter-spacing: 0.06em;
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .segmented button + button {
   background: linear-gradient(var(--line), var(--line)) left center / 1px 11px no-repeat;
@@ -361,7 +361,7 @@
   position: fixed;
   left: 50%;
   bottom: 30px;
-  z-index: 80;
+  z-index: var(--z-toast);
   transform: translateX(-50%);
   max-width: min(92vw, 560px);
   padding: 7px 14px 8px 12px;
@@ -372,7 +372,7 @@
   box-shadow: 0 3px 10px rgba(61, 49, 32, 0.1);
   font: var(--fs-small) var(--title);
   letter-spacing: 0.06em;
-  animation: rise 0.2s ease-out;
+  animation: rise var(--dur-rise) ease-out;
 }
 /* 提示条：方角纸签，字前一粒朱（同侧栏「有新答复」那粒）——一条要你看一眼的话。
    落选的（设计稿/90、91）：墨底白字（纸上一块黑，暗色里反成一块亮）；顶上一道朱（像扣了个盖）；只一个框（太素）；

@@ -90,11 +90,11 @@
   height: 1em;
 }
 .roll-stack.up {
-  animation: rollUp 0.34s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  animation: rollUp 0.34s var(--ease-ink) forwards;
 }
 .roll-stack.down {
   transform: translateY(-1em);
-  animation: rollDown 0.34s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  animation: rollDown 0.34s var(--ease-ink) forwards;
 }
 @keyframes rollUp {
   to {

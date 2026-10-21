@@ -42,8 +42,8 @@ input[type="checkbox"] {
   vertical-align: -2px;
   cursor: pointer;
   transition:
-    border-color 0.15s,
-    background-color 0.15s;
+    border-color var(--dur-quick),
+    background-color var(--dur-quick);
 }
 input[type="checkbox"]:checked {
   border-color: var(--accent);
@@ -117,6 +117,30 @@ input[type="number"]::-webkit-outer-spin-button {
   --fs-note: 11.5px;
   --fs-small: 12.5px;
   --fs-mid: 13.5px;
+  /* 浮层高低一处定：由下往上。能同时开着的，高低与 Esc 先收谁（LAYERS 的 rank，见 src/03-ui-utils.js）同序——
+     帮手窗里点开文件、文件里看图，一层压一层；提示条在一切浮层之上，差遣窗、预览里复制或报错也看得见。
+     不归档的：组件里头的 1–8（只在父层里比）、顶栏与输入区里挂着的菜单与簿录（同上）、换明暗的墨滴一组（1997–2000，永在最上） */
+  --z-tip: 24; /* 划选浮起的「引用 | 旁注」 */
+  --z-panel: 30; /* 铺满的旁注、游目，窄屏的侧栏与旁注 */
+  --z-veil: 48; /* 拖文件进来的那层纱 */
+  --z-modal: 50; /* 设置、确认 */
+  --z-pop: 60; /* 挂在 body 上的小菜单：设置里也会弹 */
+  --z-work: 75; /* 全屏的作品 */
+  --z-sheet: 88; /* 差遣窗 */
+  --z-file: 90; /* 文件预览 */
+  --z-image: 92; /* 看图 */
+  --z-toast: 96;
+  --z-gate: 100; /* 接不上桥接的那一页 */
+  /* 动效时长三档：快（悬停、选中这类状态的色与透明、小件的转动）、起（小件现身：菜单、提示条、弹层、换页的淡入）、
+     开层（纸落案上，见 90-motion-responsive.css）；退场一律同 hideWithFade 的 170 毫秒，淡完才藏。原先快 0.12–0.2s、起 0.16–0.22s 各有五六种，并到一档相差不过几十毫秒。
+     不归档的：带先后错开的编排（侧栏开合、输入框的起落）、正文与行迹的现身、展开收起（脚本同步）、印与墨的特效、循环 */
+  --dur-quick: 0.16s;
+  --dur-rise: 0.2s;
+  --dur-lay: 0.38s;
+  --dur-out: 0.17s;
+  /* 两条曲线：墨（小件起落、滑动），纸（开层与大块的位移，略缓收） */
+  --ease-ink: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-lay: cubic-bezier(0.22, 0.72, 0.2, 1);
 }
 /* 笔意图标（画法见 src/03-brush.js）：墨分两色，一片淡墨作纸，一点朱。
    落选的：等宽圆头的线稿加实心色块（UI 图标的画法，怎么减细节都偏卡通）；卷宗一个「卷」字小印（与「工」印混在一处，认不出是入口） */
@@ -124,7 +148,7 @@ input[type="number"]::-webkit-outer-spin-button {
   flex: none;
   width: 20px;
   height: 20px;
-  transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform 0.3s var(--ease-ink);
 }
 .brush .ink {
   fill: color-mix(in srgb, var(--ink) 80%, var(--paper));
@@ -311,7 +335,7 @@ body {
 }
 :root[data-bridge="waiting"] .bridge-gate {
   position: fixed;
-  z-index: 100;
+  z-index: var(--z-gate);
   inset: 0;
   display: grid;
   place-content: center;

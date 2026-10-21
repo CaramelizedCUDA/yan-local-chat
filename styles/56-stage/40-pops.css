@@ -184,7 +184,7 @@ button.stage-mark-badge:hover .brush .ink,
   border-right: 1px solid var(--ink-3);
   border-bottom: 1px solid var(--ink-3);
   transform: rotate(45deg);
-  transition: transform 0.15s;
+  transition: transform var(--dur-quick);
 }
 .stage-mark-dir.shut .stage-mark-chev {
   margin-bottom: 0;
@@ -207,7 +207,7 @@ button.stage-mark-badge:hover .brush .ink,
   gap: 1px;
   padding-right: 4px;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-quick);
 }
 .stage-mark-row:hover .stage-mark-ops,
 .stage-mark-dir:hover .stage-mark-ops,

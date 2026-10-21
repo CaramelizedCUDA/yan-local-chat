@@ -8,7 +8,7 @@
   flex: none;
   overflow: hidden;
   background: var(--grain), var(--paper-2);
-  transition: width 0.38s cubic-bezier(0.22, 0.72, 0.2, 1);
+  transition: width 0.38s var(--ease-lay);
 }
 .sidebar.collapsed,
 html[data-sidebar="collapsed"] .sidebar {
@@ -27,15 +27,15 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .wide {
   transition:
     opacity 0.24s ease 0.14s,
-    transform 0.34s cubic-bezier(0.22, 0.72, 0.2, 1) 0.1s;
+    transform 0.34s var(--ease-lay) 0.1s;
 }
 .sidebar.collapsed .wide {
   opacity: 0;
   transform: translateX(-10px);
   pointer-events: none;
   transition:
-    opacity 0.16s ease,
-    transform 0.3s cubic-bezier(0.22, 0.72, 0.2, 1);
+    opacity var(--dur-quick) ease,
+    transform 0.3s var(--ease-lay);
 }
 .brand-row {
   position: relative;
@@ -60,7 +60,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   place-items: center;
   border-radius: var(--radius-m);
   color: var(--ink-3);
-  transition: 0.16s;
+  transition: var(--dur-quick);
 }
 .icon-btn:hover,
 .icon-btn.active {
@@ -76,8 +76,8 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   top: 2px;
   left: 216px;
   transition:
-    left 0.38s cubic-bezier(0.22, 0.72, 0.2, 1),
-    background 0.16s;
+    left 0.38s var(--ease-lay),
+    background var(--dur-quick);
 }
 .sidebar.collapsed .collapse-btn {
   left: 5px;
@@ -93,8 +93,8 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font-size: var(--fs-mid);
   text-align: left;
   transition:
-    width 0.38s cubic-bezier(0.22, 0.72, 0.2, 1),
-    background 0.16s;
+    width 0.38s var(--ease-lay),
+    background var(--dur-quick);
 }
 .rail-btn:hover,
 .rail-btn.active {
@@ -157,7 +157,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   margin: 6px 0 4px;
 }
 .history-search-wrap:not(.hidden) {
-  animation: rise 0.18s ease-out;
+  animation: rise var(--dur-rise) ease-out;
 }
 .history-search {
   flex: 1;
@@ -217,7 +217,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   text-align: left;
   letter-spacing: 0.06em;
   cursor: pointer;
-  transition: color 0.16s;
+  transition: color var(--dur-quick);
 }
 .history-repo:hover {
   color: var(--accent);
@@ -257,8 +257,8 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font-size: 13px;
   transform: rotate(90deg);
   transition:
-    transform 0.18s ease,
-    opacity 0.15s;
+    transform var(--dur-quick) ease,
+    opacity var(--dur-quick);
 }
 .history-repo-group.collapsed .repo-caret {
   transform: none;
@@ -270,7 +270,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   right: 4px;
   opacity: 0;
   transform: translateY(-50%);
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-quick);
 }
 .repo-new:has(+ .repo-more) {
   right: 26px;
@@ -433,7 +433,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   border-radius: var(--radius-l);
   transition:
     width 0.25s ease,
-    background 0.16s;
+    background var(--dur-quick);
 }
 .settings-open:hover {
   background: var(--paper-3);
@@ -498,7 +498,8 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   height: 430px;
   pointer-events: none;
   opacity: 0.045;
-  background: radial-gradient(ellipse at 50% 65%, transparent 43%, var(--ink) 44% 45%, transparent 46%),
+  background:
+    radial-gradient(ellipse at 50% 65%, transparent 43%, var(--ink) 44% 45%, transparent 46%),
     radial-gradient(ellipse at 32% 55%, transparent 39%, var(--ink) 40% 41%, transparent 42%);
   transform: rotate(-12deg);
 }
@@ -654,7 +655,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   box-shadow: var(--shadow);
   z-index: 20;
   transform-origin: bottom right;
-  animation: menuIn 0.16s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: menuIn var(--dur-rise) var(--ease-ink);
 }
 .composer-right {
   display: flex;
@@ -789,7 +790,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   display: grid;
   place-items: center;
   border-radius: var(--radius-m);
-  transition: background 0.16s;
+  transition: background var(--dur-quick);
 }
 .theme-toggle:hover {
   background: var(--paper-2);
@@ -801,7 +802,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .theme-toggle .brush .theme-wash {
   fill: color-mix(in srgb, var(--ink) 32%, transparent);
   transform-origin: 10px 10px;
-  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform 0.5s var(--ease-ink);
 }
 .theme-toggle[data-theme="dark"] .theme-wash {
   transform: rotate(180deg);
@@ -821,7 +822,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   width: 36px;
   height: 30px;
   border-radius: var(--radius-m);
-  transition: background 0.16s;
+  transition: background var(--dur-quick);
 }
 .quota:hover {
   background: var(--paper-2);
@@ -854,8 +855,8 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   visibility: hidden;
   transform: translateY(-3px);
   transition:
-    opacity 0.16s,
-    transform 0.16s,
+    opacity var(--dur-quick),
+    transform var(--dur-quick),
     visibility 0s 0.16s;
   pointer-events: none;
 }
@@ -865,8 +866,8 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   visibility: visible;
   transform: none;
   transition:
-    opacity 0.16s 0.12s,
-    transform 0.16s 0.12s;
+    opacity var(--dur-quick) 0.12s,
+    transform var(--dur-quick) 0.12s;
 }
 .quota-label {
   margin-right: 6px;
@@ -898,7 +899,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   display: grid;
   place-items: center;
   border-radius: var(--radius-m);
-  transition: background 0.16s;
+  transition: background var(--dur-quick);
 }
 .clepsydra.counted .clepsydra-btn {
   width: 34px;
@@ -918,7 +919,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .clepsydra-drop,
 .clepsydra-arrow {
   transition:
-    transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1),
+    transform 0.5s var(--ease-ink),
     opacity 0.5s;
 }
 .clepsydra-btn:hover .clepsydra-drop {
@@ -951,7 +952,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   color: var(--ink-3);
   font: var(--fs-note) var(--title);
   letter-spacing: 0.04em;
-  animation: rise 0.18s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: rise var(--dur-rise) var(--ease-ink);
 }
 .clepsydra-head {
   padding: 0 0 5px;

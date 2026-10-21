@@ -19,8 +19,8 @@
     monospace;
   letter-spacing: 0.06em;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--dur-quick),
+    color var(--dur-quick);
 }
 .reasoning summary:hover {
   background: var(--paper-2);
@@ -33,7 +33,7 @@
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
   transform: rotate(-45deg);
-  transition: transform 0.15s;
+  transition: transform var(--dur-quick);
 }
 .reasoning[open] summary:before {
   content: "";
@@ -76,8 +76,8 @@
     monospace;
   letter-spacing: 0.06em;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--dur-quick),
+    color var(--dur-quick);
 }
 .tool-stack > summary::-webkit-details-marker {
   display: none;
@@ -93,7 +93,7 @@
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
   transform: rotate(-45deg);
-  transition: transform 0.15s;
+  transition: transform var(--dur-quick);
 }
 .tool-stack[open] > summary:before {
   transform: rotate(45deg) translate(-1px, -1px);
@@ -142,7 +142,7 @@
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
   transform: rotate(-45deg);
-  transition: transform 0.15s;
+  transition: transform var(--dur-quick);
 }
 .tool-run[open] > summary .tool-title:before {
   transform: rotate(45deg) translate(-1px, -1px);
@@ -216,8 +216,8 @@
     Consolas,
     monospace;
   transition:
-    color 0.15s,
-    background 0.15s;
+    color var(--dur-quick),
+    background var(--dur-quick);
 }
 .note-now:hover {
   color: var(--accent);
@@ -240,8 +240,8 @@
   color: var(--ink-3);
   cursor: pointer;
   transition:
-    color 0.15s,
-    background 0.15s;
+    color var(--dur-quick),
+    background var(--dur-quick);
 }
 .tool-state.goon svg {
   width: 15px;
