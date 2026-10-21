@@ -110,3 +110,16 @@ test("游目 A → B → A：旧 A 的连接迟到也不能占用新 A 的会话
   assert.ok(f.calls.some(call => call.method === "Target.detachFromTarget" && call.params.sessionId === "session-1"));
   assert.ok(!f.calls.some(call => call.method === "Page.startScreencast" && call.session === "session-1"));
 });
+
+test("游目连接本身出错：不留已连着的空壳，同一页还能再接上", async () => {
+  let fail = true;
+  const f = stageFixture(async method => {
+    if (method === "Target.attachToTarget" && fail) throw Error("No target with given id");
+  });
+  await f.stageAttach();
+  assert.equal(f.stage.attached, "");
+  fail = false;
+  await f.stageAttach();
+  assert.equal(f.stage.session, "session-A");
+  assert.ok(f.calls.some(call => call.method === "Page.startScreencast" && call.session === "session-A"));
+});

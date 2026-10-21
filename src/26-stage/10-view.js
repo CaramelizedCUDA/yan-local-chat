@@ -18,6 +18,7 @@ async function stageAttach() {
   await detaching;
   if (!current()) return;
   stage.attached = target;
+  let streaming = false;
   try {
     const { sessionId } = await stageSend("Target.attachToTarget", { targetId: target, flatten: true });
     if (!current()) {
@@ -40,6 +41,7 @@ async function stageAttach() {
       if (stage.ws === ws) void stageSend("Page.stopScreencast", {}, sessionId).catch(() => {});
       return;
     }
+    streaming = true;
     // 静着的页不重绘就不出帧：先截一张垫底（后台的页截不出来，等不到就算了）
     const [shot, metrics] = await Promise.race([
       Promise.all([
@@ -50,7 +52,10 @@ async function stageAttach() {
     ]);
     if (current() && stage.session === sessionId && !stage.framed)
       void stageFrame(shot.data, metrics.cssVisualViewport.clientWidth, metrics.cssVisualViewport.clientHeight);
-  } catch {}
+  } catch {
+    // 没连成（目标刚关、Page.enable 被拒）：不留「已连着」的空壳，否则同一页再也接不上；垫底那张截不出来不算
+    if (!streaming && current()) void stageDetach();
+  }
   void stageFit();
 }
 // 屏幕外那扇窗调成看台的大小：窗比网页多出的边（标签栏、地址栏、边框）照现量补上。窗口的尺寸与网页的 CSS 像素同一单位。
