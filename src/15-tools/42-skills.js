@@ -42,9 +42,16 @@ function skillCatalog() {
   const skills = skillList().filter(skill => !skill.manual);
   return skills.length ? { list: skills.map(skill => `- ${skill.name}：${skill.description}`).join("\n") } : null;
 }
-// 行首一只锦囊（页头那只缩小，设计稿/104 甲）：设置里每份、摊开时名前、「＋」里的选件、点名后那件附件，一眼认出是技能
-function skillMark(className = "skill-mark") {
-  return brushIcon("skills", className);
+// 行首一只锦囊（页头那只缩小，设计稿/104 甲）：设置里每份、摊开时名前、「＋」里的选件、点名后那件附件，一眼认出是技能。
+// 只凭点名的（quiet）淡下去、系口不点朱——模型不自取、不拆；设置里点它即切换（设计稿/105），不另设开关、不写字
+function skillMark(className = "skill-mark", quiet = false) {
+  return brushIcon("skills", `${className}${quiet ? " quiet" : ""}`);
+}
+/** @param {Skill} skill */
+function skillToggleHtml(skill) {
+  return `<button type="button" class="skill-toggle" data-skill-manual="${escapeHtml(skill.dir)}" aria-pressed="${!!skill.manual}" title="${
+    skill.manual ? t("只凭点名 · 点此交模型自取") : t("模型自取 · 点此改为只凭点名")
+  }">${skillMark("skill-mark", skill.manual)}</button>`;
 }
 // 何时用的头一句：设置里那行、「＋」里的选件都只摆这一句，全文悬停可见
 /** @param {Skill} skill */
@@ -85,7 +92,7 @@ function renderSkillPicker(pop, anchor) {
       ? shown
           .map(
             skill =>
-              `<button type="button" class="skill-pick" data-pick="${escapeHtml(skill.dir)}" title="${escapeHtml(skill.description)}">${skillMark()}<span>${escapeHtml(skill.name)}</span><small>${escapeHtml(skillGist(skill))}</small></button>`
+              `<button type="button" class="skill-pick" data-pick="${escapeHtml(skill.dir)}" title="${escapeHtml(skill.description)}">${skillMark("skill-mark", skill.manual)}<span>${escapeHtml(skill.name)}</span><small>${escapeHtml(skillGist(skill))}</small></button>`
           )
           .join("")
       : `<div class="chip-pop-label">${t(`没有匹配的技能`)}</div>`;
@@ -116,7 +123,7 @@ async function skillDocumentText(doc) {
 }
 
 // 设置 → 技能：一栏簿录（设计稿/78 乙，只一处、不分段）——段头写技能目录，右端「＋」新建、「打开」；
-// 一份一行：名、说明的头一句（全文悬停可见）、带几件脚本与参考。看与改分开，同记忆页：点一行就地摊开看全文（再点收起），
+// 一份一行：锦囊（点它切只凭点名）、名、说明的头一句（全文悬停可见）、行尾一枚小纸跟附带几件（不分脚本、参考——按扩展名分是猜）。看与改分开，同记忆页：点一行就地摊开看全文（再点收起），
 // 底下「改」才换成输入框改名字、何时用、正文，焦点离开即存成那份 SKILL.md、回到看；新建的直接是改。行末悬停一枚「删」
 /** @type {{ dir: string, name: string, description: string, body: string, from: string }|null} 正摊开改着的一份（新建的 dir 为空） */
 let skillEditing = null;
@@ -145,22 +152,21 @@ function skillsSettingsHtml() {
 /** @param {Skill} skill */
 function skillRowHtml(skill) {
   const gist = skillGist(skill),
-    count = re => skill.files.filter(file => re.test(file.path)).length,
-    scripts = count(/\.(py|js|mjs|cjs|ts|sh|ps1|bat|cmd)$/i),
-    refs = count(/\.md$/i) - 1,
-    extra = [skill.manual && t("只凭点名"), scripts && t`脚本 ${scripts}`, refs > 0 && t`参考 ${refs}`].filter(Boolean).join(" · "),
+    bundled = skill.files.filter(file => file.path.toLowerCase() !== SKILL_FILE.toLowerCase()).length,
     dir = escapeHtml(skill.dir);
-  const row = `<button type="button" class="skill-row" data-skill-edit="${dir}" title="${escapeHtml(skill.description)}">${skillMark()}<span class="skill-name">${escapeHtml(skill.name)}</span><span class="skill-gist">${escapeHtml(gist)}</span>${extra ? `<span class="skill-extra">${extra}</span>` : ""}</button>`;
-  return `<div class="skill-item">${row}<span class="memory-ops"><button type="button" class="memory-del" data-skill-remove="${dir}" title="${t(`删去`)}">${brushIcon("strike")}</button></span></div>`;
+  const row = `<button type="button" class="skill-row" data-skill-edit="${dir}" title="${escapeHtml(skill.description)}"><span class="skill-name">${escapeHtml(skill.name)}</span><span class="skill-gist">${escapeHtml(gist)}</span>${
+    bundled ? `<span class="skill-count" title="${t`附带 ${bundled} 件`}">${fileFigure("")}${bundled}</span>` : ""
+  }</button>`;
+  return `<div class="skill-item">${skillToggleHtml(skill)}${row}<span class="memory-ops"><button type="button" class="memory-del" data-skill-remove="${dir}" title="${t(`删去`)}">${brushIcon("strike")}</button></span></div>`;
 }
 // 摊开着看的一份：与改时同样三段（名字、何时用、正文），只是字不是框，点不出光标；点字收起，正文后是「附带」一节，底下「改」「删去」。
-// 锦囊仍在行首那一列，摊开的竖痕从它底下垂下来（设计稿/104），名字、正文与上下几行的名字对齐
+// 锦囊仍在行首那一列、仍可点着切换，摊开的竖痕从它底下垂下来（设计稿/104），名字、正文与上下几行的名字对齐
 /** @param {Skill} skill @param {string} body */
 function skillViewHtml(skill, body) {
   const dir = escapeHtml(skill.dir);
   return (
-    `<div class="memory-item open skill-editor" data-skill-view="${dir}"><div class="skill-view" data-skill-collapse title="${t(`收起`)}">` +
-    `${skillMark()}<div class="skill-view-name">${escapeHtml(skill.name)}</div>` +
+    `<div class="memory-item open skill-editor" data-skill-view="${dir}">${skillToggleHtml(skill)}<div class="skill-view" data-skill-collapse title="${t(`收起`)}">` +
+    `<div class="skill-view-name">${escapeHtml(skill.name)}</div>` +
     `<div class="memory-body skill-edit-desc">${escapeHtml(skill.description)}</div>` +
     `<div class="memory-body">${escapeHtml(String(body).trim())}</div></div>` +
     skillFilesHtml(skill) +
@@ -313,6 +319,20 @@ function bindSkillSettings() {
     skillViewing = null;
     renderSettings();
   });
+  // 点锦囊：切只凭点名（改 SKILL.md 头上那一行），重取一回画上
+  for (const button of document.querySelectorAll("[data-skill-manual]"))
+    button.addEventListener("click", async event => {
+      event.stopPropagation();
+      const skill = skillList().find(item => item.dir === /** @type {HTMLElement} */ (button).dataset.skillManual);
+      if (!skill) return;
+      try {
+        await bridge("/api/skills/manual", { dir: skill.dir, manual: !skill.manual }, AbortSignal.timeout(8000));
+      } catch (error) {
+        return toast(tr(String(error.message || error)));
+      }
+      await refreshSkills();
+      renderSettings();
+    });
   // 附带：点夹开合，点一件进预览器，「余下 n 件」在资源管理器里打开那一夹
   const files = /** @type {HTMLElement|null} */ ($("[data-skill-files]"));
   files?.addEventListener("click", event => {

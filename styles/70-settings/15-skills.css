@@ -43,6 +43,29 @@
   width: 15px;
   height: 15px;
 }
+/* 只凭点名：锦囊淡下去、系口那粒朱也褪成墨 */
+.skill-mark.quiet {
+  opacity: 0.42;
+}
+.skill-mark.quiet .zhu {
+  fill: color-mix(in srgb, var(--ink) 45%, var(--paper));
+}
+/* 设置里的锦囊是一枚按钮：点它切只凭点名。宽 23px，锦囊落在左起 4px，名字仍在 29px 处与摊开那份对齐 */
+.skill-toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 26px;
+  border-radius: var(--radius-s);
+  transition: background var(--dur-quick);
+}
+.skill-toggle:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.skill-toggle:hover .skill-mark.quiet {
+  opacity: 0.7;
+}
 .skill-name {
   flex: none;
   min-width: 96px;
@@ -58,10 +81,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.skill-extra {
+/* 行尾：附带几件——一枚空白折角小纸跟件数（设计稿/105 乙），没有附件的不画 */
+.skill-count {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--ink-3);
   font-size: var(--fs-mark);
+}
+.skill-count .fi {
+  width: 9px;
+  height: 12px;
 }
 .skill-empty {
   margin: 14px 4px;
@@ -80,6 +111,7 @@
 .skill-item .skill-row {
   flex: 1;
   min-width: 0;
+  padding-left: 6px;
   border-top: 0;
 }
 .skill-item .memory-ops {
@@ -111,10 +143,15 @@
   left: 11px;
   border-left: 1.5px solid color-mix(in srgb, var(--ink) 22%, transparent);
 }
-.skill-editor .skill-mark {
+.skill-editor > .skill-mark {
   position: absolute;
   top: 15px;
   left: 4px;
+}
+.skill-editor > .skill-toggle {
+  position: absolute;
+  top: 10px;
+  left: 0;
 }
 .skill-edit-name {
   justify-self: start;

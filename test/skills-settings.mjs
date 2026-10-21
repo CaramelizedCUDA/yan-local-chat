@@ -134,12 +134,28 @@ check(
 check(
   "the pouch of the opened skill sits in the same column as the rows' pouches",
   await evalJs(`(() => {
-    const row = document.querySelector(".skill-row .skill-mark").getBoundingClientRect(), open = document.querySelector("[data-skill-view] .skill-mark").getBoundingClientRect();
+    const row = document.querySelector(".skill-item .skill-mark").getBoundingClientRect(), open = document.querySelector("[data-skill-view] .skill-mark").getBoundingClientRect();
     const name = document.querySelector(".skill-row .skill-name").getBoundingClientRect(), title = document.querySelector("[data-skill-view] .skill-view-name").getBoundingClientRect();
     return Math.abs(row.left - open.left) < 1 && Math.abs(name.left - title.left) < 3;
   })()`)
 );
+check(
+  "a row shows how many files it carries, without sorting them into kinds",
+  await evalJs(`${row("大包")}.querySelector(".skill-count")?.textContent === "21" && !document.querySelector(".skill-extra")`)
+);
 await shot("skills-files.png");
+// 点锦囊：切只凭点名，写进 SKILL.md 头上那一行，锦囊淡下；再点改回。摊开着也照样点得，不收起
+await evalJs(`document.querySelector('[data-skill-view] [data-skill-manual]').click(); true`);
+await waitFor(`!!document.querySelector("[data-skill-view] .skill-mark.quiet")`, 8000);
+check(
+  "clicking the pouch makes the skill only-when-picked and keeps it open",
+  /disable-model-invocation: true/.test(readFileSync(`${SKILLS}/研究/SKILL.md`, "utf8")) &&
+    (await evalJs(`document.querySelector("[data-skill-view] [data-skill-manual]").getAttribute("aria-pressed") === "true"`))
+);
+await shot("skills-manual.png");
+await evalJs(`document.querySelector('[data-skill-view] [data-skill-manual]').click(); true`);
+await waitFor(`!document.querySelector("[data-skill-view] .skill-mark.quiet")`, 8000);
+check("clicking it again hands it back to the model", !/disable-model-invocation/.test(readFileSync(`${SKILLS}/研究/SKILL.md`, "utf8")));
 await evalJs(`document.querySelector('[data-skill-fold="references"]').click(); true`);
 await waitFor(`document.querySelectorAll(".skill-file").length === 1`);
 check("clicking a folder folds it", await evalJs(`document.querySelector('[data-skill-fold="references"]').classList.contains("shut")`));

@@ -1,7 +1,7 @@
 // 言 · 桥接 · 技能：照 Claude Code 的写法认技能——一个目录里有 SKILL.md 即一份技能，头上 name / description 两项，其余文件随它走。
 // 只认存储根/技能一处：别处（~/.claude/skills、项目里、网上）的要用就拷进来——人拷或模型拷都行，不另认几处目录、不设开合。
 // 列：各技能的名字、说明、目录与目录里的文件；读：只读列得出的技能目录之内的文件，不经链接出界；取原件（预览器看附件用）；
-// 开：以本机文件管理器打开技能目录，或以本机程序打开技能里的一件、一夹；存、删。页面怎么用见 src/15-tools/42-skills.js
+// 开：以本机文件管理器打开技能目录，或以本机程序打开技能里的一件、一夹；存、删；切只凭点名。页面怎么用见 src/15-tools/42-skills.js
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
@@ -243,6 +243,22 @@ module.exports = function createSkills({ skillsHome, bundled = "" }) {
     await fs.promises.writeFile(path.join(dir, SKILL_FILE), file);
     return { dir };
   }, failed);
+  // 只凭点名与否：设置里点那一份的锦囊，就改 SKILL.md 头上 disable-model-invocation 那一行，别处一字不动
+  const handleManual = jsonRoute(async body => {
+    const file = path.join(await ownSkillDir(body.dir), SKILL_FILE),
+      text = await fs.promises.readFile(file, "utf8"),
+      eol = text.includes("\r\n") ? "\r\n" : "\n",
+      head = /^(﻿?---\r?\n)([\s\S]*?)(\r?\n---)/.exec(text),
+      flag = "disable-model-invocation: true";
+    let next;
+    if (head) {
+      const lines = head[2].split(/\r?\n/).filter(line => !/^disable-model-invocation:/.test(line));
+      if (body.manual) lines.push(flag);
+      next = head[1] + lines.join(eol) + head[3] + text.slice(head[0].length);
+    } else next = body.manual ? `---${eol}${flag}${eol}---${eol}${eol}${text}` : text;
+    if (next !== text) await fs.promises.writeFile(file, next);
+    return { manual: !!body.manual };
+  }, failed);
   // 删一份：整个目录连同附带的脚本与参考（页面先问过人）
   const handleRemove = jsonRoute(async body => {
     const dir = await ownSkillDir(body.dir);
@@ -258,6 +274,7 @@ module.exports = function createSkills({ skillsHome, bundled = "" }) {
       "POST /api/skills/open": handleOpen,
       "POST /api/skills/open-item": handleOpenItem,
       "POST /api/skills/save": handleSave,
+      "POST /api/skills/manual": handleManual,
       "POST /api/skills/remove": handleRemove
     }
   };

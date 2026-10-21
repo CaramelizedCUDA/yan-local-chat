@@ -133,6 +133,30 @@ test("写技能：新建、改名带着目录走、头上别的几项留着；�
   assert.equal(fs.existsSync(path.join(home, "书信")), false);
 });
 
+test("只凭点名：点锦囊只改头上 disable-model-invocation 那一行，别处一字不动；没有头的补一段", async () => {
+  const parent = path.resolve("test/.tmp");
+  fs.mkdirSync(parent, { recursive: true });
+  const home = path.join(fs.mkdtempSync(path.join(parent, "skills-manual-")), "技能"),
+    file = path.join(home, "周报", "SKILL.md"),
+    bare = path.join(home, "无头", "SKILL.md"),
+    original = "---\r\nname: 周报\r\ndescription: 写周报时用\r\nlicense: MIT\r\n---\r\n照写。\r\n";
+  put(file, original);
+  put(bare, "照做。\n");
+  const { routes } = createSkills({ skillsHome: () => home }),
+    manual = routes["POST /api/skills/manual"],
+    list = async () =>
+      Object.fromEntries((await call(routes["POST /api/skills/list"], {})).data.skills.map(skill => [skill.name, skill.manual]));
+  assert.equal((await call(manual, { dir: path.dirname(file), manual: true })).status, 200);
+  assert.equal(fs.readFileSync(file, "utf8"), original.replace("license: MIT\r\n", "license: MIT\r\ndisable-model-invocation: true\r\n"));
+  await call(manual, { dir: path.dirname(file), manual: true });
+  assert.equal(fs.readFileSync(file, "utf8").match(/disable-model-invocation/g).length, 1, "再点一回不叠");
+  await call(manual, { dir: path.dirname(bare), manual: true });
+  assert.deepEqual(await list(), { 周报: true, 无头: true });
+  await call(manual, { dir: path.dirname(file), manual: false });
+  assert.equal(fs.readFileSync(file, "utf8"), original);
+  assert.equal((await call(manual, { dir: home, manual: true })).status, 400, "技能目录本身不是一份");
+});
+
 test("随言带来的技能：头一回列技能时拷进去，人删了不拷回、同名的已在不动，下一版新添的照拷", async () => {
   const parent = path.resolve("test/.tmp");
   fs.mkdirSync(parent, { recursive: true });
