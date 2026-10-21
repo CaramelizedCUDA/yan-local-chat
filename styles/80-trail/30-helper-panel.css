@@ -405,19 +405,3 @@
 .helper-run[data-status="interrupted"] .message-actions {
   opacity: 1;
 }
-/* 顶栏的「叫停」：只在这名帮手做着时露出，字同「收起行迹」，指上去转朱 */
-.helper-stop {
-  flex: none;
-  padding: 3px 7px;
-  border-radius: var(--radius-m);
-  color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.1em;
-  transition:
-    color 0.16s,
-    background-color 0.16s;
-}
-.helper-stop:hover {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}

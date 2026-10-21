@@ -294,8 +294,6 @@ function renderHelperPanel(fresh = false) {
   if (title && title.textContent !== (last.title || t("领命中"))) title.textContent = last.title || t("领命中");
   // 耗墨不在题下合计：每趟交了差，那一答末尾自己写（同主答）
   rollText($("#helperPanelSub"), helperRunsMeta(runs));
-  // 做着的才叫得停
-  $("#helperStop").classList.toggle("hidden", !helperBox(last));
   // ‹ n/m ›：只有一名帮手时不画
   const nav = $("#helperNav"),
     navKey = `${at + 1}/${all.length}`;
@@ -333,17 +331,6 @@ function renderHelperPanel(fresh = false) {
   });
   if (follow) stage.scrollTop = stage.scrollHeight;
 }
-/** 这一趟若正做着，它的收件口与中止器 @param {Step} [step] */
-function helperBox(step) {
-  return (crews.get(currentId) || []).find(box => box.step === step) || null;
-}
-// 人在面板顶上叫停：同主模型经 helper 叫停——只停这一名，已做的照未完成回报，借主模型的手接着办
-function stopOpenHelper() {
-  const box = helperBox(openHelperRuns().at(-1));
-  if (!box) return;
-  box.byUser = true;
-  box.controller.abort();
-}
 // 回到当前对话行迹里的那一步（行迹折着就摊开）；帮手手上的一步不在正文行迹里，就回到派它的那枚签
 function revealStep(id) {
   const cardOf = stepId => document.querySelector(`#messages .tool-step[data-step-id="${CSS.escape(stepId)}"]`),
@@ -375,7 +362,6 @@ function bindHelperEvents() {
     }
   });
   $("#helperFoldHead").addEventListener("click", event => toggleSubFold(event.currentTarget.dataset.run || "", true));
-  $("#helperStop").addEventListener("click", stopOpenHelper);
   $("#helperScroll").addEventListener("scroll", syncHelperFoldHead, { passive: true });
   // 工作条：左边的改动点开浮出清单，右边的帮手点开差遣面板
   $("#helperBar").addEventListener("click", event => {

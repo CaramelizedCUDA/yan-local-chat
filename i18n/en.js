@@ -299,8 +299,6 @@ var YAN_EN = {
   "第 {0} 趟 · {1}": "Run {0} · {1}",
   "帮手 · {0}": "Subagent · {0}",
   复制回报: "Copy report",
-  "只停这一名帮手，已做的回报给主模型":"Stop only this subagent; what it has done is reported to the lead agent",
-  用户叫停: "Stopped by the user",
   主模型交的命: "Task from the lead agent",
   "不到 1 分钟": "Under 1 min",
   "候 · {0} 条": "Background · {0}",
