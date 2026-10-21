@@ -187,7 +187,33 @@ check(
   await evalJs(`document.querySelector("[data-skill-reveal]")?.textContent === "余下 8 件 · 打开"`)
 );
 await shot("skills-files-many.png");
-for (const name of ["研究", "大包"]) rmSync(`${SKILLS}/${name}`, { recursive: true, force: true });
+// 改一份长正文：框要随字长高、末尾不被吞（只在打开那刻量一回高，此后宽度或字形一变，多折出的行就藏进 overflow: hidden）
+await evalJs(`document.querySelector("[data-skill-collapse]").click(); true`);
+await waitFor(`!document.querySelector("[data-skill-view]")`);
+// 正文借 skill-creator 那份：有代码块、长短行混排，合成的整齐长句复现不出被吞
+bundle("长文", {});
+writeFileSync(
+  `${SKILLS}/长文/SKILL.md`,
+  readFileSync("skills/skill-creator/SKILL.md", "utf8").replace(/^---[\s\S]*?\n---/, "---\nname: 长文\ndescription: 长正文\n---")
+);
+await evalJs(
+  `document.querySelector('.tab-btn[data-tab="general"]').click(); document.querySelector('.tab-btn[data-tab="skills"]').click(); true`
+);
+await waitFor(`!!${row("长文")}`, 8000);
+await evalJs(`${row("长文")}.click(); true`);
+await waitFor(`${view("长文")}`, 8000);
+await evalJs(`document.querySelector("[data-skill-modify]").click(); true`);
+await waitFor(`!!document.querySelector('[data-skill-field="body"]')`);
+await sleep(300);
+check(
+  "editing a long body shows all of it, the tail not clipped",
+  await evalJs(
+    `[...document.querySelectorAll("[data-skill-editor] textarea")].every(a => a.scrollHeight <= a.clientHeight + 1) && document.querySelector('[data-skill-field="body"]').value.trim().endsWith("里挑它，再写需求。")`
+  )
+);
+await evalJs(`document.querySelector("[data-skill-done]").click(); true`);
+await waitFor(`!document.querySelector("[data-skill-editor]")`, 8000);
+for (const name of ["研究", "大包", "长文"]) rmSync(`${SKILLS}/${name}`, { recursive: true, force: true });
 
 await evalJs(`document.querySelector("#closeSettings")?.click(); true`);
 

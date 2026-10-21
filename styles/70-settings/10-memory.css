@@ -145,6 +145,7 @@ input.memory-cat-new {
 }
 .memory-text {
   display: block;
+  field-sizing: content;
   width: 100%;
   margin: 0;
   padding: 0;
@@ -262,7 +263,7 @@ input.memory-cat-new {
 .history-empty {
   padding: 10px;
   color: var(--ink-3);
-  font: var(--fs-small)/1.7 var(--title);
+  font: var(--fs-small) / 1.7 var(--title);
 }
 .context-divider {
   display: flex;

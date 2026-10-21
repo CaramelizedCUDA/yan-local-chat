@@ -369,16 +369,11 @@ function bindSkillSettings() {
   });
   const editor = $("[data-skill-editor]");
   if (editor) {
-    const grow = area => {
-      area.style.height = "auto";
-      area.style.height = `${area.scrollHeight}px`;
-    };
     for (const field of editor.querySelectorAll("[data-skill-field]")) {
-      if (field.tagName === "TEXTAREA") grow(field);
+      if (field instanceof HTMLTextAreaElement) fitTextarea(field);
       field.addEventListener("input", () => {
         if (!skillEditing) return;
         skillEditing[/** @type {HTMLElement} */ (field).dataset.skillField] = /** @type {HTMLInputElement} */ (field).value;
-        if (field.tagName === "TEXTAREA") grow(field);
       });
       field.addEventListener("keydown", e => {
         if (/** @type {KeyboardEvent} */ (e).key !== "Escape") return;

@@ -102,6 +102,23 @@ function grow(el) {
   el.style.height = "auto";
   el.style.height = `${Math.min(190, Math.max(44, el.scrollHeight))}px`;
 }
+// 设置里就地改的文本框（记忆、技能）随字长高：交给 CSS 的 field-sizing: content（见 10-memory.css 的 .memory-text），
+// 宽度变了、字体晚到换了字形都由浏览器重排。只在打开那一刻量一回的话，此后多折出的行就被 overflow: hidden 吞掉——
+// 下面只是浏览器不认 field-sizing 时的兜底：随输入、随宽度变化重量
+/** @param {HTMLTextAreaElement} el */
+function fitTextarea(el) {
+  if (CSS.supports("field-sizing", "content")) return;
+  const fit = () => {
+    el.dataset.fitWidth = String(el.clientWidth);
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  fit();
+  if (el.dataset.fit) return;
+  el.dataset.fit = "1";
+  el.addEventListener("input", fit);
+  new ResizeObserver(() => el.dataset.fitWidth !== String(el.clientWidth) && fit()).observe(el);
+}
 // 编辑消息的文本框：随内容长高（浏览器不认 field-sizing 时的兜底），到七成屏高才内滚
 function growEditor(el) {
   if (!el) return;

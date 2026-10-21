@@ -161,6 +161,10 @@
   color: var(--ink-2);
   font-size: var(--fs-small);
 }
+/* 正文框随字长高（field-sizing），空着时也留三行的地方 */
+.skill-edit-body {
+  min-height: 5.1em;
+}
 .skill-edit-desc::placeholder,
 .skill-edit-body::placeholder,
 .skill-edit-name::placeholder {

@@ -126,7 +126,10 @@ await waitFor(`[...document.querySelectorAll(".attach-picker [data-pick] span")]
 await evalJs(
   `[...document.querySelectorAll(".attach-picker [data-pick]")].find(b => b.querySelector("span").textContent === "写信").click(); true`
 );
-await waitFor(`[...document.querySelectorAll(".attachment-list")].some(l => l.offsetParent && l.textContent.includes("写信.md"))`, 8000);
+await waitFor(
+  `[...document.querySelectorAll(".attachment-list")].some(l => l.offsetParent && !!l.querySelector(".skill-fi") && l.textContent.includes("写信"))`,
+  8000
+);
 await evalJs(
   `document.querySelector("#chatInput").value = "SKILLCMD 给房东"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
@@ -136,8 +139,10 @@ await waitFor(
 const cmdText = await evalJs(`[...document.querySelectorAll(".message.assistant .assistant-block > .markdown")].at(-1).textContent`);
 check("a skill picked from + goes with the question as its instructions", /CMD\|body:yes\|slash:no/.test(cmdText), cmdText);
 check(
-  "the question shows the skill as an attachment",
-  await evalJs(`[...document.querySelectorAll(".message.user")].at(-1).textContent.includes("写信.md")`)
+  "the question shows the skill as an attachment, with its pouch and name",
+  await evalJs(
+    `(m => !!m.querySelector(".skill-fi") && m.textContent.includes("写信"))([...document.querySelectorAll(".message.user")].at(-1))`
+  )
 );
 // 存成 Markdown 入卷宗
 await evalJs(
