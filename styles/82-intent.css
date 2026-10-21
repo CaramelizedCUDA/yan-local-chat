@@ -108,6 +108,10 @@
   color: var(--qing);
 }
 /* 舞台是横排 flex，卡默认被拉成舞台高，长内容溢出卡外、底边距落空，滚到底贴着窗沿：按内容取高 */
+/* 摊开、收起一张笺时内容高过又矮过一屏：滚动条的位子常留（两侧各留，仍居中），整张卡片不在动画半途左右一跳 */
+.file-viewer-stage:has(> .intent-card) {
+  scrollbar-gutter: stable both-edges;
+}
 .intent-card {
   align-self: flex-start;
   width: min(860px, 100%);
@@ -480,6 +484,8 @@
 .intent-roll {
   display: grid;
   grid-template-columns: 14px fit-content(220px) auto minmax(0, 1fr);
+  /* 收起笺时高度从旧高动下来：多出的高不分给各行，否则行被撑开、居中的记号跟着滑 */
+  align-content: start;
   border-top: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
 }
 .intent-row,
