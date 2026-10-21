@@ -186,54 +186,48 @@
   border-left: 1px solid var(--line);
   background: var(--grain), var(--paper);
 }
-/* 所领之命：主模型交给帮手的原话。默认收着只露一行，点开看全——
-   不标出来，它就成了一段没头没尾、看不懂的背景文字 */
-.helper-task {
-  margin: -4px 0 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  font-size: 12px;
+/* 一名帮手一页，每趟一来一回（设计稿/99 乙）：主模型交的命在右侧淡底里，与正文里人说的话同形，题「主 · 时刻」；
+   帮手的行迹与回报在下面作一答。落选的：甲每趟头上一行「所领之命 / 续派」收着命（几趟摞起来分不清谁说的）、
+   丙只摊最近一趟（续派正是接着上一趟的回报做，藏起来又看不清） */
+.helper-run + .helper-run {
+  margin-top: 28px;
 }
-.helper-task.hidden {
-  display: none;
-}
-.helper-task > summary {
+.helper-ask {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  margin: 0 0 12px;
+}
+.helper-ask.hidden {
+  display: none;
+}
+.helper-ask-who {
+  margin: 0 4px 4px 0;
   color: var(--ink-3);
-  cursor: pointer;
-  list-style: none;
-}
-.helper-task > summary::-webkit-details-marker {
-  display: none;
-}
-.helper-task-label {
-  flex: none;
-  color: var(--gold);
   font: 10.5px var(--title);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
 }
-.helper-task-brief {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.helper-task[open] .helper-task-brief {
-  display: none;
-}
-.helper-task-text {
-  margin-top: 7px;
-  max-height: 34vh;
-  overflow-y: auto;
+/* 纸上是 --paper，正文那一档 --paper-2 的底在这里几乎看不出，深一档 */
+.helper-ask-text {
+  max-width: 86%;
+  padding: 9px 13px;
+  background: var(--paper-3);
   color: var(--ink-2);
-  font-family: var(--title);
-  line-height: 1.8;
-  white-space: pre-wrap;
+  font-size: 12.5px;
+  line-height: 1.75;
 }
-.helper-panel-body > .sub-trail {
+/* 命长了只露两行，点开看全 */
+.helper-ask-text:not(.open) {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.helper-ask-text.more,
+.helper-ask-text.open {
+  cursor: pointer;
+}
+.helper-run > .sub-trail {
   margin: 0;
   padding-left: 0;
   border-left: 0;

@@ -30,6 +30,7 @@
  * @property {string} id
  * @property {string} [helper] 同一名帮手的几趟（差遣与续派）认同一个，取头一趟的 id
  * @property {string} task
+ * @property {string} [at] 领命的时刻；差遣面板里这一趟的命上题「主 · 时刻」，早先存下的没有，取派它的那一答的
  * @property {string} content
  * @property {string} reasoning
  * @property {Step[]} steps

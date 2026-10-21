@@ -143,7 +143,7 @@ function tellHelper(step, args, ctx) {
     return { ok: true, content: prompt("delegate.noted", { title: box.title }), display: "已递" };
   }
   if (!past) return gone();
-  // 已收工：续派。这一步自己成一趟，在当前的行迹里另起一枚签，点开看的是这一趟
+  // 已收工：续派。这一步自己成一趟，在当前的行迹里另起一枚签，点开是这名帮手那一页、停在这一趟
   step.mode = "resume";
   launchHelper(step, { title: past.title, task: text }, ctx, past);
   return { ok: true, background: true, content: prompt("delegate.resumed", { title: past.title }), display: "后台进行中" };
@@ -376,6 +376,7 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
       id,
       helper: past ? helperKey(past) : id,
       task,
+      at: new Date().toISOString(),
       content: "",
       reasoning: "",
       steps: [],

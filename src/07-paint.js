@@ -571,8 +571,8 @@ function paintTrailGroup(el, g, source, o) {
 }
 
 // ---------- 差遣面板里帮手的那一条：题头（可收起）、时间线、回报 ----------
-/** @param {Element} trail @param {Step} step @param {boolean} animate */
-function paintHelperTrail(trail, step, animate) {
+/** @param {Element} trail @param {Step} step @param {boolean} animate @param {Map<string, any>} seen 这一趟步骤的就地更新台账 */
+function paintHelperTrail(trail, step, animate, seen) {
   const { sub, live, report, status } = delegateSubState(step);
   if (live) trail.dataset.live = "true";
   else delete trail.dataset.live;
@@ -597,7 +597,7 @@ function paintHelperTrail(trail, step, animate) {
           helper: true,
           steps: true,
           animate: animate && !created,
-          seen: helperSeen
+          seen
         });
     }
   });
