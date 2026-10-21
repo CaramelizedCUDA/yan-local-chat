@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原型</title>
+<!-- 原型起手：自足一页，不引外部资源。只备三样——主题变量（与言正文里的交互内容同名，亮暗两套）、亮暗切换、状态切换；
+     版式、组件、内容都按这回的设计写，下面 main 里的只是占位。拷到草稿目录再改，用游目打开看 -->
+<style>
+  :root {
+    --paper: #fbfaf6; --paper-2: #f3f0e8; --paper-3: #e9e4d8;
+    --ink: #292724; --ink-2: #625e57; --ink-3: #8a847a;
+    --line: #ded8ca; --accent: #9b5540;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --paper: #201f1c; --paper-2: #282622; --paper-3: #32302b;
+    --ink: #e8e3d8; --ink-2: #b9b2a5; --ink-3: #8c8579;
+    --line: #3d3a34; --accent: #c97f66;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.7 system-ui, "Microsoft YaHei UI", sans-serif; }
+  button { font: inherit; color: inherit; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  /* 原型自己的工具条：切状态、切亮暗；截图时可加 ?bare 去掉它 */
+  .proto-bar { position: sticky; top: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 16px; background: var(--paper-2); border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+  .proto-bar .spacer { flex: 1; }
+  .bare .proto-bar { display: none; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px; }
+  /* 一种状态一块：data-show 写它在哪些状态下出现（空格隔开），不写的常显 */
+  [data-show] { display: none; }
+</style>
+</head>
+<body>
+<div class="proto-bar" role="toolbar" aria-label="原型">
+  <span>状态</span><span id="states"></span>
+  <span class="spacer"></span>
+  <button type="button" id="theme">亮 / 暗</button>
+</div>
+<main>
+  <h1>标题</h1>
+  <section data-show="正常">正常时的内容</section>
+  <section data-show="空">还没有内容时</section>
+  <section data-show="加载">加载中</section>
+  <section data-show="失败">出错了，以及怎么恢复</section>
+</main>
+<script>
+  // 状态：从页里的 data-show 收集，不必另列；地址里 #失败 可直接打开某一态，便于截图
+  const root = document.documentElement,
+    params = new URLSearchParams(location.search),
+    states = [...new Set([...document.querySelectorAll("[data-show]")].flatMap(el => el.dataset.show.split(/\s+/)))],
+    bar = document.getElementById("states");
+  function show(state) {
+    for (const el of document.querySelectorAll("[data-show]")) el.style.display = el.dataset.show.split(/\s+/).includes(state) ? "" : "none";
+    for (const button of bar.children) button.setAttribute("aria-pressed", String(button.textContent === state));
+    history.replaceState(null, "", `${location.search}#${encodeURIComponent(state)}`);
+  }
+  for (const state of states) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = state;
+    button.onclick = () => show(state);
+    bar.append(button);
+  }
+  root.dataset.theme = params.get("theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.getElementById("theme").onclick = () => (root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark");
+  if (params.has("bare")) root.classList.add("bare");
+  const asked = decodeURIComponent(location.hash.slice(1));
+  if (states.length) show(states.includes(asked) ? asked : states[0]);
+</script>
+</body>
+</html>
