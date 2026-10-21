@@ -363,12 +363,13 @@ button.source-local {
   border-radius: var(--radius-s);
   box-shadow: 0 16px 55px rgba(35, 30, 22, 0.18);
 }
+/* 原图：比窗小的照旧居中，比窗大的从左上角起滚——auto 边距放不下即归零（网格居中会把溢出的一截推到滚不到的左上） */
 .image-viewer-stage.actual {
-  display: block;
-  text-align: center;
+  display: flex;
   cursor: zoom-out;
 }
 .image-viewer-stage.actual .image-viewer-image {
+  flex: none;
   max-width: none;
   max-height: none;
   margin: auto;
