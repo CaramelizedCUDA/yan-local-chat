@@ -224,8 +224,9 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
     const remaining = MIN_TOOL_STATUS_MS - (performance.now() - started);
     if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
     // 在后台接着做的（差遣）：这一步仍是进行中，做完由它自己收尾；先记一句「后台进行中」，下一问的行迹摘要里模型才知道它还没回来
+    // 帮手快，上面凑够显示时长的那一会儿里就已交差：它收尾时记的结果不能被这句盖掉
     if (!outcome.background) step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
-    step.result = outcome.display;
+    if (!outcome.background || step.status === "running") step.result = outcome.display;
     outcomes.set(step.id, clipForModel(outcome.content, 60000, { hint: t("要看后面的请缩小范围分次取") }));
     if (outcome.images) images.push(...outcome.images);
     refreshSteps(assistant);
