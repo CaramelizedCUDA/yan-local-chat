@@ -42,8 +42,46 @@ function parseSkill(text) {
   return { meta, body: text.slice(match[0].length) };
 }
 
-module.exports = function createSkills({ skillsHome }) {
+// 随言带来的几份（仓库 skills/）拷进技能目录后记在这里：人删了不再拷回，下一版新添的照拷
+const BUNDLED_LEDGER = ".言自带";
+
+// 递归拷一个目录：fs.cp 在 Windows 上拷到中文路径会把名字拷乱
+async function copyDir(from, to) {
+  await fs.promises.mkdir(to, { recursive: true });
+  for (const entry of await fs.promises.readdir(from, { withFileTypes: true })) {
+    const src = path.join(from, entry.name),
+      dest = path.join(to, entry.name);
+    if (entry.isDirectory()) await copyDir(src, dest);
+    else if (entry.isFile()) await fs.promises.copyFile(src, dest);
+  }
+}
+
+module.exports = function createSkills({ skillsHome, bundled = "" }) {
   const failed = error => errorText(error, 300);
+  // 随言带来的：每个技能目录头一回列技能时拷一次。没给过的才拷，同名的已在（人自己的、改过的）不动，只记作给过
+  const seeding = new Map();
+  function seedBundled(home) {
+    if (!bundled) return;
+    const pending = seeding.get(home) || seed(home).catch(() => {});
+    seeding.set(home, pending);
+    return pending;
+  }
+  async function seed(home) {
+    const ledger = path.join(home, BUNDLED_LEDGER),
+      given = new Set((await fs.promises.readFile(ledger, "utf8").catch(() => "")).split(/\r?\n/).filter(Boolean)),
+      fresh = (await fs.promises.readdir(bundled, { withFileTypes: true }).catch(() => [])).filter(
+        entry => entry.isDirectory() && !given.has(entry.name)
+      );
+    if (!fresh.length) return;
+    const have = new Set((await listSkills()).map(skill => skill.name.toLowerCase()));
+    for (const entry of fresh) {
+      const to = path.join(home, entry.name);
+      if (!have.has(entry.name.toLowerCase()) && !(await fs.promises.stat(to).catch(() => null)))
+        await copyDir(path.join(bundled, entry.name), to);
+      given.add(entry.name);
+    }
+    await fs.promises.writeFile(ledger, `${[...given].join("\n")}\n`);
+  }
   // 链进来的技能目录也认（常见把仓库里的技能链进来），只是不再往下钻点开头的与 node_modules 之类
   async function findSkillDirs(dir, depth, out) {
     const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -104,6 +142,7 @@ module.exports = function createSkills({ skillsHome }) {
     const home = skillsHome();
     // 先建好：设置里指给人看、提示里告诉模型的目录，点开、拷进去都在
     await fs.promises.mkdir(home, { recursive: true }).catch(() => {});
+    await seedBundled(home);
     return { home, skills: await listSkills() };
   }, failed);
   const handleOpen = jsonRoute(async () => {

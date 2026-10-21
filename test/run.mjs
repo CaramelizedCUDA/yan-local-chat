@@ -183,6 +183,8 @@ try {
         YAN_CHATGPT_AUTH: "http://127.0.0.1:8798/chatgpt-auth",
         // 游目「用系统浏览器打开」：测试里不真去开系统浏览器
         YAN_NO_EXTERNAL: "1",
+        // 随言带来的技能不拷进测试的技能目录：用例各自摆自己的
+        YAN_BUILTIN_SKILLS: "",
         YAN_CHATGPT_API: "http://127.0.0.1:8798/chatgpt/v1"
       }
     });

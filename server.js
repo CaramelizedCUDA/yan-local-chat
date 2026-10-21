@@ -152,8 +152,12 @@ const WORK = require("./server/work/index.js")({
   toolEnv: ENV.apply,
   playable: VIDEO.playable
 });
-// 技能：照 Claude Code 的 SKILL.md 写法，只认存储根/技能一处（见 server/skills.js）
-const SKILLS = require("./server/skills.js")({ skillsHome: () => STORE.paths().skills });
+// 技能：照 Claude Code 的 SKILL.md 写法，只认存储根/技能一处（见 server/skills.js）；随言带来的几份在 skills/，头一回列技能时拷进去
+// （YAN_BUILTIN_SKILLS 给空串即不带，测试桥接用）
+const SKILLS = require("./server/skills.js")({
+  skillsHome: () => STORE.paths().skills,
+  bundled: process.env.YAN_BUILTIN_SKILLS ?? path.join(ROOT, "skills")
+});
 const CHATS = require("./server/chats.js")({ chatsHome: () => STORE.paths().chats });
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable });
 const STAGE_LIB = require("./server/stage.js");

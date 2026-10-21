@@ -132,3 +132,48 @@ test("写技能：新建、改名带着目录走、头上别的几项留着；�
   assert.equal((await call(remove, { dir: renamed.data.dir })).status, 200);
   assert.equal(fs.existsSync(path.join(home, "书信")), false);
 });
+
+test("随言带来的技能：头一回列技能时拷进去，人删了不拷回、同名的已在不动，下一版新添的照拷", async () => {
+  const parent = path.resolve("test/.tmp");
+  fs.mkdirSync(parent, { recursive: true });
+  const base = fs.mkdtempSync(path.join(parent, "skills-bundled-")),
+    bundled = path.join(base, "skills"),
+    home = path.join(base, "存储根", "技能");
+  put(path.join(bundled, "甲/SKILL.md"), "---\nname: 甲\ndescription: 自带的甲\n---\n甲正文");
+  put(path.join(bundled, "甲/参考/表.md"), "表");
+  put(path.join(bundled, "乙/SKILL.md"), "---\nname: 乙\ndescription: 自带的乙\n---\n");
+  put(path.join(home, "乙/SKILL.md"), "---\nname: 乙\ndescription: 人改过的乙\n---\n");
+  const list = async () =>
+    Object.fromEntries(
+      (await call(createSkills({ skillsHome: () => home, bundled }).routes["POST /api/skills/list"], {})).data.skills.map(skill => [
+        skill.name,
+        skill
+      ])
+    );
+
+  let byName = await list();
+  assert.deepEqual(Object.keys(byName).sort(), ["乙", "甲"]);
+  assert.equal(fs.readFileSync(path.join(home, "甲/参考/表.md"), "utf8"), "表");
+  assert.equal(byName["乙"].description, "人改过的乙", "同名的已在不覆盖");
+
+  fs.rmSync(path.join(home, "甲"), { recursive: true });
+  put(path.join(bundled, "丙/SKILL.md"), "---\nname: 丙\n---\n");
+  byName = await list();
+  assert.deepEqual(Object.keys(byName).sort(), ["丙", "乙"], "删了的不拷回，新添的照拷");
+});
+
+test("仓库里随言带来的技能：名字同目录名，何时用不过长，caelison 只凭点名", async () => {
+  const bundled = path.resolve("skills"),
+    { parseSkill } = createSkills({ skillsHome: () => "" });
+  const names = fs.readdirSync(bundled).sort();
+  assert.deepEqual(names, ["caelison", "code-review", "deep-research", "design", "learn", "skill-creator"]);
+  for (const name of names) {
+    const text = fs.readFileSync(path.join(bundled, name, "SKILL.md"), "utf8"),
+      { meta, body } = parseSkill(text);
+    assert.equal(meta.name, name);
+    assert.ok(meta.description && meta.description.length <= 80, `${name} 的何时用 ${meta.description?.length} 字`);
+    assert.ok(body.trim());
+    assert.doesNotMatch(text, /[A-Z]:\|聊天记录/, `${name} 里不带本机路径`);
+  }
+  assert.equal(parseSkill(fs.readFileSync(path.join(bundled, "caelison/SKILL.md"), "utf8")).meta["disable-model-invocation"], "true");
+});
