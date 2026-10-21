@@ -80,13 +80,13 @@ test("头上认 disable-model-invocation、user-invocable；附属多到截断�
   const home = path.join(fs.mkdtempSync(path.join(parent, "skills-")), "技能");
   put(path.join(home, "周报/SKILL.md"), '---\nname: 周报\ndisable-model-invocation: true\nargument-hint: "[哪一周]"\n---\n照写');
   put(path.join(home, "暗记/SKILL.md"), "---\nname: 暗记\nuser-invocable: false\n---\n");
-  for (let i = 0; i < 210; i++) put(path.join(home, `字体/assets/f${i}.ttf`), "");
+  for (let i = 0; i < 1010; i++) put(path.join(home, `字体/assets/f${i}.ttf`), "");
   put(path.join(home, "字体/SKILL.md"), "---\nname: 字体\n---\n");
   const { routes } = createSkills({ skillsHome: () => home });
   const byName = Object.fromEntries((await call(routes["POST /api/skills/list"], {})).data.skills.map(skill => [skill.name, skill]));
   assert.deepEqual([byName["周报"].manual, byName["周报"].hidden], [true, false]);
   assert.deepEqual([byName["暗记"].manual, byName["暗记"].hidden], [false, true]);
-  assert.equal(byName["字体"].files.length, 200);
+  assert.equal(byName["字体"].files.length, 1000);
   assert.equal(byName["字体"].files[0].path, "SKILL.md");
 });
 

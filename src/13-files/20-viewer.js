@@ -3,7 +3,8 @@
 // ---------- 卷宗文件的悬浮预览：图看画、文看字、表看格、网页进沙箱、PDF 交给浏览器、音视频就地放；都不必先下载 ----------
 // 预览器看两种来源：磁盘卷宗（走桥接取回）与对话里的附件（就在这个浏览器里）。同一种文件，不论从哪儿来，看法一样——
 // 自己上传的 CSV、PDF、Markdown 点开就该是看，而不是把刚发出去的东西再下载一遍。
-// viewerSource 记着当前看的是哪一件：{ path } 是卷宗，{ attachmentId } 是附件；viewerPath 仍留给卷宗那一路的下载
+// viewerSource 记着当前看的是哪一件：{ path } 是卷宗，{ attachmentId } 是附件，{ skillDir, skillPath } 是技能带的一件（设置 → 技能里点开）；
+// viewerPath 仍留给卷宗那一路的下载
 let viewerPath = "",
   viewerRevision = 0,
   viewerSource = null,
@@ -34,8 +35,13 @@ function urlReader(url) {
     extracted: ""
   };
 }
+// 技能带的一件：桥接直取原件
+function skillFileUrl(source, download = false) {
+  return `${apiBase}/api/skills/raw?dir=${encodeURIComponent(source.skillDir)}&path=${encodeURIComponent(source.skillPath)}${download ? "&download=1" : ""}`;
+}
 async function viewerReader(source) {
   if (source.path) return urlReader(archiveFileUrl(source.path));
+  if (source.skillDir) return urlReader(skillFileUrl(source));
   const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
     head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
   if (head?.ok) return urlReader(url);
@@ -50,7 +56,7 @@ async function viewerReader(source) {
     extracted: String(file.extractedText || "")
   };
 }
-/** @param {string|{path?:string, attachmentId?:string}} target 卷宗路径，或 { attachmentId } */
+/** @param {string|{path?:string, attachmentId?:string, skillDir?:string, skillPath?:string}} target 卷宗路径，或 { attachmentId }，或技能里的一件 */
 async function openFileViewer(target, name = "", trigger = null) {
   const revision = ++viewerRevision;
   const source = typeof target === "string" ? { path: target } : target;
@@ -93,6 +99,8 @@ async function openViewerWithSystem() {
   try {
     if (source?.path) await bridge("/api/archive/open", { root: archiveDir(), path: source.path }, AbortSignal.timeout(8000));
     else if (source?.attachmentId) await bridge("/api/files/open", { id: source.attachmentId }, AbortSignal.timeout(8000));
+    else if (source?.skillDir)
+      await bridge("/api/skills/open-item", { dir: source.skillDir, path: source.skillPath }, AbortSignal.timeout(8000));
     else return;
     toast(t("已交给本机程序打开"));
   } catch (error) {
@@ -102,7 +110,12 @@ async function openViewerWithSystem() {
 // 预览器头上的「下载」：看的是卷宗就走桥接，是附件就从浏览器里取
 function downloadViewerFile() {
   if (viewerSource?.attachmentId) void downloadAttachment(viewerSource.attachmentId);
-  else if (viewerPath) downloadArchiveFile(viewerPath);
+  else if (viewerSource?.skillDir) {
+    const anchor = document.createElement("a");
+    anchor.href = skillFileUrl(viewerSource, true);
+    anchor.download = String(viewerSource.skillPath).split("/").pop() || "";
+    anchor.click();
+  } else if (viewerPath) downloadArchiveFile(viewerPath);
 }
 async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
   if (kind === "image") return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;

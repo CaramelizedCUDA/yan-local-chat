@@ -1,17 +1,19 @@
 // 言 · 桥接 · 技能：照 Claude Code 的写法认技能——一个目录里有 SKILL.md 即一份技能，头上 name / description 两项，其余文件随它走。
 // 只认存储根/技能一处：别处（~/.claude/skills、项目里、网上）的要用就拷进来——人拷或模型拷都行，不另认几处目录、不设开合。
-// 列：各技能的名字、说明、目录与目录里的文件；读：只读列得出的技能目录之内的文件，不经链接出界；开：以本机文件管理器打开技能目录；存、删。页面怎么用见 src/15-tools/42-skills.js
+// 列：各技能的名字、说明、目录与目录里的文件；读：只读列得出的技能目录之内的文件，不经链接出界；取原件（预览器看附件用）；
+// 开：以本机文件管理器打开技能目录，或以本机程序打开技能里的一件、一夹；存、删。页面怎么用见 src/15-tools/42-skills.js
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
-const { jsonRoute, errorText } = require("./http.js");
-const { openPath } = require("./platform.js");
+const { jsonRoute, errorText, sendJson, sendFile, openWithSystem } = require("./http.js");
+const { openPath, reveal } = require("./platform.js");
 const { WORK_SKIP, resolveInside, pathIsInside, relPath, describeFsError } = require("./work/paths.js");
 
 const SKILL_FILE = "SKILL.md";
 // 技能放在几层之内：拷进来的可能隔着一两层（某组/某技能/SKILL.md）
+// 列文件的上限：docx 这类一份就带一百多件规范文件，宽着点；设置页按夹收拢，不怕长
 const SKILL_DEPTH = 3,
-  SKILL_FILE_LIMIT = 200,
+  SKILL_FILE_LIMIT = 1000,
   SKILL_READ_LIMIT = 2 * 1024 * 1024,
   DESCRIPTION_LIMIT = 1024;
 
@@ -151,21 +153,50 @@ module.exports = function createSkills({ skillsHome, bundled = "" }) {
     openPath(home);
     return { opened: home };
   }, failed);
-  // 读一件：dir 须是此刻列得出的某份技能，path 在它之内；SKILL.md 去掉头上那段（名字与说明目录里已给过）
-  const handleRead = jsonRoute(async body => {
-    const skill = (await listSkills()).find(item => item.dir === String(body.dir || ""));
-    if (!skill) throw Error(`没有这份技能：${body.dir}`);
-    const file = resolveInside(skill.dir, String(body.path || "").trim() || SKILL_FILE),
-      [realDir, realFile] = await Promise.all([fs.promises.realpath(skill.dir), fs.promises.realpath(file)]).catch(error => {
-        throw Error(describeFsError(error, String(body.path || "")));
+  // 技能里的一项：dir 须是此刻列得出的某份技能，path 在它之内、不经链接出界（path 空即技能目录本身）
+  async function skillItem(dir, raw) {
+    const skill = (await listSkills()).find(item => item.dir === String(dir || ""));
+    if (!skill) throw Error(`没有这份技能：${dir}`);
+    const rel = String(raw || "").trim(),
+      target = rel ? resolveInside(skill.dir, rel) : skill.dir,
+      [realDir, real] = await Promise.all([fs.promises.realpath(skill.dir), fs.promises.realpath(target)]).catch(error => {
+        throw Error(describeFsError(error, rel));
       });
-    if (!pathIsInside(realDir, realFile)) throw Error(`路径经过链接越出了技能目录：${body.path}`);
-    const stat = await fs.promises.stat(realFile);
+    if (!pathIsInside(realDir, real)) throw Error(`路径经过链接越出了技能目录：${rel}`);
+    return { skill, target, real, stat: await fs.promises.stat(real) };
+  }
+  // 读一件：SKILL.md 去掉头上那段（名字与说明目录里已给过）
+  const handleRead = jsonRoute(async body => {
+    const { skill, target, real, stat } = await skillItem(body.dir, String(body.path || "").trim() || SKILL_FILE);
     if (!stat.isFile()) throw Error(`不是文件：${body.path}`);
     if (stat.size > SKILL_READ_LIMIT) throw Error(`文件过大（${Math.round(stat.size / 1024)} KB）`);
-    const text = await fs.promises.readFile(realFile, "utf8"),
-      main = path.relative(skill.dir, file).toLowerCase() === SKILL_FILE.toLowerCase();
+    const text = await fs.promises.readFile(real, "utf8"),
+      main = path.relative(skill.dir, target).toLowerCase() === SKILL_FILE.toLowerCase();
     return { text: main ? parseSkill(text).body.trim() : text };
+  }, failed);
+  // 原件直取：GET /api/skills/raw?dir=…&path=…，设置里点一件附件进预览器看（图、PDF、网页同卷宗一样交给浏览器）
+  async function handleRaw(req, res) {
+    try {
+      const query = new URL(req.url, "http://127.0.0.1").searchParams,
+        { real, stat } = await skillItem(query.get("dir"), query.get("path"));
+      if (!stat.isFile()) throw Error(`不是文件：${query.get("path")}`);
+      await sendFile(req, res, real, { name: path.basename(real), download: !!query.get("download") });
+    } catch (error) {
+      sendJson(res, 404, { error: failed(error) });
+    }
+  }
+  // 以本机程序打开一件（脚本这类不在此跑，改在资源管理器里选中它），一夹就在资源管理器里打开
+  const handleOpenItem = jsonRoute(async body => {
+    const { real, stat } = await skillItem(body.dir, body.path);
+    if (stat.isDirectory()) openPath(real);
+    else
+      try {
+        openWithSystem(real);
+      } catch {
+        reveal(real);
+        return { revealed: real };
+      }
+    return { opened: real };
   }, failed);
   // 某一份：dir 须在技能目录之内、真有 SKILL.md
   async function ownSkillDir(dir) {
@@ -223,7 +254,9 @@ module.exports = function createSkills({ skillsHome, bundled = "" }) {
     routes: {
       "POST /api/skills/list": handleList,
       "POST /api/skills/read": handleRead,
+      "GET /api/skills/raw": handleRaw,
       "POST /api/skills/open": handleOpen,
+      "POST /api/skills/open-item": handleOpenItem,
       "POST /api/skills/save": handleSave,
       "POST /api/skills/remove": handleRemove
     }

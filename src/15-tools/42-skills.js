@@ -41,6 +41,10 @@ function skillCatalog() {
   const skills = skillList().filter(skill => !skill.manual);
   return skills.length ? { list: skills.map(skill => `- ${skill.name}：${skill.description}`).join("\n") } : null;
 }
+// 行首一只锦囊（页头那只缩小，设计稿/104 甲）：设置里每份、摊开时名前、「＋」里的选件、点名后那件附件，一眼认出是技能
+function skillMark(className = "skill-mark") {
+  return brushIcon("skills", className);
+}
 // 何时用的头一句：设置里那行、「＋」里的选件都只摆这一句，全文悬停可见
 /** @param {Skill} skill */
 function skillGist(skill) {
@@ -54,7 +58,9 @@ async function placeSkill(skill) {
   try {
     const text = await skillDocumentText({ skillDir: skill.dir, path: SKILL_FILE, main: true }),
       file = new File([`点名用技能「${skill.name}」，照它做。\n${text}`], `${skill.name}.md`, { type: "text/markdown" });
-    if (!canPlaceAttachment(file.size) || !placeAttachment(key, await ingestFile(file))) return;
+    // 记下是哪份技能：案上、问句下那一件画锦囊、写技能名，不当一件寻常的 .md
+    const record = { ...(await ingestFile(file)), skill: skill.name };
+    if (!canPlaceAttachment(file.size) || !placeAttachment(key, record)) return;
     persistDraft();
     renderAttachments();
     if (draftKey() !== key) return toast(t`${skill.name} 已置于原对话的案上`);
@@ -78,7 +84,7 @@ function renderSkillPicker(pop, anchor) {
       ? shown
           .map(
             skill =>
-              `<button type="button" data-pick="${escapeHtml(skill.dir)}" title="${escapeHtml(skill.description)}"><span>${escapeHtml(skill.name)}</span><small>${escapeHtml(skillGist(skill))}</small></button>`
+              `<button type="button" class="skill-pick" data-pick="${escapeHtml(skill.dir)}" title="${escapeHtml(skill.description)}">${skillMark()}<span>${escapeHtml(skill.name)}</span><small>${escapeHtml(skillGist(skill))}</small></button>`
           )
           .join("")
       : `<div class="chip-pop-label">${t(`没有匹配的技能`)}</div>`;
@@ -143,18 +149,20 @@ function skillRowHtml(skill) {
     refs = count(/\.md$/i) - 1,
     extra = [skill.manual && t("只凭点名"), scripts && t`脚本 ${scripts}`, refs > 0 && t`参考 ${refs}`].filter(Boolean).join(" · "),
     dir = escapeHtml(skill.dir);
-  const row = `<button type="button" class="skill-row" data-skill-edit="${dir}" title="${escapeHtml(skill.description)}"><span class="skill-name">${escapeHtml(skill.name)}</span><span class="skill-gist">${escapeHtml(gist)}</span>${extra ? `<span class="skill-extra">${extra}</span>` : ""}</button>`;
+  const row = `<button type="button" class="skill-row" data-skill-edit="${dir}" title="${escapeHtml(skill.description)}">${skillMark()}<span class="skill-name">${escapeHtml(skill.name)}</span><span class="skill-gist">${escapeHtml(gist)}</span>${extra ? `<span class="skill-extra">${extra}</span>` : ""}</button>`;
   return `<div class="skill-item">${row}<span class="memory-ops"><button type="button" class="memory-del" data-skill-remove="${dir}" title="${t(`删去`)}">${brushIcon("strike")}</button></span></div>`;
 }
-// 摊开着看的一份：与改时同样三段（名字、何时用、正文），只是字不是框，点不出光标；点字收起，底下「改」「删去」
+// 摊开着看的一份：与改时同样三段（名字、何时用、正文），只是字不是框，点不出光标；点字收起，正文后是「附带」一节，底下「改」「删去」。
+// 锦囊仍在行首那一列，摊开的竖痕从它底下垂下来（设计稿/104），名字、正文与上下几行的名字对齐
 /** @param {Skill} skill @param {string} body */
 function skillViewHtml(skill, body) {
   const dir = escapeHtml(skill.dir);
   return (
     `<div class="memory-item open skill-editor" data-skill-view="${dir}"><div class="skill-view" data-skill-collapse title="${t(`收起`)}">` +
-    `<div class="skill-view-name">${escapeHtml(skill.name)}</div>` +
+    `${skillMark()}<div class="skill-view-name">${escapeHtml(skill.name)}</div>` +
     `<div class="memory-body skill-edit-desc">${escapeHtml(skill.description)}</div>` +
     `<div class="memory-body">${escapeHtml(String(body).trim())}</div></div>` +
+    skillFilesHtml(skill) +
     `<div class="memory-meta"><span class="skill-dir" title="${dir}">${dir}</span><span class="memory-spacer"></span><span class="memory-ops"><button type="button" data-skill-modify title="${t(`修改`)}">${brushIcon("edit")}</button><button type="button" class="memory-del" data-skill-remove="${dir}" title="${t(`删去`)}">${brushIcon("strike")}</button></span></div></div>`
   );
 }
@@ -162,7 +170,7 @@ function skillViewHtml(skill, body) {
 /** @param {NonNullable<typeof skillEditing>} draft */
 function skillEditorHtml(draft) {
   return (
-    `<div class="memory-item open skill-editor" data-skill-editor>` +
+    `<div class="memory-item open skill-editor" data-skill-editor>${skillMark()}` +
     `<input class="memory-cat-name skill-edit-name" data-skill-field="name" value="${escapeHtml(draft.name)}" maxlength="64" spellcheck="false" placeholder="${t(`名字`)}" aria-label="${t(`名字`)}">` +
     `<textarea class="memory-text skill-edit-desc" data-skill-field="description" rows="1" spellcheck="false" placeholder="${t(`何时用：做什么、遇到什么样的事该翻它（模型只先看到这一句）`)}" aria-label="${t(`何时用`)}">${escapeHtml(draft.description)}</textarea>` +
     `<textarea class="memory-text skill-edit-body" data-skill-field="body" rows="3" spellcheck="false" placeholder="${t(`正文：怎么做`)}" aria-label="${t(`正文`)}">${escapeHtml(draft.body)}</textarea>` +
@@ -170,6 +178,60 @@ function skillEditorHtml(draft) {
       draft.dir ? `<button type="button" class="memory-del" data-skill-delete title="${t(`删去`)}">${brushIcon("strike")}</button>` : ""
     }</span></div></div>`
   );
+}
+// 附带一节（设计稿/103 二）：SKILL.md 之外的件按夹归拢——夹照游目书签的「夹与条」（细折角、小函、件数，夹里的以淡墨竖痕收拢），
+// 件是卷宗的件图、名字、大小。附件共不过 SKILL_OPEN_ALL 件时夹全开着，多了先收起（docx 一类一份上百件）；一夹至多列 SKILL_LEVEL_ROWS 件，
+// 余下的点了在资源管理器里打开那一夹。点一件进预览器看（与卷宗同一个，图、PDF、网页都看得），不在这页里摊开——设置窄，摊开太挤
+const SKILL_OPEN_ALL = 12,
+  SKILL_LEVEL_ROWS = 12;
+/** @type {Map<string, boolean>} 人点过的夹（技能目录 + 夹路径）：开着为 true；没点过的照件数定 */
+const skillFolds = new Map();
+/** @typedef {{ files: Skill["files"], dirs: Map<string, SkillFolder>, count: number }} SkillFolder */
+/** @param {Skill} skill */
+function skillFilesHtml(skill) {
+  const files = skill.files.filter(file => file.path.toLowerCase() !== SKILL_FILE.toLowerCase());
+  if (!files.length) return "";
+  /** @type {SkillFolder} */
+  const root = { files: [], dirs: new Map(), count: 0 };
+  for (const file of files) {
+    const parts = file.path.split("/");
+    let node = root;
+    node.count++;
+    for (const part of parts.slice(0, -1)) {
+      if (!node.dirs.has(part)) node.dirs.set(part, { files: [], dirs: new Map(), count: 0 });
+      node = /** @type {SkillFolder} */ (node.dirs.get(part));
+      node.count++;
+    }
+    node.files.push(file);
+  }
+  const dir = escapeHtml(skill.dir),
+    openAll = files.length <= SKILL_OPEN_ALL;
+  /** @param {SkillFolder} node @param {string} base */
+  const level = (node, base) => {
+    const shown = node.files.slice(0, SKILL_LEVEL_ROWS),
+      rest = node.files.length - shown.length;
+    return (
+      shown
+        .map(file => {
+          const name = file.path.split("/").pop() || file.path;
+          return `<button type="button" class="skill-file" data-skill-file="${escapeHtml(file.path)}" title="${escapeHtml(file.path)}">${fileFigure(name)}<span>${escapeHtml(name)}</span><small>${formatFileSize(file.size)}</small></button>`;
+        })
+        .join("") +
+      [...node.dirs]
+        .map(([name, sub]) => {
+          const path = base ? `${base}/${name}` : name,
+            open = skillFolds.get(`${skill.dir}\n${path}`) ?? openAll;
+          return `<button type="button" class="skill-fold${open ? "" : " shut"}" data-skill-fold="${escapeHtml(path)}" aria-expanded="${open}"><i class="skill-chev" aria-hidden="true"></i>${caseFigure()}<span>${escapeHtml(name)}</span><small>${t`${sub.count} 件`}</small></button>${
+            open ? `<div class="skill-fold-group">${level(sub, path)}</div>` : ""
+          }`;
+        })
+        .join("") +
+      (rest > 0
+        ? `<button type="button" class="skill-more" data-skill-reveal="${escapeHtml(base)}">${t`余下 ${rest} 件 · 打开`}</button>`
+        : "")
+    );
+  };
+  return `<div class="skill-files" data-skill-files="${dir}"><div class="skill-files-head">${t`附带 ${files.length} 件`}</div>${level(root, "")}</div>`;
 }
 // 存下摊开的那一份，回到看着它：没改就只回到看；新建的什么都没写就作罢
 let skillSaving = false;
@@ -249,6 +311,25 @@ function bindSkillSettings() {
     if (String(window.getSelection()).trim()) return;
     skillViewing = null;
     renderSettings();
+  });
+  // 附带：点夹开合，点一件进预览器，「余下 n 件」在资源管理器里打开那一夹
+  const files = /** @type {HTMLElement|null} */ ($("[data-skill-files]"));
+  files?.addEventListener("click", event => {
+    const target = /** @type {HTMLElement} */ (event.target),
+      dir = files.dataset.skillFiles || "",
+      fold = /** @type {HTMLElement|null} */ (target.closest("[data-skill-fold]")),
+      file = /** @type {HTMLElement|null} */ (target.closest("[data-skill-file]")),
+      more = /** @type {HTMLElement|null} */ (target.closest("[data-skill-reveal]"));
+    if (fold) {
+      skillFolds.set(`${dir}\n${fold.dataset.skillFold}`, fold.getAttribute("aria-expanded") !== "true");
+      renderSettings();
+    } else if (file) {
+      const path = file.dataset.skillFile || "";
+      void openFileViewer({ skillDir: dir, skillPath: path }, path.split("/").pop(), file);
+    } else if (more)
+      bridge("/api/skills/open-item", { dir, path: more.dataset.skillReveal || "" }, AbortSignal.timeout(8000)).catch(error =>
+        toast(tr(String(error.message || error)))
+      );
   });
   $("[data-skill-modify]")?.addEventListener("click", () => {
     const skill = skillList().find(item => item.dir === skillViewing?.dir);

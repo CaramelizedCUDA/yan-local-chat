@@ -34,7 +34,9 @@ const view = name => `(document.querySelector("[data-skill-view] .skill-view-nam
 await waitFor(`!document.querySelector("[data-skill-editor]") && ${view("回信")}`, 8000);
 check(
   "after saving it stays open to read, with no field to put a caret in",
-  await evalJs(`!document.querySelector("[data-skill-view] input, [data-skill-view] textarea") && document.querySelector("[data-skill-view]").textContent.includes("逐条答")`)
+  await evalJs(
+    `!document.querySelector("[data-skill-view] input, [data-skill-view] textarea") && document.querySelector("[data-skill-view]").textContent.includes("逐条答")`
+  )
 );
 await evalJs(`document.querySelector("[data-skill-collapse]").click(); true`);
 await waitFor(`!document.querySelector("[data-skill-view]") && !!${row("回信")}`);
@@ -99,6 +101,78 @@ await evalJs(`document.querySelector("#confirmOk").click(); true`);
 await waitFor(`!${row("复信")} && !${view("复信")}`, 8000);
 check("the skill folder is gone from disk", !existsSync(`${SKILLS}/复信`));
 
+// 附带：SKILL.md 之外的件按夹归拢，不过 12 件夹全开着，多了先收起、一夹至多列 12 件；点一件进预览器看
+const bundle = (name, files) => {
+  mkdirSync(`${SKILLS}/${name}`, { recursive: true });
+  writeFileSync(
+    `${SKILLS}/${name}/SKILL.md`,
+    `---\nname: ${name}\ndescription: 查多方来源时用。\n---\n\n照 references/researcher.md 做。\n`
+  );
+  for (const [file, text] of Object.entries(files)) {
+    mkdirSync(`${SKILLS}/${name}/${file}`.replace(/\/[^/]*$/, ""), { recursive: true });
+    writeFileSync(`${SKILLS}/${name}/${file}`, text);
+  }
+};
+bundle("研究", {
+  "references/researcher.md": "# 研究员\n先列子题。",
+  "references/report-writer.md": "成稿。",
+  "scripts/merge.py": "print(1)\n"
+});
+bundle("大包", Object.fromEntries([["ooxml.md", "规范"], ...Array.from({ length: 20 }, (_, i) => [`schemas/s${i}.xsd`, "<x/>"])]));
+await evalJs(
+  `document.querySelector('.tab-btn[data-tab="general"]').click(); document.querySelector('.tab-btn[data-tab="skills"]').click(); true`
+);
+await waitFor(`!!${row("研究")}`, 8000);
+await evalJs(`${row("研究")}.click(); true`);
+await waitFor(`!!document.querySelector("[data-skill-files]")`, 8000);
+check(
+  "an opened skill lists its bundled files by folder, all open when few",
+  await evalJs(
+    `document.querySelector(".skill-files-head").textContent === "附带 3 件" && [...document.querySelectorAll(".skill-fold")].map(b => b.textContent).join() === "references2 件,scripts1 件" && document.querySelectorAll(".skill-file").length === 3`
+  )
+);
+check(
+  "the pouch of the opened skill sits in the same column as the rows' pouches",
+  await evalJs(`(() => {
+    const row = document.querySelector(".skill-row .skill-mark").getBoundingClientRect(), open = document.querySelector("[data-skill-view] .skill-mark").getBoundingClientRect();
+    const name = document.querySelector(".skill-row .skill-name").getBoundingClientRect(), title = document.querySelector("[data-skill-view] .skill-view-name").getBoundingClientRect();
+    return Math.abs(row.left - open.left) < 1 && Math.abs(name.left - title.left) < 3;
+  })()`)
+);
+await shot("skills-files.png");
+await evalJs(`document.querySelector('[data-skill-fold="references"]').click(); true`);
+await waitFor(`document.querySelectorAll(".skill-file").length === 1`);
+check("clicking a folder folds it", await evalJs(`document.querySelector('[data-skill-fold="references"]').classList.contains("shut")`));
+await evalJs(`document.querySelector('[data-skill-file="scripts/merge.py"]').click(); true`);
+await waitFor(
+  `!document.querySelector("#fileViewer").classList.contains("hidden") && document.querySelector("#fileViewerStage").textContent.includes("print(1)")`,
+  8000
+);
+check("clicking a file opens it in the viewer", await evalJs(`document.querySelector("#fileViewerName").textContent === "merge.py"`));
+await sleep(600);
+await shot("skills-file-viewer.png");
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+await waitFor(`document.querySelector("#fileViewer").classList.contains("hidden")`);
+check("closing the viewer leaves settings open", await evalJs(`!document.querySelector("#settingsModal").classList.contains("hidden")`));
+await evalJs(`document.querySelector("[data-skill-collapse]").click(); true`);
+await waitFor(`!document.querySelector("[data-skill-view]")`);
+await evalJs(`${row("大包")}.click(); true`);
+await waitFor(`!!document.querySelector("[data-skill-files]")`, 8000);
+check(
+  "with many files folders start folded",
+  await evalJs(
+    `document.querySelector('[data-skill-fold="schemas"]').classList.contains("shut") && document.querySelectorAll(".skill-file").length === 1`
+  )
+);
+await evalJs(`document.querySelector('[data-skill-fold="schemas"]').click(); true`);
+await waitFor(`document.querySelectorAll(".skill-file").length === 13`);
+check(
+  "an opened folder lists 12 and counts the rest",
+  await evalJs(`document.querySelector("[data-skill-reveal]")?.textContent === "余下 8 件 · 打开"`)
+);
+await shot("skills-files-many.png");
+for (const name of ["研究", "大包"]) rmSync(`${SKILLS}/${name}`, { recursive: true, force: true });
+
 await evalJs(`document.querySelector("#closeSettings")?.click(); true`);
 
 // 「＋」→「技能」：挑一份，说明作附件置于案上。user-invocable: false 的不列；查找也认何时用
@@ -122,15 +196,26 @@ await evalJs(`document.querySelector('[data-menu="skill"]').click(); true`);
 await waitFor(`!!document.querySelector(".attach-picker [data-pick]")`);
 const names = await evalJs(`[...document.querySelectorAll(".attach-picker [data-pick] span")].map(s => s.textContent)`);
 check("the + menu lists skills, hiding user-invocable: false", names.join() === "周报,周记", names);
-await evalJs(`(i => { i.value = "一周的事"; i.dispatchEvent(new Event("input")); return true; })(document.querySelector(".attach-picker input"))`);
+await evalJs(
+  `(i => { i.value = "一周的事"; i.dispatchEvent(new Event("input")); return true; })(document.querySelector(".attach-picker input"))`
+);
 await shot("skills-picker.png");
 check(
   "searching matches the when-to-use line too",
   (await evalJs(`[...document.querySelectorAll(".attach-picker [data-pick] span")].map(s => s.textContent).join()`)) === "周记"
 );
 await evalJs(`document.querySelector(".attach-picker [data-pick]").click(); true`);
-await waitFor(`[...document.querySelectorAll(".attachment-list")].some(l => l.offsetParent && l.textContent.includes("周记.md"))`, 8000);
+await waitFor(`[...document.querySelectorAll(".attachment-list")].some(l => l.offsetParent && l.textContent.includes("周记"))`, 8000);
 check("picking a skill puts its instructions on the desk as an attachment", !(await evalJs(`!!document.querySelector(".attach-picker")`)));
-await evalJs(`[...document.querySelectorAll(".attachment-list")].find(l => l.offsetParent)?.querySelector("[data-remove-attachment]")?.click(); true`);
+check(
+  "the desk shows it as a skill: a pouch and the skill's name",
+  await evalJs(
+    `(c => !!c.querySelector(".skill-fi") && c.querySelector(".attachment-name").textContent === "周记")([...document.querySelectorAll(".attachment-list")].find(l => l.offsetParent).querySelector(".attachment-card"))`
+  )
+);
+await shot("skills-desk.png");
+await evalJs(
+  `[...document.querySelectorAll(".attachment-list")].find(l => l.offsetParent)?.querySelector("[data-remove-attachment]")?.click(); true`
+);
 for (const name of ["周报", "周记", "暗记"]) rmSync(`${SKILLS}/${name}`, { recursive: true, force: true });
 close();

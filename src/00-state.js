@@ -17,6 +17,7 @@
  * @property {string} [extractionError]
  * @property {string} [savedAt] 收入浏览器内卷宗的时间
  * @property {string} [archive] 磁盘卷宗里的相对路径（availableDocuments 用）
+ * @property {string} [skill] 点名用的技能（「＋」→「技能」置入的那份说明）：附件条画锦囊、写这个名字
  * @property {boolean} [quoted] 随引文的画面（游目圈点）：不进附件栏，画在引文里；引文撤了它跟着撤
  */
 /** @typedef {{ text: string, messageId?: string, model?: string, url?: string, image?: string }} Quote 引用追问：划选的一段与它所在的消息（旁注锚文本作引文时没有 messageId）；游目圈点的另带给模型的一份与网址，image 是那幅画面的附件 id（附件照常随消息走，只是画在引文里） */
