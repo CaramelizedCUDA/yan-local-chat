@@ -8,7 +8,7 @@
   margin: -3px 0 18px;
   padding-left: 10px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.24em;
   cursor: default;
   transition:
@@ -50,7 +50,7 @@
 }
 .tool-title.tool-cmd {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--fs-note);
   color: var(--ink-2);
 }
 .tool-output {
@@ -81,7 +81,7 @@
 .tool-state.pending {
   color: var(--accent);
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  font-size: 10px;
+  font-size: var(--fs-mark);
 }
 .tool-state.skipped {
   color: var(--ink-3);

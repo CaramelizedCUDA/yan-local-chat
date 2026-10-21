@@ -6,7 +6,7 @@
   padding: 2px 4px 8px;
   border-bottom: 1px solid var(--line);
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
 }
 .skill-dir {
   min-width: 0;
@@ -16,7 +16,7 @@
 .skill-open {
   flex: none;
   color: var(--ink-3);
-  font: 11.5px var(--title);
+  font: var(--fs-note) var(--title);
 }
 .skill-open:hover {
   color: var(--ink);
@@ -29,7 +29,7 @@
   padding: 8px 4px;
   border-top: 1px solid color-mix(in srgb, var(--accent) 13%, var(--line));
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   text-align: left;
 }
 .skill-row:first-child {
@@ -49,19 +49,19 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 11.5px;
+  font-size: var(--fs-note);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .skill-extra {
   flex: none;
   color: var(--ink-3);
-  font-size: 10.5px;
+  font-size: var(--fs-mark);
 }
 .skill-empty {
   margin: 14px 4px;
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 /* 一行右端一枚「删」，平时淡着，行上悬停才显 */
 .skill-item {
@@ -98,7 +98,7 @@
 }
 .skill-edit-desc {
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 .skill-edit-desc::placeholder,
 .skill-edit-body::placeholder,

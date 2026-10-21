@@ -68,7 +68,7 @@
   border: 1px solid var(--line);
   border-top: 1.5px solid var(--accent);
   color: var(--ink-2);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.08em;
   white-space: nowrap;
   box-shadow: 0 3px 10px rgba(40, 30, 20, 0.1);
@@ -130,7 +130,7 @@
   align-content: center;
   gap: 12px;
   color: var(--ink-3);
-  font: 13px var(--title);
+  font: var(--fs-mid) var(--title);
   letter-spacing: 0.14em;
 }
 .stage-leaf {
@@ -143,7 +143,7 @@
   padding: 2px 1px 3px;
   border-bottom: 1.4px solid var(--accent);
   color: var(--ink-2);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.2em;
   transition: color 0.15s;
 }
@@ -171,7 +171,7 @@
 }
 .stage-dialog-head {
   color: var(--ink-3);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.14em;
 }
 .stage-dialog-text {
@@ -179,7 +179,7 @@
   margin: 8px 0 14px;
   overflow-y: auto;
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-mid);
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -191,7 +191,7 @@
   border: 1px solid var(--line);
   background: var(--paper-2);
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-mid);
   outline: none;
 }
 .stage-dialog-input:focus {

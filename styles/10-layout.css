@@ -90,7 +90,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   padding: 0;
   border-radius: var(--radius-l);
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: var(--fs-mid);
   text-align: left;
   transition:
     width 0.38s cubic-bezier(0.22, 0.72, 0.2, 1),
@@ -137,7 +137,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   margin: 14px 0 2px;
   padding-left: 12px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.16em;
   white-space: nowrap;
 }
@@ -167,7 +167,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   border-radius: var(--radius-m);
   outline: 0;
   background: var(--paper-3);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .history-search:focus {
   border-color: var(--ink-3);
@@ -187,7 +187,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .history-label {
   padding: 0 9px 6px;
   color: color-mix(in srgb, var(--ink-2) 70%, var(--ink-3));
-  font: 10.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.16em;
 }
 /* 「工」组：绑了同一目录的对话归在一起，头一行是印 + 目录名 + 件数，点了收起 / 展开，右侧「＋」在此目录另起一纸。
@@ -239,7 +239,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 500 12.5px var(--title);
+  font: 500 var(--fs-small) var(--title);
   color: var(--ink);
 }
 .history-repo:hover .history-repo-name {
@@ -248,7 +248,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .history-repo small {
   flex: none;
   color: var(--ink-3);
-  font-size: 9.5px;
+  font-size: var(--fs-mark);
 }
 .repo-caret {
   flex: none;
@@ -373,7 +373,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: color-mix(in srgb, var(--ink) 82%, var(--ink-2));
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .history-item.active .history-open,
 .history-open:hover {
@@ -401,7 +401,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   place-items: center;
   border-radius: var(--radius-m);
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
 }
 .history-tool:hover {
   background: var(--paper-2);
@@ -418,7 +418,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   border-radius: var(--radius-m);
   outline: 0;
   background: var(--paper);
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .sidebar-footer {
   border-top: 1px solid var(--line);
@@ -449,7 +449,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   white-space: nowrap;
   text-align: left;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .settings-open .gear-wrap {
   display: grid;
@@ -473,7 +473,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   border-radius: 50%;
   background: color-mix(in srgb, var(--accent) 12%, var(--paper));
   color: var(--accent);
-  font: 500 12px var(--title);
+  font: 500 var(--fs-small) var(--title);
 }
 .main {
   position: relative;
@@ -547,7 +547,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   min-width: 0;
   padding: 0;
   color: var(--ink-2);
-  font: 500 13px var(--title);
+  font: 500 var(--fs-mid) var(--title);
   letter-spacing: 0.08em;
   text-align: left;
   cursor: pointer;
@@ -578,7 +578,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .running-head-meta {
   flex: none;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.14em;
 }
 .running-head-intent {
@@ -601,7 +601,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   padding: 3px 7px;
   border-radius: var(--radius-m);
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.1em;
   opacity: 0;
   pointer-events: none;
@@ -631,7 +631,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   gap: 8px;
   padding: 6px 10px;
   border-radius: var(--radius-m);
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .model-trigger:hover {
   background: var(--paper-2);
@@ -663,7 +663,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 }
 .model-trigger {
   padding: 5px 8px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--ink-2);
   max-width: 260px;
 }
@@ -678,7 +678,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 }
 .model-trigger .model-extra {
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
   white-space: nowrap;
 }
 .model-trigger .model-extra:empty {
@@ -699,14 +699,14 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   align-items: center;
   margin-bottom: 6px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.12em;
 }
 /* 探到模型不认思考档位：这一节只留一句话 */
 .menu-section-note {
   padding: 4px 2px 3px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.06em;
 }
 /* 菜单里思考深度各档均分一行 */
@@ -746,7 +746,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   align-items: center;
   gap: 7px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-mid);
   font-weight: 500;
 }
 .model-option-name {
@@ -759,7 +759,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   display: block;
   margin-top: 2px;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 /* 顶栏右侧两件（明暗、余墨）同一套笔墨，件与件之间一道细竖 */
 .top-actions {
@@ -847,7 +847,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   background: var(--paper);
   box-shadow: 0 6px 18px rgba(61, 49, 32, 0.12);
   color: var(--ink);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
   text-align: left;
   white-space: nowrap;
   opacity: 0;
@@ -871,7 +871,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .quota-label {
   margin-right: 6px;
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
   letter-spacing: 0.12em;
 }
 .quota-tip b {
@@ -879,7 +879,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 }
 .quota-tip small {
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 .quota.dry .quota-tip b {
   color: var(--danger);
@@ -933,7 +933,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   right: 1px;
   bottom: 3px;
   color: var(--gold);
-  font: 9px var(--title);
+  font: var(--fs-mark) var(--title);
 }
 /* 点开的簿录：方角纸签、顶上一道泥金（后台与帮手同属「在外头做着」）；一行一条，行间淡朱丝栏 */
 .clepsydra-list {
@@ -949,14 +949,14 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   background: var(--paper);
   box-shadow: 0 6px 18px rgba(61, 49, 32, 0.12);
   color: var(--ink-3);
-  font: 11.5px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.04em;
   animation: rise 0.18s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .clepsydra-head {
   padding: 0 0 5px;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .clepsydra-grp {
   display: flex;
@@ -964,11 +964,11 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   gap: 8px;
   padding: 8px 0 3px;
   color: var(--ink-2);
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 .clepsydra-grp small {
   color: var(--ink-3);
-  font-size: 10px;
+  font-size: var(--fs-mark);
 }
 .clepsydra-row {
   width: calc(100% + 8px);
@@ -1005,5 +1005,5 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   flex: 1;
   min-width: 0;
   padding: 3px 7px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }

@@ -7,7 +7,7 @@
 .ask-question {
   margin-bottom: 6px;
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-mid);
   line-height: 1.5;
 }
 .ask-header {
@@ -17,7 +17,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--radius-s);
   color: var(--accent);
-  font: 10px/16px var(--title);
+  font: var(--fs-mark)/16px var(--title);
   letter-spacing: 0.06em;
   vertical-align: 1px;
 }
@@ -29,7 +29,7 @@
   border-radius: var(--radius-s);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
-  font: 10px/16px var(--title);
+  font: var(--fs-mark)/16px var(--title);
   letter-spacing: 0.08em;
   vertical-align: 2px;
 }
@@ -105,12 +105,12 @@
   transform: rotate(42deg);
 }
 .ask-opt strong {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 500;
 }
 .ask-opt small {
   color: var(--ink-3);
-  font-size: 10.5px;
+  font-size: var(--fs-mark);
 }
 .ask-opt:hover {
   border-color: var(--ink-3);
@@ -131,7 +131,7 @@
   border-bottom: 1px solid var(--line);
   background: transparent;
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   outline: none;
 }
 .ask-other:focus {

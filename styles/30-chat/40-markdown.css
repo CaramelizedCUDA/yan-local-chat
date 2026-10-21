@@ -9,7 +9,7 @@
   list-style: none;
   user-select: none;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.12em;
 }
 .reasoning summary::-webkit-details-marker {
@@ -28,7 +28,7 @@
   overflow: hidden auto;
   margin-top: 8px;
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: var(--fs-mid);
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

@@ -94,7 +94,7 @@
   gap: 5px;
   padding: 2px 4px 2px 13px;
   color: var(--ink-3);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.03em;
   white-space: nowrap;
   cursor: pointer;

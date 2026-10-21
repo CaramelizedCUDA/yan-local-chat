@@ -13,7 +13,7 @@
 .stage-find-label {
   flex: none;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.2em;
 }
 .stage-find input {
@@ -24,14 +24,14 @@
   border-bottom: 1.4px solid var(--accent);
   background: transparent;
   color: var(--ink);
-  font: 13px var(--body);
+  font: var(--fs-mid) var(--body);
   outline: none;
 }
 .stage-find-count {
   flex: none;
   min-width: 36px;
   color: var(--ink-2);
-  font: 12px var(--body);
+  font: var(--fs-small) var(--body);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -41,7 +41,7 @@
   height: 22px;
   border-radius: var(--radius-m);
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .stage-find button:hover {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
@@ -59,14 +59,14 @@
   align-items: baseline;
   gap: 4px;
   color: var(--ink-3);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.04em;
   pointer-events: none;
 }
 .stage-letter b {
   margin: 0 2px;
   color: var(--ink-2);
-  font: 400 12px var(--body);
+  font: 400 var(--fs-small) var(--body);
   font-variant-numeric: tabular-nums;
 }
 .stage-letter button {
@@ -74,7 +74,7 @@
   padding: 0 1px 1px;
   border-bottom: 1.2px solid var(--accent);
   color: var(--ink-2);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.12em;
   pointer-events: auto;
 }

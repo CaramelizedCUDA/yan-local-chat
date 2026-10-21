@@ -32,7 +32,7 @@
 .settings-nav-title {
   padding: 0 10px 14px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.16em;
 }
 .settings-nav-spacer {
@@ -41,5 +41,5 @@
 .settings-nav-foot {
   padding: 0 10px;
   color: var(--ink-3);
-  font: 11px/1.7 var(--title);
+  font: var(--fs-note)/1.7 var(--title);
 }

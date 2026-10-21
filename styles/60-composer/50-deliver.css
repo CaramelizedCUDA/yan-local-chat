@@ -12,7 +12,7 @@
   gap: 7px;
   padding: 5px 6px 6px;
   color: var(--ink-3);
-  font: 10.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.1em;
 }
 .deliver-seal {
@@ -43,14 +43,14 @@
   white-space: nowrap;
   color: var(--ink);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 /* 右侧三样：大小离按钮远一点，「预览」「下载」挨得近一点——大小是说明，两枚按钮是一对 */
 .deliver-file small {
   flex: none;
   margin-right: 10px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
 }
@@ -58,7 +58,7 @@
   flex: none;
   padding: 4px 10px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.1em;
   transition: color 0.15s;
 }
@@ -83,7 +83,7 @@
   flex: none;
   padding: 3px 11px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.1em;
   opacity: 0.8;
 }
@@ -107,7 +107,7 @@ textarea::placeholder,
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
   border-radius: var(--radius-m);
   color: var(--ink-2);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
   transition:
     border-color 0.16s,
     color 0.16s;

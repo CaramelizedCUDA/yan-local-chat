@@ -24,7 +24,7 @@
   margin: 18px var(--side-gutter) 0;
   padding: 11px 16px 11px 17px;
   border-radius: 0 var(--radius-m) var(--radius-m) 0;
-  font-size: 13px;
+  font-size: var(--fs-mid);
   background: var(--paper-2);
 }
 .side-panel.wide .side-scroll {
@@ -69,13 +69,13 @@
 }
 .side-title strong {
   display: block;
-  font: 500 13px var(--title);
+  font: 500 var(--fs-mid) var(--title);
   letter-spacing: 0.08em;
 }
 .side-title small {
   display: block;
   color: var(--ink-3);
-  font: 9.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.16em;
 }
 .side-nav {
@@ -92,7 +92,7 @@
   border-left: 1px solid var(--accent);
   text-align: left;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.6;
   white-space: pre-wrap;
   transition: color 0.16s;
@@ -138,13 +138,13 @@
   padding-top: 3px;
 }
 .side-messages .markdown {
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .side-messages .user-bubble {
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .side-messages .message-meta {
-  font-size: 10px;
+  font-size: var(--fs-mark);
 }
 .side-messages .message-actions {
   opacity: 0.5;
@@ -177,7 +177,7 @@
   height: 24px;
   padding: 0 5px;
   color: var(--ink-3);
-  font: 12px/1 var(--title);
+  font: var(--fs-small)/1 var(--title);
   transition: color 0.16s;
 }
 .side-tools .icon-btn:hover,
@@ -231,7 +231,7 @@
   padding: 3px 7px 3px 4px;
   border-radius: var(--radius-m);
   color: var(--ink-3);
-  font: 10.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.08em;
   transition:
     color 0.16s,
@@ -280,7 +280,7 @@
 .side-index-bar small {
   flex: 1;
   color: var(--ink-3);
-  font: 10.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.14em;
 }
 .side-index-new {
@@ -289,12 +289,12 @@
   gap: 4px;
   padding: 4px 2px;
   color: var(--ink-2);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.08em;
   transition: color 0.16s;
 }
 .side-index-new span {
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1;
 }
 .side-index-new:hover {
@@ -336,7 +336,7 @@
   width: 14px;
   margin-top: 1px;
   color: var(--ink-3);
-  font: 11px/1.65 var(--title);
+  font: var(--fs-note)/1.65 var(--title);
   transition: color 0.16s;
 }
 .side-index-item.here .side-index-num {
@@ -351,7 +351,7 @@
 }
 .side-index-copy strong {
   display: -webkit-box;
-  font: 12.5px/1.65 var(--body);
+  font: var(--fs-small)/1.65 var(--body);
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -360,7 +360,7 @@
   display: block;
   margin-top: 3px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.08em;
 }
 .side-panel.wide .side-index-head h2 {
@@ -378,18 +378,18 @@
 }
 .side-panel.wide .side-index-copy small {
   margin-top: 5px;
-  font-size: 10.5px;
+  font-size: var(--fs-mark);
 }
 .side-panel.wide .side-index-num {
   width: 18px;
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .side-empty {
   padding: 34px 8px;
   text-align: center;
   color: var(--ink-3);
-  font: 12px/1.9 var(--title);
+  font: var(--fs-small)/1.9 var(--title);
   letter-spacing: 0.06em;
 }
 /* 输入与主页同一个框：寄在框里右下，模型签在它左边（回目录在页头最左）。窄栏里字小一号、阴影浅些 */
@@ -405,11 +405,11 @@
 }
 .side-composer .composer textarea {
   max-height: 160px;
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .side-composer .model-trigger {
   max-width: 170px;
-  font-size: 11.5px;
+  font-size: var(--fs-note);
 }
 /* 正文里的落点一律墨色、不框：所注的一段一道淡墨线，序号是墨色小字，元信息行的「注 n」只是字；
    正打开的那一条线与序号着朱。比过圈点（字下朱点，一片朱点抢眼）与顶朱小签（方寸之间签不成签），见设计稿/37 */
@@ -433,7 +433,7 @@ sup.note-ref {
   margin: 0 1px 0 2px;
   padding: 0 1px;
   color: var(--ink-3);
-  font: 9.5px/12px var(--title);
+  font: var(--fs-mark)/12px var(--title);
   vertical-align: super;
   cursor: pointer;
   user-select: none;
@@ -449,7 +449,7 @@ sup.note-ref.active {
   align-items: center;
   margin-left: 8px;
   color: var(--ink-3);
-  font: 10px/15px var(--title);
+  font: var(--fs-mark)/15px var(--title);
   letter-spacing: 0.06em;
   white-space: nowrap;
   transition: color 0.16s;

@@ -30,7 +30,7 @@
   left: 50%;
   top: 80px;
   color: var(--ink-2);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.3em;
   writing-mode: vertical-rl;
   white-space: nowrap;

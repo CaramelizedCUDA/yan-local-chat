@@ -29,7 +29,7 @@
   border-radius: var(--radius-s);
   background: var(--paper);
   color: var(--ink);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
   text-align: left;
   transition: border-color 0.16s;
 }
@@ -53,7 +53,7 @@
 .attachment-size {
   flex: none;
   color: var(--ink-3);
-  font-size: 10.5px;
+  font-size: var(--fs-mark);
 }
 /* 藏、移除：位置常留着，免得条子忽长忽短 */
 .attachment-tool {
@@ -62,7 +62,7 @@
   height: 22px;
   margin-left: -3px;
   color: var(--ink-3);
-  font: 11.5px var(--title);
+  font: var(--fs-note) var(--title);
   opacity: 0;
   transition: opacity 0.16s;
 }
@@ -126,7 +126,7 @@
   display: block;
   margin-top: 4px;
   color: var(--ink-3);
-  font-size: 10px;
+  font-size: var(--fs-mark);
 }
 .library-page {
   flex: 1;
@@ -159,7 +159,7 @@
 .page-facts {
   margin: 0 0 5px 4px;
   color: var(--ink-3);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
   white-space: nowrap;
 }
 .page-acts {
@@ -169,7 +169,7 @@
 .page-acts button {
   padding: 3px 10px;
   color: var(--ink-2);
-  font: 13px var(--title);
+  font: var(--fs-mid) var(--title);
   letter-spacing: 0.06em;
   white-space: nowrap;
 }
@@ -201,7 +201,7 @@
 .library-kinds button {
   padding: 2px 4px;
   color: var(--ink-3);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
 }
 .library-kinds button:hover,
 .library-kinds button.active {
@@ -220,7 +220,7 @@
   outline: 0;
   background: none;
   color: var(--ink);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
 }
 .page-find:focus {
   border-bottom-color: var(--ink-3);
@@ -234,7 +234,7 @@
   align-items: center;
   gap: 2px;
   color: var(--ink-3);
-  font: 13px var(--title);
+  font: var(--fs-mid) var(--title);
   letter-spacing: 0.06em;
 }
 .library-crumbs button {
@@ -273,7 +273,7 @@
 .strip-cols {
   min-height: 22px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.14em;
 }
 .strip-cols > span {
@@ -304,7 +304,7 @@
   border: 1px solid var(--line);
   background: var(--paper);
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.15s;
@@ -339,13 +339,13 @@
 .strip-name strong {
   overflow: hidden;
   color: var(--ink);
-  font: 400 13.5px var(--title);
+  font: 400 var(--fs-mid) var(--title);
   text-overflow: ellipsis;
 }
 .strip-name small {
   overflow: hidden;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
   text-overflow: ellipsis;
 }
 .strip.dir .strip-name strong {
@@ -374,7 +374,7 @@
 .strip-acts button {
   padding: 2px 0;
   color: var(--ink-2);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
 }
 .strip-acts button:hover {
   color: var(--ink);
@@ -400,7 +400,7 @@
   outline: 0;
   background: none;
   color: var(--ink);
-  font: 13.5px var(--title);
+  font: var(--fs-mid) var(--title);
 }
 .strip.drop-over,
 .strip-back.drop-over,
@@ -500,7 +500,7 @@
   gap: 14px;
   margin: 16px 0 0;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 .library-scratch {
   display: inline-flex;
@@ -509,7 +509,7 @@
 }
 .library-scratch button {
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
   text-decoration: underline dotted;
   text-underline-offset: 3px;
 }
@@ -520,7 +520,7 @@
   padding: 60px 10px;
   text-align: center;
   color: var(--ink-3);
-  font: 12px/1.9 var(--title);
+  font: var(--fs-small)/1.9 var(--title);
 }
 
 /* 分组页：与卷宗同一本簿。列表一组一条（组名 · 段 · 预设 · 目录 · 日期）；一组的详情是两行设置加组里的对话 */

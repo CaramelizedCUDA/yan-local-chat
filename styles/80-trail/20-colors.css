@@ -77,7 +77,7 @@
   flex: none;
   margin-left: 6px;
   color: var(--gold);
-  font: 10px/1 var(--title);
+  font: var(--fs-mark)/1 var(--title);
   letter-spacing: 0.08em;
   opacity: 0.85;
 }
@@ -112,7 +112,7 @@
   align-items: center;
   gap: 8px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.06em;
 }
 .relay-line:before,

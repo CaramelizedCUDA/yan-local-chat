@@ -370,7 +370,7 @@ button:focus:not(:focus-visible) {
   border-top: 1px solid var(--line);
   border-radius: 0 0 var(--radius-m) var(--radius-m);
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .model-manage:hover {
   color: var(--ink);
@@ -436,7 +436,7 @@ button:focus:not(:focus-visible) {
   white-space: nowrap;
   opacity: 0;
   transform: translateX(6px);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.06em;
   pointer-events: none;
   transition:
@@ -461,7 +461,7 @@ button:focus:not(:focus-visible) {
   color: var(--ink);
 }
 .outline.dense .outline-label {
-  font-size: 10px;
+  font-size: var(--fs-mark);
 }
 /* 「回到最新」：一枚圆钮，只一枚 ↓（四字收进 title），顶上一弧朱。
    落选的：方角纸签（与「引用 | 旁注」同式，用户嫌不如圆的好看，2026-10-01）；白底胶囊（99px 圆角，被嫌脱节）。见 设计稿/26 二 */

@@ -53,7 +53,7 @@
 }
 .listen-clock {
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
 }
@@ -98,7 +98,7 @@
 .listen-where {
   margin: 0 0 12px;
   color: var(--ink-3);
-  font: 11.5px/1.6 var(--title);
+  font: var(--fs-note)/1.6 var(--title);
   letter-spacing: 0.06em;
   overflow-wrap: anywhere;
 }
@@ -109,7 +109,7 @@
   gap: 1px;
   margin-bottom: 16px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
 }
 .listen-volume button {
   width: 11px;
@@ -145,7 +145,7 @@
   gap: 12px;
   padding: 7px 2px;
   color: var(--ink-2);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
   text-align: left;
 }
 .listen-list button + button {
@@ -243,7 +243,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--ink);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.06em;
 }
 .listen-name:hover {
@@ -251,7 +251,7 @@
 }
 .listen-time {
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   font-variant-numeric: tabular-nums;
 }
 .listen-acts {
@@ -261,7 +261,7 @@
   min-width: 190px;
   margin-top: 6px;
   color: var(--ink-2);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
 }
 .listen-acts button:hover {
   color: var(--ink);

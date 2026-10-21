@@ -9,7 +9,7 @@
 }
 .tool-stack.is-work > summary {
   height: 26px;
-  font: 10.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.1em;
   color: var(--ink-2);
 }
@@ -52,7 +52,7 @@
   gap: 7px;
   margin: 6px 0 4px 7px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.06em;
 }
 .trail-drafting .tool-state {
@@ -65,7 +65,7 @@
   padding: 0 4px;
   color: var(--ink-3);
   opacity: 0.7;
-  font-size: 10.5px;
+  font-size: var(--fs-mark);
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
   cursor: default;
@@ -127,7 +127,7 @@
   margin: 0 0 0.6em;
 }
 .trail-note pre {
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 .tool-step.foldable > .tool-step-head {
   cursor: pointer;
@@ -144,7 +144,7 @@
   margin: -4px 9px 8px 50px;
   padding: 2px 0;
   color: var(--ink-3);
-  font: 10.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.06em;
 }
 .tool-more:hover {

@@ -62,12 +62,12 @@ html.work-mode .chat-scroll-grabber {
   position: relative;
   margin-top: 8px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.14em;
 }
 .chat-title .chip-pop {
   top: 22px;
-  font: 12px var(--body);
+  font: var(--fs-small) var(--body);
   letter-spacing: 0;
 }
 .message {
@@ -114,7 +114,7 @@ html.work-mode .chat-scroll-grabber {
   padding: 2px 0 2px 11px;
   border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line));
   color: var(--ink-3);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.6;
   white-space: pre-wrap;
   display: -webkit-box;
@@ -172,7 +172,7 @@ html.work-mode .chat-scroll-grabber {
   border-radius: var(--radius-s);
   background: var(--paper);
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
   box-shadow: 0 3px 10px rgba(61, 49, 32, 0.1);
   animation: rise 0.16s ease-out;
   transform: translate(-50%, 0);
@@ -187,7 +187,7 @@ html.work-mode .chat-scroll-grabber {
   padding: 3px 9px;
   border-radius: 0;
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
   font-family: var(--title);
   letter-spacing: 0.04em;
 }
@@ -208,7 +208,7 @@ html.work-mode .chat-scroll-grabber {
   padding: 4px 4px 4px 11px;
   border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line));
   color: var(--ink-3);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.55;
   animation: rise 0.2s ease-out;
 }
@@ -270,7 +270,7 @@ html.work-mode .chat-scroll-grabber {
   gap: 8px;
   margin-bottom: 12px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.12em;
 }
 .message-actions {

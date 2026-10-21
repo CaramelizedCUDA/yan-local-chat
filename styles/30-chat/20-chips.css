@@ -6,7 +6,7 @@
   height: 24px;
   padding: 0 2px;
   color: var(--ink-2);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
   max-width: 260px;
   transition: color 0.16s;
 }
@@ -55,7 +55,7 @@
 .chip-pop .field {
   width: 100%;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .chip-pop-row {
   display: flex;
@@ -70,7 +70,7 @@
 .chip-pop small {
   display: block;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
   margin-top: 6px;
 }
 .chip-pop-list {
@@ -86,7 +86,7 @@
   padding: 6px 8px;
   border-radius: var(--radius-m);
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -99,7 +99,7 @@
 .chip-pop-list .chip-pop-label {
   padding: 4px 8px 2px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.12em;
 }
 .chip-menu {
@@ -114,7 +114,7 @@
   padding: 7px 9px;
   border-radius: var(--radius-m);
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .chip-menu button:hover {
   background: var(--paper-2);
@@ -125,7 +125,7 @@
 }
 .chip-menu button small {
   color: var(--ink-3);
-  font-size: 10px;
+  font-size: var(--fs-mark);
 }
 /* 浮层菜单：附件签「＋」与历史条目「⋯」共用，挂在 body 上按锚点定位 */
 .chip-pop.floating {
@@ -154,7 +154,7 @@
   border-radius: var(--radius-m) var(--radius-l) var(--radius-l) var(--radius-l);
   color: var(--ink-2);
   font-family: var(--title);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   letter-spacing: 0.025em;
   transition:
     background-color 0.16s,
@@ -162,7 +162,7 @@
 }
 .chip-pop.floating.chip-menu button small {
   margin-left: 18px;
-  font: 10.5px var(--body);
+  font: var(--fs-mark) var(--body);
   letter-spacing: 0;
 }
 .chip-pop.floating.chip-menu button.danger {
@@ -205,7 +205,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ink-3);
-  font-size: 10px;
+  font-size: var(--fs-mark);
 }
 /* 夹：名字墨色加重、后缀一枚淡 ›；顶上回上一层的一行是路径，淡墨小字，下压一线 */
 .chip-pop.attach-picker .chip-pop-list .picker-dir {
@@ -221,7 +221,7 @@
   border-bottom: 1px solid var(--line);
   border-radius: var(--radius-m) var(--radius-m) 0 0;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 .chip-pop.attach-picker .chip-pop-list .picker-up:hover {
   color: var(--ink);
@@ -233,7 +233,7 @@
   border-radius: var(--radius-m);
   text-align: left;
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
 }
 .chip-pop-unbind:hover {
   background: var(--paper-2);

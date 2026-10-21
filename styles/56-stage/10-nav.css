@@ -64,7 +64,7 @@
   padding: 0 6px;
   border-radius: var(--radius-m);
   color: var(--ink-3);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.02em;
   text-align: left;
   white-space: nowrap;
@@ -110,7 +110,7 @@
   margin: 0 4px 0 auto;
   padding: 4px 6px 4px 14px;
   color: var(--ink-2);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.1em;
   white-space: nowrap;
   cursor: default;
@@ -154,7 +154,7 @@
   display: block;
   padding: 6px 0 5px;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
   letter-spacing: 0.14em;
 }
 .stage-step {
@@ -170,7 +170,7 @@
   flex: none;
   width: 34px;
   color: color-mix(in srgb, var(--ink-3) 70%, transparent);
-  font-size: 10.5px;
+  font-size: var(--fs-mark);
 }
 .stage-step.cur {
   color: var(--ink);

@@ -15,7 +15,7 @@
   width: 100%;
   padding: 2px 0;
   color: var(--ink-3);
-  font: 11.5px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.06em;
   cursor: pointer;
   text-align: left;
@@ -136,7 +136,7 @@
 .change-files em {
   margin-left: 8px;
   color: var(--ink-3);
-  font: 10.5px var(--title);
+  font: var(--fs-mark) var(--title);
   font-style: normal;
   letter-spacing: 0.06em;
 }

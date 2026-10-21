@@ -14,7 +14,7 @@
   align-items: center;
   gap: 10px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.16em;
 }
 /* 「对谈」后注当下的节气（设计稿/84）：隔一粒淡点，与前面同字同色 */
@@ -63,7 +63,7 @@
 .suggestion {
   padding: 2px 14px;
   color: var(--ink-3);
-  font: 13px var(--title);
+  font: var(--fs-mid) var(--title);
   letter-spacing: 0.04em;
 }
 .suggestion:first-child {
