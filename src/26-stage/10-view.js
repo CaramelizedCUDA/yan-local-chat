@@ -1,6 +1,7 @@
 // 言 · 游目 · 画面：看哪一页，连上它、按大小收它的画面
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // ---------- 看哪一页：连上它、收它的画面 ----------
+let stageAttachRevision = 0;
 /** @param {string} targetId */
 function stageShow(targetId) {
   stage.current = targetId;
@@ -8,24 +9,37 @@ function stageShow(targetId) {
   if (stageVisible()) void stageAttach();
 }
 async function stageAttach() {
-  const target = stage.current;
+  const target = stage.current,
+    ws = stage.ws;
   if (!stage.ws || !target || stage.attached === target) return;
-  await stageDetach();
+  const detaching = stageDetach(),
+    revision = stageAttachRevision,
+    current = () => revision === stageAttachRevision && stage.ws === ws && stage.current === target && stageVisible();
+  await detaching;
+  if (!current()) return;
   stage.attached = target;
   try {
     const { sessionId } = await stageSend("Target.attachToTarget", { targetId: target, flatten: true });
-    if (stage.attached !== target) return void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
+    if (!current()) {
+      if (stage.ws === ws) void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
+      return;
+    }
     stage.session = sessionId;
     // 浏览器的窗口在屏幕外、不在焦点上：不模拟焦点，递进去的按键没人接（playwright 自己也这么做）
     void stageSend("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId).catch(() => {});
     // 收 Page 域的事件：载入、跳转、提示框（开着的提示框，enable 时会补报一回）
     await stageSend("Page.enable", {}, sessionId);
+    if (!current()) return;
     // 网页要人选文件：不让浏览器在屏幕外开窗，报给看台
     void stageSend("Page.setInterceptFileChooserDialog", { enabled: true }, sessionId).catch(() => {});
     // 执事在网页上哪儿下手：网页里放一个只给看台听的耳目
     void stageInkAttach(sessionId, target);
     void stageReadHistory();
     await stageSend("Page.startScreencast", { format: "jpeg", quality: 80 }, sessionId);
+    if (!current()) {
+      if (stage.ws === ws) void stageSend("Page.stopScreencast", {}, sessionId).catch(() => {});
+      return;
+    }
     // 静着的页不重绘就不出帧：先截一张垫底（后台的页截不出来，等不到就算了）
     const [shot, metrics] = await Promise.race([
       Promise.all([
@@ -34,7 +48,7 @@ async function stageAttach() {
       ]),
       new Promise((_, reject) => setTimeout(() => reject(Error("timeout")), 2000))
     ]);
-    if (stage.session === sessionId && !stage.framed)
+    if (current() && stage.session === sessionId && !stage.framed)
       void stageFrame(shot.data, metrics.cssVisualViewport.clientWidth, metrics.cssVisualViewport.clientHeight);
   } catch {}
   void stageFit();
@@ -146,6 +160,7 @@ function stageZoomStep(step) {
   stageSetZoom(STAGE_ZOOMS[Math.max(0, Math.min(STAGE_ZOOMS.length - 1, (at < 0 ? STAGE_ZOOMS.length - 1 : at) + step))]);
 }
 async function stageDetach() {
+  stageAttachRevision += 1;
   const session = stage.session;
   stage.session = stage.attached = "";
   stage.framed = false;
