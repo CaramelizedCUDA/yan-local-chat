@@ -113,7 +113,7 @@ check(
   JSON.stringify(card)
 );
 check("marker meta counts helper steps and files", /2 步 · 改 1 个文件 · \d+ 秒/.test(card.meta), card.meta);
-// 思考强度：乙领命时给了 low，请求里带的就是 low、签上标「思考低」；甲没给，沿用主答（此处是默认，不带字段、不标）
+// 思考强度：乙领命时给了 low，请求里带的就是 low、签上标「思考 低」；甲没给，沿用主答（此处是默认，不带字段、不标）
 const efforts = JSON.parse(
   await evalJs(
     `JSON.stringify([...document.querySelectorAll(".message.assistant .tool-step-delegate")].map(d => ({ title: d.querySelector(".tool-title").textContent, meta: d.querySelector(".tool-meta").textContent })))`
@@ -126,7 +126,7 @@ const helperB = efforts.find(e => e.title === "建 b.js"),
   );
 check(
   "a helper sent with effort thinks at that level and the marker says so",
-  reportB.endsWith("effort:low") && /思考低$/.test(helperB?.meta || "") && !/思考/.test(helperA?.meta || ""),
+  reportB.endsWith("effort:low") && /思考 低$/.test(helperB?.meta || "") && !/思考/.test(helperA?.meta || ""),
   JSON.stringify({ reportB, efforts })
 );
 // 差遣的档位枚举只列这台模型认的几档：通用四档里的 high、max 它不认，主模型挑中了帮手起跑就会被拒

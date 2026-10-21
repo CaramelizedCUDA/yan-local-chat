@@ -81,7 +81,7 @@ function delegateSubState(step) {
         : status === "interrupted"
           ? [t("中辍"), stepText(step.result), steps.length ? t`${steps.length} 步` : ""]
           : [stepText(step.result)]),
-      sub?.effort ? t`思考${reasoningLabel(sub.effort)}` : ""
+      sub?.effort ? t`思考 ${reasoningLabel(sub.effort)}` : ""
     ]
       .filter(Boolean)
       .join(" · ")

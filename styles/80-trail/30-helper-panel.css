@@ -84,8 +84,14 @@
   align-items: baseline;
   gap: 10px;
 }
+/* 窗本身接焦点（开窗时焦点移进来），不画框 */
+.helper-viewer:focus {
+  outline: none;
+}
+/* 名字先占足，题下那一串只取余下的、窄了省略：原先那一串不让，窄屏上名字被挤成零宽、整个不见 */
 .helper-head-title strong {
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 3em;
   overflow: hidden;
   color: var(--ink);
   font: 500 13px var(--title);
@@ -94,7 +100,11 @@
   text-overflow: ellipsis;
 }
 .helper-head-title small {
-  flex: none;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--ink-3);
   font-size: 11px;
   font-variant-numeric: tabular-nums;

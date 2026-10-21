@@ -631,7 +631,7 @@ function waitingOutcome(step, sub, tally, overrides) {
 /** @param {Step} step @param {string} [kind] 签上的标签：差遣 / 续派 */
 function delegateStepHtml(step, kind = "差遣") {
   const { sub, status, meta } = delegateSubState(step);
-  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" title="${t(`展开帮手的行迹`)}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">${t(`遣`)}</span>${t(kind)}</span><span class="tool-title" title="${escapeHtml(sub?.task || step.title || "")}">${escapeHtml(step.title || "")}</span>${kind === "差遣" ? "" : `<span class="helper-fresh">${t(`已更新`)}</span>`}<span class="tool-meta" title="${status === "error" || status === "interrupted" ? escapeHtml(stepText(step.result) || t("未完成")) : ""}">${escapeHtml(meta)}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" title="${t(`看这名帮手`)}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">${t(`遣`)}</span>${t(kind)}</span><span class="tool-title" title="${escapeHtml(sub?.task || step.title || "")}">${escapeHtml(step.title || "")}</span>${kind === "差遣" ? "" : `<span class="helper-fresh">${t(`已更新`)}</span>`}<span class="tool-meta" title="${status === "error" || status === "interrupted" ? escapeHtml(stepText(step.result) || t("未完成")) : ""}">${escapeHtml(meta)}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 行迹里那枚签的就地更新：只动头上的状态与标题。帮手自己的时间线与回报不在这儿，在面板里。返回真即已就地画好
 /** @param {Step} step */

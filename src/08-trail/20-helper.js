@@ -66,6 +66,8 @@ function renderHelperBar() {
 // 瞥一眼不必开窗：签自己在呼吸，输入框上方还有帮手条。几名帮手用 ‹ n/m › 翻，翻不动了就点中间的计数出列表
 let helperKeyOpen = ""; // 窗里正看着的那名帮手（helperKey）
 let helperRunFocus = ""; // 点开它的那一趟：合起时回到这一趟的签
+/** @type {Element|null} */
+let helperReturnFocus = null; // 开窗前焦点所在，合上时交还
 const helperSeen = new Map(); // 各趟步骤的就地更新台账，趟 id → 台账（与行迹各记各的，互不干扰）
 /** 当前对话里帮手的每一趟，按发生先后 */
 function allDelegateSteps() {
@@ -84,6 +86,17 @@ function helperLatestRuns() {
   for (const step of allDelegateSteps()) latest.set(helperKey(step), step);
   return [...latest.values()];
 }
+// 几趟合起来的一句：做着、断着、没做成的照最近一趟说（第几趟），都收了工的合计步数与用时——
+// 原先「2 趟 · 1 步 · 21 秒」的步数用时只是末一趟的，紧跟着的耗墨却是几趟的合计
+/** @param {Step[]} runs 同一名帮手的各趟 */
+function helperRunsMeta(runs) {
+  const { status, meta } = delegateSubState(runs.at(-1));
+  if (runs.length < 2) return meta;
+  if (status !== "done") return t`第 ${runs.length} 趟 · ${meta}`;
+  const steps = runs.reduce((sum, step) => sum + (step.sub?.steps || []).filter(s => !isFold(s)).length, 0),
+    ms = runs.reduce((sum, step) => sum + Number(step.sub?.durationMs || 0), 0);
+  return [t`${runs.length} 趟`, t`${steps} 步`, ms ? spanText(ms) : ""].filter(Boolean).join(" · ");
+}
 function helperPanelOpen() {
   const panel = $("#helperModal");
   return !!panel && !panel.classList.contains("hidden") && !panel.classList.contains("leaving");
@@ -98,7 +111,13 @@ function openHelperPanel(stepId, noteId = "") {
   // 点开的是先前收着的一趟：摊开它（人自己收起的仍收着）；传话要翻到那句话，总得摊开
   if (noteId || (!helperFolds.has(step.id) && helperRunFolded(step))) helperFolds.set(step.id, false);
   $("#helperList").classList.add("hidden");
-  showNow($("#helperModal"));
+  const modal = $("#helperModal");
+  showNow(modal);
+  // 焦点进窗：敲回车开的，Tab 不再落到窗底下的正文里；合上时交还
+  if (!modal.contains(document.activeElement)) {
+    helperReturnFocus = document.activeElement;
+    modal.focus({ preventScroll: true });
+  }
   renderHelperPanel(fresh);
   const stage = $("#helperScroll"),
     body = $("#helperPanelBody"),
@@ -124,6 +143,8 @@ function closeHelperPanel() {
   helperSeen.clear();
   const panel = $("#helperModal");
   if (panel && !panel.classList.contains("hidden")) hideWithFade(panel);
+  if (helperReturnFocus?.isConnected) helperReturnFocus.focus({ preventScroll: true });
+  helperReturnFocus = null;
 }
 // ‹ › 翻到前一名 / 后一名帮手，开在它最近的那一趟
 function stepHelperPanel(delta) {
@@ -139,9 +160,9 @@ function renderHelperList() {
   const all = allDelegateSteps();
   host.innerHTML = helperLatestRuns()
     .map((step, i) => {
-      const { status, meta } = delegateSubState(step),
-        runs = all.filter(run => helperKey(run) === helperKey(step)).length;
-      return `<button type="button" class="helper-list-item${helperKey(step) === helperKeyOpen ? " here" : ""}" data-helper-pick="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><span class="helper-list-no">${i + 1}</span><span class="helper-list-title">${escapeHtml(step.title || t("领命中"))}</span><span class="helper-list-meta">${escapeHtml(runs > 1 ? t`${runs} 趟 · ${meta}` : meta)}</span></button>`;
+      const { status } = delegateSubState(step),
+        meta = helperRunsMeta(all.filter(run => helperKey(run) === helperKey(step)));
+      return `<button type="button" class="helper-list-item${helperKey(step) === helperKeyOpen ? " here" : ""}" data-helper-pick="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><span class="helper-list-no">${i + 1}</span><span class="helper-list-title">${escapeHtml(step.title || t("领命中"))}</span><span class="helper-list-meta">${escapeHtml(meta)}</span></button>`;
     })
     .join("");
 }
@@ -221,15 +242,18 @@ function renderHelperPanel(fresh = false) {
     last = runs.at(-1);
   // 那名帮手不在眼前了（换了对话、切了分支）：窗合上，不留一扇空的
   if (!last) return closeHelperPanel();
-  const { status, meta } = delegateSubState(last),
+  const { status } = delegateSubState(last),
     all = helperLatestRuns(),
-    at = all.findIndex(step => helperKey(step) === helperKeyOpen);
+    at = all.findIndex(step => helperKey(step) === helperKeyOpen),
+    stage = $("#helperScroll"),
+    // 帮手做着、人停在纸底：新写的跟着往下走，同正文贴底；往上翻着看就不拽
+    follow = !fresh && status === "running" && stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 48;
   $("#helperModal").dataset.status = status;
   const title = $("#helperTitle");
   if (title && title.textContent !== (last.title || t("领命中"))) title.textContent = last.title || t("领命中");
   // 题下接着写帮手耗的墨（几趟合计）：各轮请求一回来就记上，做着时也跟着跳
   const ink = runs.reduce((sum, step) => sum + Number((step.sub.usage || liveHelperUsage.get(step.sub))?.total_tokens || 0), 0),
-    head = runs.length > 1 ? t`${runs.length} 趟 · ${meta}` : meta;
+    head = helperRunsMeta(runs);
   rollText($("#helperPanelSub"), ink ? t`${head} · 耗墨 ${formatTokens(ink)}` : head);
   // ‹ n/m ›：只有一名帮手时不画
   const nav = $("#helperNav"),
@@ -265,6 +289,7 @@ function renderHelperPanel(fresh = false) {
     if (!helperSeen.has(step.id)) helperSeen.set(step.id, new Map());
     paintHelperTrail(run.lastElementChild, step, !blank, helperSeen.get(step.id));
   });
+  if (follow) stage.scrollTop = stage.scrollHeight;
 }
 // 回到当前对话行迹里的那一步（行迹折着就摊开）；帮手手上的一步不在正文行迹里，就回到派它的那枚签
 function revealStep(id) {
@@ -353,6 +378,9 @@ function bindHelperEvents() {
   $("#helperModal").addEventListener("click", event => {
     if (helperPressedBackdrop && helperBackdrop(event.target)) closeHelperPanel();
     helperPressedBackdrop = false;
+  });
+  $("#helperModal").addEventListener("keydown", event => {
+    if (event.key === "Tab") trapModalFocus(event, $("#helperModal"));
   });
   // ‹ › 翻帮手；中间的计数点开是一张列表——帮手多了一个个翻就难受
   $("#helperNav").addEventListener("click", event => {
