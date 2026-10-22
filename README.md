@@ -12,7 +12,7 @@
 
 <a href="https://siliconflow.cn" title="硅基流动 SiliconFlow"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/powered-by-siliconflow-dark.png"><img src="assets/powered-by-siliconflow-light.png" alt="Powered by SiliconFlow" height="44"></picture></a>
 
-言与 [硅基流动 SiliconFlow](https://siliconflow.cn) 合作：DeepSeek、Qwen、GLM、Kimi 等模型一处可用。在「设置 → 模型」的接口里选「硅基流动」，填上自己的 API Key 即可——地址已填好，模型列表只列对话模型，思考档位按各模型所认换算。图文步骤见 [在言中使用硅基流动](docs/siliconflow.md)。
+言与 [硅基流动 SiliconFlow](https://siliconflow.cn) 合作：在「设置 → 模型」的接口里选「硅基流动」，填上自己的 API Key 即可。图文步骤见硅基流动官方文档里的[《在言中使用硅基流动》](https://docs.siliconflow.cn/docs/usercases/use-siliconcloud-in-yan)。
 
 ## 特色
 
