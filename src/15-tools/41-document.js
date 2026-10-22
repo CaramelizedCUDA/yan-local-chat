@@ -8,7 +8,7 @@ defineTool({
   label: t("翻阅文档"),
   offer: ctx => ctx.docs.length > 0,
   vars: ctx => {
-    const attached = ctx.docs.filter(d => !d.archive && !d.skill).map(d => d.name);
+    const attached = ctx.docs.filter(d => !d.archive && d.kind !== "skill").map(d => d.name);
     return { docs: attached.length ? t`本段附件：${attached.join("、")}。` : "" };
   },
   lookup: true,
@@ -47,7 +47,8 @@ defineTool({
       } catch (error) {
         return { ok: false, content: t`卷宗文档读取失败：${String(error.message || error).slice(0, 120)}`, display: "读取失败" };
       }
-    } else if (doc.skill) {
+    } else if (doc.kind === "skill") {
+      // 认 kind 不认 skill：点名置入的那件附件也带 skill（附件条画锦囊用），它的字在浏览器里，不在技能目录
       try {
         text = await skillDocumentText(doc);
       } catch (error) {
@@ -98,8 +99,8 @@ defineTool({
 const DOCUMENT_LIST_LIMIT = 60;
 /** @param {Step} step */
 function documentList(step, docs) {
-  const attached = docs.filter(d => !d.archive && !d.skill),
-    skills = docs.filter(d => d.skill && !d.manual),
+  const attached = docs.filter(d => !d.archive && d.kind !== "skill"),
+    skills = docs.filter(d => d.kind === "skill" && !d.manual),
     archived = docs.filter(d => d.archive).sort((a, b) => new Date(b.modifiedAt || 0).getTime() - new Date(a.modifiedAt || 0).getTime());
   step.title ||= t("可读文档");
   const lines = [

@@ -35,6 +35,26 @@ test("技能只把名字和说明带进系统提示，参考按需翻；对话�
   assert.equal(outcome.content, "参考正文");
 });
 
+test("点名置入的那件附件带着技能名，仍照附件列、照附件读——不当技能目录里的文件去桥接取", async () => {
+  const f = load([
+    "toolDefinitions",
+    "TOOLS",
+    `setup: prompts => {
+      Object.assign(PROMPTS, prompts); store.settings.archiveRead = false;
+      skillSet = { home: 'E:/skills', skills: [{ name: 'demo', description: '照格式写信', dir: 'E:/skills/demo', files: [{ path: 'SKILL.md' }] }] };
+      bridge = async () => { throw Error('没有这份技能：undefined'); };
+      getAttachment = async () => ({ kind: 'text', data: '点名用技能「demo」，照它做。' });
+    }`
+  ]);
+  f.setup(win.YAN_PROMPTS);
+  const conversation = { messages: [{ attachments: [{ id: "a1", name: "demo.md", kind: "text", skill: "demo" }] }] };
+  const description = f.toolDefinitions(conversation).find(tool => tool.function.name === "read_document").function.description;
+  assert.match(description, /本段附件：demo\.md。/);
+  const outcome = await f.TOOLS.get("read_document").run({}, { name: "demo.md" }, { conversation });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.content, "点名用技能「demo」，照它做。");
+});
+
 test("「＋」里点一份技能：说明作附件放上案，开头写明点名用它；只凭点名的不进系统提示", async () => {
   const f = load([
     "placeSkill",

@@ -66,9 +66,8 @@ async function placeSkill(skill) {
   try {
     const text = await skillDocumentText({ skillDir: skill.dir, path: SKILL_FILE, main: true }),
       file = new File([`点名用技能「${skill.name}」，照它做。\n${text}`], `${skill.name}.md`, { type: "text/markdown" });
-    // 记下是哪份技能：案上、问句下那一件画锦囊、写技能名，不当一件寻常的 .md
-    const record = { ...(await ingestFile(file)), skill: skill.name };
-    if (!canPlaceAttachment(file.size) || !placeAttachment(key, record)) return;
+    // 先量放不放得下再收进浏览器：放不下的不留一份没人引的原件。记下是哪份技能：案上、问句下那一件画锦囊、写技能名，不当一件寻常的 .md
+    if (!canPlaceAttachment(file.size) || !placeAttachment(key, { ...(await ingestFile(file)), skill: skill.name })) return;
     persistDraft();
     renderAttachments();
     if (draftKey() !== key) return toast(t`${skill.name} 已置于原对话的案上`);
