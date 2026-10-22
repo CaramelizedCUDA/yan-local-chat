@@ -44,9 +44,10 @@ const INTENT_PENS = {
     brushStroke([4.1, 2.3, 4.25, 5.6, 4.1, 8.9], 1.35, { tone: "ink", tail: 0.3 }) +
     brushStroke([7.9, 2.3, 8.05, 5.6, 7.9, 8.9], 1.35, { tone: "ink", tail: 0.3 }),
   open: () => brushDot(6, 5.6, 1.4, "ink2"),
-  // 守是常驻的约束，无所谓成没成：记号画怎么把关（设计稿/106 甲）——钩子一笔竖钩、收尾前重查一笔未合的淡墨回环，只凭自觉的不画；测试不过、凭据变了换朱圈
+  // 守是常驻的约束，无所谓成没成：记号画怎么把关（设计稿/106 甲）——钩子一笔竖钩、收尾前重查一笔淡墨横钩（107 丙：走到尾再回头看；回环与朱圈相混，
+  // 一横像破折号、「二」像等号、一波太小），只凭自觉的不画；测试不过、凭据变了换朱圈
   hook: () => brushStroke([6.6, 1.2, 6.8, 5, 6.7, 8.6, 5.6, 9.6, 3.6, 8.2], 1.5, { tone: "ink", tail: 0.5, head: 0.9 }),
-  check: () => brushArc(6, 5.6, 3.5, -40, 250, 1.15, { tone: "ink2", tail: 0.4 }) + brushDot(8.9, 3.3, 0.9, "ink2"),
+  check: () => brushStroke([2, 3.4, 6, 3, 9.4, 3.2, 8.2, 6.4, 6.4, 8.8], 1.35, { tone: "ink2", tail: 0.4, head: 0.9 }),
   kept: () => ""
 };
 const KEEP_GATE_TEXT = { hook: t("动手前先跑测试，不过就不做"), check: t("动过手的那一答，收尾前重查") };
@@ -55,11 +56,11 @@ function keepGate(node) {
   if (node.anchors.some(key => keepHookAnchor(node, key))) return "hook";
   return node.anchors.some(key => !keepHookAnchor(node, key) && ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer") ? "check" : "";
 }
-/** 守行首的记号，悬停给一句 @param {IntentNode} node */
+/** 守行首的记号：符号生疏，指上即浮一张纸签说明（原生 title 要停一秒多、12px 也难指中） @param {IntentNode} node */
 function intentKeepMark(node) {
   const gate = keepGate(node);
   return gate
-    ? `<svg class="brush intent-mk" data-mark="${gate}" width="12" height="11" viewBox="0 0 12 11"><title>${escapeHtml(KEEP_GATE_TEXT[gate])}</title>${INTENT_PENS[gate]()}</svg>`
+    ? `<span class="intent-mk-tip" role="img" aria-label="${escapeHtml(KEEP_GATE_TEXT[gate])}" data-tip="${escapeHtml(KEEP_GATE_TEXT[gate])}">${intentMark(gate)}</span>`
     : intentMark("kept");
 }
 /** @param {string} state @param {number} [x] @param {number} [y] 给了坐标即嵌进图里 */

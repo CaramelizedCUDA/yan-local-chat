@@ -362,7 +362,8 @@
   align-items: center;
   gap: 9px;
 }
-.intent-detail-head > .intent-mk {
+.intent-detail-head > .intent-mk,
+.intent-detail-head > .intent-mk-tip > .intent-mk {
   width: 14px;
   height: 13px;
 }
@@ -506,8 +507,42 @@
   outline: none;
   background: color-mix(in srgb, var(--ink) 3%, transparent);
 }
-.intent-row > .intent-mk {
+.intent-row > .intent-mk,
+.intent-row > .intent-mk-tip {
   align-self: center;
+}
+/* 守的把关记号：指上即浮一张纸签（同划选「引用 | 旁注」：方角、发丝边、极淡的影）；四周放宽几 px 好指中 */
+.intent-mk-tip {
+  position: relative;
+  display: inline-flex;
+  margin: -5px;
+  padding: 5px;
+}
+.intent-mk-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: 0;
+  z-index: var(--z-tip);
+  padding: 3px 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--paper);
+  box-shadow: 0 3px 10px rgba(61, 49, 32, 0.1);
+  color: var(--ink-2);
+  font: normal var(--fs-note) var(--body);
+  letter-spacing: 0;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-quick);
+}
+:root[data-theme="dark"] .intent-mk-tip::after {
+  background: var(--paper-3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+.intent-mk-tip:hover::after {
+  opacity: 1;
 }
 .intent-row-name {
   overflow: hidden;
