@@ -94,9 +94,11 @@ try {
   await evalJs(`document.querySelector("#chatMeta .intent-glance").click(); true`);
   await waitFor(`!!document.querySelector(".intent-card .intent-keep-head")`, 20000);
   check(
-    "the 守 heading says where each keep is checked",
-    await evalJs(`document.querySelector(".intent-keep-head small").textContent === "2 条，1 条动手前查，1 条收尾前重查"`),
-    await evalJs(`document.querySelector(".intent-keep-head small").textContent`)
+    "each 守 row marks where it is checked, the heading only counts",
+    await evalJs(
+      `document.querySelector(".intent-keep-head small").textContent === "2 条" && document.querySelector('.intent-roll [data-intent-node="远端"] .intent-mk')?.dataset.mark === "hook" && document.querySelector('.intent-roll [data-intent-node="测过"] .intent-mk')?.dataset.mark === "check"`
+    ),
+    await evalJs(`[...document.querySelectorAll(".intent-keep-head small, .intent-roll .intent-mk")].map(e => e.textContent || e.dataset.mark).join(" | ")`)
   );
   check(
     "the card leaves 守 off the graph and lists it in its own section after the roll",

@@ -44,9 +44,24 @@ const INTENT_PENS = {
     brushStroke([4.1, 2.3, 4.25, 5.6, 4.1, 8.9], 1.35, { tone: "ink", tail: 0.3 }) +
     brushStroke([7.9, 2.3, 8.05, 5.6, 7.9, 8.9], 1.35, { tone: "ink", tail: 0.3 }),
   open: () => brushDot(6, 5.6, 1.4, "ink2"),
-  // 守是常驻的约束，有就行、无所谓成没成：不画记号，只在测试不过、凭据变了时画朱圈
+  // 守是常驻的约束，无所谓成没成：记号画怎么把关（设计稿/106 甲）——钩子一笔竖钩、收尾前重查一笔未合的淡墨回环，只凭自觉的不画；测试不过、凭据变了换朱圈
+  hook: () => brushStroke([6.6, 1.2, 6.8, 5, 6.7, 8.6, 5.6, 9.6, 3.6, 8.2], 1.5, { tone: "ink", tail: 0.5, head: 0.9 }),
+  check: () => brushArc(6, 5.6, 3.5, -40, 250, 1.15, { tone: "ink2", tail: 0.4 }) + brushDot(8.9, 3.3, 0.9, "ink2"),
   kept: () => ""
 };
+const KEEP_GATE_TEXT = { hook: t("动手前先跑测试，不过就不做"), check: t("动过手的那一答，收尾前重查") };
+/** 守怎么把关：hook 写了 on、动手前跑挂的测试；check 挂着要跑指令的凭据、收尾前重查；空即只凭模型自觉 @param {IntentNode} node */
+function keepGate(node) {
+  if (node.anchors.some(key => keepHookAnchor(node, key))) return "hook";
+  return node.anchors.some(key => !keepHookAnchor(node, key) && ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer") ? "check" : "";
+}
+/** 守行首的记号，悬停给一句 @param {IntentNode} node */
+function intentKeepMark(node) {
+  const gate = keepGate(node);
+  return gate
+    ? `<svg class="brush intent-mk" data-mark="${gate}" width="12" height="11" viewBox="0 0 12 11"><title>${escapeHtml(KEEP_GATE_TEXT[gate])}</title>${INTENT_PENS[gate]()}</svg>`
+    : intentMark("kept");
+}
 /** @param {string} state @param {number} [x] @param {number} [y] 给了坐标即嵌进图里 */
 const intentMark = (state, x, y) =>
   `<svg class="brush intent-mk" data-mark="${escapeHtml(state)}"${x === undefined ? "" : ` x="${x.toFixed(1)}" y="${y.toFixed(1)}"`} width="12" height="11" viewBox="0 0 12 11" aria-hidden="true">${(INTENT_PENS[state] || INTENT_PENS.open)()}</svg>`;
@@ -224,7 +239,7 @@ function intentDetailHtml(intent, now, id) {
     ]);
   const kids = intentChildren(intent, id);
   if (kids.length) rows.push([t("内含"), chips(kids), "", true]);
-  return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head" data-intent-node="${escapeHtml(id)}" role="button" tabindex="0" title="${t(`收起`)}">${intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim"><span class="intent-when">${node.keep ? t("守") : escapeHtml(intentWhere(intent, id))}</span>${escapeHtml(node.claim)}</p><div class="intent-fields">${rows
+  return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head" data-intent-node="${escapeHtml(id)}" role="button" tabindex="0" title="${t(`收起`)}">${view === "kept" ? intentKeepMark(node) : intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim"><span class="intent-when">${node.keep ? t("守") : escapeHtml(intentWhere(intent, id))}</span>${escapeHtml(node.claim)}</p><div class="intent-fields">${rows
     .map(
       ([k, v, tone, wide]) =>
         `<div class="intent-field${wide ? " w" : ""}"><span class="k${tone ? ` ${tone}` : ""}">${k}</span><div class="v">${v}</div></div>`
@@ -253,36 +268,19 @@ function intentRollHtml(intent, now, order, selected, level) {
       const view = intentView(intent, id, now),
         inside = id === level ? "" : intentInside(intent, now, id),
         [say, tone] = intentRowSay(intent, now, id, view);
-      return `<div class="intent-row${roots.has(id) || id === level ? " root" : ""}" data-intent-node="${escapeHtml(id)}" data-state="${view}" role="button" tabindex="0">${intentMark(view)}<span class="intent-row-name">${escapeHtml(id)}</span><span class="intent-row-in">${
+      return `<div class="intent-row${roots.has(id) || id === level ? " root" : ""}" data-intent-node="${escapeHtml(id)}" data-state="${view}" role="button" tabindex="0">${view === "kept" ? intentKeepMark(intent.nodes[id]) : intentMark(view)}<span class="intent-row-name">${escapeHtml(id)}</span><span class="intent-row-in">${
         inside ? `<button type="button" data-intent-level="${escapeHtml(id)}" title="${t(`打开模块`)}">${inside} ›</button>` : ""
       }</span><span class="intent-row-say${tone ? ` ${tone}` : ""}">${escapeHtml(say)}</span></div>`;
     })
     .join("")}</div>`;
 }
 // 守：簿录之后另起一节（设计稿/80 卡片乙），行同目标那几行，出了事的说法换成事由；只在全局那一层。
-// 题旁一行事实：几条走钩子动手前查、几条挂着测试或探针收尾前重查——余下的只凭模型自觉，看得出哪些有程序把关、在哪一步把关
+// 哪条有程序把关、在哪一步把关，看各行的记号（keepGate）；题旁只写条数
 /** @param {Intent} intent @param {IntentPrints} now @param {string} selected */
 function intentKeepHtml(intent, now, selected) {
   const keeps = intentKeeps(intent);
   if (!keeps.length) return "";
-  const hooked = keeps.filter(id => intent.nodes[id].anchors.some(key => keepHookAnchor(intent.nodes[id], key))).length,
-    checked = keeps.filter(
-      id =>
-        !keepTrigger(intent.nodes[id]) && intent.nodes[id].anchors.some(key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer")
-    ).length,
-    trusted = keeps.length - hooked - checked,
-    n = keeps.length,
-    facts =
-      hooked === n
-        ? t`${n} 条，都动手前查`
-        : checked === n
-          ? t`${n} 条，收尾前都重查`
-          : trusted === n
-            ? t`${n} 条，未挂测试`
-            : [t`${n} 条`, hooked && t`${hooked} 条动手前查`, checked && t`${checked} 条收尾前重查`, trusted && t`${trusted} 条靠自觉`]
-                .filter(Boolean)
-                .join(t("，"));
-  return `<div class="intent-keep-head">${t(`守`)}<small>${facts}</small></div>${intentRollHtml(intent, now, keeps, selected, "")}`;
+  return `<div class="intent-keep-head">${t(`守`)}<small>${t`${keeps.length} 条`}</small></div>${intentRollHtml(intent, now, keeps, selected, "")}`;
 }
 /** 墨痕：新的在上，同一时刻的几笔并作一组；每笔写是哪一种（弃、撤、改意、归入……）。弃的带灰叉、写弃时的缘由，假定的带泥金勾；还在图上的名可点 @param {Intent} intent */
 function intentInkHtml(intent) {
