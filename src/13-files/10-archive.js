@@ -675,6 +675,8 @@ function bindLibraryEvents() {
     downloadArchiveFile(entry.path);
   });
   $("#messages").addEventListener("click", event => {
+    const more = event.target.closest(".deliver-more");
+    if (more) return toggleDeliverables(more);
     const button = event.target.closest("[data-deliver-action]");
     if (!button) return;
     const path = button.closest("[data-deliver]")?.dataset.deliver;

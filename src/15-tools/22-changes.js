@@ -289,19 +289,48 @@ function changeSummaryInner(message, open) {
 function deliverableMissing(path) {
   return archiveEntries !== null && !archiveEntries.some(entry => entry.path === path);
 }
-function deliverableFileHtml(f) {
+function deliverableFileHtml(f, extra = false) {
   const missing = deliverableMissing(f.path);
-  return `<div class="deliver-file${missing ? " missing" : ""}" data-deliver="${escapeHtml(f.path)}">${fileFigure(f.name, f.path)}<span class="deliver-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</span><small>${formatFileSize(f.size)}</small>${
+  return `<div class="deliver-file${missing ? " missing" : ""}${extra ? " extra" : ""}" data-deliver="${escapeHtml(f.path)}">${fileFigure(f.name, f.path)}<span class="deliver-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</span><small>${formatFileSize(f.size)}</small>${
     missing
       ? `<span class="deliver-gone">${t(`已移出卷宗`)}</span>`
       : `<button type="button" class="deliver-btn" data-deliver-action="view" title="${t(`预览`)}">${t(`预览`)}</button><button type="button" class="deliver-btn" data-deliver-action="download" title="${t(`另存到本机`)}">${t(`下载`)}</button>`
   }</div>`;
 }
+// 成品多了只摊前四件，余下的折进末行一句「余 n 件」（五件以内照旧全摊）；点开的记在本页、不存进消息，重画时照旧开着（设计稿/108 甲）
+const DELIVER_FOLD = 5,
+  DELIVER_SHOWN = 4;
+/** @type {Set<string>} */
+const deliverOpen = new Set();
+/** @param {Array<{ path: string, name: string, size: number }>} files */
+function deliverableRowsHtml(files) {
+  const fold = files.length > DELIVER_FOLD;
+  return files.map((f, i) => deliverableFileHtml(f, fold && i >= DELIVER_SHOWN)).join("");
+}
+function deliverMoreInner(rest, open) {
+  return `${open ? t("收起") : t`余 ${rest} 件`}<i aria-hidden="true">▾</i>`;
+}
 /** @param {Message} message */
 function deliverablesHtml(message) {
   const files = message.deliverables || [];
   if (!files.length) return "";
-  return `<div class="deliver-bar"><div class="deliver-head"><span class="seal deliver-seal" aria-hidden="true">${t(`成`)}</span><span>${t`成品 ${files.length} 件 · 已入卷宗`}</span></div>${files.map(deliverableFileHtml).join("")}</div>`;
+  const open = deliverOpen.has(message.id),
+    more =
+      files.length > DELIVER_FOLD
+        ? `<button type="button" class="deliver-more" aria-expanded="${open}">${deliverMoreInner(files.length - DELIVER_SHOWN, open)}</button>`
+        : "";
+  return `<div class="deliver-bar${open ? " open" : ""}"><div class="deliver-head"><span class="seal deliver-seal" aria-hidden="true">${t(`成`)}</span><span>${t`成品 ${files.length} 件 · 已入卷宗`}</span></div>${deliverableRowsHtml(files)}${more}</div>`;
+}
+/** @param {HTMLElement} button 末行那句「余 n 件 / 收起」 */
+function toggleDeliverables(button) {
+  const bar = /** @type {HTMLElement} */ (button.closest(".deliver-bar")),
+    id = /** @type {HTMLElement|null} */ (bar.closest("[data-message]"))?.dataset.message || "",
+    open = !bar.classList.contains("open");
+  if (open) deliverOpen.add(id);
+  else deliverOpen.delete(id);
+  bar.classList.toggle("open", open);
+  button.setAttribute("aria-expanded", String(open));
+  button.innerHTML = deliverMoreInner(bar.querySelectorAll(".deliver-file.extra").length, open);
 }
 // 卷宗目录刷新后，把页面上成品条里各件的在与不在同步一遍（消息本身没变，不必重画整条）
 function syncDeliverables() {
@@ -310,8 +339,10 @@ function syncDeliverables() {
       c = currentConversation(),
       message = c && allMessages(c).find(m => m.id === article?.dataset.message);
     if (!message?.deliverables?.length) continue;
-    const html = message.deliverables.map(deliverableFileHtml).join("");
+    const html = deliverableRowsHtml(message.deliverables);
     const current = [...bar.querySelectorAll(".deliver-file")].map(node => node.outerHTML).join("");
-    if (current !== html) bar.querySelectorAll(".deliver-file").forEach(node => node.remove()), bar.insertAdjacentHTML("beforeend", html);
+    if (current !== html)
+      bar.querySelectorAll(".deliver-file").forEach(node => node.remove()),
+        bar.querySelector(".deliver-head")?.insertAdjacentHTML("afterend", html);
   }
 }

@@ -1186,6 +1186,7 @@ var YAN_EN = {
   已移出卷宗: "Removed from Files",
   另存到本机: "Save a copy",
   "成品 {0} 件 · 已入卷宗": "{0} {0|output|outputs} · saved to Files",
+  "余 {0} 件": "{0} more",
   计划: "Plan",
   "计划 → {0}": "Plan → {0}",
   清单为空: "Empty list",

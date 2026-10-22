@@ -69,6 +69,31 @@ check(
   )) === "报表.csv|a,b"
 );
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+// 成品多了只摊前四件，末行「余 n 件」点开全摊、再点收起；开着的换一段对话再回来照旧开着
+const deliverRows = () =>
+  evalJs(
+    `[...document.querySelectorAll(".message.assistant .deliver-file")].filter(f => f.offsetParent).length + "|" + (document.querySelector(".message.assistant .deliver-more")?.textContent ?? "")`
+  );
+const reopenDeliver = async () => {
+  await evalJs(`document.querySelector("#newChat").click(); true`);
+  await waitFor(`!document.querySelector("#welcome").classList.contains("hidden")`);
+  await evalJs(`document.querySelector('#history [data-conversation="${convId}"] .history-open').click(); true`);
+  await waitFor(`!!document.querySelector(".message.assistant .deliver-bar")`);
+};
+await evalJs(
+  `(m => { m._kept = m.deliverables; m.deliverables = [...m.deliverables, ...[1, 2, 3, 4, 5, 6].map(i => ({ path: i + ".txt", name: i + ".txt", size: i }))]; })(__yanState().conversations[0].messages[1]); true`
+);
+await reopenDeliver();
+await shot("archive-deliver-fold.png");
+check("seven deliverables show four and fold the rest", (await deliverRows()) === "4|余 3 件▾");
+await evalJs(`document.querySelector(".message.assistant .deliver-more").click(); true`);
+check("the fold line opens all of them and turns into 收起", (await deliverRows()) === "7|收起▾");
+await reopenDeliver();
+check("an opened fold stays open after leaving and coming back", (await deliverRows()) === "7|收起▾");
+await evalJs(`document.querySelector(".message.assistant .deliver-more").click(); true`);
+check("收起 folds back to four", (await deliverRows()) === "4|余 3 件▾");
+await evalJs(`(m => { m.deliverables = m._kept; delete m._kept; })(__yanState().conversations[0].messages[1]); true`);
+await reopenDeliver();
 // 纸先沉下去、底淡掉，淡完才藏起、清台面
 await sleep(260);
 check(
