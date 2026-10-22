@@ -225,7 +225,9 @@ const put = (name, head) => {
 put("周报", "description: 写周报时用。其余略\ndisable-model-invocation: true\n");
 put("周记", "description: 记一周的事\n");
 put("暗记", "description: 背景知识\nuser-invocable: false\n");
-// 点看得见的那枚：先跑了别的用例时停在对话页，欢迎页藏着
+// 点看得见的那枚：先跑了别的用例时停在对话页，欢迎页藏着；停在卷宗（重载照旧开着）的，先收起
+await evalJs(`!document.querySelector("#library").classList.contains("hidden") && document.querySelector("#openLibrary").click(); true`);
+await waitFor(`document.querySelector("#library").classList.contains("hidden")`);
 const plus = `[...document.querySelectorAll(".attach-trigger")].find(b => b.offsetParent)`;
 // 头一回点开时现取技能，再开一回才见新放进来的
 await evalJs(`${plus}.click(); true`);
