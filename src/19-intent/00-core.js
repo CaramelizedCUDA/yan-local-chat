@@ -523,17 +523,21 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     problems.push(t`意里的项不宜多于 ${INTENT_LIMIT} 项（此刻 ${live}）：一项是值得单独判的结论，不是每一步动作；细的并进上一级`);
   return { ops, problems, tidied: [...tidied] };
 }
-/** 这一批里标成立、标假定的各项挂的凭据：写之前取一回指纹记下 @param {Intent} intent @param {IntentOp[]} ops */
+/**
+ * 这一批里要重记凭据的：标成立、标假定的；守改了钩子的也算——钩子挂的测试不记指纹，撤了钩子它就转收尾重查，得先记下一笔「过」才比得出
+ * @param {IntentOp} op @param {IntentNode|undefined} node 折上这一批之后的那一项
+ */
+const intentReseals = (op, node) =>
+  !!node && !op.remove && (SEALED.has(op.state || "") || (op.on !== undefined && !!node.keep && SEALED.has(node.state)));
+/** 这一批要重记凭据的各项挂的凭据：写之前取一回指纹记下 @param {Intent} intent @param {IntentOp[]} ops */
 function intentSealing(intent, ops) {
   const trial = applyIntentOps(intent, ops);
   return [
     ...new Set(
-      ops
-        .filter(op => SEALED.has(op.state || ""))
-        .flatMap(op => {
-          const node = trial.nodes[intentOpId(op)];
-          return node ? node.anchors.filter(key => !keepHookAnchor(node, key)) : [];
-        })
+      ops.flatMap(op => {
+        const node = trial.nodes[intentOpId(op)];
+        return intentReseals(op, node) ? node.anchors.filter(key => !keepHookAnchor(node, key)) : [];
+      })
     )
   ];
 }
@@ -615,12 +619,12 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
   for (const op of ops) {
     const id = op.rename && next.nodes[op.rename] ? op.rename : op.id,
       node = next.nodes[id];
-    if (op.remove || !SEALED.has(op.state || "") || !node) continue;
+    if (!intentReseals(op, node)) continue;
     // 取不到指纹的凭据（探针这回没跑）不记：日后也不据它判
     node.seal = {
       rev: node.rev,
       anchors: [...node.anchors],
-      premises: op.state === "done" ? Object.fromEntries(liveNeeds(next, id).map(need => [need, next.nodes[need].rev])) : {},
+      premises: node.state === "done" ?Object.fromEntries(liveNeeds(next, id).map(need => [need, next.nodes[need].rev])) : {},
       prints: Object.fromEntries(node.anchors.filter(key => key in prints).map(key => [key, prints[key]]))
     };
   }

@@ -201,6 +201,16 @@ test("钩子挂的测试平时不取指纹，动过手的那一答收尾也不�
   assert.equal(f.runs.length, 0);
 });
 
+test("撤了钩子的守转收尾重查：撤时补记测试的指纹", () => {
+  const f = hookRuntime(),
+    ops = [{ id: "算力", on: "" }];
+  assert.deepEqual(f.intentSealing(f.intent, ops), ["test:python guard.py"]);
+  const next = f.applyIntentOps(f.intent, ops, { prints: { "test:python guard.py": "过" } });
+  assert.equal(next.nodes["算力"].on, undefined);
+  assert.deepEqual(next.nodes["算力"].seal.prints, { "test:python guard.py": "过" });
+  assert.deepEqual(f.intentSealedAnchors(next), ["test:python guard.py"]);
+});
+
 test("on 的写法：只给守、要挂 test:、须是合法的正则", () => {
   const f = load(["asIntent", "normalizeIntentOps"]),
     problems = ops => f.normalizeIntentOps(f.asIntent(null), ops).problems.join("\n"),
