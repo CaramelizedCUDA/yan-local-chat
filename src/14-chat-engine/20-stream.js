@@ -33,7 +33,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     tickTrailClock(assistant);
   }, 1000);
   // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
-  const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null;
+  const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null,
+    archiveSince = Date.now();
   // 用量在 finally 里结算：停止、断网、工具链中途出错，前面几轮已经花掉的墨也得记上，不能只在整答顺利收尾时记账
   const tally = newTally(),
     stepsBefore = (assistant.steps || []).length,
@@ -100,7 +101,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     // 先把这一答预计的用量记到预留里（提示 + 最大输出），别的对话同时开工时看得见；收尾时换成实际用量
     // 预留只是估个数：一答的输出按八千算，不必与接口实际的上限一致
     releaseQuota = reserveTokens(profile, estimateTokens(history) + (Number(profile.maxTokens) || 8192));
-    if (profile.tools !== false) await Promise.all([mcpForTurn(), refreshSkills(conversation)]);
+    if (profile.tools !== false) await Promise.all([mcpForTurn(), refreshSkills()]);
     const tools = profile.tools !== false ? toolDefinitions(conversation, { profile }) : null;
     const overrides = {
       systemPrompt: systemPrompt(conversation, tools),
@@ -154,7 +155,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     if (archiveBefore && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) {
       await refreshArchive();
       assistant.deliverables = (archiveEntries || [])
-        .filter(entry => archiveBefore.get(entry.path) !== entry.modifiedAt)
+        .filter(entry => archiveBefore.get(entry.path) !== entry.modifiedAt && !ownArchiveWriteSince(entry.path, archiveSince))
         .map(entry => ({ path: entry.path, name: entry.name, size: entry.size }));
       if (!assistant.deliverables.length) delete assistant.deliverables;
     }
@@ -184,9 +185,12 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       if ((i >= stepsBefore || helpersBefore.has(step)) && step.sub?.usage && step.sub.status !== "streaming" && !step.sub.charged) {
         step.sub.charged = true;
         tally.usageKnown = true;
-        for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(step.sub.usage[key] || 0);
+        // 断过又续上的帮手：断前那份已记过（billed），只算其后新耗的
+        const billed = /** @type {Partial<Usage>} */ (step.sub.billed || {});
+        delete step.sub.billed;
+        for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(step.sub.usage[key] || 0) - Number(billed[key] || 0);
         // 帮手各轮的墨已当场扣进余墨，这里只算进这一答
-        tally.spent += Number(step.sub.usage.total_tokens || 0);
+        tally.spent += Number(step.sub.usage.total_tokens || 0) - Number(billed.total_tokens || 0);
       }
     assistant.usage = tally.usageKnown ? tally.usage : null;
     releaseQuota();

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023"],
+    "types": ["node"],
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "module": "commonjs",
+    "moduleResolution": "node"
+  },
+  "include": ["server.js", "build.js", "server/**/*.js"]
+}

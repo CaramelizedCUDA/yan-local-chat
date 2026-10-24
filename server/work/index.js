@@ -28,7 +28,17 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
   // 报错原样交给模型（卡片上只露头一句）：放得下一段线索——路径不对时同名的在哪、old 对不上时文件里最像的那一段
   const failed = error => errorText(error, 4000);
   const resolveWorkdir = raw => paths.resolveWorkdir(raw, workHome);
-  const { WORK_SHELL, runShell, startBackground, backgroundReport, discardBackground, checkBackground, watchBackground } = createShell({
+  const {
+      WORK_SHELL,
+      runShell,
+      runForeground,
+      releaseForeground,
+      startBackground,
+      backgroundReport,
+      discardBackground,
+      checkBackground,
+      watchBackground
+    } = createShell({
       toolEnv
     }),
     { lockFile } = createLocks();
@@ -135,20 +145,34 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
         if (res.destroyed) return disconnected();
         return sendJson(res, 200, report);
       }
-      // 超时只有默认值没有上限：长测试、大装包、跑数据都可能超过十分钟，页面上本就有「停止」。
-      // 封顶在 2³¹−1 毫秒（约 24 天）只因 setTimeout 超过它会溢出、当作 1 毫秒——模型给个大数，指令就被当场杀掉
-      const timeoutMs = clampNumber(Number(body.timeout) * 1000, 120000, 1000, 2147483647);
       console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ ${command.slice(0, 120)}`);
       // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉。指令不拿目录锁，见 locks.js
       const signal = requestSignal(res);
+      // 模型的 run_command 带 ticket：到时不掐，转入后台接着跑（见 runForeground）。前台最多等十分钟——
+      // 指令能跑多久不受它限，只是模型不该被一条指令攥住十分钟以上（单位给错，60000 当毫秒，就是十几个小时）
+      if (body.ticket) {
+        const waitMs = clampNumber(Number(body.timeout) * 1000, 120000, 1000, 600000),
+          { job, report } = await runForeground(command, workdir, boxed, waitMs, signal, String(body.ticket));
+        if (!report) return;
+        // 转入了后台、编号却没能交到页面：无人能再凭编号叫停它，收掉
+        if (res.destroyed) return report.running && discardBackground(job);
+        return sendJson(res, 200, report);
+      }
+      // 探针、测试这类自己跑的：到时即掐。封顶在 2³¹−1 毫秒（约 24 天）只因 setTimeout 超过它会溢出、当作 1 毫秒
+      const timeoutMs = clampNumber(Number(body.timeout) * 1000, 120000, 1000, 2147483647);
+      // 守的钩子跑测试：将要做的那一步交给它（见 src/19-intent/10-store.js 的 keepHook）
+      const hook = body.hook && typeof body.hook === "object" ? body.hook : null,
+        env = hook ? { YAN_TOOL: String(hook.tool || ""), YAN_TARGET: String(hook.target || "") } : {};
       const started = Date.now(),
-        result = await runShell(command, workdir, timeoutMs, signal, { boxed });
+        result = await runShell(command, workdir, timeoutMs, signal, { boxed, env });
       if (result.aborted) console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })}   已中止：${command.slice(0, 80)}`);
       if (!res.writableEnded && !res.destroyed) sendJson(res, 200, { ...result, durationMs: Date.now() - started });
     } catch (error) {
       sendJson(res, 400, { error: failed(error) });
     }
   }
+  // 页面说有话要递（用户补言、主模型递话给帮手）：那条前台指令转入后台，结果当即交回
+  const handleWorkRelease = jsonRoute(async body => releaseForeground(body.ticket), failed);
   const handleWorkCheck = jsonRoute(
     async body =>
       await checkBackground(body.id, body.stop === true, clampNumber(Number(body.wait) * 1000, 0, 0, 120000), String(body.key || "")),
@@ -182,6 +206,7 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       "POST /api/work/pick": handleWorkPick,
       "POST /api/work/run": handleWorkRun,
       "POST /api/work/screen": handleWorkScreen,
+      "POST /api/work/release": handleWorkRelease,
       "POST /api/work/check": handleWorkCheck,
       "POST /api/work/watch": handleWorkWatch,
       ...createFiles(work),

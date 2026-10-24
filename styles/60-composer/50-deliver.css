@@ -1,0 +1,168 @@
+/* 成品卡：言里做出的文件挂在答末，一件一行——类型、文件名、大小，右侧「看」与「下载」 */
+.deliver-bar {
+  margin-top: 10px;
+  padding: 4px 6px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--accent-soft) 22%, var(--paper));
+}
+.deliver-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px 6px;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--title);
+  letter-spacing: 0.1em;
+}
+.deliver-seal {
+  width: 17px;
+  height: 17px;
+  font-size: 10px;
+}
+.deliver-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 4px 0 7px;
+  border-radius: var(--radius-m);
+  transition: background var(--dur-quick);
+}
+.deliver-file + .deliver-file {
+  margin-top: 2px;
+}
+.deliver-file:hover {
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+}
+.deliver-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--fs-small);
+}
+/* 右侧三样：大小离按钮远一点，「预览」「下载」挨得近一点——大小是说明，两枚按钮是一对 */
+.deliver-file small {
+  flex: none;
+  margin-right: 10px;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--title);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.deliver-btn {
+  flex: none;
+  padding: 4px 10px;
+  color: var(--ink-3);
+  font: var(--fs-note) var(--title);
+  letter-spacing: 0.1em;
+  transition: color var(--dur-quick);
+}
+.deliver-btn + .deliver-btn {
+  margin-left: -8px;
+}
+/* 悬停只变朱字、不描框——与请示条那一组同是只用字 */
+.deliver-btn:hover {
+  color: var(--accent);
+}
+/* 卷宗里已删掉的成品：条目留着，名字变淡，右侧一句「已移出卷宗」代替按钮 */
+.deliver-file.missing .deliver-name,
+.deliver-file.missing .fi,
+.deliver-file.missing small {
+  opacity: 0.45;
+}
+.deliver-file.missing .deliver-name {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--ink-3) 60%, transparent);
+}
+.deliver-gone {
+  flex: none;
+  padding: 3px 11px;
+  color: var(--ink-3);
+  font: var(--fs-note) var(--title);
+  letter-spacing: 0.1em;
+  opacity: 0.8;
+}
+.context-gauge[data-busy] {
+  color: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+textarea::placeholder,
+.field::placeholder {
+  color: var(--ink-3);
+  opacity: 0.55;
+}
+/* 输入框左下「＋」旁的分组签：一方「集」印加组名；欢迎页的可撤（✕），对话页的点开分组页 */
+.group-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 180px;
+  margin-left: 4px;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: var(--radius-m);
+  color: var(--ink-2);
+  font: var(--fs-small) var(--title);
+  transition:
+    border-color var(--dur-quick),
+    color var(--dur-quick);
+}
+.group-tag:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.group-tag-seal {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-s);
+  color: var(--accent);
+  font: 9px var(--title);
+}
+.group-tag-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.group-tag-x {
+  color: var(--ink-3);
+  font-size: 10px;
+}
+/* 件多时末行一句「余 n 件」：与件行同一种只用字，名字那一列对齐；点开全摊、改作「收起」，▾ 倒转 */
+.deliver-bar:not(.open) .deliver-file.extra {
+  display: none;
+}
+.deliver-more {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  margin-top: 2px;
+  padding: 0 7px 0 33px;
+  border-radius: var(--radius-m);
+  color: var(--ink-3);
+  font: var(--fs-note) var(--title);
+  letter-spacing: 0.1em;
+  transition: color var(--dur-quick);
+}
+.deliver-more:hover,
+.deliver-more:focus-visible {
+  color: var(--accent);
+}
+.deliver-more i {
+  font-style: normal;
+  font-size: 10px;
+  transition: transform var(--dur-quick);
+}
+.deliver-more[aria-expanded="true"] i {
+  transform: rotate(180deg);
+}

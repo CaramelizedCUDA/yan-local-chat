@@ -388,10 +388,8 @@ try {
     `({ crumb: document.querySelector('#fileViewerStage .intent-crumb')?.textContent, nodes: [...document.querySelectorAll('#fileViewerStage .intent-node')].map(g => g.dataset.intentNode + (g.classList.contains('sink') ? '*' : '')).sort().join(','), where: document.querySelector('#fileViewerStage .intent-when')?.textContent })`
   );
   check(
-    "opening the module swaps in its own graph, closed by the module itself, with the path and its premise on top",
-    /^全局›训练前提数据准备撑起成品$/.test(inside.crumb || "") &&
-      inside.nodes === "一号实验,二号实验,训练*,配方冻结" &&
-      inside.where === "训练",
+    "opening the module swaps in its own graph, closed by the module itself, with only the path on top (premises live in its slip)",
+    /^全局›训练$/.test(inside.crumb || "") && inside.nodes === "一号实验,二号实验,训练*,配方冻结" && inside.where === "训练",
     JSON.stringify(inside)
   );
   await send("Page.captureScreenshot", { format: "png" }).then(shot =>

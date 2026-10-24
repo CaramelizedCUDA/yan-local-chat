@@ -313,6 +313,15 @@ async function catchUpFromDisk(ids) {
 function sweepConversations() {
   flushConversations(store.conversations.map(c => c.id));
 }
+// 前台的定时巡检：整份 stringify 再算指纹，几十 MB 的对话要卡上几百毫秒（一处存储根 47 MB、最大一段 20 MB）。
+// 一趟只巡眼前这段与轮到的另一段，各等闲时；作答中的三秒存一回，不靠这里。整份巡留给页面藏起来时
+let sweepTurn = 0;
+function sweepSomeConversations() {
+  const others = store.conversations.filter(c => c.id !== currentId),
+    ids = [currentId, others.length ? others[sweepTurn++ % others.length].id : null].filter(Boolean),
+    idle = window.requestIdleCallback || (fn => setTimeout(fn, 200));
+  for (const id of ids) idle(() => flushConversations([id]), { timeout: 5000 });
+}
 // 页面要关了：不再新发普通 fetch（卸载时它不可靠），而是在一个同步开启的 IndexedDB 事务里把所有未落稳的最新状态兜住；
 // 包括已经从待写表拿走、正在 fetch 的那份。下次开页若它比目录新，会自动推回目录。
 function flushOnUnload() {

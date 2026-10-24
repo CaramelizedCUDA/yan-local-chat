@@ -1,0 +1,88 @@
+/* 页内查找：顶替地址行——一道朱线下是要找的字，右边几处、上下、收起 */
+.stage-find {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 2px;
+}
+.stage-nav.finding > :not(.stage-find):not(#stageMarks) {
+  display: none;
+}
+.stage-find-label {
+  flex: none;
+  color: var(--ink-3);
+  font: var(--fs-note) var(--title);
+  letter-spacing: 0.2em;
+}
+.stage-find input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 2px;
+  border: 0;
+  border-bottom: 1.4px solid var(--accent);
+  background: transparent;
+  color: var(--ink);
+  font: var(--fs-mid) var(--body);
+  outline: none;
+}
+.stage-find-count {
+  flex: none;
+  min-width: 36px;
+  color: var(--ink-2);
+  font: var(--fs-small) var(--body);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.stage-find button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-m);
+  color: var(--ink-2);
+  font-size: var(--fs-mid);
+}
+.stage-find button:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+}
+
+/* 留白处的一行：执事把视口定死时写明多大；关着「适应页面」的带一个「放开」 */
+.stage-letter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--ink-3);
+  font: var(--fs-small) var(--title);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+.stage-letter b {
+  margin: 0 2px;
+  color: var(--ink-2);
+  font: 400 var(--fs-small) var(--body);
+  font-variant-numeric: tabular-nums;
+}
+.stage-letter button {
+  margin-left: 8px;
+  padding: 0 1px 1px;
+  border-bottom: 1.2px solid var(--accent);
+  color: var(--ink-2);
+  font: var(--fs-small) var(--title);
+  letter-spacing: 0.12em;
+  pointer-events: auto;
+}
+.stage-view.empty .stage-letter {
+  display: none;
+}
+
+/* 设置 → 游目：本机没装的浏览器淡下去（仍可点，点了「依赖」那行提示要装什么） */
+.segmented button.off {
+  opacity: 0.45;
+}

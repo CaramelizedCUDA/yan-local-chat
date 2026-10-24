@@ -21,9 +21,9 @@
   padding: 7px 0 7px 10px;
   border-left: 2px solid transparent;
   color: var(--ink-2);
-  font: 13.5px var(--title);
+  font: var(--fs-mid) var(--title);
   text-align: left;
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .memory-cat span {
   min-width: 0;
@@ -34,7 +34,7 @@
 .memory-cat em {
   margin-left: auto;
   color: var(--ink-3);
-  font: normal 11px var(--title);
+  font: normal var(--fs-note) var(--title);
 }
 .memory-cat:hover {
   color: var(--ink);
@@ -48,7 +48,7 @@
 .memory-cat-new {
   margin-top: 4px;
   color: var(--ink-3);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 input.memory-cat-new {
   border-top: 0;
@@ -71,7 +71,7 @@ input.memory-cat-new {
 }
 .memory-cat-count {
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
@@ -108,17 +108,17 @@ input.memory-cat-new {
 .memory-gist {
   overflow: hidden;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: var(--fs-mid);
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .memory-row:hover .memory-gist {
   color: var(--ink);
 }
 .memory-day {
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
@@ -132,7 +132,7 @@ input.memory-cat-new {
 .memory-text {
   color: var(--ink);
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--fs-mid);
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -145,6 +145,7 @@ input.memory-cat-new {
 }
 .memory-text {
   display: block;
+  field-sizing: content;
   width: 100%;
   margin: 0;
   padding: 0;
@@ -162,7 +163,7 @@ input.memory-cat-new {
   gap: 12px;
   margin-top: 6px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.04em;
 }
 .memory-source {
@@ -170,7 +171,7 @@ input.memory-cat-new {
   color: var(--ink-3);
   font: inherit;
   letter-spacing: inherit;
-  transition: color 0.16s;
+  transition: color var(--dur-quick);
 }
 .memory-source:hover {
   color: var(--accent);
@@ -190,7 +191,7 @@ input.memory-cat-new {
   width: 24px;
   height: 24px;
   border-radius: var(--radius-s);
-  transition: background 0.15s;
+  transition: background var(--dur-quick);
 }
 .memory-ops button:hover {
   background: color-mix(in srgb, var(--ink) 7%, transparent);
@@ -213,14 +214,14 @@ input.memory-cat-new {
   outline: 0;
   background: none;
   color: var(--ink);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.04em;
 }
 .memory-empty {
   margin: 0;
   padding: 18px 0;
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .memory-foot {
   display: flex;
@@ -238,7 +239,7 @@ input.memory-cat-new {
   border-radius: var(--radius-m) var(--radius-l) var(--radius-l) var(--radius-l);
   background: color-mix(in srgb, var(--paper-2) 60%, transparent);
   color: var(--ink-2);
-  font: 12px/1.6 var(--title);
+  font: var(--fs-small)/1.6 var(--title);
   letter-spacing: 0.02em;
 }
 .welcome-notice .seal {
@@ -262,7 +263,7 @@ input.memory-cat-new {
 .history-empty {
   padding: 10px;
   color: var(--ink-3);
-  font: 12px/1.7 var(--title);
+  font: var(--fs-small) / 1.7 var(--title);
 }
 .context-divider {
   display: flex;
@@ -270,7 +271,7 @@ input.memory-cat-new {
   gap: 10px;
   margin: 8px 0 34px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.12em;
 }
 .context-divider:before,

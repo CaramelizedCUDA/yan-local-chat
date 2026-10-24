@@ -285,13 +285,11 @@ function renderMessage(message, branch = null, side = false) {
   return assistantShellHtml(message);
 }
 // 正文开头带 <think>…</think> 的旧消息（导入或此前的版本）：渲染时按思考 + 正文拆开看，不改动存下的原文
-const INLINE_THINK = /^\s*<think>([\s\S]*?)<\/think>\s*/;
+// （拆法见 16-api.js 的 parseInlineThink：思考里提到标签本身的不算收尾）
 function inlineThinkView(message) {
-  const match =
-    message.status !== "streaming" && !message.reasoning && typeof message.content === "string"
-      ? message.content.match(INLINE_THINK)
-      : null;
-  return match ? { ...message, reasoning: match[1].trim(), content: message.content.slice(match[0].length) } : message;
+  const split =
+    message.status !== "streaming" && !message.reasoning && typeof message.content === "string" ? parseInlineThink(message.content) : null;
+  return split ? { ...message, ...split } : message;
 }
 /** @param {Message} message */
 function splitInlineThink(message) {

@@ -89,7 +89,8 @@ function stageCursor(e) {
     .catch(() => {})
     .finally(() => (stage.cursorAsking = false));
 }
-// 打字经一个看不见的输入框：挪到点下的地方，输入法的候选框便浮在那一处；中文等输入法打完一整段再一次递进去
+// 打字经一个看不见的输入框：输入法的候选框浮在它那里，所以它要跟着网页里的光标走——先挪到点下的地方，
+// 网页把光标放好后再量一回光标挪过去（stageCaretSoon）。组字中的字随打随递（Input.imeSetComposition），网页里带着下划线现出来，与原生一样
 /** @param {MouseEvent} e */
 function stageFocusKeys(e) {
   const keys = $("#stageKeys"),
@@ -97,6 +98,54 @@ function stageFocusKeys(e) {
   keys.style.left = `${e.clientX - box.left}px`;
   keys.style.top = `${e.clientY - box.top}px`;
   keys.focus({ preventScroll: true });
+}
+// 网页里光标此刻在哪（视口坐标）：焦点落在同源 iframe 里就钻进去（在线文档的编辑区多套在 iframe 里，字画在 canvas 上，
+// 但都有一个跟着光标走的隐藏输入框）；可编辑区取选区末端，输入框取框本身；量不出就不挪
+const STAGE_CARET = `(() => {
+  let doc = document, el = doc.activeElement, ox = 0, oy = 0;
+  while (el && el.tagName === "IFRAME") {
+    try {
+      const r = el.getBoundingClientRect();
+      ox += r.left + el.clientLeft;
+      oy += r.top + el.clientTop;
+      doc = el.contentDocument;
+      el = doc && doc.activeElement;
+    } catch { return null; }
+  }
+  if (!el || !doc) return null;
+  let r = null;
+  if (el.isContentEditable || doc.designMode === "on") {
+    const s = doc.getSelection();
+    if (s && s.rangeCount) {
+      const range = s.getRangeAt(0).cloneRange();
+      range.collapse(false);
+      const rects = range.getClientRects();
+      r = rects[rects.length - 1] || null;
+    }
+  }
+  if (!r || !r.height) r = el === doc.body ? null : el.getBoundingClientRect();
+  return r && r.height ? { x: ox + r.left, y: oy + r.top, h: Math.min(r.height, 60) } : null;
+})()`;
+// 点下、打字之后网页才动光标：稍候再量；组字当中不挪，候选框不跟着跳
+function stageCaretSoon() {
+  clearTimeout(stage.caretTimer);
+  stage.caretTimer = window.setTimeout(() => {
+    const session = stage.session;
+    if (!session || stage.composing || document.activeElement !== $("#stageKeys")) return;
+    stageSend("Runtime.evaluate", { expression: STAGE_CARET, returnByValue: true }, session)
+      .then(({ result }) => {
+        const caret = result?.value;
+        if (!caret || stage.composing || session !== stage.session) return;
+        const keys = $("#stageKeys"),
+          r = $("#stageFrame").getBoundingClientRect(),
+          box = $("#stageView").getBoundingClientRect(),
+          k = r.width / (stage.meta.width || r.width);
+        keys.style.left = `${r.left - box.left + caret.x * k}px`;
+        keys.style.top = `${r.top - box.top + caret.y * k}px`;
+        keys.style.height = `${Math.max(12, caret.h * k)}px`;
+      })
+      .catch(() => {});
+  }, 80);
 }
 /** @param {string} raw */
 function stageGo(raw) {
@@ -327,6 +376,7 @@ function bindStage() {
     if (e.button === 3 || e.button === 4) return void e.preventDefault();
     if (stageInkEnd(e)) return;
     stageMouse("mouseReleased", e, { button: STAGE_BUTTONS[e.button] || "left", clickCount: stage.click.count });
+    stageCaretSoon();
   });
   frame.addEventListener("mouseup", e => (e.button === 3 || e.button === 4) && e.preventDefault());
   // 移动一帧只递一次
@@ -358,6 +408,7 @@ function bindStage() {
     if (stageShortcut(e)) return;
     const text = e.key === "Enter" ? "\r" : e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey ? e.key : "";
     stageKey(text ? "keyDown" : "rawKeyDown", e, text);
+    stageCaretSoon();
   });
   keys.addEventListener("keyup", e => {
     e.stopPropagation();
@@ -365,9 +416,25 @@ function bindStage() {
     e.preventDefault();
     stageKey("keyUp", e);
   });
+  // 组字：随打随递，网页里现出带下划线的拼音；选定了一次提交，取消了（Esc、删光）把网页里那截撤掉
+  keys.addEventListener("compositionstart", () => (stage.composing = true));
+  keys.addEventListener("compositionupdate", e => {
+    const text = e.data || "";
+    if (stage.session)
+      void stageSend("Input.imeSetComposition", { text, selectionStart: text.length, selectionEnd: text.length }, stage.session).catch(
+        () => {}
+      );
+  });
   keys.addEventListener("compositionend", e => {
-    if (e.data && stage.session) void stageSend("Input.insertText", { text: e.data }, stage.session).catch(() => {});
+    stage.composing = false;
+    if (stage.session)
+      void stageSend(
+        e.data ? "Input.insertText" : "Input.imeSetComposition",
+        e.data ? { text: e.data } : { text: "", selectionStart: 0, selectionEnd: 0 },
+        stage.session
+      ).catch(() => {});
     keys.value = "";
+    stageCaretSoon();
   });
   // 不经按键进来的字（表情面板、剪贴板历史）：照样递进去；输入法那一路在 compositionend 递，这里不重复
   keys.addEventListener("input", e => {

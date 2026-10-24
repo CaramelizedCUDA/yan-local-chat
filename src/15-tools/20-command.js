@@ -34,6 +34,9 @@ defineTool({
     }
     // 用户可能在请示条上把这一段对话切成了径行：执行前再取一次，不沿用旧档位
     policy = commandPolicyOf(conversation);
+    // 前台的带上 ticket：等满 timeout、或有话要递（见 releaseForeground），桥接就把它转入后台接着跑，回话里带 handedOff
+    const ticket = background ? undefined : `${step.id}-${uid().slice(0, 6)}`;
+    if (ticket) foregroundRuns.set(ticket, { conversation: conversation.id, scope: step.scope });
     const data = await bridge(
       "/api/work/run",
       {
@@ -42,14 +45,24 @@ defineTool({
         permission: policy,
         command: step.title,
         timeout: Number(args.timeout) || 120,
-        background
+        background,
+        ticket
       },
       signal
-    );
+    ).finally(() => foregroundRuns.delete(ticket));
     const seconds = (data.durationMs / 1000).toFixed(data.durationMs < 10000 ? 1 : 0),
       took = data.durationMs < 60000 ? `${seconds}s` : spanText(data.durationMs),
       marks = `${escalated ? " · 出沙箱" : ""}${step.readOnly && policy === "ask" && !step.sandboxWhy ? " · 只读免确认" : ""}`;
     step.output = commandOutput(data);
+    if (data.handedOff) {
+      step.bg = { id: data.id, key: data.key, state: "running", started: Date.now() - (Number(data.durationMs) || 0) };
+      watchBackground(conversation, ctx.assistant, step);
+      return {
+        ok: true,
+        content: `${prompt(data.handedOff === "released" ? "work.bgReleased" : "work.bgWaited", { id: data.id, took })}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
+        display: `转入后台 ${data.id} · ${took}${marks}`
+      };
+    }
     if (background) {
       step.exitCode = data.exitCode ?? undefined;
       // 还在跑的：等它结束再叫醒开它的那一个——主答（这段对话），或帮手自己（帮手手上有它就睡着等，见 90-delegate.js）
@@ -65,9 +78,9 @@ defineTool({
     }
     step.exitCode = data.exitCode;
     return {
-      ok: !data.timedOut && data.exitCode === 0,
-      content: t`退出码：${data.exitCode}${data.timedOut ? t("（超时被终止）") : ""}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
-      display: `${data.timedOut ? `超时终止 · ${took}` : data.exitCode === 0 ? `完成 · ${took}` : `退出码 ${data.exitCode} · ${took}`}${marks}`
+      ok: data.exitCode === 0,
+      content: t`退出码：${data.exitCode}，用时 ${took}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
+      display: `${data.exitCode === 0 ? `完成 · ${took}` : `退出码 ${data.exitCode} · ${took}`}${marks}`
     };
   }
 });
@@ -99,6 +112,16 @@ defineTool({
     };
   }
 });
+
+// ---------- 前台指令转入后台 ----------
+// 正跑着的前台指令：ticket → 哪段对话、谁开的（帮手开的带 scope）。补言、主模型递话给帮手时，那一位手上的都转入后台——
+// 工具结果当即交回，话在回合边界随之递上；进程照跑，结束时叫醒。不掐，也不等它跑完才递
+const foregroundRuns = new Map();
+/** @param {string} conversationId @param {string} [scope] */
+function releaseForeground(conversationId, scope) {
+  for (const [ticket, run] of foregroundRuns)
+    if (run.conversation === conversationId && run.scope === scope) void bridge("/api/work/release", { ticket }).catch(() => {});
+}
 
 // ---------- 后台指令结束即叫醒 ----------
 // 桥接那头等它结束再回话（/api/work/watch，走总线不占连接），结果照帮手回报的路子寄给这段对话（mailReport）：

@@ -73,6 +73,13 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
   }
   const sizeObserver = new ResizeObserver(reportSize);
   addEventListener("resize", reportSize);
+  // 块随内容长高时不要竖滚动条：块在长高的半途内容会暂时溢出，滚动条一出、页面窄一截，图随宽缩矮，
+  // 报上去的就是窄时的高——块定在这个高，滚动条去掉又溢出一点，便卡着一根拖不动的滚动条。
+  // 所以竖向默认不滚，父页把这一块封顶了（太长）或全屏了才放开；文件预览整页摊开、独立导出的页没有父页管，照常滚
+  function setScrollable(on) {
+    document.documentElement.style.overflowY = on ? "" : "hidden";
+  }
+  if (!standalone) setScrollable(false);
 
   // ---- 本地的库：<script src="yan:echarts"> / yan:mermaid 换成随项目分发的那份，只载一次
   const LIBS = { echarts: "./vendor/echarts.min.js", mermaid: "./vendor/mermaid.min.js" },
@@ -98,15 +105,24 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
     chartObserver = new ResizeObserver(entries => {
       for (const entry of entries) for (const chart of charts) if (chart.getDom() === entry.target) chart.resize();
     });
+  // 设计稿/82 甲「淡染」：类目轴只留一道淡墨底线、不要刻度；数值轴不画线，网线退成虚点；刻度字用题字、淡一档。
+  // 折线稍圆、不画点（悬停才显），线下由浓到淡染一层同色（画前补上，见 repairEchartsOption）。落选：乙「墨线」（去网线、线边洇开）
   function echartsTheme() {
     const ink = cssVar("ink"),
       muted = cssVar("ink-2"),
       line = cssVar("line"),
-      axis = {
-        axisLine: { lineStyle: { color: line } },
-        axisTick: { lineStyle: { color: line } },
-        axisLabel: { color: muted },
-        splitLine: { lineStyle: { color: line } }
+      label = { color: cssVar("ink-3"), fontFamily: cssVar("title"), fontSize: 11 },
+      category = {
+        axisLine: { lineStyle: { color: cssVar("ink-3") } },
+        axisTick: { show: false },
+        axisLabel: label,
+        splitLine: { lineStyle: { color: line, type: [2, 5] } }
+      },
+      value = {
+        axisLine: { show: false, lineStyle: { color: cssVar("ink-3") } },
+        axisTick: { show: false },
+        axisLabel: label,
+        splitLine: { lineStyle: { color: line, type: [2, 5] } }
       };
     return {
       color: [
@@ -120,13 +136,35 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
       backgroundColor: "transparent",
       textStyle: { color: muted, fontFamily: cssVar("body") },
       title: { textStyle: { color: ink, fontFamily: cssVar("title") }, subtextStyle: { color: muted } },
-      legend: { textStyle: { color: muted } },
+      legend: { textStyle: { color: muted, fontFamily: cssVar("title") }, icon: "roundRect", itemWidth: 12, itemHeight: 3 },
       tooltip: { backgroundColor: cssVar("paper-2"), borderColor: line, textStyle: { color: ink } },
-      categoryAxis: axis,
-      valueAxis: axis,
-      timeAxis: axis,
-      logAxis: axis
+      categoryAxis: category,
+      valueAxis: value,
+      timeAxis: category,
+      logAxis: value,
+      line: { smooth: 0.3, showSymbol: false, symbolSize: 5, lineStyle: { width: 2.2, cap: "round", join: "round" } },
+      bar: { barMaxWidth: 26 }
     };
+  }
+  // 线下的染：模型没写 areaStyle 的直角坐标折线，由线往下渐淡成透明；线多了（三条以上）染在一起成一片灰，就不染
+  function washLines(option) {
+    const series = Array.isArray(option.series) ? option.series : [],
+      lines = series.filter(item => item.type === "line" && !String(item.coordinateSystem || "").startsWith("polar"));
+    if (option.xAxis === undefined || !lines.length || lines.length > 3) return option;
+    const palette = Array.isArray(option.color) && option.color.length ? option.color : echartsTheme().color,
+      { graphic, color: tint } = window.echarts;
+    series.forEach((item, i) => {
+      if (!lines.includes(item) || item.areaStyle !== undefined || item.stack) return;
+      const base = item.color || item.lineStyle?.color || item.itemStyle?.color || palette[i % palette.length];
+      if (typeof base !== "string") return;
+      item.areaStyle = {
+        color: new graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: tint.modifyAlpha(base, 0.18) },
+          { offset: 1, color: tint.modifyAlpha(base, 0) }
+        ])
+      };
+    });
+    return option;
   }
   function repairEchartsOption(option, fresh = true) {
     const list = value => (Array.isArray(value) ? value : value === undefined || value === null ? [] : [value]);
@@ -213,7 +251,9 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
       chart.setOption = (option, ...rest) => {
         const fresh = !drawn || rest[0] === true || rest[0]?.notMerge === true;
         drawn = true;
-        return set(option && typeof option === "object" ? repairEchartsOption({ ...option }, fresh) : option, ...rest);
+        if (!option || typeof option !== "object") return set(option, ...rest);
+        const repaired = repairEchartsOption({ ...option }, fresh);
+        return set(fresh ? washLines(repaired) : repaired, ...rest);
       };
       charts.add(chart);
       chartObserver.observe(dom);
@@ -225,7 +265,14 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
     const ec = window.echarts,
       next = echartsTheme();
     ec.registerTheme("yan", next);
-    const axisPatch = axes => (axes || []).map(() => next.valueAxis);
+    // 只换色，不动显隐：数值轴、类目轴各照各的那一套
+    const tone = axis => ({
+        axisLine: { lineStyle: { color: axis.axisLine.lineStyle.color } },
+        axisLabel: { color: axis.axisLabel.color },
+        splitLine: { lineStyle: { color: axis.splitLine.lineStyle.color } }
+      }),
+      axisPatch = axes =>
+        (axes || []).map(axis => tone(axis?.type === "value" || axis?.type === "log" ? next.valueAxis : next.categoryAxis));
     for (const chart of charts) {
       if (chart.isDisposed()) {
         charts.delete(chart);
@@ -256,12 +303,15 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
       securityLevel: "strict",
       theme: "base",
       fontFamily: cssVar("title") || cssVar("body"),
+      // 设计稿/82 甲：节点是一张纸签——纸色、发丝边、极淡的影，判断处衬淡一档；连线淡墨。连线上的字衬纸色（原先暗色里是一块黑）
+      themeCSS: `.node rect,.node polygon,.node circle,.node path{stroke-width:1px}.node polygon{fill:${cssVar("paper-2")}}.node{filter:drop-shadow(0 1px 1.5px ${theme.dark ? "rgba(0,0,0,.35)" : "rgba(41,39,36,.1)"})}`,
       themeVariables: {
         background: "transparent",
-        primaryColor: cssVar("paper-2"),
+        primaryColor: cssVar("paper"),
         primaryTextColor: cssVar("ink"),
-        primaryBorderColor: cssVar("ink-3"),
-        lineColor: cssVar("ink-2"),
+        primaryBorderColor: cssVar("line"),
+        lineColor: cssVar("ink-3"),
+        edgeLabelBackground: cssVar("paper"),
         secondaryColor: cssVar("paper-3"),
         tertiaryColor: cssVar("paper"),
         noteBkgColor: cssVar("accent-soft"),
@@ -435,9 +485,11 @@ self.postMessage({ type: "loaded" });
   window.addEventListener("message", event => {
     if (event.source !== parent || event.data?.id !== previewId) return;
     if (event.data.type === "yan-preview-render") {
+      if (event.data.scroll) setScrollable(true);
       applyTheme(event.data.theme);
       run(event.data.html).catch(showError);
     } else if (event.data.type === "yan-preview-theme") applyTheme(event.data.theme);
+    else if (event.data.type === "yan-preview-scroll") setScrollable(event.data.scroll);
     else if (event.data.type === "yan-compute") compute(event.data);
   });
   // 焦点在这块里时，Esc 到不了父页：转告一声，父页若正全屏着这一块就收起（没全屏时父页不理，块里自己的 Esc 照常）

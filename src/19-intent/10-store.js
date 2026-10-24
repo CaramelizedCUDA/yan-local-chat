@@ -54,8 +54,8 @@ async function intentRound(conversation, watch, signal) {
   return intentRoundText(held.intent, held.now, fresh, watch.bounces);
 }
 // 收尾前对照：这一答动过意（改过它，或它所挂的凭据在这一答里变过），模型说完要收尾时拦一次——只一次，拦完即放。
-// 守（一直要守的条件，见 00-core.js）挂的探针、测试作答途中不跑：这一答动过手，收尾前先重取一回，有条因此转待复核也算动过——
-// 言的钩子就是守。没变就照常收尾，不多费一轮；因守而拦的那一步右侧写出事的那几条与事由（设计稿/80 行迹乙）。
+// 守（一直要守的条件，见 00-core.js）写不出触发条件的，挂的探针、测试作答途中不跑：这一答动过手，收尾前先重取一回，有条因此转待复核也算动过。
+// 没变就照常收尾，不多费一轮；因守而拦的那一步右侧写出事的那几条与事由（设计稿/80 行迹乙）。写了触发条件的走钩子（见 keepHook），收尾时不再跑。
 // 摆出此刻的意（重读一回，探针也跑）、这一答里转待复核过的、改了而无凭据罩着的文件，请它对照各根的原话自己判：能收就收，未尽的接着做。
 // 不替它验、不复验、不再拦：要不要派帮手核对由它定。递的话记作行迹里的一步，往后重装这一答照原处插回（replay）
 const INTENT_UNOWNED_SHOWN = 8;
@@ -153,11 +153,59 @@ async function intentRecheck(conversation, assistant, watch, signal) {
   for (const id of fresh) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
   return fresh.length ? { prints, fresh } : null;
 }
-/** 守挂的、要跑指令的凭据（探针、测试） @param {Intent} intent */
+/** 守挂的、要跑指令的凭据（探针、测试）；钩子挂的测试不在其中 @param {Intent} intent */
 function keepAnchors(intent) {
-  return [...new Set(intentKeeps(intent).flatMap(id => Object.keys(intent.nodes[id].seal?.prints || {})))].filter(
-    key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer"
-  );
+  return [
+    ...new Set(
+      intentKeeps(intent).flatMap(id => {
+        const node = intent.nodes[id];
+        return Object.keys(node.seal?.prints || {}).filter(key => !keepHookAnchor(node, key));
+      })
+    )
+  ].filter(key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer");
+}
+// 守的钩子：写了 on 的守，有副作用的一步（指令、写文件、调接口……帮手做的也算）对得上它，动手前（请示之前）先跑它挂的测试，
+// 将要做的经环境变量交给测试：YAN_TOOL 是工具名，YAN_TARGET 是指令原文、路径或网址（别的工具即整份参数）。不过即不做这一步，测试的输出作这一步的结果回给模型。
+// 跟探针一样随档位：问而后行里只自动跑明确只读的，别的不跑——那一步本就要人批。跑不成的这回不拦。改意不过钩子：写宽了的 on 不能连撤它的那一步也拦下
+/** @param {Step} step @param {Record<string, any>} args @param {ToolContext} ctx @returns {Promise<ToolOutcome|null>} 拦下即交回这一步的结果 */
+async function keepHook(step, args, ctx) {
+  const held = intents.get(ctx.conversation.id);
+  if (!held || step.name === "update_intent" || !TOOLS.get(step.name)?.sideEffect) return null;
+  const target = String(args.command ?? args.path ?? args.url ?? JSON.stringify(args)),
+    policy = commandPolicyOf(ctx.conversation);
+  for (const id of intentKeeps(held.intent)) {
+    const node = held.intent.nodes[id],
+      on = keepTrigger(node);
+    if (!on || !(on.test(target) || on.test(step.name))) continue;
+    for (const key of node.anchors.filter(key => keepHookAnchor(node, key))) {
+      const command = anchorParts(key)[1];
+      if (policy === "ask" && !isReadOnlyCommand(command)) continue;
+      let data;
+      try {
+        data = await bridge(
+          "/api/work/run",
+          { ...workScope(ctx.conversation), command, timeout: 300, hook: { tool: step.name, target } },
+          ctx.signal
+        );
+      } catch (error) {
+        if (error.name === "AbortError") throw error;
+        continue;
+      }
+      if (data.exitCode === 0) continue;
+      const output = [data.stdout, data.stderr].filter(text => String(text || "").trim()).join("\n");
+      return {
+        ok: false,
+        content: prompt("work.keepHook", {
+          id,
+          test: anchorLabel(key),
+          code: data.timedOut ? "超时" : String(data.exitCode),
+          output: clipForModel(output, 4000, { tail: true })
+        }).trim(),
+        display: `守拦下 · ${id}`
+      };
+    }
+  }
+  return null;
 }
 /**
  * 因守拦过的那一答收了尾：再取一回守的探针与测试，书眉与卡片照实画——模型多半已改好，不必挂着「守 ○」等到下一问开工

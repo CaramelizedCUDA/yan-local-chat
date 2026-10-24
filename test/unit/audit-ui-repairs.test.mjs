@@ -44,7 +44,7 @@ test("英文的导出与改动详情也翻译存下的中文状态，命令与�
 });
 
 test("CSV / TSV 引号里的换行、分隔符、空行和转义引号不拆成新记录", () => {
-  const { parseDelimited, splitDelimited } = load(["parseDelimited", "splitDelimited"]);
+  const { parseDelimited } = load(["parseDelimited"]);
   assert.deepEqual(parseDelimited('name,note\r\nAlice,"first\n\nsecond, with ""quotes"""\r\nBob,ok\r\n', ","), [
     ["name", "note"],
     ["Alice", 'first\n\nsecond, with "quotes"'],
@@ -55,7 +55,7 @@ test("CSV / TSV 引号里的换行、分隔符、空行和转义引号不拆成�
     ["x\ty", "one\r\ntwo"]
   ]);
   assert.deepEqual(parseDelimited('\n\n"",\nlast,\n', ",", 1), [["", ""]]);
-  assert.deepEqual(splitDelimited('a,"b,c",', ","), ["a", "b,c", ""]);
+  assert.deepEqual(parseDelimited('a,"b,c","d""e",', ","), [["a", "b,c", 'd"e', ""]]);
 });
 
 test("切曲或停止会取消尚在等元数据的跳转，新的跳转仍可完成", async () => {

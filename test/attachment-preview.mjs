@@ -37,7 +37,8 @@ check(
   )) === "报表.csv|a,b|4"
 );
 await evalJs(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); true`);
-await sleep(100);
+// 纸先沉下去、底淡掉，淡完才藏起、清台面
+await sleep(260);
 check(
   "Esc closes the file preview and returns keyboard focus to its attachment",
   await evalJs(

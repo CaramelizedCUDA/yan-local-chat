@@ -1,0 +1,239 @@
+/* 差遣的签：行迹里只留这一行——一道金线、一枚「遣」印、标题与状态。帮手自己的那条时间线在右侧面板里。
+   金是「代人行事」的专色（朱留给人自己说话：请示、补言、旁注），在一串步骤里一眼认得出 */
+.tool-step-delegate {
+  margin: 4px 0;
+  padding-bottom: 2px;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 2px solid color-mix(in srgb, var(--gold) 60%, transparent);
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
+  background: color-mix(in srgb, var(--gold) 7%, transparent);
+}
+.tool-step-delegate[data-status="running"] {
+  border-left-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+}
+/* 断着：不在做、也没交差——金线退成淡墨，底色只留一丝 */
+.tool-step-delegate[data-status="interrupted"] {
+  border-left-color: color-mix(in srgb, var(--ink-3) 45%, transparent);
+  background: color-mix(in srgb, var(--gold) 4%, transparent);
+}
+.tool-step-delegate > .tool-step-head .tool-label {
+  color: var(--gold);
+}
+/* 整枚签可点：点一下在右侧开面板看帮手做了什么 */
+.tool-step-delegate > .tool-step-head {
+  cursor: pointer;
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
+}
+.tool-step-delegate > .tool-step-head:hover {
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+}
+.tool-step-delegate > .tool-step-head:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: -1px;
+}
+/* 末尾一枚小角标，示意「还有一层，在侧边」 */
+.tool-step-delegate > .tool-step-head:after {
+  content: "›";
+  flex: none;
+  margin-left: 2px;
+  color: color-mix(in srgb, var(--gold) 70%, transparent);
+  font-size: 13px;
+  transition: transform var(--dur-quick) ease;
+}
+.tool-step-delegate > .tool-step-head:hover:after {
+  transform: translateX(2px);
+}
+.tool-step-delegate > .tool-step-head {
+  min-height: 30px;
+}
+.tool-step-delegate > .tool-step-head .tool-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 52px;
+}
+.tool-step-delegate > .tool-step-head .tool-title {
+  color: var(--ink-2);
+  font-family: var(--title);
+  font-size: var(--fs-small);
+}
+.note-seal {
+  width: 15px;
+  height: 15px;
+  font-size: 9px;
+  transform: rotate(3deg);
+}
+.tool-step-note > .tool-step-head .tool-title {
+  color: var(--ink-2);
+}
+/* 印与标签排成一行（与差遣的签同一个写法）：默认的标签宽只够两个字，一印两字会折成上下两行 */
+.tool-step-note > .tool-step-head .tool-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 52px;
+  white-space: nowrap;
+}
+/* 撮要：一答之内言替模型删繁就简的那一步，模型此后只凭笔记做事。一张淡染的小笺、右上一个折角，题与笔记用题字、大半号——
+   这一步是读的，不是扫的。折角是剪出来的（clip-path），帮手面板里底色不同也不露馅。
+   不设专色：色说「在哪儿动」，撮要哪儿也没去，标签用墨、比只看的几步深一档，分量全在笺上。
+   落选（设计稿/50–52）：当作「思绪」那样一块（不像一步）、折起被撮的前段（压完行迹缩一大截）、朱印 / 束痕 / 笔意小画；
+   色上落选朱（朱已说「在别处落了笔」，一色说两件事）、入潢的淡黄底（与差遣那层金挨得太近） */
+.tool-step-fold {
+  position: relative;
+  margin: 4px 0;
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--paper-3) 70%, transparent);
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);
+}
+.tool-step-fold:after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 9px;
+  height: 9px;
+  background: linear-gradient(225deg, transparent 50%, color-mix(in srgb, var(--ink) 14%, var(--paper-3)) 50%);
+  border-bottom-left-radius: 2px;
+}
+.tool-step-fold > .tool-step-head .tool-label {
+  color: var(--ink-2);
+}
+.tool-step-fold > .tool-step-head .tool-title {
+  color: var(--ink-2);
+  font-family: var(--title);
+  font-size: var(--fs-small);
+  letter-spacing: 0.04em;
+}
+.tool-step-fold > .tool-step-head .tool-meta {
+  font-family: var(--title);
+}
+.tool-step-fold > .tool-note {
+  padding: 4px 12px 9px 50px;
+  color: var(--ink-2);
+  font: var(--fs-small)/1.75 var(--title);
+}
+.tool-step-fold > .tool-note :is(ul, ol) {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.tool-note-files {
+  margin-top: 4px;
+  color: var(--ink-3);
+  font-size: var(--fs-mark);
+}
+.sub-seal {
+  width: 15px;
+  height: 15px;
+  font-size: 9px;
+  border-color: var(--gold);
+  color: var(--gold);
+  transform: rotate(-4deg);
+}
+.sub-trail {
+  min-width: 0;
+  margin: 0 9px 8px 24px;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in srgb, var(--gold) 35%, var(--line));
+  overflow-wrap: anywhere;
+}
+.sub-timeline .trail-group {
+  padding: 2px 0 3px;
+}
+/* 末尾还在进行的那一轮（正想着、正说着）贴着上一组，不另起一组的间距；有了步骤就转成一组 */
+.sub-timeline .trail-group.sub-tail {
+  margin-top: 0;
+  padding: 0;
+}
+.sub-timeline .trail-note {
+  margin: 2px 0 4px 4px;
+  font-size: var(--fs-small);
+  line-height: 1.65;
+}
+.sub-timeline .reasoning {
+  margin: 2px 0 3px;
+}
+.sub-timeline .reasoning-body {
+  max-height: 140px;
+  font-size: var(--fs-note);
+}
+.sub-said {
+  margin: 4px 0 2px;
+  color: var(--ink-2);
+  font-family: var(--title);
+  font-size: var(--fs-small);
+  line-height: 1.7;
+}
+.sub-said > *:first-child {
+  margin-top: 0;
+}
+.sub-said > *:last-child {
+  margin-bottom: 0;
+}
+.sub-said p {
+  margin: 0 0 4px;
+}
+.sub-said pre {
+  font-size: var(--fs-note);
+}
+.sub-report {
+  margin-top: 6px;
+  min-width: 0;
+  font-size: var(--fs-mid);
+}
+/* 帮手的话与回报走 renderMarkdown 却不挂 .markdown（那是正文的标记，引用、旁注落点都认它）：列表、引文、链接、分隔线与正文共用（30-chat/40-markdown），
+   标题、表格、代码块、图片的收边在这里另定——行迹里的话是过程，标题只比本段略大、加粗，不照正文放大，免得比正文还抢眼 */
+:is(.trail-note, .sub-report) :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0 0 0.4em;
+  font: 600 1.05em/1.45 var(--title);
+}
+:is(.trail-note, .sub-report) * + :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: 0.9em;
+}
+.trail-note table,
+.sub-report table {
+  display: block;
+  width: fit-content; /* 三线表的上下两道只与表同宽 */
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: var(--fs-note);
+}
+.trail-note th,
+.trail-note td,
+.sub-report th,
+.sub-report td {
+  padding: 4px 14px 4px 2px;
+  text-align: left;
+  vertical-align: top;
+}
+.trail-note pre,
+.sub-report pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+}
+.trail-note .code-block,
+.sub-report .code-block {
+  margin: 0.6em 0;
+}
+.trail-note img,
+.sub-report img {
+  max-width: 100%;
+}
+.trail-note code,
+.sub-report code {
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-s);
+  background: var(--paper-2);
+  overflow-wrap: anywhere;
+}
+.trail-note pre code,
+.sub-report pre code {
+  padding: 0;
+  background: none;
+}

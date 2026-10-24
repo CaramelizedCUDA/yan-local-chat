@@ -227,7 +227,15 @@ module.exports = function createChats({ chatsHome }) {
     },
     error => errorText(error, 200)
   );
+  // 各页加起来正作答（连同后台帮手、最后一次存盘还没落地）的有几段：换存储位置要等它们都松手
+  function working() {
+    const now = Date.now(),
+      ids = new Set();
+    for (const lease of leases.values()) if (now - lease.at <= LEASE_MS) for (const id of lease.ids) ids.add(id);
+    return ids.size;
+  }
   return {
+    working,
     routes: {
       "POST /api/chats/load": handleLoad,
       "POST /api/chats/save": handleSave,

@@ -1,4 +1,5 @@
 // 言 · 启动
 // index.html 里写死的字先照译文表换过（中文界面不动），再起页面
 translateStatic();
-boot();
+// 画好（或半路出错）就撤掉开页时的遮挡，免得整页一直藏着
+boot().finally(() => delete document.documentElement.dataset.booting);

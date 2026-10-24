@@ -1,13 +1,13 @@
 .modal {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 42px;
   background: rgba(30, 28, 24, 0.22);
   backdrop-filter: blur(3px);
-  animation: fadeIn 0.18s ease;
+  animation: fadeIn var(--dur-rise) ease;
 }
 .modal-panel {
   position: relative;
@@ -19,7 +19,6 @@
   border-radius: var(--radius-l);
   background: var(--paper);
   box-shadow: var(--shadow);
-  animation: panelIn 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .settings-nav {
   width: 186px;
@@ -33,7 +32,7 @@
 .settings-nav-title {
   padding: 0 10px 14px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.16em;
 }
 .settings-nav-spacer {
@@ -42,5 +41,5 @@
 .settings-nav-foot {
   padding: 0 10px;
   color: var(--ink-3);
-  font: 11px/1.7 var(--title);
+  font: var(--fs-note)/1.7 var(--title);
 }

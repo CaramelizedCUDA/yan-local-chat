@@ -3,7 +3,8 @@
 // ---------- 卷宗文件的悬浮预览：图看画、文看字、表看格、网页进沙箱、PDF 交给浏览器、音视频就地放；都不必先下载 ----------
 // 预览器看两种来源：磁盘卷宗（走桥接取回）与对话里的附件（就在这个浏览器里）。同一种文件，不论从哪儿来，看法一样——
 // 自己上传的 CSV、PDF、Markdown 点开就该是看，而不是把刚发出去的东西再下载一遍。
-// viewerSource 记着当前看的是哪一件：{ path } 是卷宗，{ attachmentId } 是附件；viewerPath 仍留给卷宗那一路的下载
+// viewerSource 记着当前看的是哪一件：{ path } 是卷宗，{ attachmentId } 是附件，{ skillDir, skillPath } 是技能带的一件（设置 → 技能里点开）；
+// viewerPath 仍留给卷宗那一路的下载
 let viewerPath = "",
   viewerRevision = 0,
   viewerSource = null,
@@ -34,8 +35,13 @@ function urlReader(url) {
     extracted: ""
   };
 }
+// 技能带的一件：桥接直取原件
+function skillFileUrl(source, download = false) {
+  return `${apiBase}/api/skills/raw?dir=${encodeURIComponent(source.skillDir)}&path=${encodeURIComponent(source.skillPath)}${download ? "&download=1" : ""}`;
+}
 async function viewerReader(source) {
   if (source.path) return urlReader(archiveFileUrl(source.path));
+  if (source.skillDir) return urlReader(skillFileUrl(source));
   const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
     head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
   if (head?.ok) return urlReader(url);
@@ -50,7 +56,7 @@ async function viewerReader(source) {
     extracted: String(file.extractedText || "")
   };
 }
-/** @param {string|{path?:string, attachmentId?:string}} target 卷宗路径，或 { attachmentId } */
+/** @param {string|{path?:string, attachmentId?:string, skillDir?:string, skillPath?:string}} target 卷宗路径，或 { attachmentId }，或技能里的一件 */
 async function openFileViewer(target, name = "", trigger = null) {
   const revision = ++viewerRevision;
   const source = typeof target === "string" ? { path: target } : target;
@@ -67,7 +73,7 @@ async function openFileViewer(target, name = "", trigger = null) {
   viewerSource = source;
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
-  viewer.classList.remove("hidden");
+  showNow(viewer);
   setViewerSeal();
   $("#fileViewerDownload").classList.remove("hidden");
   $("#fileViewerName").textContent = title;
@@ -93,6 +99,8 @@ async function openViewerWithSystem() {
   try {
     if (source?.path) await bridge("/api/archive/open", { root: archiveDir(), path: source.path }, AbortSignal.timeout(8000));
     else if (source?.attachmentId) await bridge("/api/files/open", { id: source.attachmentId }, AbortSignal.timeout(8000));
+    else if (source?.skillDir)
+      await bridge("/api/skills/open-item", { dir: source.skillDir, path: source.skillPath }, AbortSignal.timeout(8000));
     else return;
     toast(t("已交给本机程序打开"));
   } catch (error) {
@@ -102,7 +110,12 @@ async function openViewerWithSystem() {
 // 预览器头上的「下载」：看的是卷宗就走桥接，是附件就从浏览器里取
 function downloadViewerFile() {
   if (viewerSource?.attachmentId) void downloadAttachment(viewerSource.attachmentId);
-  else if (viewerPath) downloadArchiveFile(viewerPath);
+  else if (viewerSource?.skillDir) {
+    const anchor = document.createElement("a");
+    anchor.href = skillFileUrl(viewerSource, true);
+    anchor.download = String(viewerSource.skillPath).split("/").pop() || "";
+    anchor.click();
+  } else if (viewerPath) downloadArchiveFile(viewerPath);
 }
 async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
   if (kind === "image") return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;
@@ -140,7 +153,7 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
         "load",
         () => {
           if (revision === viewerRevision && frame.isConnected && frame.getAttribute("sandbox") === "allow-scripts")
-            frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source, theme }, "*");
+            frame.contentWindow?.postMessage({ type: "yan-preview-render", id, html: source, theme, scroll: true }, "*");
         },
         { once: true }
       );
@@ -160,10 +173,12 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
       .join("")}</tbody></table>${rows.length > 400 ? `<p class="file-viewer-note">${t(`仅显示前 400 行`)}</p>` : ""}</div>`;
   }
   if (kind === "doc") {
-    // 每回从原件现抽（按结构抽成 Markdown）；原件取不到时才用附件上传时抽下的那份
-    let text = "";
+    // 每回从原件现抽（按结构抽成 Markdown）；原件取不到时才用附件上传时抽下的那份。文中的图照抽出的路再从原件里取（见 withZipImages）
+    let text = "",
+      data = "";
     try {
-      text = trimExtractedText(await extractDocumentText(name, reader.dataUrl || (await readFile(await reader.blob(), "data"))));
+      data = reader.dataUrl || (await readFile(await reader.blob(), "data"));
+      text = trimExtractedText(await extractDocumentText(name, data));
     } catch {
       text = trimExtractedText(reader.extracted);
     }
@@ -174,26 +189,64 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
       // 按「## 」分节：表格一张表一节，演示一页一节
       sections = text.split(/^(?=## )/m).filter(part => part.trim());
     if (sort === "sheet" && sections.length)
-      return `<div class="file-viewer-text file-viewer-wide">${note}<div class="viewer-tabs">${sections
-        .map(
-          (part, i) =>
-            `<button type="button" class="${i ? "" : "active"}" data-viewer-tab="${i}">${escapeHtml(part.match(/^## (.*)/)?.[1] || t`工作表 ${i + 1}`)}</button>`
-        )
-        .join("")}</div>${sections
-        .map(
-          (part, i) =>
-            `<div class="viewer-sheet markdown${i ? " hidden" : ""}" data-viewer-panel="${i}">${renderMarkdown(part.replace(/^## .*\n+/, ""))}</div>`
-        )
-        .join("")}</div>`;
+      return withZipImages(
+        `<div class="file-viewer-text file-viewer-wide">${note}<div class="viewer-tabs">${sections
+          .map(
+            (part, i) =>
+              `<button type="button" class="${i ? "" : "active"}" data-viewer-tab="${i}">${escapeHtml(part.match(/^## (.*)/)?.[1] || t`工作表 ${i + 1}`)}</button>`
+          )
+          .join("")}</div>${sections
+          .map(
+            (part, i) =>
+              `<div class="viewer-sheet markdown${i ? " hidden" : ""}" data-viewer-panel="${i}">${renderMarkdown(part.replace(/^## .*\n+/, ""))}</div>`
+          )
+          .join("")}</div>`,
+        data
+      );
     if (sort === "slides" && sections.length)
-      return `<div class="file-viewer-slides">${note}${sections.map(part => `<div class="viewer-slide markdown">${renderMarkdown(part)}</div>`).join("")}</div>`;
-    return `<div class="file-viewer-text markdown">${note}${renderMarkdown(text)}</div>`;
+      return withZipImages(
+        `<div class="file-viewer-slides">${note}${sections.map(part => `<div class="viewer-slide markdown">${renderMarkdown(part)}</div>`).join("")}</div>`,
+        data
+      );
+    return withZipImages(`<div class="file-viewer-text markdown">${note}${renderMarkdown(text)}</div>`, data);
   }
   const text = await reader.text();
-  if (kind === "markdown") return `<div class="file-viewer-text markdown">${renderMarkdown(text.slice(0, 200000))}</div>`;
+  if (kind === "markdown")
+    return `<div class="file-viewer-text markdown">${rebaseMarkdownImages(renderMarkdown(text.slice(0, 200000)), viewerSource?.path || "")}</div>`;
   return `<div class="file-viewer-text"><pre class="file-viewer-code">${escapeHtml(text.slice(0, 200000))}</pre>${text.length > 200000 ? `<p class="file-viewer-note">${t(`仅显示前 20 万字`)}</p>` : ""}</div>`;
 }
 // CSV / TSV：引号里的换行仍属于同一个字段，显示上限按记录计。
+// Markdown 里的相对图片（![](images/a.png)）：照这份文件所在的那一层去卷宗里取，与 VS Code 一样——不然渲染进言的页面，
+// 相对地址落到言自己的根上。消毒时本地的图已摘了 src、原路记在 data-path（见 04-markdown 的钩子），从那里取回；
+// 本机盘符不动，/ 开头的从卷宗根算。附件里的 Markdown 没有「所在的那一层」，不改
+/** @param {string} html @param {string} path 这份 Markdown 在卷宗里的路径 */
+function rebaseMarkdownImages(html, path) {
+  if (!path || !html.includes("data-path")) return html;
+  const box = document.createElement("template");
+  box.innerHTML = html;
+  for (const img of box.content.querySelectorAll("img[data-path]")) {
+    const ref = img.getAttribute("data-path") || "";
+    if (/^([a-z][a-z0-9+.-]*:|\/\/)/i.test(ref)) continue;
+    img.setAttribute("src", archiveFileUrl(archiveRelative(ref.startsWith("/") ? "" : parentDir(path), ref)));
+    img.removeAttribute("data-path");
+    img.removeAttribute("data-file");
+  }
+  return box.innerHTML;
+}
+/** @param {string} base 卷宗里的一层（"" 即根） @param {string} ref 相对的路，可带 ./ ../ 与 %20 一类转义 */
+function archiveRelative(base, ref) {
+  let clean = ref.replace(/[?#].*$/, "").replace(/\\/g, "/");
+  try {
+    clean = decodeURIComponent(clean).replace(/\\/g, "/");
+  } catch {}
+  const parts = base ? base.split("/") : [];
+  for (const part of clean.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return parts.join("/");
+}
 function parseDelimited(text, split, limit = Infinity) {
   const rows = [];
   let row = [];
@@ -235,9 +288,6 @@ function parseDelimited(text, split, limit = Infinity) {
   finish();
   return rows;
 }
-function splitDelimited(row, split) {
-  return parseDelimited(row, split)[0] || [""];
-}
 /** @param {boolean} [stop] 点的是 ×：摊着的若是正放的那一曲，一并停下；别的关法只收起，正放着的挂上顶栏接着放 */
 function closeFileViewer(stop = false) {
   viewerRevision++;
@@ -247,10 +297,14 @@ function closeFileViewer(stop = false) {
   viewerSource = null;
   viewerReturnFocus = null;
   revokeViewerUrls();
-  $("#fileViewer")?.classList.add("hidden");
-  $("#fileViewerStage").innerHTML = "";
-  // 预览里全屏着的作品随预览一起没了：页上的 work-mode 也得撤，不然对话区滚不动
-  if (!document.querySelector(".work-expanded")) closeExpandedWork();
+  // 纸沉下去、底淡掉（见 90-motion-responsive.css 的「开层」），淡完再清台面；其间又开了别的（revision 变了）就不清
+  const revision = viewerRevision;
+  hideWithFade($("#fileViewer"));
+  setTimeout(() => {
+    if (revision === viewerRevision) $("#fileViewerStage").innerHTML = "";
+    // 预览里全屏着的作品随预览一起没了：页上的 work-mode 也得撤，不然对话区滚不动
+    if (!document.querySelector(".work-expanded")) closeExpandedWork();
+  }, 180);
   if (target?.isConnected) target.focus();
 }
 // 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起
@@ -266,7 +320,7 @@ function showInFileViewer(title, html, trigger = null, seal = t("览")) {
   viewerSource = null;
   viewerReturnFocus = trigger || document.activeElement;
   revokeViewerUrls();
-  $("#fileViewer").classList.remove("hidden");
+  showNow($("#fileViewer"));
   setViewerSeal(seal);
   $("#fileViewerDownload").classList.add("hidden");
   $("#fileViewerName").textContent = title;
@@ -290,7 +344,7 @@ function showImageViewer(src, name, label, trigger) {
   image.src = src;
   image.alt = name || t("图片预览");
   setImageViewerZoom(false);
-  $("#imageViewer").classList.remove("hidden");
+  showNow($("#imageViewer"));
   $("#imageViewerClose").focus();
 }
 function downloadArchiveFile(path, root = archiveDir()) {
@@ -353,12 +407,16 @@ function setImageViewerZoom(actual) {
 let imageViewerAttachmentId = null,
   imageViewerReturnFocus = null;
 function closeImageViewer() {
-  imageViewerRevision++;
+  const revision = ++imageViewerRevision;
   const viewer = $("#imageViewer");
-  if (viewer.classList.contains("hidden")) return;
-  viewer.classList.add("hidden");
-  $("#imageViewerImage").removeAttribute("src");
-  setImageViewerZoom(false);
+  if (!isShown("#imageViewer")) return;
+  hideWithFade(viewer);
+  // 图随纸沉下去，淡完再撤
+  setTimeout(() => {
+    if (revision !== imageViewerRevision) return;
+    $("#imageViewerImage").removeAttribute("src");
+    setImageViewerZoom(false);
+  }, 180);
   imageViewerAttachmentId = null;
   const target = imageViewerReturnFocus;
   imageViewerReturnFocus = null;

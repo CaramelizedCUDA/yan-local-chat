@@ -71,7 +71,7 @@ await evalJs(`(() => {
     return original(...args);
   };
   const input = document.querySelector("#chatInput");
-  input.value = "甲的话";
+  input.value = "PLAIN 甲的话";
   input.dispatchEvent(new Event("input"));
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   return true;
@@ -84,7 +84,7 @@ await waitFor(`__yanState().conversations.find(c => c.id === "switch-a").message
 check(
   "switching away while the send waits still sends the first conversation's words there",
   await evalJs(
-    `(() => { const s = __yanState(), a = s.conversations.find(c => c.id === "switch-a"), b = s.conversations.find(c => c.id === "switch-b"); return a.messages[0].content === "甲的话" && !a.messages[0].quote && b.messages.length === 0; })()`
+    `(() => { const s = __yanState(), a = s.conversations.find(c => c.id === "switch-a"), b = s.conversations.find(c => c.id === "switch-b"); return a.messages[0].content === "PLAIN 甲的话" && !a.messages[0].quote && b.messages.length === 0; })()`
   )
 );
 check(
@@ -145,4 +145,5 @@ for (const ready of [false, true]) {
   }
   await evalJs(`window.fetch = window.__preflight.original; true`);
 }
+
 close();

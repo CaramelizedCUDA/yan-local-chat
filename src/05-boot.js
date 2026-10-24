@@ -15,7 +15,7 @@ function recoverConversation(conversation) {
       changed = true;
     } else if ((message.steps || []).some(step => step.sub && step.status === "running") && !crewRunning(conversation.id)) {
       // 这一答早写完了，后台的帮手却还记着「在做」：做它的那一处已经不在了
-      settleSteps(message, "页面刷新，帮手已中断");
+      settleSteps(message, "页面刷新");
       changed = true;
     }
   for (const thread of conversation.threads || [])
@@ -38,6 +38,8 @@ function recoverInterruptedMessages() {
   if (changed) saveStore();
 }
 async function boot() {
+  // 时令那一件只看日子：先画上，等桥接那一阵角上就是它，不先露出底下那两道圈
+  paintSeason();
   await awaitBridge();
   // 浏览器里暂存的（桥接中途断过时没落成盘的对话、上次离页兜住的最新状态）先读回，再与存储根（默认 ~/.yan）里的正本合一次
   await hydrateStore();
@@ -47,7 +49,7 @@ async function boot() {
   // MCP 服务起得慢（起进程、握手）：先起着，头一问发出前会等它；环境备没备好也问一声，系统提示里要说
   void mcpReady();
   void refreshEnv();
-  void refreshSkills(null);
+  void refreshSkills();
   if (!profiles().some(p => p.id === store.settings.activeProfileId)) store.settings.activeProfileId = profiles()[0]?.id || "";
   // 先问一声别处在作答什么，那几段不当成中断
   await syncLeases();
@@ -64,9 +66,9 @@ async function boot() {
   delete document.documentElement.dataset.sidebar;
   restorePlace();
   render();
-  // 低频的全量巡检：哪段改了没标到也兜得住；页面藏起来时也巡一趟（手机切走常常就不回来了）
+  // 低频巡检：哪段改了没标到也兜得住——前台轮着巡，页面藏起来时整份巡一趟（手机切走常常就不回来了）
   setInterval(() => {
-    sweepConversations();
+    sweepSomeConversations();
     // 开页时对话目录没读成（桥接闪断、目录大到超时）：巡检时再试，不然整个会话都只存进浏览器
     if (chatsBroken) resyncWithDisk();
   }, 45000);

@@ -236,12 +236,33 @@ check("the re-dispatch is its own card marked 已更新", again.card?.fresh && a
 await evalJs(`document.querySelector('#messages .tool-step-delegate[data-kind="续派"] > .tool-step-head').click(); true`);
 await sleep(300);
 const againPanel = await evalJs(
-  `({ task: document.querySelector("#helperTaskText").textContent, nav: document.querySelector("#helperNav .helper-nav-count")?.textContent || "", report: document.querySelector("#helperModal .sub-report")?.textContent || "" })`
+  `(runs => ({ runs: runs.length, asks: runs.map(r => r.querySelector(".helper-meta-text").textContent + "|" + r.querySelector(".helper-ask-text").textContent.slice(0, 10)), folded: runs.map(r => r.querySelector(".sub-trail").classList.contains("folded")), reports: runs.map(r => r.querySelector(".sub-report")?.textContent.trim().slice(0, 4) || ""), sub: document.querySelector("#helperPanelSub").textContent, nav: document.querySelector("#helperNav .helper-nav-count")?.textContent || "" }))([...document.querySelectorAll("#helperPanelBody > .helper-run")])`
 );
 check(
-  "its panel shows the new task and report, and pages with the first run",
-  againPanel.task.startsWith("AGAIN-TEXT") && againPanel.nav === "2/2" && againPanel.report.startsWith("再做回报"),
+  "the helper's runs stack on one page: each task on the right, each finished run folded to its report",
+  againPanel.runs === 2 &&
+    againPanel.asks.every(a => a.startsWith("帮手 · ")) &&
+    againPanel.asks[1].endsWith("|AGAIN-TEXT") &&
+    againPanel.folded.join() === "true,true" &&
+    againPanel.reports[0] &&
+    againPanel.reports[1] === "再做回报" &&
+    againPanel.sub.startsWith("2 趟") &&
+    !againPanel.sub.includes("后台进行中") &&
+    againPanel.nav === "",
   JSON.stringify(againPanel)
+);
+// 点头一趟的签：同一页，停在纸顶，头一趟的行迹摊开（只说了话就交差的没有行迹可摊，收着露回报）
+await evalJs(`document.querySelector("#helperClose").click(); true`);
+await sleep(300);
+await evalJs(`document.querySelector('#messages .tool-step-delegate[data-kind="差遣"] > .tool-step-head')?.click(); true`);
+await sleep(300);
+const firstRun = await evalJs(
+  `(runs => ({ runs: runs.length, folded: runs.map(r => r.querySelector(".sub-trail").classList.contains("folded")), heads: runs.map(r => !!r.querySelector(".sub-fold")), top: document.querySelector("#helperScroll").scrollTop }))([...document.querySelectorAll("#helperPanelBody > .helper-run")])`
+);
+check(
+  "the first run's card opens the same page at the top with that run unfolded",
+  firstRun.runs === 2 && (firstRun.heads[0] ? firstRun.folded[0] === false : firstRun.folded[0] === true) && firstRun.top === 0,
+  JSON.stringify(firstRun)
 );
 await evalJs(`document.querySelector("#helperClose").click(); true`);
 

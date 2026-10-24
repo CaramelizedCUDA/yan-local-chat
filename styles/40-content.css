@@ -1,3 +1,6 @@
+/* 代码块：衬底加框、题头一道线写语言，右边一枚复制小画（与回复下的复制同一笔）。代码要一眼认出边界，框留着。
+   试过又撤回的（见 设计稿/88）：去框去题头线、只留纸上淡染一块（丙）——实用起来边界发虚，不如有框的清楚；
+   不框不衬底、工具条指到才浮（甲，代码混进正文）；上下两道淡墨线（乙，代码一多横线就乱） */
 .code-block {
   margin: 1em 0;
   overflow: hidden;
@@ -23,7 +26,7 @@
   padding: 3px 8px;
   border-radius: var(--radius-m);
   color: var(--ink-3);
-  font: 11px var(--body);
+  font: var(--fs-note) var(--body);
 }
 .code-copy:hover {
   background: var(--paper-3);
@@ -96,7 +99,7 @@
 }
 .tool-label {
   flex: none;
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.08em;
 }
 .tool-title {
@@ -114,7 +117,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ink-3);
-  font-size: 10.5px;
+  font-size: var(--fs-mark);
 }
 .tool-step[data-status="running"] .tool-meta:after {
   content: "";
@@ -142,19 +145,19 @@
 .tool-results a {
   color: var(--accent);
   text-decoration: none;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 .tool-results span {
   display: block;
   margin-top: 2px;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
   line-height: 1.5;
 }
 .tool-note {
   padding: 2px 11px 10px;
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
   overflow-wrap: anywhere;
 }
 .tool-note a {

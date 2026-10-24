@@ -85,7 +85,7 @@
   // 意：一件工程要成立的结论图，存在目录里、跨对话沿用（见 src/19-intent/）；只给主模型
   update_intent: {
     description:
-      "跨多答的长活可立一份意：整件工程要成立的结论图，存于目录 .yan/意.json，换对话也沿用（计划只管这一答的步骤）。一项是值得单独判的结论，不是一步动作。每次只给有改动的几项，已有的只给 id 与要改的字段。",
+      "一答做不完的长活（要分几回推进、等人拍板或等长跑的任务）可立一份意：整件工程要成立的结论图，存于目录 .yan/意.json，换对话也沿用。计划只管这一答的步骤，一答做得完的活，步数再多用计划即可。一项是值得单独判的结论，不是一步动作。每次只给有改动的几项，已有的只给 id 与要改的字段。",
     parameters: {
       type: "object",
       properties: {
@@ -99,7 +99,7 @@
               claim: { type: "string", description: "要成立的那句话" },
               check: { type: "string", description: "怎么算成立" },
               when: { type: "string", description: "只在什么情形下须成立（文字说明，不是表达式）；空串撤去" },
-              needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
+              needs: { type: "array", items: { type: "string" }, description: "前提的 id，可跨模块" },
               any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
               in: { type: "string", description: "所属模块的 id：一项拆开还有许多步即作模块，细项写 in 指向它；不写即全局，至多两层" },
               anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },
@@ -111,12 +111,17 @@
               note: { type: "string", description: "假定写出处；待定写等谁、定什么；弃写为何不通" },
               root: {
                 type: "boolean",
-                description: "整件工程最终要立住的结论（用户要的结果，不是手上这一步），新立时标；说法只照用户的意思改"
+                description: "整件工程最终要立住的结论（用户要的结果，不是手上这一步），新立时标，漏了可补标；说法只照用户的意思改"
               },
               keep: {
                 type: "boolean",
                 description:
-                  "守：用户定的、一直作数的界限（如「改完测试要过」「只用某几台机器」），不是要交付的结论：不标进度，不挂前提也不作前提，不守了给 removed。挂 test: 或 cmd: 的，动过手的那一答收尾前重查，不过即拦下"
+                  "守：一直要守住的条件，不是要交付一次的结论——用户定的界限（「只用某几台机器」），或往下做不能破的（原有测试要过、保持零依赖）。能对上某类动作的写 on 作钩子；余下能用指令验的挂 test: 或 cmd:（现成没有可写一条），动过手的那一答收尾前重查，不过即拦下。不标进度，不挂前提也不作前提，不守了给 removed"
+              },
+              on: {
+                type: "string",
+                description:
+                  "守的钩子：一条正则，比将要做的那一步（指令原文、文件路径、网址或工具名）。对得上即动手前先跑这条守挂的 test:，不过即不做——将要做的经环境变量 YAN_TOOL（工具名）、YAN_TARGET 交给它；空串撤去"
               }
             },
             required: ["id"]
@@ -134,7 +139,7 @@
       type: "object",
       properties: {
         command: { type: "string", description: "要执行的指令" },
-        timeout: { type: "number", description: "超时秒数，默认 120，不设上限" },
+        timeout: { type: "number", description: "前台最多等几秒，默认 120，最多 600；到时还没结束就转入后台接着跑，不会被终止" },
         background: {
           type: "boolean",
           description:

@@ -99,9 +99,8 @@ async function summarize(profile, ask, signal, reasoning = "") {
   });
   if (!response.ok) throw Error(await describeResponseError(response));
   const temp = await readAside(response, profile, ask);
-  const summary = String(temp.content || "")
-    .replace(/<think>[\s\S]*?<\/think>/g, "")
-    .trim();
+  const text = String(temp.content || ""),
+    summary = (parseInlineThink(text)?.content ?? text).trim();
   if (!summary) throw Error(temp.reasoning ? t("模型只写了思考、没写出撮要（输出被上限截断）") : t("模型没有写出撮要"));
   return summary;
 }

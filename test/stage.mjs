@@ -120,6 +120,22 @@ check(
   await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title`)
 );
 check("keys typed into the stage stay out of 言's own inputs", await evalJs(`!document.querySelector("#welcomeInput").value`));
+// 输入法组字：拼音随打随现在网页里，选定后换成汉字；隐藏输入框已挪到网页里光标所在的输入框上（候选框跟着光标）
+const title = () => evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title`);
+await send("Input.imeSetComposition", { text: "ni", selectionStart: 2, selectionEnd: 2 });
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "输入:a你好ni"`, 8000).catch(() => {});
+check("composing text shows up in the page as it is typed", (await title()) === "输入:a你好ni", await title());
+await send("Input.insertText", { text: "呢" });
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "输入:a你好呢"`, 8000).catch(() => {});
+check("committing replaces the composing text", (await title()) === "输入:a你好呢", await title());
+await sleep(400);
+const keysAt = await evalJs(`(r => ({ x: r.left, y: r.top }))(document.querySelector("#stageKeys").getBoundingClientRect())`);
+check(
+  "the hidden key catcher follows the page's caret",
+  Math.abs(keysAt.x - (geometry.x + geometry.w * 0.6)) < geometry.w * 0.03 &&
+    Math.abs(keysAt.y - (geometry.y + geometry.h * 0.1)) < geometry.h * 0.04,
+  JSON.stringify({ keysAt, geometry })
+);
 await shot("stage.png");
 
 // 网页弹的提示框：画在画面上，作答递回网页

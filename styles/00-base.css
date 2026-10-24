@@ -42,8 +42,8 @@ input[type="checkbox"] {
   vertical-align: -2px;
   cursor: pointer;
   transition:
-    border-color 0.15s,
-    background-color 0.15s;
+    border-color var(--dur-quick),
+    background-color var(--dur-quick);
 }
 input[type="checkbox"]:checked {
   border-color: var(--accent);
@@ -90,6 +90,8 @@ input[type="number"]::-webkit-outer-spin-button {
   /* 函套的布面与题签：卷宗与分组里的夹、组画成一只小函，夹条左缘包一道这色的布边 */
   --cloth: color-mix(in srgb, var(--keep) 78%, var(--ink));
   --slip: #f6f1e4;
+  /* 案：整窗浮层（差遣、文件预览）的底，比纸深一档；纸是一条，上下各留一截案（设计稿/86 丙）。只引别的色，明暗各随其值 */
+  --desk: color-mix(in srgb, var(--paper-3) 55%, var(--paper-2));
   /* 石绿：意里已立的那一勾与名字。原先借 --code-green（#536d62）浅色下偏墨，勾了也像灰的（见 设计稿/61 一·乙；
      落选：只染勾——名字仍淡墨认不出立住；连出去的线也染——线多了一图都绿，反倒不分） */
   --stone-green: #3b8a5a;
@@ -107,6 +109,38 @@ input[type="number"]::-webkit-outer-spin-button {
   --radius-s: 3px;
   --radius-m: 6px;
   --radius-l: 10px;
+  /* 小字四档：记（时刻、计数、标签）、注（说明、次要按钮）、小（条目、菜单、弹层）、中（正文旁的主字）。
+     原先 8–13.5px 十余种按向上并：≤10.5 → 记、11–11.5 → 注、12–12.5 → 小、13–13.5 → 中，没有变小的。
+     不归档的：印章、▾ › × 一类符号、等待圆圈与意图里的「或」——字号跟着框走。
+     落选的三档 10.5 · 12 · 13.5（见 设计稿/101 乙）：档间拉开了，但设置里的说明字大一圈、有几处反倒变小 */
+  --fs-mark: 10.5px;
+  --fs-note: 11.5px;
+  --fs-small: 12.5px;
+  --fs-mid: 13.5px;
+  /* 浮层高低一处定：由下往上。能同时开着的，高低与 Esc 先收谁（LAYERS 的 rank，见 src/03-ui-utils.js）同序——
+     帮手窗里点开文件、文件里看图，一层压一层；提示条在一切浮层之上，差遣窗、预览里复制或报错也看得见。
+     不归档的：组件里头的 1–8（只在父层里比）、顶栏与输入区里挂着的菜单与簿录（同上）、换明暗的墨滴一组（1997–2000，永在最上） */
+  --z-tip: 24; /* 划选浮起的「引用 | 旁注」 */
+  --z-panel: 30; /* 铺满的旁注、游目，窄屏的侧栏与旁注 */
+  --z-veil: 48; /* 拖文件进来的那层纱 */
+  --z-modal: 50; /* 设置、确认 */
+  --z-pop: 60; /* 挂在 body 上的小菜单：设置里也会弹 */
+  --z-work: 75; /* 全屏的作品 */
+  --z-sheet: 88; /* 差遣窗 */
+  --z-file: 90; /* 文件预览 */
+  --z-image: 92; /* 看图 */
+  --z-toast: 96;
+  --z-gate: 100; /* 接不上桥接的那一页 */
+  /* 动效时长三档：快（悬停、选中这类状态的色与透明、小件的转动）、起（小件现身：菜单、提示条、弹层、换页的淡入）、
+     开层（纸落案上，见 90-motion-responsive.css）；退场一律同 hideWithFade 的 170 毫秒，淡完才藏。原先快 0.12–0.2s、起 0.16–0.22s 各有五六种，并到一档相差不过几十毫秒。
+     不归档的：带先后错开的编排（侧栏开合、输入框的起落）、正文与行迹的现身、展开收起（脚本同步）、印与墨的特效、循环 */
+  --dur-quick: 0.16s;
+  --dur-rise: 0.2s;
+  --dur-lay: 0.38s;
+  --dur-out: 0.17s;
+  /* 两条曲线：墨（小件起落、滑动），纸（开层与大块的位移，略缓收） */
+  --ease-ink: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-lay: cubic-bezier(0.22, 0.72, 0.2, 1);
 }
 /* 笔意图标（画法见 src/03-brush.js）：墨分两色，一片淡墨作纸，一点朱。
    落选的：等宽圆头的线稿加实心色块（UI 图标的画法，怎么减细节都偏卡通）；卷宗一个「卷」字小印（与「工」印混在一处，认不出是入口） */
@@ -114,7 +148,7 @@ input[type="number"]::-webkit-outer-spin-button {
   flex: none;
   width: 20px;
   height: 20px;
-  transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform 0.3s var(--ease-ink);
 }
 .brush .ink {
   fill: color-mix(in srgb, var(--ink) 80%, var(--paper));
@@ -255,6 +289,32 @@ input[type="number"]::-webkit-outer-spin-button {
   --code-blue: #9aa3cc;
   --shadow: 0 22px 64px rgba(0, 0, 0, 0.36);
 }
+/* 时令（设计稿/84 丙）：纸色随季偏一丝——春微青、夏最白、秋微暖、冬微冷；只动 --paper，差在一两分之内，并排看得出、单看不扎眼。
+   季节由 theme-boot.js 开页前写在 <html> 上 */
+:root[data-theme="light"][data-season="spring"] {
+  --paper: #f8faf3;
+}
+:root[data-theme="light"][data-season="summer"] {
+  --paper: #fcfbf8;
+}
+:root[data-theme="light"][data-season="autumn"] {
+  --paper: #fcf8ef;
+}
+:root[data-theme="light"][data-season="winter"] {
+  --paper: #f7f7f5;
+}
+:root[data-theme="dark"][data-season="spring"] {
+  --paper: #1e201c;
+}
+:root[data-theme="dark"][data-season="summer"] {
+  --paper: #22211e;
+}
+:root[data-theme="dark"][data-season="autumn"] {
+  --paper: #221f1a;
+}
+:root[data-theme="dark"][data-season="winter"] {
+  --paper: #1e1f1f;
+}
 body {
   overflow: hidden;
   background: var(--paper-2);
@@ -265,13 +325,17 @@ body {
 ::selection {
   background: var(--accent-soft);
 }
+/* 开页等桥接、读存储那一阵：index.html 写死的初稿（固定标语、「访客」、欢迎页）不露面，只留纸与框，头一回画好即撤 */
+:root[data-booting] :is(.main > *, .history, .sidebar-footer) {
+  visibility: hidden;
+}
 /* 接不上本机桥接时的一页：盖住整个界面，接上即撤 */
 .bridge-gate {
   display: none;
 }
 :root[data-bridge="waiting"] .bridge-gate {
   position: fixed;
-  z-index: 100;
+  z-index: var(--z-gate);
   inset: 0;
   display: grid;
   place-content: center;
@@ -291,7 +355,7 @@ body {
 .bridge-gate p {
   margin: 0;
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 
 /* 英文界面：各处的字距是给汉字留的，拉丁字母照常排 */

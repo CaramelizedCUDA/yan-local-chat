@@ -138,7 +138,7 @@ function appearanceSettingsHtml() {
       ["off", t("关")]
     ],
     s.inkMotion || "on"
-  )}${fontRow(s.font)}<div class="setting-row"><div class="setting-copy"><strong>${t(`印色`)}</strong><small>${t(`界面中的点睛之色`)}</small></div><div class="segmented">${["#9b5540", "#536d62", "#5c6386", "#75644f"].map(v => `<button data-setting="accent" data-value="${v}" class="${s.accent === v ? "active" : ""}" style="color:${v}">●</button>`).join("")}</div></div>`;
+  )}${fontRow(s.font)}<div class="setting-row"><div class="setting-copy"><strong>${t(`印色`)}</strong><small>${t(`界面中的点睛之色`)}</small></div><div class="segmented accent-segmented">${["#9b5540", "#536d62", "#5c6386", "#75644f"].map(v => `<button data-setting="accent" data-value="${v}" class="${s.accent === v ? "active" : ""}" style="color:${v}">●</button>`).join("")}</div></div>`;
 }
 // 字体一行：每个钮用自己那种字写自己的名字，一眼看出气质
 function fontRow(active = "mixed") {
@@ -191,7 +191,11 @@ function bindGeneralSettings() {
       archiveEntries = null;
       await refreshArchive();
       renderSettings();
-      toast(t`存储已迁至 ${pathTail(data.root)}；${data.adopted ? t("沿用该处原有数据") : t("旧处原样保留")}`);
+      toast(
+        t`存储已迁至 ${pathTail(data.root)}；${data.adopted ? t("沿用该处原有数据") : t("旧处原样保留")}${
+          data.busyCount ? t`；${data.busyCount} 个文件正被占用未拷（如 ${data.busy[0]}），可从旧处补拷` : ""
+        }`
+      );
     };
   };
   storeInput?.addEventListener("change", e => commitStore(e.target.value));
@@ -281,9 +285,10 @@ function bindSettingRows() {
       (button.onclick = () => {
         const key = button.dataset.setting,
           value = button.dataset.value;
+        // 主题要等动效盖满才写进设置，这时重画会照旧值点亮；选中态就地先挪过来
         if (key === "theme") {
+          button.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("active", b === button));
           switchTheme(value, button);
-          renderSettings();
           return;
         }
         // 换语言：译文表在开页时载入（见 theme-boot.js），存下即重新载入

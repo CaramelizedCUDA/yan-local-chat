@@ -34,7 +34,7 @@ async function addFiles(fileList) {
       break;
     }
     try {
-      placeAttachment(key, await ingestFile(file));
+      if (!placeAttachment(key, await ingestFile(file))) break;
       total += file.size;
       count += 1;
       added += 1;
@@ -48,15 +48,23 @@ async function addFiles(fileList) {
 }
 // 读好的一件放上案：案上（pendingAttachments）此刻若已换成别段的草稿，就记进原来那段的草稿里，回去时还在
 function placeAttachment(key, file) {
+  // 两批同时读（选取、拖入、卷宗置入）时，开头看到的数量与容量都可能已旧；落进目标草稿的这一刻再核一次。
+  const attachments = draftKey() === key ? pendingAttachments : draftRecord(key).attachments;
+  if (!canPlaceAttachment(file.size, attachments)) {
+    void deleteAttachments([file.id]);
+    return false;
+  }
   if (draftKey() === key) {
     pendingAttachments.push(file);
     // 随即记进草稿：一次拖进好几件，读着后面的时候页面若重画（restoreDraft 照草稿摆案），读好的几件不至于丢
-    return void persistDraft();
+    persistDraft();
+    return true;
   }
   const draft = draftRecord(key);
   store.drafts ||= {};
   store.drafts[key] = { ...draft, attachments: [...draft.attachments, file], updatedAt: now() };
   saveStoreSoon();
+  return true;
 }
 // 图入库时就换成各家都收的样子：手机原图动辄五六 MB、上万像素，Claude 收图不过 5 MB、长边过八千即拒；
 // 认得的格式只有 PNG、JPEG、GIF、WebP。大了的缩到长边 2048、换成 JPEG（带透明的 PNG 仍存 PNG），别的格式能解开的一并转。

@@ -8,10 +8,23 @@ let archiveEntries = null,
   archiveDirs = [],
   archiveScratch = null,
   archiveLoading = null,
+  /** @type {Promise<void> | null} 排在正取着的那一趟后面的下一趟 */
+  archiveQueued = null,
   // 卷宗页此刻站在哪一层（相对卷宗根，"" 即根）：只列这一层的夹与件，拖进来的文件也落在这一层
   libraryDir = "",
   // 正在就地改名的那一项（文件或夹的路径）；空即没有
   libraryRenaming = "";
+// 页面这头（人）收入、改名、挪动的件与夹：路径 → 何时。答末认成品照的是开工前后卷宗的差，作答途中人收进来的也在差里，得凭这份剔掉
+/** @type {Map<string, number>} */
+const archiveOwnWrites = new Map();
+function noteOwnArchiveWrite(path) {
+  if (path) archiveOwnWrites.set(path, Date.now());
+}
+/** 这件（或它所在的夹）是不是 since 之后人在页面上放进来、挪过来的 */
+function ownArchiveWriteSince(path, since) {
+  for (const [own, at] of archiveOwnWrites) if (at >= since && (path === own || path.startsWith(`${own}/`))) return true;
+  return false;
+}
 const ARCHIVE_DRAG = "application/x-yan-archive";
 function parentDir(path) {
   const at = String(path).lastIndexOf("/");
@@ -53,7 +66,13 @@ async function archiveFileExists({ root, path }) {
   }
 }
 async function refreshArchive() {
-  if (archiveLoading) return archiveLoading;
+  // 正取着的那一趟可能早于刚才的改动（新建夹、改名、收入）：复用它就拿回改动前的列表，重画时冲掉新夹与改名框。
+  // 排一趟在它后面再取，几处同时要的并成这一趟
+  if (archiveLoading)
+    return (archiveQueued ||= archiveLoading.then(() => {
+      archiveQueued = null;
+      return refreshArchive();
+    }));
   archiveLoading = bridge("/api/archive/list", { root: archiveDir() }, AbortSignal.timeout(8000))
     .then(data => {
       archiveEntries = data.entries || [];
@@ -249,6 +268,7 @@ async function commitLibraryRename(value) {
   if (!path || !name || name === path.split("/").pop()) return renderLibrary();
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, name }, AbortSignal.timeout(20000));
+    noteOwnArchiveWrite(moved.path);
     rebaseDeliverables(path, moved.path);
   } catch (error) {
     toast(t`改名失败：${String(error.message || error).slice(0, 80)}`);
@@ -280,8 +300,10 @@ function dataUrlFromText(text, mime = "text/plain") {
   return `data:${mime};base64,${btoa(binary)}`;
 }
 /** dir：落进卷宗的哪一层，缺省为根（导出、附件上的「藏」都落在根上；卷宗页上拖入的落在此刻所在的那一层） */
-async function putArchiveFile(name, data, dir = "") {
-  return bridge("/api/archive/put", { root: archiveDir(), name, data, dir }, AbortSignal.timeout(120000));
+async function putArchiveFile(name, data, dir = "", root = archiveDir()) {
+  const saved = await bridge("/api/archive/put", { root, name, data, dir }, AbortSignal.timeout(120000));
+  noteOwnArchiveWrite(saved.path);
+  return saved;
 }
 // 答末成品条记的是路径：件挪了、改了名，或它所在的夹挪了、改了名，条子跟着改，不然就成了「已移出卷宗」
 function rebaseDeliverables(from, to) {
@@ -303,6 +325,7 @@ async function moveArchiveItem(path, dir) {
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
       renamed = moved.name !== path.split("/").pop();
+    noteOwnArchiveWrite(moved.path);
     rebaseDeliverables(path, moved.path);
     toast(t`已移入「${dir ? dir.split("/").pop() : t("卷宗")}」${renamed ? t`，同名已有，改作 ${moved.name}` : ""}`);
   } catch (error) {
@@ -334,22 +357,69 @@ async function cleanScratch(conversation) {
   }
 }
 async function addLibraryFiles(fileList, dir = libraryDir) {
-  const files = Array.from(fileList || []);
+  await storeLibraryFiles(Array.from(fileList || []).map(file => ({ file, dir })));
+}
+/** @param {{ file: File, dir: string }[]} items @param {number} [folders] 一并建了几个夹（只为最后那句报数） */
+async function storeLibraryFiles(items, folders = 0, root = archiveDir()) {
   let added = 0;
-  for (const file of files) {
+  for (const { file, dir } of items) {
     if (file.size > MAX_ARCHIVE_FILE_BYTES) {
       toast(t`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
       continue;
     }
     try {
-      await putArchiveFile(file.name, await readFile(file, "data"), dir);
+      await putArchiveFile(file.name, await readFile(file, "data"), dir, root);
       added += 1;
     } catch (error) {
       toast(t`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
     }
   }
   await refreshArchive();
-  if (added) toast(t`已收入 ${added} 件`);
+  if (folders) toast(t`已收入 ${folders} 个夹、${added} 件`);
+  else if (added) toast(t`已收入 ${added} 件`);
+}
+// ---------- 拖进文件夹 ----------
+// 浏览器交来的 files 里，文件夹只是一个读不出内容的空条目：得在 drop 当下从 items 取出条目（过了这一刻就取不到了），再一层层往下走
+/** @param {DataTransfer} data @returns {FileSystemEntry[]} */
+function droppedEntries(data) {
+  return Array.from(data.items || [])
+    .map(item => (item.kind === "file" ? item.webkitGetAsEntry?.() : null))
+    .filter(entry => !!entry);
+}
+/** @param {FileSystemDirectoryEntry} entry @returns {Promise<FileSystemEntry[]>} 一次只给一批（Chromium 一百条），读到空为止 */
+async function folderChildren(entry) {
+  const reader = entry.createReader(),
+    all = [];
+  for (;;) {
+    const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+    if (!batch.length) return all;
+    all.push(...batch);
+  }
+}
+/** @param {FileSystemFileEntry} entry @returns {Promise<File>} */
+const entryFile = entry => new Promise((resolve, reject) => entry.file(resolve, reject));
+// 收进卷宗：夹照原样建（同名的另取名，与文件一样不覆盖），文件落进各自的夹。点开头的（.git、.DS_Store）跳过——卷宗里它们本就是藏着的
+/** @param {FileSystemEntry[]} entries */
+async function addLibraryEntries(entries) {
+  // 一批拖入固定落点；枚举目录、读取文件期间，人可以继续翻卷宗或更换存储位置。
+  const root = archiveDir(),
+    targetDir = libraryDir;
+  /** @type {{ file: File, dir: string }[]} */
+  const items = [];
+  let folders = 0;
+  const walk = async (/** @type {FileSystemEntry} */ entry, /** @type {string} */ dir) => {
+    if (entry.name.startsWith(".")) return;
+    if (entry.isFile) return void items.push({ file: await entryFile(/** @type {FileSystemFileEntry} */ (entry)), dir });
+    const made = await bridge("/api/archive/mkdir", { root, dir, name: entry.name }, AbortSignal.timeout(20000));
+    folders += 1;
+    for (const child of await folderChildren(/** @type {FileSystemDirectoryEntry} */ (entry))) await walk(child, made.path);
+  };
+  try {
+    for (const entry of entries) await walk(entry, targetDir);
+  } catch (error) {
+    toast(t`文件夹未能收入：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
+  }
+  await storeLibraryFiles(items, folders, root);
 }
 // 附件上的「藏」：原件落进卷宗目录
 async function saveToLibrary(id) {
@@ -394,10 +464,10 @@ async function removeArchiveItem(path) {
   }
   await refreshArchive();
 }
-function canPlaceAttachment(size) {
-  if (pendingAttachments.length >= 10) return toast(t("一次最多置入 10 件附件")), false;
+function canPlaceAttachment(size, attachments = pendingAttachments) {
+  if (attachments.length >= 10) return toast(t("一次最多置入 10 件附件")), false;
   if (size > MAX_FILE_BYTES) return toast(t`单个附件不超过 ${limitLabel(MAX_FILE_BYTES)}`), false;
-  const total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0);
+  const total = attachments.reduce((sum, file) => sum + Number(file.size || 0), 0);
   if (total + Number(size || 0) > MAX_PENDING_BYTES) return toast(t`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`), false;
   return true;
 }
@@ -416,7 +486,7 @@ async function placeFromArchive(path) {
     if (!response.ok) throw Error(t("取回失败"));
     const blob = await response.blob(),
       file = new File([blob], entry.name, { type: blob.type || "", lastModified: Date.parse(entry.modifiedAt) || Date.now() });
-    placeAttachment(key, await ingestFile(file));
+    if (!placeAttachment(key, await ingestFile(file))) return;
     persistDraft();
     if (draftKey() !== key) return toast(t`${entry.name} 已置于原对话的案上`);
     closeLibrary();
@@ -582,7 +652,13 @@ function bindLibraryEvents() {
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
     hideDropVeil();
-    void (view === "library" ? addLibraryFiles : addFiles)(event.dataTransfer.files);
+    const entries = droppedEntries(event.dataTransfer);
+    if (view === "library") return void (entries.length ? addLibraryEntries(entries) : addLibraryFiles(event.dataTransfer.files));
+    // 案上只放文件：拖来的夹不展开（一个夹动辄几百件），请它进卷宗
+    const folders = entries.filter(entry => entry.isDirectory);
+    if (folders.length) toast(t("文件夹请拖进卷宗：案上只放文件"));
+    const files = Array.from(event.dataTransfer.files).filter(file => !folders.some(entry => entry.name === file.name));
+    if (files.length) void addFiles(files);
   });
   // 正文里指向本地文件的链接（模型写的「下载《x.docx》」）：页面上没有那样的路。先按原路在这段对话的落脚处取，
   // 取不到（sandbox:/ 之类、或路写错了层）再到卷宗里找同名的那件
@@ -599,6 +675,8 @@ function bindLibraryEvents() {
     downloadArchiveFile(entry.path);
   });
   $("#messages").addEventListener("click", event => {
+    const more = event.target.closest(".deliver-more");
+    if (more) return toggleDeliverables(more);
     const button = event.target.closest("[data-deliver-action]");
     if (!button) return;
     const path = button.closest("[data-deliver]")?.dataset.deliver;

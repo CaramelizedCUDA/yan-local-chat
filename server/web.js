@@ -178,12 +178,14 @@ function pinnedFetch(url, options, addresses) {
           headers.get("content-encoding")
         ];
         const empty = options.method === "HEAD" || [204, 205, 304].includes(incoming.statusCode);
+        /** @type {import("node:stream").Readable} */
         let body = incoming;
         if (decode && !empty) {
-          body = decode();
-          incoming.on("error", error => body.destroy(error));
-          body.on("close", () => incoming.destroy());
-          incoming.pipe(body);
+          const inflate = decode();
+          incoming.on("error", error => inflate.destroy(error));
+          inflate.on("close", () => incoming.destroy());
+          incoming.pipe(inflate);
+          body = inflate;
           headers.delete("content-encoding");
           headers.delete("content-length");
         }

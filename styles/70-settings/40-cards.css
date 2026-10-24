@@ -11,7 +11,7 @@
   padding: 11px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-s); /* 与卷宗的簿录长条同是方角；落选的 12px 圆角成块，见 设计稿/26 五 */
-  transition: border-color 0.2s;
+  transition: border-color var(--dur-quick);
 }
 .card-head {
   display: flex;
@@ -28,7 +28,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
   color: var(--ink-3);
-  font-size: 10px;
+  font-size: var(--fs-mark);
   white-space: nowrap;
 }
 .card-state {
@@ -36,7 +36,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: var(--fs-small);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -72,7 +72,7 @@
 .card-more > summary {
   cursor: pointer;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
   list-style: none;
 }
 .card-more > summary::-webkit-details-marker {
@@ -123,7 +123,7 @@
 }
 .card-error {
   color: var(--danger);
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 .card-foot {
   display: flex;
@@ -156,8 +156,8 @@
   border: 1px solid var(--ink-3);
   border-radius: var(--radius-s);
   transition:
-    border-color 0.18s,
-    background-color 0.18s;
+    border-color var(--dur-quick),
+    background-color var(--dur-quick);
 }
 .card.pickable[aria-checked="true"] .card-tick {
   border-color: var(--accent);
@@ -190,7 +190,7 @@
   flex: none;
   min-width: 2.4em;
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--fs-note);
   text-align: right;
 }
 .card.pickable[data-state="drop"] .env-pack-word {
@@ -209,7 +209,7 @@
 .card-note {
   margin-top: 3px;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .json-box {
   margin-bottom: 14px;
@@ -220,7 +220,7 @@
   justify-content: space-between;
   margin-bottom: 6px;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 .json-editor {
   width: 100%;
@@ -228,19 +228,13 @@
   box-sizing: border-box;
   resize: vertical;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.6;
-}
-.settings-note {
-  margin-top: 14px;
-  color: var(--ink-3);
-  font-size: 12px;
-  line-height: 1.8;
 }
 .settings-sub {
   margin: 22px 0 0;
   color: var(--ink-2);
-  font: 500 13px var(--title);
+  font: 500 var(--fs-mid) var(--title);
 }
 /* 环境：状态一张卡，准备中时下面滚着输出 */
 .env-log {
@@ -267,7 +261,7 @@
   display: block;
   margin-bottom: 6px;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .preset-checks {
   display: flex;
@@ -279,7 +273,7 @@
   align-items: center;
   gap: 6px;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .preset-prompt {
   min-height: 120px;

@@ -195,11 +195,6 @@ function memoryNameField(target, className, settle) {
 }
 function bindMemoryEvents() {
   const host = $("#settingsContent");
-  // 改着的输入框随字长高
-  const grow = area => {
-    area.style.height = "auto";
-    area.style.height = `${area.scrollHeight}px`;
-  };
   host
     .querySelectorAll("[data-memory-cat]")
     .forEach(button => button.addEventListener("click", () => openMemoryCategory(button.dataset.memoryCat || null)));
@@ -224,9 +219,8 @@ function bindMemoryEvents() {
     });
     const area = row.querySelector("textarea");
     if (area) {
-      grow(area);
+      fitTextarea(area);
       area.addEventListener("input", () => {
-        grow(area);
         const text = cleanMemoryText(area.value);
         const tooLong = text.length > MEMORY_TEXT_CHARS;
         area.setCustomValidity(tooLong ? t`记忆最多 ${MEMORY_TEXT_CHARS} 字，当前内容尚未保存，请缩短后再完成` : "");

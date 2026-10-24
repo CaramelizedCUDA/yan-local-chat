@@ -78,7 +78,7 @@
   border-radius: var(--radius-m);
   background: color-mix(in srgb, var(--paper) 90%, transparent);
   opacity: 0;
-  transition: opacity 0.18s ease;
+  transition: opacity var(--dur-quick) ease;
 }
 .html-app .code-head .code-lang {
   display: none;
@@ -91,25 +91,25 @@
   display: flex;
   gap: 2px;
 }
-/* 工具条上是笔意小画：只用墨、随按钮字色，与回复下的复制、重答同一套 */
-.html-app .code-icon {
+/* 交互内容工具条、代码块题头上是笔意小画：只用墨、随按钮字色，与回复下的复制、重答同一套 */
+.code-icon {
   display: grid;
   place-items: center;
   width: 26px;
   height: 24px;
   padding: 0;
 }
-.html-app .code-icon .brush {
+.code-icon .brush {
   width: 15px;
   height: 15px;
 }
-.html-app .code-icon .brush .ink {
+.code-icon .brush .ink {
   fill: currentColor;
 }
-.html-app .code-icon .brush .ink2 {
+.code-icon .brush .ink2 {
   fill: color-mix(in srgb, currentColor 75%, transparent);
 }
-.html-app .code-icon .brush .wash {
+.code-icon .brush .wash {
   fill: color-mix(in srgb, currentColor 14%, transparent);
 }
 /* 出错、全屏时工具条与标签常显，回到有框的样子 */
@@ -136,7 +136,7 @@
   display: grid;
   place-items: center;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.08em;
 }
 /* 明暗钉成与言的主题一致：iframe 里也按这个走，两边对不上时浏览器会垫一层不透明的底 */
@@ -163,7 +163,7 @@
 .work-expanded {
   position: fixed !important;
   inset: 16px !important;
-  z-index: 75 !important;
+  z-index: var(--z-work) !important;
   display: flex !important;
   flex-direction: column !important;
   margin: 0 !important;
@@ -182,7 +182,7 @@
   border-left: 2px solid var(--accent);
   background: var(--paper-2);
   color: var(--ink-3);
-  font: 11.5px/1.6 var(--body);
+  font: var(--fs-note)/1.6 var(--body);
 }
 .source-stack {
   margin: 18px 0 4px;
@@ -213,13 +213,13 @@
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
   transform: rotate(-45deg);
-  transition: transform 0.15s;
+  transition: transform var(--dur-quick);
 }
 .source-stack[open] > summary:before {
   transform: rotate(45deg) translate(-1px, -1px);
 }
 .source-stack > summary small {
-  font: 9px var(--body);
+  font: var(--fs-mark) var(--body);
   letter-spacing: 0;
 }
 .source-grid {
@@ -242,7 +242,7 @@
   background: var(--paper-2);
   color: inherit !important;
   text-decoration: none !important;
-  transition: 0.16s;
+  transition: var(--dur-quick);
 }
 .source-card:hover {
   border-color: var(--ink-3);
@@ -281,18 +281,18 @@ button.source-local {
 }
 .source-copy strong {
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
   font-weight: 500;
 }
 .source-copy small {
   margin-top: 2px;
   color: var(--ink-3);
-  font-size: 9.5px;
+  font-size: var(--fs-mark);
 }
 .source-read {
   flex: none;
   color: var(--code-green);
-  font-size: 9px;
+  font-size: var(--fs-mark);
 }
 .chat-scroll.generating {
   padding-bottom: clamp(240px, 34vh, 380px);
@@ -300,12 +300,11 @@ button.source-local {
 .image-viewer {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: var(--z-image);
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--paper) 91%, transparent);
-  backdrop-filter: blur(12px);
-  animation: fadeIn 0.18s ease;
+  background: var(--grain), var(--wash), var(--paper);
+  animation: fadeIn var(--dur-rise) ease;
 }
 .image-viewer-head {
   height: 54px;
@@ -324,7 +323,7 @@ button.source-local {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ink-2);
-  font: 12px var(--body);
+  font: var(--fs-small) var(--body);
 }
 .image-viewer-actions {
   display: flex;
@@ -335,7 +334,7 @@ button.source-local {
   padding: 6px 9px;
   border-radius: var(--radius-m);
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 .image-viewer-actions button:hover {
   background: var(--paper-2);
@@ -364,27 +363,27 @@ button.source-local {
   border-radius: var(--radius-s);
   box-shadow: 0 16px 55px rgba(35, 30, 22, 0.18);
 }
+/* 原图：比窗小的照旧居中，比窗大的从左上角起滚——auto 边距放不下即归零（网格居中会把溢出的一截推到滚不到的左上） */
 .image-viewer-stage.actual {
-  display: block;
-  text-align: center;
+  display: flex;
   cursor: zoom-out;
 }
 .image-viewer-stage.actual .image-viewer-image {
+  flex: none;
   max-width: none;
   max-height: none;
   margin: auto;
 }
 
-/* 卷宗文件的悬浮预览：与图片查看器同一张纸，中间按文件类型换内容 */
+/* 卷宗文件的悬浮预览：与图片查看器同一张纸，中间按文件类型换内容。纸是实的，文本直接写在页上、不另垫卡片（设计稿/83 乙） */
 .file-viewer {
   position: fixed;
   inset: 0;
-  z-index: 92;
+  z-index: var(--z-file);
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--paper) 92%, transparent);
-  backdrop-filter: blur(12px);
-  animation: fadeIn 0.18s ease;
+  background: var(--grain), var(--desk);
+  animation: fadeIn var(--dur-rise) ease;
 }
 .file-viewer-head {
   height: 54px;
@@ -402,7 +401,7 @@ button.source-local {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ink);
-  font: 13px var(--title);
+  font: var(--fs-mid) var(--title);
   letter-spacing: 0.04em;
 }
 .file-viewer-actions {
@@ -414,7 +413,7 @@ button.source-local {
   padding: 6px 11px;
   border-radius: var(--radius-m);
   color: var(--ink-3);
-  font: 11.5px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.08em;
 }
 .file-viewer-actions button:hover {
@@ -467,18 +466,21 @@ button.source-local {
 .file-viewer-media audio {
   width: min(100%, 520px);
 }
+/* 文本、文档、表格、改动都写在一条纸上（设计稿/86 丙）：两侧发丝边、不投影，长短内容同一条纸，至少撑满一屏——
+   短的读来是一页起头，不是漂在顶上的一张卡；长代码有个版心。纸底与纸顶一样留一截案（原先通到窗底，底下一点空不留，像被窗沿截断）。
+   落选：有框有影的卡片（短内容漂着）、实纸无边（长代码悬着）、只两道界栏 */
 .file-viewer-text {
   width: min(100%, var(--read));
   align-self: flex-start;
+  min-height: 100%;
   height: fit-content;
   padding: 26px 30px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l);
-  background: var(--paper);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: var(--grain), var(--paper);
   color: var(--ink);
   font-size: 14px;
   line-height: 1.85;
-  box-shadow: 0 10px 40px rgba(35, 30, 22, 0.08);
 }
 .file-viewer-code {
   margin: 0;
@@ -500,7 +502,7 @@ button.source-local {
 .file-viewer-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 .file-viewer-table th,
 .file-viewer-table td {
@@ -526,7 +528,7 @@ button.source-local {
 .file-viewer-note {
   margin: 12px 0 0;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: var(--fs-note);
 }
 /* 文档按结构抽出后（见 13-files/30-extract.js 的 docxMarkdown 等）：一行小注在前，「以本机程序打开」看原样 */
 .file-viewer-text > .file-viewer-note:first-child,
@@ -559,7 +561,7 @@ button.source-local {
 .viewer-tabs button {
   padding: 2px 0;
   color: var(--ink-3);
-  font: 12.5px var(--title);
+  font: var(--fs-small) var(--title);
 }
 .viewer-tabs button:hover,
 .viewer-tabs button.active {
@@ -570,7 +572,7 @@ button.source-local {
 }
 .viewer-sheet {
   overflow-x: auto;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 .viewer-sheet table {
   margin: 0;
@@ -600,7 +602,7 @@ button.source-local {
   border-radius: var(--radius-m);
   background: var(--paper);
   box-shadow: 0 6px 22px rgba(35, 30, 22, 0.06);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.7;
 }
 .viewer-slide h2 {
@@ -610,7 +612,7 @@ button.source-local {
 .file-viewer-empty {
   margin: auto;
   color: var(--ink-3);
-  font: 12px/2.2 var(--title);
+  font: var(--fs-small)/2.2 var(--title);
   letter-spacing: 0.1em;
   text-align: center;
 }

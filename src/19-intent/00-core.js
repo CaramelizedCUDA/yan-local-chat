@@ -12,9 +12,14 @@
 // 卡在人手里、要等人拍板的标「待定」（note 写等谁、定什么）：不算立住，换了对话、过了几天也看得见卡在谁那儿。
 // 节点不分类型：事件、功能、文件都是一句要成立的结论，粒度由模型拆到有凭据可挂为止，混着也无妨。
 // 守：按任务设、一直要守的条件（收尾前测试要过、对外接口不改）标 keep——不是要交付的结论：不上图、不计进度、不挂前提也不作前提，只在全局；
-// 立时也记下用户那一问的原话。挂测试、探针的，动过手的那一答收尾前重查（见 10-store.js 的 intentRecheck），不过即拦下——言的钩子就是它。
-// 嵌套：一项做的事拆开还有许多步，就是模块——细项写 in 指向它，至多两层（全局 › 模块 › 子模块）。前提只连同一层，跨模块的写在模块上；
+// 立时也记下用户那一问的原话。守就是言的钩子：写得出触发条件的写 on（一条正则），对得上的那一步动手前先跑它挂的测试，不过即不做
+// （见 10-store.js 的 keepHook）；写不出的挂测试、探针，动过手的那一答收尾前重查（intentRecheck），再不然只凭模型自觉。
+// 嵌套：一项做的事拆开还有许多步，就是模块——细项写 in 指向它，至多两层（全局 › 模块 › 子模块）。
 // 模块以里面收口的几项（同层没人以它为前提的）为前提，所以里面立住它才算立住，传播、回归照旧，不另写判定。
+// 前提可跨模块：依的是哪一项就连哪一项（评测依的是训练里那一步，不是整个训练模块）；模块只是分组，图仍是一张 DAG，查环时连模块到收口项那几条一并算。
+// 一项不成图：新立意时只有一项要立的，退回——一答之内做得完的活用不着意。
+// 标成立要前提先立住（同一批一起标也算，模块即里面收口的几项）：自己做完而前提未立的仍是进行中。凭据变了转待复核是事后的，不在此拦。
+// 根可补标：当初没标、后来看清它就是整件事要立的，补标时记下那一问的原话；已是别项前提的不能标根。
 // 本文件只放纯函数：理顺模型交来的改动、判状态、写成给模型读的字。读写与附着见 10-store.js，工具登记见 15-tools/32-intent.js
 /**
  * @typedef {"open"|"doing"|"waiting"|"done"|"assumed"|"dropped"} IntentMark 模型标的；waiting：待定，卡在人手里、等人拍板
@@ -33,10 +38,11 @@
  * @property {{ ask: string, at: string, later?: string }} [root] 根：立时用户那一问的原话；later：末一回改根时那一问
  * @property {string} [in] 所属模块的 id；不写即在全局
  * @property {boolean} [keep] 守：一直要守的条件，不是要交付的结论
+ * @property {string} [on] 守的钩子：正则，对得上的那一步（指令原文、路径、网址或工具名）动手前先跑它挂的测试
  * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null>, anchors?: string[] }} IntentSeal
  * @typedef {{ at: string, conversation: string, text: string }} IntentLog 改意、弃、假定的留痕
  * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[], updated?: string }} Intent updated：最近一回写入的时刻——单拿出来看时，看得出旧不旧
- * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean, keep?: boolean, in?: string, remove?: boolean, rename?: string }} IntentOp in：空串即挪回全局；remove：整项撤去；rename：已有一项改叫这个名字
+ * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean, keep?: boolean, on?: string, in?: string, remove?: boolean, rename?: string }} IntentOp in：空串即挪回全局；remove：整项撤去；rename：已有一项改叫这个名字
  * @typedef {Record<string, string|null>} IntentPrints 各凭据此刻的指纹，按「种类:值」；不在其中的即不知道，不据它判
  */
 const INTENT_LIMIT = 60,
@@ -125,6 +131,7 @@ function asIntent(raw) {
     else delete intent.nodes[id].in;
     if (node.keep === true) intent.nodes[id].keep = true;
     else delete intent.nodes[id].keep;
+    if (!intent.nodes[id].keep || typeof node.on !== "string" || !node.on) delete intent.nodes[id].on;
     // 守没有进度：旧版里标过假定、未做的，一律当守着
     if (intent.nodes[id].keep) intent.nodes[id].state = "done";
     if (node.seal !== undefined) {
@@ -186,18 +193,28 @@ function intentRoots(intent) {
 }
 /** 守：没弃的几条 @param {Intent} intent */
 const intentKeeps = intent => Object.keys(intent.nodes).filter(id => intent.nodes[id].keep && !intentGone(intent, id));
+/** 守的触发条件；没写、写坏了即无 @param {{ keep?: boolean, on?: string }} node @returns {RegExp|null} */
+function keepTrigger(node) {
+  try {
+    return node.keep && node.on ? new RegExp(node.on, "i") : null;
+  } catch {
+    return null;
+  }
+}
+/** 钩子挂的测试：只在对得上的那一步之前跑（将要做的交给它），平时不取指纹、不据它判待复核 @param {IntentNode} node @param {string} key */
+const keepHookAnchor = (node, key) => !!keepTrigger(node) && anchorParts(key)[0] === "test";
 /**
- * 孤悬的：在全局、没声明为根，既无前提、也没有谁以它为前提，而图里另有根——多半是手上的一步忘了挂进它所服务的模块。
- * 只有它一项、或声明过的根不算
+ * 孤悬的：没声明为根、也没有谁以它为前提，而图里另有根——多半是手上的一步忘了连到它所撑的那一项，悄悄成了又一个根。
+ * 只有它一个根、或声明过的根不算
  * @param {Intent} intent
  */
 function intentStrays(intent) {
   const roots = intentRoots(intent);
   if (roots.length < 2) return [];
-  return roots.filter(id => !intent.nodes[id].root && !intent.nodes[id].in && !liveNeeds(intent, id).length);
+  return roots.filter(id => !intent.nodes[id].root);
 }
 /**
- * 嵌套的规矩：所属的模块要在、不成环、不过两层；前提只连同一层；根在全局；一层不宜过多
+ * 嵌套的规矩：所属的模块要在、不成环、不过两层；根在全局；一层不宜过多
  * @param {Intent} intent @returns {string[]}
  */
 function intentNestProblems(intent) {
@@ -210,9 +227,6 @@ function intentNestProblems(intent) {
     if (top && intent.nodes[top].in !== undefined && intent.nodes[intent.nodes[top].in])
       problems.push(t`${id} 的所属成了环：${[id, ...up, intent.nodes[top].in].join(" → ")}`);
     else if (up.length > INTENT_DEPTH) problems.push(t`${id} 嵌得太深：至多两层（全局 › 模块 › 子模块）`);
-    for (const need of node.needs)
-      if (intent.nodes[need] && (intent.nodes[need].in || "") !== (node.in || ""))
-        problems.push(t`${id} 的前提 ${need} 不在同一层：前提只连同一层，跨模块的写在模块上`);
     if (node.root && node.in) problems.push(t`${id} 是根，根在全局，不归模块`);
     if (node.keep && node.in) problems.push(t`${id} 是守，守在全局，不归模块`);
     if (node.keep && node.needs.length) problems.push(t`${id} 是守，不挂前提`);
@@ -240,7 +254,7 @@ function intentOrder(intent) {
   for (const id of Object.keys(intent.nodes)) visit(id);
   return out;
 }
-/** @param {Intent} intent @returns {string[]|null} 成环的一圈 */
+/** 成环的一圈：写明的前提，连同模块到它收口的几项（所以以自己所属的模块为前提也是环） @param {Intent} intent @returns {string[]|null} */
 function intentCycle(intent) {
   const state = new Map(),
     path = [];
@@ -249,7 +263,7 @@ function intentCycle(intent) {
     if (state.get(id) === 1) return [...path.slice(path.indexOf(id)), id];
     state.set(id, 1);
     path.push(id);
-    for (const need of intent.nodes[id]?.needs || []) {
+    for (const need of [...(intent.nodes[id]?.needs || []), ...intentTops(intent, id)]) {
       if (!intent.nodes[need]) continue;
       const found = visit(need);
       if (found) return found;
@@ -332,7 +346,7 @@ function intentSealedAnchors(intent) {
     ...new Set(
       Object.values(intent.nodes)
         .filter(node => SEALED.has(node.state) && node.seal)
-        .flatMap(node => Object.keys(node.seal.prints))
+        .flatMap(node => Object.keys(node.seal.prints).filter(key => !keepHookAnchor(node, key)))
     )
   ];
 }
@@ -385,6 +399,10 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     if (item.in !== undefined && item.in !== null) op.in = clip(item.in, 80) && idOf(item.in);
     if (item.any !== undefined) op.any = item.any === true || item.any === "true";
     if (item.keep !== undefined) op.keep = item.keep === true || item.keep === "true";
+    if (item.on !== undefined && item.on !== null) {
+      op.on = clip(item.on, 300);
+      if (op.on && !keepTrigger({ keep: true, on: op.on })) problems.push(t`${id} 的 on 不是合法的正则`);
+    }
     if (item.needs !== undefined) op.needs = [...new Set(list(item.needs).map(idOf))].filter(n => n && n !== id);
     if (item.rename !== undefined && item.rename !== null && clip(item.rename, 80)) {
       const to = idOf(item.rename);
@@ -412,10 +430,10 @@ function normalizeIntentOps(intent, raw, workdir = "") {
       if (!mark) problems.push(t`${id} 的 state「${item.state}」不认得：只有 open / doing / waiting / done / assumed / dropped / removed`);
       else op.state = /** @type {IntentMark} */ (mark);
     }
-    // 守没有进度可标：立起、改过都即作数、重记凭据（测试不过照旧算不过，见 intentStaleWhy）
+    // 守没有进度可标：立起、改过都即作数、重记凭据（测试不过照旧算不过，见 intentStaleWhy）。
+    // 顺手带的 open、doing 之类不退回、照作数：退回过一回，模型就把守改成了寻常一项塞进模块；只有弃要说清——不守了是撤
     if (op.keep ?? !!(intent.nodes[id]?.keep || known?.keep)) {
-      if (op.state && op.state !== "done")
-        problems.push(t`${id} 是守，没有进度可标：立起即作数，复核过再写一回即重记凭据；不守了 state 给 removed`);
+      if (op.state === "dropped") problems.push(t`${id} 是守，不守了 state 给 removed`);
       else op.state = "done";
     }
     if (!known) {
@@ -423,8 +441,8 @@ function normalizeIntentOps(intent, raw, workdir = "") {
         problems.push(t`${id} 是新的一项，claim 与 check 都要写`);
         continue;
       }
-      if (item.root === true || item.root === "true") op.root = true;
     } else if (op.claim === "" || op.check === "") problems.push(t`${id} 的 claim、check 不能改成空的`);
+    if (item.root === true || item.root === "true") op.root = true;
     ops.push(op);
   }
   // 同一批里别处仍写旧名的（前提、所属、再改那一项）：照新名认
@@ -453,17 +471,50 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     if (inside.length) problems.push(t`撤 ${op.id} 前，里面的 ${inside.join("、")} 先撤或挪出（同一批写上即可）`);
   }
   const cycle = intentCycle(trial);
-  if (cycle) problems.push(t`前提成了环：${cycle.join(" → ")}`);
+  if (cycle)
+    problems.push(
+      t`前提成了环：${cycle.join(" → ")}${cycle.some((id, i) => i && trial.nodes[id]?.in === cycle[i - 1]) ? t("（模块以里面收口的项为前提）") : ""}`
+    );
   // 嵌套的毛病只报这一批新添的：手编出的旧毛病不拦别的改动
   const nested = new Set(intentNestProblems(base));
   problems.push(...intentNestProblems(trial).filter(problem => !nested.has(problem)));
-  const strays = new Set(intentStrays(base));
+  // 孤悬只报这一批写到的：别的根原先就没标，不拿它拦这一批
+  const strays = new Set(intentStrays(base)),
+    written = new Set(ops.map(intentOpId));
   for (const id of intentStrays(trial))
-    if (!strays.has(id))
+    if (!strays.has(id) && written.has(id))
       problems.push(
-        t`${id} 孤悬在全局：既无前提，也没有谁以它为前提。手上的一步归进它所服务的模块（in），或写进它所撑那一项的 needs；本就是整件事要立的另一条结论，新立时标 root`
+        t`${id} 孤悬：没有谁以它为前提，也没标根。它撑的是哪一项，就写进那一项的 needs（可跨模块），或归进它所服务的模块（in）；一直要守住的条件标 keep；本就是整件事要立的另一条结论，标 root`
       );
+  const goals = /** @param {Intent} at */ at => Object.keys(at.nodes).filter(id => !at.nodes[id].keep && !intentGone(at, id)).length;
+  if (!goals(intent) && goals(trial) === 1)
+    problems.push(
+      t`意是几项结论连成的图，只有一项不必立：一答之内做得完的活用不着意。真是跨多答的长活，把它要先立住的几项一并写上（needs 或 in）`
+    );
+  for (const op of ops) {
+    const id = intentOpId(op),
+      node = trial.nodes[id];
+    if (!node || op.remove) continue;
+    if (op.root && intentDependents(trial, id).length)
+      problems.push(t`${id} 是 ${intentDependents(trial, id).join("、")} 的前提，不是根：根是没有谁以它为前提的`);
+    if (op.state !== "done" || node.keep) continue;
+    // 前提照这一批改完的算；此刻取不到指纹，凭据变没变不在此判
+    const holds = k => intentEstablished(trial, k),
+      written = writtenNeeds(trial, id),
+      stuck = [
+        ...(node.any && written.length && written.some(holds) ? [] : written.filter(k => !holds(k))),
+        ...intentTops(trial, id).filter(k => !holds(k))
+      ];
+    if (stuck.length)
+      problems.push(
+        t`${id} 还不能标成立：${stuck.join("、")} 没立住。前提先立住（同一批一起标即可）；这一项自己做完而前提未立的，先标 doing`
+      );
+  }
   for (const id of ops.map(intentOpId)) {
+    const node = trial.nodes[id];
+    if (node?.on && !node.keep) problems.push(t`${id} 不是守：on 只给守`);
+    else if (node?.on && !node.anchors.some(key => anchorParts(key)[0] === "test"))
+      problems.push(t`${id} 写了 on，要挂一条 test:（对得上的那一步动手前跑它，不过即不做）`);
     if (trial.nodes[id]?.state === "assumed" && !trial.nodes[id].note) problems.push(t`${id} 标了假定，note 里写明借的是什么、出处在哪`);
     if (trial.nodes[id]?.state === "waiting" && !trial.nodes[id].note) problems.push(t`${id} 标了待定，note 里写明等谁、定什么`);
   }
@@ -472,10 +523,23 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     problems.push(t`意里的项不宜多于 ${INTENT_LIMIT} 项（此刻 ${live}）：一项是值得单独判的结论，不是每一步动作；细的并进上一级`);
   return { ops, problems, tidied: [...tidied] };
 }
-/** 这一批里标成立、标假定的各项挂的凭据：写之前取一回指纹记下 @param {Intent} intent @param {IntentOp[]} ops */
+/**
+ * 这一批里要重记凭据的：标成立、标假定的；守改了钩子的也算——钩子挂的测试不记指纹，撤了钩子它就转收尾重查，得先记下一笔「过」才比得出
+ * @param {IntentOp} op @param {IntentNode|undefined} node 折上这一批之后的那一项
+ */
+const intentReseals = (op, node) =>
+  !!node && !op.remove && (SEALED.has(op.state || "") || (op.on !== undefined && !!node.keep && SEALED.has(node.state)));
+/** 这一批要重记凭据的各项挂的凭据：写之前取一回指纹记下 @param {Intent} intent @param {IntentOp[]} ops */
 function intentSealing(intent, ops) {
   const trial = applyIntentOps(intent, ops);
-  return [...new Set(ops.filter(op => SEALED.has(op.state || "")).flatMap(op => trial.nodes[intentOpId(op)]?.anchors || []))];
+  return [
+    ...new Set(
+      ops.flatMap(op => {
+        const node = trial.nodes[intentOpId(op)];
+        return intentReseals(op, node) ? node.anchors.filter(key => !keepHookAnchor(node, key)) : [];
+      })
+    )
+  ];
 }
 /**
  * 把一批改动折上去，得一份新的（不动原来那份）。先改说法与结构，最后才给标成立的各项记凭据：同一批里前提改了说法，记的是改后的
@@ -507,6 +571,10 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
       node = next.nodes[id] = { claim: "", check: "", needs: [], anchors: [], state: "open", rev: 0 };
       // 守也记下原问：「往后收尾前都跑测试」这句话本身就是它的依据
       if (op.root || op.keep) node.root = { ask: String(ask).slice(0, 2000), at };
+    } else if (op.root && !node.root) {
+      // 补标的根：记下的是补标这一问——当初那一问已不在手边，这一问正是看清它是根的时候
+      node.root = { ask: String(ask).slice(0, 2000), at };
+      log(`立根 ${id}：${node.claim}`);
     }
     const before = `${node.claim}\u0001${node.check}\u0001${node.when || ""}`;
     for (const key of /** @type {const} */ (["claim", "check", "when", "note"])) if (op[key] !== undefined) node[key] = op[key];
@@ -514,6 +582,10 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
     if (op.keep !== undefined) {
       if (op.keep) node.keep = true;
       else delete node.keep;
+    }
+    if (op.on !== undefined) {
+      if (op.on) node.on = op.on;
+      else delete node.on;
     }
     if (op.needs) node.needs = op.needs;
     if (op.in !== undefined && op.in !== (node.in || "")) {
@@ -547,12 +619,12 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
   for (const op of ops) {
     const id = op.rename && next.nodes[op.rename] ? op.rename : op.id,
       node = next.nodes[id];
-    if (op.remove || !SEALED.has(op.state || "") || !node) continue;
+    if (!intentReseals(op, node)) continue;
     // 取不到指纹的凭据（探针这回没跑）不记：日后也不据它判
     node.seal = {
       rev: node.rev,
       anchors: [...node.anchors],
-      premises: op.state === "done" ? Object.fromEntries(liveNeeds(next, id).map(need => [need, next.nodes[need].rev])) : {},
+      premises: node.state === "done" ?Object.fromEntries(liveNeeds(next, id).map(need => [need, next.nodes[need].rev])) : {},
       prints: Object.fromEntries(node.anchors.filter(key => key in prints).map(key => [key, prints[key]]))
     };
   }
@@ -621,7 +693,7 @@ function intentText(intent, now = {}, { path = t(".yan/意.json"), asks = false 
   const kept = keeps.flatMap(id => {
     const node = intent.nodes[id],
       state = intentState(intent, id, now),
-      head = `- ${state === "stale" ? `[${INTENT_STATE_TEXT.stale}] ` : ""}${id}：${node.claim}${node.when ? t`（情形：${node.when}）` : ""}`,
+      head = `- ${state === "stale" ? `[${INTENT_STATE_TEXT.stale}] ` : ""}${id}：${node.claim}${node.when ? t`（情形：${node.when}）` : ""}${node.on ? t`（动手前查：/${node.on}/）` : ""}`,
       ask = asks && node.root?.ask ? [t`  原问：${node.root.ask.slice(0, 600)}`] : [];
     if (state !== "stale") return [head, ...ask];
     return [head, t`  验收：${node.check}`, ...(state === "stale" ? [t`  缘由：${intentStaleWhy(intent, id, now)}`] : []), ...ask];

@@ -7,7 +7,7 @@
   cursor: pointer;
   text-align: center;
   color: var(--ink-3);
-  transition: color 0.15s;
+  transition: color var(--dur-quick);
 }
 .context-summary > summary::-webkit-details-marker {
   display: none;
@@ -16,7 +16,7 @@
   content: "›";
   display: inline-block;
   margin-right: 6px;
-  transition: transform 0.18s ease;
+  transition: transform var(--dur-quick) ease;
 }
 .context-summary[open] > summary:before {
   transform: rotate(90deg);
@@ -30,7 +30,7 @@
   border: 1px dashed color-mix(in srgb, var(--line) 85%, transparent);
   border-radius: var(--radius-l);
   color: var(--ink-2);
-  font: 12.5px/1.75 var(--title);
+  font: var(--fs-small)/1.75 var(--title);
   letter-spacing: 0.02em;
   text-align: left;
 }
@@ -88,7 +88,7 @@
   border-radius: var(--radius-m);
   text-align: left;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .tab-btn.active,
 .tab-btn:hover {

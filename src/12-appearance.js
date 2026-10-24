@@ -19,9 +19,12 @@ function switchTheme(next, origin) {
     saveStoreSoon();
     return;
   }
+  // 落点此刻就量：等位图画好时按钮可能已被重画换掉，量脱了页的节点得 (0, 0)，天光从左上角起
+  const rect = origin?.getBoundingClientRect?.(),
+    point = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
   // 存盘等动效走完再做：整个 store 序列化一次可能要几十毫秒，别落在动效中间
   void themeSheets()
-    .then(sheets => (willDark ? runInkDrops(apply, sheets) : runDawn(apply, origin, sheets)))
+    .then(sheets => (willDark ? runInkDrops(apply, sheets) : runDawn(apply, point, sheets)))
     .finally(saveStoreSoon);
 }
 // 墨团与光晕的形状是 00-base.css 里几张带湍流滤镜的 SVG（--ink-blob-1/2/3、--dawn-glow）。开机后闲时各画成一张上了色的位图：
@@ -213,11 +216,10 @@ function inkSoak(point) {
 }
 // 暗到亮「天光」：墨是从高处落下来的，光则是从按下的那一点亮起来的——以砚台为心向四下漫开，先急后缓；
 // 光把整屏照白的那一刻换主题，再让光退去，眼睛适应了天光，字迹浮出
-async function runDawn(apply, origin, sheets) {
+async function runDawn(apply, point, sheets) {
   if (!sheets) return apply();
-  const rect = origin?.getBoundingClientRect?.(),
-    x = rect ? rect.left + rect.width / 2 : innerWidth - 60,
-    y = rect ? rect.top + rect.height / 2 : 28;
+  const x = point ? point.x : innerWidth - 60,
+    y = point ? point.y : 28;
   suppressThemeFade = true;
   const glow = spreadSheet(sheets.glow, x, y, {
     from: 0.02,

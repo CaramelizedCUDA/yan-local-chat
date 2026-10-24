@@ -153,7 +153,8 @@ async function runTool(step, ctx) {
       display: "参数不合要求"
     };
   try {
-    return await tool.run(step, args, ctx);
+    // 意里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）
+    return (await keepHook(step, args, ctx)) || (await tool.run(step, args, ctx));
   } catch (error) {
     if (error.name === "AbortError") throw error;
     const message = String(error.message || error);
@@ -224,8 +225,9 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
     const remaining = MIN_TOOL_STATUS_MS - (performance.now() - started);
     if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
     // 在后台接着做的（差遣）：这一步仍是进行中，做完由它自己收尾；先记一句「后台进行中」，下一问的行迹摘要里模型才知道它还没回来
+    // 帮手快，上面凑够显示时长的那一会儿里就已交差：它收尾时记的结果不能被这句盖掉
     if (!outcome.background) step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
-    step.result = outcome.display;
+    if (!outcome.background || step.status === "running") step.result = outcome.display;
     outcomes.set(step.id, clipForModel(outcome.content, 60000, { hint: t("要看后面的请缩小范围分次取") }));
     if (outcome.images) images.push(...outcome.images);
     refreshSteps(assistant);
@@ -241,12 +243,17 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
   return { outcomes, images };
 }
 // 生成结束（停止、出错或中断）时，还在转圈或等待确认的步骤一并收束，不留下永远转圈的卡片。
-// 后台还在做的帮手不归这一答管：它不随这一答收尾，做完自己收这一步（见 90-delegate.js）
+// 后台还在做的帮手不归这一答管：它不随这一答收尾，做完自己收这一步（见 90-delegate.js）；
+// 做它的那一处已不在了（页面刷新、连接中断）的帮手挂着等人续（见 holdHelper），按「止」的照旧收束
 /** @param {Message} assistant */
 function settleSteps(assistant, note) {
   const live = new Set([...crews.values()].flat().map(box => box.step));
   for (const step of assistant.steps || []) {
     if (live.has(step)) continue;
+    if (step.sub && step.status === "running" && note !== "已止") {
+      holdHelper(step, note);
+      continue;
+    }
     settleStepList([step, ...(step.sub?.steps || [])], note);
     if (step.sub?.status === "streaming") step.sub.status = "stopped";
   }

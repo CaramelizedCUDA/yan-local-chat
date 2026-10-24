@@ -573,6 +573,8 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       roundLimit: toolRoundLimit(),
       onFrame
     });
+    // 末轮的流已读完、正文还在逐字显示时也能按停；与主答一样，收尾前再认一次中止。
+    job.controller.signal.throwIfAborted();
     trimReply(assistant);
     if (!assistant.content) throw Error(assistant.steps?.length ? t("模型查阅后未返回正文") : t("模型未返回正文"));
     assistant.status = "complete";

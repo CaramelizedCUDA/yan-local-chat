@@ -30,7 +30,7 @@ function foldTitle(step) {
   if (status === "done") return t`已删繁就简，${count < 100 ? t`前${chineseNumber(count)}步` : t`前 ${count} 步`}并作一则笔记`;
   return status === "error" ? t("往来渐繁，撮要未成") : t("往来渐繁，正删繁就简");
 }
-// 一张淡染的小笺、右上一个折角，标签用墨（不设专色：撮要哪儿也没去，见 styles/80-trail.css）；点开，笔记就写在笺上
+// 一张淡染的小笺、右上一个折角，标签用墨（不设专色：撮要哪儿也没去，见 styles/80-trail/10-delegate.css）；点开，笔记就写在笺上
 /** @param {Step} step */
 function foldStepHtml(step) {
   const status = step.status || "done",

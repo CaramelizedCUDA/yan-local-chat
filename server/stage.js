@@ -8,6 +8,7 @@
 // 下载签的「打开所在文件夹」：在资源管理器里显出那个文件；没记着路径的，开那个服务存下载的目录（Playwright 默认是工作目录下的 .playwright-mcp）
 "use strict";
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const { spawn, execFile } = require("node:child_process");
 const os = require("node:os");
 const { fasterSide, pickSource } = require("./mirror.js");
@@ -81,9 +82,10 @@ function prepareBrowser(config, { root, bridgePort }) {
     if (!args.includes("--headless") && launch.headless !== true && !extra.some(item => item.startsWith("--window-position=")))
       extra.push("--window-position=-32000,-32000");
   }
-  const dir = path.join(root, "游目"),
-    out = path.join(dir, "playwright.json"),
-    text = JSON.stringify(file, null, 2);
+  // 按内容取名：同时起几个 Playwright 服务（游目自带的、人另接的），各读各的；同一份接法才共用一个文件
+  const text = JSON.stringify(file, null, 2),
+    dir = path.join(root, "游目"),
+    out = path.join(dir, `playwright-${crypto.createHash("sha1").update(text).digest("hex").slice(0, 8)}.json`);
   try {
     fs.mkdirSync(dir, { recursive: true });
     if (!fs.existsSync(out) || fs.readFileSync(out, "utf8") !== text) fs.writeFileSync(out, text);
@@ -103,7 +105,7 @@ const bookmarksFile = dir => path.join(dir, "Default", "Bookmarks");
 //   浏览器/  登录状态、收藏（--user-data-dir）
 //   下载/  下载落在这里（--output-dir）
 //   内核/  本机没有 Edge / Chrome 时，Playwright 自带的那个浏览器装在这里（PLAYWRIGHT_BROWSERS_PATH）
-//   playwright.json  接法（prepareBrowser 写的）
+//   playwright-*.json  接法（prepareBrowser 写的，按内容取名）
 const BROWSERS = ["msedge", "chrome", "chromium"];
 /** @param {string} root 存储根 */
 function stageHome(root) {
@@ -309,7 +311,8 @@ module.exports = function createStage({ root = () => "" } = {}) {
       service = serviceOf(body, root()),
       { port, dir, output } = browserOf(service.args, service.cwd);
     const marks = !!dir && fs.existsSync(bookmarksFile(dir));
-    const get = path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(1500) }).then(r => r.json());
+    const get = path =>
+      fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(1500) }).then(r => /** @type {any} */ (r.json()));
     try {
       const [version, list] = await Promise.all([get("/json/version"), get("/json/list")]);
       // /json/list 按最近活动排，头一个页面即浏览器前台的那一页——多半就是模型正在用的

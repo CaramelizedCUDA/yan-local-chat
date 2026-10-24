@@ -1,8 +1,12 @@
-/* 技能一页（设计稿/78 丙）：分栏借记忆页那一套（.memory-split 等），右列一份一行——开着的一笔勾、名加粗，
-   关着的一粒淡墨点、整行退淡；记号与计划卡同一支笔。行间淡朱丝栏，点一行即开合 */
-.skill-pane-name {
-  font: 600 13.5px var(--title);
-  white-space: nowrap;
+/* 技能一页（设计稿/78 乙，只一处不分段）：段头写技能目录，下面一份一行，行间淡朱丝栏，点一行就地摊开看，「改」才成输入框 */
+.skill-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: var(--fs-note);
 }
 .skill-dir {
   min-width: 0;
@@ -12,7 +16,7 @@
 .skill-open {
   flex: none;
   color: var(--ink-3);
-  font: 11.5px var(--title);
+  font: var(--fs-note) var(--title);
 }
 .skill-open:hover {
   color: var(--ink);
@@ -24,8 +28,8 @@
   width: 100%;
   padding: 8px 4px;
   border-top: 1px solid color-mix(in srgb, var(--accent) 13%, var(--line));
-  color: var(--ink-3);
-  font-size: 12.5px;
+  color: var(--ink-2);
+  font-size: var(--fs-small);
   text-align: left;
 }
 .skill-row:first-child {
@@ -34,39 +38,68 @@
 .skill-row:hover {
   background: color-mix(in srgb, var(--paper-3) 45%, transparent);
 }
-.skill-row .plan-svg {
+/* 行首一只锦囊（设计稿/104 甲，页头那只缩小）：每份、摊开的那份、「＋」里的选件、案上那件同一枚 */
+.skill-mark {
+  width: 15px;
+  height: 15px;
+}
+/* 只凭点名：锦囊淡下去、系口那粒朱也褪成墨 */
+.skill-mark.quiet {
+  opacity: 0.42;
+}
+.skill-mark.quiet .zhu {
+  fill: color-mix(in srgb, var(--ink) 45%, var(--paper));
+}
+/* 设置里的锦囊是一枚按钮：点它切只凭点名。宽 23px，锦囊落在左起 4px，名字仍在 29px 处与摊开那份对齐 */
+.skill-toggle {
   flex: none;
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 26px;
+  border-radius: var(--radius-s);
+  transition: background var(--dur-quick);
+}
+.skill-toggle:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.skill-toggle:hover .skill-mark.quiet {
+  opacity: 0.7;
 }
 .skill-name {
   flex: none;
   min-width: 96px;
-  font-family: var(--title);
-}
-.skill-row.on .skill-name {
   color: var(--ink);
+  font-family: var(--title);
   font-weight: 600;
 }
 .skill-gist {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 11.5px;
+  font-size: var(--fs-note);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.skill-row.on .skill-gist {
-  color: var(--ink-2);
-}
-.skill-extra {
+/* 行尾：附带几件——一枚空白折角小纸跟件数（设计稿/105 乙），没有附件的不画 */
+.skill-count {
   flex: none;
-  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-3);
+  font-size: var(--fs-mark);
+}
+.skill-count .fi {
+  width: 9px;
+  height: 12px;
 }
 .skill-empty {
   margin: 14px 4px;
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
-/* 存储根那一处：一行右端一枚「改」，平时淡着，行上悬停才显 */
+/* 一行右端一枚「删」，平时淡着，行上悬停才显 */
 .skill-item {
   display: flex;
   align-items: center;
@@ -78,22 +111,47 @@
 .skill-item .skill-row {
   flex: 1;
   min-width: 0;
+  padding-left: 6px;
   border-top: 0;
 }
 .skill-item .memory-ops {
   flex: none;
   opacity: 0.35;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-quick);
 }
 .skill-item:hover .memory-ops,
 .skill-item .memory-ops:focus-within {
   opacity: 1;
 }
-/* 摊开改着的一份：同记忆页摊开的一条（左侧一道淡墨竖痕）；名字、何时用、正文上下三段 */
+/* 摊开的一份（看与改）：名字、何时用、正文上下三段。锦囊仍在行首那一列，淡墨竖痕从它底下垂下来，
+   名字与正文对齐上下几行的名字（设计稿/104）——不同记忆页那样整条缩进、竖痕挂在最左 */
 .skill-editor {
+  position: relative;
   display: grid;
   gap: 8px;
   border-bottom: 0;
+}
+.memory-item.open.skill-editor {
+  padding-left: 29px;
+  border-left: 0;
+}
+.skill-editor::before {
+  content: "";
+  position: absolute;
+  top: 36px;
+  bottom: 10px;
+  left: 11px;
+  border-left: 1.5px solid color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.skill-editor > .skill-mark {
+  position: absolute;
+  top: 15px;
+  left: 4px;
+}
+.skill-editor > .skill-toggle {
+  position: absolute;
+  top: 10px;
+  left: 0;
 }
 .skill-edit-name {
   justify-self: start;
@@ -101,13 +159,132 @@
 }
 .skill-edit-desc {
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
+}
+/* 正文框随字长高（field-sizing），空着时也留三行的地方 */
+.skill-edit-body {
+  min-height: 5.1em;
 }
 .skill-edit-desc::placeholder,
 .skill-edit-body::placeholder,
 .skill-edit-name::placeholder {
   color: var(--ink-3);
 }
+/* 摊开着看的一份：与改时同样三段、同样的字，只是不成框——点不出光标，点字收起 */
+.skill-view {
+  display: grid;
+  gap: 8px;
+  cursor: default;
+}
+.skill-view-name {
+  padding: 0 2px;
+  color: var(--ink);
+  font: 600 14px var(--title);
+}
 .skill-editor .memory-meta .skill-dir {
   flex: 0 1 auto;
+}
+/* 附带一节（设计稿/103 二）：SKILL.md 之外的件，题「附带 n 件」；件＝件图、名字、大小，夹＝细折角、小函、件数，
+   夹里的以淡墨竖痕收拢（同游目书签的夹与条）；顶层的行间淡朱丝栏。点一件进预览器 */
+.skill-files {
+  margin-top: 4px;
+}
+.skill-files-head {
+  padding: 0 2px 4px;
+  color: var(--ink-3);
+  font: var(--fs-note) var(--title);
+  letter-spacing: 0.06em;
+}
+.skill-file,
+.skill-fold,
+.skill-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 4px;
+  border-radius: var(--radius-s);
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  text-align: left;
+}
+.skill-files > :is(.skill-file, .skill-fold) {
+  border-top: 1px solid color-mix(in srgb, var(--accent) 13%, var(--line));
+  border-radius: 0;
+}
+.skill-file:hover,
+.skill-fold:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.skill-file:hover span {
+  color: var(--ink);
+}
+.skill-file .fi,
+.skill-fold .fi {
+  width: 11px;
+  height: 14px;
+}
+.skill-file span,
+.skill-fold span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-fold span {
+  color: var(--ink);
+  font: 600 var(--fs-small) var(--title);
+  letter-spacing: 0.04em;
+}
+.skill-file small,
+.skill-fold small {
+  flex: none;
+  color: var(--ink-3);
+  font-size: var(--fs-mark);
+}
+.skill-chev {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin: 0 2px 2px;
+  border-right: 1px solid var(--ink-3);
+  border-bottom: 1px solid var(--ink-3);
+  transform: rotate(45deg);
+  transition: transform var(--dur-quick);
+}
+.skill-fold.shut .skill-chev {
+  margin-bottom: 0;
+  transform: rotate(-45deg);
+}
+.skill-fold-group {
+  margin: 0 0 4px 9px;
+  padding-left: 8px;
+  border-left: 1.5px solid color-mix(in srgb, var(--ink) 14%, transparent);
+}
+.skill-more {
+  min-height: 24px;
+  padding-left: 23px;
+  color: var(--ink-3);
+  font: var(--fs-note) var(--title);
+}
+.skill-more:hover {
+  color: var(--ink);
+}
+/* 「＋」里的技能选件：锦囊、名字靠左，何时用靠右 */
+.chip-pop.attach-picker .chip-pop-list .skill-pick {
+  justify-content: flex-start;
+}
+.chip-pop.attach-picker .chip-pop-list .skill-pick span {
+  margin-right: auto;
+}
+.skill-pick .skill-mark {
+  width: 14px;
+  height: 14px;
+}
+/* 案上、问句下那一件：锦囊替件图 */
+.attachment-card .skill-fi {
+  width: 20px;
+  height: 20px;
 }

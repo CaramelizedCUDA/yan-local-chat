@@ -6,7 +6,7 @@
 // 墨痕（原「留痕」：改意、弃、撤、归入的记录）只为查考，平时只是页头一个字；点开图下换成墨痕。弃了的不上图，就记在墨痕里（带灰叉、写弃时的缘由），不再单立一节。
 // 卡片只给看、不给改：要改的往往不是一两个字，直接告诉模型。
 // 嵌套：图只画一层。模块在图上与簿录里带「里面已立几项 ›」，点它即进模块：整张图换成模块里的，以模块自己收尾（最右那一项，淡些），
-// 页头下一行写所在（可点回上层）、右边写模块的前提与撑起什么。
+// 页头下一行写所在（可点回上层）；模块的前提与撑起什么点开它那一项即见，不在这行另列。
 // 由程序照 .yan/意.json 画，与文件一字不差，不请模型另画；展开的因果（支撑、缘由、哪条凭据变了）也是程序从图与指纹推出的，不经模型。
 /** @typedef {"holds"|"premised"|"stale"|"assumed"|"doing"|"waiting"|"open"|"dropped"|"kept"} IntentView 画出来的状态：成立的再按前提分已立与前提未立；kept：守，没出事 */
 const INTENT_VIEW_TEXT = {
@@ -44,9 +44,25 @@ const INTENT_PENS = {
     brushStroke([4.1, 2.3, 4.25, 5.6, 4.1, 8.9], 1.35, { tone: "ink", tail: 0.3 }) +
     brushStroke([7.9, 2.3, 8.05, 5.6, 7.9, 8.9], 1.35, { tone: "ink", tail: 0.3 }),
   open: () => brushDot(6, 5.6, 1.4, "ink2"),
-  // 守是常驻的约束，有就行、无所谓成没成：不画记号，只在测试不过、凭据变了时画朱圈
+  // 守是常驻的约束，无所谓成没成：记号画怎么把关（设计稿/106 甲）——钩子一笔竖钩、收尾前重查一笔淡墨横钩（107 丙：走到尾再回头看；回环与朱圈相混，
+  // 一横像破折号、「二」像等号、一波太小），只凭自觉的不画；测试不过、凭据变了换朱圈
+  hook: () => brushStroke([6.6, 1.2, 6.8, 5, 6.7, 8.6, 5.6, 9.6, 3.6, 8.2], 1.5, { tone: "ink", tail: 0.5, head: 0.9 }),
+  check: () => brushStroke([2, 3.4, 6, 3, 9.4, 3.2, 8.2, 6.4, 6.4, 8.8], 1.35, { tone: "ink2", tail: 0.4, head: 0.9 }),
   kept: () => ""
 };
+const KEEP_GATE_TEXT = { hook: t("动手前先跑测试，不过就不做"), check: t("动过手的那一答，收尾前重查") };
+/** 守怎么把关：hook 写了 on、动手前跑挂的测试；check 挂着要跑指令的凭据、收尾前重查；空即只凭模型自觉 @param {IntentNode} node */
+function keepGate(node) {
+  if (node.anchors.some(key => keepHookAnchor(node, key))) return "hook";
+  return node.anchors.some(key => !keepHookAnchor(node, key) && ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer") ? "check" : "";
+}
+/** 守行首的记号：符号生疏，指上即浮一张纸签说明（原生 title 要停一秒多、12px 也难指中） @param {IntentNode} node */
+function intentKeepMark(node) {
+  const gate = keepGate(node);
+  return gate
+    ? `<span class="intent-mk-tip" role="img" aria-label="${escapeHtml(KEEP_GATE_TEXT[gate])}" data-tip="${escapeHtml(KEEP_GATE_TEXT[gate])}">${intentMark(gate)}</span>`
+    : intentMark("kept");
+}
 /** @param {string} state @param {number} [x] @param {number} [y] 给了坐标即嵌进图里 */
 const intentMark = (state, x, y) =>
   `<svg class="brush intent-mk" data-mark="${escapeHtml(state)}"${x === undefined ? "" : ` x="${x.toFixed(1)}" y="${y.toFixed(1)}"`} width="12" height="11" viewBox="0 0 12 11" aria-hidden="true">${(INTENT_PENS[state] || INTENT_PENS.open)()}</svg>`;
@@ -64,6 +80,35 @@ function intentInside(intent, now, id) {
 /** 所在：「全局」或一层层的模块名 @param {Intent} intent @param {string} id */
 const intentWhere = (intent, id) => intentAncestors(intent, id).reverse().join(" › ") || t("全局");
 /**
+ * 一层图上的线：前提可跨模块，画一层时把这一层以下各项的前提都提到这一层——两头各取它在这一层的那一项（自己，或它所在的模块）。
+ * 两头落在同一项的是那一项里面的事，这一层不画；提上来的（不是这两项直连的）画淡些；前提在这一层之外的，画成左侧一个淡影
+ * @param {Intent} intent @param {string} level
+ * @returns {{ needs: Record<string, string[]>, soft: Record<string, string[]>, ghosts: string[] }}
+ */
+function intentLevelEdges(intent, level) {
+  const at = id => [id, ...intentAncestors(intent, id)].find(k => (intent.nodes[k].in || "") === level && !intent.nodes[k].keep),
+    /** @type {Record<string, Set<string>>} */ direct = {},
+    /** @type {Record<string, Set<string>>} */ lifted = {},
+    ghosts = new Set();
+  for (const id of Object.keys(intent.nodes)) {
+    const to = intentGone(intent, id) ? undefined : at(id);
+    if (!to) continue;
+    for (const need of writtenNeeds(intent, id)) {
+      if (need === level) continue;
+      const from = at(need) || need;
+      if (from === to) continue;
+      if (from === need && !at(need)) ghosts.add(need);
+      ((id === to && need === from ? direct : lifted)[to] ||= new Set()).add(from);
+    }
+  }
+  const ids = Object.keys(intent.nodes).filter(id => at(id) === id);
+  return {
+    needs: Object.fromEntries(ids.map(id => [id, [...new Set([...(direct[id] || []), ...(lifted[id] || [])])]])),
+    soft: Object.fromEntries(ids.map(id => [id, [...(lifted[id] || [])].filter(k => !direct[id]?.has(k))])),
+    ghosts: [...ghosts]
+  };
+}
+/**
  * 图：前提在左、根在右。只画一层：全局，或某个模块里的（模块自己作收尾那一项）
  * @param {Intent} intent @param {IntentPrints} now @param {string} selected @param {string} [level] 模块的 id；空即全局
  * @returns {{ svg: string, order: string[] }} order：簿录的次序——根在先，余者随图自右而左、自上而下
@@ -75,6 +120,7 @@ function intentGraphSvg(intent, now, selected, level = "") {
     ids = Object.keys(intent.nodes).filter(
       id => !intent.nodes[id].keep && (intent.nodes[id].in || "") === level && !intentGone(intent, id)
     ),
+    { needs, soft, ghosts } = intentLevelEdges(intent, level),
     drawing = drawGraphLayout([
       ...ids.map(id => {
         const node = intent.nodes[id],
@@ -82,7 +128,8 @@ function intentGraphSvg(intent, now, selected, level = "") {
         return {
           id,
           label: id,
-          needs: node.needs,
+          needs: needs[id],
+          soft: soft[id],
           any: node.any,
           state: intentView(intent, id, now),
           root: roots.has(id),
@@ -91,7 +138,9 @@ function intentGraphSvg(intent, now, selected, level = "") {
       }),
       ...(level && intent.nodes[level]
         ? [{ id: level, label: level, needs: intentTops(intent, level), state: intentView(intent, level, now), root: true }]
-        : [])
+        : []),
+      // 这一层之外的前提：淡影，名后小字写它在哪；点它跳到它那一层
+      ...ghosts.map(id => ({ id, label: id, needs: [], state: intentView(intent, id, now), ghost: intentWhere(intent, id) }))
     ]);
   if (!drawing.nodes.length) return { svg: "", order: [] };
   const kind = state =>
@@ -104,7 +153,7 @@ function intentGraphSvg(intent, now, selected, level = "") {
           : state === "dropped"
             ? " gone"
             : "";
-  const edges = drawing.edges.map(e => `<path class="intent-edge${kind(e.state)}" d="${e.d}"/>`).join(""),
+  const edges = drawing.edges.map(e => `<path class="intent-edge${kind(e.state)}${e.soft ? " soft" : ""}" d="${e.d}"/>`).join(""),
     knots = drawing.knots
       .map(k =>
         k.any
@@ -122,13 +171,18 @@ function intentGraphSvg(intent, now, selected, level = "") {
       // 模块的进度可点：点了进模块（点名仍是选中）
       if (node.tag)
         inner += `<text class="intent-more intent-go" data-intent-level="${escapeHtml(id)}" x="${(cx + 6).toFixed(1)}" y="${(y + 4).toFixed(1)}"><title>${t(`打开模块`)}</title>${escapeHtml(node.tag)}</text>`;
+      if (node.ghost)
+        inner += `<text class="intent-more" x="${(cx + 6).toFixed(1)}" y="${(y + 4).toFixed(1)}">${escapeHtml(node.ghost)}</text>`;
       // 状态只凭记号、情形不画小格，图上不另注字；悬停时写出来
       const { claim = "", when = "" } = intent.nodes[id] || {},
         said = `${INTENT_VIEW_TEXT[node.state] || ""} · ${when ? `${when}：` : ""}${claim}`;
-      return `<g class="intent-node${node.root ? " root" : ""}${id === level ? " sink" : ""}${id === selected ? " on" : ""}" data-intent-node="${escapeHtml(id)}" data-state="${escapeHtml(node.state)}" tabindex="0" role="button" aria-label="${escapeHtml(`${id}：${said}`)}"><title>${escapeHtml(said)}</title><rect class="intent-hit" x="${(x - 4).toFixed(1)}" y="${(y - 11).toFixed(1)}" width="${(w + 8).toFixed(1)}" height="22" rx="3"/>${intentMark(node.state, x, y - 5.5)}${inner}</g>`;
+      return `<g class="intent-node${node.root ? " root" : ""}${id === level ? " sink" : ""}${node.ghost ? " ghost" : ""}${id === selected ? " on" : ""}" data-intent-node="${escapeHtml(id)}" data-state="${escapeHtml(node.state)}" tabindex="0" role="button" aria-label="${escapeHtml(`${id}：${said}`)}"><title>${escapeHtml(said)}</title><rect class="intent-hit" x="${(x - 4).toFixed(1)}" y="${(y - 11).toFixed(1)}" width="${(w + 8).toFixed(1)}" height="22" rx="3"/>${intentMark(node.state, x, y - 5.5)}${inner}</g>`;
     })
     .join("");
-  const order = [...drawing.nodes].sort((a, b) => +!!b.node.root - +!!a.node.root || b.x - a.x || a.y - b.y).map(n => n.id);
+  // 淡影是别层的，不进这一层的簿录
+  const order = [...drawing.nodes.filter(n => !n.node.ghost)]
+    .sort((a, b) => +!!b.node.root - +!!a.node.root || b.x - a.x || a.y - b.y)
+    .map(n => n.id);
   return {
     svg: `<svg class="intent-svg" width="${drawing.width}" height="${drawing.height}" viewBox="0 0 ${drawing.width} ${drawing.height}" role="img" aria-label="${t(`意的结构图`)}">${edges}${knots}${nodes}</svg>`,
     order
@@ -186,7 +240,7 @@ function intentDetailHtml(intent, now, id) {
     ]);
   const kids = intentChildren(intent, id);
   if (kids.length) rows.push([t("内含"), chips(kids), "", true]);
-  return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head" data-intent-node="${escapeHtml(id)}" role="button" tabindex="0" title="${t(`收起`)}">${intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim"><span class="intent-when">${node.keep ? t("守") : escapeHtml(intentWhere(intent, id))}</span>${escapeHtml(node.claim)}</p><div class="intent-fields">${rows
+  return `<div class="intent-detail" data-state="${view}"><div class="intent-detail-head" data-intent-node="${escapeHtml(id)}" role="button" tabindex="0" title="${t(`收起`)}">${view === "kept" ? intentKeepMark(node) : intentMark(view)}<span class="intent-detail-id">${escapeHtml(id)}</span><span class="intent-detail-state" data-state="${view}">${INTENT_VIEW_TEXT[view]}</span></div><p class="intent-detail-claim"><span class="intent-when">${node.keep ? t("守") : escapeHtml(intentWhere(intent, id))}</span>${escapeHtml(node.claim)}</p><div class="intent-fields">${rows
     .map(
       ([k, v, tone, wide]) =>
         `<div class="intent-field${wide ? " w" : ""}"><span class="k${tone ? ` ${tone}` : ""}">${k}</span><div class="v">${v}</div></div>`
@@ -215,22 +269,19 @@ function intentRollHtml(intent, now, order, selected, level) {
       const view = intentView(intent, id, now),
         inside = id === level ? "" : intentInside(intent, now, id),
         [say, tone] = intentRowSay(intent, now, id, view);
-      return `<div class="intent-row${roots.has(id) || id === level ? " root" : ""}" data-intent-node="${escapeHtml(id)}" data-state="${view}" role="button" tabindex="0">${intentMark(view)}<span class="intent-row-name">${escapeHtml(id)}</span><span class="intent-row-in">${
+      return `<div class="intent-row${roots.has(id) || id === level ? " root" : ""}" data-intent-node="${escapeHtml(id)}" data-state="${view}" role="button" tabindex="0">${view === "kept" ? intentKeepMark(intent.nodes[id]) : intentMark(view)}<span class="intent-row-name">${escapeHtml(id)}</span><span class="intent-row-in">${
         inside ? `<button type="button" data-intent-level="${escapeHtml(id)}" title="${t(`打开模块`)}">${inside} ›</button>` : ""
       }</span><span class="intent-row-say${tone ? ` ${tone}` : ""}">${escapeHtml(say)}</span></div>`;
     })
     .join("")}</div>`;
 }
 // 守：簿录之后另起一节（设计稿/80 卡片乙），行同目标那几行，出了事的说法换成事由；只在全局那一层。
-// 题旁一行事实：几条，几条挂着测试、探针收尾前重查——余下的只凭模型自己守，看得出哪些有程序把关
+// 哪条有程序把关、在哪一步把关，看各行的记号（keepGate）；题旁只写条数
 /** @param {Intent} intent @param {IntentPrints} now @param {string} selected */
 function intentKeepHtml(intent, now, selected) {
   const keeps = intentKeeps(intent);
   if (!keeps.length) return "";
-  const checked = keeps.filter(id =>
-    intent.nodes[id].anchors.some(key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer")
-  ).length;
-  return `<div class="intent-keep-head">${t(`守`)}<small>${checked === keeps.length ? t`${keeps.length} 条，收尾前都重查` : checked ? t`${keeps.length} 条，${checked} 条收尾前重查` : t`${keeps.length} 条，未挂测试`}</small></div>${intentRollHtml(intent, now, keeps, selected, "")}`;
+  return `<div class="intent-keep-head">${t(`守`)}<small>${t`${keeps.length} 条`}</small></div>${intentRollHtml(intent, now, keeps, selected, "")}`;
 }
 /** 墨痕：新的在上，同一时刻的几笔并作一组；每笔写是哪一种（弃、撤、改意、归入……）。弃的带灰叉、写弃时的缘由，假定的带泥金勾；还在图上的名可点 @param {Intent} intent */
 function intentInkHtml(intent) {
@@ -239,7 +290,7 @@ function intentInkHtml(intent) {
   for (const entry of [...intent.log].reverse()) {
     const time = intentTime(entry.at);
     if (groups.at(-1)?.time !== time) groups.push({ time, items: [] });
-    const said = entry.text.match(/^(弃|撤|改意|改根|假定|待定|复立|改名) ([^：]+?)(?:：([\s\S]*))?$/),
+    const said = entry.text.match(/^(弃|撤|改意|改根|立根|假定|待定|复立|改名) ([^：]+?)(?:：([\s\S]*))?$/),
       moved = !said && entry.text.match(/^(.+?) 归入(.+)$/);
     let [kind, name, rest] = said
       ? [said[1], said[2], said[3] || ""]
@@ -271,21 +322,13 @@ function intentInkHtml(intent) {
     .map(g => `<div class="intent-ink-group"><time>${escapeHtml(g.time)}</time><div>${g.items.join("")}</div></div>`)
     .join("")}</div>`;
 }
-/** 模块里那一层的顶上一行：所在（上层可点回），模块的前提与撑起什么 @param {Intent} intent @param {IntentPrints} now @param {string} level */
-function intentCrumbHtml(intent, now, level) {
+/** 模块里那一层的顶上一行：所在（上层可点回）。前提与撑起什么不另列——点开模块那一项，笺上就有 @param {Intent} intent @param {string} level */
+function intentCrumbHtml(intent, level) {
   if (!level || !intent.nodes[level]) return "";
-  const path = ["", ...intentAncestors(intent, level).reverse()],
-    link = k =>
-      `<button type="button" class="intent-link" data-intent-node="${escapeHtml(k)}" data-state="${intentView(intent, k, now)}">${intentMark(intentView(intent, k, now))}${escapeHtml(k)}</button>`,
-    needs = writtenNeeds(intent, level),
-    up = intentDependents(intent, level);
+  const path = ["", ...intentAncestors(intent, level).reverse()];
   return `<div class="intent-crumb"><span class="intent-crumb-path">${path
     .map(k => `<button type="button" data-intent-level="${escapeHtml(k)}">${escapeHtml(k || t("全局"))}</button><i>›</i>`)
-    .join(
-      ""
-    )}<b>${escapeHtml(level)}</b></span><span class="intent-crumb-ctx">${needs.length ? `<span>${t(`前提`)}</span>${needs.map(link).join("")}` : ""}${
-    up.length ? `<span>${t(`撑起`)}</span>${up.map(link).join("")}` : ""
-  }</span></div>`;
+    .join("")}<b>${escapeHtml(level)}</b></span></div>`;
 }
 /**
  * 整张卡片
@@ -309,7 +352,7 @@ function intentCardHtml(intent, now, { selected = "", level = "", name = "", ink
     intent.log.length
       ? `<div class="page-acts"><button type="button" data-intent-ink aria-pressed="${inked}"${inked ? ` class="on"` : ""}>${t`墨痕 ${intent.log.length}`}</button></div>`
       : ""
-  }</div>${intentCrumbHtml(intent, now, level)}<div class="intent-graph">${svg}</div>${
+  }</div>${intentCrumbHtml(intent, level)}<div class="intent-graph">${svg}</div>${
     inked
       ? intentInkHtml(intent)
       : `${intentRollHtml(intent, now, order, selected, level)}${level ? "" : intentKeepHtml(intent, now, selected)}`
@@ -379,13 +422,17 @@ async function openIntentCard(conversation, trigger = null) {
 /** 点中一项：图上、簿录里再点一下（或点笺的题）收起；别层的（前提、支撑、内含、墨痕里点的）跳到它那一层，墨痕收起 @param {string} id @param {boolean} toggle */
 function pickIntentNode(id, toggle) {
   if (!intentCard?.intent.nodes[id]) return;
+  const { level, ink } = intentCard;
   intentCard.ink = false;
   if (toggle && intentCard.selected === id) intentCard.selected = "";
   else {
     if (id !== intentCard.level) intentCard.level = intentCard.intent.nodes[id].in || "";
     intentCard.selected = id;
   }
-  paintIntentCard();
+  // 同一层里摊开、收起一张笺：簿录从旧高动到新高，与别处的展开同一种；换了层、从墨痕回来是整张换过，不动
+  const stage = $("#fileViewerStage");
+  if (ink || level !== intentCard.level) return paintIntentCard();
+  morphHeight(stage.querySelector(".intent-roll"), paintIntentCard, 320, () => stage.querySelector(".intent-roll"));
 }
 /** 点了就开合（再点收起）的：图上一项、簿录一行、摊开的笺的题；别处的名（前提、支撑、墨痕）是跳过去 */
 const INTENT_TOGGLES = "g[data-intent-node], .intent-row, .intent-detail-head";

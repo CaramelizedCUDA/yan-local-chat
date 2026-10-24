@@ -1,0 +1,226 @@
+/* 游目（看台）：对话右侧一栏，拖左缘调宽窄；「阔」铺满整页。见 src/26-stage/、src/27-stage-ink.js 与 设计稿/24–25、31–32、47 */
+.stage-panel {
+  position: relative;
+  flex: none;
+  width: 46vw;
+  min-width: 320px;
+  max-width: calc(100% - 420px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--paper);
+}
+/* 旁注也在右侧：它开着时游目让位，收起便回来 */
+.side-panel:not(.hidden) ~ .stage-panel {
+  display: none;
+}
+.stage-panel.wide {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-panel);
+  width: auto !important;
+  max-width: none;
+  border-left: 0;
+  background: var(--grain), var(--wash), var(--paper-2);
+}
+.stage-panel.leaving {
+  opacity: 0;
+  transition: opacity var(--dur-quick);
+}
+.stage-grip {
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 2;
+  cursor: col-resize;
+}
+.stage-grip::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  transition: background var(--dur-quick);
+}
+.stage-grip:hover::after,
+.stage-dragging .stage-grip::after {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.stage-panel.wide .stage-grip {
+  display: none;
+}
+/* 拖着的时候：画面与正文都不接指针，也不选中字 */
+.stage-dragging {
+  cursor: col-resize;
+  user-select: none;
+}
+.stage-dragging .stage-view,
+.stage-dragging .main {
+  pointer-events: none;
+}
+
+/* 标签：一行字、丝栏相隔，与欢迎页的提示、目录签同一写法；当前那张墨色、底下一笔朱，执事所在那张题后一粒朱；× 指着才露。
+   落选的：一张张灰纸块立在栏顶（浏览器的壳换了纸色）；贴在天头的小题签（册页）；收成「三页 ▾」一张浮签。见 设计稿/31、32 */
+.stage-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 2px 10px 0 14px;
+}
+.stage-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding-bottom: 6px;
+  margin-bottom: -6px;
+}
+.stage-tab {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 48px;
+  max-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px 2px 13px;
+  color: var(--ink-3);
+  font: var(--fs-small) var(--title);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-quick);
+}
+.stage-tab:first-child {
+  padding-left: 0;
+}
+.stage-tab + .stage-tab {
+  border-left: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.stage-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stage-tab:hover {
+  color: var(--ink-2);
+}
+.stage-tab.on {
+  color: var(--ink);
+}
+.stage-tab-under {
+  position: absolute;
+  left: calc(50% + 4px);
+  bottom: -6px;
+  width: 18px;
+  height: 5px;
+  transform: translateX(-50%);
+  overflow: visible;
+  pointer-events: none;
+}
+.stage-tab:first-child .stage-tab-under {
+  left: calc(50% - 8px);
+}
+.stage-tab-live {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: stageBreath 1.6s ease-in-out infinite;
+}
+.stage-tab-x {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-s);
+  color: var(--ink-3);
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity var(--dur-quick);
+}
+.stage-tab:hover .stage-tab-x {
+  opacity: 0.75;
+}
+.stage-tab-x:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.stage-new {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-m);
+  color: var(--ink-3);
+  font-size: 14px;
+}
+.stage-new:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+/* 栏顶右端：调律（纸签）、圈点（一支笔）、阔（往两角撑开），都是笔意小画；开着时转朱。× 与它们隔一道细线。「适应页面」是个设了就不常动的开关，收在纸签里 */
+.stage-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding-left: 10px;
+}
+.stage-tool {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-m);
+  transition: background var(--dur-quick);
+}
+.stage-tool .brush {
+  width: 17px;
+  height: 17px;
+}
+.stage-tool:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.stage-tool[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.stage-tool[aria-pressed="true"] .brush .ink,
+.stage-tool[aria-pressed="true"] .brush .ink2 {
+  fill: var(--accent);
+}
+.stage-tools #stageClose {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  margin-left: 9px;
+  border-radius: var(--radius-m);
+  color: var(--ink-3);
+  font-size: 16px;
+}
+.stage-tools #stageClose::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 5px;
+  bottom: 5px;
+  border-left: 1px solid var(--line);
+}
+.stage-tools #stageClose:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+}

@@ -23,13 +23,18 @@ const f = load([
   "intentRoundText",
   "intentDependents",
   "intentTops",
-  "intentStrays"
+  "intentStrays",
+  "intentLevelEdges"
 ]);
 
-// 照工具里的次序：理顺、取指纹、折上去
+// 照工具里的次序：理顺、取指纹、折上去。「一项不成图」另有专测，各测从一项立起只为验自己那一条
+const LONE = /只有一项不必立/;
 function change(intent, nodes, { prints = {}, ask = "", workdir = "" } = {}) {
   const { ops, problems } = f.normalizeIntentOps(intent, nodes, workdir);
-  assert.deepEqual(problems, []);
+  assert.deepEqual(
+    problems.filter(p => !LONE.test(p)),
+    []
+  );
   const keys = f.intentSealing(intent, ops);
   const sealed = Object.fromEntries(keys.map(key => [key, prints[key] ?? `h:${key}`]));
   return f.applyIntentOps(intent, ops, { at: "t", conversation: "c1", ask, prints: sealed });
@@ -63,26 +68,32 @@ test("结构：新的一项要写全，前提要在、不成环；有错整批�
   assert.equal(f.normalizeIntentOps(intent, [{ id: "乙", state: "complete" }]).ops[0].state, "done");
 });
 
-test("传播：前提没立住，上面的就不算立住；any 的一项立住即可", () => {
+test("传播：标成立要前提先立住（同一批也算），事后前提退回去，上面的就不算立住；any 的一项立住即可", () => {
   let intent = change(empty(), [
     { id: "上线", claim: "可在公网访问", check: "外网打得开", needs: ["甲", "乙"], root: true },
     { id: "甲", claim: "A", check: "a" },
     { id: "乙", claim: "B", check: "b" }
   ]);
+  assert.deepEqual(
+    problems(intent, [
+      { id: "上线", state: "done" },
+      { id: "甲", state: "done" }
+    ]),
+    ["上线 还不能标成立：乙 没立住。前提先立住（同一批一起标即可）；这一项自己做完而前提未立的，先标 doing"]
+  );
   intent = change(intent, [
     { id: "上线", state: "done" },
-    { id: "甲", state: "done" }
+    { id: "甲", state: "done" },
+    { id: "乙", state: "done" }
   ]);
-  assert.ok(!f.intentEstablished(intent, "上线"));
-  assert.match(f.intentText(intent), /\[成立·前提未立\] 上线（根）/);
-  intent = change(intent, [{ id: "乙", state: "done" }]);
   assert.ok(f.intentEstablished(intent, "上线"));
   assert.deepEqual(f.intentTally(intent), { live: 3, standing: 3 });
-  intent = change(intent, [
-    { id: "乙", state: "doing" },
-    { id: "上线", any: true }
-  ]);
+  intent = change(intent, [{ id: "乙", state: "doing" }]);
+  assert.ok(!f.intentEstablished(intent, "上线"));
+  assert.match(f.intentText(intent), /\[成立·前提未立\] 上线（根）/);
+  intent = change(intent, [{ id: "上线", any: true }]);
   assert.ok(f.intentEstablished(intent, "上线"), "任一即可：甲立住就够");
+  assert.deepEqual(problems(intent, [{ id: "上线", state: "done" }]), [], "任一即可的，重标成立也只要一项立住");
 });
 
 test("回归：标成立后凭据变了，转待复核；没变的、不知道的不算；再标成立即换一份凭据", () => {
@@ -341,8 +352,7 @@ test("嵌套：模块以里面收口的几项为前提——里面立住它才�
   assert.deepEqual(f.intentRoots(intent), ["成品"]);
   assert.deepEqual(f.intentTops(intent, "训练"), ["二号"]);
   assert.deepEqual(f.intentDependents(intent, "二号"), ["训练"], "收口的一项撑起所属模块");
-  intent = change(intent, [{ id: "训练", state: "done" }]);
-  assert.ok(!f.intentEstablished(intent, "训练"), "里面没立住，模块不算立住");
+  assert.match(problems(intent, [{ id: "训练", state: "done" }])[0], /训练 还不能标成立：二号 没立住/, "里面没立住，模块标不了成立");
   intent = change(intent, [
     { id: "一号", state: "done" },
     { id: "二号", state: "done" },
@@ -359,7 +369,7 @@ test("嵌套：模块以里面收口的几项为前提——里面立住它才�
   assert.equal(f.intentTally(gone).live, 1);
 });
 
-test("嵌套的规矩：所属要在、不过两层、前提只连同一层、根不归模块；旧毛病不拦别的改动", () => {
+test("嵌套的规矩：所属要在、不过两层、根不归模块；前提可跨模块，以所属的模块为前提即成环；旧毛病不拦别的改动", () => {
   const intent = change(empty(), [
     { id: "甲", claim: "a", check: "c" },
     { id: "乙", claim: "b", check: "c", in: "甲" },
@@ -367,7 +377,11 @@ test("嵌套的规矩：所属要在、不过两层、前提只连同一层、�
   ]);
   assert.match(problems(intent, [{ id: "丁", claim: "d", check: "c", in: "无此" }])[0], /in「无此」不存在/);
   assert.match(problems(intent, [{ id: "丁", claim: "d", check: "c", in: "丙" }])[0], /嵌得太深/);
-  assert.match(problems(intent, [{ id: "丁", claim: "d", check: "c", needs: ["乙"] }])[0], /不在同一层/);
+  assert.deepEqual(problems(intent, [{ id: "丁", claim: "d", check: "c", in: "甲", needs: ["丙"] }]), [], "前提可跨模块");
+  assert.equal(
+    problems(intent, [{ id: "丙", needs: ["甲"] }]).find(p => p.startsWith("前提成了环")),
+    "前提成了环：甲 → 乙 → 丙 → 甲（模块以里面收口的项为前提）"
+  );
   assert.match(problems(intent, [{ id: "丁", claim: "d", check: "c", in: "甲", root: true }])[0], /根在全局/);
   assert.match(problems(intent, [{ id: "甲", in: "丙" }]).join(), /所属成了环/);
   assert.deepEqual(
@@ -384,6 +398,35 @@ test("嵌套的规矩：所属要在、不过两层、前提只连同一层、�
     nodes: { 甲: { claim: "a", check: "c", needs: ["乙"] }, 乙: { claim: "b", check: "c", in: "丙" }, 丙: { claim: "c", check: "c" } }
   });
   assert.deepEqual(problems(hand, [{ id: "丙", state: "doing" }]), [], "手编出的跨层前提不拦这一批");
+});
+
+test("跨模块的前提：传播照常；画一层时提到这一层的两头（提上来的画淡），这一层之外的画作淡影", () => {
+  let intent = change(empty(), [
+    { id: "终局", claim: "交付", check: "c", root: true, needs: ["增算", "质量"] },
+    { id: "增算", claim: "增算可用", check: "c" },
+    { id: "结构候选", claim: "候选可信", check: "c", in: "增算" },
+    { id: "推理对照", claim: "有基线", check: "c", in: "增算" },
+    { id: "质量", claim: "质量更好", check: "c" },
+    { id: "锁定收益", claim: "独立测试保有收益", check: "c", in: "质量", needs: ["结构候选"] }
+  ]);
+  assert.match(problems(intent, [{ id: "锁定收益", state: "done" }])[0], /锁定收益 还不能标成立：结构候选 没立住/);
+  intent = change(intent, [
+    { id: "结构候选", state: "done" },
+    { id: "锁定收益", state: "done" }
+  ]);
+  assert.ok(f.intentEstablished(intent, "锁定收益"), "只依那一项，不必等整个模块");
+  assert.ok(!f.intentEstablished(intent, "增算"));
+  assert.deepEqual(f.intentDependents(intent, "结构候选").sort(), ["增算", "锁定收益"].sort());
+  const top = f.intentLevelEdges(intent, "");
+  assert.deepEqual(top.needs["质量"], ["增算"]);
+  assert.deepEqual(top.soft["质量"], ["增算"]);
+  assert.deepEqual(top.soft["终局"], []);
+  assert.deepEqual(top.ghosts, []);
+  const inside = f.intentLevelEdges(intent, "质量");
+  assert.deepEqual(inside.needs["锁定收益"], ["结构候选"]);
+  assert.deepEqual(inside.soft["锁定收益"], []);
+  assert.deepEqual(inside.ghosts, ["结构候选"]);
+  assert.deepEqual(f.intentLevelEdges(intent, "增算").ghosts, []);
 });
 
 test("给模型读的字：模块的细项缩进在它底下；里面都立住了的模块折成一行", () => {
@@ -432,12 +475,61 @@ test("撤与弃：撤即整项删去、抹掉指向它的前提、留一笔痕�
   assert.match(f.intentText(dropped), /^［意 .*］已立 0 \/ 3，已弃（走过不通的）：旧路$/m);
 });
 
-test("孤悬：全局里没声明为根、既无前提又没人以它为前提的一项，新写出来即退回；旧有的不拦别的改动，读给模型时标出", () => {
+test("一项不成图：新立意时只有一项要立的退回；守不算，已有的意里添一项不拦", () => {
+  assert.ok(problems(empty(), [{ id: "独一", claim: "x", check: "c", root: true }]).some(p => LONE.test(p)));
+  assert.deepEqual(
+    problems(empty(), [
+      { id: "根", claim: "R", check: "r", root: true, needs: ["甲"] },
+      { id: "甲", claim: "A", check: "a" }
+    ]),
+    []
+  );
+  assert.deepEqual(problems(empty(), [{ id: "界限", claim: "只用本机", check: "c", keep: true }]), [], "只立守不算");
+  const kept = change(empty(), [{ id: "界限", claim: "只用本机", check: "c", keep: true }]);
+  assert.ok(
+    problems(kept, [{ id: "独一", claim: "x", check: "c", root: true }]).some(p => LONE.test(p)),
+    "只有守时添一项仍是一项"
+  );
+  const two = change(empty(), [
+    { id: "根", claim: "R", check: "r", root: true, needs: ["甲"] },
+    { id: "甲", claim: "A", check: "a" }
+  ]);
+  assert.deepEqual(problems(change(two, [{ id: "甲", state: "removed" }]), [{ id: "根", state: "doing" }]), [], "已有的意撤剩一项不拦");
+});
+
+test("补标根：当初没标的可补标，记下补标那一问、留一笔痕；已是别项前提的不能标根", () => {
+  let intent = change(empty(), [
+    { id: "终局", claim: "交付", check: "c", needs: ["保留"] },
+    { id: "保留", claim: "能力不退", check: "c" }
+  ]);
+  assert.equal(intent.nodes["终局"].root, undefined);
+  assert.match(problems(intent, [{ id: "保留", root: true }])[0], /保留 是 终局 的前提，不是根/);
+  intent = change(intent, [{ id: "终局", root: true }], { ask: "这个才是要交的" });
+  assert.equal(intent.nodes["终局"].root.ask, "这个才是要交的");
+  assert.equal(intent.log.at(-1).text, "立根 终局：交付");
+  assert.deepEqual(problems(intent, [{ id: "另一根", claim: "另立", check: "c" }]).length, 1, "标过根后，再添没标的仍算孤悬");
+  const again = change(intent, [{ id: "终局", root: true }], { ask: "又说一遍" });
+  assert.equal(again.nodes["终局"].root.ask, "这个才是要交的", "已标过的不重记");
+});
+
+test("孤悬：没声明为根、又没人以它为前提的一项（有无前提都算），这一批写到的即退回；旧有的不拦别的改动，读给模型时标出", () => {
   let intent = change(empty(), [
     { id: "终局", claim: "交付", check: "c", root: true, needs: ["保留"] },
     { id: "保留", claim: "能力不退", check: "c" }
   ]);
-  assert.match(problems(intent, [{ id: "补测", claim: "跑一轮读数", check: "c" }])[0], /补测 孤悬在全局/);
+  assert.match(problems(intent, [{ id: "补测", claim: "跑一轮读数", check: "c" }])[0], /补测 孤悬：.*needs（可跨模块）.*keep/);
+  assert.match(
+    problems(intent, [{ id: "补测", claim: "跑一轮读数", check: "c", needs: ["保留"] }])[0],
+    /补测 孤悬/,
+    "有前提而没人依的也是又一个根"
+  );
+  assert.deepEqual(
+    problems(intent, [
+      { id: "补测", claim: "跑一轮读数", check: "c" },
+      { id: "终局", needs: ["保留", "补测"] }
+    ]),
+    []
+  );
   assert.deepEqual(problems(intent, [{ id: "补测", claim: "跑一轮读数", check: "c", in: "保留" }]), [], "挂进模块即可");
   assert.deepEqual(problems(intent, [{ id: "另一根", claim: "另立的结论", check: "c", root: true }]), [], "声明为根的不算");
   assert.deepEqual(f.intentStrays(empty()), []);
@@ -472,7 +564,10 @@ test("名字：空格、@ 之类照规矩改写，同一批的前提与所属一
     ["north star", "north_star"],
     ["A_i50@512 run", "A_i50_512_run"]
   ]);
-  assert.deepEqual(problems(empty(), [{ id: "48G decoding speed-up reservation", claim: "x", check: "y", root: true }]), []);
+  assert.deepEqual(
+    problems(empty(), [{ id: "48G decoding speed-up reservation", claim: "x", check: "y", root: true }]).filter(p => !LONE.test(p)),
+    []
+  );
 });
 
 test("改名：前提、所属、所记的前提版本一并换，立住的照旧立住；同一批里写旧名的照新名认；新名不能撞", () => {
@@ -558,11 +653,12 @@ test("守：一直要守的条件——不算根、不孤悬、不计进度；�
   );
   assert.ok(problems(intent, [{ id: "测过", needs: ["上线"] }]).some(p => p.includes("是守，不挂前提")));
   assert.ok(problems(intent, [{ id: "测过", in: "上线" }]).some(p => p.includes("是守，守在全局")));
-  // 守没有进度可标：不给 state 也即作数、记下凭据；给别的态退回
-  const kept = change(empty(), [{ id: "界限", claim: "只用本机", check: "无外部算力", keep: true }]);
+  // 守没有进度可标：不给 state 也即作数、记下凭据；顺手带的别的态照作数，只有弃说清该撤
+  const kept = change(empty(), [{ id: "界限", claim: "只用本机", check: "无外部算力", keep: true, state: "open" }]);
   assert.equal(kept.nodes["界限"].state, "done");
   assert.ok(kept.nodes["界限"].seal);
-  assert.ok(problems(kept, [{ id: "界限", state: "assumed" }]).some(p => p.includes("是守，没有进度可标")));
+  assert.equal(change(kept, [{ id: "界限", state: "doing" }]).nodes["界限"].state, "done");
+  assert.ok(problems(kept, [{ id: "界限", state: "dropped" }]).some(p => p.includes("是守，不守了 state 给 removed")));
   // 记下时测试就不过的照样算不过：重写一回守抹不平
   const failing = change(empty(), [{ id: "测", claim: "测试要过", check: "退出码 0", anchors: ["test:npm test"], keep: true }], {
     prints: { "test:npm test": "不过" }

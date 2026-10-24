@@ -7,14 +7,15 @@
 // 在设置里换了位置，整份拷到新处，%APPDATA%\言\位置.json 写明搬去了哪（旧数据原样留着，确认无误后可自行删去）。
 // 条子不放在 ~/.yan 里：旧处是叫人自行删去的，条子若在里头，删了旧数据也就删了条子，下次开又回到默认处。
 // 测试用 YAN_HOME 直接指定根目录，不读也不写位置条子
-// 由 server.js 装配：require("./server/store.js")()
+// 由 server.js 装配：require("./server/store.js")({ working })——working 报各页正作答的有几段（见 server/chats.js）
 "use strict";
 const { sendJson, readJson, jsonRoute, errorText, writeAtomic, parseJsonText } = require("./http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-module.exports = function createStore() {
+/** @param {{ working?: () => number }} [options] */
+module.exports = function createStore({ working = () => 0 } = {}) {
   const HOME_ROOT = path.join(os.homedir(), ".yan"),
     POINTER = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "言", "位置.json"),
     CONFIG_FILE = "配置.json";
@@ -124,10 +125,12 @@ module.exports = function createStore() {
     },
     error => `配置未能落盘：${errorText(error, 200)}`
   );
-  // 把 from 目录里的东西逐层拷进 to：已有的同名文件不覆盖（新根里的为准），返回拷了几个文件。skip 里的名字（只看顶层）不拷。
-  // 不用 fs.cpSync：Node 22 在 Windows 上拿它拷中文路径会把目录名拷成乱码、进程随之崩掉
+  // 把 from 目录里的东西逐层拷进 to：已有的同名文件不覆盖（新根里的为准），返回拷了几个文件、哪些正被占用没拷。skip 里的名字（只看顶层）不拷。
+  // 不用 fs.cpSync：Node 22 在 Windows 上拿它拷中文路径会把目录名拷成乱码、进程随之崩掉。
+  // 被占用的跳过、不让整次作废：游目的浏览器开着时，它目录里的锁与库文件拷不动
   function copyInto(from, to, skip = new Set()) {
-    if (!from || !fs.existsSync(from) || path.resolve(from).toLowerCase() === path.resolve(to).toLowerCase()) return 0;
+    const busy = [];
+    if (!from || !fs.existsSync(from) || path.resolve(from).toLowerCase() === path.resolve(to).toLowerCase()) return { count: 0, busy };
     if (inside(from, to)) throw Error("目标目录不能位于来源目录内");
     let count = 0;
     const walk = (source, target, top) => {
@@ -137,14 +140,18 @@ module.exports = function createStore() {
         const a = path.join(source, entry.name),
           b = path.join(target, entry.name);
         if (entry.isDirectory()) walk(a, b, false);
-        else if (entry.isFile() && !fs.existsSync(b)) {
-          fs.copyFileSync(a, b);
-          count += 1;
-        }
+        else if (entry.isFile() && !fs.existsSync(b))
+          try {
+            fs.copyFileSync(a, b);
+            count += 1;
+          } catch (error) {
+            if (!["EBUSY", "EPERM", "EACCES"].includes(error.code)) throw error;
+            busy.push(path.relative(from, a));
+          }
       }
     };
     walk(from, to, true);
-    return count;
+    return { count, busy };
   }
   // 换位置：parent 下的 .yan 就是新根。那里已有言的数据（另一台机器拷来的、先前搬过去的）就直接用它；
   // 否则把整份拷过去。旧处原样留着（可自行删去），%APPDATA%\言\位置.json 记下新根，桥接重启后也认得
@@ -155,17 +162,21 @@ module.exports = function createStore() {
       const next = path.basename(parent).toLowerCase() === ".yan" ? parent : path.join(parent, ".yan");
       if (next.toLowerCase() === root.toLowerCase()) return { ...describe(), moved: false };
       if (inside(root, next)) throw Error("新存储位置不能位于当前存储目录内");
+      // 有对话正作答（哪一页都算）：拷到一半它还往旧处写，搬过去的就缺了这一截；等答完再换
+      const busy = working();
+      if (busy) throw Error(`${busy} 段对话正在作答，等答完再换`);
       const existing = fs.existsSync(path.join(next, CONFIG_FILE));
+      let locked = [];
       if (!existing) {
         fs.mkdirSync(next, { recursive: true });
         // 环境不拷：虚拟环境里记着绝对路径，搬过去就坏了；到新处重新准备一遍（有缓存时很快）
-        copyInto(root, next, new Set(["位置.json", "环境"]));
+        ({ busy: locked } = copyInto(root, next, new Set(["位置.json", "环境"])));
       }
       const previous = root;
       root = next;
       ensureRoot();
       if (!process.env.YAN_HOME) writePointer(root);
-      return { ...describe(), moved: true, adopted: existing, previous };
+      return { ...describe(), moved: true, adopted: existing, previous, busy: locked.slice(0, 20), busyCount: locked.length };
     },
     error => `存储位置未能更换：${errorText(error, 200)}`
   );

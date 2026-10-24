@@ -102,6 +102,23 @@ function grow(el) {
   el.style.height = "auto";
   el.style.height = `${Math.min(190, Math.max(44, el.scrollHeight))}px`;
 }
+// 设置里就地改的文本框（记忆、技能）随字长高：交给 CSS 的 field-sizing: content（见 10-memory.css 的 .memory-text），
+// 宽度变了、字体晚到换了字形都由浏览器重排。只在打开那一刻量一回的话，此后多折出的行就被 overflow: hidden 吞掉——
+// 下面只是浏览器不认 field-sizing 时的兜底：随输入、随宽度变化重量
+/** @param {HTMLTextAreaElement} el */
+function fitTextarea(el) {
+  if (CSS.supports("field-sizing", "content")) return;
+  const fit = () => {
+    el.dataset.fitWidth = String(el.clientWidth);
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  fit();
+  if (el.dataset.fit) return;
+  el.dataset.fit = "1";
+  el.addEventListener("input", fit);
+  new ResizeObserver(() => el.dataset.fitWidth !== String(el.clientWidth) && fit()).observe(el);
+}
 // 编辑消息的文本框：随内容长高（浏览器不认 field-sizing 时的兜底），到七成屏高才内滚
 function growEditor(el) {
   if (!el) return;
@@ -136,9 +153,10 @@ function closeTopLayer() {
   return !!top;
 }
 // 带 hidden 类开合的那几层：在页上、且没藏着
+// 正在退场（leaving）的算已关：关了还在淡出的那一拍里，Esc 该落到下一层
 function isShown(selector) {
   const el = $(selector);
-  return !!el && !el.classList.contains("hidden");
+  return !!el && !el.classList.contains("hidden") && !el.classList.contains("leaving");
 }
 // ---------- 浮着的小菜单与弹层：挂在 body 上、按锚点定位，点别处、Esc、锚点所在容器滚动都收 ----------
 function closeChipPop() {
@@ -302,7 +320,7 @@ function showNow(el) {
 function hideWithFade(el, duration = 170) {
   if (!el || el.classList.contains("hidden")) return;
   clearTimeout(el._leaveTimer);
-  if (reducedMotion.matches) {
+  if (reducedMotion.matches || inkMotionOff()) {
     el.classList.add("hidden");
     return;
   }
@@ -400,11 +418,14 @@ function setProcessDetails(details, open, animate = true) {
   };
 }
 // 就地改内容时高度平滑过渡（先量旧高，改完量新高，再从旧高动到新高）：步骤输出的折起摊开、「展开全部」都走这里，
-// 别让一块内容凭空出现又凭空消失。动效关掉时直接改
-function morphHeight(el, mutate, duration = 360) {
+// 别让一块内容凭空出现又凭空消失。动效关掉时直接改。
+// 整块重画（innerHTML）的，旧节点改完就不在了：find 取重画后的那一个，从旧高动到它的新高
+function morphHeight(el, mutate, duration = 360, find = () => el) {
   if (!el || inkMotionOff() || typeof el.animate !== "function") return mutate();
   const from = el.getBoundingClientRect().height;
   mutate();
+  el = find();
+  if (!el) return;
   const to = el.getBoundingClientRect().height;
   if (Math.abs(to - from) < 2) return;
   el._morph?.cancel();

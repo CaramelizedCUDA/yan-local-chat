@@ -17,24 +17,27 @@
  * @property {string} [extractionError]
  * @property {string} [savedAt] 收入浏览器内卷宗的时间
  * @property {string} [archive] 磁盘卷宗里的相对路径（availableDocuments 用）
+ * @property {string} [skill] 点名用的技能（「＋」→「技能」置入的那份说明）：附件条画锦囊、写这个名字
  * @property {boolean} [quoted] 随引文的画面（游目圈点）：不进附件栏，画在引文里；引文撤了它跟着撤
  */
 /** @typedef {{ text: string, messageId?: string, model?: string, url?: string, image?: string }} Quote 引用追问：划选的一段与它所在的消息（旁注锚文本作引文时没有 messageId）；游目圈点的另带给模型的一份与网址，image 是那幅画面的附件 id（附件照常随消息走，只是画在引文里） */
 /** @typedef {{ id: string, name: string, arguments: string }} ToolCall 流式拼出的一次工具调用 */
 /** @typedef {{ prompt_tokens: number, completion_tokens: number, total_tokens: number, cached_tokens?: number }} Usage cached_tokens：提示里读自缓存的部分 */
 /** @typedef {"ask"|"review"|"auto"} CommandPolicy 问而后行 / 审而后行 / 径行 */
-/** @typedef {"running"|"pending"|"done"|"error"|"skipped"} StepStatus */
+/** @typedef {"running"|"pending"|"done"|"error"|"skipped"|"interrupted"} StepStatus interrupted 只给差遣：帮手断着，等人续（见 holdHelper） */
 /** @typedef {{ question: string, header: string, multi: boolean, options: { label: string, description: string }[] }} AskQuestion */
 /**
  * @typedef {Object} SubAgent 差遣出去的帮手的一趟：自己的一段对话，步骤画在派它的那一答的差遣卡片里
  * @property {string} id
  * @property {string} [helper] 同一名帮手的几趟（差遣与续派）认同一个，取头一趟的 id
  * @property {string} task
+ * @property {string} [at] 领命的时刻；差遣面板里这一趟的命上题「主 · 时刻」，早先存下的没有，取派它的那一答的
  * @property {string} content
  * @property {string} reasoning
  * @property {Step[]} steps
- * @property {"streaming"|"complete"|"stopped"|"error"} status
+ * @property {"streaming"|"complete"|"stopped"|"error"|"interrupted"} status interrupted：断着等人续
  * @property {Usage|null} usage
+ * @property {Usage|null} [billed] 断过又续上的：断前已记进那一答的那份，那一答收尾时只算其后新耗的
  * @property {boolean} [charged] 用量已记进派它的那一答（帮手收工时自己记、或那一答收尾时并入），另一边不再记
  * @property {string} [effort] 这一趟的思考档位（模型实际认的那一档）；没有即不带字段、由接口定
  * @property {{ thinking?: string, signature?: string, redacted?: string }[]|null} [thinkingBlocks]
@@ -209,7 +212,6 @@
  * @property {boolean} [stageFit] 游目「适应页面」：执事定死的视口等它歇手后放开（默认开）
  * @property {"bing"|"baidu"|"google"} [stageSearch] 游目地址栏里输的不像网址时交给哪家搜（默认必应）
  * @property {boolean} archiveRead
- * @property {Record<string, boolean>} [skills] 设置里亲手开关过的技能（按名字）；没动过的照默认（见 skillEnabled）
  * @property {number} toolRounds
  * @property {number} subRounds
  * @property {"chat"|"library"|"groups"} [lastView] 上次停在哪一页，刷新后回到原处
@@ -240,7 +242,7 @@ function prompt(path, vars = {}) {
 function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
-const APP_VERSION = "0.9.1"; // 与 package.json 同步；以桥接返回的为准
+const APP_VERSION = "1.0.2"; // 与 package.json 同步；以桥接返回的为准
 const FOLLOW_THRESHOLD = 80;
 // 一次回答里最多几轮工具调用（帮手另计），超过后收回工具、请模型直接收尾；按轮计，同一轮并发的几次调用只算一轮。
 // 默认值在这里，实际值在「设置 → 工具」里可改，留空（记作 0）即不限

@@ -13,11 +13,13 @@ function formatFileSize(value) {
 // drop：改问编辑框里的一件，× 是从这一问里去掉它（不删原件，旧版本还用着）
 function attachmentCard(file, index, sent = false, drop = false) {
   const title = `${file.name} · ${formatFileSize(file.size)}`;
-  const figure =
-    file.kind === "image" && file.id
+  // 点名用的技能：画锦囊、写技能名（附件本身仍是那份说明的 .md，模型看到的名字不变）
+  const figure = file.skill
+    ? skillMark("fi skill-fi")
+    : file.kind === "image" && file.id
       ? `<span class="fi fi-thumb" aria-hidden="true"><img class="attachment-thumb" data-thumb="${escapeHtml(file.id)}" alt=""></span>`
       : fileFigure(file.name);
-  const body = `${figure}<span class="attachment-name">${escapeHtml(file.name)}</span><span class="attachment-size">${formatFileSize(file.size)}</span>`;
+  const body = `${figure}<span class="attachment-name">${escapeHtml(file.skill || file.name)}</span><span class="attachment-size">${formatFileSize(file.size)}</span>`;
   const save = file.id
     ? `<button class="attachment-tool attachment-save" data-save-attachment="${escapeHtml(file.id)}" title="${t(`收入卷宗`)}" aria-label="${t(`收入卷宗`)}">${t(`藏`)}</button>`
     : "";

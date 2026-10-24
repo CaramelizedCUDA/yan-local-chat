@@ -1,6 +1,7 @@
-// 意里的守（言的钩子）：立一项目标「上线」、一条守「测过」（凭据 test:node check.js，标成立时记下「过」）。守不上图、不计进度，
+// 意里的守（言的钩子）：立一项目标「上线」（以「部署」为前提）、一条守「测过」（凭据 test:node check.js，标成立时记下「过」）。守不上图、不计进度，
 // 卡片里在簿录之后另起一节。此后哪一答动过手、测试转为不过，收尾前对照就拦一次——那一步右侧朱字写「测过 · 测试不过」，模型接着改，
-// 收尾后再取一回，书眉不挂着「守」；动了手而测试照旧过的，照常收尾，不多费一轮
+// 收尾后再取一回，书眉不挂着「守」；动了手而测试照旧过的，照常收尾，不多费一轮。
+// 写了 on 的守走钩子：对得上的指令动手前先跑它的测试（将要做的经 YAN_TARGET 交给它），不过即不做，对不上的照常跑
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { connect, check, sleep, PAGE, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, close } = await connect();
@@ -10,6 +11,7 @@ rmSync(dir, { recursive: true, force: true });
 mkdirSync(dir, { recursive: true });
 writeFileSync(`${dir}/a.txt`, "ok");
 writeFileSync(`${dir}/check.js`, `process.exit(require("fs").readFileSync("a.txt", "utf8").trim() === "ok" ? 0 : 1);\n`);
+writeFileSync(`${dir}/guard.js`, `process.exit(/prod/.test(process.env.YAN_TARGET || "") ? 1 : 0);\n`);
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
 await evalJs(
@@ -43,7 +45,7 @@ try {
   check(
     "the glance counts goals only, with no 守 while it holds",
     await evalJs(
-      `(g => g.textContent.includes("0/1") || g.textContent.includes("0 / 1"))(document.querySelector("#chatMeta .intent-glance")) && !document.querySelector(".intent-glance-keep")`
+      `(g => g.textContent.includes("0/2") || g.textContent.includes("0 / 2"))(document.querySelector("#chatMeta .intent-glance")) && !document.querySelector(".intent-glance-keep")`
     )
   );
 
@@ -77,13 +79,31 @@ try {
     /HOOK3 done\|gated:no/.test(three.content) && !three.steps.includes("intent_gate"),
     JSON.stringify(three)
   );
+  // 守的钩子：写了 on 的守，对得上的那一步动手前先跑它的测试（将要做的经 YAN_TARGET 交给它），不过即不做
+  const four = await ask("HOOK4 远端只推测试机", 3);
+  check(
+    "a keep with on blocks the matching command before it runs, and lets the other one through",
+    /HOOK4\|prod:blocked\|staging:ran/.test(four.content) && four.steps.filter(s => s === "run_command").length === 2,
+    JSON.stringify(four)
+  );
+  check(
+    "the blocked step says which keep stopped it",
+    await evalJs(`${answers}[3].steps.find(s => s.name === "run_command").result === "守拦下 · 远端"`)
+  );
   // 卡片：守不上图，簿录之后另起「守」一节
   await evalJs(`document.querySelector("#chatMeta .intent-glance").click(); true`);
   await waitFor(`!!document.querySelector(".intent-card .intent-keep-head")`, 20000);
   check(
+    "each 守 row marks where it is checked, the heading only counts",
+    await evalJs(
+      `document.querySelector(".intent-keep-head small").textContent === "2 条" && document.querySelector('.intent-roll [data-intent-node="远端"] .intent-mk')?.dataset.mark === "hook" && document.querySelector('.intent-roll [data-intent-node="测过"] .intent-mk')?.dataset.mark === "check"`
+    ),
+    await evalJs(`[...document.querySelectorAll(".intent-keep-head small, .intent-roll .intent-mk")].map(e => e.textContent || e.dataset.mark).join(" | ")`)
+  );
+  check(
     "the card leaves 守 off the graph and lists it in its own section after the roll",
     await evalJs(
-      `!document.querySelector('.intent-svg [data-intent-node="测过"]') && !!document.querySelector('.intent-svg [data-intent-node="上线"]') && document.querySelector(".intent-keep-head + .intent-roll [data-intent-node]")?.dataset.intentNode === "测过" && /进度\\s*0\\s*\\/\\s*1/.test(document.querySelector(".intent-card .page-facts").textContent)`
+      `!document.querySelector('.intent-svg [data-intent-node="测过"]') && !!document.querySelector('.intent-svg [data-intent-node="上线"]') && document.querySelector(".intent-keep-head + .intent-roll [data-intent-node]")?.dataset.intentNode === "测过" && /进度\\s*0\\s*\\/\\s*2/.test(document.querySelector(".intent-card .page-facts").textContent)`
     )
   );
 } finally {

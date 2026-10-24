@@ -7,14 +7,13 @@
   min-height: 0;
   border-left: 1px solid var(--line);
   background: var(--paper-2);
-  animation: fadeIn 0.18s ease;
-  transition: width 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: width 0.28s var(--ease-ink);
 }
 /* 阔：铺满整页——正文让位，旁注成一页纸：与正文同一张纸面，页头、所注一段、往来与输入都收在阅读宽度里居中 */
 .side-panel.wide {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: var(--z-panel);
   width: auto;
   border-left: 0;
   background: var(--grain), var(--wash), var(--paper);
@@ -25,7 +24,7 @@
   margin: 18px var(--side-gutter) 0;
   padding: 11px 16px 11px 17px;
   border-radius: 0 var(--radius-m) var(--radius-m) 0;
-  font-size: 13px;
+  font-size: var(--fs-mid);
   background: var(--paper-2);
 }
 .side-panel.wide .side-scroll {
@@ -50,7 +49,7 @@
 }
 .side-panel.leaving {
   opacity: 0;
-  transition: opacity 0.17s;
+  transition: opacity var(--dur-quick);
 }
 .side-head {
   display: flex;
@@ -70,13 +69,13 @@
 }
 .side-title strong {
   display: block;
-  font: 500 13px var(--title);
+  font: 500 var(--fs-mid) var(--title);
   letter-spacing: 0.08em;
 }
 .side-title small {
   display: block;
   color: var(--ink-3);
-  font: 9.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.16em;
 }
 .side-nav {
@@ -93,10 +92,10 @@
   border-left: 1px solid var(--accent);
   text-align: left;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.6;
   white-space: pre-wrap;
-  transition: color 0.16s;
+  transition: color var(--dur-quick);
 }
 .side-anchor-text {
   display: -webkit-box;
@@ -123,7 +122,7 @@
 .side-messages .message {
   margin-bottom: 16px;
 }
-/* 面板本就是旁注：答不再挂「言 模型 · 时间」一行；问句的复制 / 编辑同正文，浮在问句下方不占位（见 30-chat.css），问与答贴近 */
+/* 面板本就是旁注：答不再挂「言 模型 · 时间」一行；问句的复制 / 编辑同正文，浮在问句下方不占位（见 30-chat/00-thread.css），问与答贴近 */
 .side-messages > .message.assistant > .message-meta {
   display: none;
 }
@@ -139,20 +138,20 @@
   padding-top: 3px;
 }
 .side-messages .markdown {
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .side-messages .user-bubble {
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .side-messages .message-meta {
-  font-size: 10px;
+  font-size: var(--fs-mark);
 }
 .side-messages .message-actions {
   opacity: 0.5;
 }
 .side-messages > .message.user > .message-actions {
   opacity: 0;
-  transition: opacity 0.16s;
+  transition: opacity var(--dur-quick);
 }
 .side-messages > .message.user:hover > .message-actions,
 .side-messages > .message.user:focus-within > .message-actions {
@@ -178,8 +177,8 @@
   height: 24px;
   padding: 0 5px;
   color: var(--ink-3);
-  font: 12px/1 var(--title);
-  transition: color 0.16s;
+  font: var(--fs-small)/1 var(--title);
+  transition: color var(--dur-quick);
 }
 .side-tools .icon-btn:hover,
 .side-tools #sideExpand[aria-pressed="true"] {
@@ -232,11 +231,11 @@
   padding: 3px 7px 3px 4px;
   border-radius: var(--radius-m);
   color: var(--ink-3);
-  font: 10.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.08em;
   transition:
-    color 0.16s,
-    background 0.16s;
+    color var(--dur-quick),
+    background var(--dur-quick);
 }
 .side-back span {
   font-size: 15px;
@@ -281,7 +280,7 @@
 .side-index-bar small {
   flex: 1;
   color: var(--ink-3);
-  font: 10.5px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.14em;
 }
 .side-index-new {
@@ -290,12 +289,12 @@
   gap: 4px;
   padding: 4px 2px;
   color: var(--ink-2);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.08em;
-  transition: color 0.16s;
+  transition: color var(--dur-quick);
 }
 .side-index-new span {
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1;
 }
 .side-index-new:hover {
@@ -311,8 +310,8 @@
   text-align: left;
   color: var(--ink-2);
   transition:
-    color 0.16s,
-    background 0.16s;
+    color var(--dur-quick),
+    background var(--dur-quick);
 }
 .side-index-item + .side-index-item::after {
   content: "";
@@ -337,8 +336,8 @@
   width: 14px;
   margin-top: 1px;
   color: var(--ink-3);
-  font: 11px/1.65 var(--title);
-  transition: color 0.16s;
+  font: var(--fs-note)/1.65 var(--title);
+  transition: color var(--dur-quick);
 }
 .side-index-item.here .side-index-num {
   color: var(--accent);
@@ -352,7 +351,7 @@
 }
 .side-index-copy strong {
   display: -webkit-box;
-  font: 12.5px/1.65 var(--body);
+  font: var(--fs-small)/1.65 var(--body);
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -361,25 +360,8 @@
   display: block;
   margin-top: 3px;
   color: var(--ink-3);
-  font: 10px var(--title);
+  font: var(--fs-mark) var(--title);
   letter-spacing: 0.08em;
-}
-/* 目录收尾：一道短线与一句怎样起注，列表短时这一页也有个落处 */
-.side-index-foot {
-  margin: 22px 0 0;
-  padding-top: 14px;
-  color: var(--ink-3);
-  font: 10.5px var(--title);
-  letter-spacing: 0.12em;
-  text-align: center;
-  opacity: 0.8;
-}
-.side-index-foot::before {
-  content: "";
-  display: block;
-  width: 28px;
-  margin: 0 auto 12px;
-  border-top: 1px solid var(--line);
 }
 .side-panel.wide .side-index-head h2 {
   display: block;
@@ -396,21 +378,18 @@
 }
 .side-panel.wide .side-index-copy small {
   margin-top: 5px;
-  font-size: 10.5px;
+  font-size: var(--fs-mark);
 }
 .side-panel.wide .side-index-num {
   width: 18px;
   margin-top: 3px;
-  font-size: 12px;
-}
-.side-panel.wide .side-index-foot {
-  margin-top: 40px;
+  font-size: var(--fs-small);
 }
 .side-empty {
   padding: 34px 8px;
   text-align: center;
   color: var(--ink-3);
-  font: 12px/1.9 var(--title);
+  font: var(--fs-small)/1.9 var(--title);
   letter-spacing: 0.06em;
 }
 /* 输入与主页同一个框：寄在框里右下，模型签在它左边（回目录在页头最左）。窄栏里字小一号、阴影浅些 */
@@ -426,11 +405,11 @@
 }
 .side-composer .composer textarea {
   max-height: 160px;
-  font-size: 13px;
+  font-size: var(--fs-mid);
 }
 .side-composer .model-trigger {
   max-width: 170px;
-  font-size: 11.5px;
+  font-size: var(--fs-note);
 }
 /* 正文里的落点一律墨色、不框：所注的一段一道淡墨线，序号是墨色小字，元信息行的「注 n」只是字；
    正打开的那一条线与序号着朱。比过圈点（字下朱点，一片朱点抢眼）与顶朱小签（方寸之间签不成签），见设计稿/37 */
@@ -441,7 +420,7 @@ mark.note-anchor {
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
   cursor: pointer;
-  transition: text-decoration-color 0.16s;
+  transition: text-decoration-color var(--dur-quick);
 }
 mark.note-anchor:hover {
   text-decoration-color: var(--ink-3);
@@ -454,12 +433,12 @@ sup.note-ref {
   margin: 0 1px 0 2px;
   padding: 0 1px;
   color: var(--ink-3);
-  font: 9.5px/12px var(--title);
+  font: var(--fs-mark)/12px var(--title);
   vertical-align: super;
   cursor: pointer;
   user-select: none;
   letter-spacing: 0;
-  transition: color 0.16s;
+  transition: color var(--dur-quick);
 }
 sup.note-ref:hover,
 sup.note-ref.active {
@@ -470,10 +449,10 @@ sup.note-ref.active {
   align-items: center;
   margin-left: 8px;
   color: var(--ink-3);
-  font: 10px/15px var(--title);
+  font: var(--fs-mark)/15px var(--title);
   letter-spacing: 0.06em;
   white-space: nowrap;
-  transition: color 0.16s;
+  transition: color var(--dur-quick);
 }
 .note-mark:hover {
   color: var(--accent);

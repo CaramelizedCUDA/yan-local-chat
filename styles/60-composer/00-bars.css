@@ -1,0 +1,235 @@
+.composer-area {
+  position: absolute;
+  z-index: 6;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 28px 42px 19px;
+  background: linear-gradient(transparent, var(--paper) 28%);
+}
+.approval-bar {
+  width: min(100%, var(--read));
+  margin: 0 auto 8px;
+}
+/* 工作条：一答生成期间附在输入框上方，一条淡墨底——左边改动合计，右边在做的帮手（金色）；
+   原先一名帮手一行的帮手条并进来了：帮手在行迹里有签，不必在输入框上再各占一行（见 设计稿/12-改动条与行迹 二·乙） */
+.helper-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, var(--read));
+  margin: 0 auto 8px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--paper-2) 45%, var(--paper));
+  color: var(--ink-3);
+  font: var(--fs-note) var(--title);
+  letter-spacing: 0.06em;
+  animation: rise var(--dur-rise) var(--ease-ink);
+}
+.work-changes,
+.work-helpers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: var(--radius-m);
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+.work-changes:hover,
+.work-helpers:hover {
+  background: color-mix(in srgb, var(--paper-3) 55%, transparent);
+}
+/* 改动合计是短的、要看全；挤的时候让右边帮手的说明收成省略号 */
+.work-changes {
+  flex: none;
+  white-space: nowrap;
+}
+/* 作答途中不寻常的状态（网络重试、整理上下文）：一点朱色呼吸，与帮手的金点同一路 */
+.work-notice {
+  flex: none;
+  padding: 3px 6px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.work-notice:before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin: 0 7px 2px 0;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+.work-changes .change-count {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+}
+.work-helpers {
+  margin-left: auto;
+  color: var(--gold);
+}
+.helper-bar.only-helpers .work-helpers {
+  margin-left: 0;
+  flex: 1;
+}
+.work-helpers-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-helpers-text:before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin: 0 7px 2px 0;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.work-helpers-go {
+  flex: none;
+  margin-left: auto;
+}
+/* 中辍的帮手挂在条上直到续上：字转正墨、不呼吸（不在做），末尾续写那一笔（同签上的那一笔）。设计稿/98 甲；
+   落选：折起的行迹题头上注一句（一答写长了，题头早翻出屏幕） */
+.work-held {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-left: auto;
+}
+.helper-bar.only-helpers .work-held {
+  flex: 1;
+  margin-left: 0;
+}
+.work-held .work-helpers.held {
+  flex: 1;
+  margin-left: 0;
+  color: var(--ink-2);
+}
+.work-helpers.held .work-helpers-text:before {
+  display: none;
+}
+.helper-seal {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-color: var(--gold);
+  color: var(--gold);
+  font-size: 10px;
+}
+.change-seal {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  border-color: color-mix(in srgb, var(--rouge) 62%, transparent);
+  color: var(--rouge);
+  font-size: 10px;
+}
+/* 工作条的清单浮在条子上方，不把输入框往下推 */
+.helper-bar .work-files {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  width: min(100%, 460px);
+  margin: 0;
+  padding: 8px 12px;
+  box-shadow: 0 10px 30px rgba(35, 30, 22, 0.1);
+}
+.approval-bar {
+  padding: 10px 12px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: var(--radius-l);
+  background: var(--paper);
+  box-shadow: 0 8px 30px rgba(58, 45, 29, 0.08);
+  animation: rise var(--dur-rise) var(--ease-ink);
+}
+.approval-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--title);
+  letter-spacing: 0.12em;
+}
+.approval-seal {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
+.approval-title {
+  color: var(--accent);
+}
+.approval-hint {
+  margin-left: auto;
+  letter-spacing: 0.04em;
+}
+.approval-cmd {
+  margin: 8px 0 0;
+  padding: 7px 10px;
+  max-height: 120px;
+  overflow: auto;
+  border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  color: var(--ink);
+  font:
+    11.5px/1.55 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 沙箱会拦下的原因：一道印色细线领起，不铺底色（请示条与行迹里的请示共用） */
+.approval-sandbox {
+  margin: 8px 0 0;
+  padding: 1px 0 1px 9px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+}
+.approval-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+/* 「运行 · 跳过 · 径行」只留字，字间一道短丝栏，「运行」着朱加重——与输入框上方「目录」那一排同式；行迹里请示步骤上的同一组共用。
+   落选的（见 设计稿/33）：白底胶囊（与「开合不用胶囊」相左）；3px 方角纸签、「运行」顶上一道朱（三枚并排成一排小框，比字重） */
+.approval-actions button:not(.ask-arrow),
+.tool-approve button {
+  padding: 3px 11px;
+  color: var(--ink-2);
+  font: var(--fs-note) var(--title);
+  letter-spacing: 0.1em;
+  transition: color var(--dur-quick);
+}
+.approval-actions button:not(.ask-arrow):first-child,
+.tool-approve button:first-child {
+  padding-left: 1px;
+}
+.approval-actions button:not(.ask-arrow) + button,
+.tool-approve button + button {
+  background: linear-gradient(var(--line), var(--line)) left center / 1px 11px no-repeat;
+}
+.approval-actions button:not(.ask-arrow):hover,
+.tool-approve button:hover {
+  color: var(--ink);
+}
+.approval-actions button[data-approve="run"],
+.tool-approve button[data-approve="run"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+.tool-approve button {
+  font-size: var(--fs-note);
+}

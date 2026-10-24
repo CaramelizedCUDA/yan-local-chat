@@ -124,6 +124,12 @@ test("能经别的前提走到的直连线不画：发版—行号那条省去",
     docs: { id: "docs", needs: [], state: "doing" }
   };
   assert.deepEqual(f.reducedNeeds(nodes).ship, ["tests", "docs"]);
+  // 经提上来的淡线才走得到的，直连照画；淡线自己能经实线走到的照样省去
+  nodes.tests.soft = ["lines"];
+  assert.deepEqual(f.reducedNeeds(nodes).ship, ["lines", "tests", "docs"]);
+  nodes.ship.soft = ["lines"];
+  nodes.tests.soft = [];
+  assert.deepEqual(f.reducedNeeds(nodes).ship, ["tests", "docs"]);
 });
 
 test("已立住的前提照样摊开，不并作一项", () => {

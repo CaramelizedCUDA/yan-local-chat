@@ -220,6 +220,21 @@ function thoughtEcho(target, from, profile) {
   const echo = ownCopy(thought);
   return { reasoning_content: echo, reasoning: echo };
 }
+// 一答之内改过较早的往来（旧截图换成一行字、撮要压掉前几轮、去图重发）：改处之后送回的思考块作废。Anthropic 新一代的签名记着
+// 它之前的整段前文，前文一变，这些块再送回就是 400（preserved thinking；新开的账号一律查）。送出前与上回送出的对一遍——
+// 逐条比对象与 content 引用，改过的就地换了新值、压掉的整段拼了新条——从第一处不同起去掉思考块，只去不改，此后照常往后接
+const sentHistories = new WeakMap();
+/** @param {Array<Record<string, any>>} history @param {Profile} profile */
+function dropStaleThoughts(history, profile) {
+  if (profile.api !== "anthropic") return;
+  const sent = sentHistories.get(history) || [],
+    from = sent.findIndex(([item, content], i) => history[i] !== item || item.content !== content);
+  if (from >= 0) for (const item of history.slice(from)) delete item.thinking_blocks;
+  sentHistories.set(
+    history,
+    history.map(item => [item, item.content])
+  );
+}
 /** 请求被拒、报错说起思考或多出的字段：去掉送回的思绪，有可去的才算数 @param {Profile} profile */
 function dropThoughtEcho(history, profile, message) {
   if (!/reasoning|thinking|signature|extra|unrecognized|additional|unknown|not permitted/i.test(message)) return false;
@@ -304,6 +319,7 @@ async function readReply(profile, history, signal, overrides, target, retried = 
   // 长活：这一答的工具往来快撑满窗口了，先压掉较早的几轮再发（见 14-chat-engine/60-context.js 的 keepInWindow）
   if (!retried) await keepInWindow(profile, history, signal, overrides, { target });
   if (blindProfiles.has(profile.id)) stripImages(history);
+  dropStaleThoughts(history, profile);
   const response = await requestPatiently(profile, history, signal, overrides);
   if (!response.ok) {
     const message = await describeResponseError(response);
@@ -405,8 +421,11 @@ function noteBreak(target, why, auto = false) {
   target.breaks = [...(target.breaks || []), { at: now(), why: String(why || "").slice(0, 200), ...(auto ? { auto } : {}) }].slice(-10);
 }
 // 网络一晃就断太脆：接口没接下请求时（连不上、限流、5xx、过载）等一等再试，间隔渐长，接口给了 Retry-After 就照它等；
-// 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」
-const RETRY_DELAYS = [1000, 2000, 4000, 8000];
+// 断网时等网回来再试。参数错、鉴权错这类 4xx 试也白试，原样交回。overrides.onRetry 用来在页面上说一声「第几次重试」。
+// 远端撑五分钟上下（对方一阵 5xx、代理换线都扛得过去，无人值守的长活不至于就此停住；「止」随时收回）；本机的只试前四回——
+// 本机服务停了是人自己关的，干等没有用
+const RETRY_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000, 60000, 60000, 60000, 60000],
+  LOCAL_RETRIES = 4;
 const retryableStatus = status => status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 /** 等 ms 毫秒（断网就等到网回来；local：本机模型不靠外网，不等）；中途停止即抛 AbortError */
 function restFor(ms, signal, local = false) {
@@ -436,7 +455,7 @@ const QUOTA_GONE = /insufficient_quota|quota|billing|balance|credit|余额|欠�
 async function requestPatiently(profile, history, signal, overrides) {
   const local = /^https?:\/\/(localhost|127\.|\[::1\]|0\.0\.0\.0|192\.168\.|10\.)/i.test(String(profile.baseUrl || ""));
   for (let attempt = 0; ; attempt++) {
-    let wait = RETRY_DELAYS[attempt];
+    let wait = local && attempt >= LOCAL_RETRIES ? undefined : RETRY_DELAYS[attempt];
     try {
       const response = await requestChat(profile, history, signal, overrides);
       if (response.ok || !retryableStatus(response.status) || wait === undefined) return response;

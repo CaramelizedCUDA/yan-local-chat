@@ -11,7 +11,7 @@
   padding: 11px 2px;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
   text-align: left;
-  transition: background-color 0.16s;
+  transition: background-color var(--dur-quick);
 }
 .guide-row:hover {
   background: color-mix(in srgb, var(--paper-3) 45%, transparent);
@@ -20,7 +20,7 @@
   flex: none;
   width: 42px;
   color: var(--accent);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
   letter-spacing: 0.08em;
 }
 .guide-title {
@@ -40,7 +40,7 @@
   max-width: 260px;
   overflow: hidden;
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -49,7 +49,7 @@
   align-items: center;
   gap: 8px;
   color: var(--ink-3);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   letter-spacing: 0.1em;
 }
 .guide-back {
@@ -73,7 +73,7 @@
   padding-bottom: 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.8;
 }
 .guide-step {
@@ -101,20 +101,20 @@
   border: 1px solid var(--accent);
   border-radius: var(--radius-s);
   color: var(--accent);
-  font: 11px var(--title);
+  font: var(--fs-note) var(--title);
   transform: rotate(-3deg);
 }
 .guide-step p {
   margin: 0 0 4px 29px;
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.85;
 }
 .guide-step code {
   padding: 1px 5px;
   border-radius: var(--radius-s);
   background: var(--paper-2);
-  font-size: 11.5px;
+  font-size: var(--fs-note);
 }
 .guide-step strong {
   color: var(--ink);
@@ -127,7 +127,7 @@
   padding-left: 10px;
   border-left: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   color: var(--accent);
-  font: 11.5px/1.7 var(--title);
+  font: var(--fs-note)/1.7 var(--title);
 }
 .guide-note b {
   display: block;
@@ -143,7 +143,7 @@
 }
 .guide-pager button {
   color: var(--ink-3);
-  font: 12px var(--title);
+  font: var(--fs-small) var(--title);
 }
 .guide-pager button:hover {
   color: var(--accent);

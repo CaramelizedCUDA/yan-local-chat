@@ -33,7 +33,9 @@ const HINTS = {
   subscription_sharing_usage_limit_exceeded: "ChatGPT 订阅给言的额度用完了，可在 ChatGPT 设置 → 用量里查看或调整",
   subscription_sharing_user_not_eligible: "这个 ChatGPT 账号的套餐不能把额度用在别的应用里",
   subscription_sharing_invalid_user: "ChatGPT 的授权已被收回，请到「设置 → 模型」里重新登录",
-  subscription_sharing_unsupported_capability: "ChatGPT 订阅不支持这一问里的某样东西（模型、工具或附件）"
+  subscription_sharing_unsupported_capability: "ChatGPT 订阅不支持这一问里的某样东西（模型、工具或附件）",
+  // 桥接直连到了不支持的地区：浏览器走了代理、桥接没走
+  unsupported_country_region_territory: "OpenAI 不受理当前地区的连接：请开代理（系统代理或 TUN）后重启桥接再登录"
 };
 
 const base64url = buffer => Buffer.from(buffer).toString("base64url");
@@ -78,10 +80,19 @@ module.exports = function createChatgpt({ home }) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ ...form, resource: RESOURCE }),
       signal: AbortSignal.timeout(20000)
+    }).catch(error => {
+      throw Error(
+        `连不上 OpenAI 授权端（${error.cause?.code || error.cause?.message || error.message}）：多半是桥接没走代理，开着代理就重启桥接再试`
+      );
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok)
-      throw Object.assign(Error(data.error_description || data.error || `换令牌失败（${response.status}）`), { code: data.error });
+    const data = /** @type {any} */ (await response.json().catch(() => ({})));
+    if (!response.ok) {
+      // 两种样子：OAuth 的 { error: "invalid_grant", error_description }，与接口那种 { error: { code, message } }（地区被拒就是这种）；另有 { detail }
+      const nested = data.error && typeof data.error === "object" ? data.error : null,
+        code = nested ? nested.code || nested.type : data.error;
+      const message = nested?.message || data.error_description || data.detail || code || `换令牌失败（${response.status}）`;
+      throw Object.assign(Error(hinted(code, String(message))), { code });
+    }
     return data;
   }
 
@@ -140,7 +151,7 @@ module.exports = function createChatgpt({ home }) {
     const verifier = base64url(randomBytes(32)),
       state = base64url(randomBytes(16)),
       server = http.createServer();
-    await new Promise((resolve, reject) => server.once("error", reject).listen(0, "127.0.0.1", resolve));
+    await new Promise((resolve, reject) => server.once("error", reject).listen(0, "127.0.0.1", () => resolve()));
     const redirect = `http://127.0.0.1:${/** @type {any} */ (server.address()).port}/callback`;
     const login = (pending = { server, error: "", timer: setTimeout(stopPending, 10 * 60 * 1000) });
     server.on("request", async (req, res) => {
@@ -200,7 +211,9 @@ module.exports = function createChatgpt({ home }) {
     const auth = load();
     if (!auth.tokens) return status();
     try {
-      const config = await (await fetch(`${AUTH}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10000) })).json();
+      const config = /** @type {any} */ (
+        await (await fetch(`${AUTH}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10000) })).json()
+      );
       if (config.revocation_endpoint)
         await fetch(config.revocation_endpoint, {
           method: "POST",
@@ -220,7 +233,7 @@ module.exports = function createChatgpt({ home }) {
     // 模型表按 client_version 筛：各模型标着 Codex 客户端的最低版本（它自己的 apply_patch 之类工具要新版才有），不带就按旧版给，最新的几个看不到。
     // 言不靠 Codex 客户端的那些功能，这些模型直接调用也放行，所以带一个足够大的版本号，即「不按客户端版本筛」
     const response = await fetch(`${API}/models?client_version=999.0.0`, { headers: await headers(), signal: AbortSignal.timeout(20000) });
-    const data = await response.json().catch(() => ({}));
+    const data = /** @type {any} */ (await response.json().catch(() => ({})));
     if (!response.ok) throw Error(hinted(data.error?.code, data.error?.message || `列模型失败（${response.status}）`));
     const list = (Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : []).filter(
       m => m && (m.visibility === undefined || m.visibility === "list")
@@ -377,4 +390,6 @@ function responsesToOpenAiStream(model = "") {
     }
   });
 }
-Object.assign(module.exports, { hinted, responsesRequest, responsesToOpenAiStream });
+module.exports.hinted = hinted;
+module.exports.responsesRequest = responsesRequest;
+module.exports.responsesToOpenAiStream = responsesToOpenAiStream;

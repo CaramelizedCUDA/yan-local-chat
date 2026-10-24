@@ -78,7 +78,7 @@ function anthropicRequest(payload) {
         typeof message.content === "string"
           ? message.content
           : anthropicUserBlocks(message.content)
-              .map(b => b.text || "")
+              .map(b => ("text" in b && b.text) || "")
               .join("\n");
       if (text) system.push(text);
     } else if (role === "user") push("user", anthropicUserBlocks(message.content));

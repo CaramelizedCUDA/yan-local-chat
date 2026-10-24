@@ -198,6 +198,7 @@ function release() {
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 // 开一页、等它出内容、取回整页 HTML。gate 是地址门禁（web.js 的 assertPublicUrl），不过的请求一律不发。
 // waitFor：等这个选择器出现（检索结果页，不必等整页载完）；不给就等载完、再等正文字数停住不涨（要跑脚本才出内容的页）
+/** @param {string} url @param {{ gate?: (url: URL) => Promise<unknown>, waitFor?: string, timeout?: number }} [options] */
 async function render(url, { gate, waitFor = "", timeout = 20000 } = {}) {
   const deadline = Date.now() + timeout;
   await acquire();

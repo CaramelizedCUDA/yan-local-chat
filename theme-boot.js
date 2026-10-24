@@ -9,6 +9,8 @@ if (location.protocol === "file:") {
   document.head.append(style);
 }
 (() => {
+  // 头一回画好之前不露 index.html 里写死的初稿（见 styles/00-base.css 与 src/99-start.js）
+  if (location.protocol !== "file:") document.documentElement.dataset.booting = "";
   try {
     const settings = JSON.parse(localStorage.getItem("yan-chat-v1") || "{}").settings || {},
       html = document.documentElement;
@@ -17,6 +19,10 @@ if (location.protocol === "file:") {
     const inkMotion = settings.inkMotion || "on",
       motionOff = inkMotion === "off" || (inkMotion === "system" && matchMedia("(prefers-reduced-motion: reduce)").matches);
     html.dataset.theme = dark ? "dark" : "light";
+    // 时令：四季以四立为界（立春 2-4、立夏 5-5、立秋 8-7、立冬 11-7），纸色随季偏一丝；节气名与角上那一件见 src/12-season.js
+    const now = new Date(),
+      md = (now.getMonth() + 1) * 100 + now.getDate();
+    html.dataset.season = md >= 1107 || md < 204 ? "winter" : md < 505 ? "spring" : md < 807 ? "summer" : "autumn";
     html.dataset.inkMotion = motionOff ? "off" : "on";
     if (settings.accent) html.style.setProperty("--accent", settings.accent);
     // 与 support.js 里的 FONT_STACKS 同一份表：--title 是读的字，--body 是界面的字

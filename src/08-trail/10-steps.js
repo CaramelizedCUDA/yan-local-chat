@@ -74,12 +74,15 @@ function delegateSubState(step) {
     meta: [
       ...(live
         ? [
-            steps.length ? t`${steps.length} 步` : t("领命中"),
+            // 还没动手：开了口就不再是「领命中」，只记用时
+            steps.length ? t`${steps.length} 步` : sub?.content || sub?.reasoning ? "" : t("领命中"),
             (sub?.startedAt && spentText(Date.now() - sub.startedAt)) || (steps.length ? t("进行中") : ""),
             sub?.waiting ? t("等后台") : ""
           ]
-        : [stepText(step.result)]),
-      sub?.effort ? t`思考${reasoningLabel(sub.effort)}` : ""
+        : status === "interrupted"
+          ? [t("中辍"), stepText(step.result), steps.length ? t`${steps.length} 步` : ""]
+          : [stepText(step.result)]),
+      sub?.effort ? t`思考 ${reasoningLabel(sub.effort)}` : ""
     ]
       .filter(Boolean)
       .join(" · ")
@@ -138,7 +141,10 @@ function delegateDoing(step) {
       .find(Boolean);
   return said ? said.slice(0, 80) : sub?.reasoning ? t("正在凝神") : t("领命中");
 }
+// interrupted 只有差遣：帮手断着，状态位换成续写那一笔（与消息上的「续写」同一笔，设计稿/97 甲），点了续上（见 resumeHelpers）
 function stepStateHtml(status) {
+  if (status === "interrupted")
+    return `<button type="button" class="tool-state goon" data-helper-resume title="${t(`续上`)}" aria-label="${t(`续上`)}">${brushIcon("forward")}</button>`;
   return status === "running"
     ? `<span class="tool-state spinning" aria-label="${t(`进行中`)}"></span>`
     : status === "pending"
@@ -273,6 +279,13 @@ function bindTrailEvents() {
       event.preventDefault();
       event.stopPropagation();
       return sendSupplementNow();
+    }
+    // 断着的帮手：签上状态位、面板末尾的那一笔续写
+    const goon = event.target.closest("[data-helper-resume]");
+    if (goon) {
+      event.preventDefault();
+      event.stopPropagation();
+      return resumeHelperStep(goon.dataset.helperResume || goon.closest(".tool-step")?.dataset.stepId || "");
     }
     const more = event.target.closest("[data-step-more]");
     if (more) return showStepInFull(more.closest(".tool-step"));

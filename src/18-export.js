@@ -10,6 +10,20 @@ function exportMarkdownLabel(value) {
     .replace(/>/g, "&gt;")
     .replace(/[\\`*_{}\[\]()#+.!|~-]/g, "\\$&");
 }
+// 问话与引文在页上是纯文本（不当 Markdown 画），导出照样：转义行内记号、行首的块记号与缩进，换行写成硬换行，空行照留
+function exportPlainText(value) {
+  const escapes = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
+  const lines = String(value || "")
+    .split(/\r?\n/)
+    .map(line =>
+      line
+        .replace(/[\\`*_{}\[\]<>&|~]/g, ch => escapes[ch] || `\\${ch}`)
+        .replace(/^[ \t]+/, space => "&nbsp;".repeat(space.replace(/\t/g, "    ").length))
+        .replace(/^([#+=-])/, "\\$1")
+        .replace(/^(\d+)([.)])/, "$1\\$2")
+    );
+  return lines.map((line, i) => (line && lines[i + 1] ? `${line}\\` : line)).join("\n");
+}
 function exportToolTrail(message) {
   const steps = message.steps || [];
   if (!steps.length) return "";
@@ -52,13 +66,13 @@ function conversationMarkdown(c) {
       lines.push(t("## 问"), "");
       if (m.quote?.text)
         lines.push(
-          ...String(m.quote.text)
-            .split(/\r?\n/)
+          ...exportPlainText(m.quote.text)
+            .split("\n")
             .map(line => `> ${line}`),
           ""
         );
       if (m.attachments?.length) lines.push(t`*附件：${m.attachments.map(f => exportMarkdownLabel(f.name)).join("、")}*`, "");
-      lines.push(String(m.content || ""), "");
+      lines.push(exportPlainText(m.content), "");
     } else if (m.role === "assistant" && m.status !== "error") {
       lines.push(t`## 答${m.modelName ? ` · ${exportMarkdownLabel(m.modelName)}` : ""}`, "");
       const trail = exportToolTrail(m);

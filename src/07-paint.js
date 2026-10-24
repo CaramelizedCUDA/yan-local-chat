@@ -367,15 +367,76 @@ function stepSeen(id) {
   return seen;
 }
 const knownStepIds = new Map();
-// 一列步骤按 id 对齐：新的接在后头，变了的就地换，撤下的（没递出去的补言）拿掉
+// 一列步骤按 id 对齐：新的接在后头，变了的就地换，撤下的（没递出去的补言）拿掉。
+// 连着的同类只读步骤（三步起）并成一行「读取 · src/app.js 等 7 件」，点开再列（设计稿/85 甲）——通读时十几行一模一样的读取，
+// 把要人看的改动与运行挤到后头。改、写、运行、差遣照旧一行一件；没做完、失败的不并，单独露出来。
+// 落选：一段只读并一行（看不出先读了什么、后搜了什么）、名字铺在行里不必点（几十件时折成好几行）
+const RUN_TOOLS = new Set([
+  "read_file",
+  "list_files",
+  "search_files",
+  "read_document",
+  "fetch_page",
+  "search_web",
+  "recall",
+  "search_conversations",
+  "read_conversation"
+]);
+/** @param {Step[]} steps @returns {(Step|Step[])[]} 单步，或并成一行的一串 */
+function stepRuns(steps) {
+  /** @type {(Step|Step[])[]} */
+  const items = [];
+  for (const step of steps) {
+    const last = items.at(-1),
+      ok = RUN_TOOLS.has(step.name) && step.status === "done" && !step.change;
+    if (ok && Array.isArray(last) && last[0].name === step.name && last[0].label === step.label) last.push(step);
+    else items.push(ok ? [step] : step);
+  }
+  return items.flatMap(item => (Array.isArray(item) && item.length < 3 ? item : [item]));
+}
 /** @param {Step[]} steps */
 function syncStepList(list, steps, seen, animate) {
   const ids = new Set();
-  for (const step of steps) {
-    syncStep(list, step, seen, animate);
-    ids.add(step.id);
-  }
+  stepRuns(steps).forEach((item, i) => {
+    const el = Array.isArray(item) ? syncStepRun(list, item, seen, animate) : (syncStep(list, item, seen, animate), stepEl(list, item.id));
+    ids.add(el.dataset.stepId);
+    // 一串并起来时它的几步原先各自一行：并成的那行挪到头一步的位置，散的几行由下面拿掉
+    if (list.children[i] !== el) list.insertBefore(el, list.children[i] || null);
+  });
   for (const el of [...list.children]) if (!ids.has(el.dataset.stepId)) el.remove();
+}
+/** @param {Element} list @param {string} id @returns {HTMLElement} */
+function stepEl(list, id) {
+  return list.querySelector(`:scope > [data-step-id="${CSS.escape(id)}"]`);
+}
+// 并成的一行：题头同一步的样子（标题前一枚细折角），身子是这一串各步，照常就地更新；开合随人
+/** @param {Element} list @param {Step[]} run @returns {HTMLElement} */
+function syncStepRun(list, run, seen, animate) {
+  const [first] = run,
+    id = `run:${first.id}`;
+  let el = stepEl(list, id);
+  if (!el) {
+    list.insertAdjacentHTML(
+      "beforeend",
+      `<details class="tool-run" data-step-id="${escapeHtml(id)}"><summary class="tool-step" data-tool="${escapeHtml(first.name)}" data-status="done"><div class="tool-step-head"><span class="tool-label"></span><span class="tool-title"></span><span class="tool-meta"></span>${stepStateHtml("done")}</div></summary><div class="tool-steps"></div></details>`
+    );
+    el = /** @type {HTMLElement} */ (list.lastElementChild);
+    if (animate) el.classList.add("is-new");
+  }
+  const files = ["read_file", "read_document", "fetch_page"].includes(first.name),
+    count = files ? t`${run.length} 件` : t`${run.length} 回`,
+    head = el.querySelector(":scope > summary > .tool-step-head"),
+    title = String(first.title || stepArgsTitle(first));
+  head.querySelector(".tool-label").textContent = first.label ? t(first.label) : toolLabel(first.name);
+  head.querySelector(".tool-title").innerHTML =
+    `${escapeHtml(title)}<span class="tool-run-more">${files ? t` 等 ${run.length} 件` : t` 等 ${run.length} 回`}</span>`;
+  head.querySelector(".tool-title").title = title;
+  head.querySelector(".tool-meta").textContent = count;
+  const body = el.querySelector(":scope > .tool-steps"),
+    ids = new Set(run.map(step => step.id));
+  for (const step of run) syncStep(body, step, seen, false);
+  for (const child of [...body.children]) if (!ids.has(child.dataset.stepId)) child.remove();
+  return el;
 }
 /**
  * 一条时间线：一轮一组（这一轮的思绪 · 说的话 · 各步），末尾是还在进行的那一轮（思绪、正写着的话、正拟的调用）。
@@ -505,19 +566,21 @@ function paintTrailGroup(el, g, source, o) {
           }
     );
   if (g.drafting) parts.push(draftingPart(g.drafting));
-  if (g.idle) parts.push({ key: "idle", sig: "", html: () => `<div class="sub-idle">${t(`帮手正在凝神`)}</div>` });
+  // 还没开口：同主答的「正在凝神」
+  if (g.idle) parts.push({ key: "idle", sig: "", html: () => `<div class="thinking">${t(`正在凝神`)}</div>` });
   syncParts(el, parts, o.animate);
 }
 
 // ---------- 差遣面板里帮手的那一条：题头（可收起）、时间线、回报 ----------
-/** @param {Element} trail @param {Step} step @param {boolean} animate */
-function paintHelperTrail(trail, step, animate) {
-  const { sub, live, report } = delegateSubState(step);
+/** @param {Element} trail @param {Step} step @param {boolean} animate @param {Map<string, any>} seen 这一趟步骤的就地更新台账 */
+function paintHelperTrail(trail, step, animate, seen) {
+  const { sub, live, report, status, steps } = delegateSubState(step);
   if (live) trail.dataset.live = "true";
   else delete trail.dataset.live;
   /** @type {Part[]} */
   const parts = [];
-  if (sub)
+  // 没动过手、只说了话就交差的一趟没有行迹可看，题头不画（同主答：没有步骤就没有「行迹」那一行），说的话即回报
+  if (sub && (live || steps.length))
     parts.push({
       key: "fold",
       sig: "",
@@ -536,12 +599,31 @@ function paintHelperTrail(trail, step, animate) {
           helper: true,
           steps: true,
           animate: animate && !created,
-          seen: helperSeen
+          seen
         });
     }
   });
   if (report)
     parts.push({ key: "report", sig: report, html: () => `<div class="sub-report"></div>`, paint: el => paintMarkdown(el, report) });
+  // 交了差（或断了）的一趟，末尾同主答一排：复制回报、这一趟耗的墨；做着时不露，同主答。
+  // 断着的照主答断了的样子先落一句，那一排是续写（设计稿/97）——人多半是点开面板看它断在哪，看完就地续上
+  if (sub && !live) {
+    const interrupted = status === "interrupted",
+      why = interrupted ? tr(stepText(step.result) || "").replace(/[。.\s]+$/, "") : "",
+      ink = Number(sub.usage?.total_tokens) || 0;
+    parts.push({
+      key: "foot",
+      sig: `${status}|${why}|${ink}|${!!report}`,
+      html: () =>
+        `<div class="sub-foot">${interrupted ? `<div class="resume-note">${why ? `${escapeHtml(why)}${LANG === "en" ? ". " : "。"}` : ""}${t(`已做的都在，可由此续上。`)}</div>` : ""}<div class="message-actions">${
+          interrupted
+            ? `<button type="button" class="message-action" data-helper-resume="${escapeHtml(step.id)}" title="${t(`续上`)}" aria-label="${t(`续上`)}">${brushIcon("forward")}</button>`
+            : report
+              ? `<button type="button" class="message-action" data-helper-copy title="${t(`复制回报`)}" aria-label="${t(`复制回报`)}">${brushIcon("copy")}</button>`
+              : ""
+        }${ink ? `<span class="message-cost" title="${t`这一趟共耗约 ${formatTokens(ink)} token`}">${t`耗墨 ${formatTokens(ink)}`}</span>` : ""}</div></div>`
+    });
+  }
   syncParts(trail, parts, animate);
   if (sub) syncSubFold(trail, step);
 }

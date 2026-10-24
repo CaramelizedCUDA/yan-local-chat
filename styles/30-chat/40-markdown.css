@@ -1,0 +1,239 @@
+.reasoning {
+  margin: 0 0 14px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+  font-family: var(--body);
+}
+.reasoning summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--title);
+  letter-spacing: 0.12em;
+}
+.reasoning summary::-webkit-details-marker {
+  display: none;
+}
+.reasoning summary:before {
+  content: "▸ ";
+}
+.reasoning[open] summary:before {
+  content: "▾ ";
+}
+/* 思绪原样保留换行与空格（pre-wrap）：一串没有空格的长串、行尾挂着的空格与制表符都会把内容撑宽，横向就多出一条空荡荡的滚动条。
+   长串在任意处折行，横向一律不滚 */
+.reasoning-body {
+  max-height: 320px;
+  overflow: hidden auto;
+  margin-top: 8px;
+  color: var(--ink-3);
+  font-size: var(--fs-mid);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.thinking {
+  color: var(--ink-3);
+}
+.thinking:after {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 1em;
+  margin-left: 5px;
+  background: var(--accent);
+  vertical-align: -2px;
+  animation: blink 1s steps(1) infinite;
+}
+/* 不带空格的长串（Windows 路径、哈希、网址）放不下时就地折行，不撑出横向滚动。用 break-word 不用 anywhere：
+   anywhere 会把表格的最小宽度算成一个字宽，各列挤成竖条 */
+.markdown {
+  overflow-wrap: break-word;
+}
+.markdown p {
+  margin: 0 0 1em;
+}
+.markdown > p:last-child,
+.markdown .md-tail > p:last-child {
+  margin-bottom: 0;
+}
+.markdown .md-stable > p:last-child {
+  margin-bottom: 1em;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-family: var(--title);
+  font-weight: 600;
+  line-height: 1.45;
+  margin: 1.35em 0 0.6em;
+}
+.markdown h1 {
+  font-size: 1.35em;
+}
+.markdown h2 {
+  font-size: 1.22em;
+}
+.markdown h3 {
+  font-size: 1.1em;
+}
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-size: 1em;
+}
+:is(.markdown, .trail-note, .sub-report) :is(ul, ol) {
+  padding-left: 1.4em;
+  margin: 0.6em 0 1em;
+}
+:is(.markdown, .trail-note, .sub-report) li {
+  margin: 0.25em 0;
+}
+:is(.markdown, .trail-note, .sub-report) li > :is(ul, ol) {
+  margin: 0.25em 0;
+}
+:is(.markdown, .trail-note, .sub-report) li > p {
+  margin: 0 0 0.4em;
+}
+.markdown li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.3em;
+}
+.markdown input[type="checkbox"] {
+  margin: 0 0.5em 0 0;
+  vertical-align: -1px;
+}
+:is(.markdown, .trail-note, .sub-report) blockquote {
+  margin: 1em 0;
+  padding: 1px 0 1px 18px;
+  border-left: 1px solid var(--line);
+  color: var(--ink-2);
+}
+/* 引文里首段的段前距、末段的段后距留在竖线里，线就比字长出一截（帮手回报的段落带着浏览器默认的上下边距） */
+:is(.markdown, .trail-note, .sub-report) blockquote > :first-child {
+  margin-top: 0;
+}
+:is(.markdown, .trail-note, .sub-report) blockquote > :last-child {
+  margin-bottom: 0;
+}
+.markdown code {
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-s);
+  background: var(--paper-2);
+  font:
+    85% ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+}
+.markdown pre {
+  position: relative;
+  overflow: auto;
+  margin: 1em 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--paper-2);
+  /* 字号与行高定在 pre 上：只定在里头的 code 上时，每行仍被 pre 按正文字号撑出的行高（约 1.85 × 正文）拉开，代码稀得像隔行 */
+  font-size: 85%;
+  line-height: 1.65;
+}
+.markdown pre code {
+  padding: 0;
+  background: none;
+  font-size: 1em;
+  line-height: inherit;
+}
+:is(.markdown, .trail-note, .sub-report) a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+}
+/* 指向本地文件的链接没有 href（点击去卷宗里找同名的那件），样子上仍是一条链接 */
+.markdown a[data-file] {
+  cursor: pointer;
+}
+/* 引了这一答工具交回的画面：链接点了看图，画面就地画在正文里——与行迹里的同一张折角小纸，放大到正文里看得清 */
+.markdown a[data-open-image] {
+  cursor: zoom-in;
+}
+.markdown .fi.reply-shot {
+  display: block;
+  width: min(100%, 560px);
+  height: auto;
+  margin: 10px 0 4px;
+  cursor: zoom-in;
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+/* 整页长截图不把正文撑成一长条：高过七成屏就从顶上取景，点开看全幅 */
+.markdown .fi.reply-shot img {
+  height: auto;
+  max-height: 70vh;
+  object-position: top;
+  border-radius: 0;
+}
+.markdown .fi.reply-shot:hover,
+.markdown .fi.reply-shot:focus-visible {
+  outline-color: var(--ink-3);
+}
+:is(.markdown, .trail-note, .sub-report) hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 1.5em 0;
+}
+.markdown img {
+  max-width: 100%;
+  border-radius: var(--radius-m);
+}
+:is(.markdown, .trail-note, .sub-report) del {
+  color: var(--ink-3);
+}
+.markdown table {
+  display: block;
+  width: fit-content; /* 三线表的上下两道只与表同宽 */
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.92em;
+}
+/* 表格是书页上的三线表：顶底两道粗墨、表头下一道细墨、不画竖线，行间一道淡朱丝栏（与设置的丝栏同色）。
+   帮手回报（80-trail）与 CSV 预览（85-components）同此。落选的：满格框线、表头铺底（表格软件的画法，纸墨里最硬）。见 设计稿/26 三 */
+.markdown table,
+.trail-note table,
+.sub-report table,
+.file-viewer-table {
+  border-top: 1.6px solid color-mix(in srgb, var(--ink) 70%, transparent);
+  border-bottom: 1.6px solid color-mix(in srgb, var(--ink) 70%, transparent);
+}
+.markdown th,
+.markdown td {
+  padding: 6px 18px 6px 2px;
+  text-align: left;
+  vertical-align: top;
+}
+:is(.markdown, .trail-note, .sub-report, .file-viewer-table) th {
+  border-bottom: 0.8px solid color-mix(in srgb, var(--ink) 45%, transparent);
+  font-weight: 600;
+}
+:is(.markdown, .trail-note, .sub-report, .file-viewer-table) tr + tr td {
+  border-top: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+}
+:is(.markdown, .trail-note, .sub-report, .file-viewer-table) :is(th, td):last-child {
+  padding-right: 2px;
+}
+/* 不挂在 .markdown 下：行迹里的话、帮手回报、前文摘要也走 renderMarkdown 却不带 .markdown，长公式在那里得一样横向滚动 */
+.math-block {
+  overflow-x: auto;
+  margin: 1em 0;
+  padding: 2px 0;
+  text-align: center;
+}
+.markdown .katex {
+  font-size: 1.05em;
+}

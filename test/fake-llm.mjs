@@ -589,10 +589,12 @@ http
           250
         );
       // BGWAKE / BGRELOAD：挂一条先睡一会儿的后台指令就收尾；它结束时另起一答（前面冠着上一答的行迹），据结果收尾。
-      // BGBUSY：挂上后自己接着干四轮（每轮约一秒），后台指令在这期间结束，回报就递进这一答里
-      const bgKey = ["BGWAKE", "BGRELOAD", "BGBUSY"].find(k => firstUser.includes(k));
+      // BGBUSY：挂上后自己接着干四轮（每轮约一秒），后台指令在这期间结束，回报就递进这一答里。
+      // FGWAIT / FGSTEER：前台起指令，等满 timeout（1 秒）或被补言叫转，转入后台；收尾时把工具结果与补言到没到写出来
+      const bgKey = ["BGWAKE", "BGRELOAD", "BGBUSY", "FGWAIT", "FGSTEER"].find(k => firstUser.includes(k));
       if (bgKey) {
-        const sleepFor = bgKey === "BGRELOAD" ? 6 : 3,
+        const sleepFor = bgKey === "BGRELOAD" ? 6 : bgKey === "FGSTEER" ? 4 : 3,
+          runArgs = bgKey === "FGWAIT" ? { timeout: 1 } : bgKey === "FGSTEER" ? {} : { background: true },
           heard = msgs.find(m => m.role === "user" && String(m.content).includes("后台指令 bg") && String(m.content).includes("已结束"));
         if (firstTurn && !toolResults.length)
           return sse(res, [
@@ -604,7 +606,7 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: `Start-Sleep -Seconds ${sleepFor}; Write-Output wake-ok`, background: true })
+                    arguments: JSON.stringify({ command: `Start-Sleep -Seconds ${sleepFor}; Write-Output wake-ok`, ...runArgs })
                   }
                 }
               ]
@@ -637,7 +639,15 @@ http
             ],
             400
           );
-        return sse(res, [delta({ content: "挂上了，等它。" }), delta({}, { usage: { total_tokens: 5 } })]);
+        const steered = msgs.some(m => m.role === "user" && String(m.content).includes("FGSTEER-NOTE"));
+        return sse(res, [
+          delta({
+            content: bgKey.startsWith("FG")
+              ? `挂上了，等它。｜${steered ? "steer" : "-"}｜${String(toolResults.at(-1)?.content || "").slice(0, 160)}`
+              : "挂上了，等它。"
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
       }
       // HELPERAGAIN：主模型差一名慢帮手，等它回报后续派它再做一回（它该记得上一回），两份回报都到了收尾
       if (firstUser.includes("HELPERAGAIN")) {
@@ -709,6 +719,60 @@ http
           );
         if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
         return sse(res, [delta({ content: `BGWORK done｜reports:${helperReports.length}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
+      // BREAKSUB（帮手）：先说一句、算一步，再请求就被拒（断了）；人点「续」之后的那一回，看历史里有没有断前说的话与「接着做」，据此回报
+      if (firstUser.includes("BREAKSUB")) {
+        const resumed = msgs.some(m => m.role === "user" && String(m.content).includes("从断处接着写"));
+        if (resumed)
+          return sse(res, [
+            delta({
+              content: `BREAKSUB done｜kept:${msgs.some(m => m.role === "assistant" && String(m.content).includes("断前写的一段"))}｜steps:${toolResults.length}`
+            }),
+            delta({}, { usage: { total_tokens: 7 } })
+          ]);
+        if (!toolResults.length)
+          return sse(res, [
+            delta({ content: "断前写的一段。" }),
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_bk0",
+                  type: "function",
+                  function: { name: "run_js", arguments: JSON.stringify({ code: "return 1 + 1" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 4 } })
+          ]);
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: { message: "upstream hiccup (fake)" } }));
+      }
+      // HELPERBREAK（主模型）：派一名会断的帮手就收尾；它断着时不该有回报来叫醒；人续上、它交差后醒来照回报收尾
+      if (firstUser.includes("HELPERBREAK")) {
+        if (helperReports.length)
+          return sse(res, [
+            delta({
+              content: `HELPERBREAK got｜${helperReports.map(r => (r.content.includes("BREAKSUB done") ? "done" : "other")).join(",")}`
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (!toolResults.length && !msgs.some(m => m.role === "assistant" && String(m.content).includes("派一名帮手")))
+          return sse(res, [
+            delta({ content: "派一名帮手。" }),
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_hb0",
+                  type: "function",
+                  function: { name: "delegate", arguments: JSON.stringify({ title: "会断的活", task: "BREAKSUB：做完回报。" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
       }
       // RELAYWAKE：派一名慢帮手（约 3 秒）后这一答断了（接口报错）；回报到了，断着的那一答自己续上、回报递进去，据此收尾
       if (firstUser.includes("RELAYWAKE")) {
@@ -921,9 +985,9 @@ http
       // 收尾前对照拦下就改回（覆写已有文件得先读过）；HOOK3 只改一个无关的文件，不该被拦。轮次按这一问之后的工具结果数
       // 认哪一问：跳过收尾对照递来的话；问里附的意带着 HOOK1 的原问，所以后来的问先认
       const hookAt = msgs.findLastIndex(
-        m => m.role === "user" && typeof m.content === "string" && /HOOK[123]/.test(m.content) && !m.content.startsWith("［收尾前对照意］")
+        m => m.role === "user" && typeof m.content === "string" && /HOOK[1234]/.test(m.content) && !m.content.startsWith("［收尾前对照意］")
       );
-      if (hookAt >= 0 && (/HOOK[123]/.test(String(lastUser)) || String(lastUser).includes("［收尾前对照意］"))) {
+      if (hookAt >= 0 && (/HOOK[1234]/.test(String(lastUser)) || String(lastUser).includes("［收尾前对照意］"))) {
         const ask = msgs[hookAt].content,
           after = msgs.slice(hookAt + 1),
           n = after.filter(m => m.role === "tool").length,
@@ -938,11 +1002,25 @@ http
               delta({}, { usage: { total_tokens: 5 } })
             ]),
           say = text => sse(res, [delta({ content: text }), delta({}, { usage: { total_tokens: 5 } })]);
+        // HOOK4：立一条带钩子的守（on 对 deploy，测试 guard.js 见 YAN_TARGET 里有 prod 即不过），先推 prod 被拦、再推 staging 照跑
+        if (ask.includes("HOOK4 远端")) {
+          if (n === 0)
+            return call("update_intent", {
+              nodes: [{ id: "远端", claim: "只推测试机", check: "guard.js 过", keep: true, on: "deploy", anchors: ["test:node guard.js"] }]
+            });
+          if (n === 1) return call("run_command", { command: "echo deploy-prod" });
+          if (n === 2) return call("run_command", { command: "echo deploy-staging" });
+          const results = after.filter(m => m.role === "tool").map(m => String(m.content));
+          return say(
+            `HOOK4|prod:${/守「远端」拦下/.test(results[1]) ? "blocked" : "ran"}|staging:${/deploy-staging/.test(results[2]) ? "ran" : "blocked"}`
+          );
+        }
         if (!ask.includes("HOOK2 改一下") && !ask.includes("HOOK3 加个")) {
           if (n === 0)
             return call("update_intent", {
               nodes: [
-                { id: "上线", claim: "博客打得开", check: "首页回 200", root: true },
+                { id: "上线", claim: "博客打得开", check: "首页回 200", root: true, needs: ["部署"] },
+                { id: "部署", claim: "推到服务器", check: "服务器上看得到新文件" },
                 { id: "测过", claim: "改完测试要过", check: "node check.js 退出码为 0", anchors: ["test:node check.js"], keep: true }
               ]
             });
@@ -1038,10 +1116,10 @@ http
         ]);
       }
       // 断线后页面自动请它接着写：STREAMERR 那段每回都断（接满两回仍断，才算中断），别的接上一句收尾
-      if (typeof lastUser === "string" && lastUser.includes("上一条回复在此处中断")) {
+      if (typeof lastUser === "string" && lastUser.includes("上一条回复在此中断")) {
         const asked = [...msgs]
           .reverse()
-          .find(m => m.role === "user" && typeof m.content === "string" && !m.content.includes("上一条回复在此处中断"));
+          .find(m => m.role === "user" && typeof m.content === "string" && !m.content.includes("上一条回复在此中断"));
         if (String(asked?.content || "").includes("STREAMERR"))
           return sse(res, [{ error: { message: "rate limited again (fake)", type: "rate_limit_error" } }]);
         return sse(res, [delta({ content: "接着写完。" }), delta({}, { usage: { total_tokens: 5 } })]);

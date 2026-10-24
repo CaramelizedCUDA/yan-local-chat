@@ -1,0 +1,211 @@
+/* 画面：按原尺寸取景，宽、高哪边先顶到就按哪边缩，不放大过原尺寸；只留一道发丝边，不要影。
+   朱笔（圈点、执事落笔处）与键入时的取景四角都叠在同一张纸上，与画面同比缩放 */
+.stage-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  container-type: size;
+  overflow: hidden;
+}
+.stage-sheet {
+  position: relative;
+  width: min(calc(100cqw - 26px), calc((100cqh - 20px) * var(--ar, 1.7778)), calc(var(--fw, 1280) * 1px));
+  aspect-ratio: var(--ar, 1.7778);
+}
+.stage-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-shadow: 0 0 0 1px var(--line);
+  user-select: none;
+  touch-action: none;
+}
+.stage-frame:not([src]),
+.stage-view.empty .stage-sheet {
+  visibility: hidden;
+}
+.stage-view.pen .stage-frame {
+  cursor: crosshair !important;
+}
+.stage-ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.stage-ink .zhu {
+  fill: var(--accent);
+}
+.stage-ink .stage-acts,
+.stage-label {
+  animation: stageAct 1.8s ease forwards;
+}
+@keyframes stageAct {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.stage-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.stage-label {
+  position: absolute;
+  padding: 1px 6px 2px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-top: 1.5px solid var(--accent);
+  color: var(--ink-2);
+  font: var(--fs-note) var(--title);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(40, 30, 20, 0.1);
+}
+/* 键盘交给网页时：画面四角各一笔墨色取景角（不占朱，朱留给执事）。落选：画面描一圈朱 */
+.stage-corners {
+  position: absolute;
+  inset: -7px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-quick);
+}
+.stage-view.typing .stage-corners {
+  opacity: 1;
+}
+.stage-corners i {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border: 0 solid color-mix(in srgb, var(--ink) 70%, transparent);
+}
+.stage-corners i:nth-child(1) {
+  left: 0;
+  top: 0;
+  border-width: 1.6px 0 0 1.6px;
+}
+.stage-corners i:nth-child(2) {
+  right: 0;
+  top: 0;
+  border-width: 1.6px 1.6px 0 0;
+}
+.stage-corners i:nth-child(3) {
+  left: 0;
+  bottom: 0;
+  border-width: 0 0 1.6px 1.6px;
+}
+.stage-corners i:nth-child(4) {
+  right: 0;
+  bottom: 0;
+  border-width: 0 1.6px 1.6px 0;
+}
+.stage-keys {
+  position: absolute;
+  width: 1px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  pointer-events: none;
+}
+/* 空台：一页空册（淡墨四笔、角上一方小印），底下一句状态，可做的事是一个带朱线的词。落选：一句话一枚描边按钮 */
+.stage-empty {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  color: var(--ink-3);
+  font: var(--fs-mid) var(--title);
+  letter-spacing: 0.14em;
+}
+.stage-leaf {
+  width: 150px;
+  height: 92px;
+  margin-bottom: 4px;
+  overflow: visible;
+}
+.stage-go {
+  padding: 2px 1px 3px;
+  border-bottom: 1.4px solid var(--accent);
+  color: var(--ink-2);
+  font: var(--fs-small) var(--title);
+  letter-spacing: 0.2em;
+  transition: color var(--dur-quick);
+}
+.stage-go:hover {
+  color: var(--accent);
+}
+
+/* 网页弹的提示框：画面上蒙一层薄纸，当中一张方角浮签、顶一道朱（与浮签同一个写法）；画在屏幕外的窗上看不到，这里另画 */
+.stage-dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--paper) 55%, transparent);
+}
+.stage-dialog-card {
+  width: min(380px, 100%);
+  padding: 16px 18px 14px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  background: var(--paper);
+  box-shadow: 0 12px 32px rgba(40, 30, 20, 0.12);
+}
+.stage-dialog-head {
+  color: var(--ink-3);
+  font: var(--fs-small) var(--title);
+  letter-spacing: 0.14em;
+}
+.stage-dialog-text {
+  max-height: 40vh;
+  margin: 8px 0 14px;
+  overflow-y: auto;
+  color: var(--ink);
+  font-size: var(--fs-mid);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.stage-dialog-input {
+  width: 100%;
+  margin: -4px 0 14px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: var(--fs-mid);
+  outline: none;
+}
+.stage-dialog-input:focus {
+  border-color: var(--ink-3);
+}
+.stage-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.stage-dialog-actions .primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.stage-dialog-actions .primary:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}

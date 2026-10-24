@@ -5,7 +5,7 @@
 // 何时去连：开页时、打开看台时，与每次浏览器类的 MCP 调用之后（浏览器多半是这时起的）；断了就等下一次，不轮询。
 // 调试口与配置目录不另设，桥接从那个 MCP 服务的参数（及它 --config 的那份文件）里读出来。
 // 浏览器没开、或被关掉了：看台里点「打开浏览器」，言替你调一次那个 MCP 的 browser_navigate，浏览器照它的配置起来——言自己不起浏览器。
-// 旁注与看台同在右侧：旁注开着时看台让位（纯 CSS，见 styles/56-stage.css），让位时、言的页面在后台时都不收画面。
+// 旁注与看台同在右侧：旁注开着时看台让位（纯 CSS，见 styles/56-stage/00-panel.css），让位时、言的页面在后台时都不收画面。
 // 网页的尺寸：playwright 有头时不设视口，网页多大即窗口多大——看台就把屏幕外那扇窗调成自己的大小（有下限，免得网站换成手机版），
 // 网页原大显示；窗口调不动的（设了视口的）照旧按宽高里较紧的一边缩放，点按按同一倍数换算回去。
 // 浏览器自己画的那几样（网页弹的提示框、载入中、能否后退）在屏幕外的窗上看不到：看台照 Page 域的事件自己画。
@@ -68,6 +68,9 @@ const stage = {
   // 指针形状跟着网页：上一回问的时刻、是否还在问
   cursorAt: 0,
   cursorAsking: false,
+  // 输入法：正在组字（组字当中不挪隐藏输入框）、量光标的计时
+  composing: false,
+  caretTimer: 0,
   // 浏览器的调试口（桥接从配置里读出来的：报错、开发者工具用）
   port: 0,
   seen: false,
@@ -221,6 +224,7 @@ function stagePageEvent(method, params) {
   } else if (method === "Page.fileChooserOpened" && params.backendNodeId) {
     stage.dialog = { type: "file", message: "", multiple: params.mode === "selectMultiple", node: params.backendNodeId };
     stageRenderDialog();
+    void stageWatchChooser(stage.dialog);
   } else if (method === "Page.downloadWillBegin") {
     // 下载：浏览器在屏幕外存，游目只记一笔（名、来处、多大、到哪一步）；存到哪由 MCP 的结果补上（见 stageNoteDownload）
     stage.downloads = [
@@ -305,6 +309,34 @@ function stageAnswer(accept) {
   void stageSend("Page.handleJavaScriptDialog", { accept, ...(input ? { promptText: input.value } : {}) }, stage.session).catch(() => {});
   stage.dialog = null;
   stageRenderDialog();
+}
+// 选文件没有「关了」的事件：模型那头（playwright）替人选了、网页换了页、那个 <input> 没了，卡片都得自己收——隔一会儿看一眼它
+/** @param {{ node?: number }} dialog */
+async function stageWatchChooser(dialog) {
+  const session = stage.session;
+  const look = async () => {
+    const { object } = await stageSend("DOM.resolveNode", { backendNodeId: dialog.node }, session);
+    const { result } = await stageSend(
+      "Runtime.callFunctionOn",
+      {
+        objectId: object.objectId,
+        functionDeclaration: "function () { return this.isConnected ? [...this.files].map(f => f.name + ':' + f.size).join('/') : null; }",
+        returnByValue: true
+      },
+      session
+    );
+    void stageSend("Runtime.releaseObject", { objectId: object.objectId }, session).catch(() => {});
+    return result.value ?? null;
+  };
+  const before = await look().catch(() => null);
+  if (before === null) return;
+  while (stage.dialog === dialog && stage.session === session) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    if (stage.dialog !== dialog) return;
+    if ((await look().catch(() => null)) === before) continue;
+    stage.dialog = null;
+    stageRenderDialog();
+  }
 }
 // 选文件用言这边的窗（点「选文件」那一下即是人手的动作，浏览器才许开窗）；选好的落到桥接的临时目录，路径交给网页里那个 <input type=file>
 /** @param {{ multiple?: boolean, node?: number }} dialog */

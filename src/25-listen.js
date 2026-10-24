@@ -52,15 +52,17 @@ function listenTrackFrom(source, name, reader) {
     track.list = list;
     return list.find(item => item.key === track.key) || track;
   }
-  const track = {
-    key: `a:${source?.attachmentId}`,
-    name,
-    url: reader.url(),
-    where: t`附件 · ${fileExtension(name).toUpperCase()}`,
-    source,
-    bytes: async () => (await reader.blob()).arrayBuffer(),
-    list: []
-  };
+  // 附件，或技能带的一件（设置 → 技能里点开）
+  const skill = !!source?.skillDir,
+    track = {
+      key: skill ? `s:${source.skillDir}/${source.skillPath}` : `a:${source?.attachmentId}`,
+      name,
+      url: reader.url(),
+      where: skill ? t`技能 · ${fileExtension(name).toUpperCase()}` : t`附件 · ${fileExtension(name).toUpperCase()}`,
+      source,
+      bytes: async () => (await reader.blob()).arrayBuffer(),
+      list: []
+    };
   track.list = [track];
   return track;
 }
@@ -410,7 +412,7 @@ function listenRenderPendant() {
 
 // ---------- 两面何时各现：都由喇叭此刻的样子推出来 ----------
 function listenPageLive() {
-  return !$("#fileViewer").classList.contains("hidden") && !!$("#fileViewerStage .listen-page") && listenShown?.key === listenTrack?.key;
+  return isShown("#fileViewer") && !!$("#fileViewerStage .listen-page") && listenShown?.key === listenTrack?.key;
 }
 function listenSync() {
   const box = $("#listenPendant"),

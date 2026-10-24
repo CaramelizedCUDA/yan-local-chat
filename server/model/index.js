@@ -68,7 +68,7 @@ module.exports = function createModel({ home }) {
       signal: AbortSignal.timeout(20000)
     });
     if (!response.ok) throw Error(await upstreamError(response));
-    const data = await response.json();
+    const data = /** @type {any} */ (await response.json());
     const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : null;
     return list && list.map(item => (typeof item === "string" ? item : item?.id || item?.name)).filter(Boolean);
   }

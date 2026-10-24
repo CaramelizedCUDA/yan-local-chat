@@ -13,10 +13,10 @@ test("技能只把名字和说明带进系统提示，参考按需翻；对话�
     "systemPrompt",
     "TOOLS",
     `setup: prompts => {
-      Object.assign(PROMPTS, prompts); store.settings.skills = {}; store.settings.archiveRead = false;
-      skillSets.set('', { roots: [], skills: [{ name: 'demo', description: '照格式写信', source: '言', dir: 'E:/skills/demo', files:
+      Object.assign(PROMPTS, prompts); store.settings.archiveRead = false;
+      skillSet = { home: 'E:/skills', skills: [{ name: 'demo', description: '照格式写信', dir: 'E:/skills/demo', files:
         ['SKILL.md', ...Array.from({length:80}, (_, i) => 'references/ref-' + i + '.md')].map(path => ({path}))
-      }] });
+      }] };
       bridge = async () => ({ text: '参考正文' });
     }`
   ]);
@@ -35,64 +35,48 @@ test("技能只把名字和说明带进系统提示，参考按需翻；对话�
   assert.equal(outcome.content, "参考正文");
 });
 
-test("技能页从工作目录切到无目录对话：显示存储根时，打开的也是存储根", async () => {
+test("点名置入的那件附件带着技能名，仍照附件列、照附件读——不当技能目录里的文件去桥接取", async () => {
   const f = load([
-      "skillsSettingsHtml",
-      "bindSkillSettings",
-      "doc: () => document",
-      `setup: request => {
-      skillSourceOpen = '项目'; currentConversation = () => null;
-      skillSets.set('', { roots: [{ source: '言', dir: 'E:/store/技能' }], skills: [] });
-      bridge = request; refreshSkills = async () => {};
+    "toolDefinitions",
+    "TOOLS",
+    `setup: prompts => {
+      Object.assign(PROMPTS, prompts); store.settings.archiveRead = false;
+      skillSet = { home: 'E:/skills', skills: [{ name: 'demo', description: '照格式写信', dir: 'E:/skills/demo', files: [{ path: 'SKILL.md' }] }] };
+      bridge = async () => { throw Error('没有这份技能：undefined'); };
+      getAttachment = async () => ({ kind: 'text', data: '点名用技能「demo」，照它做。' });
     }`
-    ]),
-    requests = [];
-  f.setup(async (url, body) => {
-    requests.push({ url, body });
-    return {};
-  });
-  const html = f.skillsSettingsHtml();
-  assert.match(html, /memory-cat active[^>]*data-skill-source="言"/);
-  assert.ok(html.includes("E:/store/技能"));
-  const query = f.doc().querySelector;
-  let click;
-  f.doc().querySelector = selector =>
-    selector === "[data-skill-open]"
-      ? {
-          addEventListener: (_, fn) => {
-            click = fn;
-          }
-        }
-      : null;
-  try {
-    f.bindSkillSettings();
-    await click();
-    assert.deepEqual(requests, [{ url: "/api/skills/open", body: { workdir: "", source: "言" } }]);
-  } finally {
-    f.doc().querySelector = query;
-  }
+  ]);
+  f.setup(win.YAN_PROMPTS);
+  const conversation = { messages: [{ attachments: [{ id: "a1", name: "demo.md", kind: "text", skill: "demo" }] }] };
+  const description = f.toolDefinitions(conversation).find(tool => tool.function.name === "read_document").function.description;
+  assert.match(description, /本段附件：demo\.md。/);
+  const outcome = await f.TOOLS.get("read_document").run({}, { name: "demo.md" }, { conversation });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.content, "点名用技能「demo」，照它做。");
 });
 
-test("问话以「/技能名」开头：说明作附件放上案，问话去掉点名；对不上的照原话", async () => {
+test("「＋」里点一份技能：说明作附件放上案，开头写明点名用它；只凭点名的不进系统提示", async () => {
   const f = load([
-    "takeSkillCommand",
+    "placeSkill",
+    "skillCatalog",
     "pending: () => pendingAttachments",
     `setup: () => {
-      pendingAttachments = []; renderAttachments = () => {};
-      skillSets.set('', { roots: [], skills: [{ name: 'Demo', description: '写信', source: 'Claude', dir: 'E:/skills/demo', files: [{ path: 'SKILL.md' }] }] });
+      store.conversations = []; store.drafts = {}; currentId = null;
+      pendingAttachments = []; renderAttachments = () => {}; saveStoreSoon = () => {};
+      skillSet = { home: 'E:/skills', skills: [
+        { name: 'Demo', description: '写信', dir: 'E:/skills/demo', files: [{ path: 'SKILL.md' }] },
+        { name: 'weekly', description: '写周报', dir: 'E:/skills/weekly', files: [{ path: 'SKILL.md' }], manual: true }
+      ] };
       bridge = async () => ({ text: '照格式写信' });
-      ingestFile = async file => ({ id: 'a', name: file.name, kind: 'text', text: await file.text() });
+      ingestFile = async file => ({ id: 'a', name: file.name, kind: 'text', size: file.size, text: await file.text() });
     }`
   ]);
   f.setup();
-  const input = { value: "/demo 给房东写一封" };
-  assert.equal(await f.takeSkillCommand(input, ""), true);
-  assert.equal(input.value, "给房东写一封");
-  assert.equal(f.pending().length, 1);
-  assert.equal(f.pending()[0].name, "Demo.md");
-  assert.match(f.pending()[0].text, /^技能目录：E:\/skills\/demo\n\n照格式写信$/);
-  const other = { value: "/usr/bin 是什么" };
-  assert.equal(await f.takeSkillCommand(other, ""), true);
-  assert.equal(other.value, "/usr/bin 是什么");
-  assert.equal(f.pending().length, 1);
+  await f.placeSkill({ name: "Demo", dir: "E:/skills/demo" });
+  const [placed] = f.pending();
+  assert.equal(placed.name, "Demo.md");
+  assert.match(placed.text, /^点名用技能「Demo」，照它做。\n技能目录：E:\/skills\/demo\n\n照格式写信$/);
+  const catalog = f.skillCatalog().list;
+  assert.match(catalog, /- Demo：写信/);
+  assert.ok(!catalog.includes("weekly"), "manual 的不列给模型");
 });

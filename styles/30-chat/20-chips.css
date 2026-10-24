@@ -1,0 +1,240 @@
+/* 输入框上方的签（目录、审而后行）：只留字，「目录」二字着朱作题；不描边不成块（见 设计稿/27 三） */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 2px;
+  color: var(--ink-2);
+  font: var(--fs-small) var(--title);
+  max-width: 260px;
+  transition: color var(--dur-quick);
+}
+.chip + .chip {
+  margin-left: 8px;
+}
+.chip:hover {
+  color: var(--ink);
+}
+.chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.chip .chip-glyph {
+  color: var(--accent);
+  font: 11px var(--title);
+  letter-spacing: 0.06em;
+}
+.chip .chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip .chip-caret {
+  color: var(--ink-3);
+  font-size: 9px;
+  margin-left: 1px;
+}
+.chip.on {
+  color: var(--accent);
+}
+.chip-pop {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  z-index: 21;
+  width: min(420px, calc(100vw - 48px));
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  transform-origin: top left;
+  animation: menuIn var(--dur-rise) var(--ease-ink);
+}
+.chip-pop .field {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--fs-small);
+}
+.chip-pop-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.chip-pop-row .outline-btn {
+  flex: none;
+  white-space: nowrap;
+  padding: 6px 12px;
+}
+.chip-pop small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--fs-note);
+  margin-top: 6px;
+}
+.chip-pop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 180px;
+  overflow: auto;
+}
+.chip-pop-list button {
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: var(--radius-m);
+  color: var(--ink-2);
+  font-size: var(--fs-note);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-pop-list button:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.chip-pop-list .chip-pop-label {
+  padding: 4px 8px 2px;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--title);
+  letter-spacing: 0.12em;
+}
+.chip-menu {
+  width: 150px;
+  padding: 5px;
+}
+.chip-menu button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 9px;
+  border-radius: var(--radius-m);
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+}
+.chip-menu button:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.chip-menu button.active {
+  color: var(--accent);
+}
+.chip-menu button small {
+  color: var(--ink-3);
+  font-size: var(--fs-mark);
+}
+/* 浮层菜单：附件签「＋」与历史条目「⋯」共用，挂在 body 上按锚点定位 */
+.chip-pop.floating {
+  position: fixed;
+  top: auto;
+  left: auto;
+  width: auto;
+  min-width: 148px;
+  max-width: min(320px, calc(100vw - 20px));
+  z-index: var(--z-pop);
+}
+.chip-pop.floating.drop-up {
+  transform-origin: bottom left;
+}
+.chip-pop.floating:not(.chip-menu) {
+  width: min(420px, calc(100vw - 20px));
+  max-width: none;
+}
+/* 与模型菜单同一副面孔：同样的内距与圆角、标题字、右上角略收的印角；小注靠右，删除一类另起一段 */
+.chip-pop.floating.chip-menu {
+  padding: 6px;
+}
+.chip-pop.floating.chip-menu button {
+  padding: 8px 10px;
+  border-radius: var(--radius-m) var(--radius-l) var(--radius-l) var(--radius-l);
+  color: var(--ink-2);
+  font-family: var(--title);
+  font-size: var(--fs-small);
+  letter-spacing: 0.025em;
+  transition:
+    background-color var(--dur-quick),
+    color var(--dur-quick);
+}
+.chip-pop.floating.chip-menu button small {
+  margin-left: 18px;
+  font: var(--fs-mark) var(--body);
+  letter-spacing: 0;
+}
+.chip-pop.floating.chip-menu button.danger {
+  margin-top: 4px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--radius-m) var(--radius-m);
+  color: var(--ink-3);
+}
+.chip-menu button.danger:hover {
+  color: var(--danger);
+}
+.chip-pop.attach-picker {
+  width: min(320px, calc(100vw - 20px));
+  padding: 8px;
+}
+.chip-pop.attach-picker .field {
+  font-family: inherit;
+  margin-bottom: 6px;
+}
+.chip-pop.attach-picker .chip-pop-list {
+  max-height: 240px;
+}
+.chip-pop.attach-picker .chip-pop-list button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-family: inherit;
+}
+.chip-pop.attach-picker .chip-pop-list button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-pop.attach-picker .chip-pop-list button small {
+  flex: 0 1 auto;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-3);
+  font-size: var(--fs-mark);
+}
+/* 夹：名字墨色加重、后缀一枚淡 ›；顶上回上一层的一行是路径，淡墨小字，下压一线 */
+.chip-pop.attach-picker .chip-pop-list .picker-dir {
+  color: var(--ink);
+}
+.chip-pop.attach-picker .picker-dir i {
+  margin-left: 5px;
+  color: var(--ink-3);
+  font-style: normal;
+}
+.chip-pop.attach-picker .chip-pop-list .picker-up {
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+  color: var(--ink-3);
+  font-size: var(--fs-note);
+}
+.chip-pop.attach-picker .chip-pop-list .picker-up:hover {
+  color: var(--ink);
+}
+.chip-pop-unbind {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-m);
+  text-align: left;
+  color: var(--ink-2);
+  font-size: var(--fs-note);
+}
+.chip-pop-unbind:hover {
+  background: var(--paper-2);
+  color: var(--accent);
+}

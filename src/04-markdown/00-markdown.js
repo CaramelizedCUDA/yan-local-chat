@@ -154,7 +154,7 @@ function codeBlockHtml(text, lang) {
   } catch {
     html = escapeHtml(text);
   }
-  return `<div class="code-block"><div class="code-head"><span class="code-lang">${escapeHtml(language || "text")}</span><button type="button" class="code-copy" data-copy-code>${t(`复制`)}</button></div><pre><code class="hljs${known ? ` language-${escapeHtml(language)}` : ""}">${html}</code></pre></div>\n`;
+  return `<div class="code-block"><div class="code-head"><span class="code-lang">${escapeHtml(language || "text")}</span>${vizTool("data-copy-code", t("复制"), "copy")}</div><pre><code class="hljs${known ? ` language-${escapeHtml(language)}` : ""}">${html}</code></pre></div>\n`;
 }
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();

@@ -69,6 +69,33 @@ check(
   )) === "报表.csv|a,b"
 );
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+// 成品多了只摊前四件，末行「余 n 件」点开全摊、再点收起；开着的换一段对话再回来照旧开着
+const deliverRows = () =>
+  evalJs(
+    `[...document.querySelectorAll(".message.assistant .deliver-file")].filter(f => f.offsetParent).length + "|" + (document.querySelector(".message.assistant .deliver-more")?.textContent ?? "")`
+  );
+const reopenDeliver = async () => {
+  await evalJs(`document.querySelector("#newChat").click(); true`);
+  await waitFor(`!document.querySelector("#welcome").classList.contains("hidden")`);
+  await evalJs(`document.querySelector('#history [data-conversation="${convId}"] .history-open').click(); true`);
+  await waitFor(`!!document.querySelector(".message.assistant .deliver-bar")`);
+};
+await evalJs(
+  `(m => { m._kept = m.deliverables; m.deliverables = [...m.deliverables, ...[1, 2, 3, 4, 5, 6].map(i => ({ path: i + ".txt", name: i + ".txt", size: i }))]; })(__yanState().conversations[0].messages[1]); true`
+);
+await reopenDeliver();
+await shot("archive-deliver-fold.png");
+check("seven deliverables show four and fold the rest", (await deliverRows()) === "4|余 3 件▾");
+await evalJs(`document.querySelector(".message.assistant .deliver-more").click(); true`);
+check("the fold line opens all of them and turns into 收起", (await deliverRows()) === "7|收起▾");
+await reopenDeliver();
+check("an opened fold stays open after leaving and coming back", (await deliverRows()) === "7|收起▾");
+await evalJs(`document.querySelector(".message.assistant .deliver-more").click(); true`);
+check("收起 folds back to four", (await deliverRows()) === "4|余 3 件▾");
+await evalJs(`(m => { m.deliverables = m._kept; delete m._kept; })(__yanState().conversations[0].messages[1]); true`);
+await reopenDeliver();
+// 纸先沉下去、底淡掉，淡完才藏起、清台面
+await sleep(260);
 check(
   "preview closed",
   await evalJs(
@@ -116,18 +143,31 @@ check(
     `[...document.querySelectorAll(".tool-step")].some(s => s.querySelector(".tool-label")?.textContent === "技能" && s.querySelector(".tool-title")?.textContent === "写信")`
   )
 );
-// 人点名：问话以「/写信」开头，那份说明作一件附件随问附上，问话里不留点名
+// 人点名：「＋」→「技能」挑「写信」，那份说明作一件附件置于案上、随问附上
+await evalJs(`[...document.querySelectorAll(".attach-trigger")].find(b => b.offsetParent).click(); true`);
+await waitFor(`!!document.querySelector('[data-menu="skill"]')`);
+await evalJs(`document.querySelector('[data-menu="skill"]').click(); true`);
+await waitFor(`[...document.querySelectorAll(".attach-picker [data-pick] span")].some(s => s.textContent === "写信")`);
 await evalJs(
-  `document.querySelector("#chatInput").value = "/写信 SKILLCMD 给房东"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
+  `[...document.querySelectorAll(".attach-picker [data-pick]")].find(b => b.querySelector("span").textContent === "写信").click(); true`
+);
+await waitFor(
+  `[...document.querySelectorAll(".attachment-list")].some(l => l.offsetParent && !!l.querySelector(".skill-fi") && l.textContent.includes("写信"))`,
+  8000
+);
+await evalJs(
+  `document.querySelector("#chatInput").value = "SKILLCMD 给房东"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
 await waitFor(
   `document.querySelectorAll(".message.assistant").length === 4 && [...document.querySelectorAll(".message.assistant")].at(-1).dataset.status === "complete"`
 );
 const cmdText = await evalJs(`[...document.querySelectorAll(".message.assistant .assistant-block > .markdown")].at(-1).textContent`);
-check("/写信 at the start attaches the skill's instructions and drops the slash name", /CMD\|body:yes\|slash:no/.test(cmdText), cmdText);
+check("a skill picked from + goes with the question as its instructions", /CMD\|body:yes\|slash:no/.test(cmdText), cmdText);
 check(
-  "the question shows the skill as an attachment",
-  await evalJs(`[...document.querySelectorAll(".message.user")].at(-1).textContent.includes("写信.md")`)
+  "the question shows the skill as an attachment, with its pouch and name",
+  await evalJs(
+    `(m => !!m.querySelector(".skill-fi") && m.textContent.includes("写信"))([...document.querySelectorAll(".message.user")].at(-1))`
+  )
 );
 // 存成 Markdown 入卷宗
 await evalJs(
@@ -361,6 +401,56 @@ await evalJs(
 );
 await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="课程/新.txt"]')`, 8000);
 check("files dropped in land in the folder being viewed", existsSync(`${ARCHIVE}/课程/新.txt`));
+// 拖进一个文件夹：照原样建夹、文件落进各层，点开头的跳过；同名的夹另取名，不并进旧的。
+// 真的文件夹拖放合成不出来，这里照浏览器的目录条目接口（webkitGetAsEntry / createReader / readEntries 分批）造一个
+const dropFolder = `(() => {
+  const file = (name, text) => ({ name, isFile: true, isDirectory: false, file: ok => ok(new File([text], name)) });
+  const dir = (name, children) => ({ name, isFile: false, isDirectory: true, createReader: () => { let given = false; return { readEntries: ok => setTimeout(() => ok(given ? [] : ((given = true), children))) }; } });
+  const tree = dir("场景示例", [file("说明.md", "# 说明"), file(".DS_Store", "x"), dir("图", [file("a.txt", "A")]), dir(".git", [file("HEAD", "ref")])]);
+  const event = new Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: { types: ["Files"], files: [], items: [{ kind: "file", webkitGetAsEntry: () => tree }] } });
+  window.dispatchEvent(event);
+  return true;
+})()`;
+await evalJs(dropFolder);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程/场景示例"]')`, 8000).catch(() => {});
+check(
+  "a dropped folder comes in with its structure, skipping dot entries",
+  existsSync(`${ARCHIVE}/课程/场景示例/说明.md`) &&
+    readFileSync(`${ARCHIVE}/课程/场景示例/图/a.txt`, "utf8") === "A" &&
+    !existsSync(`${ARCHIVE}/课程/场景示例/.DS_Store`) &&
+    !existsSync(`${ARCHIVE}/课程/场景示例/.git`) &&
+    !existsSync(`${ARCHIVE}/课程/场景示例/git`)
+);
+// Markdown 里的相对图片照这份文件所在的那一层去卷宗里取（先写好，下一回拖入时卷宗刷新就列出来）
+mkdirSync(`${ARCHIVE}/课程/场景示例/images`, { recursive: true });
+writeFileSync(
+  `${ARCHIVE}/课程/场景示例/images/点 1.png`,
+  Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/eL9GtQAAAABJRU5ErkJggg==", "base64")
+);
+writeFileSync(`${ARCHIVE}/课程/场景示例/读我.md`, "# 读我\n\n![](images/点%201.png)\n\n![](./images/../images/点%201.png)\n");
+writeFileSync(`${ARCHIVE}/课程/场景示例/images/点#2.png`, readFileSync(`${ARCHIVE}/课程/场景示例/images/点 1.png`));
+writeFileSync(`${ARCHIVE}/课程/场景示例/读我.md`, "\n![](images/点%232.png)\n", { flag: "a" });
+await evalJs(dropFolder);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程/场景示例 (2)"]')`, 8000).catch(() => {});
+check("dropping it again makes a second folder instead of merging", existsSync(`${ARCHIVE}/课程/场景示例 (2)/图/a.txt`));
+await evalJs(`document.querySelector('#libraryGrid [data-library-dir="课程/场景示例"]').click(); true`);
+await waitFor(`!!document.querySelector('#libraryGrid [data-library-disk="课程/场景示例/读我.md"] [data-library-action="view"]')`, 8000);
+await evalJs(
+  `document.querySelector('#libraryGrid [data-library-disk="课程/场景示例/读我.md"] [data-library-action="view"]').click(); true`
+);
+await waitFor(`document.querySelectorAll("#fileViewerStage .markdown img").length === 3`, 8000).catch(() => {});
+await waitFor(`[...document.querySelectorAll("#fileViewerStage .markdown img")].every(img => img.complete)`, 8000).catch(() => {});
+check(
+  "relative images in an archived Markdown file load from beside it",
+  await evalJs(
+    `(imgs => imgs.length === 3 && imgs.every(img => img.naturalWidth === 1 && img.src.includes("/api/archive/file")))([...document.querySelectorAll("#fileViewerStage .markdown img")])`
+  ),
+  await evalJs(`[...document.querySelectorAll("#fileViewerStage .markdown img")].map(img => img.src + " " + img.naturalWidth).join(" | ")`)
+);
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+await evalJs(`document.querySelector("#libraryGrid .strip-back").click(); true`);
+await waitFor(`document.querySelector("#libraryCrumbs").textContent === "卷宗›课程"`, 8000);
 const dragCard = (path, dir) =>
   evalJs(
     `(() => { const dt = new DataTransfer(), fire = (type, node) => node.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt })),
@@ -427,7 +517,7 @@ await evalJs(`document.querySelector('.chip-pop.attach-picker [data-dir="课程"
 await waitFor(`!!document.querySelector('.chip-pop.attach-picker .picker-up')`);
 check(
   "clicking a folder in the picker enters it, with a way back up",
-  (await pickerRows()) === "‹,夹:课程/空夹,夹:课程/深度学习,课程/新.txt,课程/成品.txt" &&
+  (await pickerRows()) === "‹,夹:课程/场景示例,夹:课程/场景示例 (2),夹:课程/空夹,夹:课程/深度学习,课程/新.txt,课程/成品.txt" &&
     (await evalJs(`!!document.querySelector(".chip-pop.attach-picker")`))
 );
 await evalJs(

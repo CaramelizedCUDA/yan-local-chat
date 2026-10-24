@@ -14,7 +14,7 @@ function stageVisible() {
 function stageWake() {
   stage.seen = stageVisible();
   if (stage.seen) void stageAttach();
-  else if (stage.session) void stageDetach();
+  else if (stage.session || stage.attached) void stageDetach();
   stageSync();
 }
 function openStage() {

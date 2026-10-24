@@ -62,6 +62,7 @@ class McpClient {
     return tools;
   }
   /** 调一件工具；signal 断了就告诉服务端取消。等连接、重拉工具时已经停了的，不再发出（abort 事件只响一次，事后挂上的听不到） */
+  /** @param {string} tool @param {Record<string, any>} args @param {{ timeout?: number, signal?: AbortSignal }} [options] */
   async call(tool, args, { timeout = CALL_MS, signal } = {}) {
     if (signal?.aborted) throw Error("已停止");
     if (this.toolsChanged) this.tools = await this.listTools();

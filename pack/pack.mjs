@@ -36,6 +36,7 @@ const KEEP = [
   "src/",
   "styles/",
   "prompts/",
+  "skills/",
   "i18n/",
   "vendor/"
 ];

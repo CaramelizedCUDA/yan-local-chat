@@ -1,0 +1,294 @@
+.chat {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+/* 滚动条两侧都留槽：正文列才与下面的输入框同一中线（只留一侧时正文左偏半条滚动条宽）；
+   顶端渐隐 26px，滚到顶栏下的正文淡出而不是被一刀切齐。
+   留神：mask 会让里面 position: fixed 的元素改以滚动区为定位基准；全屏的可视化（.work-expanded）因此在展开时撤掉渐隐，见 90-motion-responsive.css */
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 42px 145px;
+  scrollbar-gutter: stable both-edges;
+  mask-image: linear-gradient(transparent, #000 26px);
+}
+/* 原生细滚动条保持原样，只在它上面铺一层透明的宽命中区；延伸到底边，输入框盖住正文后也仍能抓住。 */
+.chat-scroll-grabber {
+  position: absolute;
+  z-index: 7;
+  top: 55px;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  background: transparent;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+}
+.chat-scroll-grabber.active {
+  pointer-events: auto;
+  cursor: default; /* 与原生滚动条一样，指针不变形 */
+}
+html.work-mode .chat-scroll-grabber {
+  pointer-events: none;
+}
+/* 命中层盖着滑块，原生的 :hover 到不了它；指针在命中层上（或正拖着）时把滑块加深，手感与直接悬在滑块上一致 */
+.main:has(.chat-scroll-grabber.active:hover) .chat-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink-3) 46%, transparent);
+  background-clip: padding-box;
+}
+.chat-inner {
+  width: min(100%, var(--read));
+  margin: 0 auto;
+}
+.chat-title {
+  margin: 2px 0 35px;
+}
+.chat-title h1 {
+  margin: 0 -6px;
+  padding: 0 6px;
+  border-radius: var(--radius-m);
+  outline: 0;
+  cursor: text;
+  font: 500 25px var(--title);
+  letter-spacing: 0.035em;
+}
+.chat-title h1:focus {
+  background: var(--paper-2);
+}
+.chat-title div {
+  position: relative;
+  margin-top: 8px;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--title);
+  letter-spacing: 0.14em;
+}
+.chat-title .chip-pop {
+  top: 22px;
+  font: var(--fs-small) var(--body);
+  letter-spacing: 0;
+}
+.message {
+  margin-bottom: 36px;
+}
+/* 问近其答、答远下问：问句下的复制 / 编辑浮在气泡下方不占位，问与它的答贴近，一轮与下一轮拉开。
+   原先两者都隔 36px，加上问句按钮暗占的一行，问离自己的答反比离上一答远，眼睛会把问句归给上一答 */
+#messages > .message.user {
+  position: relative;
+  margin-bottom: 26px;
+}
+#messages > .message.user > .message-actions {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin: 0 -5px 0 0;
+  padding-top: 3px; /* 用内边距而非外边距：指针从气泡挪到按钮上，中间没有失了 :hover 的缝 */
+}
+#messages > .message.assistant {
+  margin-bottom: 64px;
+}
+.message.is-new {
+  animation: rise 0.32s var(--ease-ink);
+}
+.message.user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+/* 问句的底是叠在纸上的一层淡墨（设计稿/100 甲）：亮色深一档、暗色亮一档，纸随时令变、落在暗色右上的晕里、在旁注那张纸上都照样差出一档。
+   原先实底 paper-2 与主区纸面（纸 + 纹理 + 晕）几乎同色，暗色里问句气泡看不见；落选的：发丝边（问句成了框，长问句像输入框）、实底 paper-3（固定色，碰上晕与时令纸时差时大时小） */
+.user-bubble {
+  max-width: 80%;
+  padding: 12px 16px;
+  border-radius: var(--radius-l) var(--radius-l) var(--radius-s) var(--radius-l);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  white-space: pre-wrap;
+  line-height: 1.7;
+  overflow-wrap: break-word;
+}
+.user-quote {
+  max-width: 80%;
+  margin: 0 6px 6px 0;
+  padding: 2px 0 2px 11px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--ink-3);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: pointer;
+  transition: color var(--dur-quick);
+}
+.user-quote:hover {
+  color: var(--ink-2);
+}
+/* 带画面的引文（游目圈点）：字在上、图在下，随问句靠右，朱线换到右侧。见 设计稿/36 乙 */
+.user-quote.has-shot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 2px 11px 2px 0;
+  border-left: 0;
+  border-right: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  text-align: right;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.user-quote-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* 画面缩略：引文里圈点的、行迹里工具交回的，同一张折角小纸、同一尺寸，点开进图片查看器（带 .fi 压过件图的 18×22） */
+.fi.quote-shot,
+.fi.tool-shot {
+  width: 168px;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  cursor: zoom-in;
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+.fi.quote-shot:hover,
+.fi.quote-shot:focus-visible,
+.fi.tool-shot:hover,
+.fi.tool-shot:focus-visible {
+  outline-color: var(--ink-3);
+}
+.quote-tip {
+  position: fixed;
+  z-index: var(--z-tip);
+  display: flex;
+  align-items: center;
+  padding: 1px 3px 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: var(--fs-note);
+  box-shadow: 0 3px 10px rgba(61, 49, 32, 0.1);
+  animation: rise var(--dur-rise) ease-out;
+  transform: translate(-50%, 0);
+}
+/* 划选浮起的「引用 | 旁注」：方角纸签，两枚只用字、短丝栏相隔，与分段钮同式（设计稿/87 甲）。
+   落选的：顶上一道朱（设计稿/90 甲，像给小块扣了个盖）；字前一粒朱（两个选项各点一粒、或只点一个都怪，见 设计稿/91 丙——那粒给了提示条） */
+:root[data-theme="dark"] .quote-tip {
+  background: var(--paper-3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+.quote-tip button {
+  padding: 3px 9px;
+  border-radius: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-note);
+  font-family: var(--title);
+  letter-spacing: 0.04em;
+}
+.quote-tip button:hover {
+  color: var(--ink);
+}
+.quote-tip-sep {
+  width: 1px;
+  height: 11px;
+  margin: 0 1px;
+  background: var(--line);
+}
+.composer-quote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 2px 10px;
+  padding: 4px 4px 4px 11px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--ink-3);
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  animation: rise var(--dur-rise) ease-out;
+}
+.composer-quote-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.composer-quote-shot:empty {
+  display: none;
+}
+.composer-quote-text {
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.composer-quote-close {
+  padding: 0 4px;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.6;
+  opacity: 0.7;
+}
+.composer-quote-close:hover {
+  color: var(--ink);
+  opacity: 1;
+}
+.message.flash {
+  animation: quoteFlash 1.2s ease-out;
+}
+@keyframes quoteFlash {
+  0% {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+/* 正文与行迹里说的话同一个字号（中号）：过程与结论靠墨色深浅和时间线那道竖线分，不靠大小——
+   一段话从正文归进行迹时只是墨色变淡，不缩放、不重排（见 设计稿/39） */
+.assistant-block {
+  font-family: var(--title);
+  font-size: 15.5px;
+  line-height: 1.85;
+}
+/* 楷与仿宋比宋清瘦，回复放大半号才不费眼 */
+:root[data-font="kai"] .assistant-block,
+:root[data-font="fangsong"] .assistant-block {
+  font-size: 16px;
+}
+.message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--title);
+  letter-spacing: 0.12em;
+}
+.message-actions {
+  display: flex;
+  gap: 2px;
+  margin: 9px 0 0 -5px;
+  opacity: 0;
+  transition: var(--dur-quick);
+}
+.message.user .message-actions {
+  margin-right: -5px;
+}
+.message:hover .message-actions {
+  opacity: 1;
+}
+.message.assistant:not([data-status="streaming"]) .message-actions {
+  opacity: 0.62;
+}
+.message.assistant:hover .message-actions {
+  opacity: 1;
+}

@@ -25,7 +25,8 @@ function renderChips(work) {
 }
 // 附件签「＋」：展开后二选一——外件（本机文件）或卷宗（已收入的文件，点选即置于案上，在这张菜单里接着选）
 function openAttachMenu(anchor) {
-  const total = libraryTotal();
+  const total = libraryTotal(),
+    skills = skillList().filter(skill => !skill.hidden).length;
   openMenu(
     anchor,
     [
@@ -36,10 +37,29 @@ function openAttachMenu(anchor) {
         note: total ? t`${total} 件` : t("尚空"),
         keep: true,
         run: (button, pop) => (total ? renderArchivePicker(pop, anchor) : toast(t("卷宗尚空")))
+      },
+      {
+        id: "skill",
+        label: t("技能"),
+        note: skills ? t`${skills} 份` : t("尚空"),
+        keep: true,
+        run: (button, pop) => (skills ? renderSkillPicker(pop, anchor) : toast(t("尚无技能，可在设置 → 技能里写一份")))
       }
     ],
     { align: "left", kind: "attach" }
   );
+  // 刚放进技能目录的：下回点开就列得出
+  void refreshSkills();
+}
+// 选件的清单换了内容、高随之变：重新贴一次锚点（向上翻的，底边贴住锚点）
+/** @param {HTMLElement} pop @param {Element} anchor */
+function settlePickerPop(pop, anchor) {
+  const rect = anchor.getBoundingClientRect(),
+    height = pop.offsetHeight;
+  if (pop.classList.contains("drop-up") || innerHeight - rect.bottom - 6 < height + 10) {
+    pop.classList.add("drop-up");
+    pop.style.top = `${Math.max(10, rect.top - 6 - height)}px`;
+  }
 }
 // 卷宗选件：与卷宗页一样逐层看——先列这一层的夹、再列件，点夹即进、顶上一行「‹」回上一层，点一件即置于案上；
 // 一旦查找，就跨各层平铺，件旁注上它所在的夹，查找也认夹名
@@ -58,15 +78,6 @@ function renderArchivePicker(pop, anchor) {
     const count = files.filter(file => file.path.startsWith(`${dir.path}/`)).length;
     return `<button type="button" class="picker-dir" data-dir="${escapeHtml(dir.path)}" title="${t`打开 ${escapeHtml(dir.path)}`}"><span>${escapeHtml(dir.name)}<i aria-hidden="true">›</i></span><small>${count ? t`${count} 件` : t("空")}</small></button>`;
   };
-  // 清单的高随层而变：每画一回重新贴一次锚点（向上翻的，底边贴住锚点）
-  const place = () => {
-    const rect = anchor.getBoundingClientRect(),
-      height = pop.offsetHeight;
-    if (pop.classList.contains("drop-up") || innerHeight - rect.bottom - 6 < height + 10) {
-      pop.classList.add("drop-up");
-      pop.style.top = `${Math.max(10, rect.top - 6 - height)}px`;
-    }
-  };
   const paint = () => {
     const query = input.value.trim().toLowerCase();
     let html;
@@ -83,7 +94,8 @@ function renderArchivePicker(pop, anchor) {
     }
     list.innerHTML = html;
     list.scrollTop = 0;
-    place();
+    // 清单的高随层而变：每画一回重新贴一次锚点
+    settlePickerPop(pop, anchor);
   };
   paint();
   input.addEventListener("input", paint);
