@@ -1,6 +1,6 @@
 # 代码结构与开发
 
-[← 文档目录](README.md)
+[← 文档目录](README.md) · [English](en/development.md)
 
 零依赖、无转译：源码分成多段，桥接在请求 `/support.js`（`prompts/` 在前、`src/` 在后）与 `/app.css` 时按路径顺序即时拼接（子目录就地展开）（ETag 取各段的大小与修改时间），改一段刷新即生效；不落成文件，仓库里没有拼好的产物。
 

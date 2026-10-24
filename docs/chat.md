@@ -1,6 +1,6 @@
 # 对谈
 
-[← 文档目录](README.md)
+[← 文档目录](README.md) · [English](en/chat.md)
 
 ## 会话与输入
 

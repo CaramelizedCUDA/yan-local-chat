@@ -31,6 +31,7 @@ const KEEP = [
   "preview-runtime.js",
   "start.cmd",
   "README.md",
+  "README.en.md",
   "LICENSE",
   "server/",
   "src/",

@@ -1,6 +1,6 @@
 # 启动与运行
 
-[← 文档目录](README.md)
+[← 文档目录](README.md) · [English](en/start.md)
 
 零依赖：仅需 Node.js 18 或更高版本，无需安装 npm 包，所有前端库随项目本地分发，不加载在线资源
 
