@@ -1364,6 +1364,7 @@ var YAN_EN = {
   "输入框留空时，Enter 即准许": "With the input empty, Enter allows it",
   "Enter 准许": "Enter to allow",
   准许: "Allow",
+  翻看: "Read trail",
   "守：{0} 待复核": "Keep: {0} needs recheck",
   "守：{0}": "Keep: {0}",
   测试不过: "test failing",

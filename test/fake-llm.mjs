@@ -670,6 +670,40 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // HELPERREAD：主模型差一名帮手跑一条指令再回报，回报到了翻看它的经过（helper 的 read），照所见收尾
+      if (firstUser.includes("HELPERREAD")) {
+        const say = text => sse(res, [delta({ content: text }), delta({}, { usage: { total_tokens: 5 } })]),
+          call = (id, name, args) =>
+            sse(res, [
+              delta({ tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] }),
+              delta({}, { usage: { total_tokens: 5 } })
+            ]);
+        if (firstTurn && !toolResults.length) return call("call_hr0", "delegate", { title: "翻活", task: "READSUB：跑一条指令再回报。" });
+        if (!helperReports.length) return say("等回报。");
+        const trail = toolResults.map(m => String(m.content)).find(text => text.startsWith("第 1 趟"));
+        if (!trail) return call("call_hr1", "helper", { helper: "翻活", read: true });
+        return say(
+          `HELPERREAD done|cmd:${/echo READ-OUT/.test(trail) ? "yes" : "no"}|out:${/^\s+READ-OUT/m.test(trail) ? "yes" : "no"}|said:${trail.includes("【帮手】先跑一条") ? "yes" : "no"}`
+        );
+      }
+      // 帮手那一侧：先说一句、跑一条指令，再回报
+      if (firstUser.includes("READSUB")) {
+        if (toolResults.length) return sse(res, [delta({ content: "跑完了。" }), delta({}, { usage: { total_tokens: 3 } })]);
+        return sse(res, [
+          delta({ content: "先跑一条。" }),
+          delta({
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_rs0",
+                type: "function",
+                function: { name: "run_command", arguments: JSON.stringify({ command: "echo READ-OUT" }) }
+              }
+            ]
+          }),
+          delta({}, { usage: { total_tokens: 3 } })
+        ]);
+      }
       // 续派的那一趟（帮手那一侧）：它的历史里该有上一趟的命与回报
       if (typeof lastUser === "string" && lastUser.includes("AGAIN-TEXT"))
         return sse(res, [

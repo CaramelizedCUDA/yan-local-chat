@@ -89,7 +89,7 @@
  * @property {boolean} [full] 输出看全 / 只看前 10 行
  * @property {boolean} [folded] 差遣卡片整张折起
  * @property {SubAgent} [sub]
- * @property {"tell"|"resume"|"stop"} [mode] 传话一步做的是哪样：递话、续派、叫停
+ * @property {"tell"|"resume"|"stop"|"read"} [mode] 传话一步做的是哪样：递话、续派、叫停、翻看
  * @property {string} [ref] 传话、叫停说到的那一趟（步骤 id）
  * @property {string} [noteId] 传话递去的那句话在帮手时间线里的步骤 id
  * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }} [relay] 作答途中回来的回报（relay_note）是谁

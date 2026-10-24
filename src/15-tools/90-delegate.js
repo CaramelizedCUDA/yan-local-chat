@@ -25,7 +25,7 @@ defineTool({
     t`差遣「${String(step.title || "").slice(0, 40)}」→ ${step.status === "interrupted" ? t`中辍（${step.result || ""}），等用户续上` : step.result || step.status}${subChangedPaths(step).length ? t`，改了 ${subChangedPaths(step).slice(0, 8).join("、")}` : ""}`
 });
 // 给帮手递话：正做着的，话进它的收件口，说到落点时读到（同补言，不掐断）；已收工的即续派，带着先前的经过接着做。
-// 叫停只停正做着的那一个，已做的照未完成回报。这一步在行迹里也是一枚签（续派 / 传话 / 叫停），点开是那名帮手
+// 叫停只停正做着的那一个，已做的照未完成回报；翻看只读它的经过（见 helperTrail）。这一步在行迹里也是一枚签（续派 / 传话 / 叫停 / 翻看），点开是那名帮手
 defineTool({
   name: "helper",
   group: "delegate",
@@ -107,6 +107,19 @@ function tellHelper(step, args, ctx) {
       display: "没有这名帮手"
     });
   step.title = box?.title || past?.title || name;
+  if (args.read === true) {
+    step.mode = "read";
+    const runs = helperRuns(ctx.conversation).filter(run => run !== step && run.title === name),
+      key = runs.length ? helperKey(runs.at(-1)) : "",
+      mine = helperRuns(ctx.conversation).filter(run => run !== step && helperKey(run) === key);
+    if (!mine.length) return gone();
+    step.ref = mine.at(-1).id;
+    return {
+      ok: true,
+      content: clipForModel(helperTrail(mine), 30000, { tail: true, hint: t("中间的经过从略") }),
+      display: `${mine.length} 趟`
+    };
+  }
   if (stop) {
     step.mode = "stop";
     if (!box) return gone();
@@ -147,6 +160,39 @@ function tellHelper(step, args, ctx) {
   step.mode = "resume";
   launchHelper(step, { title: past.title, task: text }, ctx, past);
   return { ok: true, background: true, content: prompt("delegate.resumed", { title: past.title }), display: "后台进行中" };
+}
+// 翻看帮手的经过：回报是它的结论，要核对（跑了哪些指令、出了什么）就看行迹。照差遣面板那条时间线写：领的命、它说的话与做的步骤按先后穿插，
+// 指令带输出。工具结果的原文不存，别的步骤只有签上的字；还在做的也翻得到，做到哪写到哪
+/** @param {Step[]} runs 同一名帮手的几趟，按先后 */
+function helperTrail(runs) {
+  return runs
+    .map((run, i) => {
+      const sub = /** @type {SubAgent} */ (run.sub),
+        content = String(sub.content || ""),
+        lines = [t`第 ${i + 1} 趟（${run.status === "running" ? t("还在做") : stepText(run.result) || run.status}）· 领命：${clipForModel(sub.task, 1500)}`],
+        said = text => {
+          if (text.trim()) lines.push(t`【帮手】${clipForModel(text.trim(), 1500, { tail: true })}`);
+        };
+      let from = 0;
+      for (const step of sub.steps) {
+        if (isFold(step)) continue;
+        const at = Math.min(Math.max(from, Number(step.at) || 0), content.length);
+        said(content.slice(from, at));
+        from = at;
+        if (step.name === "helper_note") {
+          lines.push(t`【传话】${step.note || step.title || ""}`);
+          continue;
+        }
+        const digest = TOOLS.get(step.name)?.digest;
+        lines.push(
+          `· ${typeof digest === "function" ? digest(step) : `${step.name} ${String(step.title || "").slice(0, 200)} → ${step.status === "skipped" ? t("用户跳过") : stepText(step.result) || step.status}`}`
+        );
+        if (step.output) lines.push(clipForModel(String(step.output).trim(), 1200, { tail: true }).replace(/^/gm, "  "));
+      }
+      said(content.slice(from));
+      return lines.join("\n");
+    })
+    .join("\n\n");
 }
 // 差遣当即回一句「已开工」，主模型这一轮随即结束、照常往下走；帮手在后台做，做完回报寄给这段对话（见 mailReport）
 /**
@@ -650,14 +696,14 @@ function syncDelegateCard(el, step, prev) {
   }
   return true;
 }
-// 传话、叫停、续派的签：与差遣同一种签，点开是那名帮手——传话开到递去的那句话，续派开的是这一趟
+// 传话、叫停、翻看、续派的签：与差遣同一种签，点开是那名帮手——传话开到递去的那句话，续派开的是这一趟
 /** @param {Step} step */
 function helperKind(step) {
   // 内里用中文的种类名（比对、data-kind 都认它），画到签上时才照语言换
   if (step.sub) return "续派";
-  if (step.mode) return step.mode === "stop" ? "叫停" : "传话";
+  if (step.mode) return { stop: "叫停", read: "翻看" }[step.mode] || "传话";
   const parsed = parseToolArguments(step.arguments);
-  return parsed.ok && parsed.args.stop === true ? "叫停" : "传话";
+  return parsed.ok && parsed.args.read === true ? "翻看" : parsed.ok && parsed.args.stop === true ? "叫停" : "传话";
 }
 /** @param {Step} step */
 function helperStepHtml(step) {

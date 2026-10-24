@@ -61,4 +61,23 @@ check(
   "nothing is left running once the helper is done",
   await evalJs(`!__yanState().conversations.some(c => c.messages.some(m => m.status === "streaming"))`)
 );
+
+// 翻看：主模型只拿到回报，要核对就翻帮手的经过——它说的话、跑的指令与输出按先后穿插；行迹里一枚「翻看」签
+const readText = "HELPERREAD 派个帮手再翻它的经过",
+  readConv = `__yanState().conversations.find(c => c.messages[0]?.content === ${JSON.stringify(readText)})`;
+await evalJs(
+  `document.querySelector("#newChat").click(); setTimeout(() => { document.querySelector("#welcomeInput").value = ${JSON.stringify(readText)}; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); }, 300); true`
+);
+await waitFor(
+  `${readConv}?.messages.at(-1)?.content.includes("HELPERREAD done") && ${readConv}.messages.at(-1).status === "complete"`,
+  25000
+).catch(() => {});
+const read = await evalJs(
+  `(c => ({ text: c?.messages.at(-1).content, card: document.querySelector('#messages .tool-step-delegate[data-kind="翻看"]')?.textContent || "" }))(${readConv})`
+);
+check(
+  "the main model reads a helper's trail: its words, the command and its output",
+  read.text?.includes("HELPERREAD done|cmd:yes|out:yes|said:yes") && read.card.includes("1 趟"),
+  JSON.stringify(read)
+);
 close();
