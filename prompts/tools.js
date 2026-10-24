@@ -101,7 +101,7 @@
               when: { type: "string", description: "只在什么情形下须成立（文字说明，不是表达式）；空串撤去" },
               needs: { type: "array", items: { type: "string" }, description: "前提的 id，可跨模块" },
               any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
-              in: { type: "string", description: "所属模块的 id：一项拆开还有许多步即作模块，细项写 in 指向它；不写即全局，至多两层" },
+              in: { type: "string", description: "所属模块的 id：一项拆开还有许多步即作模块，细项写 in 指向它；不写即全局" },
               anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },
               state: {
                 type: "string",
@@ -116,12 +116,12 @@
               keep: {
                 type: "boolean",
                 description:
-                  "守：一直要守住的条件，不是要交付一次的结论——用户定的界限（「只用某几台机器」），或往下做不能破的（原有测试要过、保持零依赖）。能对上某类动作的写 on 作钩子；余下能用指令验的挂 test: 或 cmd:（现成没有可写一条），动过手的那一答收尾前重查，不过即拦下。不标进度，不挂前提也不作前提，不守了给 removed"
+                  "守：一直要守住的条件，不是要交付一次的结论——用户定的界限（「只用某几台机器」），或往下做不能破的（原有测试要过、保持零依赖）。能对上某类动作的写 on 作钩子；余下能用指令验的挂 test: 或 cmd:（现成没有可写一条），动过手的那一答收尾前重查，不过即拦下"
               },
               on: {
                 type: "string",
                 description:
-                  "守的钩子：一条正则，比将要做的那一步（指令原文、文件路径、网址或工具名）。对得上即动手前先跑这条守挂的 test:，不过即不做——将要做的经环境变量 YAN_TOOL（工具名）、YAN_TARGET 交给它；没挂 test: 的对上就不做；空串撤去"
+                  "守的钩子：一条正则，比将要做的那一步（指令原文、文件路径、网址或工具名），对上即动手前把关：挂了 test: 的先跑它，不过即不做（将要做的经环境变量 YAN_TOOL（工具名）、YAN_TARGET 交给它）；没挂的就不做；空串撤去"
               },
               ask: {
                 type: "boolean",
