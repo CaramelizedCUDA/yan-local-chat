@@ -4,7 +4,7 @@
 //   url(config)               对话发往哪
 //   headers(config, body)     带什么头（可以是异步的：ChatGPT 订阅的令牌要换新；对话时 body 是已换好的请求体）
 //   request(payload, config)  OpenAI 格式的请求体换成这家的
-//   stream(model)             这家的事件流换回 chat.completions 分块的 TransformStream；不给即原样透传
+//   stream(model)             这家的事件流换回 chat.completions 分块的 TransformStream（用 sse.js 的骨架，只写一个事件换成什么）；不给即原样透传
 //   modelsUrl(config) / models(config)  列模型：给地址的照通行的 { data: [...] } 读，自有说法的自己列
 //   levels(config)            这家认的思考档位有定表的：页面探档位时照表回，不必真发一趟
 //   needsBaseUrl              是否要填 Base URL（ChatGPT 订阅不用）
@@ -41,7 +41,8 @@ async function upstreamError(response) {
 /** @param {{ home: () => string }} options 存储根（ChatGPT 订阅的登录凭证放在那里） */
 module.exports = function createModel({ home }) {
   const chatgpt = require("./chatgpt.js")({ home });
-  const PROVIDERS = { openai, anthropic: anthropic.provider, chatgpt: chatgpt.provider };
+  // 硅基流动是 OpenAI 兼容的，设置里单列一档只为标出名字、填好地址；它与别家不同的几处在 openai.js 里按 api 认
+  const PROVIDERS = { openai, siliconflow: openai, anthropic: anthropic.provider, chatgpt: chatgpt.provider };
   // 接口类型由页面定好了送来（设置里选的，旧配置没写的页面按地址认）；没写的当 OpenAI 兼容
   const providerOf = config => PROVIDERS[config.api] || PROVIDERS.openai;
 

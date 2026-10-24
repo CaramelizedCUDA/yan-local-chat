@@ -2,6 +2,7 @@
 // 由 server/work/index.js 装配，落点、沙箱、锁与报错的写法都从那里传进来（work）
 "use strict";
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { jsonRoute, requestSignal } = require("../http.js");
 const { fetchPublicResponse, readLimitedBytes } = require("../web.js");
@@ -12,6 +13,9 @@ const writeTextAtomic = require("./atomic.js");
 // 读一回最多交出多少字；覆盖写时捎回原文的长度，与页面留存写入内容的长度（src/15-tools/21-files.js 的 WRITTEN_KEEP_CHARS）一致
 const WORK_FILE_LIMIT = 200000,
   PREVIOUS_KEEP_CHARS = 4000;
+// 文件指纹：读、写、改都捎回一枚，页面记在那一步上；再写、再改时带上自己最后见到的那枚（seen），在锁里与现状比——
+// 对不上就是读过之后被别人（别的帮手、主模型、编辑器、指令）改过。按内容算，改了又改回去的不算
+const fingerprint = buffer => crypto.createHash("sha1").update(buffer).digest("hex").slice(0, 16);
 
 module.exports = function createFiles(work) {
   const { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile } = work;
@@ -23,7 +27,7 @@ module.exports = function createFiles(work) {
     if (file === workdir) throw Error("请给出文件名");
     const content = String(body.content ?? "");
     if (Buffer.byteLength(content) > 32 * 1024 * 1024) throw Error("单个文件不超过 32 MB");
-    const release = await lockFile(workdir, file, signal);
+    const release = await lockFile(file, signal);
     try {
       const existing = await fs.promises.stat(file).catch(() => null);
       if (existing?.isDirectory()) throw Error(`${body.path} 是目录，不能作为文件写入`);
@@ -35,6 +39,10 @@ module.exports = function createFiles(work) {
       // 这一答（或这名帮手）没读过它就整份覆盖：先拦下，请它读了再写——最危险的整份覆盖不该比 edit_file 更不设防。空文件不拦
       if (body.unseen === true && previous?.length)
         throw Error(`${body.path} 已存在（${previous.length} 字节），整份覆盖前请先 read_file 看过；只改几处用 edit_file`);
+      // 读过之后被别人改过：拿旧印象整份写回，别人的改动就悄悄没了。不写，回现状的指纹，页面据此查是谁改的、请它重读
+      // 读后被清空也算被改过（空的也有指纹）：不比长度
+      if (typeof body.seen === "string" && previous && fingerprint(previous) !== body.seen)
+        return { stale: true, path: shownPath(workdir, file), sig: fingerprint(previous) };
       const prior = previous ? decodeText(previous) : null,
         previousText = prior?.text ?? "",
         previousLines = previousText ? countLines(previousText) : 0;
@@ -58,6 +66,7 @@ module.exports = function createFiles(work) {
         ...(prior?.encoding === "gbk" ? { converted: "gbk" } : {}),
         previousLines,
         ...counts,
+        sig: fingerprint(output),
         previous:
           previousText.length > PREVIOUS_KEEP_CHARS
             ? `${previousText.slice(0, PREVIOUS_KEEP_CHARS)}\n…（其后 ${previousText.length - PREVIOUS_KEEP_CHARS} 字未留存）`
@@ -91,7 +100,8 @@ module.exports = function createFiles(work) {
       offset,
       shown: slice.length,
       text,
-      encoding: decoded.encoding
+      encoding: decoded.encoding,
+      sig: fingerprint(buffer)
     };
   }, failed);
   // ---- edit_file：精确文本替换。old 必须在文件里唯一出现（或显式 replace_all）；文件是 CRLF 时把片段的换行也换成 CRLF 再匹配
@@ -106,7 +116,7 @@ module.exports = function createFiles(work) {
     if (file === workdir) throw Error("请给出文件名");
     if (!oldText) throw Error("old 不能为空；新建文件请用 write_file");
     if (oldText === newText) throw Error("old 与 new 相同，无需修改");
-    const release = await lockFile(workdir, file, signal);
+    const release = await lockFile(file, signal);
     try {
       const stat = await fs.promises.stat(file).catch(() => null);
       if (!stat) throw Error(`文件不存在：${body.path}${await missingHint(workdir, file, strictBox(body))}`);
@@ -143,13 +153,17 @@ module.exports = function createFiles(work) {
       await writeTextAtomic(file, output, signal).catch(error => {
         throw Error(describeFsError(error, String(body.path)));
       });
-      const line = source.slice(0, source.indexOf(needle)).split(/\r?\n/).length;
+      const line = source.slice(0, source.indexOf(needle)).split(/\r?\n/).length,
+        before = fingerprint(raw);
+      // 读过之后被别人改过、要改的这段原文却还对得上：照改（原文比对已兜住这一处），捎回改前的指纹，页面据此说是谁动过、别处的现状它没看过
       return {
         path: shownPath(workdir, file),
         replaced: replaceAll ? count : 1,
         line,
         lines: countLines(result),
-        bytes: output.length
+        bytes: output.length,
+        sig: fingerprint(output),
+        ...(typeof body.seen === "string" && before !== body.seen ? { drift: before } : {})
       };
     } finally {
       release();
@@ -204,16 +218,21 @@ module.exports = function createFiles(work) {
     }
     const { buffer, truncated } = await readLimitedBytes(response, DOWNLOAD_LIMIT);
     if (truncated) throw Error(`文件超过 ${DOWNLOAD_LIMIT / 1048576} MB`);
-    const release = await lockFile(workdir, target, signal);
+    const release = await lockFile(target, signal);
     try {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       const extension = path.extname(target),
         stem = target.slice(0, target.length - extension.length);
+      // 挑名与落盘是一步：独占创建（wx），名字被占了（别的下载、别处刚写的）就顺延到下一个序号，不会两份落进同一个名字
       let file = target;
-      for (let n = 2; fs.existsSync(file); n++) file = `${stem} (${n})${extension}`;
-      await fs.promises.writeFile(file, buffer).catch(error => {
-        throw Error(describeFsError(error, shownPath(workdir, file)));
-      });
+      for (let n = 2; ; n++)
+        try {
+          await fs.promises.writeFile(file, buffer, { flag: "wx" });
+          break;
+        } catch (error) {
+          if (error.code !== "EEXIST") throw Error(describeFsError(error, shownPath(workdir, file)));
+          file = `${stem} (${n})${extension}`;
+        }
       return {
         path: shownPath(workdir, file),
         bytes: buffer.length,

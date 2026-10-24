@@ -25,6 +25,10 @@ const requestJobs = new JobMap();
 // 各段对话在后台做着的帮手（对话 id → 一名一个收件口，见 90-delegate.js）。帮手不随派它的那一答收尾：主答只剩等待就收尾，
 // 回报到了另起一答。所以它与作答一样要攥锁防冻、要报到（别处不该把这段当成没人管）
 const crews = new JobMap();
+// 帮手做着时的累计用量（帮手消息 → 那份 tally.usage），只给差遣面板看。不挂到 sub.usage 上：runRounds 拿它当这一轮的用量槽，
+// 累计数挂上去会被当成这一轮的再加一遍、一轮翻一倍（10-14、10-15 两回耗墨涨到 10¹⁴ 以上）
+/** @type {WeakMap<SubAgent, Record<string, number>>} */
+const liveHelperUsage = new WeakMap();
 // 正等着结束的后台指令（步骤 id → 那个挂着的请求，见 20-command.js 的 watchBackground）：结束了要叫醒模型，页面不能被冻住
 /** @type {Map<string, AbortController>} */
 const bgWatches = new Map();
@@ -32,7 +36,7 @@ const bgWatches = new Map();
 let awakeHold = null;
 function holdAwake() {
   const busy = requestJobs.size || crews.size || bgWatches.size;
-  if (busy && !awakeHold && globalThis.navigator?.locks) {
+  if (busy && !awakeHold && navigator.locks) {
     const hold = { release: () => {} },
       done = new Promise(resolve => (hold.release = () => resolve(null)));
     awakeHold = hold;

@@ -34,3 +34,13 @@ if (location.protocol === "file:") {
     if (localStorage.getItem("yan-sidebar") === "collapsed" && innerWidth > 760) html.dataset.sidebar = "collapsed";
   } catch {}
 })();
+// 界面语言：设置里选的为准，没选过的随浏览器（中文系的用中文）。英文表只在要用时载入，赶在 support.js 之前（见 src/00-i18n.js）
+(() => {
+  let language = "";
+  try {
+    language = JSON.parse(localStorage.getItem("yan-chat-v1") || "{}").settings?.language || "";
+  } catch {}
+  if ((language || (/^zh/i.test(navigator.language || "") ? "zh" : "en")) !== "en" || location.protocol === "file:") return;
+  document.documentElement.lang = "en";
+  document.write('<script src="./i18n/en.js"></script>');
+})();

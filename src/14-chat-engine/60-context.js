@@ -18,15 +18,15 @@ function compactable(c, before = null) {
 async function compactContext(c, { auto = false, before = null, profile = activeProfile(), signal = null } = {}) {
   const source = compactable(c, before);
   if (source.filter(m => m.role === "user").length < (before ? 1 : 2)) {
-    if (!auto) toast("对话还短，不必压缩");
+    if (!auto) toast(t("对话还短，不必压缩"));
     return false;
   }
   if (!profile || quotaExhausted(profile)) {
-    if (!auto) toast("没有可用的模型");
+    if (!auto) toast(t("没有可用的模型"));
     return false;
   }
   if (compactingIds.has(c.id)) {
-    if (!auto) toast("正在撮要");
+    if (!auto) toast(t("正在撮要"));
     return false;
   }
   // 摘要先在外面生成，成了再一次性插进分隔（生成期间只有页面上一行「正在压缩」，不进消息、不落盘）：
@@ -40,22 +40,22 @@ async function compactContext(c, { auto = false, before = null, profile = active
   try {
     // 途中递进来的补言、回报按到达的位置排进这一答（见 answerParts），摘要才分得清先后；问里的引文照送给模型的样子，附件记个名
     const clip = text => String(text || "").slice(0, 6000),
-      attached = m => (m.attachments?.length ? `（附件：${m.attachments.map(file => file.name).join("、")}）` : ""),
+      attached = m => (m.attachments?.length ? t`（附件：${m.attachments.map(file => file.name).join("、")}）` : ""),
       transcript = (
         await Promise.all(
           source.map(async m =>
             m.role === "user"
-              ? [`用户：${clip(quotedText(m))}${attached(m)}`]
+              ? [t`用户：${clip(quotedText(m))}${attached(m)}`]
               : [
                   ...(await answerForApi(m)).map(entry =>
-                    entry.role === "user" ? `途中递来：${clip(entryText(entry))}` : `助手：${clip(entry.content)}`
+                    entry.role === "user" ? t`途中递来：${clip(entryText(entry))}` : t`助手：${clip(entry.content)}`
                   ),
                   stepsDigest(m)
                 ].filter(Boolean)
           )
         )
       ).flat();
-    if (earlier) transcript.unshift(`更早的前文（上一份摘要）：${earlier}`);
+    if (earlier) transcript.unshift(t`更早的前文（上一份摘要）：${earlier}`);
     // 转写可能很长、模型可能先思考再写：超时给足五分钟。这段对话开了思考档位的，压缩时降到最低一档：摘要用不着深想
     const timeout = AbortSignal.timeout(300000),
       summary = await summarize(
@@ -75,7 +75,7 @@ async function compactContext(c, { auto = false, before = null, profile = active
     saveStore();
     compactingIds.delete(c.id);
     renderConversation();
-    toast(auto ? "上下文已重，前文已自动撮要" : "前文已撮要");
+    toast(auto ? t("上下文已重，前文已自动撮要") : t("前文已撮要"));
     return true;
   } catch (error) {
     compactingIds.delete(c.id);
@@ -83,8 +83,8 @@ async function compactContext(c, { auto = false, before = null, profile = active
     // 作答途中压的，用户点了停止：不必再说压缩失败
     if (signal?.aborted) return false;
     console.warn("压缩失败", error);
-    const reason = error?.name === "TimeoutError" ? "模型五分钟内未写出撮要" : friendlyError(String(error?.message || error));
-    toast(`撮要未成：${reason.slice(0, 80)}`);
+    const reason = error?.name === "TimeoutError" ? t("模型五分钟内未写出撮要") : friendlyError(String(error?.message || error));
+    toast(t`撮要未成：${reason.slice(0, 80)}`);
     return false;
   } finally {
     compactingIds.delete(c.id);
@@ -98,21 +98,11 @@ async function summarize(profile, ask, signal, reasoning = "") {
     reasoning: reasoning ? "low" : ""
   });
   if (!response.ok) throw Error(await describeResponseError(response));
-  /** @type {Message} */
-  const temp = { id: `summary-${uid()}`, role: "assistant", content: "", timestamp: now() };
-  if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, temp);
-  else {
-    const data = await response.json();
-    temp.content = extractContent(data);
-    temp.reasoning = normalizeContent(data?.choices?.[0]?.message?.reasoning_content ?? data?.choices?.[0]?.message?.reasoning);
-    temp.usage = data.usage;
-  }
-  spendTokens(profile, Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]));
-  renderQuota();
+  const temp = await readAside(response, profile, ask);
   const summary = String(temp.content || "")
     .replace(/<think>[\s\S]*?<\/think>/g, "")
     .trim();
-  if (!summary) throw Error(temp.reasoning ? "模型只写了思考、没写出撮要（输出被上限截断）" : "模型没有写出撮要");
+  if (!summary) throw Error(temp.reasoning ? t("模型只写了思考、没写出撮要（输出被上限截断）") : t("模型没有写出撮要"));
   return summary;
 }
 // 分隔上的摘要进历史：一问一答的样子，各家接口都认（说法见 prompts/assistant.js 的 summary）
@@ -181,16 +171,16 @@ const plainContent = content =>
   typeof content === "string" ? content : Array.isArray(content) ? content.map(part => part?.text || "").join("\n") : "";
 // 往来的转写：工具结果与调用参数按预算逐级截短，仍放不下就从最早的删起（上一份笔记留着）
 function foldTranscript(region, budget) {
-  const clip = (text, n) => (text.length > n ? `${text.slice(0, n)}…（余 ${text.length - n} 字略）` : text);
+  const clip = (text, n) => (text.length > n ? t`${text.slice(0, n)}…（余 ${text.length - n} 字略）` : text);
   let lines = [];
   for (const limit of [2000, 800, 300]) {
     lines = region.map(m => {
-      if (m.role === "tool") return `结果：${clip(plainContent(m.content), limit)}`;
-      if (m.role === "user") return `用户：${clip(plainContent(m.content), 4000)}`;
+      if (m.role === "tool") return t`结果：${clip(plainContent(m.content), limit)}`;
+      if (m.role === "user") return t`用户：${clip(plainContent(m.content), 4000)}`;
       const said = plainContent(m.content).trim();
       return [
-        said && `你：${clip(said, 4000)}`,
-        ...(m.tool_calls || []).map(c => `调用 ${c.function?.name}：${clip(String(c.function?.arguments || ""), limit / 4)}`)
+        said && t`你：${clip(said, 4000)}`,
+        ...(m.tool_calls || []).map(c => t`调用 ${c.function?.name}：${clip(String(c.function?.arguments || ""), limit / 4)}`)
       ]
         .filter(Boolean)
         .join("\n");
@@ -295,7 +285,7 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
     history.splice(
       head,
       cut - head,
-      { role: "assistant", content: `［工作笔记］\n${note}` },
+      { role: "assistant", content: t`［工作笔记］\n${note}` },
       { role: "user", content: prompt("assistant.folded") }
     );
     if (mark) Object.assign(mark, { status: "done", note, fold: { ...mark.fold, to: note.length } });
@@ -307,7 +297,7 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
     if (signal.aborted) throw error;
     // 没压成：送出前的那次照原样发，也许还放得下；接口已回说放不下的，由 readReply 把原来的错交回去
     console.warn("轮内压缩失败", error);
-    if (mark) Object.assign(mark, { status: "error", result: "未撮成" });
+    if (mark) Object.assign(mark, { status: "error", result: t("未撮成") });
     return false;
   } finally {
     overrides.onFold?.(false);

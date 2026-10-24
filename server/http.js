@@ -169,7 +169,10 @@ async function sendFile(req, res, file, { name, download = false }) {
     "Content-Disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(name)}`
   });
   if (req.method === "HEAD" || !size) return res.end();
-  fs.createReadStream(file, { start, end }).pipe(res);
+  // 读到一半文件没了（预览途中被删、被移走）：头已发出，只能掐断这条连接，不然页面那头一直等着
+  fs.createReadStream(file, { start, end })
+    .on("error", () => res.destroy())
+    .pipe(res);
 }
 
 // 交给 Windows 的默认程序打开一件文件（预览认不得、或只抽得出结构时，看原样）。

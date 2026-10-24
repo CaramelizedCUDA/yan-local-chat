@@ -4,8 +4,8 @@ const HISTORY_TEXT_CHARS = 3000;
 function attachmentExcerpt(text, name, label) {
   const value = String(text || "");
   return value.length > HISTORY_TEXT_CHARS
-    ? `\n\n--- 附件：${name}（${label}，开头）---\n${value.slice(0, HISTORY_TEXT_CHARS)}\n[全文共 ${value.length} 字，此处只留开头 ${HISTORY_TEXT_CHARS} 字；其余要用时以 read_document 读取]`
-    : `\n\n--- 附件：${name}（${label}）---\n${value}`;
+    ? t`\n\n--- 附件：${name}（${label}，开头）---\n${value.slice(0, HISTORY_TEXT_CHARS)}\n[全文共 ${value.length} 字，此处只留开头 ${HISTORY_TEXT_CHARS} 字；其余要用时以 read_document 读取]`
+    : t`\n\n--- 附件：${name}（${label}）---\n${value}`;
 }
 /** @param {Message} message */
 function quotedText(message) {
@@ -15,7 +15,7 @@ function quotedText(message) {
   return `${quote
     .split(/\r?\n/)
     .map(line => `> ${line}`)
-    .join("\n")}\n\n${message.content || "请就所引用的内容作答。"}`;
+    .join("\n")}\n\n${message.content || t("请就所引用的内容作答。")}`;
 }
 // 上一答动过文件、请示过、差遣过、检索翻阅过的，压成一行带给下一问：模型才记得自己读过、改过哪些文件、查到过哪几条，不必从头再探。
 // 哪些步骤带、怎么写，由各工具登记的 digest 定。label 是方括号里的标头：进历史时写「上一答的行迹」（见 historyForApi），存卷宗与压缩转写里写「行迹」
@@ -28,17 +28,17 @@ function settledDigest(message) {
   const steps = (message.steps || []).length,
     broken = (message.steps || []).filter(step => step.status === "error" || step.status === "skipped").length;
   if (message.trailDigest?.steps !== steps || (message.trailDigest.broken || 0) !== broken)
-    message.trailDigest = { steps, broken, text: stepsDigest(message, "上一答的行迹") };
+    message.trailDigest = { steps, broken, text: stepsDigest(message, t("上一答的行迹")) };
   return message.trailDigest.text;
 }
 /** @param {{ steps?: Step[] }} message 一答；帮手的一趟也一样：续派时它上一趟的行迹冠在新的活前面 */
-function stepsDigest(message, label = "行迹") {
+function stepsDigest(message, label = t("行迹")) {
   const steps = (message.steps || []).filter(step => TOOLS.get(step.name)?.digest);
   if (!steps.length) return "";
   const line = step => {
     const digest = TOOLS.get(step.name).digest;
     return digest === true
-      ? `${step.name} ${String(step.title || "").slice(0, 80)} → ${step.status === "skipped" ? "用户跳过" : step.result || step.status}`
+      ? `${step.name} ${String(step.title || "").slice(0, 80)} → ${step.status === "skipped" ? t("用户跳过") : step.result || step.status}`
       : digest(step);
   };
   // 步数多了留头留尾：开头几步是怎么起的，末尾是做到了哪——续写、下一问最要紧的是后者，只留开头的话长活做到哪全丢了
@@ -46,7 +46,7 @@ function stepsDigest(message, label = "行迹") {
     steps.length > DIGEST_HEAD + DIGEST_TAIL
       ? [
           ...steps.slice(0, DIGEST_HEAD).map(line),
-          `…中间 ${steps.length - DIGEST_HEAD - DIGEST_TAIL} 步从略…`,
+          t`…中间 ${steps.length - DIGEST_HEAD - DIGEST_TAIL} 步从略…`,
           ...steps.slice(-DIGEST_TAIL).map(line)
         ]
       : steps.map(line);
@@ -154,38 +154,49 @@ async function messageForApi(message, latest, budget = inlineTextBudget(), image
   // 多段内容：首段只是用户的话，附件的文字（最新一问是全文，往后是摘要与占位）另起一段，其后图片与文件原件。
   // 首段在这一问与往后各问里一字不差，缓存才接得过这一问（见 streamReply 标的缓存点）
   /** @type {Array<Record<string, any>>} */
-  const content = [{ type: "text", text: quotedText(message) || "请查看附件。" }];
+  const content = [{ type: "text", text: quotedText(message) || t("请查看附件。") }];
   let notes = "";
   for (const metadata of message.attachments) {
+    // 模型接口通常不收压缩包；原件已经落在本机，给出可用的路径，让本机工具解包。
+    // 历史里的包也保留这条索引。先复制到工作目录再解压，来源在目录外时也不必放宽沙箱。
+    if (fileKind(metadata.name).name === "archive") {
+      try {
+        const local = await bridge("/api/files/path", { id: metadata.id }, AbortSignal.timeout(8000));
+        notes += t`\n\n[压缩包：${metadata.name}；本机原件路径：${local.path}。用 run_command 将原件复制到工作目录，再解压到独立的临时子目录并读取；不要修改原件。]`;
+      } catch (error) {
+        notes += t`\n\n[压缩包 ${metadata.name} 的本机原件暂不可用：${String(error.message || error)}]`;
+      }
+      continue;
+    }
     // 早先消息里的图片只留一行占位，用不着原件：不必每问都把它从存储目录整份取回来。
     // 占位照实说图已不在：写「已在此前发送」，模型会当自己还看得见，问起图里的细节便凭空作答
     if (!images && metadata.kind === "image") {
-      notes += `\n\n[图片：${metadata.name}，${formatFileSize(metadata.size)}，先前发过，原图已不在上下文中]`;
+      notes += t`\n\n[图片：${metadata.name}，${formatFileSize(metadata.size)}，先前发过，原图已不在上下文中]`;
       continue;
     }
     const file = metadata.data !== undefined ? metadata : await getAttachment(metadata.id);
     if (!file) {
-      notes += `\n\n[附件 ${metadata.name} 的原件已找不到]`;
+      notes += t`\n\n[附件 ${metadata.name} 的原件已找不到]`;
       continue;
     }
     if (file.kind === "text") {
       notes += latest
         ? tooLongToInline(file.data, budget)
-          ? `\n\n[附件 ${file.name}：文本 ${String(file.data).length} 字，过长未随消息附上；需要时用 read_document 按页或关键词读取]`
-          : `\n\n--- 附件：${file.name} ---\n${file.data}`
-        : attachmentExcerpt(file.data, file.name, "文本");
+          ? t`\n\n[附件 ${file.name}：文本 ${String(file.data).length} 字，过长未随消息附上；需要时用 read_document 按页或关键词读取]`
+          : t`\n\n--- 附件：${file.name} ---\n${file.data}`
+        : attachmentExcerpt(file.data, file.name, t("文本"));
       continue;
     }
     if (file.kind !== "image" && file.extractedText) {
       notes += latest
         ? tooLongToInline(file.extractedText, budget)
-          ? `\n\n[附件 ${file.name}：本机提取文本 ${String(file.extractedText).length} 字，过长未随消息附上；需要时用 read_document 按页或关键词读取]`
-          : `\n\n--- 附件：${file.name}（本机提取）---\n${file.extractedText}`
-        : attachmentExcerpt(file.extractedText, file.name, "本机提取");
+          ? t`\n\n[附件 ${file.name}：本机提取文本 ${String(file.extractedText).length} 字，过长未随消息附上；需要时用 read_document 按页或关键词读取]`
+          : t`\n\n--- 附件：${file.name}（本机提取）---\n${file.extractedText}`
+        : attachmentExcerpt(file.extractedText, file.name, t("本机提取"));
       continue;
     }
     if (file.kind === "image" ? !images : !latest) {
-      notes += `\n\n[${file.kind === "image" ? "图片" : "文件"}：${file.name}，${formatFileSize(file.size)}，先前发过，原件已不在上下文中]`;
+      notes += t`\n\n[${file.kind === "image" ? t("图片") : t("文件")}：${file.name}，${formatFileSize(file.size)}，先前发过，原件已不在上下文中]`;
       continue;
     }
     if (file.kind === "image") content.push({ type: "image_url", image_url: { url: file.data, detail: "auto" } });

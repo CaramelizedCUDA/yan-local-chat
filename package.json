@@ -1,6 +1,6 @@
 {
   "name": "yan-local-chat",
-  "version": "0.5.0",
+  "version": "0.9.1",
   "private": true,
   "license": "Apache-2.0",
   "description": "清简纸墨风格的本地聊天前端与轻量执事：接 OpenAI 兼容、Anthropic 与 ChatGPT 订阅，绑上目录即可读写文件、执行指令、推进长活",
@@ -10,7 +10,8 @@
     "check": "npx -y -p typescript@5.6.3 tsc -p jsconfig.json",
     "unit": "node --test \"test/unit/*.test.mjs\"",
     "test": "node --test \"test/unit/*.test.mjs\" && node test/run.mjs",
-    "format": "npx prettier@3.3.3 --write ."
+    "format": "npx prettier@3.3.3 --write .",
+    "pack": "node pack/pack.mjs"
   },
   "engines": {
     "node": ">=18"

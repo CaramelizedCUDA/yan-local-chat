@@ -14,7 +14,7 @@ const MESSAGE_ACTIONS = {
     busy: true,
     run: async ({ message }) => {
       await copyText(message.content);
-      toast("已复制");
+      toast(t("已复制"));
     }
   },
   note: { brush: "note", busy: true, run: ({ message }) => openSideIndex(message.id) },
@@ -39,7 +39,7 @@ const MESSAGE_ACTIONS = {
   edit: {
     brush: "edit",
     run: ({ c, message }) => {
-      if (conversationDry(c)) return toast("余墨已尽，请调高上限或更换模型");
+      if (conversationDry(c)) return toast(t("余墨已尽，请调高上限或更换模型"));
       editingMessageId = message.id;
       editingDropped = new Set();
       renderConversation(false);
@@ -64,10 +64,10 @@ const MESSAGE_ACTIONS = {
   resume: {
     brush: "forward",
     run: async ({ c, message }) => {
-      if (conversationDry(c)) return toast("余墨已尽，请调高上限或更换模型");
+      if (conversationDry(c)) return toast(t("余墨已尽，请调高上限或更换模型"));
       const profile = activeProfile();
       if (!profile) return openSettings("models");
-      if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
+      if (quotaBlocked(profile)) return toast(t("余墨已尽，请调高上限或更换模型"));
       await resumeAnswer(c, message, profile);
     }
   },
@@ -104,12 +104,12 @@ async function resumeAnswer(c, message, profile) {
 // 重答、重试：这一答连同其后的整段留作一个版本，就着上一问另起一答
 /** @param {MessageActionContext} context */
 async function regenerateAt({ c, index }) {
-  if (conversationDry(c)) return toast("余墨已尽，请调高上限或更换模型");
+  if (conversationDry(c)) return toast(t("余墨已尽，请调高上限或更换模型"));
   const userIndex = [...c.messages.slice(0, index)].map(m => m.role).lastIndexOf("user");
   if (userIndex < 0) return;
   const profile = activeProfile();
   if (!profile) return openSettings("models");
-  if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
+  if (quotaBlocked(profile)) return toast(t("余墨已尽，请调高上限或更换模型"));
   if (!(await preparing(() => prepareTurn(c)))) return;
   forkTail(c, userIndex + 1);
   /** @type {Message} */
@@ -126,10 +126,10 @@ async function saveEditedMessage(conversation, index, value) {
   const text = value.trim(),
     old = conversation.messages[index],
     attachments = (old.attachments || []).filter(file => !editingDropped.has(file.id));
-  if (!text && !attachments.length) return toast("尚未落笔");
+  if (!text && !attachments.length) return toast(t("尚未落笔"));
   const profile = activeProfile();
   if (!profile) return openSettings("models");
-  if (quotaBlocked(profile)) return toast("余墨已尽，请调高上限或更换模型");
+  if (quotaBlocked(profile)) return toast(t("余墨已尽，请调高上限或更换模型"));
   if (text === old.content && attachments.length === (old.attachments || []).length) {
     editingMessageId = null;
     renderConversation(false);

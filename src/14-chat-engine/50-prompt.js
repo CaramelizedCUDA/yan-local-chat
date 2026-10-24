@@ -11,9 +11,10 @@ const PROMPT_VARS = {
   // 不报条数：记一条就变，系统提示一变，整段对话的缓存都作废
   "memory.hint": () => {
     const names = memoryCategories().map(cat => cat.name);
-    return { categories: names.length ? `，分作${names.map(name => `「${name}」`).join("")}` : "" };
+    return { categories: names.length ? t`，分作${names.map(name => `「${name}」`).join("")}` : "" };
   },
   "mcp.hint": ctx => mcpHintVars(ctx.tools, ctx.preset),
+  "skills.hint": ctx => skillCatalog(ctx.conversation),
   "side.passage": ctx => (ctx.anchor ? {} : null),
   "side.whole": ctx => (ctx.anchor ? null : {}),
   "side.noTools": ctx => (ctx.tools.size ? null : {})
@@ -59,7 +60,7 @@ function workVars(conversation) {
           ? "work.reachAnywhere"
           : "work.reachInside"
     ),
-    platform: win ? "Windows" : bootstrap.work?.platform === "darwin" ? "macOS" : "类 Unix",
+    platform: win ? "Windows" : bootstrap.work?.platform === "darwin" ? "macOS" : t("类 Unix"),
     shell,
     shellNote: win ? prompt(/5\.1/.test(shell) ? "work.windowsShellLegacy" : "work.windowsShell") : ""
   };

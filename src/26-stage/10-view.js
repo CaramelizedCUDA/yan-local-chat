@@ -82,7 +82,7 @@ function stageRenderLetter() {
     size = stage.pinned;
   letter.classList.toggle("hidden", !size);
   if (size)
-    letter.innerHTML = `执事把视口定在 <b>${size.width}×${size.height}</b>${stageFitOn() ? "，它歇手后铺满" : `<button type="button" data-stage-release>放开</button>`}`;
+    letter.innerHTML = `${t(`执事把视口定在`)} <b>${size.width}×${size.height}</b>${stageFitOn() ? t("，它歇手后铺满") : `<button type="button" data-stage-release>${t(`放开`)}</button>`}`;
 }
 // 放开定死的视口：执事那头（Playwright）记着那个尺寸，换页也会再钉回去，游目这头清不掉——只有新开一页最干净。
 // 经那个 MCP 服务的 browser_tabs 办：同一网址新开一页、关掉旧的，执事那边的标签账也对得上（它下回调用时看得到）。
@@ -108,7 +108,7 @@ async function stageRelease(now = false) {
     await call({ action: "new", url });
     await call({ action: "close", index: Number(old[1]) });
   } catch (error) {
-    if (now) toast(`未能放开：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
+    if (now) toast(t`未能放开：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
   }
 }
 // 执事歇手了吗：没有在途的浏览器调用、没有在答的对话与差遣

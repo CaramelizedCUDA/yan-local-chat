@@ -24,7 +24,7 @@ function groupMembers(id) {
     .filter(c => c.groupId === id)
     .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt.localeCompare(a.updatedAt));
 }
-function createGroup(name = "新分组") {
+function createGroup(name = t("新分组")) {
   const group = { id: uid(), name, createdAt: now(), presetId: "", workdir: "" };
   groupsList().push(group);
   saveStore();
@@ -75,9 +75,9 @@ async function dissolveGroup(id) {
   const members = groupMembers(id);
   if (
     !(await askConfirm({
-      title: `解散分组「${group.name}」？`,
-      body: members.length ? `组里的 ${members.length} 段对话退回散列，不会删除。` : "此组尚无对话。",
-      ok: "解散"
+      title: t`解散分组「${group.name}」？`,
+      body: members.length ? t`组里的 ${members.length} 段对话退回散列，不会删除。` : t("此组尚无对话。"),
+      ok: t("解散")
     }))
   )
     return;
@@ -99,9 +99,9 @@ function openGroupMenu(id, anchor) {
   openMenu(
     anchor,
     [
-      { id: "rename", label: "改名", run: () => startGroupRename(id) },
-      { id: "settings", label: "设置", run: () => openGroupsPage(id) },
-      { id: "dissolve", label: "解散", danger: true, run: () => void dissolveGroup(id) }
+      { id: "rename", label: t("改名"), run: () => startGroupRename(id) },
+      { id: "settings", label: t("设置"), run: () => openGroupsPage(id) },
+      { id: "dissolve", label: t("解散"), danger: true, run: () => void dissolveGroup(id) }
     ],
     { kind: "group", key: id }
   );
@@ -122,14 +122,14 @@ function openMoveMenu(c, anchor) {
       })),
       {
         id: "new",
-        label: "新建分组…",
+        label: t("新建分组…"),
         run: () => {
           const group = createGroup();
           moveToGroup(c, group.id);
           startGroupRename(group.id);
         }
       },
-      current && { id: "out", label: `移出「${current.name}」`, run: () => moveToGroup(c, "") }
+      current && { id: "out", label: t`移出「${current.name}」`, run: () => moveToGroup(c, "") }
     ],
     { kind: "group-move" }
   );
@@ -177,9 +177,9 @@ function groupListHtml() {
       (lastTouched(groupMembers(b.id)) || b.createdAt).localeCompare(lastTouched(groupMembers(a.id)) || a.createdAt)
     ),
     chats = store.conversations.filter(c => groups.some(group => group.id === c.groupId)).length;
-  return `<div class="page-head">${brushIcon("groups")}<h1>分组</h1><span class="page-facts">${groups.length ? `${groups.length} 组 · ${chats} 段对话` : ""}</span><div class="page-acts"><button id="groupsAdd" type="button">新建分组</button></div></div><div class="page-sub"></div>${
+  return `<div class="page-head">${brushIcon("groups")}<h1>${t(`分组`)}</h1><span class="page-facts">${groups.length ? t`${groups.length} 组 · ${chats} 段对话` : ""}</span><div class="page-acts"><button id="groupsAdd" type="button">${t(`新建分组`)}</button></div></div><div class="page-sub"></div>${
     groups.length
-      ? `<div class="strips group-strips"><div class="strip-cols"><span></span><span>组名</span><span>段</span><span>预设</span><span>目录</span><span>日期</span></div>${groups
+      ? `<div class="strips group-strips"><div class="strip-cols"><span></span><span>${t(`组名`)}</span><span>${t(`段`)}</span><span>${t(`预设`)}</span><span>${t(`目录`)}</span><span>${t(`日期`)}</span></div>${groups
           .map(group => {
             const members = groupMembers(group.id),
               preset = store.settings.presets.find(item => item.id === group.presetId),
@@ -187,7 +187,7 @@ function groupListHtml() {
             return `<button type="button" class="strip dir" data-group-page="${escapeHtml(group.id)}"><span>${caseFigure()}</span><span class="strip-name"><strong>${escapeHtml(group.name)}</strong></span><span>${members.length}</span><span><span class="ell">${escapeHtml(preset?.name || "—")}</span></span><span title="${escapeHtml(group.workdir)}"><span class="ell">${escapeHtml(group.workdir || "—")}</span></span><span>${escapeHtml(formatDay(touched))}</span></button>`;
           })
           .join("")}</div>`
-      : `<div class="library-empty">尚无分组</div>`
+      : `<div class="library-empty">${t(`尚无分组`)}</div>`
   }`;
 }
 // 一组：页头即组名（就地可改），右边「在此组新建 · 解散」；下是两行设置与组里的对话，簿头的 ‹ 回列表
@@ -195,17 +195,17 @@ function groupListHtml() {
 function groupDetailHtml(group) {
   const members = groupMembers(group.id),
     presets = store.settings.presets;
-  return `<div class="page-head">${brushIcon("groups")}<input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="组名"><span class="page-facts">${members.length ? `${members.length} 段对话` : "尚无对话"}</span><div class="page-acts"><button id="groupNewChat" type="button">在此组新建</button><button id="groupDissolve" class="danger" type="button">解散</button></div></div><div class="page-sub"><div class="library-crumbs"><button type="button" data-group-page="">分组</button><span class="sep" aria-hidden="true">›</span><span class="here">${escapeHtml(group.name)}</span></div></div><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>预设</strong><small>${presets.length ? "" : "尚无预设"}</small></div><select id="groupPreset" class="field select"><option value="">本色（不带预设）</option>${presets
+  return `<div class="page-head">${brushIcon("groups")}<input id="groupName" class="group-name-field" value="${escapeHtml(group.name)}" maxlength="40" spellcheck="false" aria-label="${t(`组名`)}"><span class="page-facts">${members.length ? t`${members.length} 段对话` : t("尚无对话")}</span><div class="page-acts"><button id="groupNewChat" type="button">${t(`在此组新建`)}</button><button id="groupDissolve" class="danger" type="button">${t(`解散`)}</button></div></div><div class="page-sub"><div class="library-crumbs"><button type="button" data-group-page="">${t(`分组`)}</button><span class="sep" aria-hidden="true">›</span><span class="here">${escapeHtml(group.name)}</span></div></div><div class="group-settings"><div class="setting-row"><div class="setting-copy"><strong>${t(`预设`)}</strong><small>${presets.length ? "" : t("尚无预设")}</small></div><select id="groupPreset" class="field select"><option value="">${t(`本色（不带预设）`)}</option>${presets
     .map(
       preset =>
         `<option value="${escapeHtml(preset.id)}"${preset.id === group.presetId ? " selected" : ""}>${escapeHtml(preset.name)}</option>`
     )
     .join(
       ""
-    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>默认目录</strong></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="不绑目录" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">选择…</button></div></div></div><div class="strips group-members"><div class="strip-cols"><span><button type="button" class="strip-back" data-group-page="" title="回分组" aria-label="回分组">‹</button></span><span>组里的对话</span><span>日期</span></div>${members
+    )}</select></div><div class="setting-row"><div class="setting-copy"><strong>${t(`默认目录`)}</strong></div><div class="setting-actions setting-directory"><input id="groupWorkdir" class="field" spellcheck="false" autocomplete="off" placeholder="${t(`不绑目录`)}" value="${escapeHtml(group.workdir)}"><button id="groupWorkdirPick" class="outline-btn" type="button">${t(`选择…`)}</button></div></div></div><div class="strips group-members"><div class="strip-cols"><span><button type="button" class="strip-back" data-group-page="" title="${t(`回分组`)}" aria-label="${t(`回分组`)}">‹</button></span><span>${t(`组里的对话`)}</span><span>${t(`日期`)}</span></div>${members
     .map(
       c =>
-        `<div class="strip" role="button" tabindex="0" data-group-chat="${escapeHtml(c.id)}"><span>${fileFigure("对话.md")}</span><span class="strip-name"><strong>${escapeHtml(c.title)}</strong></span><span class="strip-date"><span class="strip-when">${escapeHtml(formatDay(c.updatedAt))}</span><span class="strip-acts"><button type="button" data-group-out="${escapeHtml(c.id)}" title="移出此组，退回散列">移出</button></span></span>${c.pinned ? `<i class="group-pin" title="组内置顶" aria-label="组内置顶"></i>` : ""}</div>`
+        `<div class="strip" role="button" tabindex="0" data-group-chat="${escapeHtml(c.id)}"><span>${fileFigure(t("对话.md"))}</span><span class="strip-name"><strong>${escapeHtml(c.title)}</strong></span><span class="strip-date"><span class="strip-when">${escapeHtml(formatDay(c.updatedAt))}</span><span class="strip-acts"><button type="button" data-group-out="${escapeHtml(c.id)}" title="${t(`移出此组，退回散列`)}">${t(`移出`)}</button></span></span>${c.pinned ? `<i class="group-pin" title="${t(`组内置顶`)}" aria-label="${t(`组内置顶`)}"></i>` : ""}</div>`
     )
     .join("")}</div>`;
 }
@@ -237,7 +237,7 @@ $("#groups").addEventListener("click", async event => {
   const pick = /** @type {HTMLButtonElement|null} */ (target.closest("#groupWorkdirPick"));
   if (pick) {
     pick.disabled = true;
-    pick.textContent = "择取中…";
+    pick.textContent = t("择取中…");
     try {
       const input = /** @type {HTMLInputElement} */ ($("#groupWorkdir"));
       const data = await bridge("/api/work/pick", { current: input.value.trim() }, AbortSignal.timeout(300000));
@@ -249,7 +249,7 @@ $("#groups").addEventListener("click", async event => {
       toast(String(error.message || error).slice(0, 80));
     } finally {
       pick.disabled = false;
-      pick.textContent = "择目录…";
+      pick.textContent = t("择目录…");
     }
   }
 });
@@ -330,7 +330,7 @@ $("#history").addEventListener("drop", event => {
     target = dropGroupOf(event)?.dataset.group || "";
   if (!c || (c.groupId || "") === target) return;
   moveToGroup(c, target);
-  toast(target ? `移入「${groupsList().find(group => group.id === target)?.name}」` : "已移出分组");
+  toast(target ? t`移入「${groupsList().find(group => group.id === target)?.name}」` : t("已移出分组"));
 });
 $("#history").addEventListener("dragend", () => {
   clearDropMarks();

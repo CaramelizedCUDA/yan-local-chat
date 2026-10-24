@@ -10,11 +10,11 @@ defineEmbed({
   // 流式尾段尚未闭合时先立一个占位框，框里是一页草图（见 pendingSketchHtml）
   pending(text, language) {
     const lines = String(text || "").split("\n").length;
-    return `<div class="viz viz-pending" data-viz-pending="html" data-lines="${lines}" style="--phase:${vizPhase()}" role="status" aria-label="交互内容仍在生成，已写 ${lines} 行"><div class="code-head"><span class="code-lang">${language}</span><span class="viz-pending-signal" aria-hidden="true"></span></div><div class="viz-pending-body" aria-hidden="true">${pendingSketchHtml()}</div></div>\n`;
+    return `<div class="viz viz-pending" data-viz-pending="html" data-lines="${lines}" style="--phase:${vizPhase()}" role="status" aria-label="${t`交互内容仍在生成，已写 ${lines} 行`}"><div class="code-head"><span class="code-lang">${language}</span><span class="viz-pending-signal" aria-hidden="true"></span></div><div class="viz-pending-body" aria-hidden="true">${pendingSketchHtml()}</div></div>\n`;
   },
   html(text, language) {
     const source = legacyViz(language, text) ? legacyVizHtml(language, text) : text;
-    return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">html · 正在载入</span><span>${vizTool("data-app-restart", "重来", "reload")}${vizTool("data-app-download", "下载", "download")}${vizTool("data-work-expand", "全屏", "wide")}${vizTool("data-copy-code", "复制源码", "copy")}</span></div><div class="html-app-stage"><span>正在载入交互内容</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
+    return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">${t(`html · 正在载入`)}</span><span>${vizTool("data-app-restart", t("重来"), "reload")}${vizTool("data-app-download", t("下载"), "download")}${vizTool("data-work-expand", t("全屏"), "wide")}${vizTool("data-copy-code", t("复制源码"), "copy")}</span></div><div class="html-app-stage"><span>${t(`正在载入交互内容`)}</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
   },
   mount: renderHtmlApps,
   bind: bindHtmlAppEvents
@@ -110,7 +110,7 @@ async function standaloneHtmlApp(source) {
   if (parsed.querySelector(".mermaid")) names.add("mermaid");
   const read = async path => {
     const response = await fetch(path, { signal: AbortSignal.timeout(30000) });
-    if (!response.ok) throw Error(`导出资源未能载入：${path}`);
+    if (!response.ok) throw Error(t`导出资源未能载入：${path}`);
     return response.text();
   };
   const [runtime, libraries] = await Promise.all([
@@ -127,16 +127,16 @@ async function standaloneHtmlApp(source) {
     csp =
       "default-src 'none'; script-src data: blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
     preview = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"></head><body><script type="application/json" id="yan-preview-export">${config}</script><script src="${dataUrlFromText(runtime, "text/javascript")}"></script></body></html>`;
-  return `<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(parsed.title || "言 · 交互作品")}</title><style>html,body{margin:0;height:100%}iframe{display:block;width:100%;height:100%;border:0}</style></head><body style="background:${escapeHtml(theme.vars.paper || "#fff")}"><iframe sandbox="allow-scripts" title="交互作品" srcdoc="${escapeHtml(preview)}"></iframe></body></html>`;
+  return `<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(parsed.title || t("言 · 交互作品"))}</title><style>html,body{margin:0;height:100%}iframe{display:block;width:100%;height:100%;border:0}</style></head><body style="background:${escapeHtml(theme.vars.paper || "#fff")}"><iframe sandbox="allow-scripts" title="${t(`交互作品`)}" srcdoc="${escapeHtml(preview)}"></iframe></body></html>`;
 }
 async function downloadHtmlApp(button) {
   if (button.disabled) return;
   const source = htmlAppSource(button.closest(".html-app"));
   button.disabled = true;
   try {
-    downloadText(await standaloneHtmlApp(source), "text/html;charset=utf-8", "言-交互作品.html");
+    downloadText(await standaloneHtmlApp(source), "text/html;charset=utf-8", t("言-交互作品.html"));
   } catch (error) {
-    toast(`下载失败：${String(error.message || error).slice(0, 160)}`);
+    toast(t`下载失败：${String(error.message || error).slice(0, 160)}`);
   } finally {
     button.disabled = false;
   }
@@ -194,14 +194,14 @@ function mountHtmlApp(el) {
   el.dataset.appState = "loading";
   el.classList.remove("html-app-error");
   const label = el.querySelector(".code-lang");
-  if (label) label.textContent = "html · 正在载入";
+  if (label) label.textContent = t("html · 正在载入");
   const stage = el.querySelector(".html-app-stage");
-  stage.innerHTML = `<iframe sandbox="allow-scripts" title="隔离的 HTML 交互预览" src="./preview.html#${id}"></iframe>`;
+  stage.innerHTML = `<iframe sandbox="allow-scripts" title="${t(`隔离的 HTML 交互预览`)}" src="./preview.html#${id}"></iframe>`;
   setTimeout(() => {
     if (!el.isConnected || el.dataset.appId !== id || el.dataset.appState !== "loading") return;
     el.dataset.appState = "error";
     el.classList.add("html-app-error");
-    if (label) label.textContent = "html · 未能载入";
+    if (label) label.textContent = t("html · 未能载入");
   }, 6000);
 }
 function renderHtmlApps(root) {
@@ -221,7 +221,7 @@ function closeExpandedWork(except = null) {
     if (item !== except) {
       item.classList.remove("work-expanded");
       const trigger = item.querySelector("[data-work-expand]");
-      if (trigger) labelTool(trigger, "全屏");
+      if (trigger) labelTool(trigger, t("全屏"));
     }
   if (!except) document.documentElement.classList.remove("work-mode");
 }
@@ -229,7 +229,7 @@ function toggleWorkExpanded(el, button) {
   const open = !el.classList.contains("work-expanded");
   closeExpandedWork(open ? el : null);
   el.classList.toggle("work-expanded", open);
-  labelTool(button, open ? "收起" : "全屏");
+  labelTool(button, open ? t("收起") : t("全屏"));
   document.documentElement.classList.toggle("work-mode", open);
 }
 // 交互作品的工具条（重来、下载、放大）与预览 iframe 报来的状态与高度
@@ -265,7 +265,7 @@ function bindHtmlAppEvents() {
     app.classList.toggle("html-app-error", data.state === "error");
     const label = app.querySelector(".code-lang");
     if (label) {
-      label.textContent = data.state === "error" ? "html · 运行有误" : "html · 可交互";
+      label.textContent = data.state === "error" ? t("html · 运行有误") : t("html · 可交互");
       label.title = data.detail || "";
     }
     if (data.state === "ready" && followBottom) requestAnimationFrame(scrollBottom);

@@ -576,6 +576,24 @@ test("mergeConfig3：自己改过的取自己的，没改的取对方的；按 i
   // 草稿 x 我发出去了（删了）、它没动：删；y 它新写的：留
   assert.deepEqual(Object.keys(merged.drafts), ["y"]);
 });
+test("mergeConfig3：用量取对方的加上这边未确认的，基准旧了也不翻倍", () => {
+  const profile = (usedTokens, name = "A") => ({ id: "a", name, quota: "", usedTokens });
+  const meta = (p, theme = "light") => ({
+    version: 6,
+    settings: { theme },
+    profiles: [p],
+    memory: { enabled: true, items: [] },
+    drafts: {}
+  });
+  // 自己写下的那份没听到回音：磁盘上就是自己这份，基准还停在早先
+  const base = meta(profile(1000)),
+    mine = meta(profile(5000), "dark"),
+    theirs = meta(profile(5000), "dark");
+  assert.equal(f.mergeConfig3(base, mine, theirs).profiles[0].usedTokens, 9000);
+  assert.equal(f.mergeConfig3(base, mine, theirs, () => 0).profiles[0].usedTokens, 5000);
+  // 对方也花了：取它的，加上这边还没写下的
+  assert.equal(f.mergeConfig3(base, meta(profile(5030), "dark"), meta(profile(5200)), () => 30).profiles[0].usedTokens, 5230);
+});
 test("mergeConfig3：两处各添预设、分组、MCP 与环境工具时都留下", () => {
   const base = {
     version: 5,
@@ -683,6 +701,26 @@ test("OpenAI 兼容：DashScope 的档位换成预算，别家原样；思考块
   assert.equal(plain.enable_thinking, undefined);
   assert.deepEqual(openaiProvider.levels({ baseUrl: "https://dashscope.aliyuncs.com/v1" }), ["low", "medium", "high", "max"]);
   assert.equal(openaiProvider.levels({ baseUrl: "https://example.com/v1" }), null);
+});
+test("硅基流动：Qwen 之类换成预算，DeepSeek-V4 与 GLM-5.2 照送 reasoning_effort；模型列表只要对话的", () => {
+  const sf = model => ({ api: "siliconflow", baseUrl: "https://api.siliconflow.cn/v1", model });
+  const payload = { model: "Qwen/Qwen3-32B", messages: [{ role: "user", content: "x" }], reasoning_effort: "max" };
+  const qwen = openaiProvider.request(payload, sf("Qwen/Qwen3-32B"));
+  assert.equal(qwen.reasoning_effort, undefined);
+  assert.equal(qwen.enable_thinking, true);
+  assert.equal(qwen.thinking_budget, 32768);
+  const deepseek = openaiProvider.request(payload, sf("Pro/deepseek-ai/DeepSeek-V4"));
+  assert.equal(deepseek.reasoning_effort, "max");
+  assert.equal(deepseek.enable_thinking, undefined);
+  assert.deepEqual(openaiProvider.levels(sf("zai-org/GLM-5.2")), ["high", "max"]);
+  assert.deepEqual(openaiProvider.levels(sf("Qwen/Qwen3-32B")), ["low", "medium", "high", "max"]);
+  // 旧配置选的 OpenAI 兼容、地址是硅基流动的，一样认得
+  assert.equal(
+    openaiProvider.request(payload, { baseUrl: "https://api.siliconflow.com/v1", model: "Qwen/Qwen3-32B" }).thinking_budget,
+    32768
+  );
+  assert.equal(String(openaiProvider.modelsUrl(sf(""))), "https://api.siliconflow.cn/v1/models?sub_type=chat");
+  assert.equal(String(openaiProvider.modelsUrl({ baseUrl: "https://example.com/v1" })), "https://example.com/v1/models");
 });
 test("结束原因：认不出的原样交出，由页面的白名单判半途被掐；被遮蔽的思考块照原样回传", async () => {
   const stopWith = async reason => {

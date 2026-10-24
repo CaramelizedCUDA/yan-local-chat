@@ -105,9 +105,9 @@ async function stageLaunch() {
       timeout: 60
     });
     await stageLocate();
-    if (!stage.ws) toast(`浏览器已开，但连不上调试口${stage.port ? ` ${stage.port}` : ""}`);
+    if (!stage.ws) toast(t`浏览器已开，但连不上调试口${stage.port ? ` ${stage.port}` : ""}`);
   } catch (error) {
-    toast(`浏览器打开失败：${String(error.message || error).slice(0, 80)}`);
+    toast(t`浏览器打开失败：${String(error.message || error).slice(0, 80)}`);
   } finally {
     stage.launching = false;
     stageSync();
@@ -136,8 +136,8 @@ async function stageReadMarks() {
   const data = await bridge("/api/stage/bookmarks", stageService()).catch(() => null);
   if (data) {
     stage.markTree = [
-      { id: data.barId || "1", name: "收藏夹栏", children: (data.bar || []).map(stageMarkOf) },
-      { id: data.otherId || "2", name: "其他收藏", children: (data.other || []).map(stageMarkOf) }
+      { id: data.barId || "1", name: t("收藏夹栏"), children: (data.bar || []).map(stageMarkOf) },
+      { id: data.otherId || "2", name: t("其他收藏"), children: (data.other || []).map(stageMarkOf) }
     ];
     stage.markTreeAt = 0;
   }
@@ -157,7 +157,7 @@ function stageRenderMarkBtn() {
 // 在浏览器的收藏页里跑一段：body 里可用 bm(方法, ...参数)，跑完递回整棵收藏树
 /** @param {string} body */
 async function stageMarkDo(body) {
-  if (!stage.ws) throw Error("游目未连上");
+  if (!stage.ws) throw Error(t("游目未连上"));
   const { browserContextId } = await stageSend("Target.createBrowserContext", { disposeOnDetach: true });
   stage.helperCtx = browserContextId;
   try {
@@ -171,13 +171,13 @@ async function stageMarkDo(body) {
       ready = !!(await run("typeof chrome === 'object' && !!chrome.bookmarks").catch(() => null))?.result?.value;
       if (!ready) await new Promise(resolve => setTimeout(resolve, 100));
     }
-    if (!ready) throw Error("浏览器的收藏页未能载入");
+    if (!ready) throw Error(t("浏览器的收藏页未能载入"));
     const { result, exceptionDetails } = await run(
       `(async () => { const bm = (fn, ...args) => new Promise((ok, no) => chrome.bookmarks[fn](...args, r => chrome.runtime.lastError ? no(Error(chrome.runtime.lastError.message)) : ok(r))); ${body}; return (await bm("getTree"))[0].children; })()`
     );
-    if (exceptionDetails) throw Error(exceptionDetails.exception?.description?.split("\n")[0] || "收藏未能更改");
+    if (exceptionDetails) throw Error(exceptionDetails.exception?.description?.split("\n")[0] || t("收藏未能更改"));
     const roots = /** @type {any[]} */ (result.value || []);
-    stage.markTree = roots.slice(0, 2).map((root, i) => ({ ...stageMarkOf(root), name: i ? "其他收藏" : "收藏夹栏" }));
+    stage.markTree = roots.slice(0, 2).map((root, i) => ({ ...stageMarkOf(root), name: i ? t("其他收藏") : t("收藏夹栏") }));
     stage.markTreeAt = Date.now();
     stageRenderMarkBtn();
   } finally {
@@ -223,7 +223,7 @@ function stageMarksHtml() {
     ribbon = brushIcon("mark", "stage-mark-ribbon"),
     box = `<svg class="fi stage-mark-case" viewBox="0 0 16 20" aria-hidden="true"><rect class="case" x="1" y=".5" width="14.5" height="19"/><rect class="slip" x="4" y="3" width="4" height="11.5"/></svg>`,
     ops = (/** @type {StageMark} */ node) =>
-      `<span class="stage-mark-ops"><button type="button" data-mark-edit="${escapeHtml(node.id)}" title="改" aria-label="改">${brushIcon("edit")}</button><button type="button" class="del" data-mark-del="${escapeHtml(node.id)}" title="删" aria-label="删">${brushIcon("strike")}</button></span>`;
+      `<span class="stage-mark-ops"><button type="button" data-mark-edit="${escapeHtml(node.id)}" title="${t(`改`)}" aria-label="${t(`改`)}">${brushIcon("edit")}</button><button type="button" class="del" data-mark-del="${escapeHtml(node.id)}" title="${t(`删`)}" aria-label="${t(`删`)}">${brushIcon("strike")}</button></span>`;
   // fixed：「其他收藏」是浏览器自己的根，不改不删
   /** @param {StageMark} node @param {boolean} [fixed] */
   const dir = (node, fixed = false) => {
@@ -243,12 +243,12 @@ function stageMarksHtml() {
   const head = !canMark
     ? ""
     : mine
-      ? `<div class="stage-mark-this on"><span>${escapeHtml(mine.name)}</span>${ops(mine)}<i class="stage-mark-badge" title="此页已收">${brushIcon("mark")}</i></div>`
-      : `<div class="stage-mark-this"><span>${escapeHtml(stageTitle(tab))}</span><button type="button" class="stage-mark-badge" data-mark-add title="收藏此页" aria-label="收藏此页">${brushIcon("mark")}</button></div>`;
+      ? `<div class="stage-mark-this on"><span>${escapeHtml(mine.name)}</span>${ops(mine)}<i class="stage-mark-badge" title="${t(`此页已收`)}">${brushIcon("mark")}</i></div>`
+      : `<div class="stage-mark-this"><span>${escapeHtml(stageTitle(tab))}</span><button type="button" class="stage-mark-badge" data-mark-add title="${t(`收藏此页`)}" aria-label="${t(`收藏此页`)}">${brushIcon("mark")}</button></div>`;
   const bar = tree[0]?.children || [],
     other = tree[1],
-    body = list(bar) + (other?.children?.length ? dir({ ...other, name: "其他收藏" }, true) : "");
-  return `${head}<div class="stage-mark-list">${body || `<div class="stage-mark-empty">尚无收藏</div>`}</div><div class="stage-pop-foot"><button type="button" data-mark-folder>新夹</button><button type="button" data-mark-manage>整理…</button></div>`;
+    body = list(bar) + (other?.children?.length ? dir({ ...other, name: t("其他收藏") }, true) : "");
+  return `${head}<div class="stage-mark-list">${body || `<div class="stage-mark-empty">${t(`尚无收藏`)}</div>`}</div><div class="stage-pop-foot"><button type="button" data-mark-folder>${t(`新夹`)}</button><button type="button" data-mark-manage>${t(`整理…`)}</button></div>`;
 }
 /** @param {string} id @param {StageMark[]} [nodes] @returns {StageMark | undefined} */
 function stageMarkById(id, nodes = stage.markTree || []) {
@@ -296,7 +296,7 @@ async function stageMarksClick(pop, target) {
     if (hit("data-mark-cancel")) return stageMarksRefresh(pop);
     if (hit("data-mark-folder")) {
       stageMarksRefresh(pop);
-      pop.querySelector(".stage-mark-list")?.insertAdjacentHTML("afterbegin", stageMarkFormHtml("", "新夹", null));
+      pop.querySelector(".stage-mark-list")?.insertAdjacentHTML("afterbegin", stageMarkFormHtml("", t("新夹"), null));
       return /** @type {HTMLInputElement | null} */ (pop.querySelector(".stage-mark-form input"))?.select();
     }
     if (edit) {
@@ -318,7 +318,8 @@ async function stageMarksClick(pop, target) {
       if (!name && !url) return;
       // 址一栏给人看的是解开的网址：没改就不存它，免得把原网址换成解开的那串
       const changes = { title: name, ...(url && node?.url && url !== stageReadable(node.url) ? { url: stageUrlOf(url) || url } : {}) };
-      if (!id) await stageMarkDo(`await bm("create", { parentId: ${js(stage.markTree?.[0]?.id || "1")}, title: ${js(name || "新夹")} })`);
+      if (!id)
+        await stageMarkDo(`await bm("create", { parentId: ${js(stage.markTree?.[0]?.id || "1")}, title: ${js(name || t("新夹"))} })`);
       else await stageMarkDo(`await bm("update", ${js(id)}, ${js(changes)})`);
       return stageMarksRefresh(pop);
     }
@@ -328,22 +329,22 @@ async function stageMarksClick(pop, target) {
       // 夹里有东西：先换成「确定删」，再点一下才删
       if (node.children?.length && !del.classList.contains("sure")) {
         del.classList.add("sure");
-        del.title = "再点一下删去";
+        del.title = t("再点一下删去");
         del
           .closest(".stage-mark-ops")
-          ?.insertAdjacentHTML("afterbegin", `<small>连同 ${stageMarkFlat(node.children).length} 条，再点删去</small>`);
+          ?.insertAdjacentHTML("afterbegin", `<small>${t`连同 ${stageMarkFlat(node.children).length} 条，再点删去`}</small>`);
         return;
       }
       await stageMarkDo(`await bm(${js(node.children ? "removeTree" : "remove")}, ${js(node.id)})`);
       return stageMarksRefresh(pop);
     }
   } catch (error) {
-    toast(`收藏未能更改：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
+    toast(t`收藏未能更改：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
   }
 }
 /** @param {string} id 空即新建夹 @param {string} name @param {string | null} url 夹没有网址 */
 function stageMarkFormHtml(id, name, url) {
-  return `<div class="stage-mark-form" data-id="${escapeHtml(id)}"><label>名<input value="${escapeHtml(name)}" spellcheck="false"></label>${url === null ? "" : `<label>址<input value="${escapeHtml(stageReadable(url))}" spellcheck="false"></label>`}<div class="stage-mark-acts"><button type="button" data-mark-cancel>取消</button><button type="button" data-mark-save>存</button></div></div>`;
+  return `<div class="stage-mark-form" data-id="${escapeHtml(id)}"><label>${t(`名`)}<input value="${escapeHtml(name)}" spellcheck="false"></label>${url === null ? "" : `<label>${t(`址`)}<input value="${escapeHtml(stageReadable(url))}" spellcheck="false"></label>`}<div class="stage-mark-acts"><button type="button" data-mark-cancel>${t(`取消`)}</button><button type="button" data-mark-save>${t(`存`)}</button></div></div>`;
 }
 
 // ---------- 浏览器自己的页 ----------
@@ -357,15 +358,15 @@ function stageInsideUrl(page) {
 function stageOpenInside(page) {
   if (!stage.ws) return void stageLaunch();
   void stageSend("Target.createTarget", { url: stageInsideUrl(page) }).catch(error =>
-    toast(`打开失败：${String(error.message || error).slice(0, 80)}`)
+    toast(t`打开失败：${String(error.message || error).slice(0, 80)}`)
   );
 }
 
 // ---------- 栏顶「调律」的纸签：游目的杂项 ----------
 // 平时一眼要的放上头（查找、缩放），翻旧账的居中（历史、下载、收藏），偶尔一用的居后
 const STAGE_SEARCH = /** @type {const} */ ({
-  bing: ["必应", "https://www.bing.com/search?q="],
-  baidu: ["百度", "https://www.baidu.com/s?wd="],
+  bing: [t("必应"), "https://www.bing.com/search?q="],
+  baidu: [t("百度"), "https://www.baidu.com/s?wd="],
   google: ["Google", "https://www.google.com/search?q="]
 });
 // 地址栏里输的不像网址时交给哪家：纸签里点一下换一家，记在配置里
@@ -381,39 +382,39 @@ function stageOpenMenu(anchor) {
   openMenu(
     anchor,
     [
-      { id: "find", label: "查找", note: "Ctrl+F", run: () => stageFindOpen() },
-      `<div class="stage-menu-zoom"><span>缩放</span><span class="stage-zoom"><button type="button" data-stage-zoom="-1" aria-label="缩小">−</button><button type="button" class="stage-zoom-pct" data-stage-zoom="0" title="复原">${Math.round(stage.zoom * 100)}%</button><button type="button" data-stage-zoom="1" aria-label="放大">＋</button></span></div>`,
+      { id: "find", label: t("查找"), note: "Ctrl+F", run: () => stageFindOpen() },
+      `<div class="stage-menu-zoom"><span>${t(`缩放`)}</span><span class="stage-zoom"><button type="button" data-stage-zoom="-1" aria-label="${t(`缩小`)}">−</button><button type="button" class="stage-zoom-pct" data-stage-zoom="0" title="${t(`复原`)}">${Math.round(stage.zoom * 100)}%</button><button type="button" data-stage-zoom="1" aria-label="${t(`放大`)}">＋</button></span></div>`,
       rule,
-      { id: "history", label: "历史", run: () => stageOpenInside("history") },
-      { id: "downloads", label: "下载", note: fresh ? String(fresh) : "", noteClass: "fresh", run: () => stageOpenDownloads(anchor) },
-      { id: "favorites", label: "整理收藏…", run: () => stageOpenInside("favorites") },
+      { id: "history", label: t("历史"), run: () => stageOpenInside("history") },
+      { id: "downloads", label: t("下载"), note: fresh ? String(fresh) : "", noteClass: "fresh", run: () => stageOpenDownloads(anchor) },
+      { id: "favorites", label: t("整理收藏…"), run: () => stageOpenInside("favorites") },
       rule,
       {
         id: "copy",
-        label: "复制网址",
+        label: t("复制网址"),
         run: () =>
           url() &&
           void navigator.clipboard.writeText(stageReadable(url())).then(
-            () => toast("网址已复制"),
-            () => toast("复制失败")
+            () => toast(t("网址已复制")),
+            () => toast(t("复制失败"))
           )
       },
       // 交给系统默认的浏览器开（经桥接：言跑在 VS Code 里时 window.open 不管用）：要登自己的账号、或要看外头那扇窗时
       {
         id: "system",
-        label: "用系统浏览器打开",
+        label: t("用系统浏览器打开"),
         run: () => {
-          if (!/^https?:/.test(url())) return toast("仅网页（http / https）可交系统浏览器打开");
+          if (!/^https?:/.test(url())) return toast(t("仅网页（http / https）可交系统浏览器打开"));
           void bridge("/api/stage/open", { url: url() }).then(
-            () => toast("已交给系统浏览器"),
-            error => toast(`打开失败：${String(error.message || error).slice(0, 80)}`)
+            () => toast(t("已交给系统浏览器")),
+            error => toast(t`打开失败：${String(error.message || error).slice(0, 80)}`)
           );
         }
       },
       // 开发者工具：浏览器自带的那套前端，由它的调试口供出；要在调试口的放行来源里加上它自己（见 docs/stage.md）
       {
         id: "devtools",
-        label: "开发者工具",
+        label: t("开发者工具"),
         run: () =>
           stage.current &&
           stage.port &&
@@ -427,17 +428,17 @@ function stageOpenMenu(anchor) {
       // 适应页面、搜索用哪家：点了就换，不收纸签（记进配置）
       {
         id: "fit",
-        label: "适应页面",
-        note: stageFitOn() ? "开" : "关",
+        label: t("适应页面"),
+        note: stageFitOn() ? t("开") : t("关"),
         keep: true,
         run: button => {
           stageSetFit(!stageFitOn());
-          button.querySelector("small").textContent = stageFitOn() ? "开" : "关";
+          button.querySelector("small").textContent = stageFitOn() ? t("开") : t("关");
         }
       },
       {
         id: "search",
-        label: "搜索用",
+        label: t("搜索用"),
         note: `${STAGE_SEARCH[stageSearchEngine()][0]} ›`,
         keep: true,
         run: button => {
@@ -448,8 +449,8 @@ function stageOpenMenu(anchor) {
         }
       },
       rule,
-      { id: "settings", label: "浏览器设置…", run: () => stageOpenInside("settings") },
-      { id: "stage-settings", label: "游目设置…", run: () => openSettings("stage") }
+      { id: "settings", label: t("浏览器设置…"), run: () => stageOpenInside("settings") },
+      { id: "stage-settings", label: t("游目设置…"), run: () => openSettings("stage") }
     ],
     {
       kind: "stage-menu",
@@ -473,7 +474,7 @@ function stageSaveDownloads() {
 function stageNoteDownload(name, path) {
   const item = stage.downloads.find(entry => !entry.path && (entry.name === name || path.endsWith(entry.name)));
   if (item) item.path = path;
-  else stage.downloads.unshift({ guid: uid(), name, url: "", total: 0, got: 0, state: "completed", at: Date.now(), path, by: "执事" });
+  else stage.downloads.unshift({ guid: uid(), name, url: "", total: 0, got: 0, state: "completed", at: Date.now(), path, by: t("执事") });
   stageSaveDownloads();
 }
 /** @param {HTMLElement} anchor */
@@ -491,8 +492,8 @@ function stageOpenDownloads(anchor) {
           item.state === "inProgress"
             ? `${item.total ? Math.round((item.got / item.total) * 100) : 0}%`
             : item.state === "canceled"
-              ? "已取消"
-              : "已下完",
+              ? t("已取消")
+              : t("已下完"),
         size = item.total ? formatFileSize(item.total) : "",
         meta = [size, item.by || "", stageHost(item.url), stageAgo(item.at)].filter(Boolean).join(" · ");
       return `<button type="button" class="stage-dl" data-stage-reveal="${escapeHtml(item.path || "")}" title="${escapeHtml(item.path || item.url)}"><i class="stage-dl-file" style="--fc:${tone(item.name)}"></i><span class="stage-dl-name">${escapeHtml(item.name)}</span><span class="stage-dl-state${item.state === "canceled" ? " off" : ""}">${state}</span><span class="stage-dl-meta">${escapeHtml(meta)}</span></button>`;
@@ -500,7 +501,7 @@ function stageOpenDownloads(anchor) {
     .join("");
   const pop = openFloatingPop(
     anchor,
-    `<div class="stage-pop-head">下载</div>${rows || `<div class="stage-mark-empty">尚无下载</div>`}<div class="stage-pop-foot"><button type="button" data-stage-reveal="">打开所在文件夹</button><button type="button" data-stage-inside="downloads">全部下载…</button></div>`,
+    `<div class="stage-pop-head">${t(`下载`)}</div>${rows || `<div class="stage-mark-empty">${t(`尚无下载`)}</div>`}<div class="stage-pop-foot"><button type="button" data-stage-reveal="">${t(`打开所在文件夹`)}</button><button type="button" data-stage-inside="downloads">${t(`全部下载…`)}</button></div>`,
     { align: "right", menu: false }
   );
   pop.classList.add("stage-downloads", "stage-pop");
@@ -521,21 +522,21 @@ function stageOpenDownloads(anchor) {
 function stageAgo(at) {
   const minutes = Math.round((Date.now() - at) / 60000);
   return minutes < 1
-    ? "刚才"
+    ? t("刚才")
     : minutes < 60
-      ? `${minutes} 分钟前`
+      ? t`${minutes} 分钟前`
       : minutes < 1440
-        ? `${Math.round(minutes / 60)} 小时前`
-        : `${Math.round(minutes / 1440)} 天前`;
+        ? t`${Math.round(minutes / 60)} 小时前`
+        : t`${Math.round(minutes / 1440)} 天前`;
 }
 /** @param {{ title: string, url: string }} tab */
 function stageTitle(tab) {
-  if (tab.url === "about:blank") return "空白页";
+  if (tab.url === "about:blank") return t("空白页");
   if (tab.title && tab.title !== tab.url) return tab.title;
   try {
     return new URL(tab.url).host || tab.url;
   } catch {
-    return tab.url || "新标签页";
+    return tab.url || t("新标签页");
   }
 }
 // 地址栏给人看：%E5… 解回汉字（解不开的原样）
@@ -600,7 +601,7 @@ function stageRender() {
   $("#stageTabs").innerHTML = [...stage.tabs]
     .map(
       ([id, tab]) =>
-        `<div class="stage-tab${id === stage.current ? " on" : ""}" role="tab" aria-selected="${id === stage.current}" data-stage-tab="${escapeHtml(id)}" title="${escapeHtml(tab.title || tab.url)}"><span class="stage-tab-name">${escapeHtml(stageTitle(tab))}</span>${acting && id === stage.front ? `<span class="stage-tab-live" title="执事在这一页"></span>` : ""}<button type="button" class="stage-tab-x" data-stage-close="${escapeHtml(id)}" title="关闭此页" aria-label="关闭此页">×</button>${id === stage.current ? `<svg class="stage-tab-under" viewBox="0 0 18 5" aria-hidden="true">${under}</svg>` : ""}</div>`
+        `<div class="stage-tab${id === stage.current ? " on" : ""}" role="tab" aria-selected="${id === stage.current}" data-stage-tab="${escapeHtml(id)}" title="${escapeHtml(tab.title || tab.url)}"><span class="stage-tab-name">${escapeHtml(stageTitle(tab))}</span>${acting && id === stage.front ? `<span class="stage-tab-live" title="${t(`执事在这一页`)}"></span>` : ""}<button type="button" class="stage-tab-x" data-stage-close="${escapeHtml(id)}" title="${t(`关闭此页`)}" aria-label="${t(`关闭此页`)}">×</button>${id === stage.current ? `<svg class="stage-tab-under" viewBox="0 0 18 5" aria-hidden="true">${under}</svg>` : ""}</div>`
     )
     .join("");
   stageRenderMarkBtn();
@@ -611,11 +612,14 @@ function stageRender() {
     addr.title = tab?.url ? stageReadable(tab.url) : "";
   }
   const empty = stage.launching
-    ? stageEmptyHtml("正在打开浏览器…")
+    ? stageEmptyHtml(t("正在打开浏览器…"))
     : !stage.ws
-      ? stageEmptyHtml("浏览器未开", stageServer() ? `<button type="button" class="stage-go" data-stage-launch>打开浏览器</button>` : "")
+      ? stageEmptyHtml(
+          t("浏览器未开"),
+          stageServer() ? `<button type="button" class="stage-go" data-stage-launch>${t(`打开浏览器`)}</button>` : ""
+        )
       : !tab
-        ? stageEmptyHtml("没有开着的页", `<button type="button" class="stage-go" data-stage-new>新建标签页</button>`)
+        ? stageEmptyHtml(t("没有开着的页"), `<button type="button" class="stage-go" data-stage-new>${t(`新建标签页`)}</button>`)
         : "";
   // 隔一会儿就重画一回：没变不动，免得按钮在指针下被换掉
   if (empty !== stage.empty) $("#stageEmpty").innerHTML = stage.empty = empty;
@@ -652,28 +656,29 @@ function stageActionText(tool, args) {
     name = tool.replace(/^browser_/, "");
   /** @type {Record<string, () => string>} */
   const say = {
-    navigate: () => `前往 ${stageHost(args.url) || args.url || ""}`,
-    navigate_back: () => "返回上页",
-    navigate_forward: () => "前进一页",
-    click: () => `${args.doubleClick ? "双击" : "点击"}${quote(args.element)}`,
-    hover: () => `悬停${quote(args.element)}`,
-    type: () => `键入${quote(args.text)}`,
-    fill_form: () => "填写表单",
-    select_option: () => `选取${quote([].concat(args.values || []).join("、"))}`,
-    press_key: () => `按键 ${args.key || ""}`,
-    drag: () => `拖动${quote(args.startElement)}`,
-    snapshot: () => "阅读此页",
-    take_screenshot: () => "截取画面",
+    navigate: () => t`前往 ${stageHost(args.url) || args.url || ""}`,
+    navigate_back: () => t("返回上页"),
+    navigate_forward: () => t("前进一页"),
+    click: () => `${args.doubleClick ? t("双击") : t("点击")}${quote(args.element)}`,
+    hover: () => t`悬停${quote(args.element)}`,
+    type: () => t`键入${quote(args.text)}`,
+    fill_form: () => t("填写表单"),
+    select_option: () => t`选取${quote([].concat(args.values || []).join("、"))}`,
+    press_key: () => t`按键 ${args.key || ""}`,
+    drag: () => t`拖动${quote(args.startElement)}`,
+    snapshot: () => t("阅读此页"),
+    take_screenshot: () => t("截取画面"),
     wait_for: () =>
-      args.text ? `等候${quote(args.text)}` : args.textGone ? `等候${quote(args.textGone)}消失` : `等候 ${args.time || ""} 秒`,
-    tabs: () => ({ new: "新开一页", close: "关闭一页", select: "切换标签", list: "查看各页" })[String(args.action)] || "查看各页",
-    evaluate: () => "运行脚本",
-    file_upload: () => "上传文件",
-    handle_dialog: () => (args.accept ? "应允提示" : "回绝提示"),
-    close: () => "关闭浏览器",
-    resize: () => "调整窗口",
-    console_messages: () => "查看控制台",
-    network_requests: () => "查看网络请求"
+      args.text ? t`等候${quote(args.text)}` : args.textGone ? t`等候${quote(args.textGone)}消失` : t`等候 ${args.time || ""} 秒`,
+    tabs: () =>
+      ({ new: t("新开一页"), close: t("关闭一页"), select: t("切换标签"), list: t("查看各页") })[String(args.action)] || t("查看各页"),
+    evaluate: () => t("运行脚本"),
+    file_upload: () => t("上传文件"),
+    handle_dialog: () => (args.accept ? t("应允提示") : t("回绝提示")),
+    close: () => t("关闭浏览器"),
+    resize: () => t("调整窗口"),
+    console_messages: () => t("查看控制台"),
+    network_requests: () => t("查看网络请求")
   };
   return say[name]?.() || name;
 }

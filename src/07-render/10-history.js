@@ -42,10 +42,10 @@ function renderHistory() {
   /** @type {Map<string, any[]>} */
   const buckets = new Map();
   buckets.set(
-    "置顶",
+    t("置顶"),
     pinned.map(c => ({ kind: "chat", c }))
   );
-  for (const label of ["今天", "过去七天", "更早"]) buckets.set(label, []);
+  for (const label of [t("今天"), t("过去七天"), t("更早")]) buckets.set(label, []);
   for (const node of nodes) buckets.get(dayBucket(node.at)).push(node);
   // 正改着名时侧栏也可能重画（别的对话拟好了题、后台一答收尾）：改到一半的字与光标得留住，不能被原标题冲掉
   // 改组名同理
@@ -56,30 +56,30 @@ function renderHistory() {
     typed = mine ? { value: editing.value, start: editing.selectionStart, end: editing.selectionEnd } : null;
   const item = c => {
     if (renamingId === c.id)
-      return `<div class="history-item active" data-conversation="${escapeHtml(c.id)}"><input class="history-rename" value="${escapeHtml(typed && renamingDirty ? typed.value : c.title)}" maxlength="60" aria-label="重命名对话"></div>`;
+      return `<div class="history-item active" data-conversation="${escapeHtml(c.id)}"><input class="history-rename" value="${escapeHtml(typed && renamingDirty ? typed.value : c.title)}" maxlength="60" aria-label="${t(`重命名对话`)}"></div>`;
     // 这一答写完了、帮手还在后台做，也算在忙；帮手的请示没有哪一答替它挂「等待确认」，按请示本身认
     const job = requestJob(c.id),
       running = !!job || crewRunning(c.id),
       waiting = job?.label === AWAITING || [...pendingApprovals.values()].some(entry => entry.conversationId === c.id),
-      runningTip = job ? "后台作答中" : "帮手在后台做";
+      runningTip = job ? t("后台作答中") : t("帮手在后台做");
     const state = waiting
-      ? `<span class="history-state waiting" title="有指令待你定夺" aria-label="有指令待你定夺">问</span>`
+      ? `<span class="history-state waiting" title="${t(`有指令待你定夺`)}" aria-label="${t(`有指令待你定夺`)}">${t(`问`)}</span>`
       : running
         ? `<span class="history-state running" title="${runningTip}" aria-label="${runningTip}"></span>`
         : c.unread
-          ? `<span class="history-state unread" title="有新答复" aria-label="有新答复"></span>`
+          ? `<span class="history-state unread" title="${t(`有新答复`)}" aria-label="${t(`有新答复`)}"></span>`
           : c.pinned && groupOf(c)
-            ? `<span class="history-state pinned" title="组内置顶" aria-label="组内置顶"></span>`
+            ? `<span class="history-state pinned" title="${t(`组内置顶`)}" aria-label="${t(`组内置顶`)}"></span>`
             : "";
-    return `<div class="history-item ${c.id === currentId ? "active" : ""} ${running ? "is-running" : ""} ${c.unread ? "has-unread" : ""} ${isWork(c) ? "is-work" : ""}" data-conversation="${escapeHtml(c.id)}" draggable="true"><button class="history-open" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</button>${state}<span class="history-tools"><button class="history-tool history-more" data-history-action="menu" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></span></div>`;
+    return `<div class="history-item ${c.id === currentId ? "active" : ""} ${running ? "is-running" : ""} ${c.unread ? "has-unread" : ""} ${isWork(c) ? "is-work" : ""}" data-conversation="${escapeHtml(c.id)}" draggable="true"><button class="history-open" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</button>${state}<span class="history-tools"><button class="history-tool history-more" data-history-action="menu" title="${t(`更多`)}" aria-label="${t(`更多`)}" aria-haspopup="menu">⋯</button></span></div>`;
   };
   const repoHtml = node => {
-    const name = node.dir.split(/[\\/]/).filter(Boolean).pop() || node.dir || "未定目录",
+    const name = node.dir.split(/[\\/]/).filter(Boolean).pop() || node.dir || t("未定目录"),
       fold = collapsed.has(node.dir) && !query,
       shown = fold ? [] : node.items,
       here = fold && node.items.some(c => c.id === currentId),
       running = node.items.filter(c => requestJob(c.id)).length;
-    return `<div class="history-repo-group${fold ? " collapsed" : ""}${here ? " holds-current" : ""}" data-repo="${escapeHtml(node.dir)}"><div class="history-repo-head"><button type="button" class="history-repo" data-repo-toggle="${escapeHtml(node.dir)}" title="${escapeHtml(node.dir)}\n${fold ? "展开" : "收起"}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">工</span><span class="history-repo-name">${escapeHtml(name)}</span><small>${node.items.length}${fold && running ? ` · ${running} 生成中` : ""}</small><span class="repo-caret" aria-hidden="true">›</span></button><button type="button" class="history-tool repo-new" data-history-workdir="${escapeHtml(node.dir)}" title="在此目录新建">＋</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
+    return `<div class="history-repo-group${fold ? " collapsed" : ""}${here ? " holds-current" : ""}" data-repo="${escapeHtml(node.dir)}"><div class="history-repo-head"><button type="button" class="history-repo" data-repo-toggle="${escapeHtml(node.dir)}" title="${escapeHtml(node.dir)}\n${fold ? t("展开") : t("收起")}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">${t(`工`)}</span><span class="history-repo-name">${escapeHtml(name)}</span><small>${node.items.length}${fold && running ? t` · ${running} 生成中` : ""}</small><span class="repo-caret" aria-hidden="true">›</span></button><button type="button" class="history-tool repo-new" data-history-workdir="${escapeHtml(node.dir)}" title="${t(`在此目录新建`)}">＋</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
   };
   // 分组：画法同「工」组，印文是「集」；组首右侧「＋」在此组另起一段、「⋯」改名、打开组的设置或解散；改名时组名换成输入框。
   // 对话可拖到组上移入、拖到组外移出（见 24-groups.js）
@@ -92,9 +92,9 @@ function renderHistory() {
       here = fold && items.some(c => c.id === currentId),
       renaming = renamingGroupId === group.id;
     const name = renaming
-      ? `<input class="history-rename group-rename" value="${escapeHtml(typed ? typed.value : group.name)}" maxlength="40" aria-label="分组改名">`
+      ? `<input class="history-rename group-rename" value="${escapeHtml(typed ? typed.value : group.name)}" maxlength="40" aria-label="${t(`分组改名`)}">`
       : `<span class="history-repo-name">${escapeHtml(group.name)}</span>`;
-    return `<div class="history-repo-group is-set${fold ? " collapsed" : ""}${here ? " holds-current" : ""}" data-group="${escapeHtml(group.id)}"><div class="history-repo-head"><div role="button" tabindex="0" class="history-repo" data-group-toggle="${escapeHtml(group.id)}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">集</span>${name}<small>${node.items.length}</small><span class="repo-caret" aria-hidden="true">›</span></div><button type="button" class="history-tool repo-new" data-group-new="${escapeHtml(group.id)}" title="在此组新建">＋</button><button type="button" class="history-tool repo-new repo-more" data-group-menu="${escapeHtml(group.id)}" title="更多" aria-label="更多" aria-haspopup="menu">⋯</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
+    return `<div class="history-repo-group is-set${fold ? " collapsed" : ""}${here ? " holds-current" : ""}" data-group="${escapeHtml(group.id)}"><div class="history-repo-head"><div role="button" tabindex="0" class="history-repo" data-group-toggle="${escapeHtml(group.id)}" aria-expanded="${fold ? "false" : "true"}"><span class="repo-seal" aria-hidden="true">${t(`集`)}</span>${name}<small>${node.items.length}</small><span class="repo-caret" aria-hidden="true">›</span></div><button type="button" class="history-tool repo-new" data-group-new="${escapeHtml(group.id)}" title="${t(`在此组新建`)}">＋</button><button type="button" class="history-tool repo-new repo-more" data-group-menu="${escapeHtml(group.id)}" title="${t(`更多`)}" aria-label="${t(`更多`)}" aria-haspopup="menu">⋯</button></div>${shown.length ? `<div class="history-repo-items">${shown.map(item).join("")}</div>` : ""}</div>`;
   };
   renderingHistory = true;
   try {
@@ -105,7 +105,7 @@ function renderHistory() {
           ([label, items]) =>
             `<div class="history-group"><div class="history-label">${label}</div>${items.map(node => (node.kind === "repo" ? repoHtml(node) : node.kind === "set" ? setHtml(node) : item(node.c))).join("")}</div>`
         )
-        .join("") || `<div class="history-empty">${query ? "没有匹配的对话" : "尚无旧墨"}</div>`;
+        .join("") || `<div class="history-empty">${query ? t("没有匹配的对话") : t("尚无旧墨")}</div>`;
     const input = $("#history .history-rename");
     if (input) {
       input.focus();

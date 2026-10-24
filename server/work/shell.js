@@ -192,6 +192,12 @@ module.exports = function createShell({ toolEnv }) {
       durationMs: Date.now() - job.started
     };
   }
+  // 尚未把编号交给页面便断开：无人能再凭编号叫停它，立即撤去并收掉进程。
+  function discardBackground(job) {
+    backgroundJobs.delete(job.id);
+    job.reported = true;
+    killTree(job.child);
+  }
   // 桥接退出时把还在跑的指令（前台的与后台的）一并收掉，连根
   process.on("exit", () => {
     for (const child of runningShells) killTreeSync(child);
@@ -231,5 +237,5 @@ module.exports = function createShell({ toolEnv }) {
     job.reported = true;
     return { ...(await backgroundReport(job, 0)), command: job.command };
   }
-  return { WORK_SHELL, runShell, startBackground, backgroundReport, checkBackground, watchBackground };
+  return { WORK_SHELL, runShell, startBackground, backgroundReport, discardBackground, checkBackground, watchBackground };
 };

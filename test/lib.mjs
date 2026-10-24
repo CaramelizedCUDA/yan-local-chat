@@ -75,6 +75,10 @@ export async function connect() {
       );
   };
   await send("Page.enable");
+  // 默认中文，不依赖执行机器的系统语言；i18n 用例仍可显式切换语言。
+  await send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `Object.defineProperty(navigator, "language", { get: () => "zh-CN", configurable: true }); Object.defineProperty(navigator, "languages", { get: () => ["zh-CN", "zh"], configurable: true });`
+  });
   await send("Runtime.enable");
   await send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await send("Emulation.setDeviceMetricsOverride", { width: 1380, height: 900, deviceScaleFactor: 1, mobile: false });

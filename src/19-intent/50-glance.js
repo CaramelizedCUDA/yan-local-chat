@@ -1,5 +1,6 @@
 // 言 · 意 · 常显（见 设计稿/59 乙、60 一·甲）：意是整个目录的骨架，不随行迹跑掉——题下一行（目录之后）与书眉（滚过标题后，顶栏左侧）
 // 各带一枚：石青「意」印、已立几项、一排记号（按态排：已立、假定在前，存疑、待复核、待定、在做，未做在后）；点开即卡片（见 40-card.js）。
+// 那一排只排目标；守出了事（转待复核、未立）才在末尾隔一道丝栏、写「守」跟它们的记号——混进那一排就与目标的待复核认不出（设计稿/81 一）。
 // 按目录记最近见到的那份：每答开工读的、改完交回的都记进来；同一目录的几段对话看的是同一份。
 // 刚打开、本页还没见过的目录现读一回（文件与目录现取指纹，探针不为看一眼去跑）
 const INTENT_GLANCE_ORDER = ["holds", "assumed", "premised", "stale", "waiting", "doing", "open"],
@@ -46,14 +47,21 @@ function intentGlanceHtml(conversation, short = false) {
   if (!held) return void glanceIntent(conversation), "";
   const { intent, now } = held,
     views = Object.keys(intent.nodes)
-      .filter(id => !intentGone(intent, id))
+      .filter(id => !intent.nodes[id].keep && !intentGone(intent, id))
       .map(id => intentView(intent, id, now))
-      .sort((a, b) => INTENT_GLANCE_ORDER.indexOf(a) - INTENT_GLANCE_ORDER.indexOf(b));
-  if (!views.length) return "";
+      .sort((a, b) => INTENT_GLANCE_ORDER.indexOf(a) - INTENT_GLANCE_ORDER.indexOf(b)),
+    keeps = intentKeeps(intent),
+    // 只立了守、没有目标的：守都列出来，不然这一枚就不见了，卡片也点不开
+    broken = views.length ? keeps.filter(id => intentView(intent, id, now) === "stale") : keeps;
+  if (!views.length && !broken.length) return "";
   const { standing } = intentTally(intent, now),
     rest = views.length - INTENT_GLANCE_MARKS;
-  return `<button type="button" class="intent-glance" data-intent-open title="意：进度 ${standing} / ${views.length}，点开看图"><span class="seal intent-seal" aria-hidden="true">意</span><span>${short ? `<b>${standing}</b>/${views.length}` : `进度 <b>${standing}</b> / ${views.length}`}</span><span class="intent-glance-run" aria-hidden="true">${views
+  return `<button type="button" class="intent-glance" data-intent-open title="${t`意：进度 ${standing} / ${views.length}，点开看图`}"><span class="seal intent-seal" aria-hidden="true">${t(`意`)}</span>${views.length ? `<span>${short ? `<b>${standing}</b>/${views.length}` : `${t(`进度`)} <b>${standing}</b> / ${views.length}`}</span>` : ""}<span class="intent-glance-run" aria-hidden="true">${views
     .slice(0, INTENT_GLANCE_MARKS)
     .map(view => intentMark(view))
-    .join("")}${rest > 0 ? `<i>+${rest}</i>` : ""}</span></button>`;
+    .join("")}${rest > 0 ? `<i>+${rest}</i>` : ""}</span>${
+    broken.length
+      ? `<span class="intent-glance-keep" title="${escapeHtml(views.length ? t`守：${broken.join("、")} 待复核` : t`守：${broken.join("、")}`)}"><i aria-hidden="true"></i>${t(`守`)}${broken.map(id => intentMark(intentView(intent, id, now))).join("")}</span>`
+      : ""
+  }</button>`;
 }

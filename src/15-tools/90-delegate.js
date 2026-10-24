@@ -6,7 +6,7 @@
 defineTool({
   name: "delegate",
   group: "delegate",
-  label: "差遣",
+  label: t("差遣"),
   offer: ctx => ctx.offered.some(name => name !== "ask_user"),
   // 思考档位只列这台模型认的几档：通用四档里有它不认的，主模型一挑中，帮手起跑就被接口拒；不认档位的模型不给这一项
   params: (parameters, ctx) => {
@@ -21,14 +21,14 @@ defineTool({
   html: step => delegateStepHtml(step),
   sync: syncDelegateCard,
   digest: step =>
-    `差遣「${String(step.title || "").slice(0, 40)}」→ ${step.result || step.status}${subChangedPaths(step).length ? `，改了 ${subChangedPaths(step).slice(0, 8).join("、")}` : ""}`
+    t`差遣「${String(step.title || "").slice(0, 40)}」→ ${step.result || step.status}${subChangedPaths(step).length ? t`，改了 ${subChangedPaths(step).slice(0, 8).join("、")}` : ""}`
 });
 // 给帮手递话：正做着的，话进它的收件口，说到落点时读到（同补言，不掐断）；已收工的即续派，带着先前的经过接着做。
 // 叫停只停正做着的那一个，已做的照未完成回报。这一步在行迹里也是一枚签（续派 / 传话 / 叫停），点开是那名帮手
 defineTool({
   name: "helper",
   group: "delegate",
-  label: "传话",
+  label: t("传话"),
   offer: ctx => ctx.offered.includes("delegate"),
   mainOnly: true,
   sideEffect: true,
@@ -39,7 +39,7 @@ defineTool({
 // 作答途中回来的回报（帮手、后台指令）：落在行迹里它到达的那一刻，一小步，点开即那名帮手或挂它的那一步
 defineTool({
   name: "relay_note",
-  label: "回报",
+  label: t("回报"),
   offer: false,
   html: relayStepHtml,
   replay: replayReport
@@ -53,9 +53,9 @@ function replayReport(step) {
 // 递给帮手的话：落在帮手自己的时间线里它到达的那一刻，待递转圈、递到打勾（与补言同一种画法）
 defineTool({
   name: "helper_note",
-  label: "传话",
+  label: t("传话"),
   offer: false,
-  html: step => noteStepHtml(step, { seal: "传", label: "传话" }),
+  html: step => noteStepHtml(step, { seal: t("传"), label: t("传话") }),
   replay: replayReport
 });
 /** 这段对话里帮手的每一趟（差遣与续派），按先后 @param {Conversation|null} conversation */
@@ -96,12 +96,12 @@ function tellHelper(step, args, ctx) {
       ok: false,
       content: prompt("delegate.gone", {
         title: name,
-        running: boxes.map(item => `「${item.title}」`).join("、") || "无",
+        running: boxes.map(item => `「${item.title}」`).join("、") || t("无"),
         done:
           [...new Set(helperRuns(ctx.conversation).map(run => run.title))]
             .filter(title => !boxes.some(item => item.title === title))
             .map(title => `「${title}」`)
-            .join("、") || "无"
+            .join("、") || t("无")
       }),
       display: "没有这名帮手"
     });
@@ -113,7 +113,7 @@ function tellHelper(step, args, ctx) {
     box.controller.abort();
     return { ok: true, content: prompt("delegate.stopping", { title: box.title }), display: "已叫停" };
   }
-  if (!text) return { ok: false, content: "message 不能为空", display: "无话" };
+  if (!text) return { ok: false, content: t("message 不能为空"), display: "无话" };
   step.note = text;
   if (box) {
     // 正做着：话落在它自己的时间线里，进它的收件口——正说着就等到句尾再停这一轮递上，正跑工具就等结果交回时递
@@ -158,7 +158,7 @@ function delegateInBackground(step, args, ctx) {
     String(args.title || "")
       .trim()
       .slice(0, 40) || task.slice(0, 24);
-  if (!task) return { ok: false, content: "task 不能为空：请把背景、目标、边界与要回报的内容写全", display: "任务为空" };
+  if (!task) return { ok: false, content: t("task 不能为空：请把背景、目标、边界与要回报的内容写全"), display: "任务为空" };
   launchHelper(step, args, ctx);
   return { ok: true, background: true, content: prompt("delegate.started", { title: step.title }), display: "后台进行中" };
 }
@@ -192,7 +192,7 @@ function launchHelper(step, args, ctx, past = null) {
         step.status = "error";
         // 用户停的（停止、刷新）：不回报，也就不再叫醒谁
         if (error.name === "AbortError") return void (step.result = "已止");
-        step.result = friendlyError(String(error.message || error));
+        step.result = bridgeErrorText(String(error.message || error));
         mailReport(conversation, {
           report: prompt("delegate.failed", {
             title: step.title,
@@ -220,16 +220,14 @@ function launchHelper(step, args, ctx, past = null) {
 function helperWaits(sub) {
   return sub.steps.filter(step => step.bg?.state === "running");
 }
-// 派它的那一答收尾时它还没做完，墨没算进去：做完了记回那一答
-/** @param {Message} assistant @param {Profile|null} profile */
-function chargeHelper(assistant, usage, profile) {
+// 派它的那一答收尾时它还没做完，墨没算进这一答：做完了记回那一答（余墨各轮已当场扣过，见 runRounds 的 spend）
+/** @param {Message} assistant */
+function chargeHelper(assistant, usage) {
   const spent = Number(usage?.total_tokens || 0);
-  if (!spent || !profile) return;
+  if (!spent) return;
   assistant.usage ||= { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   for (const key of Object.keys(usage)) assistant.usage[key] = Number(assistant.usage[key] || 0) + Number(usage[key] || 0);
   assistant.tokenCount = Number(assistant.tokenCount || 0) + spent;
-  spendTokens(profile, spent);
-  renderQuota();
 }
 // 续派时帮手先前的经过：每一趟一问一答（所领之命 → 回报），上一趟的行迹冠在下一趟的命前，与主对话的历史同一个写法
 /** @param {Conversation} conversation @param {Step} past */
@@ -242,7 +240,7 @@ function helperHistory(conversation, past) {
     const trail = i ? settledDigest(mine[i - 1].sub) : "";
     history.push(
       { role: "user", content: `${trail ? `${trail}\n\n` : ""}${run.sub.task}` },
-      { role: "assistant", content: String(run.sub.report || run.sub.content || "").trim() || "（未留回报）" }
+      { role: "assistant", content: String(run.sub.report || run.sub.content || "").trim() || t("（未留回报）") }
     );
   });
   return history;
@@ -264,9 +262,9 @@ function subChangedPaths(step) {
 async function runDelegate(step, args, ctx, profile, past, progress) {
   const { conversation, assistant } = ctx;
   const task = String(args.task).trim();
-  if (!profile) return { ok: false, content: "没有可用的模型", display: "无模型" };
+  if (!profile) return { ok: false, content: t("没有可用的模型"), display: "无模型" };
   const tools = toolDefinitions(conversation, { sub: true });
-  if (!tools) return { ok: false, content: "此对话里没有可交给帮手的工具", display: "无工具可用" };
+  if (!tools) return { ok: false, content: t("此对话里没有可交给帮手的工具"), display: "无工具可用" };
   const id = `sub-${uid()}`;
   // 思考强度：主模型按活的难易给（省略即同主答），续派沿用这名帮手上一趟的；记下的是模型实际认的那一档，卡片上标出
   const asked = REASONING_ORDER.includes(args.effort) ? args.effort : past?.sub?.effort || conversation.reasoning || "",
@@ -286,13 +284,13 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
   step.sub = sub;
   // 领命时附上主对话的账本（只读）：目标与约束它也得知道，开头提过的一条小约束才不会在分出去的活里丢了。
   // 领命这一刻现读：「先定下约束、再派活」最常见，开工时读的那份往往是旧的，甚至还没有
-  await loadLedger(conversation, ctx.signal);
+  const ledger = await loadLedger(conversation, ctx.signal, "sub");
   // 读账本这一会儿里按了「止」：它把中止吞了，这里补上——帮手还没登记，过了这里 stopCrew 就找不到它
   ctx.signal?.throwIfAborted();
   const lead = past ? settledDigest(past.sub) : "";
   const history = [
     ...(past ? helperHistory(conversation, past) : []),
-    { role: "user", content: `${ledgerNote(conversation, "sub", profile)}${lead ? `${lead}\n\n` : ""}${task}` }
+    { role: "user", content: `${ledgerNote(conversation, "sub", profile, ledger)}${lead ? `${lead}\n\n` : ""}${task}` }
   ];
   const overrides = {
     systemPrompt: systemPrompt(conversation, tools, { role: "sub" }),
@@ -302,7 +300,7 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
     head: history.length,
     onFold: busy => {
       const job = requestJob(conversation.id);
-      if (job) setJobLabel(conversation, job, busy ? "帮手正删繁就简" : "");
+      if (job) setJobLabel(conversation, job, busy ? t("帮手正删繁就简") : "");
       refreshSteps(assistant);
     }
   };
@@ -331,7 +329,9 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
   // 帮手的话是逐字流进来的，卡片每隔一小会儿刷一次，不必每个字都重画
   let painted = "";
   const paint = () => {
-    const sig = `${sub.content.length}|${sub.reasoning.length}|${sub.status}|${sub.steps.map(s => s.status).join("")}|${Math.floor((Date.now() - sub.startedAt) / 1000)}`;
+    // 用量边做边给差遣面板看（见 liveHelperUsage）；收工时才记到帮手身上
+    if (tally.usageKnown) liveHelperUsage.set(sub, tally.usage);
+    const sig = `${tally.usage.total_tokens}|${sub.content.length}|${sub.reasoning.length}|${sub.status}|${sub.steps.map(s => s.status).join("")}|${Math.floor((Date.now() - sub.startedAt) / 1000)}`;
     if (sig === painted) return;
     painted = sig;
     refreshSteps(assistant);
@@ -380,7 +380,7 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
       sub.status = "stopped";
       if (box.halted) throw error;
       // 主模型叫停的：照未完成回报，它已做的一并交回
-      failure = "已按吩咐叫停";
+      failure = t("已按吩咐叫停");
     } else {
       sub.status = "error";
       failure = friendlyError(String(error.message || error));
@@ -405,7 +405,7 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
     // 按「止」时主答的 job 已先撤下、它的收尾也会来算这名帮手：谁先记谁打 charged，另一边跳过
     if (!sub.charged && requestJob(conversation.id)?.assistantId !== assistant.id) {
       sub.charged = true;
-      chargeHelper(assistant, sub.usage, profile);
+      chargeHelper(assistant, sub.usage);
     }
     // 回报是最后一段话；裁掉开头的空行，偏移跟着前移
     const lead = trimReply(sub);
@@ -418,10 +418,10 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
       ok: false,
       content: prompt("delegate.failed", {
         title: step.title,
-        reason: failure || "未收到回报",
+        reason: failure || t("未收到回报"),
         steps: sub.steps.length,
         changed: changedNote,
-        partial: sub.report ? `它最后说：${sub.report.slice(0, 4000)}` : ""
+        partial: sub.report ? t`它最后说：${sub.report.slice(0, 4000)}` : ""
       }),
       display: `${display} · 未完成`
     };
@@ -430,7 +430,7 @@ async function runDelegate(step, args, ctx, profile, past, progress) {
       ok: false,
       content: prompt("delegate.failed", {
         title: step.title,
-        reason: "帮手没有写回报",
+        reason: t("帮手没有写回报"),
         steps: sub.steps.length,
         changed: changedNote,
         partial: ""
@@ -455,7 +455,7 @@ function helperSummary(step, sub, overrides, ms) {
   const changed = subChangedPaths(step),
     stats = changeStats({ steps: [step] });
   return {
-    changedNote: changed.length ? `，改了 ${changed.length} 个文件：${changed.join("、")}（+${stats.added} −${stats.removed}）` : "",
+    changedNote: changed.length ? t`，改了 ${changed.length} 个文件：${changed.join("、")}（+${stats.added} −${stats.removed}）` : "",
     display: `${sub.steps.filter(s => !isFold(s)).length} 步${changed.length ? ` · 改 ${changed.length} 个文件` : ""}${overrides.folds ? ` · 撮要 ${overrides.folds} 回` : ""} · ${spanText(ms)}`
   };
 }
@@ -473,7 +473,7 @@ function waitingOutcome(step, sub, tally, overrides) {
       steps: sub.steps.length,
       changed: changedNote,
       ids,
-      report: clipForModel(sub.content.slice(tally.replyStart).trim(), 16000, { tail: true }) || "（未留话）"
+      report: clipForModel(sub.content.slice(tally.replyStart).trim(), 16000, { tail: true }) || t("（未留话）")
     }),
     display: `${display} · 等后台`
   };
@@ -485,7 +485,7 @@ function waitingOutcome(step, sub, tally, overrides) {
 /** @param {Step} step @param {string} [kind] 签上的标签：差遣 / 续派 */
 function delegateStepHtml(step, kind = "差遣") {
   const { sub, status, meta } = delegateSubState(step);
-  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" title="展开帮手的行迹"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">遣</span>${kind}</span><span class="tool-title" title="${escapeHtml(sub?.task || step.title || "")}">${escapeHtml(step.title || "")}</span>${kind === "差遣" ? "" : `<span class="helper-fresh">已更新</span>`}<span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "未完成") : ""}">${escapeHtml(meta)}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" title="${t(`展开帮手的行迹`)}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">${t(`遣`)}</span>${t(kind)}</span><span class="tool-title" title="${escapeHtml(sub?.task || step.title || "")}">${escapeHtml(step.title || "")}</span>${kind === "差遣" ? "" : `<span class="helper-fresh">${t(`已更新`)}</span>`}<span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result) || t("未完成")) : ""}">${escapeHtml(meta)}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 行迹里那枚签的就地更新：只动头上的状态与标题。帮手自己的时间线与回报不在这儿，在面板里。返回真即已就地画好
 /** @param {Step} step */
@@ -506,6 +506,7 @@ function syncDelegateCard(el, step, prev) {
 // 传话、叫停、续派的签：与差遣同一种签，点开是那名帮手——传话开到递去的那句话，续派开的是这一趟
 /** @param {Step} step */
 function helperKind(step) {
+  // 内里用中文的种类名（比对、data-kind 都认它），画到签上时才照语言换
   if (step.sub) return "续派";
   if (step.mode) return step.mode === "stop" ? "叫停" : "传话";
   const parsed = parseToolArguments(step.arguments);
@@ -521,7 +522,7 @@ function helperStepHtml(step) {
     status = step.status || "done",
     said = text.split("\n").find(Boolean) || "",
     fresh = kind === "传话" && status !== "error";
-  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"${step.ref ? ` data-ref="${escapeHtml(step.ref)}"` : ""}${step.noteId ? ` data-note="${escapeHtml(step.noteId)}"` : ""}><div class="tool-step-head" role="button" tabindex="0" title="${step.ref ? "看这名帮手" : ""}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">遣</span>${kind}</span><span class="tool-title" title="${escapeHtml(text)}">${escapeHtml(name)}${said ? `<span class="helper-said">${escapeHtml(said.slice(0, 80))}</span>` : ""}</span>${fresh ? `<span class="helper-fresh">已更新</span>` : ""}<span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "") : ""}">${status === "running" ? "" : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-delegate" data-step-id="${escapeHtml(step.id)}" data-kind="${kind}" data-status="${escapeHtml(status)}"${step.ref ? ` data-ref="${escapeHtml(step.ref)}"` : ""}${step.noteId ? ` data-note="${escapeHtml(step.noteId)}"` : ""}><div class="tool-step-head" role="button" tabindex="0" title="${step.ref ? t("看这名帮手") : ""}"><span class="tool-label"><span class="seal sub-seal" aria-hidden="true">${t(`遣`)}</span>${t(kind)}</span><span class="tool-title" title="${escapeHtml(text)}">${escapeHtml(name)}${said ? `<span class="helper-said">${escapeHtml(said.slice(0, 80))}</span>` : ""}</span>${fresh ? `<span class="helper-fresh">${t(`已更新`)}</span>` : ""}<span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result) || "") : ""}">${status === "running" ? "" : escapeHtml(stepText(step.result) || "")}</span>${stepStateHtml(status)}</div></div>`;
 }
 /** @param {Step} step */
 function relayStepHtml(step) {
@@ -529,10 +530,10 @@ function relayStepHtml(step) {
     status = step.status || "done",
     bg = relay.kind === "bg",
     what = bg
-      ? `后台 ${relay.title} 已结束${relay.ok ? "" : ` · 退出码 ${relay.exitCode ?? "?"}`}`
-      : `帮手「${relay.title}」${relay.ok ? "回报" : "未完成"}`,
+      ? t`后台 ${relay.title} 已结束${relay.ok ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`}`
+      : t`帮手「${relay.title}」${relay.ok ? t("回报") : t("未完成")}`,
     target = bg ? `data-relay-reveal="${escapeHtml(relay.step)}"` : `data-relay-step="${escapeHtml(relay.step)}"`;
-  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? "回到挂它的那一步" : "看这一趟的经过"}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? "候" : "遣"}</span>回报</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? "待递" : escapeHtml(step.result || "已递")}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? t("回到挂它的那一步") : t("看这一趟的经过")}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? t("候") : t("遣")}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result) || t("已递"))}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 签的种类变了（参数拟完才知道是续派还是传话）就整张换；续派的签与差遣一样就地更新
 /** @param {Step} step */

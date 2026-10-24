@@ -19,7 +19,7 @@ async function preparing(task) {
 async function prepareTurn(c) {
   if (!(await ensureWorkReady(c))) return false;
   if (!(await claimConversation(c.id))) {
-    toast("此对话正在另一页面作答，稍后再发");
+    toast(t("此对话正在另一页面作答，稍后再发"));
     return false;
   }
   // 等的这一会儿，后台回报可能已在这段里另起了一答，这段也可能已被删掉
@@ -31,7 +31,7 @@ async function sendOrStop() {
   if (conversationRunning()) return composerHasContent() ? sendSupplement() : stopGeneration();
   if (crewRunning() && !composerHasContent()) return stopGeneration();
   // 另一个页面正在这段对话里作答：这边只跟着看，写完再说（话留在输入框里）
-  if (runningElsewhere()) return toast("此对话正在另一页面作答，稍后再发");
+  if (runningElsewhere()) return toast(t("此对话正在另一页面作答，稍后再发"));
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
   const text = input.value.trim();
   if (!text && !pendingAttachments.length && !pendingQuote) return;
@@ -41,14 +41,23 @@ async function sendOrStop() {
   try {
     const profile = activeProfile();
     if (!profile) {
-      toast("请先接入模型");
+      toast(t("请先接入模型"));
       return openSettings("models");
     }
     if (quotaBlocked(profile)) {
       if (currentConversation()) renderConversation();
-      toast(quotaExhausted(profile) ? "余墨已尽，请调高上限或更换模型" : "余墨不足：进行中的对话已占去余量，请稍候或调高上限");
+      toast(quotaExhausted(profile) ? t("余墨已尽，请调高上限或更换模型") : t("余墨不足：进行中的对话已占去余量，请稍候或调高上限"));
       return;
     }
+    // 「/技能名」开头：那份说明先作一件附件放上案（见 takeSkillCommand）。不是斜杠起头就不等这一下，案上的附件照旧在下面一并攥住
+    if (
+      text.startsWith("/") &&
+      !(await takeSkillCommand(
+        input,
+        currentConversation()?.workdir ?? ((store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "")
+      ))
+    )
+      return;
     // 案上的东西在点发送这一刻就定下：下面要等工作目录立起来，这期间用户可能已换到别的对话，
     // 输入框、待发的附件与引文都换成了那一段的草稿，不能等完了再去读
     const sendingDraftKey = draftKey(),
@@ -61,12 +70,12 @@ async function sendOrStop() {
       const pending = (store.settings.pendingWorkdir || "").trim() || pendingGroup()?.workdir || "";
       // 行：先把工作目录立起来，立不起来就不发
       if (pending && profile.tools === false) {
-        toast("当前模型已关闭本机工具，请在模型高级配置中开启");
+        toast(t("当前模型已关闭本机工具，请在模型高级配置中开启"));
         return;
       }
       c = {
         id: uid(),
-        title: titleFrom(text || pendingQuote?.text || "", pendingAttachments),
+        title: titleFrom(snapshot.content || pendingQuote?.text || "", snapshot.attachments),
         forks: [],
         threads: [],
         createdAt: now(),
@@ -214,7 +223,7 @@ function sendSupplement() {
 function sendSupplementNow() {
   const job = requestJob();
   if (!job?.queue?.some(item => item.user)) return;
-  if (!job.reading || !job.round) return toast("工具执行完毕即递上");
+  if (!job.reading || !job.round) return toast(t("工具执行完毕即递上"));
   clearInterval(job.steerTimer);
   job.steerTimer = 0;
   job.round.abort();
@@ -330,12 +339,12 @@ function settleSupplements(conversation, assistant, job, profile) {
     updatedAt: now()
   };
   if (currentId === conversation.id && view === "chat") restoreDraft();
-  toast("这一答未写完，补言已放回案上");
+  toast(t("这一答未写完，补言已放回案上"));
   mail();
 }
 function titleFrom(text, attachments) {
   // 按码点截：截在 emoji 中间会留下半个字
-  const chars = [...(text || `关于 ${attachments[0]?.name || "附件"}`).replace(/\s+/g, " ").trim()];
+  const chars = [...(text || t`关于 ${attachments[0]?.name || t("附件")}`).replace(/\s+/g, " ").trim()];
   return chars.slice(0, 28).join("") + (chars.length > 28 ? "…" : "");
 }
 // ---------- 停：一处收口 ----------

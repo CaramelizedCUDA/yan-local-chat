@@ -14,18 +14,28 @@ npm start
 
 浏览器会打开 `http://127.0.0.1:18787`。首次使用时，在「设置 → 模型」中填写显示名称、模型 ID、Base URL 与 API Key 即可开始；项目不会读取或内置开发者电脑上的任何配置。可以添加多个接口并切换默认模型；每个模型可选「接口」是 OpenAI 兼容（chat/completions）还是 Anthropic（Messages API），Base URL 带 anthropic.com 的不选也认。
 
+界面语言在「设置 → 通用 → 语言」里切换（中文 / English），切换后页面重新载入；没选过的随浏览器语言，中文系用中文，其余用英文。英文界面只换界面上的字，给模型的提示词照旧；「设置 → 文档」暂只有中文。
+
 
 `start.cmd` 打开的 CMD 窗口即本机桥接进程，必须保持开启；关闭后已加载的页面暂时仍在，但刷新、模型转发、联网与执事都会停止。浏览器开了、页面却报「本机桥接已停止」时，先看这个窗口：桥接退出会停在那里并打出原因（端口被占、缺 node 等），不会一闪而过。
+
+## Windows 便携包
+
+不想先装 Node 的，用便携包：解开是一个「言」文件夹，双击里面的 `言.exe` 即可，其余与上面一样（窗口即桥接，须开着）。包里带着官方 Node（`node\`，含 npm），言自己的文件与仓库里的一字不差；`start.cmd` 也认这个 `node\`，两者等价。自带的 Node 接在 PATH 末尾：模型跑的 `node`、`npx` 与「环境」里装的前端工具找得到它，系统已装了 Node 的仍用系统的。对话、卷宗、配置照旧在 `~/.yan/`，换用便携包或换回源码都接得上。
+
+`言.exe` 没有代码签名，头一回双击 Windows 可能提示「已保护你的电脑」，点「更多信息 → 仍要运行」即可。
+
+打包：在仓库里运行 `npm run pack`，得 `dist/yan-<版本>-win-x64.zip`。要用到系统自带的 `curl.exe`、`tar.exe` 与 .NET Framework 4 的 `csc.exe`（Windows 10 / 11 都有）；Node 的版本写在 `pack/pack.mjs` 开头，压缩包按 nodejs.org 的校验和验过才用，换版本后整套测试用包里的 Node 跑一遍（`dist\言\node\node.exe test/run.mjs`）。启动器的源码是 `pack/launcher.cs`，图标 `pack/icon.ico` 由 `icon.svg` 画成。
 
 ## 在 VS Code 内使用
 
 1. 通过「终端 → 运行任务」执行「言：启动模型桥接」，并保持该任务终端开启。
-2. 按 `Ctrl+Shift+P`，运行「Simple Browser: Show」，输入 `http://127.0.0.1:18787`。
+2. 用系统浏览器打开 `http://127.0.0.1:18787`。Simple Browser 以 iframe 嵌入页面，会被言的 `frame-ancestors 'none'` 策略阻止；桥接也不向扩展 Webview 来源开放执事接口。
 3. 在「设置 → 模型」中填写配置；可先点「获取列表」，再点「测试连接」；联网检索在「设置 → 工具」里测。
 
 ## 直接打开 index.html
 
-言须经本机桥接打开：运行 start.cmd（或 `npm start`），页面在 `http://127.0.0.1:18787`；VS Code 预览也会去连本机的桥接。直接双击 `index.html`（`file://`）接不上桥接——桥接不认来源为 `null` 的页面（`file://` 页面是它，别处网页嵌进来的沙箱 iframe 也是它，分不出来）——页面只提示先运行 start.cmd，接上即开。改过 `src/` 或 `styles/` 后刷新即生效（桥接按请求即时拼接，不落成文件）。
+言须经本机桥接打开：运行 start.cmd（或 `npm start`），用系统浏览器访问 `http://127.0.0.1:18787`。直接双击 `index.html`（`file://`）接不上桥接——桥接不认来源为 `null` 的页面（`file://` 页面是它，别处网页嵌进来的沙箱 iframe 也是它，分不出来）。改过 `src/` 或 `styles/` 后刷新即生效（桥接按请求即时拼接，不落成文件）。
 
 ## 环境变量
 

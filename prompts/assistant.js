@@ -6,7 +6,7 @@
   today: "今日{{day}}（{{iso}}）。",
 
   // 模型不看这句便不知道能查新近的事；引用附链接是页面的约定
-  search: "可联网搜索：涉时效或超出所知的事可先搜，引用时附上链接。",
+  search: "涉时效或超出所知的事可先联网搜，引用时附上链接。",
 
   // 画在正文里：页面就地渲染成可交互的一块，不是文件，不该落到目录
   drawing:
@@ -51,7 +51,7 @@
   // 题是用户日后在侧栏里认这段对话的把手：只据当前问答，保留主题关键词。
   // 问「叫它什么」而非「拟个标题」：后者让模型进了标题的文体，出来的是「关于某某的探讨」「某某详解」一类
   title:
-    "用户：{{user}}{{assistant}}\n\n——用户往后在侧栏里靠一个称呼认出这段对话。只据这段问答的实际内容，保留项目、任务或主题关键词，简短直白，十二字内。只答那几个字。"
+    "用户：{{user}}{{assistant}}\n\n——用户往后在侧栏里靠一个称呼认出这段对话。只据这段问答的实际内容，保留项目、任务或主题关键词，简短直白，用这段对话所用的语言。只答那几个字。"
 };
 
 // 系统提示的拼接次序。一段一行，写明何时带上，不写即处处都带：
@@ -73,6 +73,7 @@ window.YAN_PROMPTS.order = [
   { key: "assistant.search", tool: "search_web" },
   { key: "memory.hint", tool: "remember" },
   { key: "mcp.hint" },
+  { key: "skills.hint", tool: "read_document" },
   { key: "assistant.drawing", roles: ["main", "side"] },
   { key: "assistant.manner", mode: "chat", roles: ["main", "side"] },
   { key: "side.passage", roles: ["side"] },

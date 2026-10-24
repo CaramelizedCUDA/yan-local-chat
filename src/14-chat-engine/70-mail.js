@@ -26,26 +26,31 @@ function mailReport(conversation, item) {
 function relayOf({ step, relay }) {
   return relay || { step: step.id, title: String(step.title || ""), ok: step.status === "done" };
 }
+// 收信的那一个（主答的消息，或帮手的 sub）在自己的时间线末落一小步「回报」，递上后打勾；回这一步
+/** @param {{ content: string, reasoning?: string, steps?: Step[] }} owner @returns {Step} */
+function postRelayNote(owner, item) {
+  const relay = relayOf(item);
+  /** @type {Step} */
+  const note = {
+    id: `relay_${uid().slice(0, 8)}`,
+    name: "relay_note",
+    arguments: "{}",
+    status: "running",
+    title: relay.title,
+    relay,
+    at: owner.content.length,
+    rat: String(owner.reasoning || "").length
+  };
+  (owner.steps ||= []).push(note);
+  return note;
+}
 // 作答途中到的：行迹里落一步「回报」，递上后打勾（deliverSupplements 按 note 打勾）；这一答没来得及递就收尾了，
 // settleSupplements 把这一步撤下、回报另起一答
 /** @param {Conversation} conversation */
 function deliverInline(conversation, job, item) {
   const host = conversation.messages.find(message => message.id === job.assistantId);
   if (host) {
-    const relay = relayOf(item);
-    /** @type {Step} */
-    const note = {
-      id: `relay_${uid().slice(0, 8)}`,
-      name: "relay_note",
-      arguments: "{}",
-      status: "running",
-      title: relay.title,
-      relay,
-      at: host.content.length,
-      rat: String(host.reasoning || "").length
-    };
-    (host.steps ||= []).push(note);
-    item = { ...item, note };
+    item = { ...item, note: postRelayNote(host, item) };
     refreshSteps(host);
   }
   job.queue.push(item);
@@ -56,20 +61,7 @@ function deliverInline(conversation, job, item) {
 function mailHelper(conversation, scope, item) {
   const box = (crews.get(conversation.id) || []).find(entry => entry.sub.id === scope);
   if (!box) return;
-  const relay = relayOf(item);
-  /** @type {Step} */
-  const note = {
-    id: `relay_${uid().slice(0, 8)}`,
-    name: "relay_note",
-    arguments: "{}",
-    status: "running",
-    title: relay.title,
-    relay,
-    at: box.sub.content.length,
-    rat: String(box.sub.reasoning || "").length
-  };
-  box.sub.steps.push(note);
-  box.queue.push({ ...item, note });
+  box.queue.push({ ...item, note: postRelayNote(box.sub, item) });
   box.wake?.();
   refreshSteps(box.host);
 }
@@ -127,7 +119,7 @@ function wakeWithReports(conversation, items) {
   saveStore();
   if (currentId === conversation.id && view === "chat") renderConversation();
   else renderHistory();
-  toast(profile ? "余墨已尽，帮手的回报先记下了" : "没有可用的模型，帮手的回报先记下了");
+  toast(profile ? t("余墨已尽，帮手的回报先记下了") : t("没有可用的模型，帮手的回报先记下了"));
 }
 // 断着时记下的回报交给开工的这一答：行迹里落一步「回报」，随后当即递上。派它的那一步已不在眼前这条路上的（重答把那一答收成了版本）不递，
 // 免得张冠李戴。返回交出去的几项，这一答一个字没等到就又断了，原样还回去

@@ -6,7 +6,7 @@
 const LOCAL_BRIDGE = "http://127.0.0.1:18787";
 // 桥接的引导信息（版本、存储根、目录、平台、shell）；notice 是页面自己写的桥接状态提示，在设置 → 模型顶部显示
 let bootstrap = { notice: "" };
-/** @type {string|null} 桥接的地址：桥接自己开的页面是 ""（同源），别处打开的（VS Code Webview）是 LOCAL_BRIDGE */
+/** @type {string|null} 桥接的地址：桥接自己开的页面是 ""（同源），探测别的本机端口时用 LOCAL_BRIDGE */
 let apiBase = null;
 // 页面是不是桥接自己开的（http://127.0.0.1:端口）：是的话桥接一定在，探测失败多半只是首次加载时被大文件挤慢了，该多等、多试
 function servedByBridge() {
@@ -25,7 +25,7 @@ async function connectBridge(candidates, timeout = 1400) {
       const next = await response.json();
       bootstrap = next;
       apiBase = candidate;
-      if (next.stale) toast("本机桥接已更新，请关闭桥接窗口后重新运行 start.cmd", 8000);
+      if (next.stale) toast(t("本机桥接已更新，请关闭桥接窗口后重新运行 start.cmd"), 8000);
       return true;
     } catch {}
   }
@@ -95,6 +95,9 @@ function busReady() {
 /** @returns {Promise<Response>} */
 async function bridgeFetch(path, body, signal) {
   const direct = () => fetch(`${apiBase}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
+  // 大文件与长对话直接送原请求，避免总线再包一层 JSON、服务端拆开后再复制一整份。
+  // 4 Mi 个字符即使全是转义字符，外层 JSON 也小于总线的 32 MiB 上限。
+  if (typeof body === "string" && body.length > 4 * 1024 * 1024) return direct();
   if (!(await busReady())) return direct();
   signal?.throwIfAborted();
   // 回话一定读完：不读，浏览器就一直攥着这次请求连同发出去的整段 body（GC 也收不掉）。
@@ -148,7 +151,7 @@ async function bridgeFetch(path, body, signal) {
         finish();
         // 桥接那头这一页的流恰好断了：这一次改为直接 fetch
         if (status === 409) return direct().then(resolve, reject);
-        reject(Error(data.error || `请求失败（${status}）`));
+        reject(Error(data.error || t`请求失败（${status}）`));
       },
       error => job.fail(error)
     );
@@ -163,7 +166,7 @@ function bridgeTimedOut(error) {
 async function bridge(path, payload, signal) {
   const response = await bridgeFetch(path, JSON.stringify(payload), signal);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
+  if (!response.ok) throw Object.assign(Error(data.error || t`请求失败（${response.status}）`), { status: response.status, data });
   return data;
 }
 
@@ -175,7 +178,7 @@ async function describeResponseError(response) {
   try {
     error = JSON.parse(raw)?.error;
   } catch {
-    return raw.trim().slice(0, 300) || `请求失败（${response.status}）`;
+    return raw.trim().slice(0, 300) || t`请求失败（${response.status}）`;
   }
-  return (typeof error === "string" && error) || `请求失败（${response.status}）`;
+  return (typeof error === "string" && error) || t`请求失败（${response.status}）`;
 }

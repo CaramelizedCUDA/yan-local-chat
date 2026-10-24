@@ -53,6 +53,8 @@
  * @property {string} arguments 模型给的参数原文（JSON）
  * @property {StepStatus} status
  * @property {string} [title] 标题行：指令、路径、关键词……
+ * @property {boolean} [keep] 收尾前对照是因守转待复核而拦的（右侧事由画朱）
+ * @property {string} [label] 这一步另有名目时的标签（存中文原文），盖过工具自己的（翻技能记作「技能」）
  * @property {string} [result] 标题行右侧的一句结果
  * @property {string} [note]
  * @property {string} [url]
@@ -64,7 +66,7 @@
  * @property {boolean} [readOnly] 只读指令，免确认
  * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
  * @property {boolean} [background] 后台指令
- * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", quiet?: boolean }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；quiet：那一答已停，结束时不叫醒）
+ * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", quiet?: boolean, started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；quiet：那一答已停，结束时不叫醒；started：起跑的时刻，书眉的漏据它算已跑多久）
  * @property {{ old: string, new: string }} [diff]
  * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
  * @property {string} [previous] write_file 覆盖掉的原文（过长只留开头），与 written 比出红绿
@@ -72,6 +74,8 @@
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
  * @property {number} [rat] 调用发起时思绪的长度
  * @property {string} [scope] 帮手的步骤记它所属的帮手 id
+ * @property {string} [sig] 读、写、改之后这件文件的指纹（再写再改时比对，见 seenSig）
+ * @property {string} [drifted] 改时发现读后已被谁改过：这一处照原文改了，别处没看过，整份覆盖前须重读
  * @property {string} [root] 读、写、改文件时落在哪个目录（换了目录，先前读过的不算数）
  * @property {Attachment[]} [attachments] 补言（user_note）随带的附件
  * @property {boolean} [cached] 结果是复用的
@@ -158,7 +162,7 @@
  * @property {string} model
  * @property {string} [baseUrl]
  * @property {string} [apiKey]
- * @property {"openai"|"anthropic"|"chatgpt"} [api] 接口类型；没写按地址认（anthropic.com）；chatgpt 是在浏览器里登录的 ChatGPT 订阅
+ * @property {"openai"|"anthropic"|"chatgpt"|"siliconflow"} [api] 接口类型；没写按地址认（anthropic.com）；chatgpt 是在浏览器里登录的 ChatGPT 订阅；siliconflow 即 OpenAI 兼容、地址填好
  * @property {number} [temperature] 留空即不传，由接口定
  * @property {number} [maxTokens] 只对 Anthropic 有意义（Messages API 必填）；OpenAI 兼容接口不传，由服务端定
  * @property {string} quota 用量上限，如 "100k"；空则不限
@@ -186,6 +190,7 @@
  * @typedef {Object} Settings
  * @property {string} name
  * @property {"light"|"dark"|"system"} theme
+ * @property {"zh"|"en"} [language] 界面语言；没选过的随浏览器
  * @property {"on"|"off"|"system"} inkMotion
  * @property {"sans"|"serif"|"mixed"|"kai"|"fangsong"} font
  * @property {string} accent
@@ -204,6 +209,7 @@
  * @property {boolean} [stageFit] 游目「适应页面」：执事定死的视口等它歇手后放开（默认开）
  * @property {"bing"|"baidu"|"google"} [stageSearch] 游目地址栏里输的不像网址时交给哪家搜（默认必应）
  * @property {boolean} archiveRead
+ * @property {Record<string, boolean>} [skills] 设置里亲手开关过的技能（按名字）；没动过的照默认（见 skillEnabled）
  * @property {number} toolRounds
  * @property {number} subRounds
  * @property {"chat"|"library"|"groups"} [lastView] 上次停在哪一页，刷新后回到原处
@@ -234,7 +240,7 @@ function prompt(path, vars = {}) {
 function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
-const APP_VERSION = "0.5.0"; // 与 package.json 同步；以桥接返回的为准
+const APP_VERSION = "0.9.1"; // 与 package.json 同步；以桥接返回的为准
 const FOLLOW_THRESHOLD = 80;
 // 一次回答里最多几轮工具调用（帮手另计），超过后收回工具、请模型直接收尾；按轮计，同一轮并发的几次调用只算一轮。
 // 默认值在这里，实际值在「设置 → 工具」里可改，留空（记作 0）即不限

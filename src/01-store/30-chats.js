@@ -143,7 +143,7 @@ async function writeConversation(id) {
         spilled = true;
         if (!chatSaveWarned) {
           chatSaveWarned = true;
-          toast(`对话未能落盘，先暂存在浏览器里：${String(error.message || error).slice(0, 60)}`);
+          toast(t`对话未能落盘，先暂存在浏览器里：${String(error.message || error).slice(0, 60)}`);
         }
       }
     if (spilled && !deletedChatIds.has(id))
@@ -156,7 +156,7 @@ async function writeConversation(id) {
       } catch {
         if (!chatSaveWarned) {
           chatSaveWarned = true;
-          toast("本机对话存储失败，请先导出备份");
+          toast(t("本机对话存储失败，请先导出备份"));
         }
       }
     if (activeChatWrites.get(id) === pending) activeChatWrites.delete(id);
@@ -231,7 +231,7 @@ function catchUpConversation(item, { quiet = false } = {}) {
     if (!runningElsewhere(c.id)) pendingChatWrites.set(c.id, { force: true });
     // 这边有、目录里没有的内容接了进去，才值得说一声（只差个未读标记之类的不算）
     const grew = ["messages", "forks", "threads"].some(key => next[key].length > theirs[key].length);
-    if (grew && !mergeNoticed) toast("这段对话在另一处也写过，两边的内容已并在一起");
+    if (grew && !mergeNoticed) toast(t("这段对话在另一处也写过，两边的内容已并在一起"));
     mergeNoticed ||= grew;
   }
   if (!quiet) {
@@ -322,6 +322,7 @@ function flushOnUnload() {
   saveTimer = null;
   writeMeta({ disk: false });
   if (configSaveTimer) saveConfigNow();
+  keepSentConfigs();
   const db = stateDb;
   if (!db) return;
   const records = [];
@@ -492,7 +493,7 @@ async function syncChatsWithDisk() {
         return c;
       })
       .filter(Boolean);
-    if (dropped) toast(dropped === 1 ? "有一段对话已在别处删除，此处随之移去" : `有 ${dropped} 段对话已在别处删除，此处随之移去`);
+    if (dropped) toast(dropped === 1 ? t("有一段对话已在别处删除，此处随之移去") : t`有 ${dropped} 段对话已在别处删除，此处随之移去`);
     const known = new Set(store.conversations.map(c => c.id));
     for (const item of disk.values())
       if (!known.has(item.id)) {
@@ -521,7 +522,7 @@ async function syncChatsWithDisk() {
     void settleAttachmentStore();
   } catch (error) {
     // 巡检里重试也没读成的不再说一遍
-    if (!chatsBroken) toast(`对话目录不可用，先存在浏览器里：${String(error.message || error).slice(0, 60)}`);
+    if (!chatsBroken) toast(t`对话目录不可用，先存在浏览器里：${String(error.message || error).slice(0, 60)}`);
     chatsBroken = true;
   } finally {
     chatsSyncing = false;

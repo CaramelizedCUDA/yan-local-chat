@@ -3,7 +3,7 @@
 defineTool({
   name: "run_command",
   group: "work",
-  label: "运行",
+  label: t("运行"),
   offer: ctx => ctx.files,
   sideEffect: true,
   writes: true,
@@ -14,7 +14,7 @@ defineTool({
     const { conversation, signal } = ctx,
       { workdir, sandbox } = workScope(conversation);
     step.title = args.command.trim();
-    if (!step.title) return { ok: false, content: "指令为空", display: "指令为空" };
+    if (!step.title) return { ok: false, content: t("指令为空"), display: "指令为空" };
     step.readOnly = isReadOnlyCommand(step.title);
     const background = args.background === true;
     if (background) step.background = true;
@@ -54,19 +54,19 @@ defineTool({
       step.exitCode = data.exitCode ?? undefined;
       // 还在跑的：等它结束再叫醒开它的那一个——主答（这段对话），或帮手自己（帮手手上有它就睡着等，见 90-delegate.js）
       if (data.running) {
-        step.bg = { id: data.id, key: data.key, state: "running" };
+        step.bg = { id: data.id, key: data.key, state: "running", started: Date.now() - (Number(data.durationMs) || 0) };
         watchBackground(conversation, ctx.assistant, step);
       }
       return {
         ok: data.running || data.exitCode === 0,
-        content: `${data.running ? prompt("work.bgStarted", { id: data.id, seconds }) : `后台指令 ${data.id} 已结束，退出码：${data.exitCode}`}\n--- stdout ---\n${data.stdout || "(空)"}\n--- stderr ---\n${data.stderr || "(空)"}`,
+        content: `${data.running ? prompt("work.bgStarted", { id: data.id, seconds }) : t`后台指令 ${data.id} 已结束，退出码：${data.exitCode}`}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
         display: `后台 ${data.id} · ${data.running ? "进行中" : `已结束 · 退出码 ${data.exitCode}`}${marks}`
       };
     }
     step.exitCode = data.exitCode;
     return {
       ok: !data.timedOut && data.exitCode === 0,
-      content: `退出码：${data.exitCode}${data.timedOut ? "（超时被终止）" : ""}\n--- stdout ---\n${data.stdout || "(空)"}\n--- stderr ---\n${data.stderr || "(空)"}`,
+      content: t`退出码：${data.exitCode}${data.timedOut ? t("（超时被终止）") : ""}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
       display: `${data.timedOut ? `超时终止 · ${took}` : data.exitCode === 0 ? `完成 · ${took}` : `退出码 ${data.exitCode} · ${took}`}${marks}`
     };
   }
@@ -76,14 +76,14 @@ defineTool({
 defineTool({
   name: "check_command",
   group: "work",
-  label: "后台",
+  label: t("后台"),
   offer: ctx => ctx.files,
   html: workStepHtml,
   async run(step, args, { conversation, assistant, signal }) {
     const id = args.id.trim(),
       stop = args.stop === true,
       started = bgStepOf(conversation, id);
-    step.title = `${id}${stop ? " · 结束" : ""}`;
+    step.title = `${id}${stop ? t(" · 结束") : ""}`;
     // 模型亲手结束它：不必再叫醒一回
     if (stop && started) bgWatches.get(started.id)?.abort();
     const data = await bridge("/api/work/check", { id, stop, wait: Number(args.wait) || 0 }, signal);
@@ -94,7 +94,7 @@ defineTool({
     }
     return {
       ok: true,
-      content: `${data.running ? `${data.id} 还在进行` : `${data.id} 已结束，退出码：${data.exitCode}`}\n--- 新的 stdout ---\n${data.stdout || "(空)"}\n--- 新的 stderr ---\n${data.stderr || "(空)"}`,
+      content: t`${data.running ? t`${data.id} 还在进行` : t`${data.id} 已结束，退出码：${data.exitCode}`}\n--- 新的 stdout ---\n${data.stdout || t("(空)")}\n--- 新的 stderr ---\n${data.stderr || t("(空)")}`,
       display: data.running ? "进行中" : stop ? "已结束" : `已结束 · 退出码 ${data.exitCode}`
     };
   }
@@ -112,6 +112,7 @@ function watchBackground(conversation, assistant, step) {
     profile = requestJob(conversation.id)?.profile || profiles().find(p => p.id === conversation.profileId) || activeProfile();
   bgWatches.set(step.id, controller);
   holdAwake();
+  renderClepsydra();
   bridge("/api/work/watch", { id: step.bg.id, key: step.bg.key }, controller.signal)
     .then(
       data => {
@@ -129,8 +130,8 @@ function watchBackground(conversation, assistant, step) {
             command: String(data.command || step.title).slice(0, 200),
             exitCode: data.exitCode,
             duration: spanText(data.durationMs),
-            stdout: data.stdout || "(空)",
-            stderr: data.stderr || "(空)"
+            stdout: data.stdout || t("(空)"),
+            stderr: data.stderr || t("(空)")
           }),
           step,
           profile,
@@ -165,6 +166,7 @@ function settleBackground(step, state, exitCode, assistant) {
   if (conversation) markDirty(conversation.id);
   saveStoreSoon();
   refreshSteps(assistant);
+  renderClepsydra();
   // 帮手开的：它若睡着等，叫它看一眼——有信就接着做，等的都了结了就收工（随桥接重启而止的不寄信，见 mailHelper）
   if (step.scope && conversation) (crews.get(conversation.id) || []).find(box => box.sub.id === step.scope)?.wake?.();
 }
@@ -210,7 +212,7 @@ function commandOutput(data) {
 /** @param {Conversation} conversation */
 function workScope(conversation) {
   const workdir = workRoot(conversation);
-  if (!workdir) throw Error("此对话没有可用的目录（本机桥接不在线）");
+  if (!workdir) throw Error(t("此对话没有可用的目录（本机桥接不在线）"));
   return { workdir, roam: roamAllowed(), sandbox: sandboxed(), permission: commandPolicyOf(conversation) };
 }
 // 文件工具能不能出目录：设置里的「可及范围」，默认全盘（系统级配置、别处的资料本就该读得到）
@@ -237,10 +239,10 @@ function isReadOnlyCommand(command) {
 /** @param {Step} step */
 function sandboxWhyHtml(step) {
   return step.sandboxWhy
-    ? `<div class="approval-sandbox">沙箱会拦下：${escapeHtml(step.sandboxWhy.replace(/^沙箱拒绝：/, ""))}。运行即在沙箱外执行这一条。</div>`
+    ? `<div class="approval-sandbox">${t`沙箱会拦下：${escapeHtml(step.sandboxWhy.replace(/^沙箱拒绝：/, ""))}。运行即在沙箱外执行这一条。`}</div>`
     : "";
 }
 /** @param {Step} step */
 function commandApprovalHtml(step) {
-  return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">问</span><span class="approval-title">${isWork(currentConversation()) ? "执事请示" : "本机请示"} · 运行此指令${step.background ? "（后台）" : ""}</span><span class="approval-hint" title="输入框留空时，Enter 即运行">Enter 运行</span></div><pre class="approval-cmd">${escapeHtml(step.title)}</pre>${sandboxWhyHtml(step)}<div class="approval-actions"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="径行：此对话中后续指令不再询问">径行</button></div>`;
+  return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">${t(`问`)}</span><span class="approval-title">${isWork(currentConversation()) ? t("执事请示") : t("本机请示")} ${t(`· 运行此指令`)}${step.background ? t("（后台）") : ""}</span><span class="approval-hint" title="${t(`输入框留空时，Enter 即运行`)}">${t(`Enter 运行`)}</span></div><pre class="approval-cmd">${escapeHtml(step.title)}</pre>${sandboxWhyHtml(step)}<div class="approval-actions"><button type="button" data-approve="run">${t(`运行`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button><button type="button" data-approve="auto" title="${t(`径行：此对话中后续指令不再询问`)}">${t(`径行`)}</button></div>`;
 }

@@ -130,7 +130,7 @@ function stageInkRender() {
     .map(act => {
       const left = ((act.x - stage.scroll.x + act.w + (act.kind === "type" ? 0 : 6 * k)) / width) * 100,
         top = ((act.y - stage.scroll.y + (act.kind === "type" ? act.h - 6 * k : -18 * k)) / height) * 100;
-      return `<span class="stage-label" style="left:${Math.min(92, left)}%;top:${Math.max(0, top)}%">${act.kind === "type" ? "键入" : "点击"}</span>`;
+      return `<span class="stage-label" style="left:${Math.min(92, left)}%;top:${Math.max(0, top)}%">${act.kind === "type" ? t("键入") : t("点击")}</span>`;
     })
     .join("");
 }
@@ -221,21 +221,21 @@ async function stageQuote() {
     boxes = stageNoteBoxes(),
     said = stageNotes.map(
       note =>
-        `${note.kind === "dot" ? "点" : "圈"}${note.text ? `「${note.text.slice(0, 24)}${note.text.length > 24 ? "…" : ""}」` : "一处"}`
+        `${note.kind === "dot" ? t("点") : t("圈")}${note.text ? `「${note.text.slice(0, 24)}${note.text.length > 24 ? "…" : ""}」` : t("一处")}`
     ),
-    name = `游目 · ${host || "网页"}.jpg`,
+    name = t`游目 · ${host || t("网页")}.jpg`,
     lines = stageNotes.map((note, i) => {
       const b = boxes[i];
       return note.kind === "dot"
-        ? `点：网页左 ${b.x}、上 ${b.y}${note.text ? ` ——「${note.text}」` : ""}`
-        : `圈：网页左 ${b.x}、上 ${b.y}，宽 ${b.w}、高 ${b.h}${note.text ? ` ——「${note.text}」` : ""}`;
+        ? t`点：网页左 ${b.x}、上 ${b.y}${note.text ? ` ——「${note.text}」` : ""}`
+        : t`圈：网页左 ${b.x}、上 ${b.y}，宽 ${b.w}、高 ${b.h}${note.text ? ` ——「${note.text}」` : ""}`;
     });
   stageQuoteMade = {
-    text: `游目 · ${place}　${said.join("　")}`,
+    text: t`游目 · ${place}　${said.join("　")}`,
     model: [
-      `游目 · ${stageReadable(tab.url)}${tab.title ? `（${tab.title}）` : ""}`,
+      t`游目 · ${stageReadable(tab.url)}${tab.title ? `（${tab.title}）` : ""}`,
       ...lines,
-      `附图「${name}」，朱笔即所圈点；位置是网页视口里的 CSS 像素，与附图同一取景`
+      t`附图「${name}」，朱笔即所圈点；位置是网页视口里的 CSS 像素，与附图同一取景`
     ].join("\n"),
     url: tab.url
   };
@@ -290,7 +290,7 @@ function stageQuoteChanged() {
 /** @param {string} url */
 function stageRevisit(url) {
   openStage();
-  if (!stage.ws) return toast("浏览器未开");
+  if (!stage.ws) return toast(t("浏览器未开"));
   const open = [...stage.tabs].find(([, tab]) => tab.url === url);
   if (open) {
     void stageSend("Target.activateTarget", { targetId: open[0] }).catch(() => {});

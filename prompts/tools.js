@@ -10,8 +10,12 @@
   },
 
   fetch_page: {
-    description: "读网页正文（已去 HTML），多用于看某条搜索结果的详情。",
-    parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] }
+    description: "读网页或 PDF 正文（已去 HTML）。",
+    parameters: {
+      type: "object",
+      properties: { url: { type: "string" }, offset: { type: "number", description: "从第几字起读，长文续读用" } },
+      required: ["url"]
+    }
   },
 
   http_request: {
@@ -20,7 +24,7 @@
       type: "object",
       properties: {
         url: { type: "string" },
-        method: { type: "string", description: "GET（默认）/ POST / PUT / PATCH / DELETE / HEAD" },
+        method: { type: "string", description: "默认 GET" },
         headers: { type: "object", description: '请求头，如 { "Accept": "application/json" }' },
         body: { type: "string", description: "请求体原文（JSON 请自行序列化并给 Content-Type）" }
       },
@@ -81,7 +85,7 @@
   // 意：一件工程要成立的结论图，存在目录里、跨对话沿用（见 src/19-intent/）；只给主模型
   update_intent: {
     description:
-      "跨多答的长活可立一份意：整件工程要成立的结论图，存于目录 .yan/意.json，换对话也沿用（计划只管这一答的步骤）。一项是值得单独判的结论，不是一步动作；写怎么算成立、以哪几项为前提、凭什么。每次只给有改动的几项，已有的只给 id 与要改的字段。成立与否由你照 check 判；借外部结论、不自己做的标 assumed，note 写出处。",
+      "跨多答的长活可立一份意：整件工程要成立的结论图，存于目录 .yan/意.json，换对话也沿用（计划只管这一答的步骤）。一项是值得单独判的结论，不是一步动作。每次只给有改动的几项，已有的只给 id 与要改的字段。",
     parameters: {
       type: "object",
       properties: {
@@ -91,21 +95,28 @@
             type: "object",
             properties: {
               id: { type: "string", description: "短名，用对话的语言，八字以内" },
-              rename: { type: "string", description: "已有一项改叫这个名字（说法变了、旧名不贴切时）；前提与所属随之改" },
+              rename: { type: "string", description: "已有一项改叫这个名字，前提与所属随之改" },
               claim: { type: "string", description: "要成立的那句话" },
               check: { type: "string", description: "怎么算成立" },
+              when: { type: "string", description: "只在什么情形下须成立（文字说明，不是表达式）；空串撤去" },
               needs: { type: "array", items: { type: "string" }, description: "前提的 id" },
               any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
-              in: { type: "string", description: "所属模块的 id：一项拆开还有许多步，就当模块，细项写 in 指向它；不写即全局，至多两层" },
+              in: { type: "string", description: "所属模块的 id：一项拆开还有许多步即作模块，细项写 in 指向它；不写即全局，至多两层" },
               anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },
               state: {
                 type: "string",
-                description: "open / doing / waiting（等人拍板）/ done / assumed / dropped（走过不通的路，留作记号）/ removed（方案改了、写错了，整项撤去）"
+                description:
+                  "open / doing / waiting（等人拍板）/ done / assumed（借外部结论、不自己做）/ dropped（走过不通的路，留作记号）/ removed（方案改了、写错了，整项撤去）"
               },
-              note: { type: "string", description: "假定的出处；待定写等谁、定什么；弃时写为何不通" },
+              note: { type: "string", description: "假定写出处；待定写等谁、定什么；弃写为何不通" },
               root: {
                 type: "boolean",
                 description: "整件工程最终要立住的结论（用户要的结果，不是手上这一步），新立时标；说法只照用户的意思改"
+              },
+              keep: {
+                type: "boolean",
+                description:
+                  "守：用户定的、一直作数的界限（如「改完测试要过」「只用某几台机器」），不是要交付的结论：不标进度，不挂前提也不作前提，不守了给 removed。挂 test: 或 cmd: 的，动过手的那一答收尾前重查，不过即拦下"
               }
             },
             required: ["id"]
@@ -149,7 +160,7 @@
   },
 
   write_file: {
-    description: "新建文件，或整份重写已有文件（覆盖全部内容），目录自动创建。改局部用 edit_file。",
+    description: "新建或整份覆盖一个文件，目录自动创建；改局部用 edit_file。",
     brief: "写一个文本文件（新建或整份覆盖），目录自动创建。",
     parameters: {
       type: "object",
@@ -216,7 +227,7 @@
 
   delegate: {
     description:
-      "差遣一名帮手独立完成一件自成一段的子任务，做完回报。宜于量大、独立、或会读进大量与主线无关内容的活（通读归纳、多路检索比对、排查不熟的模块、按已定方案实现一部分、改后复查）；一两步的事直接做。帮手的目录与工具同你（请示用户、记与忘、计划与意除外），但看不到这段对话，task 须写全。能拆成互不相干的几块时，可同一轮差遣多名并行（所改文件互不重叠）。",
+      "差遣一名帮手独立完成一件自成一段的子任务，做完回报。宜于量大、独立、或会读进大量与主线无关内容的活（通读归纳、多路检索、排查不熟的模块、按已定方案实现、改后复查）；一两步的事直接做。帮手的目录与工具同你（请示用户、记与忘、计划与意除外），看不到这段对话，task 须写全。互不相干的几块可同一轮差遣多名并行（所改文件互不重叠）。",
     brief:
       "把一件自成一段的大活（通读一批资料并归纳、多路检索比对、生成一份复杂文件）交给帮手独立做完后回报；一两步的事直接做。帮手看不到这段对话，task 须写全。",
     parameters: {
@@ -228,7 +239,7 @@
           type: "string",
           enum: ["low", "medium", "high", "max"],
           description:
-            "帮手的思考强度，按活的难易定：照章办事（通读归纳、批量检索、按已定方案改）取最低档，要权衡取舍的取居中，难查的毛病、方案设计与复查取最高档；省略同你此刻"
+            "思考强度：照章办事（通读归纳、批量检索、按已定方案改）取 low，要权衡取舍的居中，难查的毛病、方案设计与复查取 max；省略同你此刻"
         }
       },
       required: ["title", "task"]
@@ -281,12 +292,12 @@
   // 录（记忆）：五件都在浏览器里完成，不经桥接；记忆启用时提供
   remember: {
     description:
-      "记一条长期有效的信息进跨对话的记忆（偏好、身份、约定、日后还会用到的结论）：一条一事、脱离本次对话也看得懂；临时细节不记；已有相近条目给 replaces 合并。",
+      "记一条长期有效的信息进跨对话的记忆（偏好、身份、约定、日后还会用到的结论）：一条一事、脱离本次对话也看得懂；已有相近条目给 replaces 合并。",
     parameters: {
       type: "object",
       properties: {
-        category: { type: "string", description: "所属分类，先沿用已有的类，都不合再起新类；名字简短，如「偏好」「言的开发」" },
-        text: { type: "string", description: "条目正文，写全，不超过 2000 字" },
+        category: { type: "string", description: "所属分类，先沿用已有的，都不合再起新类，名字简短" },
+        text: { type: "string", description: "条目正文，不超过 2000 字" },
         replaces: { type: "string", description: "要合并更新的已有条目 id（见 recall 的结果）" }
       },
       required: ["category", "text"]
@@ -300,7 +311,7 @@
 
   recall: {
     description:
-      "查看记忆：都不给则列出各类（几条、最近一条的开头）；给 category 列出那一类的全部条目；给 query 跨类按关键词筛（空格分隔、须同时命中）。用户提到此前谈过的事、或问题依赖过往偏好时用。",
+      "查看记忆：都不给则列出各类；给 category 列出那一类全部条目；给 query 跨类按关键词筛（空格分隔、须同时命中）。用户提到此前谈过的事、或问题依赖过往偏好时用。",
     parameters: {
       type: "object",
       properties: {
@@ -337,7 +348,7 @@
 
   read_document: {
     description:
-      "读对话附件或卷宗里的文档（PDF、Office、文本），全文或片段；长文档按页码或关键词只取片段。{{docs}}卷宗里有什么不清楚时，name 留空即列出。",
+      "读对话附件、卷宗里的文档（PDF、Office、文本）或技能的说明，全文或片段；长文档按页码或关键词只取片段。{{docs}}卷宗里有什么不清楚时，name 留空即列出。",
     parameters: {
       type: "object",
       properties: {

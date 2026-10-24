@@ -4,11 +4,11 @@ const PLAN_STATUSES = new Set(["pending", "doing", "done", "skipped"]),
 defineTool({
   name: "update_plan",
   group: "work",
-  label: "计划",
+  label: t("计划"),
   offer: ctx => ctx.work,
   mainOnly: true,
   html: planStepHtml,
-  digest: step => `计划 → ${(step.plan || []).map(item => `${PLAN_MARKS[item.status] || "○"}${item.text.slice(0, 40)}`).join("；")}`,
+  digest: step => t`计划 → ${(step.plan || []).map(item => `${PLAN_MARKS[item.status] || "○"}${item.text.slice(0, 40)}`).join("；")}`,
   run(step, args) {
     const items = args.items
       .map(item => (typeof item === "string" ? { text: item, status: "pending" } : item))
@@ -18,14 +18,14 @@ defineTool({
         const status = String(item.status || "").toLowerCase();
         return { text: String(item.text).trim().slice(0, 200), status: PLAN_STATUSES.has(status) ? status : "pending" };
       });
-    if (!items.length) return { ok: false, content: "items 为空：每项给 text 与 status", display: "清单为空" };
+    if (!items.length) return { ok: false, content: t("items 为空：每项给 text 与 status"), display: "清单为空" };
     step.plan = items;
     const done = items.filter(item => item.status === "done").length,
       doing = items.find(item => item.status === "doing");
-    step.title = doing ? doing.text : done === items.length ? "全部完成" : `${done}/${items.length}`;
+    step.title = doing ? doing.text : done === items.length ? t("全部完成") : `${done}/${items.length}`;
     return {
       ok: true,
-      content: `计划已更新：${done}/${items.length} 完成${doing ? `，正在做「${doing.text}」` : ""}`,
+      content: t`计划已更新：${done}/${items.length} 完成${doing ? t`，正在做「${doing.text}」` : ""}`,
       display: `${done}/${items.length}`
     };
   }
@@ -59,10 +59,10 @@ function planStepHtml(step) {
     .join("");
   const meta =
     status === "error"
-      ? escapeHtml(step.result || "失败")
+      ? escapeHtml(stepText(step.result) || t("失败"))
       : `<span class="plan-row" role="img" aria-label="${done}/${items.length}">${items.map(item => planMarkHtml(item.status)).join("")}</span>`;
   // 做完不再挂 ✓：那一排记号已说了进度
-  return `<div class="tool-step tool-step-plan" data-tool="update_plan" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"><span class="tool-label">计划</span><span class="tool-title" title="${escapeHtml(step.title || "")}">${escapeHtml(step.title || "")}</span><span class="tool-meta">${meta}</span>${status === "done" ? "" : stepStateHtml(status)}</div>${items.length ? `<ol class="plan-list">${rows}</ol>` : ""}</div>`;
+  return `<div class="tool-step tool-step-plan" data-tool="update_plan" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"><span class="tool-label">${t(`计划`)}</span><span class="tool-title" title="${escapeHtml(step.title || "")}">${escapeHtml(step.title || "")}</span><span class="tool-meta">${meta}</span>${status === "done" ? "" : stepStateHtml(status)}</div>${items.length ? `<ol class="plan-list">${rows}</ol>` : ""}</div>`;
 }
 // 一条行迹里只有最新那张计划摊开整单，更早的只留题头一行（一答里改四回计划，就是四张一模一样的清单）。
 // 计划散在各组里，不是兄弟节点，CSS 认不出哪张最新；每回画行迹时点一遍，步骤重画了也随之补上

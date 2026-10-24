@@ -38,17 +38,18 @@ function render(shouldScroll = false) {
 }
 function renderHeader() {
   renderModelTriggers();
-  $("#welcomeMode").textContent = workMode() ? "执事" : "对谈";
+  $("#welcomeMode").textContent = workMode() ? t("执事") : t("对谈");
   $("#displayNameSidebar").textContent = store.settings.name;
-  $("#avatar").textContent = store.settings.name.trim().slice(0, 1) || "客";
+  $("#avatar").textContent = store.settings.name.trim().slice(0, 1) || t("客");
   const dark = document.documentElement.dataset.theme === "dark",
     toggle = $("#themeToggle");
   toggle.dataset.theme = dark ? "dark" : "light";
-  toggle.title = dark ? "天光 · 亮色" : "落墨 · 暗色";
+  toggle.title = dark ? t("天光 · 亮色") : t("落墨 · 暗色");
   $("#greeting").textContent = greeting();
   renderModeSwitch();
   renderWelcome();
   renderQuota();
+  renderClepsydra();
   renderModelMenu();
   renderLibraryCount();
 }
@@ -69,6 +70,8 @@ function quotaInk(ratio) {
 // 浮签是一句话，数目用亿、万；别处（上下文、每答耗墨）仍是 k / m / e，与设置里填上限的写法一致
 function quotaAmount(n) {
   const compact = (amount, unit) => `${Number(amount.toFixed(amount >= 10 ? 0 : 1))} ${unit}`;
+  if (LANG === "en")
+    return n >= 1e9 ? compact(n / 1e9, "B") : n >= 1e6 ? compact(n / 1e6, "M") : n >= 1e4 ? compact(n / 1e3, "K") : String(Math.round(n));
   return n >= 100000000 ? compact(n / 100000000, "亿") : n >= 10000 ? compact(n / 10000, "万") : String(Math.round(n));
 }
 function renderQuota() {
@@ -79,14 +82,18 @@ function renderQuota() {
     ratio = !p ? 0 : cap ? remaining / cap : 1,
     status = $("#quotaStatus");
   $("#quotaInk").innerHTML = quotaInk(ratio);
-  status.querySelector(".quota-label").textContent = p && cap === null ? "耗墨" : "余墨";
+  status.querySelector(".quota-label").textContent = p && cap === null ? t("耗墨") : t("余墨");
   $("#quotaText").textContent = !p ? "" : quotaAmount(cap === null ? used : remaining);
-  $("#quotaNote").textContent = !p ? "尚未接入模型" : cap === null ? "不设上限" : `上限 ${quotaAmount(cap)}`;
+  $("#quotaNote").textContent = !p ? t("尚未接入模型") : cap === null ? t("不设上限") : t`上限 ${quotaAmount(cap)}`;
   status.classList.toggle("dry", !!cap && remaining === 0);
   status.classList.toggle("empty", !p);
   status.setAttribute(
     "aria-label",
-    !p ? "尚未接入模型" : cap === null ? `不限用量，已耗 ${formatTokens(used)}` : `余墨 ${formatTokens(remaining)} / ${formatTokens(cap)}`
+    !p
+      ? t("尚未接入模型")
+      : cap === null
+        ? t`不限用量，已耗 ${formatTokens(used)}`
+        : t`余墨 ${formatTokens(remaining)} / ${formatTokens(cap)}`
   );
 }
 function renderModelTriggers() {
@@ -97,8 +104,8 @@ function renderModelTriggers() {
   // 标签写实际会送出的那一档：模型不认所选的就落到最接近的；模型不认思考档位（探过是 none）就不写
   const used = level ? nearestReasoning(p, level) : "";
   document.querySelectorAll(".model-trigger").forEach(button => {
-    button.querySelector(".model-name").textContent = p?.name || "尚未接入模型";
-    button.querySelector(".model-extra").textContent = [preset?.name, used ? `思考 ${reasoningLabel(used)}` : ""]
+    button.querySelector(".model-name").textContent = p?.name || t("尚未接入模型");
+    button.querySelector(".model-extra").textContent = [preset?.name, used ? t`思考 ${reasoningLabel(used)}` : ""]
       .filter(Boolean)
       .map(text => `· ${text}`)
       .join(" ");
@@ -133,7 +140,7 @@ function renderModelMenu() {
           return `<button class="model-option${active ? " active" : ""}" data-profile="${escapeHtml(p.id)}"${active ? ' aria-current="true"' : ""} title="${escapeHtml(p.model)}"><strong><span class="model-dot"></span><span class="model-option-name">${escapeHtml(p.name)}</span></strong></button>`;
         })
         .join("")
-    : `<button class="model-option" id="configureFirst"><strong>接入模型</strong></button>`;
+    : `<button class="model-option" id="configureFirst"><strong>${t(`接入模型`)}</strong></button>`;
   const c = currentConversation(),
     profile = activeProfile(),
     level = (c ? c.reasoning : profile?.reasoning) || "",
@@ -143,7 +150,7 @@ function renderModelMenu() {
   if (all.length)
     $("#modelMenu").insertAdjacentHTML(
       "beforeend",
-      `${presetMenuHtml()}<div class="menu-section"><div class="menu-section-title"><span>思考深度</span><span>当前模型</span></div>${choices.length > 1 ? `<div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div>` : `<div class="menu-section-note">此模型不认思考档位</div>`}</div><button class="model-option model-manage" data-manage>模型设置</button>`
+      `${presetMenuHtml()}<div class="menu-section"><div class="menu-section-title"><span>${t(`思考深度`)}</span><span>${t(`当前模型`)}</span></div>${choices.length > 1 ? `<div class="segmented">${choices.map(value => `<button type="button" data-reasoning="${value}" class="${value === shown ? "active" : ""}">${reasoningLabel(value)}</button>`).join("")}</div>` : `<div class="menu-section-note">${t(`此模型不认思考档位`)}</div>`}</div><button class="model-option model-manage" data-manage>${t(`模型设置`)}</button>`
     );
   $("#configureFirst")?.addEventListener("click", () => openSettings("models"));
   $("#modelMenu [data-manage]")?.addEventListener("click", e => {

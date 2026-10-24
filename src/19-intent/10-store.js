@@ -35,7 +35,7 @@ async function loadIntent(conversation, signal) {
 /** 一答之内的回归簿记：上一回看到的待复核几项、各项被打回几回 @param {Conversation} conversation */
 function intentWatch(conversation) {
   const held = intents.get(conversation.id);
-  return { stale: new Set(held ? intentStaleIds(held.intent, held.now) : []), bounces: new Map(), gated: false };
+  return { stale: new Set(held ? intentStaleIds(held.intent, held.now) : []), bounces: new Map(), gated: false, kept: false };
 }
 /**
  * 一轮工具做完：重取便宜的那几种凭据（文件、目录；探针只在每答开工与标成立时跑）的指纹，新转待复核的写成一段接在这一轮的工具结果后
@@ -54,6 +54,8 @@ async function intentRound(conversation, watch, signal) {
   return intentRoundText(held.intent, held.now, fresh, watch.bounces);
 }
 // 收尾前对照：这一答动过意（改过它，或它所挂的凭据在这一答里变过），模型说完要收尾时拦一次——只一次，拦完即放。
+// 守（一直要守的条件，见 00-core.js）挂的探针、测试作答途中不跑：这一答动过手，收尾前先重取一回，有条因此转待复核也算动过——
+// 言的钩子就是守。没变就照常收尾，不多费一轮；因守而拦的那一步右侧写出事的那几条与事由（设计稿/80 行迹乙）。
 // 摆出此刻的意（重读一回，探针也跑）、这一答里转待复核过的、改了而无凭据罩着的文件，请它对照各根的原话自己判：能收就收，未尽的接着做。
 // 不替它验、不复验、不再拦：要不要派帮手核对由它定。递的话记作行迹里的一步，往后重装这一答照原处插回（replay）
 const INTENT_UNOWNED_SHOWN = 8;
@@ -70,8 +72,10 @@ function changedPaths(assistant) {
  */
 async function intentGate(conversation, assistant, watch, signal) {
   if (watch.gated) return null;
+  if (!intents.has(conversation.id)) return null;
   const touched = (assistant.steps || []).some(step => step.name === "update_intent" && step.status === "done") || watch.bounces.size > 0;
-  if (!touched || !intents.has(conversation.id)) return null;
+  const rechecked = touched ? null : await intentRecheck(conversation, assistant, watch, signal);
+  if (!touched && !rechecked) return null;
   watch.gated = true;
   // 别的对话这一答期间也可能改过：重读一回，以文件为准
   let intent = intents.get(conversation.id).intent;
@@ -81,15 +85,29 @@ async function intentGate(conversation, assistant, watch, signal) {
     if (error.name === "AbortError") throw error;
   }
   if (!Object.keys(intent.nodes).length) return null;
-  const now = await intentPrints(conversation, intentSealedAnchors(intent), signal);
+  // 刚重跑过的（测试可能跑上几分钟）不再跑一遍
+  const now = {
+    ...(await intentPrints(
+      conversation,
+      intentSealedAnchors(intent).filter(key => !rechecked || !(key in rechecked.prints)),
+      signal
+    )),
+    ...rechecked?.prints
+  };
   keepIntent(conversation, intent, now);
+  // 已动过意时走上面的整体验证，也要据最终指纹记下守的失败；先重查过的那几条不重复算一回。
+  const broken = intentKeeps(intent).filter(id => intentState(intent, id, now) === "stale");
+  for (const id of broken)
+    if (!watch.stale.has(id) && !rechecked?.fresh.includes(id)) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
+  watch.kept = broken.length > 0;
+  watch.stale = new Set(intentStaleIds(intent, now));
   const unowned = intentUnowned(intent, changedPaths(assistant)),
     report = [
       prompt("work.intentGate", { intent: intentText(intent, now, { path: INTENT_FILE, asks: true }) }),
-      watch.bounces.size && prompt("work.intentGateBounced", { list: [...watch.bounces].map(([id, n]) => `${id} ${n} 回`).join("、") }),
+      watch.bounces.size && prompt("work.intentGateBounced", { list: [...watch.bounces].map(([id, n]) => t`${id} ${n} 回`).join("、") }),
       unowned.length &&
         prompt("work.intentGateUnowned", {
-          list: `${unowned.slice(0, INTENT_UNOWNED_SHOWN).join("、")}${unowned.length > INTENT_UNOWNED_SHOWN ? ` 等 ${unowned.length} 个` : ""}`
+          list: `${unowned.slice(0, INTENT_UNOWNED_SHOWN).join("、")}${unowned.length > INTENT_UNOWNED_SHOWN ? t` 等 ${unowned.length} 个` : ""}`
         }),
       prompt("work.intentGateAsk")
     ]
@@ -102,8 +120,10 @@ async function intentGate(conversation, assistant, watch, signal) {
     name: "intent_gate",
     arguments: "{}",
     status: "done",
+    // 存中文原文，画出来时照语言换
     title: "收尾前对照意",
-    result: `已立 ${standing} / ${live}`,
+    result: broken.length ? `${broken.join("、")} · ${keepWhy(intent, now, broken)}` : `已立 ${standing} / ${live}`,
+    ...(broken.length ? { keep: true } : {}),
     at: String(assistant.content || "").length,
     rat: String(assistant.reasoning || "").length,
     report
@@ -112,6 +132,57 @@ async function intentGate(conversation, assistant, watch, signal) {
   refreshSteps(assistant);
   saveStoreSoon();
   return { role: "user", content: report };
+}
+/**
+ * 动过手的那一答（写过、改过文件，或跑过指令——帮手做的也算），收尾前重取守挂的探针与测试；有条新转待复核就记进 bounces（收尾对照里列出），
+ * 交回重取到的指纹与转待复核的几条，否则 null
+ * @param {Conversation} conversation @param {Message} assistant @param {ReturnType<typeof intentWatch>} watch @param {AbortSignal} [signal]
+ * @returns {Promise<{ prints: IntentPrints, fresh: string[] }|null>}
+ */
+async function intentRecheck(conversation, assistant, watch, signal) {
+  const held = intents.get(conversation.id),
+    keeps = intentKeeps(held.intent),
+    keys = keepAnchors(held.intent),
+    acted = allSteps(assistant).some(
+      step => step.status === "done" && TOOLS.get(step.name)?.group === "work" && TOOLS.get(step.name)?.sideEffect
+    );
+  if (!keys.length || !acted) return null;
+  const prints = await intentPrints(conversation, keys, signal);
+  held.now = { ...held.now, ...prints };
+  const fresh = keeps.filter(id => intentState(held.intent, id, held.now) === "stale" && !watch.stale.has(id));
+  for (const id of fresh) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
+  return fresh.length ? { prints, fresh } : null;
+}
+/** 守挂的、要跑指令的凭据（探针、测试） @param {Intent} intent */
+function keepAnchors(intent) {
+  return [...new Set(intentKeeps(intent).flatMap(id => Object.keys(intent.nodes[id].seal?.prints || {})))].filter(
+    key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer"
+  );
+}
+/**
+ * 因守拦过的那一答收了尾：再取一回守的探针与测试，书眉与卡片照实画——模型多半已改好，不必挂着「守 ○」等到下一问开工
+ * @param {Conversation} conversation
+ */
+async function intentSettleKeeps(conversation) {
+  const held = intents.get(conversation.id),
+    key = glanceKey(conversation),
+    shown = intentGlances.get(key),
+    keys = held ? keepAnchors(held.intent) : [];
+  if (!keys.length || (shown && shown.intent !== held.intent)) return;
+  try {
+    const prints = await intentPrints(conversation, keys);
+    // 测试可能跑很久：下一答、同目录的另一段对话或改绑目录后，旧结果不能盖回新的记录。
+    if (intents.get(conversation.id) !== held || glanceKey(conversation) !== key || intentGlances.get(key) !== shown) return;
+    held.now = { ...held.now, ...prints };
+    noteIntentGlance(conversation, held.intent, held.now);
+  } catch {
+    // 桥接不在、指令跑不成：照旧挂着，下一问开工再取
+  }
+}
+/** 拦下那一步右侧的事由：测试没过写「测试不过」，余者「凭据已变」 @param {Intent} intent @param {IntentPrints} now @param {string[]} ids */
+function keepWhy(intent, now, ids) {
+  const failed = ids.some(id => intent.nodes[id]?.anchors.some(key => anchorParts(key)[0] === "test" && now[key] === "不过"));
+  return failed ? "测试不过" : "凭据已变";
 }
 /** 这一答里改过意：记下改完的那份，往后几轮据它比（作答途中压了前文要重装时，附的也是它）；题下与书眉跟着换 @param {Conversation} conversation @param {Intent} intent @param {IntentPrints} now */
 function keepIntent(conversation, intent, now) {
@@ -140,5 +211,5 @@ async function changeIntent(conversation, signal, change) {
     const data = await bridge("/api/work/intent", { ...workScope(conversation), data: result.next, base: version }, signal);
     if (!data.conflict) return result;
   }
-  throw Error("意被别处接连改动，没写成，稍后再试");
+  throw Error(t("意被别处接连改动，没写成，稍后再试"));
 }

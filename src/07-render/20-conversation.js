@@ -34,7 +34,7 @@ function restoreScrollPosition(snapshot, { follow = true } = {}) {
 /** @param {Conversation} c */
 function renderChatMeta(c) {
   $("#chatMeta").innerHTML =
-    `${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="打开旁注">旁注 ${visibleThreads(c).length}</button>` : ""}${isWork(c) ? intentGlance(c) : ""}`;
+    t`${escapeHtml(formatDay(c.createdAt))} · ${escapeHtml(chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true))}问${visibleThreads(c).length ? ` · <button class="chat-meta-notes" type="button" data-open-notes title="${t(`打开旁注`)}">${t`旁注 ${visibleThreads(c).length}`}</button>` : ""}${isWork(c) ? intentGlance(c) : ""}`;
   renderRunningHead();
   requestAnimationFrame(syncRunningHead);
 }
@@ -51,7 +51,7 @@ function renderRunningHead() {
     const notes = visibleThreads(c).length;
     head.querySelector(".running-head-title").textContent = c.title;
     head.querySelector(".running-head-meta").textContent =
-      `${chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true)}问${notes ? ` · 旁注 ${notes}` : ""}`;
+      t`${chineseNumber(c.messages.filter(m => m.role === "user" && !m.relay).length, true)}问${notes ? t` · 旁注 ${notes}` : ""}`;
     head.querySelector(".running-head-intent").innerHTML = intentGlanceHtml(c, true);
   }
   syncRunningHead();
@@ -107,7 +107,7 @@ function renderConversation(shouldScroll = false) {
   }
   const dry = conversationDry(c);
   $("#chatInput").disabled = dry;
-  $("#chatInput").placeholder = dry ? "余墨已尽，换个模型再续" : "续言于此";
+  $("#chatInput").placeholder = dry ? t("余墨已尽，换个模型再续") : t("续言于此");
   renderSendButtons();
   if (shouldScroll || !snapshot) {
     followBottom = true;
@@ -165,7 +165,7 @@ function foldCompacted(c) {
   for (const button of host.querySelectorAll("[data-toggle-compacted]")) {
     const own = button.closest("[data-message]")?.dataset.message === c.messages[index]?.id;
     button.classList.toggle("hidden", !own || !before.size);
-    button.textContent = c.showCompacted ? "收起前文" : "展开前文";
+    button.textContent = c.showCompacted ? t("收起前文") : t("展开前文");
   }
 }
 // 消息列表按 id 增量同步：没变的节点原样留下（图表、沙箱、展开状态都不动），只插入、替换或移除有变化的那几条。
@@ -183,12 +183,12 @@ function syncMessages(c, converged) {
   if (compactingIds.has(c.id))
     items.push({
       key: "__compacting",
-      html: `<div class="context-divider compacting" data-message="__compacting"><span>正在撮要前文…</span></div>`
+      html: `<div class="context-divider compacting" data-message="__compacting"><span>${t(`正在撮要前文…`)}</span></div>`
     });
   if (conversationDry(c))
     items.push({
       key: "__dry",
-      html: `<div class="server-notice ended-notice" data-message="__dry"><span>此模型余墨已尽。更换模型或调高上限，即可在此续写。</span><button type="button" class="outline-btn" data-pick-model>更换模型</button></div>`
+      html: `<div class="server-notice ended-notice" data-message="__dry"><span>${t(`此模型余墨已尽。更换模型或调高上限，即可在此续写。`)}</span><button type="button" class="outline-btn" data-pick-model>${t(`更换模型`)}</button></div>`
     });
   const result = syncNodes($("#messages"), items, converged);
   if (document.documentElement.classList.contains("work-mode") && !$("#messages").querySelector(".work-expanded")) closeExpandedWork();
@@ -238,7 +238,7 @@ function vizThemeKey() {
 function noteMarkHtml(message) {
   const count = noteCounts.get(message.id) || 0;
   return count
-    ? `<button class="note-mark" type="button" data-note-mark title="查看这条消息的旁注">注${count > 1 ? ` ${count}` : ""}</button>`
+    ? `<button class="note-mark" type="button" data-note-mark title="${t(`查看这条消息的旁注`)}">${t`注${count > 1 ? ` ${count}` : ""}`}</button>`
     : "";
 }
 // 用户消息与上下文分隔的整条 HTML；回复另有画法（见 07-paint.js）
@@ -250,18 +250,18 @@ function relayHtml(message, branch = null) {
     names = items
       .map(item =>
         item.kind === "bg"
-          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="回到所在一步">后台 ${escapeHtml(item.title)} 已结束${item.ok ? "" : ` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
-          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="查看经过">帮手「${escapeHtml(item.title)}」${item.ok ? "回报" : "未完成"}</button>`
+          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="${t(`回到所在一步`)}">${t`后台 ${escapeHtml(item.title)} 已结束`}${item.ok ? "" : t` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
+          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="${t(`查看经过`)}">${t`帮手「${escapeHtml(item.title)}」`}${item.ok ? t("回报") : t("未完成")}</button>`
       )
       .join(`<span class="relay-sep" aria-hidden="true">·</span>`),
-    seal = items.every(item => item.kind === "bg") ? "候" : "遣";
+    seal = items.every(item => item.kind === "bg") ? t("候") : t("遣");
   return `<article class="message relay" data-message="${escapeHtml(message.id)}"><div class="relay-line"><span class="seal sub-seal" aria-hidden="true">${seal}</span>${names}</div>${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
 }
 function renderMessage(message, branch = null, side = false) {
   if (message.role === "context")
     return message.summary
-      ? `<div class="context-divider has-summary" data-message="${escapeHtml(message.id)}"><details class="context-summary"><summary>前文撮要 · ${escapeHtml(chineseNumber(message.compacted || 0, true))}条</summary><div class="context-summary-body">${renderMarkdown(message.summary)}</div></details><button type="button" class="context-toggle" data-toggle-compacted>展开前文</button></div>`
-      : `<div class="context-divider" data-message="${escapeHtml(message.id)}"><span>上下文由此重新开始</span></div>`;
+      ? `<div class="context-divider has-summary" data-message="${escapeHtml(message.id)}"><details class="context-summary"><summary>${t`前文撮要 · ${escapeHtml(chineseNumber(message.compacted || 0, true))}条`}</summary><div class="context-summary-body">${renderMarkdown(message.summary)}</div></details><button type="button" class="context-toggle" data-toggle-compacted>${t(`展开前文`)}</button></div>`
+      : `<div class="context-divider" data-message="${escapeHtml(message.id)}"><span>${t(`上下文由此重新开始`)}</span></div>`;
   if (message.role === "user" && message.relay) return relayHtml(message, branch);
   if (message.role === "user") {
     if (editingMessageId === message.id) {
@@ -269,7 +269,7 @@ function renderMessage(message, branch = null, side = false) {
       const kept = side
         ? []
         : (message.attachments || []).filter(file => file.id && !quoteImageOf(file, message.quote) && !editingDropped.has(file.id));
-      return `<article class="message user" data-message="${escapeHtml(message.id)}">${kept.length ? `<div class="sent-attachments">${kept.map(file => attachmentCard(file, null, false, true)).join("")}</div>` : ""}<div class="message-editor"><textarea class="message-edit-input">${escapeHtml(message.content)}</textarea><div class="edit-actions"><button class="message-action" data-action="cancel-edit">取消</button><button class="message-action edit-save" data-action="save-edit">保存并重答</button></div></div></article>`;
+      return `<article class="message user" data-message="${escapeHtml(message.id)}">${kept.length ? `<div class="sent-attachments">${kept.map(file => attachmentCard(file, null, false, true)).join("")}</div>` : ""}<div class="message-editor"><textarea class="message-edit-input">${escapeHtml(message.content)}</textarea><div class="edit-actions"><button class="message-action" data-action="cancel-edit">${t(`取消`)}</button><button class="message-action edit-save" data-action="save-edit">${t(`保存并重答`)}</button></div></div></article>`;
     }
     // 随引文的画面画在引文里（字在上、图在下，随问句靠右），不在件条里再列一回
     const listed = (message.attachments || []).filter(file => !quoteImageOf(file, message.quote)),
@@ -278,9 +278,9 @@ function renderMessage(message, branch = null, side = false) {
       ? `<div class="sent-attachments">${listed.map(file => attachmentCard(file, null, true)).join("")}</div>`
       : "";
     const quote = message.quote?.text
-      ? `<div class="user-quote${shot ? " has-shot" : ""}" data-quote-source="${escapeHtml(message.quote.messageId || "")}"${message.quote.url ? ` data-quote-url="${escapeHtml(message.quote.url)}"` : ""} title="回到出处">${shot ? `<span class="user-quote-text">${escapeHtml(message.quote.text)}</span>${quoteShotHtml(message.quote.image, message.quote.text)}` : escapeHtml(message.quote.text)}</div>`
+      ? `<div class="user-quote${shot ? " has-shot" : ""}" data-quote-source="${escapeHtml(message.quote.messageId || "")}"${message.quote.url ? ` data-quote-url="${escapeHtml(message.quote.url)}"` : ""} title="${t(`回到出处`)}">${shot ? `<span class="user-quote-text">${escapeHtml(message.quote.text)}</span>${quoteShotHtml(message.quote.image, message.quote.text)}` : escapeHtml(message.quote.text)}</div>`
       : "";
-    return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", "复制消息")}${actionIcon("edit", "编辑消息")}</div></article>`;
+    return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", t("复制消息"))}${actionIcon("edit", t("编辑消息"))}</div></article>`;
   }
   return assistantShellHtml(message);
 }
@@ -304,9 +304,9 @@ function splitInlineThink(message) {
 /** @param {Message} message */
 function assistantNoteHtml(message) {
   return message.status === "error"
-    ? `<div class="message-error">${escapeHtml(message.error || "请求失败")}</div>`
+    ? `<div class="message-error">${escapeHtml(message.error ? tr(message.error) : t("请求失败"))}</div>`
     : message.status === "interrupted"
-      ? `<div class="resume-note">${message.error ? `${escapeHtml(message.error.replace(/[。.\s]+$/, ""))}。` : "连接中断，"}已写的部分都在，可由此续写。</div>`
+      ? `<div class="resume-note">${message.error ? `${escapeHtml(tr(message.error).replace(/[。.\s]+$/, ""))}${LANG === "en" ? ". " : "。"}` : t("连接中断，")}${t(`已写的部分都在，可由此续写。`)}</div>`
       : "";
 }
 /** @param {Message} message */
@@ -314,10 +314,10 @@ function assistantActionsHtml(message) {
   return message.status === "streaming"
     ? ""
     : message.status === "error"
-      ? actionIcon("retry", "重试")
+      ? actionIcon("retry", t("重试"))
       : message.status === "interrupted"
-        ? `${message.content ? actionIcon("copy", "复制已写的部分") : ""}${actionIcon("resume", "续写")}${actionIcon("retry", "从头重写")}`
-        : `${actionIcon("copy", "复制答复")}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", "续写") : ""}${actionIcon("regenerate", "重新生成")}${actionIcon("note", "旁注")}${messageCostHtml(message)}`;
+        ? `${message.content ? actionIcon("copy", t("复制已写的部分")) : ""}${actionIcon("resume", t("续写"))}${actionIcon("retry", t("从头重写"))}`
+        : `${actionIcon("copy", t("复制答复"))}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", t("续写")) : ""}${actionIcon("regenerate", t("重新生成"))}${actionIcon("note", t("旁注"))}${messageCostHtml(message)}`;
 }
 // 这一答耗了多少墨：各轮请求的用量之和（含帮手），接口报了用量就用实数，没报则按字数估；当前上下文有多大另看右下角
 /** @param {Message} message */
@@ -327,8 +327,8 @@ function messageCostHtml(message) {
   const heavy = n >= CONTEXT_HEAVY,
     prompt = Number(message.usage?.prompt_tokens) || 0,
     cached = Number(message.usage?.cached_tokens) || 0,
-    hit = prompt && cached ? `；提示里 ${Math.round((cached / prompt) * 100)}% 读自缓存` : "";
-  return `<span class="message-cost${heavy ? " heavy" : ""}" title="这一答共耗约 ${formatTokens(n)} token${message.tokenEstimated ? "（估算）" : ""}${hit}${heavy ? "；上下文已重，可撮要前文" : ""}">耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}</span>`;
+    hit = prompt && cached ? t`；提示里 ${Math.round((cached / prompt) * 100)}% 读自缓存` : "";
+  return `<span class="message-cost${heavy ? " heavy" : ""}" title="${t`这一答共耗约 ${formatTokens(n)} token`}${message.tokenEstimated ? t("（估算）") : ""}${hit}${heavy ? t("；上下文已重，可撮要前文") : ""}">${t`耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}`}</span>`;
 }
 // 一答收尾：就地画成定稿的样子（图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下）；这条不在页上就整段重画
 /**

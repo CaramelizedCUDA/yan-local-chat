@@ -51,13 +51,13 @@ const MIN_TOOL_STATUS_MS = 240;
  */
 // 内置工具的分组：预设按组挑（一件件挑太碎），设置里照这个次序列
 const TOOL_GROUPS = {
-  web: "联网",
-  compute: "计算",
-  work: "指令与文件",
-  docs: "翻文档",
-  ask: "请示",
-  memory: "记忆与旧谈",
-  delegate: "差遣"
+  web: t("联网"),
+  compute: t("计算"),
+  work: t("指令与文件"),
+  docs: t("翻文档"),
+  ask: t("请示"),
+  memory: t("记忆与旧谈"),
+  delegate: t("差遣")
 };
 /** @type {Map<string, Tool>} 按登记先后排，交给模型时也是这个次序 */
 const TOOLS = new Map();
@@ -125,31 +125,31 @@ function presetAllows(preset, tool) {
  */
 async function runTool(step, ctx) {
   const tool = TOOLS.get(step.name);
-  if (!tool?.run) return { ok: false, content: `未知工具 ${step.name}`, display: "未知工具" };
+  if (!tool?.run) return { ok: false, content: t`未知工具 ${step.name}`, display: "未知工具" };
   // 没交给它的工具，它也可能照着名字调（旁注只查不改、预设只挑了几组、帮手拿不到只给主模型的）：给哪些就只认哪些
   if (ctx.offered && !ctx.offered.has(step.name))
     return step.scope && tool.mainOnly
-      ? { ok: false, content: `${step.name} 只有主模型可用；需要它做的事写进回报里，由主模型决定。`, display: "帮手无权" }
-      : { ok: false, content: `此处没有提供 ${step.name}，只能用这一轮给出的工具。`, display: "此处未提供" };
+      ? { ok: false, content: t`${step.name} 只有主模型可用；需要它做的事写进回报里，由主模型决定。`, display: "帮手无权" }
+      : { ok: false, content: t`此处没有提供 ${step.name}，只能用这一轮给出的工具。`, display: "此处未提供" };
   const parsed = parseToolArguments(step.arguments);
   if (!parsed.ok)
     return {
       ok: false,
-      content: `调用 ${step.name} 的参数不是合法 JSON（${parsed.error}）。arguments 必须是一个 JSON 对象，不要加代码围栏、注释或多余的逗号，也不要把它再编码成字符串；内容过长时先精简再发。这件工具收的参数：${toolSchemaHint(step.name)}\n\n收到的原文（前 300 字）：${parsed.raw.slice(0, 300)}`,
+      content: t`调用 ${step.name} 的参数不是合法 JSON（${parsed.error}）。arguments 必须是一个 JSON 对象，不要加代码围栏、注释或多余的逗号，也不要把它再编码成字符串；内容过长时先精简再发。这件工具收的参数：${toolSchemaHint(step.name)}\n\n收到的原文（前 300 字）：${parsed.raw.slice(0, 300)}`,
       display: "参数解析失败"
     };
   // 截断的参数救回来也不能拿去写：内容已经不全，写下去就是把文件写坏
   if (parsed.truncated && tool.sideEffect)
     return {
       ok: false,
-      content: `调用 ${step.name} 的参数 JSON 不完整（多半是输出被最大长度截断），为安全起见没有执行。请把内容精简或分成几次写入（大文件先 write_file 写开头，再用 edit_file 追加），确保 arguments 是完整的 JSON。这件工具收的参数：${toolSchemaHint(step.name)}\n\n收到的原文（末尾 200 字）：…${step.arguments.slice(-200)}`,
+      content: t`调用 ${step.name} 的参数 JSON 不完整（多半是输出被最大长度截断），为安全起见没有执行。请把内容精简或分成几次写入（大文件先 write_file 写开头，再用 edit_file 追加），确保 arguments 是完整的 JSON。这件工具收的参数：${toolSchemaHint(step.name)}\n\n收到的原文（末尾 200 字）：…${step.arguments.slice(-200)}`,
       display: "参数不完整"
     };
   const { args, problems } = normalizeToolArguments(step.name, parsed.args);
   if (problems.length)
     return {
       ok: false,
-      content: `调用 ${step.name} 的参数不合要求：${problems.join("；")}。这件工具收的参数：${toolSchemaHint(step.name)}；实际收到的键：${Object.keys(parsed.args).join("、") || "（无）"}${parsed.truncated ? "\n（参数 JSON 不完整，可能是输出被截断）" : ""}\n\n收到的原文（前 300 字）：${step.arguments.slice(0, 300)}`,
+      content: t`调用 ${step.name} 的参数不合要求：${problems.join("；")}。这件工具收的参数：${toolSchemaHint(step.name)}；实际收到的键：${Object.keys(parsed.args).join("、") || t("（无）")}${parsed.truncated ? t("\n（参数 JSON 不完整，可能是输出被截断）") : ""}\n\n收到的原文（前 300 字）：${step.arguments.slice(0, 300)}`,
       display: "参数不合要求"
     };
   try {
@@ -157,7 +157,7 @@ async function runTool(step, ctx) {
   } catch (error) {
     if (error.name === "AbortError") throw error;
     const message = String(error.message || error);
-    return { ok: false, content: `工具执行失败：${message}`, display: friendlyError(message).slice(0, 60) };
+    return { ok: false, content: t`工具执行失败：${message}`, display: bridgeErrorText(message).slice(0, 60) };
   }
 }
 // 同一答里同样的参数不必再跑一遍：键是工具名加规范化后的参数，怎么规范由各工具的 cache 定
@@ -179,10 +179,11 @@ function stableToolJson(value) {
     );
   return typeof value === "string" ? value.trim() : value;
 }
-// 复用结果时连同呈现一起搬过来：标题、网址、备注、命中
+// 复用结果时连同呈现一起搬过来：标签、标题、网址、备注、命中
 /** @param {Step} step */
 function toolPresentation(step) {
   return {
+    label: step.label,
     title: step.title || "",
     url: step.url || "",
     note: step.note || "",
@@ -211,7 +212,7 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
       Object.assign(step, structuredClone(cached.presentation));
       step.cached = true;
       outcome = structuredClone(cached.outcome);
-      outcome.content = `（与本答先前一次同样的调用，结果照搬）\n${outcome.content}`;
+      outcome.content = t`（与本答先前一次同样的调用，结果照搬）\n${outcome.content}`;
       outcome.display = `复用 · ${outcome.display}`;
     } else {
       outcome = await runTool(step, ctx);
@@ -225,7 +226,7 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
     // 在后台接着做的（差遣）：这一步仍是进行中，做完由它自己收尾；先记一句「后台进行中」，下一问的行迹摘要里模型才知道它还没回来
     if (!outcome.background) step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
     step.result = outcome.display;
-    outcomes.set(step.id, clipForModel(outcome.content, 60000, { hint: "要看后面的请缩小范围分次取" }));
+    outcomes.set(step.id, clipForModel(outcome.content, 60000, { hint: t("要看后面的请缩小范围分次取") }));
     if (outcome.images) images.push(...outcome.images);
     refreshSteps(assistant);
     saveStore();
@@ -269,16 +270,18 @@ function clipForModel(text, limit, { tail = false, hint = "" } = {}) {
   const value = String(text ?? "");
   if (value.length <= limit) return value;
   const cut = value.length - limit,
-    note = `${cut} 字截去${hint ? `；${hint}` : ""}`;
-  if (!tail) return `${value.slice(0, limit)}\n…（其后 ${note}）`;
+    note = t`${cut} 字截去${hint ? `；${hint}` : ""}`;
+  if (!tail) return t`${value.slice(0, limit)}\n…（其后 ${note}）`;
   const head = Math.floor(limit * 0.3);
-  return `${value.slice(0, head)}\n…（中间 ${note}）…\n${value.slice(value.length - (limit - head))}`;
+  return t`${value.slice(0, head)}\n…（中间 ${note}）…\n${value.slice(value.length - (limit - head))}`;
 }
 // 步骤上留着的输出只留末尾一截：指令跑出几万行，整份存进对话既占地方也没人看
 const STEP_OUTPUT_KEEP = 6000;
 function trimOutput(text) {
   const value = String(text || "");
-  return value.length > STEP_OUTPUT_KEEP ? `…（前面 ${value.length - STEP_OUTPUT_KEEP} 字略去）\n${value.slice(-STEP_OUTPUT_KEEP)}` : value;
+  return value.length > STEP_OUTPUT_KEEP
+    ? t`…（前面 ${value.length - STEP_OUTPUT_KEEP} 字略去）\n${value.slice(-STEP_OUTPUT_KEEP)}`
+    : value;
 }
 function clampNumber(value, fallback, min, max) {
   return Math.max(min, Math.min(max, Number.isFinite(value) ? value : fallback));

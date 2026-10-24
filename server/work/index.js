@@ -28,8 +28,10 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
   // 报错原样交给模型（卡片上只露头一句）：放得下一段线索——路径不对时同名的在哪、old 对不上时文件里最像的那一段
   const failed = error => errorText(error, 4000);
   const resolveWorkdir = raw => paths.resolveWorkdir(raw, workHome);
-  const { WORK_SHELL, runShell, startBackground, backgroundReport, checkBackground, watchBackground } = createShell({ toolEnv }),
-    { lockFile, lockWorkdir } = createLocks();
+  const { WORK_SHELL, runShell, startBackground, backgroundReport, discardBackground, checkBackground, watchBackground } = createShell({
+      toolEnv
+    }),
+    { lockFile } = createLocks();
   // 沙箱分两档：问而后行（或没说档位的请求）用严的；审而后行、径行用宽的——文件工具在宽档里不设防，指令只守系统本身（见 server/sandbox.js）
   const looseTier = body => body.permission === "review" || body.permission === "auto";
   const strictBox = body => body.sandbox === true && !looseTier(body);
@@ -117,23 +119,30 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
         if (why) throw Error(why);
       }
       if (body.background === true) {
+        if (res.destroyed) return;
         console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ （后台）${command.slice(0, 120)}`);
-        return sendJson(res, 200, await backgroundReport(startBackground(command, workdir, boxed), 5000));
+        const job = startBackground(command, workdir, boxed);
+        let delivered = false;
+        const disconnected = () => {
+          if (!delivered) discardBackground(job);
+        };
+        res.once("close", disconnected);
+        res.once("finish", () => {
+          delivered = true;
+          res.removeListener("close", disconnected);
+        });
+        const report = await backgroundReport(job, 5000);
+        if (res.destroyed) return disconnected();
+        return sendJson(res, 200, report);
       }
       // 超时只有默认值没有上限：长测试、大装包、跑数据都可能超过十分钟，页面上本就有「停止」。
       // 封顶在 2³¹−1 毫秒（约 24 天）只因 setTimeout 超过它会溢出、当作 1 毫秒——模型给个大数，指令就被当场杀掉
       const timeoutMs = clampNumber(Number(body.timeout) * 1000, 120000, 1000, 2147483647);
       console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ ${command.slice(0, 120)}`);
-      // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉。排队等目录锁时停了，也不再启动指令
+      // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉。指令不拿目录锁，见 locks.js
       const signal = requestSignal(res);
       const started = Date.now(),
-        release = await lockWorkdir(workdir, signal);
-      let result;
-      try {
         result = await runShell(command, workdir, timeoutMs, signal, { boxed });
-      } finally {
-        release();
-      }
       if (result.aborted) console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })}   已中止：${command.slice(0, 80)}`);
       if (!res.writableEnded && !res.destroyed) sendJson(res, 200, { ...result, durationMs: Date.now() - started });
     } catch (error) {

@@ -31,7 +31,7 @@ function parseToolArguments(raw) {
     const parsed = attempt(repaired);
     if (parsed?.ok) return { ...parsed, truncated: true };
   }
-  return { ok: false, error: String(first?.error?.message || "不是合法 JSON"), raw: text };
+  return { ok: false, error: String(first?.error?.message || t("不是合法 JSON")), raw: text };
 }
 // 回传给接口的工具调用参数必须是一个合法的 JSON 对象：模型写坏的（如 "params": , ）若原样回传，有的中转一解析就让整个请求报错，
 // 这一答便断在半途。写坏这件事已在工具结果里告诉模型了，历史里给救回的参数，救不回的给 {}
@@ -104,7 +104,7 @@ function coerceToolValue(value, rule) {
   if (type === "boolean") {
     if (typeof value === "boolean") return value;
     const text = String(value).trim().toLowerCase();
-    return ["true", "yes", "1", "是"].includes(text) ? true : ["false", "no", "0", "否", ""].includes(text) ? false : value;
+    return ["true", "yes", "1", t("是")].includes(text) ? true : ["false", "no", "0", t("否"), ""].includes(text) ? false : value;
   }
   if (type === "array" || type === "object") {
     let parsed = value;
@@ -147,7 +147,7 @@ function normalizeArguments(spec, raw) {
   }
   for (const [key, rule] of Object.entries(spec.properties)) args[key] = coerceToolValue(args[key], rule);
   const problems = [];
-  for (const key of spec.required || []) if (args[key] === undefined || args[key] === null) problems.push(`缺少必填参数 ${key}`);
+  for (const key of spec.required || []) if (args[key] === undefined || args[key] === null) problems.push(t`缺少必填参数 ${key}`);
   return { args, problems };
 }
 // 参数出错时回给模型的一行 schema 摘要
@@ -155,9 +155,9 @@ function toolSchemaHint(name) {
   return schemaHint(toolSpec(name)?.parameters);
 }
 function schemaHint(spec) {
-  if (!spec?.properties) return "见工具定义";
+  if (!spec?.properties) return t("见工具定义");
   const required = new Set(spec.required || []);
   return Object.entries(spec.properties)
-    .map(([key, value]) => `${key}（${value.type || "any"}${required.has(key) ? "，必填" : "，可选"}）`)
+    .map(([key, value]) => `${key}（${value.type || "any"}${required.has(key) ? t("，必填") : t("，可选")}）`)
     .join("、");
 }

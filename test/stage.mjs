@@ -524,16 +524,16 @@ await menuPick("search");
 await menuPick("fit");
 await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
 
-// 设置 → 游目：只管游目自己的浏览器怎么配（开没开、用哪个、驱动、存储），排在 MCP 之后、记忆之前
+// 设置 → 游目：只管游目自己的浏览器怎么配（开没开、用哪个、驱动、存储），排在技能之后、记忆之前
 await evalJs(`document.querySelector("#openSettings").click(); document.querySelector('[data-tab="stage"]').click(); true`);
 await waitFor(
   `!!document.querySelector('#settingsContent [data-stage-opt="browser"]') && !document.querySelector("#settingsContent").textContent.includes("……")`,
   8000
 ).catch(() => {});
 check(
-  "the 游目 tab sits between MCP and 记忆, with the line it is named after",
+  "the 游目 tab sits between 技能 and 记忆, with the line it is named after",
   await evalJs(
-    `(t => t.nextElementSibling?.dataset.tab === "memory" && t.previousElementSibling?.dataset.tab === "mcp")(document.querySelector('[data-tab="stage"]')) && document.querySelector("#settingsContent .settings-lead")?.textContent === "游目骋怀，足以极视听之娱。" && !!document.querySelector("#settingsContent .settings-mark")`
+    `(t => t.nextElementSibling?.dataset.tab === "memory" && t.previousElementSibling?.dataset.tab === "skills")(document.querySelector('[data-tab="stage"]')) && document.querySelector("#settingsContent .settings-lead")?.textContent === "游目骋怀，足以极视听之娱。" && !!document.querySelector("#settingsContent .settings-mark")`
   )
 );
 check(

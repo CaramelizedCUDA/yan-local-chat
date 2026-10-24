@@ -1,6 +1,7 @@
 "use strict";
 const http = require("node:http");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { createHash } = require("node:crypto");
 // 拼接规则（build.js）改了就重新载入：页面脚本本是即时拼的，不该因为拼法变了就得重启桥接
@@ -20,6 +21,7 @@ const { sendJson } = require("./server/http.js");
 const { openUrl } = require("./server/platform.js");
 // 联网：地址门禁、翻网页、检索、调接口
 const WEB = require("./server/web.js");
+const SEARCH = require("./server/search.js");
 
 const ROOT = __dirname;
 const HOST = "127.0.0.1";
@@ -53,15 +55,11 @@ function securityHeaders(req, res) {
       : `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:*; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`
   );
 }
-// 能调桥接的页面：本机的与 VS Code Webview。别的网站连模型转发、列模型也不许借道——那等于让任意网页经桥接往局域网里发请求。
+// 能调桥接的页面：本机来源。别的网站连模型转发、列模型也不许借道——那等于让任意网页经桥接往局域网里发请求。
 // 来源为 "null" 的一概不认：file:// 打开的页面是它，可任何网站嵌一个开了沙箱的 iframe 也是它，分不出来；
 // file:// 打开的页面因此接不上桥接，页面只提示去 http://127.0.0.1:端口 打开
 function allowedOrigin(origin) {
-  return (
-    /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin || "") ||
-    /^vscode-webview:\/\//i.test(origin || "") ||
-    /^https:\/\/[a-z0-9-]+\.(vscode-cdn|vscode-webview)\.net$/i.test(origin || "")
-  );
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin || "");
 }
 // Host 头只认本机的这个端口：防 DNS 重绑定——恶意域名解析到 127.0.0.1 后，它的页面对桥接发的是「同源」请求，GET 不带 Origin，
 // 只看 Origin 就会被当成本机脚本放行（卷宗的取件接口能读到任意路径）
@@ -79,11 +77,11 @@ function corsHeaders(req, res) {
   if (req.headers["access-control-request-private-network"] === "true") res.setHeader("Access-Control-Allow-Private-Network", "true");
 }
 // 执事接口能执行本机指令，不能只依赖 CORS：不可信页面即使读不到响应，也可能用简单请求触发副作用。
-// 无 Origin 的本机脚本仍可调用（沙箱里跑的脚本也在其列：它本就以用户权限运行，调桥接不多出什么，见 server/sandbox.js 的 callsBridge）；浏览器只接受本站页面与 VS Code Webview（别的本机端口可对谈，但不开放执事）。
+// 无 Origin 的本机脚本仍可调用；浏览器只接受本站页面（别的本机端口可对谈，但不开放执事）。
 function trustedWorkRequest(req) {
   const origin = req.headers.origin;
-  if (!origin) return true;
-  if (/^vscode-webview:\/\//i.test(origin) || /^https:\/\/[a-z0-9-]+\.(vscode-cdn|vscode-webview)\.net$/i.test(origin)) return true;
+  // img / video 等浏览器 GET 通常不带 Origin，仍须按 Fetch Metadata 拒绝跨站与别的本机来源。
+  if (!origin) return !req.headers["sec-fetch-site"] || ["same-origin", "none"].includes(req.headers["sec-fetch-site"]);
   try {
     const url = new URL(origin),
       port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
@@ -138,9 +136,14 @@ const WORK = require("./server/work/index.js")({
   toolEnv: ENV.apply,
   playable: VIDEO.playable
 });
+// 技能：照 Claude Code 的 SKILL.md 写法，认存储根/技能、~/.claude/skills 与工作目录/.claude/skills（见 server/skills.js）
+const SKILLS = require("./server/skills.js")({ skillsHome: () => STORE.paths().skills });
 const CHATS = require("./server/chats.js")({ chatsHome: () => STORE.paths().chats });
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable });
 const STAGE_LIB = require("./server/stage.js");
+// 检索与翻网页用的无头浏览器（直接请求被拦、网页要跑脚本时才起，见 server/headless.js）：配置目录只是 Cookie 与缓存，不算用户的东西，
+// 放系统临时目录、不进存储根（也不进 环境/：清空环境时它若开着，删到一半就卡住）；按端口各一份，测试的桥接不与常开的那个共用
+require("./server/headless.js").configure({ home: () => path.join(os.tmpdir(), `yan-检索浏览器-${PORT}`) });
 // MCP：按设置里的配置起、连外部的 MCP 服务，把它们的工具交给页面
 const MCP = require("./server/mcp/index.js")({
   version: APP_VERSION,
@@ -156,16 +159,18 @@ const BUS = require("./server/bus.js")({ dispatch });
 const MODEL = require("./server/model/index.js")({ home: () => STORE.paths().root });
 
 // 接口表：「方法 路径」→ 处理函数。受信的那一半能碰本机磁盘与本机服务（执事、卷宗、对话目录、存储、附件，以及能打本机的 http_request），
-// 只受理本站页面与 VS Code Webview；另一半（引导、转发、检索、翻网页）凡是本机桥接认得的来源都可调
+// 只受理本站页面与本机脚本；另一半（引导、转发、检索、翻网页）凡是本机桥接认得的来源都可调
 const OPEN_ROUTES = {
     "GET /api/bootstrap": handleBootstrap,
     ...MODEL.openRoutes,
     ...WEB.openRoutes,
+    ...SEARCH.openRoutes,
     ...BUS.routes
   },
   TRUSTED_ROUTES = {
     ...WEB.routes,
     ...WORK.routes,
+    ...SKILLS.routes,
     ...CHATS.routes,
     ...STORE.routes,
     ...FILES.routes,
@@ -184,7 +189,7 @@ const BUNDLES = {
   "/app.css": { build: () => currentBundler().bundleStyles(), type: "text/css; charset=utf-8" }
 };
 // 静态服务只开放页面运行真正需要的文件。仓库根目录里还有桥接源码、测试、.git 与用户可能临时放入的配置，
-// 不能因为它们恰好位于 ROOT 下就一并交给浏览器；vendor/ 是随页面分发的纯前端资源；提示词随页面脚本拼进 /support.js。
+// 不能因为它们恰好位于 ROOT 下就一并交给浏览器；vendor/ 是随页面分发的纯前端资源，i18n/ 是界面的译文表；提示词随页面脚本拼进 /support.js。
 const PUBLIC_STATIC_FILES = new Set(["index.html", "theme-boot.js", "icon.svg", "preview.html", "preview-runtime.js"]);
 const REAL_ROOT = fs.realpathSync(ROOT);
 function publicStaticTarget(requested) {
@@ -192,7 +197,7 @@ function publicStaticTarget(requested) {
   const webPath = requested.replace(/\\/g, "/"),
     normalized = path.posix.normalize(webPath);
   if (normalized !== webPath || normalized.startsWith("../") || path.posix.isAbsolute(normalized)) return null;
-  if (!PUBLIC_STATIC_FILES.has(normalized) && !normalized.startsWith("vendor/")) return null;
+  if (!PUBLIC_STATIC_FILES.has(normalized) && !normalized.startsWith("vendor/") && !normalized.startsWith("i18n/")) return null;
   const candidate = path.resolve(ROOT, ...normalized.split("/"));
   if (!fs.existsSync(candidate)) return null;
   // 白名单目录中若出现指向仓库外的符号链接，也不能跟出去。
@@ -245,7 +250,9 @@ function serveStatic(req, res) {
   }
   res.writeHead(200, { ...headers, "Content-Length": stat.size });
   if (req.method === "HEAD") return res.end();
-  fs.createReadStream(file).pipe(res);
+  fs.createReadStream(file)
+    .on("error", () => res.destroy())
+    .pipe(res);
 }
 
 // YAN_DEBUG=1：把每个请求与异常断开都打到控制台，排查「页面说桥接没起」这类问题时用
@@ -271,7 +278,7 @@ async function dispatch(req, res) {
     if (urlPath.startsWith("/api/") && req.headers.origin && !allowedOrigin(req.headers.origin))
       return sendJson(res, 403, { error: "此页面无权调用本机桥接" });
     if (TRUSTED_PATHS.has(urlPath) && !trustedWorkRequest(req))
-      return sendJson(res, 403, { error: "此页面无权调用本机执事接口，请从桥接地址或 VS Code 打开「言」" });
+      return sendJson(res, 403, { error: "此页面无权调用本机执事接口，请从桥接地址打开「言」" });
     corsHeaders(req, res);
     if (req.method === "OPTIONS") {
       res.writeHead(204);

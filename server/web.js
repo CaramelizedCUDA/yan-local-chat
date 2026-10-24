@@ -1,9 +1,14 @@
-// 言 · 桥接的联网：地址门禁（公网才放行，http_request / download_file 另放本机回环）、按量读正文、翻网页、免 Key 检索、调接口
+// 言 · 桥接的联网：地址门禁（公网才放行，http_request / download_file 另放本机回环）、按量读正文、翻网页、调接口（检索在 server/search.js）
 // 地址门禁与读正文是纯函数，server/work/ 的 download_file 与 CLIXML 还原直接 require；routes 由 server.js 装进接口表
 "use strict";
 const dns = require("node:dns").promises;
 const net = require("node:net");
+const http = require("node:http");
+const https = require("node:https");
+const { Readable } = require("node:stream");
+const zlib = require("node:zlib");
 const { jsonRoute } = require("./http.js");
+const browser = require("./headless.js");
 
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 // 超出 Unicode 范围的实体（&#99999999;）fromCodePoint 会抛错，整页就读不成：换成替换符
@@ -147,10 +152,48 @@ async function assertPublicUrl(url, { allowLoopback = false } = {}) {
   const host = hostLiteral(url.hostname);
   const blocked = address => isPrivateAddress(address) && !(allowLoopback && isLoopback(address));
   if (blocked(host)) throw Error(allowLoopback ? "不允许访问内网地址（本机 127.0.0.1 / localhost 除外）" : "不允许访问本机或内网地址");
-  if (net.isIP(host) || (allowLoopback && host === "localhost")) return;
+  if (net.isIP(host)) return [{ address: host, family: net.isIP(host) }];
   const addresses = await dns.lookup(host, { all: true, verbatim: true });
   const hit = addresses.find(item => blocked(item.address) && !isFakeIpAddress(item.address));
   if (!addresses.length || hit) throw Error(`网址解析到了本机或内网地址${hit ? `（${hit.address}）` : ""}`);
+  return addresses;
+}
+// 连接只用刚验过的解析结果：Host / TLS SNI 仍取原域名，不在 fetch 时再解析一回。
+const pinnedLookup = addresses => (_host, options, done) => {
+  const list = options.family ? addresses.filter(item => item.family === options.family) : addresses;
+  if (!list.length) return done(Error("网址没有可用的 IP 地址"));
+  if (options.all) done(null, list);
+  else done(null, list[0].address, list[0].family);
+};
+function pinnedFetch(url, options, addresses) {
+  if (url.username || url.password) return Promise.reject(Error("请用请求头提供认证，不在网址里放凭据"));
+  return new Promise((resolve, reject) => {
+    const request = (url.protocol === "https:" ? https : http).request(
+      url,
+      { ...options, lookup: pinnedLookup(addresses), agent: false },
+      incoming => {
+        const headers = new Headers();
+        for (let i = 0; i < incoming.rawHeaders.length; i += 2) headers.append(incoming.rawHeaders[i], incoming.rawHeaders[i + 1]);
+        const decode = { gzip: zlib.createGunzip, deflate: zlib.createInflate, br: zlib.createBrotliDecompress }[
+          headers.get("content-encoding")
+        ];
+        const empty = options.method === "HEAD" || [204, 205, 304].includes(incoming.statusCode);
+        let body = incoming;
+        if (decode && !empty) {
+          body = decode();
+          incoming.on("error", error => body.destroy(error));
+          body.on("close", () => incoming.destroy());
+          incoming.pipe(body);
+          headers.delete("content-encoding");
+          headers.delete("content-length");
+        }
+        if (empty) incoming.resume();
+        resolve(new Response(empty ? null : Readable.toWeb(body), { status: incoming.statusCode, headers }));
+      }
+    );
+    request.on("error", reject);
+    request.end(options.body || undefined);
+  });
 }
 // 桥接自己发出的请求都带这个头；桥接收到带它的 /api/ 请求一律拒绝。http_request / download_file 能打本机，
 // 不设这一道，模型就能借它们调桥接自己的执事接口，绕过请示与沙箱在沙箱外跑指令（无 Origin、Host 也对得上）
@@ -160,17 +203,29 @@ async function fetchPublicResponse(url, { method = "GET", headers = {}, body = n
   let current = new URL(url);
   const signal = AbortSignal.timeout(timeout);
   for (let redirects = 0; redirects <= 5; redirects++) {
-    await assertPublicUrl(current, { allowLoopback });
-    const response = await fetch(current, {
-      method,
-      headers: { "User-Agent": BROWSER_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7", ...headers, [OUTBOUND_MARK]: "1" },
-      body: body && !["GET", "HEAD"].includes(method) ? body : undefined,
-      redirect: "manual",
-      signal
-    });
+    const addresses = await assertPublicUrl(current, { allowLoopback });
+    const response = await pinnedFetch(
+      current,
+      {
+        method,
+        headers: { "User-Agent": BROWSER_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7", ...headers, [OUTBOUND_MARK]: "1" },
+        body: body && !["GET", "HEAD"].includes(method) ? body : undefined,
+        signal
+      },
+      addresses
+    );
     if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
       await response.body?.cancel().catch(() => {});
-      current = new URL(response.headers.get("location"), current);
+      const next = new URL(response.headers.get("location"), current);
+      // 自定义头可能就是凭据（包括服务自定的 token 头）：跨来源时不替用户转交。
+      if (
+        next.origin !== current.origin &&
+        Object.keys(headers).some(
+          name => !/^(accept|accept-language|content-type|user-agent|range|if-none-match|if-modified-since)$/i.test(name)
+        )
+      )
+        throw Error("带自定义认证请求头的请求不能跨来源跳转，请直接请求目标地址");
+      current = next;
       // 303 与 POST 后的 301/302 按浏览器惯例改成 GET
       if (response.status === 303 || (method !== "GET" && method !== "HEAD" && [301, 302].includes(response.status))) {
         method = "GET";
@@ -243,15 +298,7 @@ const handleHttp = jsonRoute(async body => {
     { buffer, truncated } = await readLimitedBytes(response, textual ? 4 * 1024 * 1024 : 64 * 1024);
   const responseHeaders = {};
   for (const [name, value] of response.headers) if (!/^set-cookie$/i.test(name)) responseHeaders[name] = value;
-  let text = "";
-  if (textual) {
-    const charset = (type.match(/charset=["']?([\w-]+)/i) || [])[1] || "utf-8";
-    try {
-      text = new TextDecoder(charset).decode(buffer);
-    } catch {
-      text = buffer.toString("utf8");
-    }
-  }
+  const text = textual ? decodeText(buffer, charsetOf(type)) : "";
   return {
     status: response.status,
     statusText: response.statusText,
@@ -266,173 +313,52 @@ const handleHttp = jsonRoute(async body => {
   };
 });
 const FETCH_TEXT_LIMIT = 3 * 1024 * 1024;
-// 正文最多只收 3 MB：边读边计，到量即取消读取器——不先把整个响应吃进内存再截，对方回 500 MB 也只占 3 MB
+const charsetOf = text => (String(text).match(/charset=["']?([\w-]+)/i) || [])[1];
+// 认不得的字符集（写错、冷门）照 UTF-8 读，不让整页读不成
+function decodeText(buffer, charset = "utf-8") {
+  try {
+    return new TextDecoder(charset).decode(buffer);
+  } catch {
+    return buffer.toString("utf8");
+  }
+}
+// 正文最多只收 3 MB（见 readLimitedBytes：边读边计，对方回 500 MB 也只占 3 MB）；字符集先看响应头，没写再看页头的 <meta>
 async function readLimitedText(response, limit = FETCH_TEXT_LIMIT) {
   const type = response.headers.get("content-type") || "";
   if (!/text\/|application\/(xhtml|json|xml)/i.test(type)) {
     await response.body?.cancel().catch(() => {});
     throw Error(`不支持的内容类型 ${type.split(";")[0] || "未知"}`);
   }
-  const chunks = [];
-  let size = 0;
-  if (response.body) {
-    const reader = response.body.getReader();
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (size + value.length >= limit) {
-        chunks.push(value.subarray(0, limit - size));
-        size = limit;
-        await reader.cancel().catch(() => {});
-        break;
-      }
-      chunks.push(value);
-      size += value.length;
-    }
-  }
-  const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)));
-  const charset =
-    (type.match(/charset=["']?([\w-]+)/i) ||
-      buffer
-        .subarray(0, 4096)
-        .toString("latin1")
-        .match(/charset=["']?([\w-]+)/i) ||
-      [])[1] || "utf-8";
-  let text;
-  try {
-    text = new TextDecoder(charset).decode(buffer);
-  } catch {
-    text = buffer.toString("utf8");
-  }
-  return { text, type, truncated: size >= limit };
+  const { buffer, truncated } = await readLimitedBytes(response, limit);
+  const charset = charsetOf(type) || charsetOf(buffer.subarray(0, 4096).toString("latin1"));
+  return { text: decodeText(buffer, charset), type, truncated };
 }
-async function fetchText(url, timeout = 15000, headers = {}) {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": BROWSER_UA,
-      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
-      Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
-      ...headers
-    },
-    redirect: "follow",
-    signal: AbortSignal.timeout(timeout)
+// 取网页的字（翻网页、检索）：地址门禁与逐跳再查都经 fetchPublicResponse，只此一路。没成的报错带 status（翻网页据此认被拒）；
+// pdf：是 PDF 就原样交回字节，不当文字读
+async function fetchText(url, { timeout = 15000, headers = {}, pdf = false } = {}) {
+  const { response, url: finalUrl } = await fetchPublicResponse(url, {
+    headers: { Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5", ...headers },
+    timeout
   });
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
-    throw Error(`网页返回 ${response.status}`);
+    throw Object.assign(Error(`网页返回 ${response.status}`), { status: response.status });
+  }
+  const declared = response.headers.get("content-type") || "";
+  if (pdf && (/application\/pdf/i.test(declared) || (/octet-stream/i.test(declared) && /\.pdf$/i.test(new URL(finalUrl).pathname)))) {
+    const { buffer, truncated } = await readLimitedBytes(response, PDF_LIMIT);
+    if (truncated) throw Error("PDF 超过 20 MB，用 download_file 存下来再读");
+    return { pdf: buffer, url: finalUrl, type: declared };
   }
   const { text, type } = await readLimitedText(response);
-  return { text, url: response.url, type, headers: response.headers };
+  return { text, url: finalUrl, type, headers: response.headers };
 }
-async function fetchPublicText(url, timeout = 20000) {
-  let current = new URL(url);
-  const signal = AbortSignal.timeout(timeout);
-  for (let redirects = 0; redirects <= 5; redirects++) {
-    await assertPublicUrl(current);
-    const response = await fetch(current, {
-      headers: {
-        "User-Agent": BROWSER_UA,
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
-        Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5"
-      },
-      redirect: "manual",
-      signal
-    });
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      await response.body?.cancel().catch(() => {});
-      if (!location) throw Error("网页跳转缺少目标地址");
-      current = new URL(location, current);
-      continue;
-    }
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
-      throw Error(`网页返回 ${response.status}`);
-    }
-    const { text, type } = await readLimitedText(response);
-    return { text, url: current.href, type };
-  }
-  throw Error("网页跳转次数过多");
-}
-// 免 Key 的检索：先 Bing（国内可达；ensearch=1 走国际索引），失败或无结果再试 DuckDuckGo（连搜几回就回 202，只作后备）
-// Bing 结果链接是 /ck/a?…&u=a1<base64url> 形式的跳转，还原成真实地址
-function resolveBingUrl(href) {
-  const raw = decodeEntities(href);
-  try {
-    const url = new URL(raw, "https://www.bing.com");
-    if (/bing\.com$/i.test(url.hostname) && url.pathname === "/ck/a") {
-      const u = url.searchParams.get("u") || "";
-      if (u.startsWith("a1")) return Buffer.from(u.slice(2), "base64url").toString("utf8");
-    }
-    return url.href;
-  } catch {
-    return raw;
-  }
-}
-// Bing 认人：不带 Cookie 的请求当作脚本，查询词只认一个、其余丢掉，照样回十条（搜 Modal 的 GPU 定价出来的是莫代尔面料）。
-// 像浏览器一样留着它给的 Cookie：头一回先进首页讨一份，此后每次回话里新给的随手记上，自然续期
-const bingJar = new Map();
-function keepCookies(headers) {
-  for (const line of headers.getSetCookie?.() || []) {
-    const pair = line.split(";")[0],
-      at = pair.indexOf("=");
-    if (at > 0) bingJar.set(pair.slice(0, at).trim(), pair.slice(at + 1));
-  }
-}
-async function searchBing(query, count) {
-  if (!bingJar.size) keepCookies((await fetchText("https://www.bing.com/")).headers);
-  const { text, headers } = await fetchText(
-    `https://www.bing.com/search?q=${encodeURIComponent(query)}&ensearch=1&count=${count}&form=QBLH`,
-    15000,
-    { Cookie: [...bingJar].map(([name, value]) => `${name}=${value}`).join("; "), Referer: "https://www.bing.com/" }
-  );
-  keepCookies(headers);
-  const results = [];
-  for (const match of text.matchAll(
-    /<li class="b_algo"[\s\S]*?<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/h2>([\s\S]*?)<\/li>/g
-  )) {
-    const snippet = (match[3].match(/<p[^>]*>([\s\S]*?)<\/p>/) || [])[1] || "";
-    const url = resolveBingUrl(match[1]);
-    if (/^https?:\/\//.test(url)) results.push({ title: stripTags(match[2]), url, snippet: stripTags(snippet) });
-    if (results.length >= count) break;
-  }
-  return results;
-}
-async function searchDuckDuckGo(query, count) {
-  const { text } = await fetchText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=cn-zh`);
-  const results = [];
-  for (const match of text.matchAll(
-    /<a rel="nofollow" class="result__a" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g
-  )) {
-    let url = match[1];
-    const uddg = url.match(/[?&]uddg=([^&]+)/);
-    if (uddg) url = decodeURIComponent(uddg[1]);
-    if (url.startsWith("//")) url = `https:${url}`;
-    results.push({ title: stripTags(match[2]), url, snippet: stripTags(match[3]) });
-    if (results.length >= count) break;
-  }
-  return results;
-}
-const handleSearch = jsonRoute(async body => {
-  const query = String(body.query || "")
-      .trim()
-      .slice(0, 300),
-    count = Math.max(1, Math.min(10, Number(body.count) || 6));
-  if (!query) throw Error("搜索关键词不能为空");
-  const errors = [];
-  let results = [];
-  for (const engine of [searchBing, searchDuckDuckGo]) {
-    try {
-      results = await engine(query, count);
-      if (results.length) break;
-    } catch (error) {
-      errors.push(error.message);
-    }
-  }
-  // 一家零条（Bing 被拦时回的是验证页，也是零条）、另一家连不上：说不准是真没有，按报错交回，模型才不当「查无此事」
-  if (!results.length && errors.length) throw Error(`搜索引擎暂时不可用：${errors.join("；")}`);
-  return { query, results };
-});
+const PAGE_CHARS = 24000,
+  PDF_LIMIT = 20 * 1024 * 1024,
+  // 直接请求被拒（多是认出了脚本）：交给无头浏览器开一页再取
+  REFUSED = new Set([401, 403, 429, 503]);
+// 翻网页：先直接请求（轻）；被拒、或抽出的字寥寥而页里满是脚本（要跑脚本才出内容），再交给无头浏览器（server/headless.js）。
+// 长文按 offset 一段段读；PDF 原样交回页面，由页面那头的 pdf.js 抽字（与附件同一套）
 const handleFetch = jsonRoute(async body => {
   let url;
   try {
@@ -440,27 +366,61 @@ const handleFetch = jsonRoute(async body => {
   } catch {
     throw Error("网址无效");
   }
-  const page = await fetchPublicText(url.href, 20000);
-  const title = stripTags((page.text.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "");
-  const html = /html|xml/i.test(page.type),
-    full = html ? htmlToText(page.text) : page.text;
-  // total：正文原有多少字，页面据此说截去了多少；scripted：抽出的字寥寥、页里却满是脚本，多半要跑脚本才出内容
+  const offset = Math.max(0, Math.floor(Number(body.offset) || 0));
+  let page = null,
+    refused = null;
+  try {
+    page = await fetchText(url.href, { timeout: 20000, pdf: true });
+  } catch (error) {
+    if (!REFUSED.has(error.status) || !browser.available()) throw error;
+    refused = error;
+  }
+  if (page?.pdf) {
+    let name = "";
+    try {
+      name = decodeURIComponent(new URL(page.url).pathname.split("/").pop());
+    } catch {}
+    return { title: name || page.url, url: page.url, pdf: `data:application/pdf;base64,${page.pdf.toString("base64")}` };
+  }
+  const html = !page || /html|xml/i.test(page.type);
+  let title = page ? stripTags((page.text.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "") : "",
+    full = !page ? "" : html ? htmlToText(page.text) : page.text,
+    finalUrl = page?.url || url.href,
+    scripted = !!page && html && full.trim().length < 200 && (page.text.match(/<script/gi) || []).length >= 3;
+  if (refused || (scripted && browser.available()))
+    try {
+      const shown = await browser.render(url.href, { gate: assertPublicUrl }),
+        text = htmlToText(shown.html);
+      if (text.trim().length > full.trim().length) {
+        full = text;
+        title = shown.title || title;
+        finalUrl = shown.url;
+        scripted = false;
+      }
+    } catch {}
+  if (refused && !full.trim()) throw refused;
+  // total：正文共多少字，页面据此说读到了哪、怎么续读；scripted：浏览器也没能补上，所见并非全貌
   return {
     title,
-    url: page.url,
-    text: full.slice(0, 24000),
+    url: finalUrl,
+    text: full.slice(offset, offset + PAGE_CHARS),
+    offset,
     total: full.length,
-    ...(html && full.trim().length < 200 && (page.text.match(/<script/gi) || []).length >= 3 ? { scripted: true } : {})
+    ...(scripted ? { scripted: true } : {})
   };
 });
 
 module.exports = {
-  // 引导、检索、翻网页：本机桥接认得的来源都可调
-  openRoutes: { "POST /api/search": handleSearch, "POST /api/fetch": handleFetch },
+  // 引导、翻网页：本机桥接认得的来源都可调（检索在 server/search.js）
+  openRoutes: { "POST /api/fetch": handleFetch },
   // http_request 能打本机的服务，只给受信的页面
   routes: { "POST /api/http": handleHttp },
   OUTBOUND_MARK,
   decodeEntities,
+  stripTags,
+  fetchText,
+  assertPublicUrl,
+  pinnedLookup,
   fetchPublicResponse,
   readLimitedBytes
 };

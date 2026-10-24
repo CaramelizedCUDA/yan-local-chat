@@ -16,7 +16,12 @@ function viewer() {
     if (!nodes.has(selector)) {
       const classes = new Set(["hidden"]);
       nodes.set(selector, {
-        classList: { contains: n => classes.has(n), add: n => classes.add(n), remove: n => classes.delete(n) },
+        classList: {
+          contains: n => classes.has(n),
+          add: n => classes.add(n),
+          remove: n => classes.delete(n),
+          toggle: (n, on) => (on ? classes.add(n) : classes.delete(n))
+        },
         setAttribute() {},
         removeAttribute(n) {
           delete this[n];

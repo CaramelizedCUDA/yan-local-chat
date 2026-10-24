@@ -9,7 +9,7 @@ function openFileDb() {
     const request = indexedDB.open(FILE_DB_NAME, 1);
     request.onupgradeneeded = () => request.result.createObjectStore(FILE_STORE_NAME, { keyPath: "id" });
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || Error("附件存储不可用"));
+    request.onerror = () => reject(request.error || Error(t("附件存储不可用")));
   });
   return fileDbPromise;
 }
@@ -19,8 +19,8 @@ async function fileStoreRequest(mode, action) {
     const transaction = db.transaction(FILE_STORE_NAME, mode),
       request = action(transaction.objectStore(FILE_STORE_NAME));
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || Error("附件存储失败"));
-    transaction.onabort = () => reject(transaction.error || Error("附件存储已中止"));
+    request.onerror = () => reject(request.error || Error(t("附件存储失败")));
+    transaction.onabort = () => reject(transaction.error || Error(t("附件存储已中止")));
   });
 }
 // ---------- 附件原件 ----------

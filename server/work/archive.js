@@ -114,12 +114,12 @@ module.exports = function createArchive({ archiveHome, playable, lockFile = crea
   }
   // 同名不覆盖，另取「名 (2).扩展名」。每个候选名在写锁内检查与落笔，rename 也不会因同时挪入而互盖。
   // 明着改名（exact）遇同名就报错，不替用户另取名。
-  async function placeFree(root, dir, name, make, exact = false) {
+  async function placeFree(dir, name, make, exact = false) {
     const extension = path.extname(name),
       stem = name.slice(0, name.length - extension.length);
     for (let n = 1; ; n++) {
       const target = path.join(dir, n === 1 ? name : `${stem} (${n})${extension}`);
-      const release = await lockFile(root, target);
+      const release = await lockFile(target);
       try {
         await make(target);
         return target;
@@ -151,7 +151,7 @@ module.exports = function createArchive({ archiveHome, playable, lockFile = crea
       if (!data.startsWith("data:") || comma < 0) throw Error("文件内容格式无效");
       const bytes = Buffer.from(data.slice(comma + 1), /;base64/i.test(data.slice(0, comma)) ? "base64" : "utf8");
       if (bytes.length > ARCHIVE_FILE_LIMIT) throw Error(`单个文件不超过 ${ARCHIVE_FILE_LIMIT / 1048576} MB`);
-      const target = await placeFree(root, await archiveDirOf(root, body.dir), name, to =>
+      const target = await placeFree(await archiveDirOf(root, body.dir), name, to =>
         fs.promises.writeFile(to, bytes, { flag: "wx" })
       ).catch(error => {
         throw Error(describeFsError(error, name));
@@ -207,7 +207,6 @@ module.exports = function createArchive({ archiveHome, playable, lockFile = crea
     // Windows 上只改大小写仍是同一个文件；其他系统的大小写不同可以是两件文件。
     const sameFile = process.platform === "win32" && wanted.toLowerCase() === from.toLowerCase();
     const to = await placeFree(
-      root,
       dir,
       name,
       async to => {
@@ -233,7 +232,7 @@ module.exports = function createArchive({ archiveHome, playable, lockFile = crea
   // 新建夹：落在 dir 那一层；同名已有就另取「新建夹 (2)」
   const handleArchiveMkdir = jsonRoute(async body => {
     const root = await archiveRoot(body.root),
-      target = await placeFree(root, await archiveDirOf(root, body.dir), cleanName(body.name || "新建夹"), to => fs.promises.mkdir(to)).catch(
+      target = await placeFree(await archiveDirOf(root, body.dir), cleanName(body.name || "新建夹"), to => fs.promises.mkdir(to)).catch(
         error => {
           throw Error(describeFsError(error, String(body.name || "")));
         }

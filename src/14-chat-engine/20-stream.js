@@ -100,7 +100,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     // 先把这一答预计的用量记到预留里（提示 + 最大输出），别的对话同时开工时看得见；收尾时换成实际用量
     // 预留只是估个数：一答的输出按八千算，不必与接口实际的上限一致
     releaseQuota = reserveTokens(profile, estimateTokens(history) + (Number(profile.maxTokens) || 8192));
-    if (profile.tools !== false) await mcpForTurn();
+    if (profile.tools !== false) await Promise.all([mcpForTurn(), refreshSkills(conversation)]);
     const tools = profile.tools !== false ? toolDefinitions(conversation, { profile }) : null;
     const overrides = {
       systemPrompt: systemPrompt(conversation, tools),
@@ -109,7 +109,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       head: history.length,
       // 撮要那一步由 keepInWindow 记进行迹（见 60-context.js 的 foldMark），这里只管重画与作业条上的一句
       onFold: busy => {
-        setJobLabel(conversation, job, busy ? "正删繁就简" : "");
+        setJobLabel(conversation, job, busy ? t("正删繁就简") : "");
         refreshSteps(assistant);
       },
       // 放不下的是这一问之前的对话：压成摘要落成分隔（下一问也用得上），换掉 history 里这一问之前的那截
@@ -142,13 +142,14 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     if (!assistant.content)
       throw Error(
         assistant.steps?.length
-          ? "模型调过工具后未落正文，可续写收尾"
+          ? t("模型调过工具后未落正文，可续写收尾")
           : anthropicLike(profile)
-            ? "模型未返回正文，可在模型的高级配置里调高 max_tokens 后重试"
-            : "模型未返回正文，可重试"
+            ? t("模型未返回正文，可在模型的高级配置里调高 max_tokens 后重试")
+            : t("模型未返回正文，可重试")
       );
     assistant.status = "complete";
     conversation.updatedAt = now();
+    if (watch.kept) void intentSettleKeeps(conversation);
     // 言里动过文件的，卷宗目录多半有了新东西：重新翻一遍，新出的、改过的成品挂在答末，侧栏的件数跟着更新
     if (archiveBefore && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) {
       await refreshArchive();
@@ -164,12 +165,12 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     if (error.name === "AbortError") assistant.status = "stopped";
     else if (assistant.content || assistant.reasoning || assistant.steps?.length) {
       assistant.status = "interrupted";
-      assistant.error = friendlyError(error.message);
+      assistant.error = bridgeErrorText(error.message);
       assistant.interruptedAt = now();
       noteBreak(assistant, assistant.error);
     } else {
       assistant.status = "error";
-      assistant.error = friendlyError(error.message);
+      assistant.error = bridgeErrorText(error.message);
     }
   } finally {
     if (gaugeTicker) clearInterval(gaugeTicker);
@@ -184,6 +185,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
         step.sub.charged = true;
         tally.usageKnown = true;
         for (const key of Object.keys(tally.usage)) tally.usage[key] += Number(step.sub.usage[key] || 0);
+        // 帮手各轮的墨已当场扣进余墨，这里只算进这一答
+        tally.spent += Number(step.sub.usage.total_tokens || 0);
       }
     assistant.usage = tally.usageKnown ? tally.usage : null;
     releaseQuota();
@@ -191,7 +194,8 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       opened: tally.opened,
       partialRound: tally.roundOpen,
       roundStart: tally.roundStart,
-      steered: tally.steered
+      steered: tally.steered,
+      spent: tally.spent
     });
     if (prior) {
       if (prior.usage) {

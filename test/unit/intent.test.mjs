@@ -37,6 +37,16 @@ function change(intent, nodes, { prints = {}, ask = "", workdir = "" } = {}) {
 const problems = (intent, nodes, workdir = "") => f.normalizeIntentOps(intent, nodes, workdir).problems;
 const empty = () => f.asIntent(null);
 
+test("when 从工具参数进入结论，修改条件使旧封印待复核，空串可撤去", () => {
+  let intent = change(empty(), [{ id: "条件", claim: "可用", check: "验证", when: "仅生产环境" }]);
+  assert.equal(intent.nodes["条件"].when, "仅生产环境");
+  intent = change(intent, [{ id: "条件", state: "done" }]);
+  const changed = change(intent, [{ id: "条件", when: "仅测试环境" }]);
+  assert.equal(f.intentState(changed, "条件"), "stale");
+  assert.match(f.intentText(changed), /情形：仅测试环境/);
+  assert.equal(change(changed, [{ id: "条件", when: "" }]).nodes["条件"].when, "");
+});
+
 test("结构：新的一项要写全，前提要在、不成环；有错整批不收", () => {
   let intent = empty();
   assert.match(problems(intent, [{ id: "甲", claim: "能登录" }])[0], /claim 与 check 都要写/);
@@ -442,7 +452,11 @@ test("孤悬：全局里没声明为根、既无前提又没人以它为前提�
 });
 
 test("名字：空格、@ 之类照规矩改写，同一批的前提与所属一并改，回给模型时说一声；英文名可比汉字长一倍", () => {
-  const { ops, problems: found, tidied } = f.normalizeIntentOps(empty(), [
+  const {
+    ops,
+    problems: found,
+    tidied
+  } = f.normalizeIntentOps(empty(), [
     { id: "north star", claim: "R", check: "r", root: true, needs: ["A_i50@512 run"] },
     { id: "A_i50@512 run", claim: "跑一轮", check: "读数落卷" }
   ]);
@@ -516,4 +530,45 @@ test("待定：等人拍板的一项，note 写等谁、定什么；不算立住
   assert.match(f.intentText(intent), /- \[待定\] 提交规范：合官方规范\n {2}待定：等官方通知：篇幅与提交渠道\n {2}验收：逐条对照通知/);
   assert.equal(intent.log.at(-1).text, "待定 提交规范：等官方通知：篇幅与提交渠道");
   assert.equal(f.asIntent(JSON.parse(JSON.stringify(intent))).nodes["提交规范"].state, "waiting", "存盘读回仍是待定");
+});
+
+test("守：一直要守的条件——不算根、不孤悬、不计进度；不挂前提、不作前提、不归模块；立时记下原话，读给模型时另列一节", () => {
+  let intent = change(
+    empty(),
+    [
+      { id: "上线", claim: "博客打得开", check: "首页 200", root: true },
+      { id: "测过", claim: "改完测试要过", check: "npm test 退出码 0", anchors: ["test:npm test"], keep: true, state: "done" }
+    ],
+    { ask: "往后收尾前都跑测试", prints: { "test:npm test": "过" } }
+  );
+  assert.equal(intent.nodes["测过"].keep, true);
+  assert.equal(intent.nodes["测过"].root.ask, "往后收尾前都跑测试");
+  assert.deepEqual(f.intentRoots(intent), ["上线"]);
+  assert.deepEqual(f.intentStrays(intent), []);
+  assert.deepEqual(f.intentTally(intent, {}), { live: 1, standing: 0 });
+  assert.equal(f.intentState(intent, "测过", { "test:npm test": "不过" }), "stale");
+  const text = f.intentText(intent, { "test:npm test": "不过" });
+  assert.match(text, /已立 0 \/ 1/);
+  assert.match(text, /守（常驻的约束）：\n- \[待复核\] 测过：改完测试要过\n  验收：npm test 退出码 0\n  缘由：测试「npm test」不过/);
+  assert.ok(!/- \[[^\]]+\] 测过（/.test(text), "守不当根或孤悬写进目标那几行");
+  // 守着时没有态：只一行说法
+  assert.match(f.intentText(intent, { "test:npm test": "过" }), /守（常驻的约束）：\n- 测过：改完测试要过$/);
+  assert.ok(
+    problems(intent, [{ id: "部署", claim: "推上去", check: "跑起来", needs: ["测过"] }]).some(p => p.includes("是守：守不作前提"))
+  );
+  assert.ok(problems(intent, [{ id: "测过", needs: ["上线"] }]).some(p => p.includes("是守，不挂前提")));
+  assert.ok(problems(intent, [{ id: "测过", in: "上线" }]).some(p => p.includes("是守，守在全局")));
+  // 守没有进度可标：不给 state 也即作数、记下凭据；给别的态退回
+  const kept = change(empty(), [{ id: "界限", claim: "只用本机", check: "无外部算力", keep: true }]);
+  assert.equal(kept.nodes["界限"].state, "done");
+  assert.ok(kept.nodes["界限"].seal);
+  assert.ok(problems(kept, [{ id: "界限", state: "assumed" }]).some(p => p.includes("是守，没有进度可标")));
+  // 记下时测试就不过的照样算不过：重写一回守抹不平
+  const failing = change(empty(), [{ id: "测", claim: "测试要过", check: "退出码 0", anchors: ["test:npm test"], keep: true }], {
+    prints: { "test:npm test": "不过" }
+  });
+  assert.equal(f.intentState(failing, "测", { "test:npm test": "不过" }), "stale");
+  // 撤去守的身份即回到目标那一套
+  intent = change(intent, [{ id: "测过", keep: false, needs: [] }]);
+  assert.equal(intent.nodes["测过"].keep, undefined);
 });

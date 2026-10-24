@@ -3,3 +3,4 @@ test/.tmp/
 *.md
 *.html
 设计稿/
+dist/

@@ -33,7 +33,7 @@ module.exports = function createIntent(work) {
       write = body.data !== undefined,
       file = await targetOf(workdir, { ...body, path: INTENT_PATH }, { write });
     if (!write) return readIntent(file);
-    const release = await lockFile(workdir, file, signal);
+    const release = await lockFile(file, signal);
     try {
       const current = await readIntent(file);
       if (current.version !== String(body.base || "")) return { conflict: true, ...current };

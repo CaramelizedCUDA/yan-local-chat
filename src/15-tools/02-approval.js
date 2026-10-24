@@ -24,7 +24,7 @@ async function askApproval(step, { conversation, assistant, signal }) {
     };
     const onAbort = () => {
       pendingApprovals.delete(step.id);
-      reject(Object.assign(Error("已停止"), { name: "AbortError" }));
+      reject(Object.assign(Error(t("已停止")), { name: "AbortError" }));
     };
     signal.addEventListener("abort", onAbort, { once: true });
     pendingApprovals.set(step.id, { conversationId: conversation.id, resolve: done, step });
@@ -76,13 +76,20 @@ function approveFrom(button) {
 // 输入框留空时按 Enter：指令即运行；表单翻到下一题，末题即提交
 function approveByEnter(entry) {
   if (!entry.step.form) return settleApproval(entry.step.id, true);
-  const bar = $("#approvalBar"),
-    page = Number(bar.dataset.page || 0),
+  if (!formEnter($("#approvalBar"))) toast(t("请先在上方作答"));
+}
+// 表单里按 Enter：翻到下一题，末题即提交；一题都没答的不交，回 false
+function formEnter(bar) {
+  const page = Number(bar.dataset.page || 0),
     total = bar.querySelectorAll(".ask-q").length;
-  if (page < total - 1) return formPage(bar, page + 1);
+  if (page < total - 1) {
+    formPage(bar, page + 1);
+    return true;
+  }
   const answers = collectForm(bar);
-  if (answers?.some(Boolean)) return settleApproval(entry.step.id, answers);
-  toast("请先在上方作答");
+  if (!answers?.some(Boolean)) return false;
+  settleApproval(bar.dataset.stepId, answers);
+  return true;
 }
 
 // 请示条：批与不批、ask_user 的表单；输入框旁的权限档位切换（切宽了，这段对话里等着的请示一并放行）
@@ -125,12 +132,7 @@ function bindApprovalEvents() {
   $("#approvalBar").addEventListener("keydown", event => {
     if (event.key !== "Enter" || !event.target.classList.contains("ask-other")) return;
     event.preventDefault();
-    const bar = $("#approvalBar"),
-      page = Number(bar.dataset.page || 0),
-      total = bar.querySelectorAll(".ask-q").length;
-    if (page < total - 1) return formPage(bar, page + 1);
-    const answers = collectForm(bar);
-    if (answers && answers.some(Boolean)) settleApproval(bar.dataset.stepId, answers);
+    formEnter($("#approvalBar"));
   });
   $("#workAuto").onclick = () => {
     const c = currentConversation();

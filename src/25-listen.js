@@ -11,6 +11,8 @@ let listenTrack = null,
   /** @type {ListenTrack | null} 预览整页上摆着的那一曲（可能还没放，与 listenTrack 不同） */
   listenShown = null,
   listenOwnUrl = "",
+  listenRevision = 0,
+  listenSeekCancel = null,
   listenFrameId = 0,
   listenGraph = null,
   listenSwing = { amp: 0, t: 0 };
@@ -30,7 +32,7 @@ function listenArchiveTrack(entry) {
     key: `p:${entry.path}`,
     name: entry.name,
     url: archiveFileUrl(entry.path),
-    where: ["卷宗", ...dir].join(" › ") + ` · ${fileExtension(entry.name).toUpperCase()} · ${formatFileSize(entry.size || 0)}`,
+    where: [t("卷宗"), ...dir].join(" › ") + ` · ${fileExtension(entry.name).toUpperCase()} · ${formatFileSize(entry.size || 0)}`,
     source: { path: entry.path },
     bytes: async () => (await fetch(archiveFileUrl(entry.path))).arrayBuffer(),
     list: []
@@ -54,7 +56,7 @@ function listenTrackFrom(source, name, reader) {
     key: `a:${source?.attachmentId}`,
     name,
     url: reader.url(),
-    where: `附件 · ${fileExtension(name).toUpperCase()}`,
+    where: t`附件 · ${fileExtension(name).toUpperCase()}`,
     source,
     bytes: async () => (await reader.blob()).arrayBuffer(),
     list: []
@@ -136,12 +138,14 @@ function listenInit() {
     if (!listenTrack) return;
     const page = $("#fileViewerStage .listen-page");
     if (page && listenShown?.key === listenTrack.key)
-      page.outerHTML = `<div class="file-viewer-empty">浏览器不支持此编码，可下载后以本机程序打开<br><button type="button" class="outline-btn" data-viewer-download>下载</button></div>`;
-    else toast("此曲无法播放");
+      page.outerHTML = `<div class="file-viewer-empty">${t(`浏览器不支持此编码，可下载后以本机程序打开`)}<br><button type="button" class="outline-btn" data-viewer-download>${t(`下载`)}</button></div>`;
+    else toast(t("此曲无法播放"));
     listenRelease();
   });
 }
 async function listenLoad(track, play = false) {
+  const revision = ++listenRevision;
+  listenSeekCancel?.();
   listenInit();
   const el = listenEl();
   if (listenOwnUrl) URL.revokeObjectURL(listenOwnUrl);
@@ -155,12 +159,13 @@ async function listenLoad(track, play = false) {
   if (url.startsWith("blob:")) {
     const bytes = await track.bytes();
     // 读着字节的工夫已换了曲（快点上下首）或收了喇叭：这一份作废，别盖掉后来那一首
-    if (listenTrack !== track) return;
+    if (revision !== listenRevision) return;
     if (listenOwnUrl) URL.revokeObjectURL(listenOwnUrl);
     url = listenOwnUrl = URL.createObjectURL(new Blob([bytes]));
   }
   el.src = url;
   if (play) await listenPlay();
+  if (revision !== listenRevision) return;
   listenSync();
   listenRenderPage();
 }
@@ -182,6 +187,8 @@ async function listenPlay() {
   await el.play().catch(() => {});
 }
 function listenRelease() {
+  listenRevision++;
+  listenSeekCancel?.();
   const el = listenEl();
   el.pause();
   el.removeAttribute("src");
@@ -211,14 +218,30 @@ function listenStep(dir, track = listenTrack) {
 }
 async function listenSeek(ratio, track = listenTrack) {
   if (!track) return;
-  if (listenTrack?.key !== track.key) await listenLoad(track, false);
+  listenSeekCancel?.();
+  const change = listenTrack?.key !== track.key,
+    revision = listenRevision + (change ? 1 : 0);
+  if (change) await listenLoad(track, false);
   const el = listenEl(),
     go = () => {
+      if (revision !== listenRevision || listenTrack?.key !== track.key || !Number.isFinite(el.duration)) return;
       el.currentTime = Math.min(0.999, Math.max(0, ratio)) * el.duration;
       void listenPlay();
     };
+  if (revision !== listenRevision || listenTrack?.key !== track.key) return;
   if (Number.isFinite(el.duration)) go();
-  else el.addEventListener("loadedmetadata", go, { once: true });
+  else {
+    const ready = () => {
+      cancel();
+      go();
+    };
+    const cancel = () => {
+      el.removeEventListener("loadedmetadata", ready);
+      if (listenSeekCancel === cancel) listenSeekCancel = null;
+    };
+    listenSeekCancel = cancel;
+    el.addEventListener("loadedmetadata", ready, { once: true });
+  }
 }
 
 // ---------- 一面：预览里的整页（设计稿/27 一 · 乙 · 圆相）：圆里是题名、时刻与钮，旁边是出处、音量与同夹的曲 ----------
@@ -249,18 +272,18 @@ function listenPageHtml(track) {
       : "";
   const dots = Array.from(
     { length: LISTEN_VOLUME_STEPS },
-    (_, i) => `<button type="button" data-listen-volume="${i + 1}" aria-label="音量 ${i + 1}/${LISTEN_VOLUME_STEPS}"></button>`
+    (_, i) => `<button type="button" data-listen-volume="${i + 1}" aria-label="${t`音量 ${i + 1}/${LISTEN_VOLUME_STEPS}`}"></button>`
   ).join("");
   return `<div class="listen-page">
     <div class="listen-ring"><svg viewBox="0 0 300 300" data-listen-ring aria-hidden="true"><defs><filter id="listenRough" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="5"/><feDisplacementMap in="SourceGraphic" scale="2.4"/></filter></defs>
       <g filter="url(#listenRough)"><path class="listen-rest" d="${listenRingD(listenRing(track), 0, LISTEN_BARS - 1)}"/><path class="listen-past" d=""/></g></svg>
       <div class="listen-mid"><p class="listen-title">${escapeHtml(track.name.replace(/\.[^.]+$/, ""))}</p><span class="listen-clock" data-listen-clock>0:00 / —</span>
         <div class="listen-controls">
-          <button type="button" class="listen-step" data-listen-do="prev" title="上一首" aria-label="上一首">${brushIcon("back")}</button>
-          <button type="button" class="listen-play" data-listen-do="toggle" title="播放">奏</button>
-          <button type="button" class="listen-step" data-listen-do="next" title="下一首" aria-label="下一首">${brushIcon("forward")}</button>
+          <button type="button" class="listen-step" data-listen-do="prev" title="${t(`上一首`)}" aria-label="${t(`上一首`)}">${brushIcon("back")}</button>
+          <button type="button" class="listen-play" data-listen-do="toggle" title="${t(`播放`)}">${t(`奏`)}</button>
+          <button type="button" class="listen-step" data-listen-do="next" title="${t(`下一首`)}" aria-label="${t(`下一首`)}">${brushIcon("forward")}</button>
         </div></div></div>
-    <div class="listen-aside"><p class="listen-where">${escapeHtml(track.where)}</p><div class="listen-volume" title="音量">音${dots}</div>${list}</div></div>`;
+    <div class="listen-aside"><p class="listen-where">${escapeHtml(track.where)}</p><div class="listen-volume" title="${t(`音量`)}">${t`音${dots}`}</div>${list}</div></div>`;
 }
 // 在预览里换摆另一曲：题名、下载都跟着这一曲
 function listenShowPage(track) {
@@ -315,8 +338,8 @@ function listenRenderPage() {
     `${listenClock(live ? el.currentTime : 0)} / ${live ? listenClock(el.duration) : "—"}`;
   const playing = live && !el.paused,
     button = page.querySelector(".listen-play");
-  button.textContent = playing ? "止" : "奏";
-  button.title = playing ? "暂停" : "播放";
+  button.textContent = playing ? t("止") : t("奏");
+  button.title = playing ? t("暂停") : t("播放");
   const level = Math.round(el.volume * LISTEN_VOLUME_STEPS);
   page.querySelectorAll("[data-listen-volume]").forEach(dot => dot.classList.toggle("on", Number(dot.dataset.listenVolume) <= level));
 }
@@ -331,11 +354,11 @@ let listenDrawn = -1;
 function listenPendantHtml() {
   const { x, cord, r } = LISTEN_HANG;
   return `<svg class="brush listen-svg" viewBox="0 0 28 64" aria-hidden="true">${brushStroke([x, 0, x + 0.4, cord / 2, x, cord], 1.1, { tail: 0.8, head: 1 })}${brushArc(x, cord + r + 1, r, -90, 270, 1.4, { tone: "ghost", tail: 1, head: 1 })}<g class="listen-played"></g><circle class="zhu listen-now" r="1.5" cx="${x}" cy="${cord + 1}"/></svg>
-  <button type="button" class="listen-hit" data-listen="rope" aria-label="听音"></button>
+  <button type="button" class="listen-hit" data-listen="rope" aria-label="${t(`听音`)}"></button>
   <div class="listen-card">
-    <button type="button" class="listen-name" data-listen="page" title="回整页"></button>
+    <button type="button" class="listen-name" data-listen="page" title="${t(`回整页`)}"></button>
     <small class="listen-time"></small>
-    <div class="listen-acts"><button type="button" data-listen="prev">上一首</button><button type="button" class="listen-toggle" data-listen="toggle">止</button><button type="button" data-listen="next">下一首</button><button type="button" class="listen-stop" data-listen="stop" title="停止" aria-label="停止">✕</button></div>
+    <div class="listen-acts"><button type="button" data-listen="prev">${t(`上一首`)}</button><button type="button" class="listen-toggle" data-listen="toggle">${t(`止`)}</button><button type="button" data-listen="next">${t(`下一首`)}</button><button type="button" class="listen-stop" data-listen="stop" title="${t(`停止`)}" aria-label="${t(`停止`)}">✕</button></div>
   </div>`;
 }
 function listenPendant() {
@@ -352,15 +375,18 @@ function listenPendant() {
     if (part === "toggle") return void listenToggle();
     if (part === "prev" || part === "next") return listenStep(part === "next" ? 1 : -1);
   });
-  // 点签外、按 Esc：纸签收回，只留那一缕
+  // 点签外、按 Esc（见下面登记的一层）：纸签收回，只留那一缕
   document.addEventListener("pointerdown", e => {
     if (box.classList.contains("open") && !box.contains(e.target)) box.classList.remove("open");
   });
-  window.addEventListener("keydown", e => {
-    if (e.key === "Escape" && box.classList.contains("open")) box.classList.remove("open");
-  });
   return box;
 }
+defineLayer({
+  name: "listen-card",
+  rank: 92,
+  open: () => !!$("#listenPendant")?.classList.contains("open"),
+  close: () => $("#listenPendant").classList.remove("open")
+});
 function listenRenderPendant() {
   const box = $("#listenPendant");
   if (!box?.childElementCount || !listenTrack) return;
@@ -379,7 +405,7 @@ function listenRenderPendant() {
     now.setAttribute("cy", String(listenN(cy + r * Math.sin((end * Math.PI) / 180))));
   }
   box.querySelector(".listen-time").textContent = `${listenClock(el.currentTime)} / ${listenClock(el.duration)}`;
-  box.querySelector(".listen-toggle").textContent = el.paused ? "奏" : "止";
+  box.querySelector(".listen-toggle").textContent = el.paused ? t("奏") : t("止");
 }
 
 // ---------- 两面何时各现：都由喇叭此刻的样子推出来 ----------

@@ -489,6 +489,31 @@ http
           250
         );
       }
+      // BOOKSTALE：开工时附上了账本，指令随后改了它，再差遣（帮手领命时现读到新版）；主模型拿开工时那份整份写回，须被挡下
+      if (firstUser.includes("BOOKSTALE")) {
+        const call = (id, name, args) =>
+          delta({ tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] });
+        if (firstTurn && !toolResults.length)
+          return sse(res, [
+            call("call_bs0", "run_command", { command: "Add-Content -Path .yan/账本.md -Value '- 乙' -Encoding utf8" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (firstTurn && toolResults.length === 1)
+          return sse(res, [
+            call("call_bs1", "delegate", { title: "看账本", task: "BOOKHELPER：照账本办，回报看到的约束。" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (!helperReports.length) return sse(res, [delta({ content: "等回报。" }), delta({}, { usage: { total_tokens: 5 } })]);
+        if (!msgs.some(m => m.tool_calls?.some(c => c.function.name === "write_file")))
+          return sse(res, [
+            call("call_bs2", "write_file", { path: ".yan/账本.md", content: "# 约束\n- 甲\n" }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({ content: `BOOKSTALE|${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // BOOKMID：开工时还没有账本，主模型中途立账本、再差遣；帮手领命时拿到的须是刚立的那份
       if (firstUser.includes("BOOKHELPER"))
         return sse(res, [
@@ -842,7 +867,12 @@ http
         ]);
       }
       // 收尾前对照意：递来的那句话原样回显，就此收尾（只拦一回，回显之后不该再来）
-      if (typeof lastUser === "string" && lastUser.startsWith("［收尾前对照意］"))
+      // HOOK2 被拦下后要接着改，由下面 HOOK 那一段接
+      if (
+        typeof lastUser === "string" &&
+        lastUser.startsWith("［收尾前对照意］") &&
+        !/HOOK2/.test(String(msgs.findLast(m => m.role === "user" && !String(m.content).startsWith("［收尾前对照意］"))?.content))
+      )
         return sse(res, [delta({ content: `GATE|${lastUser}` }), delta({}, { usage: { total_tokens: 5 } })]);
       // INTENTC：两项同依托 api/user.js，标成立后改它、再标成立、再改……第三回改完该说相持；末轮回显各工具结果。
       // 须排在 INTENTA、INTENTB 前：同一目录的意里记着它们的原话，随这一问附着
@@ -887,6 +917,48 @@ http
       if (typeof lastUser === "string" && lastUser.includes("INTENTB"))
         return sse(res, [delta({ content: `INTENTB|${lastUser}` }), delta({}, { usage: { total_tokens: 5 } })]);
       // INTENTA：立意（一根一前提，前提依托 src/a.js）并写出那个文件；第二轮标前提成立、再改根的说法；第三轮回显各结果
+      // 意里的守（见 test/intent-hook.mjs）：HOOK1 立一项目标、一条守（挂 test:）并把守标成立；HOOK2 把 a.txt 改坏后想收尾，
+      // 收尾前对照拦下就改回（覆写已有文件得先读过）；HOOK3 只改一个无关的文件，不该被拦。轮次按这一问之后的工具结果数
+      // 认哪一问：跳过收尾对照递来的话；问里附的意带着 HOOK1 的原问，所以后来的问先认
+      const hookAt = msgs.findLastIndex(
+        m => m.role === "user" && typeof m.content === "string" && /HOOK[123]/.test(m.content) && !m.content.startsWith("［收尾前对照意］")
+      );
+      if (hookAt >= 0 && (/HOOK[123]/.test(String(lastUser)) || String(lastUser).includes("［收尾前对照意］"))) {
+        const ask = msgs[hookAt].content,
+          after = msgs.slice(hookAt + 1),
+          n = after.filter(m => m.role === "tool").length,
+          gate = after.find(m => m.role === "user" && String(m.content).includes("［收尾前对照意］")),
+          call = (name, args) =>
+            sse(res, [
+              delta({
+                tool_calls: [
+                  { index: 0, id: `call_h${hookAt}_${n}`, type: "function", function: { name, arguments: JSON.stringify(args) } }
+                ]
+              }),
+              delta({}, { usage: { total_tokens: 5 } })
+            ]),
+          say = text => sse(res, [delta({ content: text }), delta({}, { usage: { total_tokens: 5 } })]);
+        if (!ask.includes("HOOK2 改一下") && !ask.includes("HOOK3 加个")) {
+          if (n === 0)
+            return call("update_intent", {
+              nodes: [
+                { id: "上线", claim: "博客打得开", check: "首页回 200", root: true },
+                { id: "测过", claim: "改完测试要过", check: "node check.js 退出码为 0", anchors: ["test:node check.js"], keep: true }
+              ]
+            });
+          if (n === 1) return call("update_intent", { nodes: [{ id: "测过", state: "done" }] });
+          return say(`HOOK1|${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 120)}`);
+        }
+        if (ask.includes("HOOK2 改一下")) {
+          if (n === 0) return call("read_file", { path: "a.txt" });
+          if (n === 1) return call("write_file", { path: "a.txt", content: "bad" });
+          if (!gate) return say("HOOK2 改好了。");
+          if (n === 2) return call("write_file", { path: "a.txt", content: "ok" });
+          return say(`HOOK2 fixed|${String(gate.content).includes("本答内转待复核过：测过") ? "bounced" : "no-bounce"}`);
+        }
+        if (n === 0) return call("write_file", { path: "b.txt", content: "无关" });
+        return say(`HOOK3 done|gated:${gate ? "yes" : "no"}`);
+      }
       if (typeof lastUser === "string" && lastUser.includes("INTENTA")) {
         const n = toolResults.length,
           call = (index, name, args) => ({
@@ -1157,6 +1229,39 @@ http
         return sse(res, [
           delta({
             content: `ARCHIVE done｜archive:${sys.includes("卷宗") ? "yes" : "no"}|work:${sys.includes("「行」（执事）") ? "yes" : "no"}|run:${names.includes("run_command") ? "yes" : "no"}|result:${String(toolResults.at(-1).content).slice(0, 40)}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
+      // 人点名的技能：问话里「/写信」已换成一件附件，说明正文随问附上
+      const userText = Array.isArray(lastUser) ? lastUser.map(part => part.text || "").join("\n") : String(lastUser);
+      if (userText.includes("SKILLCMD"))
+        return sse(res, [
+          delta({ content: `CMD|body:${userText.includes("先写称谓") ? "yes" : "no"}|slash:${userText.includes("/写信") ? "yes" : "no"}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      if (typeof lastUser === "string" && lastUser.includes("SKILLTEST")) {
+        // 技能：系统提示里列着「写信」（不在 read_document 的说明里），凭技能名翻到它的 SKILL.md，把目录与读到的回出来
+        const doc = (payload.tools || []).find(t => t.function.name === "read_document"),
+          sys = String(msgs[0]?.role === "system" ? msgs[0].content : ""),
+          listed = sys.includes("- 写信：照格式写信") && !String(doc?.function.description || "").includes("写信");
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_skill",
+                  type: "function",
+                  function: { name: "read_document", arguments: JSON.stringify({ name: "写信" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({
+            content: `SKILL|listed:${listed ? "yes" : "no"}|${String(toolResults.at(-1).content).replace(/\s+/g, " ").slice(0, 200)}`
           }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);

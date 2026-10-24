@@ -101,8 +101,8 @@ module.exports = function createBus({ dispatch }) {
   }
 
   async function send(req, res) {
-    // 上限跟着最大的那条接口走：卷宗收件自己认 400MB（256MB 的文件编成 data URL 再套一层），默认的 128MB 在总线这层就先拒了
-    const { page, id, path, body } = await readJson(req, 450 * 1024 * 1024),
+    // 大请求由客户端直连原接口，免掉嵌套 JSON 的多份副本；总线只接小的交代。
+    const { page, id, path, body } = await readJson(req, 32 * 1024 * 1024),
       entry = pages.get(page);
     if (!entry) return sendJson(res, 409, { error: "总线未接通" });
     if (typeof id !== "string" || !id || typeof path !== "string" || !path.startsWith("/api/") || path.startsWith("/api/bus"))

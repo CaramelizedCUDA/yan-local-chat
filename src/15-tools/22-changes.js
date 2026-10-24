@@ -60,9 +60,9 @@ function changeCountHtml(stats) {
 function changeFilesHtml(stats, open, extra = "") {
   return `<div class="change-files${extra}${open ? "" : " hidden"}">${stats.files
     .map((f, i) => {
-      const tags = [f.created ? "新建" : "", f.helper ? "帮手" : ""].filter(Boolean).join(" · "),
+      const tags = [f.created ? t("新建") : "", f.helper ? t("帮手") : ""].filter(Boolean).join(" · "),
         cut = f.path.lastIndexOf("/") + 1;
-      return `<button type="button" data-change-path="${escapeHtml(f.path)}" title="看 ${escapeHtml(f.path)} 的改动" style="--i:${Math.min(i, 12)}"><span class="path">${cut ? `<span class="dir">${escapeHtml(f.path.slice(0, cut))}</span>` : ""}${escapeHtml(f.path.slice(cut))}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins${f.added ? "" : " zero"}">+${f.added}</span><span class="del${f.removed ? "" : " zero"}">−${f.removed}</span></button>`;
+      return `<button type="button" data-change-path="${escapeHtml(f.path)}" title="${t`看 ${escapeHtml(f.path)} 的改动`}" style="--i:${Math.min(i, 12)}"><span class="path">${cut ? `<span class="dir">${escapeHtml(f.path.slice(0, cut))}</span>` : ""}${escapeHtml(f.path.slice(cut))}${tags ? `<em>${tags}</em>` : ""}</span><span class="ins${f.added ? "" : " zero"}">+${f.added}</span><span class="del${f.removed ? "" : " zero"}">−${f.removed}</span></button>`;
     })
     .join("")}</div>`;
 }
@@ -264,7 +264,7 @@ function changeDiffHtml(message, path) {
   if (created && lastWrite > 0) steps = steps.slice(lastWrite);
   return `<div class="file-viewer-text change-diff">${steps
     .map(step => {
-      const note = [toolLabel(step.name), step.scope ? "帮手" : "", step.result || step.note || ""].filter(Boolean).join(" · "),
+      const note = [toolLabel(step.name), step.scope ? t("帮手") : "", stepText(step.result || step.note)].filter(Boolean).join(" · "),
         head = `<p class="file-viewer-note">${escapeHtml(note)}</p>`;
       if (step.diff) return `${head}<div class="tool-diff">${splitDiffHtml(step.diff.old, step.diff.new).html}</div>`;
       // 新建的件（或没记下原文的）也并排画：左边留空，与改动同一种画法，不一会儿整宽一会儿两栏
@@ -276,13 +276,13 @@ function changeDiffHtml(message, path) {
 }
 /** @param {Message} message @param {string} path @param {Element} trigger */
 function openChangeDiff(message, path, trigger) {
-  showInFileViewer(`${path} · 这一答的改动`, changeDiffHtml(message, path), trigger);
+  showInFileViewer(t`${path} · 这一答的改动`, changeDiffHtml(message, path), trigger);
 }
 /** @param {Message} message */
 function changeSummaryInner(message, open) {
   const stats = changeStats(message);
   if (!stats.files.length) return "";
-  return `<button type="button" class="change-summary" aria-expanded="${open}"><span class="seal change-seal" aria-hidden="true">改</span><span class="change-title">改动 ${stats.files.length} 个文件</span><span class="change-count">${changeCountHtml(stats)}${changeSpark(stats.added, stats.removed)}</span></button>${changeFilesHtml(stats, open)}`;
+  return `<button type="button" class="change-summary" aria-expanded="${open}"><span class="seal change-seal" aria-hidden="true">${t(`改`)}</span><span class="change-title">${t`改动 ${stats.files.length} 个文件`}</span><span class="change-count">${changeCountHtml(stats)}${changeSpark(stats.added, stats.removed)}</span></button>${changeFilesHtml(stats, open)}`;
 }
 // 成品：言里这一答在卷宗根目录新出或改过的文件。一件一行：件图、文件名、大小，右侧「看」（悬浮预览）与「下载」
 // 卷宗里已经删掉的成品：条目留着（这一答确实出过这件），但标成「已移出卷宗」，不再给看与下载的按钮
@@ -293,15 +293,15 @@ function deliverableFileHtml(f) {
   const missing = deliverableMissing(f.path);
   return `<div class="deliver-file${missing ? " missing" : ""}" data-deliver="${escapeHtml(f.path)}">${fileFigure(f.name, f.path)}<span class="deliver-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</span><small>${formatFileSize(f.size)}</small>${
     missing
-      ? `<span class="deliver-gone">已移出卷宗</span>`
-      : `<button type="button" class="deliver-btn" data-deliver-action="view" title="预览">预览</button><button type="button" class="deliver-btn" data-deliver-action="download" title="另存到本机">下载</button>`
+      ? `<span class="deliver-gone">${t(`已移出卷宗`)}</span>`
+      : `<button type="button" class="deliver-btn" data-deliver-action="view" title="${t(`预览`)}">${t(`预览`)}</button><button type="button" class="deliver-btn" data-deliver-action="download" title="${t(`另存到本机`)}">${t(`下载`)}</button>`
   }</div>`;
 }
 /** @param {Message} message */
 function deliverablesHtml(message) {
   const files = message.deliverables || [];
   if (!files.length) return "";
-  return `<div class="deliver-bar"><div class="deliver-head"><span class="seal deliver-seal" aria-hidden="true">成</span><span>成品 ${files.length} 件 · 已入卷宗</span></div>${files.map(deliverableFileHtml).join("")}</div>`;
+  return `<div class="deliver-bar"><div class="deliver-head"><span class="seal deliver-seal" aria-hidden="true">${t(`成`)}</span><span>${t`成品 ${files.length} 件 · 已入卷宗`}</span></div>${files.map(deliverableFileHtml).join("")}</div>`;
 }
 // 卷宗目录刷新后，把页面上成品条里各件的在与不在同步一遍（消息本身没变，不必重画整条）
 function syncDeliverables() {

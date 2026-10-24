@@ -15,7 +15,7 @@ async function exportData(includeFiles) {
   if (includeFiles) {
     // 附件原件只带仍在用的那几件：存储目录与浏览器里的暂存都翻，谁有取谁。原件合起来可能上 GB，
     // 拼成一个大字符串会超出浏览器的字符串上限、点了没反应——一件一件接进 Blob，内存里只过一件
-    toast("正在收拢附件原件…");
+    toast(t("正在收拢附件原件…"));
     blob = new Blob([`${JSON.stringify(safeStore).slice(0, -1)},"attachments":[`], { type: "application/json" });
     for (const id of attachmentKeepIds()) {
       const record = await getAttachment(id).catch(() => null);
@@ -28,10 +28,10 @@ async function exportData(includeFiles) {
   } else blob = new Blob([JSON.stringify(safeStore, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `言-备份-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = t`言-备份-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  toast(`备份已导出${includeFiles ? `（含 ${files} 件附件原件）` : ""}；不含 API Key`);
+  toast(t`备份已导出${includeFiles ? t`（含 ${files} 件附件原件）` : ""}；不含 API Key`);
 }
 // 读备份：小的整份解析；带着上百 MB 附件原件的，整份读成一个字符串会超出浏览器的上限——按字节找到末尾的附件数组，
 // 前面的记录照常解析，原件一件一件解出来交给调用者，内存里只过一件
@@ -87,7 +87,7 @@ async function importData(file) {
   try {
     const { data, attachments } = await readBackup(file);
     if (!data || !Number.isInteger(data.version) || data.version < 1 || data.version > STORE_VERSION || !Array.isArray(data.conversations))
-      throw Error("不是言的备份文件，或版本不兼容");
+      throw Error(t("不是言的备份文件，或版本不兼容"));
     // 旧版备份先按启动时同一套迁移与规整过一遍（workAuto → commandPolicy、去掉半成品的压缩分隔……），别等下次刷新才对
     const incoming = normalizeStoreData(data);
     const known = new Set(store.conversations.map(c => c.id));
@@ -154,9 +154,9 @@ async function importData(file) {
     render();
     renderSettings();
     toast(
-      `已导入 ${conversations} 段对话、${added} 个模型${groups ? `、${groups} 个分组` : ""}${presets ? `、${presets} 个预设` : ""}${servers ? `、${servers} 个 MCP 服务（密钥需重填）` : ""}${drafts ? `、${drafts} 份草稿` : ""}${memories ? `、${memories} 条记忆` : ""}${files ? `，恢复 ${files} 件附件原件` : ""}${data.attachments ? "" : "；备份不含附件原件，旧附件将显示为不可用"}`
+      t`已导入 ${conversations} 段对话、${added} 个模型${groups ? t`、${groups} 个分组` : ""}${presets ? t`、${presets} 个预设` : ""}${servers ? t`、${servers} 个 MCP 服务（密钥需重填）` : ""}${drafts ? t`、${drafts} 份草稿` : ""}${memories ? t`、${memories} 条记忆` : ""}${files ? t`，恢复 ${files} 件附件原件` : ""}${data.attachments ? "" : t("；备份不含附件原件，旧附件将显示为不可用")}`
     );
   } catch (error) {
-    toast(`导入失败：${String(error.message || error).slice(0, 80)}`);
+    toast(t`导入失败：${String(error.message || error).slice(0, 80)}`);
   }
 }

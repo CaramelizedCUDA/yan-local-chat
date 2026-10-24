@@ -1,8 +1,8 @@
 // 言 · 意 · 凭据：一项成立凭的是什么。一种凭据一份登记：怎么规整写法、多久取一回指纹、怎么取、怎么说给人听、罩不罩得住某个改过的文件。
 // 程序只比指纹变没变，不判对错——变了，凭它成立（或凭它假定）的那项就转待复核，由模型再判。先例：需求追溯的「可疑链接」
 // （记下链接时上游的哈希，上游一变即可疑，复核后清除）、构建系统 Shake 的 oracle（外部状态每回问一遍，答案没变就不往上传）。
-// 现有三种，由弱到强：文件（模型本就知道哪些文件要紧）、目录（整片，新增删除也算）、探针（一条指令的输出——部署、服务、依赖版本这类
-// 外部状态与事件也罩得住）。往后可加符号、测试、时效……加一种只加一份登记，写法随之出现在 anchors 的参数说明里（见 15-tools/32-intent.js）
+// 现有四种，由弱到强：文件（模型本就知道哪些文件要紧）、目录（整片，新增删除也算）、探针（一条指令的输出——部署、服务、依赖版本这类
+// 外部状态与事件也罩得住）、测试（一条指令过没过）。往后可加符号、时效……加一种只加一份登记，写法随之出现在 anchors 的参数说明里（见 15-tools/32-intent.js）
 /**
  * @typedef {Object} AnchorKind
  * @property {string} hint 写法，列在 anchors 的参数说明里；文件是裸写的，不带前缀
@@ -39,7 +39,7 @@ function parseAnchor(raw, workdir = "") {
     match = /^([a-z]{2,8}):([\s\S]*)$/.exec(text),
     [kind, given] = match && ANCHOR_KINDS.has(match[1]) ? [match[1], match[2]] : ["file", text],
     value = ANCHOR_KINDS.get(kind).normalize(given, workdir || "");
-  return value ? { key: `${kind}:${value}` } : { problem: `凭据「${text.slice(0, 80)}」写不对：${ANCHOR_KINDS.get(kind).problem}` };
+  return value ? { key: `${kind}:${value}` } : { problem: t`凭据「${text.slice(0, 80)}」写不对：${ANCHOR_KINDS.get(kind).problem}` };
 }
 /**
  * 无主改动：改过的文件里，没有哪一项（没弃的）的凭据罩着的——回归罩不到的盲区，也是副作用常藏的地方。.yan/ 下是言自己的簿记，不算
@@ -75,9 +75,9 @@ async function anchorPrints(conversation, keys, signal, cadence = "answer") {
 }
 
 defineAnchor("file", {
-  hint: "文件路径",
+  hint: t("文件路径"),
   normalize: (value, workdir) => intentPath(value, workdir),
-  problem: "要一个文件路径",
+  problem: t("要一个文件路径"),
   label: value => value,
   cadence: "round",
   read: async (conversation, values, signal) =>
@@ -85,9 +85,9 @@ defineAnchor("file", {
   covers: (value, path) => value === path
 });
 defineAnchor("dir", {
-  hint: "dir:目录（底下整片，新增删除也算）",
+  hint: t("dir:目录（底下整片，新增删除也算）"),
   normalize: (value, workdir) => intentPath(value, workdir).replace(/\/+$/, "") || ".",
-  problem: "要一个目录",
+  problem: t("要一个目录"),
   label: value => `${value}/`,
   cadence: "round",
   read: async (conversation, values, signal) =>
@@ -97,9 +97,9 @@ defineAnchor("dir", {
 // 探针：比的是一条指令的输出（连同退出码）。跟着这段对话的档位走：问而后行里只自动跑明确只读的，别的这回不跑、不据它判；
 // 审而后行、径行照跑。超时给得短——每答开工都要跑，一条卡住的探针不该拖住整答
 defineAnchor("cmd", {
-  hint: "cmd:指令（比它的输出，宜选只读、输出稳定的）",
+  hint: t("cmd:指令（比它的输出，宜选只读、输出稳定的）"),
   normalize: value => (/\n/.test(value) ? "" : value.trim().slice(0, 300)),
-  problem: "指令只能一行",
+  problem: t("指令只能一行"),
   label: value => `探针「${value}」`,
   cadence: "answer",
   async read(conversation, values, signal) {
@@ -112,6 +112,32 @@ defineAnchor("cmd", {
         try {
           const data = await bridge("/api/work/run", { ...workScope(conversation), command, timeout: 15 }, signal);
           prints[command] = hashText(`${data.exitCode}\u0000${data.stdout || ""}\u0000${data.stderr || ""}`);
+        } catch (error) {
+          if (error.name === "AbortError") throw error;
+        }
+      })
+    );
+    return prints;
+  }
+});
+// 测试：只比过没过（退出码是否为 0），输出里的耗时、行号变了不算——「收尾前跑一遍测试、不过接着改」这类常驻的条件挂在它上面。
+// 跟探针一样随档位：问而后行里只自动跑明确只读的。超时给得宽；改过文件的那一答收尾前会重跑（见 10-store.js 的 intentGate）
+defineAnchor("test", {
+  hint: t("test:指令（只比过没过：退出码为 0 即过）"),
+  normalize: value => (/\n/.test(value) ? "" : value.trim().slice(0, 300)),
+  problem: t("指令只能一行"),
+  label: value => `测试「${value}」`,
+  cadence: "answer",
+  async read(conversation, values, signal) {
+    const policy = commandPolicyOf(conversation),
+      /** @type {Record<string, string|null>} */
+      prints = {};
+    await Promise.all(
+      values.map(async command => {
+        if (policy === "ask" && !isReadOnlyCommand(command)) return;
+        try {
+          const data = await bridge("/api/work/run", { ...workScope(conversation), command, timeout: 300 }, signal);
+          prints[command] = data.exitCode === 0 ? "过" : "不过";
         } catch (error) {
           if (error.name === "AbortError") throw error;
         }

@@ -20,8 +20,8 @@ function plainStepHtml(step, title) {
   let more = "";
   const clamp = text => {
     const out = clampLines(text, step.full);
-    if (out.clipped) more = `展开全部 · ${out.total} 行`;
-    else if (step.full && out.total > STEP_SHOW_LINES) more = `只看前 ${STEP_SHOW_LINES} 行`;
+    if (out.clipped) more = t`展开全部 · ${out.total} 行`;
+    else if (step.full && out.total > STEP_SHOW_LINES) more = t`只看前 ${STEP_SHOW_LINES} 行`;
     return escapeHtml(out.text);
   };
   const link = (url, label) => {
@@ -42,19 +42,19 @@ function plainStepHtml(step, title) {
       : step.url
         ? `<div class="tool-note">${link(step.url, escapeHtml(safeWebUrl(step.url) || step.url))}</div>`
         : step.note
-          ? `<div class="tool-note">${escapeHtml(step.note)}</div>`
+          ? `<div class="tool-note">${escapeHtml(stepText(step.note))}</div>`
           : "");
   const status = step.status || "done",
     foldable = !!body,
     folded = foldable && (step.expanded === undefined ? true : !step.expanded);
-  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? "展开" : "收起"}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "工具执行失败") : ""}">${status === "running" ? "查阅中" : status === "error" ? escapeHtml(step.result || "失败") : escapeHtml(step.result || "")}</span>${stepStateHtml(status)}</div>${stepShotsHtml(step)}${body}</div>`;
+  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? t("展开") : t("收起")}"` : ""}><span class="tool-label">${escapeHtml(step.label ? t(step.label) : toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result) || t("工具执行失败")) : ""}">${status === "running" ? t("查阅中") : status === "error" ? escapeHtml(stepText(step.result) || t("失败")) : escapeHtml(stepText(step.result) || "")}</span>${stepStateHtml(status)}</div>${stepShotsHtml(step)}${body}</div>`;
 }
 // 工具交回的画面（游目截图之类）：折起时也露着——画面就是这一步的结果；点开进图片查看器
 /** @param {Step} step */
 function stepShotsHtml(step) {
   const shots = (step.attachments || []).filter(file => file.kind === "image" && file.id);
   return shots.length
-    ? `<div class="tool-shots">${shots.map(file => `<span class="fi fi-thumb tool-shot" role="button" tabindex="0" data-open-image="${escapeHtml(file.id)}" title="查看 ${escapeHtml(file.name)}"><img data-thumb="${escapeHtml(file.id)}" alt=""></span>`).join("")}</div>`
+    ? `<div class="tool-shots">${shots.map(file => `<span class="fi fi-thumb tool-shot" role="button" tabindex="0" data-open-image="${escapeHtml(file.id)}" title="${t`查看 ${escapeHtml(file.name)}`}"><img data-thumb="${escapeHtml(file.id)}" alt=""></span>`).join("")}</div>`
     : "";
 }
 // 一次差遣此刻的样子：帮手（它自己的一条时间线画在右侧的差遣面板里，见 paintHelperTrail——差遣是并行的活，线性的行迹盛不下）、
@@ -74,12 +74,12 @@ function delegateSubState(step) {
     meta: [
       ...(live
         ? [
-            steps.length ? `${steps.length} 步` : "领命中",
-            (sub?.startedAt && spentText(Date.now() - sub.startedAt)) || (steps.length ? "进行中" : ""),
-            sub?.waiting ? "等后台" : ""
+            steps.length ? t`${steps.length} 步` : t("领命中"),
+            (sub?.startedAt && spentText(Date.now() - sub.startedAt)) || (steps.length ? t("进行中") : ""),
+            sub?.waiting ? t("等后台") : ""
           ]
-        : [String(step.result || "")]),
-      sub?.effort ? `思考${reasoningLabel(sub.effort)}` : ""
+        : [stepText(step.result)]),
+      sub?.effort ? t`思考${reasoningLabel(sub.effort)}` : ""
     ]
       .filter(Boolean)
       .join(" · ")
@@ -124,10 +124,10 @@ function delegateDoing(step) {
     steps = sub?.steps || [],
     current = [...steps].reverse().find(s => s.status === "running" || s.status === "pending") || steps.at(-1);
   if (current && (current.status === "running" || current.status === "pending"))
-    return `${current.status === "pending" ? AWAITING : "正在"} ${toolLabel(current.name)} ${String(current.title || "").slice(0, 60)}`.trim();
+    return `${current.status === "pending" ? t(AWAITING) : t("正在")} ${toolLabel(current.name)} ${String(current.title || "").slice(0, 60)}`.trim();
   // 睡着等自己挂的后台指令
   if (sub?.waiting)
-    return `等后台 ${helperWaits(sub)
+    return t`等后台 ${helperWaits(sub)
       .map(s => s.bg?.id)
       .join("、")}`;
   const base = Math.max(0, ...steps.map(s => Number(s.at) || 0)),
@@ -136,18 +136,18 @@ function delegateDoing(step) {
       .trim()
       .split("\n")
       .find(Boolean);
-  return said ? said.slice(0, 80) : sub?.reasoning ? "正在凝神" : "领命中";
+  return said ? said.slice(0, 80) : sub?.reasoning ? t("正在凝神") : t("领命中");
 }
 function stepStateHtml(status) {
   return status === "running"
-    ? `<span class="tool-state spinning" aria-label="进行中"></span>`
+    ? `<span class="tool-state spinning" aria-label="${t(`进行中`)}"></span>`
     : status === "pending"
-      ? `<span class="tool-state pending" aria-label="${AWAITING}">?</span>`
+      ? `<span class="tool-state pending" aria-label="${t(AWAITING)}">?</span>`
       : status === "skipped"
-        ? `<span class="tool-state skipped" aria-label="已跳过">–</span>`
+        ? `<span class="tool-state skipped" aria-label="${t(`已跳过`)}">–</span>`
         : status === "error"
-          ? `<span class="tool-state failed" aria-label="失败">×</span>`
-          : `<span class="tool-state done" aria-label="完成">✓</span>`;
+          ? `<span class="tool-state failed" aria-label="${t(`失败`)}">×</span>`
+          : `<span class="tool-state done" aria-label="${t(`完成`)}">✓</span>`;
 }
 // 步骤输出的露出规矩：默认摊开的只有两种——目录清单（露前 10 行）与红绿对比（两侧各 10 行），底下一行「展开全部」；
 // 指令输出、读取、搜索这些有明确的行数、往往又长，默认折起，标题行上有结果与行数，点标题行才看；报错的也折起。
@@ -164,28 +164,28 @@ function clampLines(text, full) {
 function workStepHtml(step, title) {
   const status = step.status || "done",
     command = step.name === "run_command";
-  const meta = status === "running" ? "" : status === "pending" ? AWAITING : escapeHtml(step.result || step.note || "");
+  const meta = status === "running" ? "" : status === "pending" ? t(AWAITING) : escapeHtml(stepText(step.result || step.note));
   let body = "",
     more = "";
   // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头
   if (status === "pending")
-    body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre>${sandboxWhyHtml(step)}<div class="tool-approve"><button type="button" data-approve="run">运行</button><button type="button" data-approve="skip">跳过</button><button type="button" data-approve="auto" title="径行：此对话中后续指令不再询问">径行</button></div>`;
+    body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre>${sandboxWhyHtml(step)}<div class="tool-approve"><button type="button" data-approve="run">${t(`运行`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button><button type="button" data-approve="auto" title="${t(`径行：此对话中后续指令不再询问`)}">${t(`径行`)}</button></div>`;
   else if (step.diff) {
     const diff = splitDiffHtml(step.diff.old, step.diff.new, { limit: step.full ? Infinity : DIFF_SHOW_ROWS, wrap: !!step.full });
     body = `<div class="tool-diff">${diff.html}</div>`;
-    if (diff.clipped) more = `展开全部 · −${diff.removed} +${diff.added} 行`;
-    else if (step.full && diff.rows > DIFF_SHOW_ROWS) more = `只看前 ${DIFF_SHOW_ROWS} 行`;
+    if (diff.clipped) more = t`展开全部 · −${diff.removed} +${diff.added} 行`;
+    else if (step.full && diff.rows > DIFF_SHOW_ROWS) more = t`只看前 ${DIFF_SHOW_ROWS} 行`;
   } else if (step.output) {
     const out = clampLines(step.output, step.full);
     body = `<pre class="tool-output">${escapeHtml(out.text)}</pre>`;
-    if (out.clipped) more = `展开全部 · ${out.total} 行`;
-    else if (step.full && out.total > STEP_SHOW_LINES) more = `只看前 ${STEP_SHOW_LINES} 行`;
-  } else if (step.note && !command) body = `<div class="tool-note">${escapeHtml(step.note)}</div>`;
+    if (out.clipped) more = t`展开全部 · ${out.total} 行`;
+    else if (step.full && out.total > STEP_SHOW_LINES) more = t`只看前 ${STEP_SHOW_LINES} 行`;
+  } else if (step.note && !command) body = `<div class="tool-note">${escapeHtml(stepText(step.note))}</div>`;
   if (more) body += `<button type="button" class="tool-more" data-step-more>${more}</button>`;
   const foldable = !!body && status !== "pending",
     openByDefault = status !== "error" && (!!step.diff || step.name === "list_files"),
     folded = foldable && (step.expanded === undefined ? !openByDefault : !step.expanded);
-  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}${step.readOnly ? " is-read-only" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? "展开输出" : "收起输出"}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title${command ? " tool-cmd" : ""}" title="${escapeHtml(title)}">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || "执行失败") : ""}">${meta}</span>${stepStateHtml(status)}</div>${body}</div>`;
+  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}${step.readOnly ? " is-read-only" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? t("展开输出") : t("收起输出")}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title${command ? " tool-cmd" : ""}" title="${escapeHtml(title)}">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || t("执行失败")) : ""}">${meta}</span>${stepStateHtml(status)}</div>${body}</div>`;
 }
 // 步骤有了变动（入册、跑完、请示、帮手有进展）：照这一答此刻的样子重画，工作条与差遣面板跟着更新
 /** @param {Message} assistant */
@@ -241,12 +241,12 @@ function sourceCardsHtml(message) {
   if (!list.length && !local.length) return "";
   const card = (source, index) =>
     source.memoryId
-      ? `<button type="button" class="source-card source-local" data-open-memory="${escapeHtml(source.memoryId)}" title="查看这条记忆"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.text)}</strong><small>记忆</small></span></button>`
+      ? `<button type="button" class="source-card source-local" data-open-memory="${escapeHtml(source.memoryId)}" title="${t(`查看这条记忆`)}"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.text)}</strong><small>${t(`记忆`)}</small></span></button>`
       : source.id
-        ? `<button type="button" class="source-card source-local" data-open-talk="${escapeHtml(source.id)}" title="打开这段对话"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.title)}</strong><small>旧谈${source.date ? ` · ${escapeHtml(formatDay(source.date))}` : ""}</small></span>${source.read ? `<span class="source-read">已读</span>` : ""}</button>`
-        : `<a class="source-card" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.title)}</strong><small>${escapeHtml(safeHost(source.url))}</small></span>${source.read ? `<span class="source-read">已读</span>` : ""}</a>`;
+        ? `<button type="button" class="source-card source-local" data-open-talk="${escapeHtml(source.id)}" title="${t(`打开这段对话`)}"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.title)}</strong><small>${t`旧谈${source.date ? ` · ${escapeHtml(formatDay(source.date))}` : ""}`}</small></span>${source.read ? `<span class="source-read">${t(`已读`)}</span>` : ""}</button>`
+        : `<a class="source-card" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.title)}</strong><small>${escapeHtml(safeHost(source.url))}</small></span>${source.read ? `<span class="source-read">${t(`已读`)}</span>` : ""}</a>`;
   const all = [...list, ...local];
-  return `<details class="source-stack"><summary><span>出处</span><small>${all.length} 条</small></summary><div class="source-grid">${all.map(card).join("")}</div></details>`;
+  return `<details class="source-stack"><summary><span>${t(`出处`)}</span><small>${t`${all.length} 条`}</small></summary><div class="source-grid">${all.map(card).join("")}</div></details>`;
 }
 // 这段对话里编号为 id 的一步：主线、版本、旁注里的，连同帮手各自的步骤
 function stepInView(id) {
@@ -292,7 +292,7 @@ function bindTrailEvents() {
     const wasFolded = el.classList.contains("folded");
     if (step) step.expanded = wasFolded;
     morphHeight(el, () => el.classList.toggle("folded", !wasFolded));
-    head.title = wasFolded ? "收起输出" : "展开输出";
+    head.title = wasFolded ? t("收起输出") : t("展开输出");
     saveStoreSoon();
   };
   const showStepInFull = el => {

@@ -72,6 +72,7 @@ function reserveTokens(profile, amount) {
 function spendTokens(profile, amount) {
   const live = profiles().find(p => p.id === profile.id) || profile;
   live.usedTokens = Math.max(0, Number(live.usedTokens || 0)) + amount;
+  noteSpend(live.id, amount);
   return live;
 }
 /** @param {Profile} profile */
@@ -102,7 +103,7 @@ function formatTokens(value) {
 // 把这一问换成最接近的一档重发一次，此后菜单只列它认的。菜单上没有「关」：愿意接 Key 的人不至于连思考都不愿开，
 // 要它少想就选「低」，旧数据里存的「关」按「默认」看
 const REASONING_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-  REASONING_NAMES = { "": "默认", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" },
+  REASONING_NAMES = { "": t("默认"), minimal: t("极低"), low: t("低"), medium: t("中"), high: t("高"), xhigh: t("极高"), max: t("最高") },
   REASONING_DEFAULT_LEVELS = ["low", "medium", "high", "max"];
 function reasoningLabel(level) {
   return REASONING_NAMES[level || ""] || level;
@@ -268,11 +269,12 @@ async function requestChat(profile, messages, signal, overrides = {}) {
 function profileForRequest(profile) {
   return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profileApi(profile) };
 }
-// 接口类型：设置里选的为准；旧配置没写的按地址认（anthropic.com）。桥接照它挑这一家的登记，不再自己认
-/** @param {Profile} profile @returns {"openai"|"anthropic"|"chatgpt"} */
+// 接口类型：设置里选的为准；旧配置没写的按地址认（anthropic.com）。桥接照它挑这一家的登记，不再自己认。
+// 硅基流动说的是 OpenAI 兼容的话，单列一档只为在设置里标出名字、填好地址
+/** @param {Profile} profile @returns {"openai"|"anthropic"|"chatgpt"|"siliconflow"} */
 function profileApi(profile) {
   const api = String(profile?.api || "").toLowerCase();
-  if (api === "anthropic" || api === "chatgpt") return api;
+  if (api === "anthropic" || api === "chatgpt" || api === "siliconflow") return api;
   return !api && /anthropic\.com/i.test(String(profile?.baseUrl || "")) ? "anthropic" : "openai";
 }
 const anthropicLike = profile => profileApi(profile) === "anthropic";
@@ -502,8 +504,12 @@ function normalizeContent(content) {
 function extractContent(data) {
   return normalizeContent(data?.choices?.[0]?.message?.content);
 }
-function friendlyError(message) {
+// 报错的原话（中文）：存进消息、步骤的用它，显示时再 tr；直接显示的用 friendlyError
+function bridgeErrorText(message) {
   if (/Failed to fetch|NetworkError|Load failed/i.test(message))
     return "本机桥接已停止或无法访问。请重新运行 start.cmd 或 VS Code 任务「言：启动模型桥接」，并保持终端窗口开启。";
   return String(message).slice(0, 500);
+}
+function friendlyError(message) {
+  return tr(bridgeErrorText(message));
 }

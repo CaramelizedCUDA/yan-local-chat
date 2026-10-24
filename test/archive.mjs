@@ -1,7 +1,7 @@
 // 言 / 行合一：没绑目录的对话是言——工具落在卷宗目录（存储根里的 卷宗/），脚本落在隐藏的草稿目录、非只读指令先问；
 // 中途绑上目录即为行，提示词随之而变，解开又回到言；卷宗页面即目录的视图，不列草稿
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { connect, check, sleep, PAGE, WORK, ARCHIVE } from "./lib.mjs";
+import { connect, check, sleep, PAGE, WORK, ARCHIVE, HOME } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
@@ -90,6 +90,45 @@ check(
     `[...document.querySelectorAll(".tool-step")].some(s => s.querySelector(".tool-label")?.textContent === "翻阅文档" && s.querySelector(".tool-title")?.textContent === "报表.csv")`
   )
 );
+// 技能：放进存储根/技能的一份，下一问就列在 read_document 的说明里，凭技能名翻得到 SKILL.md（去了头，注明目录）
+mkdirSync(`${HOME}/技能/写信`, { recursive: true });
+writeFileSync(`${HOME}/技能/写信/SKILL.md`, "---\nname: 写信\ndescription: 照格式写信\n---\n\n先写称谓，再写正文。");
+await evalJs(
+  `document.querySelector("#chatInput").value = "SKILLTEST 写封信"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
+);
+await waitFor(
+  `document.querySelectorAll(".message.assistant").length === 3 && [...document.querySelectorAll(".message.assistant")].at(-1).dataset.status === "complete"`
+);
+const skillText = await evalJs(`[...document.querySelectorAll(".message.assistant .assistant-block > .markdown")].at(-1).textContent`);
+check(
+  "a skill in the storage root is listed in the system prompt, not in read_document's description",
+  /SKILL\|listed:yes/.test(skillText),
+  skillText
+);
+check(
+  "reading a skill by name returns SKILL.md without its front matter, headed by the skill folder",
+  /技能目录：.*写信 先写称谓，再写正文。/.test(skillText) && !/description:/.test(skillText),
+  skillText
+);
+check(
+  "the step reads 技能 · 写信 in the trail, not 翻阅文档 · 写信/SKILL.md",
+  await evalJs(
+    `[...document.querySelectorAll(".tool-step")].some(s => s.querySelector(".tool-label")?.textContent === "技能" && s.querySelector(".tool-title")?.textContent === "写信")`
+  )
+);
+// 人点名：问话以「/写信」开头，那份说明作一件附件随问附上，问话里不留点名
+await evalJs(
+  `document.querySelector("#chatInput").value = "/写信 SKILLCMD 给房东"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
+);
+await waitFor(
+  `document.querySelectorAll(".message.assistant").length === 4 && [...document.querySelectorAll(".message.assistant")].at(-1).dataset.status === "complete"`
+);
+const cmdText = await evalJs(`[...document.querySelectorAll(".message.assistant .assistant-block > .markdown")].at(-1).textContent`);
+check("/写信 at the start attaches the skill's instructions and drops the slash name", /CMD\|body:yes\|slash:no/.test(cmdText), cmdText);
+check(
+  "the question shows the skill as an attachment",
+  await evalJs(`[...document.querySelectorAll(".message.user")].at(-1).textContent.includes("写信.md")`)
+);
 // 存成 Markdown 入卷宗
 await evalJs(
   `document.querySelector('.history-item.active [data-history-action="menu"]').click(); document.querySelector('.chip-pop [data-menu="export"]').click(); true`
@@ -145,10 +184,10 @@ await evalJs(
   `document.querySelector("#chatInput").value = "BIND 继续"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
 await waitFor(
-  `document.querySelectorAll(".message.assistant").length === 3 && document.querySelectorAll(".message.assistant")[2].dataset.status === "complete"`
+  `document.querySelectorAll(".message.assistant").length === 5 && document.querySelectorAll(".message.assistant")[4].dataset.status === "complete"`
 );
-const text2 = await evalJs(`document.querySelectorAll(".message.assistant")[2].querySelector(".assistant-block > .markdown").textContent`);
-check("after binding the prompt is the 执事 one and history is intact", /work:yes\|archive:no\|n:6/.test(text2), text2);
+const text2 = await evalJs(`document.querySelectorAll(".message.assistant")[4].querySelector(".assistant-block > .markdown").textContent`);
+check("after binding the prompt is the 执事 one and history is intact", /work:yes\|archive:no\|n:10/.test(text2), text2);
 check("stored conversation carries the workdir", await evalJs(`__yanState().conversations[0].workdir.toLowerCase().endsWith("work")`));
 
 // ---- 解开：回到言
@@ -380,12 +419,16 @@ const pickerRows = () =>
   evalJs(
     `[...document.querySelectorAll(".chip-pop.attach-picker .chip-pop-list button")].map(b => b.dataset.dir !== undefined ? (b.classList.contains("picker-up") ? "‹" : "夹:") + b.dataset.dir : b.dataset.pick).join()`
   );
-check("the archive picker shows one level: folders, then that level's files", (await pickerRows()) === "夹:课程,一声.mp3,讲义.txt,ARCHIVE 做个表.md");
+check(
+  "the archive picker shows one level: folders, then that level's files",
+  (await pickerRows()) === "夹:课程,一声.mp3,讲义.txt,ARCHIVE 做个表.md"
+);
 await evalJs(`document.querySelector('.chip-pop.attach-picker [data-dir="课程"]').click(); true`);
 await waitFor(`!!document.querySelector('.chip-pop.attach-picker .picker-up')`);
 check(
   "clicking a folder in the picker enters it, with a way back up",
-  (await pickerRows()) === "‹,夹:课程/空夹,夹:课程/深度学习,课程/新.txt,课程/成品.txt" && (await evalJs(`!!document.querySelector(".chip-pop.attach-picker")`))
+  (await pickerRows()) === "‹,夹:课程/空夹,夹:课程/深度学习,课程/新.txt,课程/成品.txt" &&
+    (await evalJs(`!!document.querySelector(".chip-pop.attach-picker")`))
 );
 await evalJs(
   `(() => { const i = document.querySelector(".chip-pop.attach-picker input"); i.value = "笔记"; i.dispatchEvent(new Event("input")); })(); true`
@@ -393,7 +436,9 @@ await evalJs(
 check(
   "searching in the picker lists matches from every level",
   (await pickerRows()) === "课程/深度学习/笔记.md" &&
-    (await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="课程/深度学习/笔记.md"] small').textContent.startsWith("课程/深度学习 · ")`))
+    (await evalJs(
+      `document.querySelector('.chip-pop.attach-picker [data-pick="课程/深度学习/笔记.md"] small').textContent.startsWith("课程/深度学习 · ")`
+    ))
 );
 await evalJs(`document.querySelector('.chip-pop.attach-picker [data-pick="课程/深度学习/笔记.md"]').click(); true`);
 await waitFor(`!!document.querySelector("#welcomeAttachments .attachment-card[data-name='笔记.md']")`);

@@ -118,7 +118,7 @@ function stageConnect(url, front) {
       stage.current = stage.front = stage.attached = stage.session = "";
       stage.framed = false;
       stageResetPage();
-      for (const waiter of stage.pending.values()) waiter.reject(Error("游目已断开"));
+      for (const waiter of stage.pending.values()) waiter.reject(Error(t("游目已断开")));
       stage.pending.clear();
       $("#stageFrame").removeAttribute("src");
       stageSync();
@@ -145,7 +145,7 @@ function stageConnect(url, front) {
 /** @param {string} method @param {Record<string, any>} [params] @param {string} [sessionId] */
 function stageSend(method, params = {}, sessionId = "") {
   const ws = stage.ws;
-  if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(Error("游目未连上"));
+  if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(Error(t("游目未连上")));
   const id = ++stage.seq;
   ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
   return new Promise((resolve, reject) => stage.pending.set(id, { resolve, reject }));
@@ -226,7 +226,7 @@ function stagePageEvent(method, params) {
     stage.downloads = [
       {
         guid: params.guid,
-        name: params.suggestedFilename || "未命名",
+        name: params.suggestedFilename || t("未命名"),
         url: params.url || "",
         total: 0,
         got: 0,
@@ -283,10 +283,10 @@ function stageRenderDialog() {
     ask = dialog.type !== "alert",
     host = stageHost(stage.tabs.get(stage.current)?.url || "");
   const [head, text, yes, no] = file
-    ? ["网页要你选文件", `${host || "此页"}请你上传文件${dialog.multiple ? "，可多选" : ""}`, "选文件", "取消"]
+    ? [t("网页要你选文件"), t`${host || t("此页")}请你上传文件${dialog.multiple ? t("，可多选") : ""}`, t("选文件"), t("取消")]
     : leave
-      ? ["离开此页？", dialog.message || "此页有尚未存下的改动。", "离开", "留下"]
-      : ["网页的提示", dialog.message, "确定", "取消"];
+      ? [t("离开此页？"), dialog.message || t("此页有尚未存下的改动。"), t("离开"), t("留下")]
+      : [t("网页的提示"), dialog.message, t("确定"), t("取消")];
   box.innerHTML = `<div class="stage-dialog-card" role="alertdialog" aria-label="${head}"><div class="stage-dialog-head">${head}</div><div class="stage-dialog-text">${escapeHtml(text)}</div>${dialog.type === "prompt" ? `<input class="stage-dialog-input" spellcheck="false" value="${escapeHtml(dialog.defaultPrompt || "")}">` : ""}<div class="stage-dialog-actions">${ask ? `<button type="button" class="outline-btn" data-stage-answer="no">${no}</button>` : ""}<button type="button" class="outline-btn primary" data-stage-answer="yes">${yes}</button></div></div>`;
   /** @type {HTMLElement} */ (box.querySelector(".stage-dialog-input, [data-stage-answer=yes]")).focus({ preventScroll: true });
 }
@@ -324,7 +324,7 @@ async function stageSendFiles(files, node) {
     for (const file of files) paths.push((await bridge("/api/stage/upload", { name: file.name, data: await readFile(file, "data") })).path);
     await stageSend("DOM.setFileInputFiles", { files: paths, backendNodeId: node }, session);
   } catch (error) {
-    toast(`文件未能传入网页：${String(error.message || error).slice(0, 80)}`);
+    toast(t`文件未能传入网页：${String(error.message || error).slice(0, 80)}`);
   }
 }
 /** @param {string} url */

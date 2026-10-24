@@ -37,13 +37,13 @@ function renderModeSwitch() {
   if (!seal) return;
   seal.dataset.mode = work ? "work" : "chat";
   seal.querySelector(".rail-icon").textContent = work ? "行" : "言";
-  seal.querySelector(".wide").textContent = work ? "执事" : "对谈";
-  seal.title = work ? "行 · 执事：指令与改动落在工作目录" : "言 · 对谈：产出收入卷宗";
+  seal.querySelector(".wide").textContent = work ? t("执事") : t("对谈");
+  seal.title = work ? t("行 · 执事：指令与改动落在工作目录") : t("言 · 对谈：产出收入卷宗");
 }
 const COMMAND_POLICY_META = {
-  ask: ["问而后行", "只读指令径行，其余逐条请示"],
-  review: ["审而后行", "桥接代审：常规改动放行，高危动作回绝"],
-  auto: ["径行", "不再审查；沙箱之界照守"]
+  ask: [t("问而后行"), t("只读指令径行，其余逐条请示")],
+  review: [t("审而后行"), t("桥接代审：常规改动放行，高危动作回绝")],
+  auto: [t("径行"), t("不再审查；沙箱之界照守")]
 };
 function commandPolicyOf(c) {
   return normalizeCommandPolicy(c?.commandPolicy, normalizeCommandPolicy(store.settings.commandPolicyDefault));

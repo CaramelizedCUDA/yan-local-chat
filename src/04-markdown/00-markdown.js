@@ -154,7 +154,7 @@ function codeBlockHtml(text, lang) {
   } catch {
     html = escapeHtml(text);
   }
-  return `<div class="code-block"><div class="code-head"><span class="code-lang">${escapeHtml(language || "text")}</span><button type="button" class="code-copy" data-copy-code>复制</button></div><pre><code class="hljs${known ? ` language-${escapeHtml(language)}` : ""}">${html}</code></pre></div>\n`;
+  return `<div class="code-block"><div class="code-head"><span class="code-lang">${escapeHtml(language || "text")}</span><button type="button" class="code-copy" data-copy-code>${t(`复制`)}</button></div><pre><code class="hljs${known ? ` language-${escapeHtml(language)}` : ""}">${html}</code></pre></div>\n`;
 }
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -194,7 +194,7 @@ function renderReplyShots(root) {
     shot.setAttribute("role", "button");
     shot.tabIndex = 0;
     shot.dataset.openImage = file.id;
-    shot.title = `查看 ${file.name}`;
+    shot.title = t`查看 ${file.name}`;
     shot.innerHTML = `<img data-thumb="${escapeHtml(file.id)}" alt="${escapeHtml(ref.getAttribute("alt") || file.name)}">`;
     // 图换成那幅；链接留着字（点了也是看图），画面接在后面
     if (ref.tagName === "IMG") ref.replaceWith(shot);
@@ -264,9 +264,9 @@ function bindContentEvents() {
     if (copy) {
       void copyText(copy.closest(".code-block, .html-app")?.querySelector("code")?.textContent || "");
       // 小画钮不换字（换了画就没了），说一声；代码块上的字钮照旧换成「已复制」
-      if (copy.classList.contains("code-icon")) return toast("已复制");
-      copy.textContent = "已复制";
-      setTimeout(() => (copy.textContent = "复制"), 1200);
+      if (copy.classList.contains("code-icon")) return toast(t("已复制"));
+      copy.textContent = t("已复制");
+      setTimeout(() => (copy.textContent = t("复制")), 1200);
     }
   });
   for (const embed of EMBEDS) embed.bind?.();

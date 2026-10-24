@@ -22,7 +22,7 @@ function openStateDb() {
     // 另一处窗口还开着旧版页面时，升级表结构会被它挡住，open 永远不回来：等几秒就当没有 IndexedDB，页面照常开（对话从目录来）
     const timer = setTimeout(() => {
       stateDbPromise = null;
-      reject(Error("对话存储被另一处窗口占着"));
+      reject(Error(t("对话存储被另一处窗口占着")));
     }, 5000);
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -43,7 +43,7 @@ function openStateDb() {
     request.onerror = () => {
       clearTimeout(timer);
       stateDbPromise = null;
-      reject(request.error || Error("对话存储不可用"));
+      reject(request.error || Error(t("对话存储不可用")));
     };
   });
   return stateDbPromise;
@@ -53,8 +53,8 @@ function dbRequest(db, storeName, mode, action) {
     const transaction = db.transaction(storeName, mode),
       request = action(transaction.objectStore(storeName));
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || Error("对话存储失败"));
-    transaction.onabort = () => reject(transaction.error || Error("对话存储已中止"));
+    request.onerror = () => reject(request.error || Error(t("对话存储失败")));
+    transaction.onabort = () => reject(transaction.error || Error(t("对话存储已中止")));
   });
 }
 async function stateStoreRequest(storeName, mode, action) {
@@ -66,8 +66,8 @@ function dbBatch(db, storeName, fill) {
     const transaction = db.transaction(storeName, "readwrite");
     fill(transaction.objectStore(storeName));
     transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error || Error("对话存储失败"));
-    transaction.onabort = () => reject(transaction.error || Error("对话存储已中止"));
+    transaction.onerror = () => reject(transaction.error || Error(t("对话存储失败")));
+    transaction.onabort = () => reject(transaction.error || Error(t("对话存储已中止")));
   });
 }
 // 内容的指纹：长度加一遍 FNV-1a，够用来判断「和上次写的一不一样」
@@ -117,7 +117,7 @@ function writeMeta({ disk = true } = {}) {
     } catch {
       if (!metaSaveWarned) {
         metaSaveWarned = true;
-        toast("设置未能存下（浏览器存储已满），请先导出备份");
+        toast(t("设置未能存下（浏览器存储已满），请先导出备份"));
       }
     }
   if (disk && changed) scheduleConfigSave();

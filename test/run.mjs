@@ -197,6 +197,7 @@ try {
       "--disable-software-rasterizer",
       "--no-sandbox",
       "--no-first-run",
+      "--lang=zh-CN",
       "--no-default-browser-check",
       // Edge 起来后会为兼容层自己重启一回：重启出的进程不再是这里的子进程，收尾的 taskkill /T 够不着，占着调试口留到下一回（playwright 也带这一项）
       "--edge-skip-compat-layer-relaunch",
