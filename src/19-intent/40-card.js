@@ -50,17 +50,23 @@ const INTENT_PENS = {
   check: () => brushStroke([2, 3.4, 6, 3, 9.4, 3.2, 8.2, 6.4, 6.4, 8.8], 1.35, { tone: "ink2", tail: 0.4, head: 0.9 }),
   kept: () => ""
 };
-const KEEP_GATE_TEXT = { hook: t("动手前先跑测试，不过就不做"), check: t("动过手的那一答，收尾前重查") };
-/** 守怎么把关：hook 写了 on、动手前跑挂的测试；check 挂着要跑指令的凭据、收尾前重查；空即只凭模型自觉 @param {IntentNode} node */
+const KEEP_CHECK_TEXT = t("动过手的那一答，收尾前重查");
+/** 守怎么把关：hook 写了 on、动手前拦；check 挂着要跑指令的凭据、收尾前重查；空即只凭模型自觉 @param {IntentNode} node */
 function keepGate(node) {
-  if (node.anchors.some(key => keepHookAnchor(node, key))) return "hook";
-  return node.anchors.some(key => !keepHookAnchor(node, key) && ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer") ? "check" : "";
+  if (keepTrigger(node)) return "hook";
+  return node.anchors.some(key => ANCHOR_KINDS.get(anchorParts(key)[0])?.cadence === "answer") ? "check" : "";
+}
+/** 钩子对上了怎么办：请用户批、先跑测试、或就不做 @param {IntentNode} node */
+function keepHookTip(node) {
+  if (node.ask) return t("动手前请你批，准了才做");
+  return node.anchors.some(key => keepHookAnchor(node, key)) ? t("动手前先跑测试，不过就不做") : t("对上了就不做");
 }
 /** 守行首的记号：符号生疏，指上即浮一张纸签说明（原生 title 要停一秒多、12px 也难指中） @param {IntentNode} node */
 function intentKeepMark(node) {
-  const gate = keepGate(node);
+  const gate = keepGate(node),
+    tip = gate === "hook" ? keepHookTip(node) : KEEP_CHECK_TEXT;
   return gate
-    ? `<span class="intent-mk-tip" role="img" aria-label="${escapeHtml(KEEP_GATE_TEXT[gate])}" data-tip="${escapeHtml(KEEP_GATE_TEXT[gate])}">${intentMark(gate)}</span>`
+    ? `<span class="intent-mk-tip" role="img" aria-label="${escapeHtml(tip)}" data-tip="${escapeHtml(tip)}">${intentMark(gate)}</span>`
     : intentMark("kept");
 }
 /** @param {string} state @param {number} [x] @param {number} [y] 给了坐标即嵌进图里 */

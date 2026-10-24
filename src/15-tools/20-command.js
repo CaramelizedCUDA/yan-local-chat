@@ -25,7 +25,8 @@ defineTool({
       step.sandboxWhy = screened?.why || undefined;
     }
     let escalated = false;
-    if (policy === "ask" && (!step.readOnly || step.sandboxWhy)) {
+    // 守的关口刚批过这一条（见 keepHook）：不再另问，除非还要出沙箱
+    if (policy === "ask" && (!step.readOnly || step.sandboxWhy) && !(step.granted && !step.sandboxWhy)) {
       if (!(await askApproval(step, ctx))) {
         step.skipped = true;
         return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };

@@ -174,7 +174,8 @@ function workStepHtml(step, title) {
   let body = "",
     more = "";
   // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头
-  if (status === "pending")
+  if (status === "pending" && step.gate) body = keepGateHtml(step);
+  else if (status === "pending")
     body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre>${sandboxWhyHtml(step)}<div class="tool-approve"><button type="button" data-approve="run">${t(`运行`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button><button type="button" data-approve="auto" title="${t(`径行：此对话中后续指令不再询问`)}">${t(`径行`)}</button></div>`;
   else if (step.diff) {
     const diff = splitDiffHtml(step.diff.old, step.diff.new, { limit: step.full ? Infinity : DIFF_SHOW_ROWS, wrap: !!step.full });

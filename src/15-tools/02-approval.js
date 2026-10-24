@@ -56,10 +56,22 @@ function renderApprovalBar() {
   if (bar.dataset.stepId !== entry.step.id) {
     bar.dataset.stepId = entry.step.id;
     bar.dataset.page = "0";
-    bar.innerHTML = TOOLS.get(entry.step.name).approval(entry.step);
+    bar.innerHTML = entry.step.gate ? keepApprovalHtml(entry.step) : TOOLS.get(entry.step.name).approval(entry.step);
     formPage(bar);
   }
   if (bar.classList.contains("hidden") || bar.classList.contains("leaving")) showNow(bar);
+}
+// 守的关口（意里标了 ask 的守，见 19-intent/10-store.js 的 keepHook）：不论哪件工具都是这一张——守的原话领起，下面是将要做的；
+// 只有准许与跳过，没有「径行」：关口不随档位放宽
+/** @param {Step} step */
+function keepApprovalHtml(step) {
+  const gate = /** @type {{ id: string, claim: string, target: string }} */ (step.gate);
+  return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">${t(`守`)}</span><span class="approval-title">${t`守请示 · ${escapeHtml(gate.id)}`}</span><span class="approval-hint" title="${t(`输入框留空时，Enter 即准许`)}">${t(`Enter 准许`)}</span></div>${keepGateHtml(step)}`;
+}
+/** 请示条与行迹里共用：守的原话、将要做的、准许与跳过 @param {Step} step */
+function keepGateHtml(step) {
+  const gate = /** @type {{ id: string, claim: string, target: string }} */ (step.gate);
+  return `<div class="approval-sandbox">${escapeHtml(gate.claim)}</div><pre class="approval-cmd">${escapeHtml(`${toolLabel(step.name)} · ${gate.target}`)}</pre><div class="approval-actions"><button type="button" data-approve="run">${t(`准许`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button></div>`;
 }
 // 请示条或行迹里的「运行 / 跳过 / 径行」
 function approveFrom(button) {
@@ -140,8 +152,9 @@ function bindApprovalEvents() {
     c.commandPolicy = nextCommandPolicy(commandPolicyOf(c));
     saveStore();
     renderWorkAuto();
-    // 只放行指令与外部服务的请示；等着作答的表单不是「批不批」，不能拿 true 打发掉
+    // 只放行指令与外部服务的请示；等着作答的表单不是「批不批」，不能拿 true 打发掉；守的关口不随档位放宽
     if (c.commandPolicy !== "ask")
-      for (const [stepId, entry] of pendingApprovals) if (entry.conversationId === c.id && !entry.step.form) settleApproval(stepId, true);
+      for (const [stepId, entry] of pendingApprovals)
+        if (entry.conversationId === c.id && !entry.step.form && !entry.step.gate) settleApproval(stepId, true);
   };
 }

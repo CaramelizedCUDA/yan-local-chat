@@ -237,7 +237,9 @@ async function runMcpTool(step, server, tool, args, ctx) {
   if (!config || !spec || !presetAllows(presetOf(ctx.conversation), /** @type {Tool} */ ({ server }))) return mcpUnknown(server, tool);
   step.title ||= spec.title || tool;
   step.code = JSON.stringify(args, null, 2);
-  const ask = !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
+  // 守的关口刚批过这一步（见 keepHook）：不再另问
+  const ask =
+    !step.granted && !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
   if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
     return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };

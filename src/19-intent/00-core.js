@@ -12,8 +12,9 @@
 // 卡在人手里、要等人拍板的标「待定」（note 写等谁、定什么）：不算立住，换了对话、过了几天也看得见卡在谁那儿。
 // 节点不分类型：事件、功能、文件都是一句要成立的结论，粒度由模型拆到有凭据可挂为止，混着也无妨。
 // 守：按任务设、一直要守的条件（收尾前测试要过、对外接口不改）标 keep——不是要交付的结论：不上图、不计进度、不挂前提也不作前提，只在全局；
-// 立时也记下用户那一问的原话。守就是言的钩子：写得出触发条件的写 on（一条正则），对得上的那一步动手前先跑它挂的测试，不过即不做
-// （见 10-store.js 的 keepHook）；写不出的挂测试、探针，动过手的那一答收尾前重查（intentRecheck），再不然只凭模型自觉。
+// 立时也记下用户那一问的原话。守就是言的钩子：写得出触发条件的写 on（一条正则），对得上的那一步动手前先跑它挂的测试，不过即不做；
+// 没挂测试的即禁令，对上就不做；标了 ask 的是关口（「批准前不发布」），对上即请用户批，不论权限档位（见 10-store.js 的 keepHook）。
+// 写不出触发条件的挂测试、探针，动过手的那一答收尾前重查（intentRecheck），再不然只凭模型自觉。
 // 嵌套：一项做的事拆开还有许多步，就是模块——细项写 in 指向它，至多两层（全局 › 模块 › 子模块）。
 // 模块以里面收口的几项（同层没人以它为前提的）为前提，所以里面立住它才算立住，传播、回归照旧，不另写判定。
 // 前提可跨模块：依的是哪一项就连哪一项（评测依的是训练里那一步，不是整个训练模块）；模块只是分组，图仍是一张 DAG，查环时连模块到收口项那几条一并算。
@@ -38,11 +39,12 @@
  * @property {{ ask: string, at: string, later?: string }} [root] 根：立时用户那一问的原话；later：末一回改根时那一问
  * @property {string} [in] 所属模块的 id；不写即在全局
  * @property {boolean} [keep] 守：一直要守的条件，不是要交付的结论
- * @property {string} [on] 守的钩子：正则，对得上的那一步（指令原文、路径、网址或工具名）动手前先跑它挂的测试
+ * @property {string} [on] 守的钩子：正则，对得上的那一步（指令原文、路径、网址或工具名）动手前先跑它挂的测试；没挂测试即不做
+ * @property {boolean} [ask] 写了 on 的守是关口：测试过了（或没挂）还要请用户批
  * @typedef {{ rev: number, premises: Record<string, number>, prints: Record<string, string|null>, anchors?: string[] }} IntentSeal
  * @typedef {{ at: string, conversation: string, text: string }} IntentLog 改意、弃、假定的留痕
  * @typedef {{ nodes: Record<string, IntentNode>, log: IntentLog[], updated?: string }} Intent updated：最近一回写入的时刻——单拿出来看时，看得出旧不旧
- * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean, keep?: boolean, on?: string, in?: string, remove?: boolean, rename?: string }} IntentOp in：空串即挪回全局；remove：整项撤去；rename：已有一项改叫这个名字
+ * @typedef {{ id: string, claim?: string, check?: string, when?: string, needs?: string[], any?: boolean, anchors?: string[], state?: IntentMark, note?: string, root?: boolean, keep?: boolean, on?: string, ask?: boolean, in?: string, remove?: boolean, rename?: string }} IntentOp in：空串即挪回全局；remove：整项撤去；rename：已有一项改叫这个名字
  * @typedef {Record<string, string|null>} IntentPrints 各凭据此刻的指纹，按「种类:值」；不在其中的即不知道，不据它判
  */
 const INTENT_LIMIT = 60,
@@ -132,6 +134,7 @@ function asIntent(raw) {
     if (node.keep === true) intent.nodes[id].keep = true;
     else delete intent.nodes[id].keep;
     if (!intent.nodes[id].keep || typeof node.on !== "string" || !node.on) delete intent.nodes[id].on;
+    if (!intent.nodes[id].on || node.ask !== true) delete intent.nodes[id].ask;
     // 守没有进度：旧版里标过假定、未做的，一律当守着
     if (intent.nodes[id].keep) intent.nodes[id].state = "done";
     if (node.seal !== undefined) {
@@ -201,6 +204,9 @@ function keepTrigger(node) {
     return null;
   }
 }
+/** 钩子对上了怎么办：给模型读的那半句 @param {IntentNode} node */
+const keepHookText = node =>
+  node.ask ? t("动手前请用户批") : node.anchors.some(key => anchorParts(key)[0] === "test") ? t("动手前查") : t("对上即不做");
 /** 钩子挂的测试：只在对得上的那一步之前跑（将要做的交给它），平时不取指纹、不据它判待复核 @param {IntentNode} node @param {string} key */
 const keepHookAnchor = (node, key) => !!keepTrigger(node) && anchorParts(key)[0] === "test";
 /**
@@ -403,6 +409,7 @@ function normalizeIntentOps(intent, raw, workdir = "") {
       op.on = clip(item.on, 300);
       if (op.on && !keepTrigger({ keep: true, on: op.on })) problems.push(t`${id} 的 on 不是合法的正则`);
     }
+    if (item.ask !== undefined) op.ask = item.ask === true || item.ask === "true";
     if (item.needs !== undefined) op.needs = [...new Set(list(item.needs).map(idOf))].filter(n => n && n !== id);
     if (item.rename !== undefined && item.rename !== null && clip(item.rename, 80)) {
       const to = idOf(item.rename);
@@ -510,11 +517,11 @@ function normalizeIntentOps(intent, raw, workdir = "") {
         t`${id} 还不能标成立：${stuck.join("、")} 没立住。前提先立住（同一批一起标即可）；这一项自己做完而前提未立的，先标 doing`
       );
   }
-  for (const id of ops.map(intentOpId)) {
-    const node = trial.nodes[id];
+  for (const op of ops) {
+    const id = intentOpId(op),
+      node = trial.nodes[id];
     if (node?.on && !node.keep) problems.push(t`${id} 不是守：on 只给守`);
-    else if (node?.on && !node.anchors.some(key => anchorParts(key)[0] === "test"))
-      problems.push(t`${id} 写了 on，要挂一条 test:（对得上的那一步动手前跑它，不过即不做）`);
+    if (op.ask && node && !node.on) problems.push(t`${id} 没写 on：ask 是钩子对上时请用户批，先写 on`);
     if (trial.nodes[id]?.state === "assumed" && !trial.nodes[id].note) problems.push(t`${id} 标了假定，note 里写明借的是什么、出处在哪`);
     if (trial.nodes[id]?.state === "waiting" && !trial.nodes[id].note) problems.push(t`${id} 标了待定，note 里写明等谁、定什么`);
   }
@@ -587,6 +594,9 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
       if (op.on) node.on = op.on;
       else delete node.on;
     }
+    // 撤了钩子，关口随之撤
+    if (op.ask && node.on) node.ask = true;
+    else if (op.ask !== undefined || !node.on) delete node.ask;
     if (op.needs) node.needs = op.needs;
     if (op.in !== undefined && op.in !== (node.in || "")) {
       if (node.rev) log(`${id} 归入${op.in ? `「${op.in}」` : "全局"}`);
@@ -693,7 +703,7 @@ function intentText(intent, now = {}, { path = t(".yan/意.json"), asks = false 
   const kept = keeps.flatMap(id => {
     const node = intent.nodes[id],
       state = intentState(intent, id, now),
-      head = `- ${state === "stale" ? `[${INTENT_STATE_TEXT.stale}] ` : ""}${id}：${node.claim}${node.when ? t`（情形：${node.when}）` : ""}${node.on ? t`（动手前查：/${node.on}/）` : ""}`,
+      head = `- ${state === "stale" ? `[${INTENT_STATE_TEXT.stale}] ` : ""}${id}：${node.claim}${node.when ? t`（情形：${node.when}）` : ""}${node.on ? `（${keepHookText(node)}：/${node.on}/）` : ""}`,
       ask = asks && node.root?.ask ? [t`  原问：${node.root.ask.slice(0, 600)}`] : [];
     if (state !== "stale") return [head, ...ask];
     return [head, t`  验收：${node.check}`, ...(state === "stale" ? [t`  缘由：${intentStaleWhy(intent, id, now)}`] : []), ...ask];

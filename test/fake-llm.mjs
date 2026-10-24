@@ -985,9 +985,9 @@ http
       // 收尾前对照拦下就改回（覆写已有文件得先读过）；HOOK3 只改一个无关的文件，不该被拦。轮次按这一问之后的工具结果数
       // 认哪一问：跳过收尾对照递来的话；问里附的意带着 HOOK1 的原问，所以后来的问先认
       const hookAt = msgs.findLastIndex(
-        m => m.role === "user" && typeof m.content === "string" && /HOOK[1234]/.test(m.content) && !m.content.startsWith("［收尾前对照意］")
+        m => m.role === "user" && typeof m.content === "string" && /HOOK[1-6]/.test(m.content) && !m.content.startsWith("［收尾前对照意］")
       );
-      if (hookAt >= 0 && (/HOOK[1234]/.test(String(lastUser)) || String(lastUser).includes("［收尾前对照意］"))) {
+      if (hookAt >= 0 && (/HOOK[1-6]/.test(String(lastUser)) || String(lastUser).includes("［收尾前对照意］"))) {
         const ask = msgs[hookAt].content,
           after = msgs.slice(hookAt + 1),
           n = after.filter(m => m.role === "tool").length,
@@ -1013,6 +1013,28 @@ http
           const results = after.filter(m => m.role === "tool").map(m => String(m.content));
           return say(
             `HOOK4|prod:${/守「远端」拦下/.test(results[1]) ? "blocked" : "ran"}|staging:${/deploy-staging/.test(results[2]) ? "ran" : "blocked"}`
+          );
+        }
+        // HOOK5：没挂测试的钩子即禁令，对上就不做；HOOK6：标了 ask 的是关口，对上即请用户批——头一回准、第二回跳过
+        if (ask.includes("HOOK5 不推")) {
+          if (n === 0)
+            return call("update_intent", {
+              nodes: [{ id: "不推", claim: "不往 main 推", check: "没有推到 main", keep: true, on: "push origin main" }]
+            });
+          if (n === 1) return call("run_command", { command: "echo push origin main" });
+          const results = after.filter(m => m.role === "tool").map(m => String(m.content));
+          return say(`HOOK5|main:${/守「不推」拦下了这一步，没有执行：不往 main 推/.test(results[1]) ? "blocked" : "ran"}`);
+        }
+        if (ask.includes("HOOK6 发布")) {
+          if (n === 0)
+            return call("update_intent", {
+              nodes: [{ id: "发布", claim: "发布前给我审", check: "用户批过", keep: true, on: "publish", ask: true }]
+            });
+          if (n === 1) return call("run_command", { command: "echo publish-one" });
+          if (n === 2) return call("run_command", { command: "echo publish-two" });
+          const results = after.filter(m => m.role === "tool").map(m => String(m.content));
+          return say(
+            `HOOK6|one:${/publish-one/.test(results[1]) ? "ran" : "blocked"}|two:${/用户没有准许/.test(results[2]) ? "declined" : "ran"}`
           );
         }
         if (!ask.includes("HOOK2 改一下") && !ask.includes("HOOK3 加个")) {

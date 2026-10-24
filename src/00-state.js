@@ -68,6 +68,8 @@
  * @property {number} [exitCode]
  * @property {boolean} [readOnly] 只读指令，免确认
  * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
+ * @property {{ id: string, claim: string, target: string }} [gate] 正等用户批的守的关口（见 keepHook），批完即去
+ * @property {boolean} [granted] 守的关口批过了：这件工具自己不再另问
  * @property {boolean} [background] 后台指令
  * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", quiet?: boolean, started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；quiet：那一答已停，结束时不叫醒；started：起跑的时刻，书眉的漏据它算已跑多久）
  * @property {{ old: string, new: string }} [diff]
