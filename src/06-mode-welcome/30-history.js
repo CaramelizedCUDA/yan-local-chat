@@ -19,8 +19,8 @@ function openHistoryMenu(id, anchor) {
                   label: split.panes.length > 1 ? t`收起第 ${splitSlotOf(id) + 1} 栏` : t("收起右栏"),
                   run: () => void closeSplit(splitSlotOf(id), id)
                 }
-              : split.panes.length >= MAX_SPLIT_PANES
-                ? { id: "split", label: t("在右栏打开"), note: t("已满四栏"), disabled: true, run: () => {} }
+              : split.panes.length >= MAX_SPLIT_PANES || splitRoom() <= 0
+                ? { id: "split", label: t("在右栏打开"), note: splitFullByOthers() ? t("别处占着") : t("已满四栏"), disabled: true, run: () => {} }
                 : { id: "split", label: t("在右栏打开"), note: t("并排看"), run: () => void openSplit(id) }
           ]),
       { id: "pin", label: c.pinned ? t("取消置顶") : t("置顶"), run: () => togglePin(id) },

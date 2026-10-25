@@ -39,6 +39,7 @@ interface Window {
     id: () => string;
     slot: number;
     refresh: () => void;
+    bus: () => boolean;
   }; // 栏页报给主页面：这一栏是谁、在忙什么
 }
 

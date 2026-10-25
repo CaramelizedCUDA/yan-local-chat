@@ -56,6 +56,8 @@ if (PANE) {
     busy: paneBusy,
     id: () => currentId || "",
     slot: PANE_SLOT,
+    // 这一栏的事件流接上了没有：主页面拿它从桥接报的总数里减去自家的，余下的是别的标签页、窗口
+    bus: () => busOpen,
     // 主页面改了设置（明暗、朱色、字体、模型……）：读一回磁盘上的配置，三方合并后照着重画
     // 这一栏若正存着自己的配置，refreshConfigFromDisk 会把这次读盘排队到存完之后（见 01-store/20-config.js）
     refresh: () => void refreshConfigFromDisk()
@@ -88,6 +90,22 @@ function splitHolds(id) {
   return !PANE && !!id && splitSlotOf(id) >= 0;
 }
 /** @returns {number} */
+// 还能再开几栏：本页四栏的上限，与整个浏览器的连接预算（别的标签页、窗口里开着的言也占着）取小
+function splitRoom() {
+  const own = split.panes.length;
+  let connected = busOpen ? 1 : 0;
+  for (const pane of split.panes)
+    try {
+      if (/** @type {any} */ (splitFrame(pane.slot)?.contentWindow)?.__yanPane?.bus?.()) connected++;
+    } catch {}
+  // 别处的页面数 = 桥接报的总数 − 本页已接上的；还没报过（0）就只按本页算
+  const elsewhere = Math.max(0, busPages - connected);
+  return Math.max(0, Math.min(MAX_SPLIT_PANES - own, MAX_BROWSER_PAGES - elsewhere - 1 - own));
+}
+// 栏满，是本页四栏满了，还是别的标签页、窗口占着连接
+function splitFullByOthers() {
+  return split.panes.length < MAX_SPLIT_PANES && splitRoom() === 0;
+}
 function splitFreeSlot() {
   for (let slot = 0; slot < MAX_SPLIT_PANES; slot++) if (!splitEntry(slot)) return slot;
   return -1;
@@ -192,7 +210,10 @@ function mountSplitPane(pane) {
 }
 /** @param {SplitPane[]} list */
 function mountSplitRestore(list) {
-  const clean = list.filter(pane => pane.id !== currentId).slice(0, MAX_SPLIT_PANES);
+  const all = list.filter(pane => pane.id !== currentId).slice(0, MAX_SPLIT_PANES);
+  // 刷新后接着开：别的标签页、窗口占着连接时只挂得下的那几栏，余下的不挂（挂了会把整个浏览器的言卡死）
+  const clean = all.slice(0, splitRoom());
+  if (clean.length < all.length) toast(t`别的标签页、窗口也开着言，这回只接着开了 ${clean.length} 栏`);
   if (!clean.length) return;
   const rail = splitRailReady();
   if (!rail) return;
@@ -228,6 +249,10 @@ function openSplit(id) {
   }
   if (split.panes.length >= MAX_SPLIT_PANES) {
     toast(t("右栏最多四栏，先收起一栏再开"));
+    return false;
+  }
+  if (splitRoom() <= 0) {
+    toast(t("这个浏览器里别的标签页、窗口也开着言，连接不够再开一栏；先关掉几处再开"));
     return false;
   }
   // 游目或铺满的旁注会盖住 rail：先收起来，新栏才看得见
@@ -578,6 +603,8 @@ function bindSplit() {
     close: (slot = 0, id = "") => void closeSplit(Number(slot) || 0, String(id || "")),
     focus: slot => focusSplit(Number(slot)),
     state: () => ({
+      busPages,
+      room: splitRoom(),
       panes: split.panes
         .slice()
         .sort((a, b) => a.slot - b.slot)

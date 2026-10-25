@@ -289,6 +289,8 @@ const PAGE_ID = uid();
 // 右栏最多四栏：主页面 + 四份同源 iframe = 五处页面。每处常占一条 EventSource，
 // 浏览器对同一 host:port 的 HTTP/1.1 连接上限为六，余一条给普通请求；第六处页面会死锁（见 27-split.js）
 const MAX_SPLIT_PANES = 4;
+// 同一个浏览器里言最多几处页面同开（每处一条常驻事件流，六条连接留一条给普通请求）——别的标签页、窗口也算在内
+const MAX_BROWSER_PAGES = MAX_SPLIT_PANES + 1;
 // 这一页是嵌在主页面右侧的第几栏（0..3）；主页面为 -1。关一栏不重排其余栏
 const PANE = new URLSearchParams(location.search).get("pane") === "side";
 const PANE_SLOT = (() => {

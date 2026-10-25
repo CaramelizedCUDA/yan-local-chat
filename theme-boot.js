@@ -16,6 +16,7 @@ if (location.protocol === "file:") {
   if (paneQuery.get("pane") === "side") {
     document.documentElement.dataset.pane = "side";
     const slot = Number(paneQuery.get("slot"));
+    // 4 即 src/00-state.js 的 MAX_SPLIT_PANES：这份脚本先于主脚本跑、拿不到那个常量，改栏数时两处一起改
     document.documentElement.dataset.paneSlot = String(Number.isInteger(slot) && slot >= 0 && slot < 4 ? slot : 0);
   }
   try {

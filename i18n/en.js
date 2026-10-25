@@ -1616,6 +1616,10 @@ var YAN_EN = {
   "关掉右栏会中断它，已写的部分都在。": "Closing the right pane will interrupt it. What has been written so far is kept.",
   "右栏最多四栏，先收起一栏再开": "Up to four right panes; close one to open another",
   已满四栏: "All four panes are open",
+  别处占着: "Used by other tabs",
+  "这个浏览器里别的标签页、窗口也开着言，连接不够再开一栏；先关掉几处再开":
+    "Other tabs or windows in this browser are also running Yan, so there are not enough connections for another pane. Close some first",
+  "别的标签页、窗口也开着言，这回只接着开了 {0} 栏": "Other tabs or windows are also running Yan, so only {0} panes were restored",
   "窗口太窄，右栏开不了": "The window is too narrow to open a right pane",
   仍要关掉: "Close anyway"
 };

@@ -90,12 +90,21 @@ module.exports = function createBus({ dispatch }) {
     res.write(": open\n\n");
     const entry = { res, jobs: new Map(), agent };
     pages.set(page, entry);
+    announcePages(entry.agent);
     // 本机连接一般不会断；隔一阵写一行注释，中途有东西把连接掐了也能尽快发现
     const beat = setInterval(() => res.write(": beat\n\n"), 30000);
     res.on("close", () => {
       clearInterval(beat);
       if (pages.get(page) === entry) closePage(page);
     });
+  }
+  // 同一个浏览器里言开着几处页面（主页面、各栏、别的标签页、别的窗口）：每处常占一条事件流，
+  // 浏览器对同一 host:port 只给六条 HTTP/1.1 连接，是整个浏览器共用的。按 User-Agent 归作同一个浏览器
+  // （同款浏览器的两份配置会被算在一起，只会多算、不会少算）；有页开合就告诉同一浏览器里的每一页，右栏据此判还能不能再开一栏
+  function announcePages(agent) {
+    const same = [...pages.values()].filter(entry => entry.agent === agent);
+    const line = `event: pages\ndata: ${JSON.stringify({ n: same.length })}\n\n`;
+    for (const entry of same) if (!entry.res.writableEnded) entry.res.write(line);
   }
   function closePage(page) {
     const entry = pages.get(page);
@@ -104,6 +113,7 @@ module.exports = function createBus({ dispatch }) {
     for (const job of entry.jobs.values()) job.destroy();
     entry.jobs.clear();
     if (!entry.res.writableEnded) entry.res.end();
+    announcePages(entry.agent);
   }
 
   async function send(req, res) {

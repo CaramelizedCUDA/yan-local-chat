@@ -48,7 +48,9 @@ async function awaitBridge() {
 let busSource = null,
   busBase = "",
   busOpen = false,
-  busTried = false;
+  busTried = false,
+  // 桥接报来的：这个浏览器里言一共开着几处页面（连这一页在内，见 server/bus.js 的 announcePages）；0 是还没报
+  busPages = 0;
 const busJobs = new Map(),
   busWaiters = [];
 function busConnect() {
@@ -77,6 +79,10 @@ function busConnect() {
     for (const job of [...busJobs.values()]) job.fail(new TypeError("Failed to fetch"));
     settle(false);
   };
+  busSource.addEventListener("pages", event => {
+    const n = Number(JSON.parse(/** @type {MessageEvent} */ (event).data).n);
+    busPages = Number.isInteger(n) && n > 0 ? n : 0;
+  });
   busSource.onmessage = event => {
     const message = JSON.parse(event.data);
     busJobs.get(message.id)?.[message.t](message);
