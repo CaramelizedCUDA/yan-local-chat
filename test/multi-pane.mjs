@@ -42,6 +42,9 @@ try {
   );
   await send("Page.navigate", { url: PAGE });
   await waitFor(`typeof __yanSplit === "object" && document.querySelector("#messages")?.textContent.includes("mp-0的答")`, 20000);
+  // 上一个用例收尾的页面可能还占着事件流：先等桥接只剩本页，再开四栏
+  await waitFor(`__yanSplit.state().busPages === 1`, 45000).catch(() => {});
+  await sleep(1200);
 
   // 1. 开四栏：主页面 mp-0 + 四栏 mp-1..mp-4 = 五处同源页面
   for (const id of ["mp-1", "mp-2", "mp-3", "mp-4"]) {

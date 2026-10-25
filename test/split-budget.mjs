@@ -49,12 +49,25 @@ try {
   );
   await send("Page.navigate", { url: PAGE });
   await waitFor(`typeof __yanSplit === "object" && document.querySelector("#messages")?.textContent.includes("sb-0的答")`, 20000);
+  // 上一个用例收尾的页面可能还占着事件流：先等桥接只剩本页，再开另一个标签页
+  await waitFor(`${paneState}.busPages === 1`, 45000).catch(() => {});
+  await sleep(1200);
 
   // 1. 另开一个标签页的言：这个浏览器里言占了两处
   const tab = await (await fetch(`${DEBUG}/json/new?${encodeURIComponent(PAGE)}`, { method: "PUT" })).json();
   otherTab = tab.id;
   // 上一个用例收尾的页面，浏览器要过一会儿才真放开它们的事件流（桥接的心跳写失败时才认出来）：等到只剩这两处
-  await waitFor(`${paneState}.busPages === 2`, 45000);
+  try {
+    await waitFor(`${paneState}.busPages === 2`, 45000);
+  } catch (error) {
+    const diag = await evalJs(`(() => ({ busPages: __yanSplit.state().busPages, panes: __yanSplit.state().panes.map(p => p.id) }))()`).catch(() => null);
+    const pages = await fetch(`${DEBUG}/json`)
+      .then(r => r.json())
+      .then(list => list.filter(t => t.type === "page").map(t => ({ id: t.id, url: t.url, title: t.title })))
+      .catch(() => null);
+    console.log("  [diag]", JSON.stringify({ diag, pages, otherTab }));
+    throw error;
+  }
   // 计数还要稳一下：上一页可能刚好在这一刻重连，数会短暂又变成三；这时不做右栏预算的测试
   await sleep(1500);
   const pageCount = await evalJs(`${paneState}.busPages`);
