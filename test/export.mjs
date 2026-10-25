@@ -48,8 +48,11 @@ await fetch(PAGE + "api/chats/save", {
 });
 const { send, evalJs, waitFor, close } = await connect();
 await send("Page.navigate", { url: PAGE });
-await waitFor(`!!document.querySelector('[data-conversation="export-probe"]')`, 10000);
-await evalJs(`document.querySelector('[data-conversation="export-probe"] .history-open').click(); true`);
+// 侧栏可能先于事件绑定画出来（开页从磁盘换进配置时），早点的那一下会落空：点到它真开了为止
+await waitFor(
+  `(document.querySelector('[data-conversation="export-probe"] .history-open')?.click(), !!document.querySelector('[data-conversation="export-probe"].active'))`,
+  10000
+);
 await waitFor(`document.querySelectorAll('.html-app[data-app-state="ready"]').length === 3`, 20000);
 await evalJs(
   `document.querySelector('[data-conversation="export-probe"] [data-history-action="menu"]').click(); document.querySelector('.chip-pop [data-menu="export"]').click(); true`
