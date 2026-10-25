@@ -286,6 +286,8 @@ let pendingProfileId = "";
 let pendingQuote = null;
 // 这个页面的名号：总线认它回话（01-bridge.js），几个页面同开时租约认它是谁在作答（01-store/40-leases.js）
 const PAGE_ID = uid();
+// 这一页是嵌在主页面右侧的右栏（并排的第二段对话，见 27-split.js）：只开 ?c= 那一段，不接游目，不记停在哪儿
+const PANE = new URLSearchParams(location.search).get("pane") === "side";
 let suppressViz = false;
 let followBottom = true,
   autoScrolling = false;

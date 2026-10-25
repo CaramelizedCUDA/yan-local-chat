@@ -10,6 +10,13 @@ function openHistoryMenu(id, anchor) {
   openMenu(
     anchor,
     [
+      ...(PANE || isMobile()
+        ? []
+        : [
+            splitHolds(id)
+              ? { id: "split", label: t("收起右栏"), run: () => void closeSplit() }
+              : { id: "split", label: t("在右栏打开"), note: t("并排看"), run: () => void openSplit(id) }
+          ]),
       { id: "pin", label: c.pinned ? t("取消置顶") : t("置顶"), run: () => togglePin(id) },
       { id: "rename", label: t("改名"), run: () => startRename(id) },
       {
@@ -47,6 +54,9 @@ function newChat() {
   if (isMobile()) toggleSidebar(true);
 }
 function openConversation(id) {
+  // 右栏里要换对话的交回主页面开；开在右栏的那段，左边不再开一份，光标送过去
+  if (PANE && id !== currentId && splitHandOff(id)) return;
+  if (splitHolds(id)) return focusSplit();
   if (id !== currentId) {
     closeSidePanel();
     persistDraft();

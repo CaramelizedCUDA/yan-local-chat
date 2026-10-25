@@ -65,6 +65,7 @@ async function boot() {
   toggleSidebar(isMobile() || localStorage.getItem("yan-sidebar") === "collapsed");
   delete document.documentElement.dataset.sidebar;
   restorePlace();
+  restoreSplit();
   render();
   // 低频巡检：哪段改了没标到也兜得住——前台轮着巡，页面藏起来时整份巡一趟（手机切走常常就不回来了）
   setInterval(() => {
@@ -131,6 +132,8 @@ function bindEvents() {
   bindAttachmentEvents();
   bindStage();
   bindStageInk();
+  bindSplit();
+  bindPane();
   // 输入法组字中的按键（选词的 Enter、取消组字的 Esc）归输入法：在最外层先拦下，各处的快捷键都不必各自判一回
   window.addEventListener(
     "keydown",
@@ -191,7 +194,8 @@ function toggleSidebar(force) {
   const sidebar = $("#sidebar"),
     collapsed = force ?? !sidebar.classList.contains("collapsed");
   sidebar.classList.toggle("collapsed", collapsed);
-  if (!isMobile())
+  // 右栏的侧栏不露面，开合也不记，免得改了主页面的
+  if (!isMobile() && !PANE)
     try {
       localStorage.setItem("yan-sidebar", collapsed ? "collapsed" : "open");
     } catch {}

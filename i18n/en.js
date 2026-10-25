@@ -1597,6 +1597,19 @@ var YAN_EN = {
     "Use the browser to [a task on the web, e.g. compare prices across a few sites and put them in a table, enter this list into an admin panel]. Check with me whenever a judgment call comes up.",
   原型演示: "Build a prototype",
   "在这个目录里从零做一个（一个小作品，比如番茄钟、记账本、贪吃蛇），一个网页就行，做好映射到浏览器里，检查无误后向我汇报。":
-    "Build [a small project, e.g. a pomodoro timer, an expense tracker, snake] from scratch in this folder as a single web page. Open it in the browser, check it works, then report back."
+    "Build [a small project, e.g. a pomodoro timer, an expense tracker, snake] from scratch in this folder as a single web page. Open it in the browser, check it works, then report back.",
+  // ---- 右栏：两段对话并排 ----
+  右栏: "Right pane",
+  右栏的对话: "Right pane chat",
+  在右栏打开: "Open in right pane",
+  并排看: "Side by side",
+  收起右栏: "Close right pane",
+  开在右栏: "Open in the right pane",
+  右: "R",
+  这段对话正开在左边: "This chat is already open on the left",
+  "这段对话开在右栏，窗口放宽些即可看到": "This chat is open in the right pane. Widen the window to see it",
+  右栏的对话还在作答: "The right pane chat is still answering",
+  "关掉右栏会中断它，已写的部分都在。": "Closing the right pane will interrupt it. What has been written so far is kept.",
+  仍要关掉: "Close anyway"
 };
 if (typeof module === "object") module.exports = YAN_EN;

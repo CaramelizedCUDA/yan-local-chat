@@ -11,6 +11,8 @@ if (location.protocol === "file:") {
 (() => {
   // 头一回画好之前不露 index.html 里写死的初稿（见 styles/00-base.css 与 src/99-start.js）
   if (location.protocol !== "file:") document.documentElement.dataset.booting = "";
+  // 右栏（并排的第二段对话）：先挂上，侧栏与游目在样式里就不露面（见 src/27-split.js）
+  if (new URLSearchParams(location.search).get("pane") === "side") document.documentElement.dataset.pane = "side";
   try {
     const settings = JSON.parse(localStorage.getItem("yan-chat-v1") || "{}").settings || {},
       html = document.documentElement;

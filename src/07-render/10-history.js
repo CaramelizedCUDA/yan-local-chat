@@ -71,7 +71,7 @@ function renderHistory() {
           : c.pinned && groupOf(c)
             ? `<span class="history-state pinned" title="${t(`组内置顶`)}" aria-label="${t(`组内置顶`)}"></span>`
             : "";
-    return `<div class="history-item ${c.id === currentId ? "active" : ""} ${running ? "is-running" : ""} ${c.unread ? "has-unread" : ""} ${isWork(c) ? "is-work" : ""}" data-conversation="${escapeHtml(c.id)}" draggable="true"><button class="history-open" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</button>${state}<span class="history-tools"><button class="history-tool history-more" data-history-action="menu" title="${t(`更多`)}" aria-label="${t(`更多`)}" aria-haspopup="menu">⋯</button></span></div>`;
+    return `<div class="history-item ${c.id === currentId ? "active" : ""} ${running ? "is-running" : ""} ${c.unread ? "has-unread" : ""} ${isWork(c) ? "is-work" : ""} ${splitHolds(c.id) ? "in-split" : ""}" data-conversation="${escapeHtml(c.id)}" draggable="true"><button class="history-open" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</button>${splitHolds(c.id) ? `<span class="split-mark" title="${t(`开在右栏`)}">${t(`右`)}</span>` : ""}${state}<span class="history-tools"><button class="history-tool history-more" data-history-action="menu" title="${t(`更多`)}" aria-label="${t(`更多`)}" aria-haspopup="menu">⋯</button></span></div>`;
   };
   const repoHtml = node => {
     const name = node.dir.split(/[\\/]/).filter(Boolean).pop() || node.dir || t("未定目录"),
