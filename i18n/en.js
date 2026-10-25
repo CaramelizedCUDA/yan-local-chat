@@ -1132,6 +1132,7 @@ var YAN_EN = {
   参数不合要求: "Invalid arguments",
   "工具执行失败：{0}": "Tool failed: {0}",
   "复用 · {0}": "Reused · {0}",
+  复用: "Reused",
   请先在上方作答: "Answer above first",
   检索: "Search",
   "检索「{0}」→ {1}": 'Search "{0}" → {1}',

@@ -159,7 +159,7 @@ async function runTool(step, ctx) {
     const stopped = (await keepHook(step, args, ctx)) || (await reviewHook(step, args, ctx));
     if (stopped) return stopped;
     const outcome = await tool.run(step, args, ctx);
-    return step.reviewed?.ok ? { ...outcome, display: `${outcome.display} · 审准` } : outcome;
+    return step.reviewed?.ok ? { ...outcome, display: [outcome.display, "审准"].filter(Boolean).join(" · ") } : outcome;
   } catch (error) {
     if (error.name === "AbortError") throw error;
     const message = String(error.message || error);
@@ -219,7 +219,7 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
       step.cached = true;
       outcome = structuredClone(cached.outcome);
       outcome.content = t`（与本答先前一次同样的调用，结果照搬）\n${outcome.content}`;
-      outcome.display = `复用 · ${outcome.display}`;
+      outcome.display = ["复用", outcome.display].filter(Boolean).join(" · ");
     } else {
       outcome = await runTool(step, ctx);
       // 动过外头的（写了文件、跑了指令、调了接口）：先前查到的可能已经不是那样，一概作废
