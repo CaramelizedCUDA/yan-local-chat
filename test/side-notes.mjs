@@ -305,7 +305,7 @@ await sleep(400);
 check(
   "阔 fills the whole page",
   await evalJs(
-    `document.querySelector("#sidePanel").classList.contains("wide") && Math.round(document.querySelector("#sidePanel").getBoundingClientRect().width) === innerWidth && document.querySelector("#sideExpand").textContent === "窄"`
+    `document.querySelector("#sidePanel").classList.contains("wide") && Math.round(document.querySelector("#sidePanel").getBoundingClientRect().width) === innerWidth && document.querySelector("#sideExpand").getAttribute("aria-pressed") === "true"`
   )
 );
 await shot("side.png");
