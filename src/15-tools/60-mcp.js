@@ -244,9 +244,15 @@ async function runMcpTool(step, server, tool, args, ctx) {
     step.skipped = true;
     return { ok: false, content: prompt("assistant.declined"), display: "" };
   }
-  // 审而后行里的写操作：开了审查就交它判（见 03-review.js）
-  if (!mcpReadOnly(spec) && !(config.autoApprove || []).includes(tool) && reviewOn(ctx.conversation)) {
-    const denied = await reviewGate(step, args, ctx, `调外部服务 ${server} 的写操作 ${tool}`);
+  // 审而后行里的写操作：开了审查就交它判（见 03-review.js）；游目的浏览器只审可能把东西带出去的那几样
+  if (reviewOn(ctx.conversation)) {
+    const why =
+      server === STAGE_SERVER
+        ? stageReviewWhy(tool, args, ctx.conversation)
+        : !mcpReadOnly(spec) && !(config.autoApprove || []).includes(tool)
+          ? `调外部服务 ${server} 的写操作 ${tool}`
+          : "";
+    const denied = why && (await reviewGate(step, args, ctx, why));
     if (denied) return denied;
   }
   const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal).finally(

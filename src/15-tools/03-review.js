@@ -1,7 +1,7 @@
 // 言 · 审查：审而后行里，规则标疑的那一步交「专司」里另配的审查模型照用户的原话再判（学 Claude Code 的 auto 模式）。
 // 没开审查、或档位不是审而后行，一切照旧（规则拦的回绝，没拦的照做）；审查出错也退回这样，最坏不比没开差。
 // 标疑的几类：指令被宽的沙箱或审查规则拦下的；往外发、网址里带着一长串用户没给过的参数，或带着内容 POST 出去的；
-// 写长期记忆、往技能目录里写的（会进往后每段对话的上下文）；调 MCP 服务的写操作（见 60-mcp.js）。
+// 写长期记忆、往技能目录里写的（会进往后每段对话的上下文）；调 MCP 服务的写操作（见 60-mcp.js）——游目的浏览器另按 stageReviewWhy 收窄。
 // 审查只看用户的原话、意里的目标与守、将要做的那一步；准了照做（指令带 reviewed 交桥接，规则那一道不再拦），
 // 驳了原因作工具结果回给主模型、叫它换条路，不向用户请示。一答里连驳三回、或共驳二十回，叫它停手向用户说明
 const REVIEW_STREAK = 3,
@@ -45,15 +45,40 @@ function egressWhy(name, args, conversation) {
   } catch {
     return "";
   }
-  const said = conversation.messages
-    .filter(m => m.role === "user")
-    .map(m => String(m.content || ""))
-    .join("\n");
+  const said = userSaid(conversation);
   if (said.includes(url.href)) return "";
   const seen = conversation.messages.some(m => allSteps(m).some(s => s.results?.some(r => r.url === url.href) || (s.url === url.href && s.status === "done")));
   if (seen) return "";
   const long = [...url.searchParams.values(), url.hash.slice(1)].map(decodeURIComponentSafe).find(v => /[A-Za-z0-9_\-+/=.%]{32,}/.test(v) && !said.includes(v));
   return long ? "网址里带着一长串用户没给过的参数" : "";
+}
+/** @param {Conversation} conversation */
+function userSaid(conversation) {
+  return conversation.messages
+    .filter(m => m.role === "user")
+    .map(m => String(m.content || ""))
+    .join("\n");
+}
+// 游目的浏览器：点击、按键、翻页、等待都是在用户托付的事里走动，一概送审只是每步多等一回、审查也多半照准。
+// 只审可能把东西带出去的：跳到带长串参数的网址（与翻网页同一把尺）、往页面里填进一段用户没说过的字、上传本机文件、在页面里跑代码
+const STAGE_CODE = ["browser_evaluate", "browser_run_code_unsafe", "browser_webmcp_call"],
+  STAGE_TYPING = ["browser_type", "browser_press_sequentially"];
+/** @param {string} tool @param {Record<string, any>} args @param {Conversation} conversation */
+function stageReviewWhy(tool, args, conversation) {
+  if (tool === "browser_navigate") return egressWhy("fetch_page", args, conversation);
+  if (tool === "browser_file_upload") return "往网页上传本机文件";
+  if (STAGE_CODE.includes(tool)) return "在网页里跑代码";
+  const typed =
+    tool === "browser_fill_form"
+      ? (Array.isArray(args.fields) ? args.fields : []).map(field => field?.value)
+      : STAGE_TYPING.includes(tool)
+        ? [args.text]
+        : [];
+  // 短的（搜索词、选项）带不出什么；长的且不是用户自己说过的才审
+  const said = userSaid(conversation);
+  return typed.some(value => (text => text.length >= 20 && !said.includes(text))(String(value ?? "").trim()))
+    ? "往网页里填进一段用户没说过的字"
+    : "";
 }
 function decodeURIComponentSafe(text) {
   try {
