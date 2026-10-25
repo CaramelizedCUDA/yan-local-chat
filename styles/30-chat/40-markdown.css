@@ -154,14 +154,14 @@
   border-bottom: 1px solid var(--accent-soft);
 }
 /* 指向本地文件的链接没有 href（点击去卷宗里找同名的那件），样子上仍是一条链接 */
-.markdown a[data-file] {
+:is(.markdown, .trail-note, .sub-report) a[data-file] {
   cursor: pointer;
 }
 /* 引了这一答工具交回的画面：链接点了看图，画面就地画在正文里——与行迹里的同一张折角小纸，放大到正文里看得清 */
-.markdown a[data-open-image] {
+:is(.markdown, .trail-note, .sub-report) a[data-open-image] {
   cursor: zoom-in;
 }
-.markdown .fi.reply-shot {
+:is(.markdown, .trail-note, .sub-report) .fi.reply-shot {
   display: block;
   width: min(100%, 560px);
   height: auto;
@@ -171,14 +171,14 @@
   outline-offset: -1px;
 }
 /* 整页长截图不把正文撑成一长条：高过七成屏就从顶上取景，点开看全幅 */
-.markdown .fi.reply-shot img {
+:is(.markdown, .trail-note, .sub-report) .fi.reply-shot img {
   height: auto;
   max-height: 70vh;
   object-position: top;
   border-radius: 0;
 }
-.markdown .fi.reply-shot:hover,
-.markdown .fi.reply-shot:focus-visible {
+:is(.markdown, .trail-note, .sub-report) .fi.reply-shot:hover,
+:is(.markdown, .trail-note, .sub-report) .fi.reply-shot:focus-visible {
   outline-color: var(--ink-3);
 }
 :is(.markdown, .trail-note, .sub-report) hr {
