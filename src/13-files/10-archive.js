@@ -661,9 +661,9 @@ function bindLibraryEvents() {
     if (files.length) void addFiles(files);
   });
   // 正文里指向本地文件的链接（模型写的「下载《x.docx》」）：页面上没有那样的路。先按原路在这段对话的落脚处取，
-  // 取不到（sandbox:/ 之类、或路写错了层）再到卷宗里找同名的那件
+  // 取不到（sandbox:/ 之类、或路写错了层）再到卷宗里找同名的那件。答复后又动了手，那段话退进行迹成了 .trail-note，帮手的回报是 .sub-report，同样认
   document.addEventListener("click", async event => {
-    const link = event.target.closest(".markdown a[data-file]");
+    const link = event.target.closest(":is(.markdown, .trail-note, .sub-report) a[data-file]");
     if (!link) return;
     event.preventDefault();
     const name = link.dataset.file,
