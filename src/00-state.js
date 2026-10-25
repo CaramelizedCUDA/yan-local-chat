@@ -189,6 +189,8 @@
  * @property {string} profileId 选它时换到这个模型；空则不换
  * @property {CommandPolicy|""} policy 选它时的指令权限；空则照设置里的默认
  */
+/** @typedef {Pick<Profile, "baseUrl"|"apiKey"|"model"|"api">} Endpoint 发一次请求要的那几样：模型配置与专司里另配的一份都够 */
+/** @typedef {{ on: boolean, api: "openai"|"anthropic"|"siliconflow", baseUrl: string, apiKey: string, model: string, modelList: string[] }} Duty 专司里另配的一份（审查、生图各一）：与模型配置同形，只认接口、地址、Key、模型；on 是开没开 */
 /** @typedef {{ id: string, text: string, category?: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
 /** @typedef {{ text: string, attachments: Attachment[], quote?: Quote|null, updatedAt?: string }} Draft */
 /**
@@ -204,7 +206,9 @@
  * @property {string} presetId 新对话用的预设（上回选的）；空即本色
  * @property {{ id: string, name: string, createdAt: string, presetId: string, workdir: string }[]} groups 分组：自立的几组，对话各记 groupId；组里新起的对话用组的预设、绑组的默认目录
  * @property {string} [pendingGroupId] 从组首「＋」另起的新对话归进这一组（用过即清）
- * @property {boolean} autoTitle
+ * @property {boolean} autoTitle 自动拟题（设置 → 专司）：随对话的模型，只有开关
+ * @property {Duty} dutyReview 审查（设置 → 专司）：审而后行里规则标疑的那一步交它再判；关着即照规则回绝
+ * @property {Duty} dutyImage 生图（设置 → 专司）：配了才把生图交给模型
  * @property {string} [pendingWorkdir] 欢迎页目录签里待绑的目录
  * @property {string[]} collapsedRepos
  * @property {CommandPolicy} commandPolicyDefault 新对话默认的指令权限模式

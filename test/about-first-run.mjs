@@ -33,7 +33,7 @@ const heads = await evalJs(
 );
 check(
   "every tab has a head with icon, title and lead",
-  heads.length === 11 && heads.every(([, mark, title, lead]) => mark && title && lead),
+  heads.length === 12 && heads.every(([, mark, title, lead]) => mark && title && lead),
   JSON.stringify(heads)
 );
 await evalJs(`document.querySelector('.tab-btn[data-tab="guide"]').click(); true`);

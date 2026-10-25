@@ -265,13 +265,13 @@ async function requestChat(profile, messages, signal, overrides = {}) {
   };
   return bridgeFetch("/api/chat", JSON.stringify({ profile: profileForRequest(profile), ...parameters, ...extras }), signal);
 }
-/** @param {Profile} profile */
+/** @param {Endpoint} profile */
 function profileForRequest(profile) {
   return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, api: profileApi(profile) };
 }
 // 接口类型：设置里选的为准；旧配置没写的按地址认（anthropic.com）。桥接照它挑这一家的登记，不再自己认。
 // 硅基流动说的是 OpenAI 兼容的话，单列一档只为在设置里标出名字、填好地址
-/** @param {Profile} profile @returns {"openai"|"anthropic"|"chatgpt"|"siliconflow"} */
+/** @param {Endpoint} profile @returns {"openai"|"anthropic"|"chatgpt"|"siliconflow"} */
 function profileApi(profile) {
   const api = String(profile?.api || "").toLowerCase();
   if (api === "anthropic" || api === "chatgpt" || api === "siliconflow") return api;

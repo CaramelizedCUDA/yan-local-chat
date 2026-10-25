@@ -193,7 +193,7 @@ async function handleProfileAction(profile, action, card) {
     }
   }
 }
-/** @param {Profile} profile */
+/** @param {Endpoint} profile */
 async function fetchModelList(profile) {
   if (!String(profile.baseUrl || "").trim() && profileApi(profile) !== "chatgpt") throw Error(t("请先填写 Base URL"));
   const data = await bridge("/api/models", { profile: profileForRequest(profile) });

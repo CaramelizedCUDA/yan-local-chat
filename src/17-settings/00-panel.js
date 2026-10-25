@@ -10,6 +10,7 @@ const SETTINGS_TABS = {
   models: [modelsSettingsHtml, bindModelSettings, t("君子生非异也，善假于物也。")],
   presets: [presetsSettingsHtml, bindPresetEvents, t("画竹，必先得成竹于胸中。")],
   tools: [toolsSettingsHtml, bindToolSettings, t("工欲善其事，必先利其器。")],
+  duty: [dutySettingsHtml, bindDutySettings, t("尺有所短，寸有所长。")],
   env: [envSettingsHtml, bindEnvEvents, t("万事俱备，只欠东风。")],
   mcp: [mcpSettingsHtml, bindMcpEvents, t("他山之石，可以攻玉。")],
   skills: [skillsSettingsHtml, bindSkillSettings, t("闻道有先后，术业有专攻。")],
@@ -109,7 +110,7 @@ function generalSettingsHtml() {
       ["en", "English"]
     ],
     LANG
-  )}<div class="setting-row"><div class="setting-copy"><strong>${t(`自动拟题`)}</strong><small>${t(`由模型拟题，略耗额度`)}</small></div><div class="segmented"><button data-setting="autoTitle" data-value="true" class="${store.settings.autoTitle ? "active" : ""}">${t(`开`)}</button><button data-setting="autoTitle" data-value="false" class="${store.settings.autoTitle ? "" : "active"}">${t(`关`)}</button></div></div>${storageSettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>${t(`本机数据`)}</strong><small>${t`${store.conversations.length} 段对话 · ${libraryTotal()} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}`}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">${t(`含附件原件`)}</label><button id="exportData" class="outline-btn">${t(`导出备份`)}</button><button id="importData" class="outline-btn">${t(`导入备份`)}</button></div></div><div class="setting-row"><div class="setting-copy"><strong>${t(`清空所有对话`)}</strong><small>${t(`模型配置、个性化与卷宗将保留`)}</small></div><button id="clearAll" class="danger-btn">${t(`清空对话`)}</button></div>`;
+  )}${storageSettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>${t(`本机数据`)}</strong><small>${t`${store.conversations.length} 段对话 · ${libraryTotal()} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}`}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">${t(`含附件原件`)}</label><button id="exportData" class="outline-btn">${t(`导出备份`)}</button><button id="importData" class="outline-btn">${t(`导入备份`)}</button></div></div><div class="setting-row"><div class="setting-copy"><strong>${t(`清空所有对话`)}</strong><small>${t(`模型配置、个性化与卷宗将保留`)}</small></div><button id="clearAll" class="danger-btn">${t(`清空对话`)}</button></div>`;
 }
 // 工具：沙箱、三档指令权限、可及范围、卷宗可读、轮次上限——模型能动手的边界都在这一栏
 function toolsSettingsHtml() {
