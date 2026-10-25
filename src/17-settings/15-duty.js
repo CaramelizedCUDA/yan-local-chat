@@ -112,7 +112,7 @@ function bindDutySettings() {
           if (button.dataset.dutyAction === "models") {
             status().textContent = t("取列表中…");
             try {
-              const models = await fetchModelList(d);
+              const models = await fetchModelList(d, id === "image" ? "image" : undefined);
               if (!models.length) throw Error(t("接口未返回模型列表，请手动输入模型 ID"));
               d.modelList = models;
               if (!models.includes(d.model)) d.model = models[0];

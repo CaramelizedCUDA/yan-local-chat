@@ -510,6 +510,7 @@ var YAN_EN = {
   拟题: "Titles",
   审查: "Review",
   生图: "Images",
+  已画好: "Done",
   已配: "Set up",
   未配: "Not set up",
   未填完: "Incomplete",

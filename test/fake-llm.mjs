@@ -21,10 +21,13 @@ const delta = (d, extra = {}) => ({
   ...extra
 });
 // 长活（LONGSUB 帮手、LONGMAIN 主答）：每轮读一个大文件，请求超过 limit 字就回「放不下」；轮数记在这里，压掉的往来不影响它
+const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 const long = { rounds: {}, folds: {}, overflows: {}, limit: { LONGSUB: 60000, LONGMAIN: 200000 } };
 let calls = 0,
   // 审查员收到的每一问：是不是只要一字的那一步、审的是哪件工具（GET /review-asks 取走并清空）
   reviewAsks = [],
+  // 生图接口收到的每一问（GET /image-asks 取走并清空）
+  imageAsks = [],
   flaky503 = 0,
   titleFailed = false,
   slowTitleFailed = false;
@@ -164,6 +167,17 @@ http
       reviewAsks = [];
       return;
     }
+    if (req.url.endsWith("/image-asks") && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(imageAsks));
+      imageAsks = [];
+      return;
+    }
+    // 生图交回的网址：一像素的 PNG，类型故意报成 octet-stream（桥接按头几个字节认）
+    if (req.url.endsWith("/fake-image") && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/octet-stream" });
+      return res.end(Buffer.from(PIXEL, "base64"));
+    }
     // 用例读一下到目前为止收到过几次请求（探档位只探一次之类的断言）
     if (req.url.endsWith("/calls") && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "text/plain" });
@@ -175,6 +189,12 @@ http
       const payload = JSON.parse(body || "{}");
       calls += 1;
       if (req.url.endsWith("/v1/messages")) return anthropicMessages(payload, res);
+      // 生图（专司里的生图，见 server/model/image.js）：照硅基流动的样子交回一个网址
+      if (req.url.endsWith("/images/generations")) {
+        imageAsks.push(payload);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ images: [{ url: "http://127.0.0.1:8798/fake-image" }], seed: 1 }));
+      }
       // 这一问总是分段送来（首段标着缓存点、账本另起一段）：只有文字的并回一串，各分支照旧当字符串读；带图带件的仍是分段
       const raw = payload.messages || [],
         msgs = raw.map(m =>
@@ -191,6 +211,25 @@ http
         reviewAsks.push({ quick, tool: text.match(/［将要做的］\n(\w+)/)?.[1] || "" });
         const answer = text.includes("Set-Alias") ? "准" : quick ? "疑" : "驳，用户没让把这串参数发出去";
         return sse(res, [delta({ content: answer }), delta({}, { usage: { total_tokens: 3 } })]);
+      }
+      // IMAGE-DUTY：画一幅，下一轮报回工具结果、请求里附了几幅图，正文引那幅图的文件名
+      {
+        const asked = msgs.findLastIndex(m => m.role === "user" && typeof m.content === "string" && m.content.includes("IMAGE-DUTY"));
+        if (asked >= 0) {
+          const results = msgs.slice(asked + 1).filter(m => m.role === "tool");
+          if (!results.length)
+            return sse(res, [
+              delta({ tool_calls: [{ index: 0, id: "call_image_0", type: "function", function: { name: "generate_image", arguments: JSON.stringify({ prompt: "一只墨色的猫", size: "1024x1024", name: "墨猫" }) } }] }),
+              delta({}, { usage: { total_tokens: 5 } })
+            ]);
+          const seen = msgs.slice(asked + 1).flatMap(m => (Array.isArray(m.content) ? m.content : [])).filter(part => part.type === "image_url").length;
+          return sse(res, [
+            delta({ content: `IMAGE-DUTY done｜${String(results[0].content).replace(/\s+/g, " ").slice(0, 160)}｜看到图 ${seen} 幅
+
+![墨猫](墨猫.png)` }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        }
       }
       // REVIEW-DUTY：审而后行里先发一条宽沙箱会拦的指令（定义别名），再翻一个网址里带长串参数的网页；收尾把两步的结果报回去
       if (typeof lastUser === "string" && lastUser.includes("REVIEW-DUTY")) {

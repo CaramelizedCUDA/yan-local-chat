@@ -53,6 +53,7 @@ const MIN_TOOL_STATUS_MS = 240;
 const TOOL_GROUPS = {
   web: t("联网"),
   compute: t("计算"),
+  image: t("生图"),
   work: t("指令与文件"),
   docs: t("翻文档"),
   ask: t("请示"),

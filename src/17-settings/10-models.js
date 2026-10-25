@@ -194,9 +194,10 @@ async function handleProfileAction(profile, action, card) {
   }
 }
 /** @param {Endpoint} profile */
-async function fetchModelList(profile) {
+/** @param {"image"} [kind] 列画图的（专司里的生图；硅基流动据此筛） */
+async function fetchModelList(profile, kind) {
   if (!String(profile.baseUrl || "").trim() && profileApi(profile) !== "chatgpt") throw Error(t("请先填写 Base URL"));
-  const data = await bridge("/api/models", { profile: profileForRequest(profile) });
+  const data = await bridge("/api/models", { profile: profileForRequest(profile), ...(kind ? { kind } : {}) });
   return [...new Set(data.models || [])].sort();
 }
 // 模型一栏：添一个模型、各张模型卡里的输入与按钮

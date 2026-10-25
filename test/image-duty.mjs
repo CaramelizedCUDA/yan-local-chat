@@ -1,0 +1,56 @@
+// 生图（设置 → 专司）：配好了才把 generate_image 交给模型；画好的图收进卷宗、挂在步骤上、随工具结果附给模型，正文引文件名就地画出；
+// 硅基流动交回的是网址，桥接取成 data: 地址。没配生图时工具不交出，生图接口一问也收不到
+import { existsSync } from "node:fs";
+import { connect, check, sleep, PAGE, ARCHIVE } from "./lib.mjs";
+
+const asks = async () => (await fetch("http://127.0.0.1:8798/image-asks")).json();
+const { send, evalJs, waitFor, close } = await connect();
+const duty = { on: true, api: "siliconflow", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", model: "Kwai-Kolors/Kolors", modelList: [] };
+await send("Page.navigate", { url: PAGE + "preview.html" });
+await sleep(500);
+await evalJs(
+  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 6, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false, dutyImage: ${JSON.stringify(duty)} }, profiles: [{ id: "p1", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", quota: "", usedTokens: 0 }], conversations: [], memory: { enabled: true, items: [] }, drafts: {} })); true`
+);
+await send("Page.navigate", { url: PAGE });
+await sleep(900);
+await asks();
+
+// 等本次新开的那篇对话答完（看状态，不看页面上残留的上一段）
+const ask = async () => {
+  const before = await evalJs(`__yanState().conversations.length`);
+  await evalJs(
+    `document.querySelector("#welcomeInput").value = "IMAGE-DUTY"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
+  );
+  await waitFor(
+    `__yanState().conversations.length > ${before} && (m => m?.role === "assistant" && m.status === "complete")(__yanState().conversations[0].messages.at(-1))`,
+    30000
+  );
+  return evalJs(
+    `(m => ({ steps: (m.steps || []).map(s => ({ name: s.name, status: s.status, title: s.title, files: (s.attachments || []).map(a => a.name) })), reply: m.content, deliverables: (m.deliverables || []).map(d => d.name) }))(__yanState().conversations[0].messages.at(-1))`
+  );
+};
+
+let state = await ask();
+check(
+  "配了生图：画好收进卷宗，挂在步骤上",
+  state.steps[0]?.name === "generate_image" && state.steps[0].status === "done" && state.steps[0].files[0] === "墨猫.png" && existsSync(`${ARCHIVE}/墨猫.png`),
+  JSON.stringify(state.steps)
+);
+const log = await asks();
+check(
+  "硅基流动的参数名：image_size、batch_size",
+  log.length === 1 && log[0].model === "Kwai-Kolors/Kolors" && log[0].image_size === "1024x1024" && log[0].batch_size === 1 && log[0].prompt === "一只墨色的猫",
+  JSON.stringify(log)
+);
+check("工具结果写明存处，图随结果附给模型", /存为 墨猫\.png/.test(state.reply) && /看到图 1 幅/.test(state.reply), state.reply.slice(0, 300));
+check("答末成品条列出这幅", state.deliverables.includes("墨猫.png"), JSON.stringify(state.deliverables));
+await waitFor(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`, 5000).catch(() => {});
+check("正文引文件名就地画出", await evalJs(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`));
+
+// 没配生图：工具不交出，接口一问也没收到
+await evalJs(`__yanState().settings.dutyImage.on = false; document.querySelector("#newChat").click(); true`);
+await sleep(400);
+state = await ask();
+check("没配生图：工具不交出", state.steps[0]?.status !== "done" && !existsSync(`${ARCHIVE}/墨猫 (2).png`), JSON.stringify(state.steps));
+check("没配生图：生图接口一问也没收到", (await asks()).length === 0);
+await close();

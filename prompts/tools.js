@@ -59,6 +59,21 @@
     }
   },
 
+  // 生图：专司里配了生图的模型才给
+  generate_image: {
+    description: "按描述画一幅图，存进工作目录根。描述写画面本身：主体、构图、风格、光色；图中要有字的写明原字。",
+    brief: "按描述画一幅图，存进卷宗。描述写画面本身：主体、构图、风格、光色；图中要有字的写明原字。",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "画面描述" },
+        size: { type: "string", description: "宽x高，如 1024x1024；省略由接口定" },
+        name: { type: "string", description: "文件名（不带扩展名），省略自动取" }
+      },
+      required: ["prompt"]
+    }
+  },
+
   // 计划：行里给用户看的任务清单，每次给完整清单；只给主模型
   update_plan: {
     description:
