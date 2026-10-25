@@ -43,7 +43,7 @@ async function awaitBridge() {
 // 总线：长请求（模型流、工具、指令）不再各占一条浏览器连接，响应都从这一页的一条事件流回来（桥接那头见 server/bus.js）。
 // 浏览器对同一个 host:port 只开 6 条连接，几段对话连同帮手一起跑，长请求一多，存配置、建目录这类短请求就排队排到超时。
 // bridgeFetch 与 fetch 一样交回 Response：接的人照旧读 ok、status、headers、body，不知道底下走的是总线。
-// 总线没接通（连不上事件流的环境、桥接刚重启）就直接 fetch，功能一样，只是回到一请求一连接
+// 总线没接通（连不上事件流的环境、桥接刚重启、同一浏览器已开满五处言）就直接 fetch，功能一样，只是回到一请求一连接
 /** @type {EventSource|null} */
 let busSource = null,
   busBase = "",

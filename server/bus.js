@@ -68,7 +68,7 @@ class BusResponse extends Writable {
 
 /** @param {{ dispatch: (req: any, res: any) => Promise<void>|void }} options */
 module.exports = function createBus({ dispatch }) {
-  // page → { res: 事件流, jobs: Map<id, BusResponse> }
+  // page → { res: 事件流, jobs: Map<id, BusResponse>, agent: 那一页的 User-Agent }
   const pages = new Map();
 
   function openStream(req, res) {
@@ -76,13 +76,19 @@ module.exports = function createBus({ dispatch }) {
     if (!/^[\w-]{8,80}$/.test(page)) return sendJson(res, 400, { error: "缺少页面标识" });
     // 同一页重连：旧流上的请求随旧流作废
     closePage(page);
+    // 同一浏览器里已有五页各占一条事件流：这一页再占，六条连接就全满了，各页的普通请求都排着不动。
+    // 不接，页面那头 EventSource 遇非 200 即关、不再重连，退回一请求一连接（见 src/01-bridge.js 的 bridgeFetch）。
+    // 按 User-Agent 认同一浏览器：同款浏览器的两份配置会算在一起，只会早降、不会漏
+    const agent = String(req.headers["user-agent"] || "");
+    if ([...pages.values()].filter(entry => entry.agent === agent).length >= 5)
+      return sendJson(res, 503, { error: "此浏览器已开五处言，这一页不走总线" });
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       "X-Accel-Buffering": "no"
     });
     res.write(": open\n\n");
-    const entry = { res, jobs: new Map() };
+    const entry = { res, jobs: new Map(), agent };
     pages.set(page, entry);
     // 本机连接一般不会断；隔一阵写一行注释，中途有东西把连接掐了也能尽快发现
     const beat = setInterval(() => res.write(": beat\n\n"), 30000);
