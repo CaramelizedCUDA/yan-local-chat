@@ -55,12 +55,27 @@ try {
   otherTab = tab.id;
   // 上一个用例收尾的页面，浏览器要过一会儿才真放开它们的事件流（桥接的心跳写失败时才认出来）：等到只剩这两处
   await waitFor(`${paneState}.busPages === 2`, 45000);
-  check("the bridge counts two Yan pages in this browser", (await evalJs(`${paneState}.busPages`)) === 2);
+  // 计数还要稳一下：上一页可能刚好在这一刻重连，数会短暂又变成三；这时不做右栏预算的测试
+  await sleep(1500);
+  const pageCount = await evalJs(`${paneState}.busPages`);
+  check("the bridge counts two Yan pages in this browser", pageCount === 2);
+  if (pageCount !== 2) throw Error("the browser did not settle at two Yan pages");
 
   // 2. 主页面 + 三栏 + 别的标签页 = 五处：第四栏该拒
   for (const id of ["sb-1", "sb-2", "sb-3"]) {
     check(`add ${id} with another tab open`, (await evalJs(`__yanSplit.add(${JSON.stringify(id)})`)) === true);
-    await paneReady(id);
+    try {
+      await paneReady(id);
+    } catch (error) {
+      const diag = await evalJs(
+        `(() => { const s = ${paneState}; const frames = [...document.querySelectorAll(".split-frame")].map(f => { const w = f.contentWindow; return { slot: f.closest(".split-panel")?.dataset.slot, src: f.getAttribute("src"), paneId: w?.__yanPane?.id?.(), bus: w?.__yanPane?.bus?.(), state: typeof w?.__yanState === "function", convs: w?.__yanState?.().conversations?.length, msgs: w?.document?.querySelectorAll("#messages .message").length, ready: w?.document?.readyState }; }); return { busPages: s.busPages, room: s.room, panes: s.panes.map(x => x.id), ids: __yanState().conversations.map(c => c.id), last: __yanState().settings.lastConversationId, active: document.querySelector('#history .history-item.active')?.dataset.conversation || "", saved: localStorage.getItem("yan-split-v2"), frames }; })()`
+      ).catch(() => null);
+      if (diag) {
+        console.log("  [diag]", JSON.stringify(diag));
+        for (const frame of diag.frames || []) console.log("  [frame]", JSON.stringify(frame));
+      }
+      throw error;
+    }
   }
   await sleep(800);
   check("a fourth pane is refused while another tab holds a connection", (await evalJs(`__yanSplit.add("sb-4")`)) === false);
