@@ -1363,6 +1363,8 @@ var YAN_EN = {
   测试: "Test",
   守: "Keep",
   守拦下: "Blocked by keep",
+  审准: "review OK",
+  审查未准: "Review declined",
   "动手前先跑测试，不过就不做": "Runs its test before acting; blocks the step if it fails",
   "动过手的那一答，收尾前重查": "Rechecked before wrapping up any answer that changed things",
   "动手前请你批，准了才做": "Asks you before acting; the step runs only if you allow it",

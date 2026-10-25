@@ -153,8 +153,12 @@ async function runTool(step, ctx) {
       display: "参数不合要求"
     };
   try {
-    // 意里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）
-    return (await keepHook(step, args, ctx)) || (await tool.run(step, args, ctx));
+    // 意里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）；
+    // 审而后行里规则标疑的，再交专司的审查模型判（见 03-review.js）
+    const stopped = (await keepHook(step, args, ctx)) || (await reviewHook(step, args, ctx));
+    if (stopped) return stopped;
+    const outcome = await tool.run(step, args, ctx);
+    return step.reviewed?.ok ? { ...outcome, display: `${outcome.display} · 审准` } : outcome;
   } catch (error) {
     if (error.name === "AbortError") throw error;
     const message = String(error.message || error);

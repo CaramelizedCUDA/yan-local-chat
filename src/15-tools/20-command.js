@@ -44,6 +44,7 @@ defineTool({
         workdir,
         sandbox: sandbox && !escalated,
         permission: policy,
+        reviewed: step.reviewed?.ok === true,
         command: step.title,
         timeout: Number(args.timeout) || 120,
         background,

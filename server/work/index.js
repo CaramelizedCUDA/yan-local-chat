@@ -124,12 +124,14 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
       if (!fs.existsSync(workdir)) throw Error("工作目录已不存在，请重新发送以重建，或另起对话");
       const guarded = sandbox.screenStoreCommand(command, storeRoot(), workdir);
       if (guarded) throw Error(guarded);
-      const boxed = body.sandbox === true;
-      if (boxed) {
+      const boxed = body.sandbox === true,
+        // 审而后行里规则拦下、审查模型照用户的原话准了的这一条：不再过宽的沙箱与审查规则（存储根那一道仍守）
+        reviewed = body.permission === "review" && body.reviewed === true;
+      if (boxed && !reviewed) {
         const why = looseTier(body) ? sandbox.screenLoose(command) : sandbox.screenCommand(command, workdir);
         if (why) throw Error(why);
       }
-      if (body.permission === "review") {
+      if (body.permission === "review" && !reviewed) {
         const why = sandbox.screenAutoReview(command);
         if (why) throw Error(why);
       }
@@ -193,10 +195,14 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
       sendJson(res, 400, { error: failed(error) });
     }
   }
-  // 问而后行：发指令前先问一声严的沙箱会不会拦——会拦的照样请示，请示条上写明原因，用户批了这一条就出沙箱跑
+  // 发指令前先问一声会不会拦。问而后行（没说档位的也算）问严的沙箱——会拦的照样请示，用户批了这一条就出沙箱跑；
+  // 审而后行问宽的沙箱与审查规则——会拦的交专司里的审查模型再判（见 src/15-tools/03-review.js），准了即带 reviewed 来跑
   const handleWorkScreen = jsonRoute(async body => {
-    const workdir = resolveWorkdir(body.workdir);
-    return { why: sandbox.screenCommand(String(body.command || ""), workdir) };
+    const workdir = resolveWorkdir(body.workdir),
+      command = String(body.command || "");
+    if (body.permission === "review")
+      return { why: (body.sandbox === true && sandbox.screenLoose(command)) || sandbox.screenAutoReview(command) };
+    return { why: sandbox.screenCommand(command, workdir) };
   }, failed);
   // 文件、列与搜、意各一段，共用上面的落点、沙箱筛查与报错写法
   const work = { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile, storeRoot };

@@ -23,6 +23,8 @@ const delta = (d, extra = {}) => ({
 // 长活（LONGSUB 帮手、LONGMAIN 主答）：每轮读一个大文件，请求超过 limit 字就回「放不下」；轮数记在这里，压掉的往来不影响它
 const long = { rounds: {}, folds: {}, overflows: {}, limit: { LONGSUB: 60000, LONGMAIN: 200000 } };
 let calls = 0,
+  // 审查员收到的每一问：是不是只要一字的那一步、审的是哪件工具（GET /review-asks 取走并清空）
+  reviewAsks = [],
   flaky503 = 0,
   titleFailed = false,
   slowTitleFailed = false;
@@ -155,6 +157,13 @@ http
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify(long));
     }
+    // 审查用例读一下审查员收到过哪几问，读完即清
+    if (req.url.endsWith("/review-asks") && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(reviewAsks));
+      reviewAsks = [];
+      return;
+    }
     // 用例读一下到目前为止收到过几次请求（探档位只探一次之类的断言）
     if (req.url.endsWith("/calls") && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "text/plain" });
@@ -175,6 +184,30 @@ http
         ),
         toolResults = msgs.filter(m => m.role === "tool");
       const lastUser = [...msgs].reverse().find(m => m.role === "user")?.content || "";
+      // 审查员（专司里另配的审查模型，见 src/15-tools/03-review.js）：指令那一步一字准；外发那一步先疑、再驳并说理由；审的次数记着给用例对账
+      if (String(msgs[0]?.role === "system" ? msgs[0].content : "").includes("你替用户审")) {
+        const text = String(lastUser),
+          quick = text.endsWith("只答一个字：准，或疑。");
+        reviewAsks.push({ quick, tool: text.match(/［将要做的］\n(\w+)/)?.[1] || "" });
+        const answer = text.includes("Set-Alias") ? "准" : quick ? "疑" : "驳，用户没让把这串参数发出去";
+        return sse(res, [delta({ content: answer }), delta({}, { usage: { total_tokens: 3 } })]);
+      }
+      // REVIEW-DUTY：审而后行里先发一条宽沙箱会拦的指令（定义别名），再翻一个网址里带长串参数的网页；收尾把两步的结果报回去
+      if (typeof lastUser === "string" && lastUser.includes("REVIEW-DUTY")) {
+        const lastUserIndex = msgs.findLastIndex(m => m.role === "user"),
+          results = msgs.slice(lastUserIndex + 1).filter(m => m.role === "tool"),
+          call = (name, args) =>
+            sse(res, [
+              delta({ tool_calls: [{ index: 0, id: `call_duty_${results.length}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] }),
+              delta({}, { usage: { total_tokens: 5 } })
+            ]);
+        if (results.length === 0) return call("run_command", { command: "Set-Alias yanrv Get-Date; Set-Content duty-ok.txt ok" });
+        if (results.length === 1) return call("fetch_page", { url: "https://example.com/c?k=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789xyz" });
+        return sse(res, [
+          delta({ content: `REVIEW-DUTY done｜${results.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 120)).join(" ▸ ")}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // MCPSHOT：连截两幅（两轮各一次 snap），第三轮报回请求里看到的图——几条带图、最新那条是不是紧跟工具结果、旧的是否换成了字
       if (msgs.some(m => m.role === "user" && typeof m.content === "string" && m.content.includes("MCPSHOT"))) {
         const n = toolResults.length,
