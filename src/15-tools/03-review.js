@@ -24,9 +24,11 @@ async function reviewFlag(step, args, ctx) {
   const { conversation, signal } = ctx;
   if (step.name === "run_command") {
     const { workdir, sandbox } = workScope(conversation);
-    const screened = await bridge("/api/work/screen", { workdir, sandbox, permission: "review", command: String(args.command || "") }, signal).catch(
-      () => null
-    );
+    const screened = await bridge(
+      "/api/work/screen",
+      { workdir, sandbox, permission: "review", command: String(args.command || "") },
+      signal
+    ).catch(() => null);
     // 审查也不放行的（调桥接、藏字）不去问，照规则回绝
     return screened?.why && !screened.hard ? String(screened.why).replace(/^(审查|沙箱)拒绝：/, "") : "";
   }
@@ -48,15 +50,19 @@ function egressWhy(name, args, conversation) {
   }
   const said = userSaid(conversation);
   if (said.includes(url.href)) return "";
-  const seen = conversation.messages.some(m => allSteps(m).some(s => s.results?.some(r => r.url === url.href) || (s.url === url.href && s.status === "done")));
+  const seen = conversation.messages.some(m =>
+    allSteps(m).some(s => s.results?.some(r => r.url === url.href) || (s.url === url.href && s.status === "done"))
+  );
   if (seen) return "";
-  const long = [...url.searchParams.values(), url.hash.slice(1)].map(decodeURIComponentSafe).find(v => /[A-Za-z0-9_\-+/=.%]{32,}/.test(v) && !said.includes(v));
+  const long = [...url.searchParams.values(), url.hash.slice(1)]
+    .map(decodeURIComponentSafe)
+    .find(v => /[A-Za-z0-9_\-+/=.%]{32,}/.test(v) && !said.includes(v));
   return long ? "网址里带着一长串用户没给过的参数" : "";
 }
-/** @param {Conversation} conversation */
+/** 用户亲口说的：帮手回报、后台指令结束另起的那一问（带 relay）也是 user 消息，可那是工具输出，不算 @param {Conversation} conversation */
 function userSaid(conversation) {
   return conversation.messages
-    .filter(m => m.role === "user")
+    .filter(m => m.role === "user" && !m.relay)
     .map(m => String(m.content || ""))
     .join("\n");
 }
@@ -88,13 +94,23 @@ function decodeURIComponentSafe(text) {
     return text;
   }
 }
-/** 写的路径落在存储根的技能目录里没有（相对的按这段对话的目录接上） @param {string} raw @param {Conversation} conversation */
+/** 写的路径落在存储根的技能目录里没有（相对的按这段对话的目录接上；卷宗就在存储根下，../技能/… 即到，. 与 .. 先消掉再比） @param {string} raw @param {Conversation} conversation */
 function insideSkills(raw, conversation) {
   const skills = String(bootstrap.store?.skills || "");
   if (!skills || !raw) return false;
-  const norm = p => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase(),
-    full = /^([a-z]:)?[\\/]/i.test(raw) ? raw : `${workRoot(conversation) || ""}/${raw}`;
-  return `${norm(full)}/`.startsWith(`${norm(skills)}/`);
+  const full = /^([a-z]:)?[\\/]/i.test(raw) ? raw : `${workRoot(conversation) || ""}/${raw}`;
+  return `${plainPath(full)}/`.startsWith(`${plainPath(skills)}/`);
+}
+/** 比路径用：斜杠归一、小写、消掉 . 与 ..（退到根即止）、去掉重复与末尾的斜杠 @param {string} raw */
+function plainPath(raw) {
+  /** @type {string[]} */
+  const parts = [];
+  for (const segment of raw.replace(/\\/g, "/").toLowerCase().split("/")) {
+    if (segment === "..") {
+      if (parts.length > 1) parts.pop();
+    } else if (segment !== "." && (segment || !parts.length)) parts.push(segment);
+  }
+  return parts.join("/");
 }
 
 /** 交审查模型判：准即返回 null 照做（step.reviewed 记下），驳即交回结果。出错退回没开审查时的样子 @param {Step} step @param {Record<string, any>} args @param {ToolContext} ctx @param {string} why */
@@ -148,15 +164,20 @@ async function askReviewer(step, args, ctx, why) {
       else takeWholeReply(await response.json(), reply);
       return String(reply.content || "").trim();
     };
-  if ((await ask(prompt("review.quick"), 1500)).startsWith("准")) return { ok: true, why: "" };
-  const said = await ask(prompt("review.reason"), 3000),
-    reason = said.replace(/^[准驳][\s：:，,。.]*/, "").slice(0, 120);
-  return { ok: said.startsWith("准"), why: reason };
+  if (reviewWord(await ask(prompt("review.quick"), 1500)).startsWith("准")) return { ok: true, why: "" };
+  const said = reviewWord(await ask(prompt("review.reason"), 3000));
+  // 首字既不是准也不是驳（写空了、答非所问）：当审查出错，退回照规则，不拿它当驳
+  if (!/^[准驳]/.test(said)) throw Error("审查模型没给出准或驳");
+  return { ok: said.startsWith("准"), why: said.replace(/^[准驳][\s*_`"'：:，,。.、」』”’】\])）]*/, "").slice(0, 120) };
+}
+/** 审查的答复去掉开头的 Markdown 记号与引号（**准**、「驳」），首字才是定夺 @param {string} text */
+function reviewWord(text) {
+  return text.replace(/^[\s*_`#>"'「『“‘【\[(（-]+/, "");
 }
 /** 交给审查的那段话：用户历次的原话（新的在后、过长截去旧的）、意里的目标与守、将要做的、规则的缘由 @param {Conversation} conversation */
 function reviewCase(step, args, conversation, why) {
   const said = conversation.messages
-      .filter(m => m.role === "user")
+      .filter(m => m.role === "user" && !m.relay)
       .map(m => [String(m.content || "").trim(), ...(m.attachments || []).map(a => `［附件 ${a.name}］`)].filter(Boolean).join(" "))
       .filter(Boolean),
     lines = [];
@@ -169,7 +190,9 @@ function reviewCase(step, args, conversation, why) {
   const held = intents.get(conversation.id)?.intent,
     goals = held ? intentRoots(held).map(id => held.nodes[id].claim) : [],
     keeps = held ? intentKeeps(held).map(id => held.nodes[id].claim) : [],
-    intentText = [goals.length ? `目标：${goals.join("；")}` : "", keeps.length ? `守：${keeps.join("；")}` : ""].filter(Boolean).join("\n");
+    intentText = [goals.length ? `目标：${goals.join("；")}` : "", keeps.length ? `守：${keeps.join("；")}` : ""]
+      .filter(Boolean)
+      .join("\n");
   return prompt("review.case", {
     user: lines.join("\n") || "（无）",
     intent: intentText ? prompt("review.intent", { text: intentText }) : "",
