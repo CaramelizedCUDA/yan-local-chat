@@ -541,6 +541,11 @@ function pruneSplitPanes() {
 function syncSplit() {
   pruneSplitPanes();
 }
+// 主页面改了设置、或配置刚写进磁盘：叫每一栏读一回（错峰，别四份页面同时读盘）
+function splitRefreshPanes() {
+  if (PANE || !split.panes.length) return;
+  split.panes.forEach((pane, index) => setTimeout(() => splitPaneAt(pane.slot)?.refresh(), index * 120));
+}
 
 // ---------- 绑定 ----------
 /** @param {HTMLElement} grip */
@@ -637,18 +642,18 @@ function bindSplit() {
     if (panel) panel.classList.remove("flash");
   });
   // 这边改了设置：叫每一栏读一回（错峰，别四份页面同时读盘）。
-  // 头一回趁早；配置写盘有防抖，稍后再补一回，免得头一回读到的还是旧的那份
+  // 头一回趁早；配置写盘有防抖，稍后再补一回，免得头一回读到的还是旧的那份。
+  // 只看明暗/字体/动效：内联 style 会被输入区高度、季印这类常变的东西碰到，
+  // 拿它当设置变化会让计时器反复重置，栏里的明暗要等到下一次布局变动才跟上
   let refreshTimer = 0,
     refreshTimerLate = 0;
   new MutationObserver(() => {
     if (!split.panes.length) return;
     clearTimeout(refreshTimer);
     clearTimeout(refreshTimerLate);
-    const refreshPanes = () =>
-      split.panes.forEach((pane, index) => setTimeout(() => splitPaneAt(pane.slot)?.refresh(), index * 120));
-    refreshTimer = window.setTimeout(refreshPanes, 800);
-    refreshTimerLate = window.setTimeout(refreshPanes, 3200);
-  }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-font", "data-ink-motion", "style"] });
+    refreshTimer = window.setTimeout(splitRefreshPanes, 800);
+    refreshTimerLate = window.setTimeout(splitRefreshPanes, 3200);
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-font", "data-ink-motion"] });
   window.addEventListener("resize", () => {
     if (splitResizeRaf) return;
     splitResizeRaf = requestAnimationFrame(() => {

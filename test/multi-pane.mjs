@@ -187,13 +187,18 @@ try {
       !(await evalJs(`(() => ${paneState}.panes.some(p => p.id === "mp-4"))()`))
   );
 
-  // 9. 明暗变化到每一栏
+  // 9. 明暗变化到每一栏；同时模拟真实布局抖动（输入区高度会不断改 <html> 的内联 style）。
+  // 旧实现把 style 也当成设置变化，同步计时器被反复重置，栏里的明暗要等下一次布局变动才跟上。
   await sleep(2000);
   await evalJs(`document.querySelector("#themeToggle").click(); true`);
+  await evalJs(
+    `(() => { window.__themeChurn = setInterval(() => document.documentElement.style.setProperty("--composer-h", (100 + Math.random() * 20).toFixed(1) + "px"), 150); return true; })()`
+  );
   await waitFor(
     `(() => ${paneState}.panes.every(p => { const f = document.querySelector('.split-panel[data-slot="' + p.slot + '"] .split-frame'); return f?.contentWindow?.document?.documentElement?.dataset?.theme === document.documentElement.dataset.theme; }))()`,
-    15000
+    8000
   ).catch(() => {});
+  await evalJs(`clearInterval(window.__themeChurn); delete window.__themeChurn; true`);
   const themes = await evalJs(
     `(() => { const s = ${paneState}; return { main: document.documentElement.dataset.theme, panes: s.panes.map(p => { const f = document.querySelector('.split-panel[data-slot="' + p.slot + '"] .split-frame'); return { slot: p.slot, id: p.id, theme: f?.contentWindow?.document?.documentElement?.dataset?.theme, pane: !!f?.contentWindow?.__yanPane }; }) }; })()`
   );

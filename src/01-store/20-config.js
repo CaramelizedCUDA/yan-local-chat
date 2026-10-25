@@ -113,6 +113,8 @@ function saveConfigNow({ force = false } = {}) {
       const written = Number(data.savedAt) || savedAt;
       if (written > configSyncedAt) rememberConfigBase(meta, written);
       settleSpend(spent);
+      // 配置已落盘：主页面叫每一栏读一回，明暗/字体/朱色不必等下一次布局变动
+      if (!PANE) splitRefreshPanes();
     })
     .catch(error => {
       if (unloading) return;
