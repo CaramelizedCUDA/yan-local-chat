@@ -149,6 +149,7 @@ const VIDEO = require("./server/video.js")({
 const WORK = require("./server/work/index.js")({
   archiveHome: () => STORE.paths().archive,
   workHome: () => STORE.paths().work,
+  storeRoot: () => STORE.paths().root,
   toolEnv: ENV.apply,
   playable: VIDEO.playable
 });

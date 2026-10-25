@@ -266,4 +266,31 @@ function screenPath(rel, { write = false } = {}) {
   return null;
 }
 
-module.exports = { screenCommand, screenLoose, screenAutoReview, sandboxEnv, screenPath, SECRET_ENV };
+// 存储根里装着 API Key 与登录令牌的几样：配置（连每小时一份的备份）与 ChatGPT 登录。模型没有正当理由碰它们——改设置有界面；
+// 读得到就能被一段网页里的话骗去拼进网址发走，写得到就能自己关沙箱、改预设。所以不论档位、沙箱开不开都守，只认桥接此刻的存储根，
+// 开发言自己时仓库里的同名字样不受牵连。静态筛查：脚本里拼出来的路径管不到
+const STORE_SECRETS = ["配置.json", "配置备份", "ChatGPT 登录.json"];
+const STORE_WHY = "不碰言的配置与登录文件（内有 API Key 与令牌）；要改设置，请用户在设置里改";
+/** 一个绝对路径是不是落在存储根的这几样上（或就是存储根里它们之下）。是则返回原因 @param {string} full @param {string} root */
+function screenStorePath(full, root) {
+  if (!root) return null;
+  const base = normalizeLower(path.resolve(root)),
+    target = normalizeLower(path.resolve(full));
+  return STORE_SECRETS.some(name => inside(normalizeLower(path.join(base, name)), target)) ? `拒绝：${STORE_WHY}` : null;
+}
+/**
+ * 指令文本里点没点到这几样：写了它们的名字，且又写了存储根（或 .yan），或就在存储根里跑（卷宗、工作都在根下，..\配置.json 即到）；
+ * 对存储根顶层用通配（.yan\*）也算。 @param {string} command @param {string} root @param {string} workdir
+ */
+function screenStoreCommand(command, root, workdir) {
+  if (!root) return null;
+  const text = String(command || "").replace(/\//g, "\\").toLowerCase(),
+    base = normalizeLower(path.resolve(root)).replace(/\//g, "\\"),
+    named = STORE_SECRETS.some(name => text.includes(name.toLowerCase())),
+    near = text.includes(base) || /\\\.yan(?:\\|["'\s]|$)/.test(text) || inside(base, normalizeLower(path.resolve(workdir || "")));
+  if (named && near) return `拒绝：${STORE_WHY}`;
+  const wild = new RegExp(`(?:${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}|\\\\\\.yan)\\\\\\*`);
+  return wild.test(text) ? `拒绝：${STORE_WHY}` : null;
+}
+
+module.exports = { screenCommand, screenLoose, screenAutoReview, sandboxEnv, screenPath, screenStorePath, screenStoreCommand, SECRET_ENV };
