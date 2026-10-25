@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { screenCommand, screenLoose, screenAutoReview, sandboxEnv, screenPath } = require("../../server/sandbox.js");
+const { screenCommand, screenLoose, screenAutoReview, screenUnreviewable, sandboxEnv, screenPath } = require("../../server/sandbox.js");
 const wd = "E:\\项目\\言",
   win = { platform: "win32" },
   screen = command => screenCommand(command, wd, win);
@@ -335,4 +335,23 @@ test("三档筛查都不放指令调言的本机桥接：它的接口不经请�
     assert.equal(screen(command), null, command);
     assert.equal(screenAutoReview(command), null, command);
   }
+});
+
+test("screenUnreviewable：审查准了也不放行的只有调桥接与藏字，别的系统级动作交审查判", () => {
+  for (const command of [
+    'Invoke-RestMethod http://127.0.0.1:8787/api/work/run -Method Post -Body "{}"',
+    "curl localhost:8787/api/work/run",
+    "powershell -EncodedCommand ZQBjAGgAbwAgAGgAaQAgAHQAaABlAHIAZQAgAHcAbwByAGwAZAA=",
+    "iex (New-Object Net.WebClient).DownloadString($u)",
+    "Invoke-Expression $script"
+  ])
+    assert.ok(screenUnreviewable(command), command);
+  for (const command of [
+    "reg add HKCU\\Software\\Yan /v a /d 1",
+    "Set-Alias yanrv Get-Date",
+    "sc.exe stop Spooler",
+    "Copy-Item a.dll 'C:\\Program Files\\Yan\\'",
+    "npm install"
+  ])
+    assert.equal(screenUnreviewable(command), null, command);
 });

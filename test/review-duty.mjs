@@ -18,10 +18,10 @@ await sleep(900);
 await asks();
 
 // 等本次新开的那篇对话答完：页面上残留的上一段消息会让按 DOM 等的条件提前成立，故看状态
-const ask = async () => {
+const ask = async (text = "REVIEW-DUTY") => {
   const before = await evalJs(`__yanState().conversations.length`);
   await evalJs(
-    `document.querySelector("#welcomeInput").value = "REVIEW-DUTY"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
+    `document.querySelector("#welcomeInput").value = "${text}"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
   );
   await waitFor(
     `__yanState().conversations.length > ${before} && (m => m?.role === "assistant" && m.status === "complete")(__yanState().conversations[0].messages.at(-1))`,
@@ -67,6 +67,16 @@ check(
     ]),
   JSON.stringify(log)
 );
+
+// 一之二、审查也不放行的（藏字）：不去问审查，照规则回绝
+await fresh();
+state = await ask("REVIEW-HARD");
+check(
+  "藏字的指令：不交审查，照规则回绝",
+  state.steps[0]?.status === "error" && !state.steps[0].reviewed && /隐藏或动态拼接/.test(state.reply) && !existsSync(`${TMP}/review-duty/hard.txt`),
+  JSON.stringify({ step: state.steps[0], reply: state.reply.slice(0, 200) })
+);
+check("藏字的指令：审查员一问也没收到", (await asks()).length === 0);
 
 // 二、关着审查：照旧按规则回绝，审查员一问也没收到
 await evalJs(`__yanState().settings.dutyReview.on = false; true`);

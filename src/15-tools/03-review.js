@@ -27,7 +27,8 @@ async function reviewFlag(step, args, ctx) {
     const screened = await bridge("/api/work/screen", { workdir, sandbox, permission: "review", command: String(args.command || "") }, signal).catch(
       () => null
     );
-    return screened?.why ? String(screened.why).replace(/^(审查|沙箱)拒绝：/, "") : "";
+    // 审查也不放行的（调桥接、藏字）不去问，照规则回绝
+    return screened?.why && !screened.hard ? String(screened.why).replace(/^(审查|沙箱)拒绝：/, "") : "";
   }
   if (["fetch_page", "http_request", "download_file"].includes(step.name)) return egressWhy(step.name, args, conversation);
   if (step.name === "remember") return "写进长期记忆，往后每段对话都会带上";

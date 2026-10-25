@@ -231,6 +231,15 @@ http
           ]);
         }
       }
+      // REVIEW-HARD：审查也不放行的一条（藏字），收尾把结果报回去
+      if (typeof lastUser === "string" && lastUser.includes("REVIEW-HARD")) {
+        if (!toolResults.length)
+          return sse(res, [
+            delta({ tool_calls: [{ index: 0, id: "call_hard_0", type: "function", function: { name: "run_command", arguments: JSON.stringify({ command: "Invoke-Expression 'Set-Content hard.txt x'" }) } }] }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [delta({ content: `REVIEW-HARD done｜${String(toolResults[0].content).replace(/\s+/g, " ").slice(0, 160)}` }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
       // REVIEW-DUTY：审而后行里先发一条宽沙箱会拦的指令（定义别名），再翻一个网址里带长串参数的网页；收尾把两步的结果报回去
       if (typeof lastUser === "string" && lastUser.includes("REVIEW-DUTY")) {
         const lastUserIndex = msgs.findLastIndex(m => m.role === "user"),

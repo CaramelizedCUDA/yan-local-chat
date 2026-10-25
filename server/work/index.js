@@ -125,8 +125,10 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
       const guarded = sandbox.screenStoreCommand(command, storeRoot(), workdir);
       if (guarded) throw Error(guarded);
       const boxed = body.sandbox === true,
-        // 审而后行里规则拦下、审查模型照用户的原话准了的这一条：不再过宽的沙箱与审查规则（存储根那一道仍守）
+        // 审而后行里规则拦下、审查模型照用户的原话准了的这一条：不再过宽的沙箱与审查规则（存储根那一道、调桥接与藏字仍守）
         reviewed = body.permission === "review" && body.reviewed === true;
+      const unreviewable = reviewed && sandbox.screenUnreviewable(command);
+      if (unreviewable) throw Error(`审查拒绝：${unreviewable}`);
       if (boxed && !reviewed) {
         const why = looseTier(body) ? sandbox.screenLoose(command) : sandbox.screenCommand(command, workdir);
         if (why) throw Error(why);
@@ -196,12 +198,16 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
     }
   }
   // 发指令前先问一声会不会拦。问而后行（没说档位的也算）问严的沙箱——会拦的照样请示，用户批了这一条就出沙箱跑；
-  // 审而后行问宽的沙箱与审查规则——会拦的交专司里的审查模型再判（见 src/15-tools/03-review.js），准了即带 reviewed 来跑
+  // 审而后行问宽的沙箱与审查规则——会拦的交专司里的审查模型再判（见 src/15-tools/03-review.js），准了即带 reviewed 来跑；
+  // 审查也不放行的（调桥接、藏字）标 hard，不必去问
   const handleWorkScreen = jsonRoute(async body => {
     const workdir = resolveWorkdir(body.workdir),
       command = String(body.command || "");
     if (body.permission === "review")
-      return { why: (body.sandbox === true && sandbox.screenLoose(command)) || sandbox.screenAutoReview(command) };
+      return {
+        why: (body.sandbox === true && sandbox.screenLoose(command)) || sandbox.screenAutoReview(command),
+        hard: !!sandbox.screenUnreviewable(command)
+      };
     return { why: sandbox.screenCommand(command, workdir) };
   }, failed);
   // 文件、列与搜、意各一段，共用上面的落点、沙箱筛查与报错写法
