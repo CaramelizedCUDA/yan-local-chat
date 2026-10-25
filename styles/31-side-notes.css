@@ -164,40 +164,50 @@
 .side-panel[data-mode="index"] #sideRemove {
   display: none;
 }
-/* 页头右边：「阔」「删」只用字、丝栏相隔（与请示条「运行 · 跳过」同一写法）；收起的 × 隔一道细竖线另立。
-   左边的「注」印留着，是这一栏唯一的印。早先两枚字也各框成小印，连同正文序号、「注 n」、目录一列朱印，满屏是框（设计稿/37 现状） */
+/* 页头右边：阔（往两角撑开）、删（一笔划去）都是笔意小画，形制照游目页头的 .stage-tool，铺满时转朱；
+   删不可撤，与阔隔一道丝栏；收起的 × 再隔一道另立（设计稿/109 甲）。
+   左边的「注」印留着，是这一栏唯一的印。早先两件是字、更早各框成小印，满屏是框（设计稿/37） */
 .side-tools {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 2px;
   margin-left: 6px;
 }
-.side-tools .icon-btn {
-  width: auto;
-  height: 24px;
-  padding: 0 5px;
-  color: var(--ink-3);
-  font: var(--fs-small)/1 var(--title);
-  transition: color var(--dur-quick);
+.side-tools #sideExpand,
+.side-tools #sideRemove {
+  width: 26px;
+  height: 26px;
 }
-.side-tools .icon-btn:hover,
+.side-tools #sideExpand .brush,
+.side-tools #sideRemove .brush {
+  width: 17px;
+  height: 17px;
+}
+.side-tools #sideExpand:hover,
+.side-tools #sideRemove:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
 .side-tools #sideExpand[aria-pressed="true"] {
-  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.side-tools #sideExpand[aria-pressed="true"] .brush .ink,
+.side-tools #sideExpand[aria-pressed="true"] .brush .ink2 {
+  fill: var(--accent);
 }
 .side-tools #sideRemove {
   position: relative;
-  margin-left: 6px;
+  margin-left: 7px;
 }
 .side-tools #sideRemove::before {
   content: "";
   position: absolute;
-  left: -6px;
+  left: -5px;
   top: 6px;
   bottom: 6px;
   border-left: 1px solid var(--line);
 }
-.side-tools #sideRemove:hover {
-  color: var(--danger);
+.side-tools #sideRemove:hover .brush .ink {
+  fill: var(--danger);
 }
 .side-tools #sideClose {
   position: relative;

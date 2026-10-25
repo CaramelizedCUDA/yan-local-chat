@@ -306,8 +306,8 @@ function setupSidePanel() {
       wide = !panel.classList.contains("wide");
     panel.classList.toggle("wide", wide);
     const b = $("#sideExpand");
-    b.textContent = wide ? t("窄") : t("阔");
     b.title = wide ? t("收回侧边") : t("铺满整页");
+    b.setAttribute("aria-label", b.title);
     b.setAttribute("aria-pressed", String(wide));
   };
   $("#chatMeta").addEventListener("click", e => {
