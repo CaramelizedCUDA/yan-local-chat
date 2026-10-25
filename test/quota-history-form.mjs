@@ -60,7 +60,8 @@ const seed = {
 };
 await evalJs(`localStorage.setItem("yan-chat-v1", JSON.stringify(${JSON.stringify(seed)})); true`);
 await send("Page.navigate", { url: PAGE });
-await sleep(1200);
+// 前面几个用例可能刚收掉多栏，页面起来会慢一些：等历史真的画出来再点，不赌固定时长
+await waitFor(`!!document.querySelector("#history .history-item")`, 20000);
 // 余墨已尽：打开旧对话（旧数据里还带着 ended 锁）
 await evalJs(
   `[...document.querySelectorAll("#history .history-item")].find(n => n.textContent.includes("干墨对话")).querySelector(".history-open").click(); true`

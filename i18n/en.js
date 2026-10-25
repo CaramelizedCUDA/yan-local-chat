@@ -1598,18 +1598,25 @@ var YAN_EN = {
   原型演示: "Build a prototype",
   "在这个目录里从零做一个（一个小作品，比如番茄钟、记账本、贪吃蛇），一个网页就行，做好映射到浏览器里，检查无误后向我汇报。":
     "Build [a small project, e.g. a pomodoro timer, an expense tracker, snake] from scratch in this folder as a single web page. Open it in the browser, check it works, then report back.",
-  // ---- 右栏：两段对话并排 ----
+  // ---- 右栏：同源页面并排（最多四栏） ----
   右栏: "Right pane",
+  "右栏 {0}": "Right pane {0}",
   右栏的对话: "Right pane chat",
   在右栏打开: "Open in right pane",
   并排看: "Side by side",
   收起右栏: "Close right pane",
+  "收起第 {0} 栏": "Close right pane {0}",
   开在右栏: "Open in the right pane",
   右: "R",
+  "右{0}": "R{0}",
   这段对话正开在左边: "This chat is already open on the left",
   "这段对话开在右栏，窗口放宽些即可看到": "This chat is open in the right pane. Widen the window to see it",
   右栏的对话还在作答: "The right pane chat is still answering",
+  "右栏第 {0} 栏的对话还在作答": "The chat in right pane {0} is still answering",
   "关掉右栏会中断它，已写的部分都在。": "Closing the right pane will interrupt it. What has been written so far is kept.",
+  "右栏最多四栏，先收起一栏再开": "Up to four right panes; close one to open another",
+  已满四栏: "All four panes are open",
+  "窗口太窄，右栏开不了": "The window is too narrow to open a right pane",
   仍要关掉: "Close anyway"
 };
 if (typeof module === "object") module.exports = YAN_EN;

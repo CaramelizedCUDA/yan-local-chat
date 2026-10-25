@@ -28,10 +28,10 @@ const { send, evalJs, waitFor, close } = await connect();
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
 await evalJs(
-  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, quota: "", usedTokens: 0, systemPrompt: "" }], conversations: [], library: [], drafts: {} })); localStorage.removeItem("yan-split"); true`
+  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, quota: "", usedTokens: 0, systemPrompt: "" }], conversations: [], library: [], drafts: {} })); localStorage.removeItem("yan-split"); localStorage.removeItem("yan-split-width"); localStorage.removeItem("yan-split-v2"); true`
 );
 await send("Page.navigate", { url: PAGE });
-await waitFor(`!!document.querySelector('[data-conversation="split-right"]')`, 8000);
+await waitFor(`!!document.querySelector('[data-conversation="split-right"]')`, 20000);
 await evalJs(`document.querySelector('[data-conversation="split-left"] .history-open').click(); true`);
 await sleep(300);
 
@@ -42,7 +42,7 @@ await evalJs(`document.querySelector('.chip-pop [data-menu="split"]').click(); t
 await sleep(300);
 check(
   "the chat open on the left is not opened again on the right",
-  (await evalJs(`document.querySelector("#splitPanel").classList.contains("hidden")`)) &&
+  (await evalJs(`document.querySelector("#splitRail").classList.contains("hidden")`)) &&
     (await evalJs(`document.querySelector("#toast").textContent`)).includes("左边")
 );
 
@@ -50,11 +50,11 @@ check(
 await evalJs(`document.querySelector('[data-conversation="split-right"] [data-history-action="menu"]').click(); true`);
 await waitFor(`!!document.querySelector('.chip-pop [data-menu="split"]')`);
 await evalJs(`document.querySelector('.chip-pop [data-menu="split"]').click(); true`);
-const pane = `document.querySelector("#splitFrame").contentWindow`;
-await waitFor(`!!${pane}.document?.querySelector('#messages .message.assistant')`, 10000);
+const pane = `document.querySelector('.split-panel[data-slot="0"] .split-frame').contentWindow`;
+await waitFor(`!!${pane}.document?.querySelector('#messages .message.assistant')`, 30000);
 check(
   "the right pane opens that chat beside the left one",
-  !(await evalJs(`document.querySelector("#splitPanel").classList.contains("hidden")`)) &&
+  !(await evalJs(`document.querySelector("#splitRail").classList.contains("hidden")`)) &&
     (await evalJs(`${pane}.__yanPane.id()`)) === "split-right" &&
     (await evalJs(`${pane}.document.querySelector("#messages").textContent.includes("右边这段的答")`)) &&
     (await evalJs(`document.querySelector("#messages").textContent.includes("左边这段的答")`))
@@ -97,11 +97,11 @@ check(
 await send("Page.reload");
 // 重载后脚本还没跑完时 __yanState 尚不存在：先等主页面起来，再看右栏有没有接着开
 await waitFor(`typeof __yanState === "function"`, 20000);
-await waitFor(`!!document.querySelector("#splitFrame")?.contentWindow.__yanPane?.id()`, 20000).catch(() => {});
+await waitFor(`!!document.querySelector('.split-panel[data-slot="0"] .split-frame')?.contentWindow.__yanPane?.id()`, 20000).catch(() => {});
 check(
   "after a reload the left chat and the right pane both come back",
   (await evalJs(`__yanState().settings.lastConversationId`)) === "split-left" &&
-    (await evalJs(`document.querySelector("#splitFrame").contentWindow.__yanPane?.id()`)) === "split-right"
+    (await evalJs(`document.querySelector('.split-panel[data-slot="0"] .split-frame').contentWindow.__yanPane?.id()`)) === "split-right"
 );
 
 // 右栏里要开别的对话：交回主页面开
@@ -110,7 +110,8 @@ await evalJs(`${pane}.document.querySelector("#paneClose").click(); true`);
 await sleep(400);
 check(
   "closing the right pane hides it and forgets it",
-  (await evalJs(`document.querySelector("#splitPanel").classList.contains("hidden")`)) &&
+  (await evalJs(`document.querySelector("#splitRail").classList.contains("hidden")`)) &&
+    (await evalJs(`localStorage.getItem("yan-split-v2")`)) === null &&
     (await evalJs(`localStorage.getItem("yan-split")`)) === null &&
     !(await evalJs(`!!document.querySelector('[data-conversation="split-right"] .split-mark')`))
 );

@@ -63,7 +63,7 @@ function securityHeaders(req, res) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   // 主页面另许连本机的 ws：看台直连模型所用浏览器的调试口（见 server/stage.js）。
-  // 主页面只许本站自己嵌入：右栏（并排的第二段对话）就是主页面嵌了一份自己（见 src/27-split.js）；别的网站一概嵌不进来。
+  // 主页面只许本站自己嵌入：右栏（并排的最多四段对话）就是主页面嵌了一份自己（见 src/27-split.js）；别的网站一概嵌不进来。
   // preview.html 只允许被本站（主页面）嵌入，且只有它需要执行 blob: 脚本；否则任意网站都能把它 iframe 进去并注入脚本读取 localStorage
   res.setHeader(
     "Content-Security-Policy",

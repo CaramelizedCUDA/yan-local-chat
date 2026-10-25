@@ -86,8 +86,8 @@ async function boot() {
 }
 
 function bindEvents() {
-  $("#collapseSidebar").onclick = () => toggleSidebar();
-  $("#mobileMenu").onclick = () => toggleSidebar(false);
+  $("#collapseSidebar").onclick = () => toggleSidebar(undefined, { user: true });
+  $("#mobileMenu").onclick = () => toggleSidebar(false, { user: true });
   // 侧栏的翻页是散列的一段；要归进某组从组首「＋」起
   $("#newChat").onclick = () => {
     delete store.settings.pendingGroupId;
@@ -175,7 +175,7 @@ function bindEvents() {
     syncScrim();
     syncChatScrollGrabber();
   });
-  $("#sidebarScrim").onclick = () => toggleSidebar(true);
+  $("#sidebarScrim").onclick = () => toggleSidebar(true, { user: true });
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
     if (store.settings.theme === "system") {
       applyAppearance();
@@ -190,12 +190,17 @@ function bindEvents() {
 function syncScrim() {
   $("#sidebarScrim").classList.toggle("hidden", !isMobile() || $("#sidebar").classList.contains("collapsed"));
 }
-function toggleSidebar(force) {
+function toggleSidebar(force, { persist = true, relayout = true, user = false } = {}) {
   const sidebar = $("#sidebar"),
     collapsed = force ?? !sidebar.classList.contains("collapsed");
+  // 用户亲手开合：之后不被右栏的自动收起覆盖
+  if (user && !PANE && !isMobile()) {
+    split.sidebarOverride = true;
+    split.autoSidebar = null;
+  }
   sidebar.classList.toggle("collapsed", collapsed);
   // 右栏的侧栏不露面，开合也不记，免得改了主页面的
-  if (!isMobile() && !PANE)
+  if (!isMobile() && !PANE && persist)
     try {
       localStorage.setItem("yan-sidebar", collapsed ? "collapsed" : "open");
     } catch {}
@@ -203,6 +208,7 @@ function toggleSidebar(force) {
   const button = $("#collapseSidebar");
   button.textContent = collapsed ? "›" : "‹";
   button.title = collapsed ? t("展开侧栏") : t("收起侧栏");
+  if (relayout && !PANE) layoutRail({ mayCollapseSidebar: false });
 }
 function toggleHistorySearch(force) {
   const wrap = $("#historySearchWrap"),

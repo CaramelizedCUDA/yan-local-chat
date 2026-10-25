@@ -72,7 +72,7 @@ const { send, evalJs, waitFor, close } = await connect();
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
 await evalJs(
-  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 6, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, quota: "", usedTokens: 0, systemPrompt: "" }], conversations: [], memory: { enabled: false, items: [] }, drafts: {} })); localStorage.removeItem("yan-split"); true`
+  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 6, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, quota: "", usedTokens: 0, systemPrompt: "" }], conversations: [], memory: { enabled: false, items: [] }, drafts: {} })); localStorage.removeItem("yan-split"); localStorage.removeItem("yan-split-width"); localStorage.removeItem("yan-split-v2"); true`
 );
 await send("Page.navigate", { url: PAGE });
 await waitFor(`!!document.querySelector('[data-conversation="act-right"]')`, 8000);
@@ -81,7 +81,7 @@ await waitFor(`document.querySelector("#messages").textContent.includes("左边�
 await evalJs(`document.querySelector('[data-conversation="act-right"] [data-history-action="menu"]').click(); true`);
 await waitFor(`!!document.querySelector('.chip-pop [data-menu="split"]')`);
 await evalJs(`document.querySelector('.chip-pop [data-menu="split"]').click(); true`);
-const pane = `document.querySelector("#splitFrame").contentWindow`;
+const pane = `document.querySelector('.split-panel[data-slot="0"] .split-frame').contentWindow`;
 await waitFor(`!!${pane}.document?.querySelector('#messages .message.assistant')`, 10000);
 const rightDoc = `${pane}.document`;
 const lastAssistant = doc => `[...${doc}.querySelectorAll('#messages .message.assistant')].at(-1)`;
@@ -148,7 +148,7 @@ await evalJs(`document.querySelector("#confirmCancel").click(); true`);
 await sleep(400);
 check(
   "cancelling keeps the pane and its stream running",
-  !(await evalJs(`document.querySelector("#splitPanel").classList.contains("hidden")`)) && (await paneStatus()) === "streaming"
+  !(await evalJs(`document.querySelector("#splitRail").classList.contains("hidden")`)) && (await paneStatus()) === "streaming"
 );
 await waitPaneStatus("complete");
 
@@ -157,11 +157,11 @@ await sendIn(rightDoc, "SLOWTEXT 第四回");
 await waitPaneStatus("streaming", 10000);
 await send("Page.reload");
 await waitFor(`typeof __yanState === "function"`, 20000);
-await waitFor(`!!document.querySelector("#splitFrame")?.contentWindow.__yanPane?.id()`, 20000).catch(() => {});
+await waitFor(`!!document.querySelector('.split-panel[data-slot="0"] .split-frame')?.contentWindow.__yanPane?.id()`, 20000).catch(() => {});
 check(
   "after the parent reload the left chat and the right pane both come back",
   (await evalJs(`__yanState().settings.lastConversationId`)) === "act-left" &&
-    (await evalJs(`document.querySelector("#splitFrame").contentWindow.__yanPane?.id()`)) === "act-right"
+    (await evalJs(`document.querySelector('.split-panel[data-slot="0"] .split-frame').contentWindow.__yanPane?.id()`)) === "act-right"
 );
 await waitFor(
   `(() => { const c = __yanState().conversations.find(c => c.id === "act-right"); const m = c && c.messages.at(-1); return !!m && m.role === "assistant" && m.status !== "streaming"; })()`,
