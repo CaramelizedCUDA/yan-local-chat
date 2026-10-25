@@ -242,7 +242,7 @@ async function runMcpTool(step, server, tool, args, ctx) {
     !step.granted && !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
   if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
-    return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
+    return { ok: false, content: prompt("assistant.declined"), display: "" };
   }
   // 审而后行里的写操作：开了审查就交它判（见 03-review.js）
   if (!mcpReadOnly(spec) && !(config.autoApprove || []).includes(tool) && reviewOn(ctx.conversation)) {

@@ -47,7 +47,7 @@ defineTool({
     return {
       ok: true,
       content: t`已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? t`，覆盖了原${data.binary ? t("有的二进制") : ""}文件` : ""}${data.converted ? t("；原文件是 GBK，已存成 UTF-8") : ""}）`,
-      display: data.existed ? "已覆盖" : "已写入"
+      display: ""
     };
   }
 });

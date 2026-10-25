@@ -113,7 +113,7 @@ const step1 = await evalJs(
 );
 check(
   "step completed with output",
-  step1.status === "done" && /^完成 · /.test(step1.meta) && step1.output.includes("你好，世界"),
+  step1.status === "done" && /^[\d.]+s/.test(step1.meta) && step1.output.includes("你好，世界"),
   JSON.stringify(step1)
 );
 const text1 = await evalJs(`document.querySelector(".message.assistant .assistant-block > .markdown").textContent`);
@@ -137,7 +137,7 @@ await waitFor(`[...document.querySelectorAll('.message.assistant')].at(-1)?.data
 const step2 = await evalJs(
   `(s => ({ status: s.dataset.status, meta: s.querySelector(".tool-meta").textContent }))([...document.querySelectorAll(".tool-step")].at(-1))`
 );
-check("skipped step state", step2.status === "skipped" && step2.meta === "已跳过", JSON.stringify(step2));
+check("skipped step state", step2.status === "skipped" && step2.meta === "", JSON.stringify(step2));
 check(
   "model told about skip",
   (await evalJs(`[...document.querySelectorAll(".message.assistant .markdown")].at(-1).textContent`)).includes("被跳过")

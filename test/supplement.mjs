@@ -212,7 +212,7 @@ const halt = await evalJs(
 );
 check(
   "main model stops a helper; its partial report still comes back",
-  halt.text.includes("已按吩咐叫停") && halt.sub === "stopped" && halt.card.includes("已叫停"),
+  halt.text.includes("已按吩咐叫停") && halt.sub === "stopped" && halt.card.includes("叫停"),
   JSON.stringify(halt)
 );
 

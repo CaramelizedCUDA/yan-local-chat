@@ -30,7 +30,7 @@ defineTool({
     return {
       ok: true,
       content: prompt("image.saved", { path: saved.path, name: saved.name }) + (revised ? `\n${prompt("image.revised", { text: revised })}` : ""),
-      display: "已画好",
+      display: "",
       images: [data]
     };
   }

@@ -353,10 +353,10 @@ check(
   askText
 );
 check(
-  "supplement was handed to the model after the tool result, marked as said mid-reply; trail step now 已递",
+  "supplement was handed to the model after the tool result, marked as said mid-reply; trail step ticked",
   askText.includes("|note:［作答途中用户补充的话，仍是这一答］补一句：ASK 顺便看看卷宗") &&
     (await evalJs(
-      `(s => s.dataset.status === "done" && s.querySelector(".tool-meta").textContent === "已递")(document.querySelector('#messages .tool-step-note'))`
+      `(s => s.dataset.status === "done" && s.querySelector(".tool-meta").textContent === "")(document.querySelector('#messages .tool-step-note'))`
     )),
   askText
 );

@@ -71,7 +71,7 @@ check(
   "with other work going on, the result lands in the same answer as a small step in the trail",
   (await shape("BGBUSY")) === "user,assistant" &&
     busy.text.includes("BGBUSY done｜inline") &&
-    busy.steps.some(s => s.startsWith("relay_note:done:已递")) &&
+    busy.steps.some(s => s === "relay_note:done:") &&
     busy.steps.filter(s => s.startsWith("list_files")).length >= 1 &&
     busy.card?.text.includes("已结束") &&
     busy.lines === 0,

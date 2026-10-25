@@ -493,7 +493,7 @@ function stageOpenDownloads(anchor) {
             ? `${item.total ? Math.round((item.got / item.total) * 100) : 0}%`
             : item.state === "canceled"
               ? t("已取消")
-              : t("已下完"),
+              : "✓",
         size = item.total ? formatFileSize(item.total) : "",
         meta = [size, item.by || "", stageHost(item.url), stageAgo(item.at)].filter(Boolean).join(" · ");
       return `<button type="button" class="stage-dl" data-stage-reveal="${escapeHtml(item.path || "")}" title="${escapeHtml(item.path || item.url)}"><i class="stage-dl-file" style="--fc:${tone(item.name)}"></i><span class="stage-dl-name">${escapeHtml(item.name)}</span><span class="stage-dl-state${item.state === "canceled" ? " off" : ""}">${state}</span><span class="stage-dl-meta">${escapeHtml(meta)}</span></button>`;

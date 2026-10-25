@@ -44,7 +44,7 @@ function envPacksHtml() {
     .map(pack => {
       const on = pack.base || chosen.has(pack.id),
         state = installed.has(pack.id) ? (on ? "done" : "drop") : on ? "pick" : "",
-        word = { done: t("已装"), pick: t("待装"), drop: t("待卸") }[state] || "",
+        word = { pick: t("待装"), drop: t("待卸") }[state] || "",
         contents = [...pack.pip, ...pack.npm].join(" · ") || tr(pack.hint);
       return `<button type="button" class="card pickable env-pack" role="checkbox" aria-checked="${on}"${pack.base ? ' aria-disabled="true"' : ""} data-env-pack="${escapeHtml(pack.id)}" data-state="${state}"><span class="card-body"><span class="card-head"><span class="card-name">${escapeHtml(tr(pack.name))}</span><span class="card-tag">${escapeHtml(tr(pack.tag))}</span></span><span class="card-note">${escapeHtml(tr(pack.note))}</span>${contents ? `<span class="card-sub" title="${escapeHtml(contents)}">${escapeHtml(contents)}</span>` : ""}</span><span class="env-pack-word">${word}</span><span class="card-tick" aria-hidden="true">${state === "done" ? `<svg viewBox="0 0 22 22"><path d="M4.5 11.8c1.6 1.2 3 2.6 4.3 4.3C11 11.4 14 7.6 18 4.8"/></svg>` : ""}</span></button>`;
     })

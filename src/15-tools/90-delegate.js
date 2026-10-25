@@ -125,7 +125,7 @@ function tellHelper(step, args, ctx) {
     if (!box) return gone();
     step.ref = box.step.id;
     box.controller.abort();
-    return { ok: true, content: prompt("delegate.stopping", { title: box.title }), display: "已叫停" };
+    return { ok: true, content: prompt("delegate.stopping", { title: box.title }), display: "叫停" };
   }
   if (!text) return { ok: false, content: t("message 不能为空"), display: "无话" };
   step.note = text;
@@ -153,7 +153,7 @@ function tellHelper(step, args, ctx) {
     // 睡着等后台的：叫醒它读这句
     box.wake?.();
     refreshSteps(box.host);
-    return { ok: true, content: prompt("delegate.noted", { title: box.title }), display: "已递" };
+    return { ok: true, content: prompt("delegate.noted", { title: box.title }), display: "" };
   }
   if (!past) return gone();
   // 已收工：续派。这一步自己成一趟，在当前的行迹里另起一枚签，点开是这名帮手那一页、停在这一趟
@@ -726,7 +726,7 @@ function relayStepHtml(step) {
       ? t`后台 ${relay.title} 已结束${relay.ok ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`}`
       : t`帮手「${relay.title}」${relay.ok ? t("回报") : t("未完成")}`,
     target = bg ? `data-relay-reveal="${escapeHtml(relay.step)}"` : `data-relay-step="${escapeHtml(relay.step)}"`;
-  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? t("回到挂它的那一步") : t("看这一趟的经过")}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? t("候") : t("遣")}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result) || t("已递"))}</span>${stepStateHtml(status)}</div></div>`;
+  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? t("回到挂它的那一步") : t("看这一趟的经过")}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? t("候") : t("遣")}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 签的种类变了（参数拟完才知道是续派还是传话）就整张换；续派的签与差遣一样就地更新
 /** @param {Step} step */

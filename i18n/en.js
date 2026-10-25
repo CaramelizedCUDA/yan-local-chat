@@ -1085,6 +1085,8 @@ var YAN_EN = {
   "余墨不足：进行中的对话已占去余量，请稍候或调高上限": "Not enough tokens left: running chats reserved the rest. Wait or raise the limit",
   工具执行完毕即递上: "Delivered after the current tool finishes",
   "已递 · 引路": "Sent · steering",
+  引路: "Steering",
+  合并: "Merged",
   已递: "Sent",
   "这一答未写完，补言已放回案上": "The reply didn't finish; your follow-up was put back in the input",
   "关于 {0}": "About {0}",

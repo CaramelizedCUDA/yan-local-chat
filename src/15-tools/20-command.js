@@ -29,7 +29,7 @@ defineTool({
     if (policy === "ask" && (!step.readOnly || step.sandboxWhy) && !(step.granted && !step.sandboxWhy)) {
       if (!(await askApproval(step, ctx))) {
         step.skipped = true;
-        return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
+        return { ok: false, content: prompt("assistant.declined"), display: "" };
       }
       escalated = !!step.sandboxWhy;
     }
@@ -82,7 +82,7 @@ defineTool({
     return {
       ok: data.exitCode === 0,
       content: t`退出码：${data.exitCode}，用时 ${took}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
-      display: `${data.exitCode === 0 ? `完成 · ${took}` : `退出码 ${data.exitCode} · ${took}`}${marks}`
+      display: `${data.exitCode === 0 ? took : `退出码 ${data.exitCode} · ${took}`}${marks}`
     };
   }
 });
