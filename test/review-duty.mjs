@@ -17,13 +17,18 @@ await send("Page.navigate", { url: PAGE });
 await sleep(900);
 await asks();
 
+// 等本次新开的那篇对话答完：页面上残留的上一段消息会让按 DOM 等的条件提前成立，故看状态
 const ask = async () => {
+  const before = await evalJs(`__yanState().conversations.length`);
   await evalJs(
     `document.querySelector("#welcomeInput").value = "REVIEW-DUTY"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
   );
-  await waitFor(`document.querySelector('.message.assistant')?.dataset.status === "complete"`, 30000);
+  await waitFor(
+    `__yanState().conversations.length > ${before} && (m => m?.role === "assistant" && m.status === "complete")(__yanState().conversations[0].messages.at(-1))`,
+    30000
+  );
   return evalJs(
-    `(c => ({ steps: c.messages.at(-1).steps.map(s => ({ name: s.name, status: s.status, result: s.result, reviewed: s.reviewed || null })), reply: c.messages.at(-1).content }))(__yanState().conversations.find(c => c.id === __yanState().conversations.at(0).id))`
+    `(c => ({ steps: (c.messages.at(-1).steps || []).map(s => ({ name: s.name, status: s.status, result: s.result, reviewed: s.reviewed || null })), reply: c.messages.at(-1).content }))(__yanState().conversations[0])`
   );
 };
 const fresh = async () => {
