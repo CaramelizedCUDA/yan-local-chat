@@ -153,6 +153,9 @@ async function runTool(step, ctx) {
       content: t`调用 ${step.name} 的参数不合要求：${problems.join("；")}。这件工具收的参数：${toolSchemaHint(step.name)}；实际收到的键：${Object.keys(parsed.args).join("、") || t("（无）")}${parsed.truncated ? t("\n（参数 JSON 不完整，可能是输出被截断）") : ""}\n\n收到的原文（前 300 字）：${step.arguments.slice(0, 300)}`,
       display: "参数不合要求"
     };
+  // 给人看的一句（工具参数里的 description）：请示条与行迹题头用它，守的关口在工具跑之前就问，所以这里先记下
+  if (toolSpec(step.name)?.parameters?.properties?.description && typeof args.description === "string" && args.description.trim())
+    step.gist = args.description.trim();
   try {
     // 意里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）；
     // 审而后行里规则标疑的，再交专司的审查模型判（见 03-review.js）

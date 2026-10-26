@@ -136,7 +136,7 @@
               on: {
                 type: "string",
                 description:
-                  "守的钩子：一条正则，比将要做的那一步（指令原文、文件路径、网址或工具名），对上即动手前把关：挂了 test: 的先跑它，不过即不做（将要做的经环境变量 YAN_TOOL（工具名）、YAN_TARGET 交给它）；没挂的就不做；空串撤去"
+                  "守的钩子：一条正则（不分大小写、含有即中，写窄到动作本身，如 git\\s+push 而非 push），比将要做的那一步（指令原文、文件路径、网址或工具名），对上即动手前把关：挂了 test: 的先跑它，不过即不做（将要做的经环境变量 YAN_TOOL（工具名）、YAN_TARGET 交给它）；没挂的就不做；空串撤去"
               },
               ask: {
                 type: "boolean",
@@ -158,6 +158,7 @@
       type: "object",
       properties: {
         command: { type: "string", description: "要执行的指令" },
+        description: { type: "string", description: "一句白话说这条要做什么，给不看指令的用户看，如「在本地跑 codegen 的测试」" },
         timeout: { type: "number", description: "前台最多等几秒，默认 120，最多 600；到时还没结束就转入后台接着跑，不会被终止" },
         background: {
           type: "boolean",

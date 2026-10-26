@@ -68,10 +68,15 @@ function keepApprovalHtml(step) {
   const gate = /** @type {{ id: string, claim: string, target: string }} */ (step.gate);
   return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">${t(`守`)}</span><span class="approval-title">${t`守请示 · ${escapeHtml(gate.id)}`}</span><span class="approval-hint" title="${t(`输入框留空时，Enter 即准许`)}">${t(`Enter 准许`)}</span></div>${keepGateHtml(step)}`;
 }
-/** 请示条与行迹里共用：守的原话、将要做的、准许与跳过 @param {Step} step */
-function keepGateHtml(step) {
+/** 请示条与行迹里共用：守的原话、将要做的、准许与跳过；行迹的题头已写着白话那一句，不再重复 @param {Step} step */
+function keepGateHtml(step, withGist = true) {
   const gate = /** @type {{ id: string, claim: string, target: string }} */ (step.gate);
-  return `<div class="approval-sandbox">${escapeHtml(gate.claim)}</div><pre class="approval-cmd">${escapeHtml(`${toolLabel(step.name)} · ${gate.target}`)}</pre><div class="approval-actions"><button type="button" data-approve="run">${t(`准许`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button></div>`;
+  return `<div class="approval-sandbox">${escapeHtml(gate.claim)}</div>${withGist ? gistHtml(step) : ""}<pre class="approval-cmd">${escapeHtml(`${toolLabel(step.name)} · ${gate.target}`)}</pre><div class="approval-actions"><button type="button" data-approve="run">${t(`准许`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button></div>`;
+}
+// 模型用白话说的这一步要做什么：多数人不读指令，请示时先看这一句，原文在下面供核对
+/** @param {Step} step */
+function gistHtml(step) {
+  return step.gist ? `<div class="approval-gist">${escapeHtml(step.gist)}</div>` : "";
 }
 // 请示条或行迹里的「运行 / 跳过 / 径行」
 function approveFrom(button) {
