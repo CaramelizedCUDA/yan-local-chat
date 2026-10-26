@@ -34,8 +34,14 @@ check("一卷一日一点，今天圈朱，只一年时不列可翻的年份", c
 await evalJs(
   `document.querySelector('#usageCard [data-usage-day="${today}"]').dispatchEvent(new PointerEvent("pointerover", { bubbles: true })); true`
 );
-const tip = await evalJs(`(t => ({ shown: !t.classList.contains("hidden"), text: t.textContent }))(document.querySelector("#usageCard .usage-tip"))`);
+const tip = await evalJs(`(t => ({ shown: !t.classList.contains("hidden"), text: t.textContent }))(document.querySelector("#usageTip"))`);
 check("指上今天那一点，浮出各类的数", tip.shown && /主答\s*\d/.test(tip.text) && tip.text.includes("—"), JSON.stringify(tip));
+// 最下面一行（周日）：浮签伸出卡外，不能被卡片滑开用的 overflow: clip 截掉——浮签不在卡里，整张都露着
+await evalJs(`document.querySelector('#usageCard [data-usage-day][y="72"]').dispatchEvent(new PointerEvent("pointerover", { bubbles: true })); true`);
+const low = await evalJs(
+  `(t => { const r = t.getBoundingClientRect(), card = document.querySelector("#usageCard").getBoundingClientRect(); return { inCard: !!t.closest("details"), rows: t.querySelectorAll("span").length, past: r.bottom > card.bottom, height: Math.round(r.height) }; })(document.querySelector("#usageTip"))`
+);
+check("指最下一行，浮签五类整张露着、伸出卡外也不截", !low.inCard && low.rows === 5 && low.past && low.height > 100, JSON.stringify(low));
 
 await post("/api/usage/add", {
   items: [

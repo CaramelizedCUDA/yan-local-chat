@@ -25,8 +25,9 @@ const usageInk = row => (row ? ["main", "helper", "side", "review"].reduce((sum,
 const usageValue = row => (usageKind ? Number(row?.[usageKind]) || 0 : usageInk(row));
 const usageAmount = (kind, n) => (kind === "image" ? t`${n} 张` : quotaAmount(n));
 const usageLocale = () => (LANG === "en" ? "en" : "zh-CN");
+// 浮签放在卡外：details 的内容层为了滑开设了 overflow: clip（见 90-motion-responsive.css），放里头指下面几行就被截掉
 function usageCardHtml() {
-  return `<details class="profile-card usage-card" id="usageCard"${usageOpen ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${t(`用量`)}</strong></summary><div class="usage-body" id="usageBody">${usageBodyHtml()}</div></details>`;
+  return `<details class="profile-card usage-card" id="usageCard"${usageOpen ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${t(`用量`)}</strong></summary><div class="usage-body" id="usageBody">${usageBodyHtml()}</div></details><div class="usage-tip hidden" id="usageTip"></div>`;
 }
 function usageBodyHtml() {
   if (!usageDays) return "";
@@ -80,7 +81,7 @@ function usageBodyHtml() {
       ([k, name, c]) =>
         `<button type="button" data-usage-kind="${k}" aria-pressed="${usageKind === k}"><i style="background:${c}"></i>${name()}<b>${usageAmount(k, totals[k])}</b></button>`
     ).join("");
-  return `${years.length > 1 ? `<div class="usage-years">${years.map(y => `<button type="button" data-usage-year="${y}"${y === usageYear ? ' aria-current="true"' : ""}>${y}</button>`).join("")}</div>` : `<div class="usage-years"><span aria-current="true">${usageYear}</span></div>`}<div class="usage-chart"><div class="usage-months">${months}</div><svg viewBox="0 0 ${cols * S} ${7 * S}" role="img" aria-label="${escapeHtml(t`${usageYear} 年逐日用量`)}">${dots}</svg><div class="usage-tip hidden"></div></div><div class="usage-legend${usageKind ? " filtered" : ""}">${legend}</div>`;
+  return `${years.length > 1 ? `<div class="usage-years">${years.map(y => `<button type="button" data-usage-year="${y}"${y === usageYear ? ' aria-current="true"' : ""}>${y}</button>`).join("")}</div>` : `<div class="usage-years"><span aria-current="true">${usageYear}</span></div>`}<div class="usage-chart"><div class="usage-months">${months}</div><svg viewBox="0 0 ${cols * S} ${7 * S}" role="img" aria-label="${escapeHtml(t`${usageYear} 年逐日用量`)}">${dots}</svg></div><div class="usage-legend${usageKind ? " filtered" : ""}">${legend}</div>`;
 }
 // 浮签：那天各类的数，没用到的淡下去；只看一类时其余也淡下
 function usageTipHtml(day) {
@@ -123,18 +124,22 @@ function bindUsageCard() {
   card.addEventListener("pointerover", e => {
     const cell = /** @type {HTMLElement} */ (e.target).closest("[data-usage-day]"),
       chart = card.querySelector(".usage-chart"),
-      tip = /** @type {HTMLElement} */ (card.querySelector(".usage-tip"));
+      tip = /** @type {HTMLElement} */ ($("#usageTip"));
     if (!cell || !chart || !tip) return;
     tip.innerHTML = usageTipHtml(cell.dataset.usageDay);
+    // 先现出来再量：藏着时没有定位父层、也没有宽
     tip.classList.remove("hidden");
-    // 落在那一点旁边：靠右的放左侧，免得出了卡
-    const box = chart.getBoundingClientRect(),
+    const host = tip.offsetParent;
+    if (!host) return;
+    // 落在那一点旁边：靠右的放左侧，免得出了卡；坐标按浮签的定位父层算（它随设置栏一起滚）
+    const base = host.getBoundingClientRect(),
+      box = chart.getBoundingClientRect(),
       at = cell.getBoundingClientRect(),
       right = at.left - box.left > box.width * 0.6;
-    tip.style.left = `${right ? at.left - box.left - tip.offsetWidth - 8 : at.right - box.left + 8}px`;
-    tip.style.top = `${Math.max(0, at.top - box.top - 12)}px`;
+    tip.style.left = `${(right ? at.left - tip.offsetWidth - 8 : at.right + 8) - base.left + host.scrollLeft}px`;
+    tip.style.top = `${at.top - 12 - base.top + host.scrollTop}px`;
   });
   card.addEventListener("pointerout", e => {
-    if (!(/** @type {HTMLElement} */ (e.relatedTarget)?.closest?.("[data-usage-day]"))) card.querySelector(".usage-tip")?.classList.add("hidden");
+    if (!(/** @type {HTMLElement} */ (e.relatedTarget)?.closest?.("[data-usage-day]"))) $("#usageTip")?.classList.add("hidden");
   });
 }
