@@ -516,8 +516,17 @@ check(
   later.width === framed.width && later.height === framed.height,
   JSON.stringify({ framed, later })
 );
-// 留白处写明：适应页面开着（默认）说执事歇手后铺满；关掉则挂一个「放开」
+// 留白处写明谁定的、多大：光凭量出来的尺寸只挂「放开」（自动放开要新开一页，会冲掉网页里的脚本）；
+// 执事亲手定的（browser_resize）且适应页面开着（默认）才说它歇手后铺满；关掉适应页面又挂回「放开」
 await waitFor(`!document.querySelector("#stageLetter").classList.contains("hidden")`, 5000).catch(() => {});
+check(
+  "a viewport that only measures as pinned offers 放开, no auto-release",
+  await evalJs(
+    `(l => l.textContent.includes("1600×1200") && !!l.querySelector("[data-stage-release]") && !l.textContent.includes("歇手后铺满"))(document.querySelector("#stageLetter"))`
+  ),
+  await evalJs(`document.querySelector("#stageLetter").textContent`)
+);
+await evalJs(`__yanStage.markPinned(); true`);
 check(
   "the blank strip says who pinned the viewport and how big",
   await evalJs(

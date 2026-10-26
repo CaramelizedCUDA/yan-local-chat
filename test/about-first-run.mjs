@@ -62,9 +62,12 @@ check(
     `document.querySelector('[data-quota-amount]').getAttribute("aria-invalid") !== "true" && document.querySelector('[data-quota-amount]').placeholder === "不限"`
   )
 );
+// 内联样式只留给随数据变、写不进样式表的：印色色板、字体样字、用量卡的月份位置与图例色
 check(
   "no inline styles in rendered settings except swatches",
-  await evalJs(`[...document.querySelectorAll("#settingsContent [style]")].every(el => el.dataset.setting === "accent")`)
+  await evalJs(
+    `[...document.querySelectorAll("#settingsContent [style]")].every(el => ["accent", "font"].includes(el.dataset.setting) || el.closest("#usageCard, #usageTip"))`
+  )
 );
 check(
   "history empty state uses class",
