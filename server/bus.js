@@ -73,8 +73,11 @@ module.exports = function createBus({ dispatch }) {
   const pages = new Map();
 
   function openStream(req, res) {
-    const page = new URL(req.url, "http://127.0.0.1").searchParams.get("page") || "";
+    const query = new URL(req.url, "http://127.0.0.1").searchParams,
+      page = query.get("page") || "",
+      stream = query.get("stream") || "";
     if (!/^[\w-]{8,80}$/.test(page)) return sendJson(res, 400, { error: "缺少页面标识" });
+    if (stream && !/^[\w-]{8,80}$/.test(stream)) return sendJson(res, 400, { error: "事件流标识无效" });
     // 同一页重连：旧流上的请求随旧流作废
     closePage(page);
     // 同一浏览器里已有五页各占一条事件流：这一页再占，六条连接就全满了，各页的普通请求都排着不动。
@@ -89,7 +92,7 @@ module.exports = function createBus({ dispatch }) {
       "X-Accel-Buffering": "no"
     });
     res.write(": open\n\n");
-    const entry = { res, jobs: new Map(), agent };
+    const entry = { res, jobs: new Map(), agent, stream };
     pages.set(page, entry);
     announcePages(entry.agent);
     // 本机连接一般不会断；隔一阵写一行注释，中途有东西把连接掐了也能尽快发现
@@ -141,12 +144,21 @@ module.exports = function createBus({ dispatch }) {
     pages.get(page)?.jobs.get(id)?.destroy();
     sendJson(res, 200, { ok: true });
   }
+  async function close(req, res) {
+    const { page, stream } = await readJson(req);
+    if (typeof page !== "string" || !/^[\w-]{8,80}$/.test(page) || typeof stream !== "string" || !/^[\w-]{8,80}$/.test(stream))
+      return sendJson(res, 400, { error: "页面或事件流标识无效" });
+    // pagehide 的延迟请求不能误关 pageshow 后已经重连的新流。
+    if (pages.get(page)?.stream === stream) closePage(page);
+    sendJson(res, 200, { ok: true });
+  }
 
   return {
     routes: {
       "GET /api/bus": openStream,
       "POST /api/bus/send": send,
-      "POST /api/bus/cancel": cancel
+      "POST /api/bus/cancel": cancel,
+      "POST /api/bus/close": close
     }
   };
 };

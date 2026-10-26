@@ -53,6 +53,8 @@ let busSource = null,
   busPages = 0;
 const busJobs = new Map(),
   busWaiters = [];
+let busReconnectOnShow = false,
+  busStreamId = "";
 function busConnect() {
   if (busSource && busBase === apiBase) return;
   busSource?.close();
@@ -60,7 +62,8 @@ function busConnect() {
   busOpen = busTried = false;
   busBase = apiBase;
   if (typeof EventSource !== "function") return;
-  busSource = new EventSource(`${apiBase}/api/bus?page=${encodeURIComponent(PAGE_ID)}`);
+  busStreamId = uid();
+  busSource = new EventSource(`${apiBase}/api/bus?page=${encodeURIComponent(PAGE_ID)}&stream=${encodeURIComponent(busStreamId)}`);
   const settle = open => {
     busOpen = open;
     busTried = true;
@@ -87,6 +90,32 @@ function busConnect() {
     const message = JSON.parse(event.data);
     busJobs.get(message.id)?.[message.t](message);
   };
+}
+// pagehide 进往返缓存时旧 EventSource 可能跟着被冻结；显式退掉桥接登记，回来后再接一条新的。
+function busPageHide() {
+  const source = busSource;
+  if (!source) return;
+  const base = apiBase,
+    stream = busStreamId;
+  busReconnectOnShow = true;
+  busSource = null;
+  busBase = "";
+  busStreamId = "";
+  busOpen = busTried = false;
+  busPages = 0;
+  source.close();
+  for (const job of [...busJobs.values()]) job.fail(new TypeError("Failed to fetch"));
+  void fetch(`${base}/api/bus/close`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ page: PAGE_ID, stream }),
+    keepalive: true
+  }).catch(() => {});
+}
+function busPageShow() {
+  if (!busReconnectOnShow) return;
+  busReconnectOnShow = false;
+  busConnect();
 }
 function busReady() {
   busConnect();

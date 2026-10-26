@@ -158,10 +158,12 @@ function bindEvents() {
   // flushOnUnload 自身幂等，不会因为两者都到而重复写。
   window.addEventListener("beforeunload", flushPageState);
   window.addEventListener("pagehide", flushPageState);
+  window.addEventListener("pagehide", busPageHide);
   // 从前进 / 后退缓存回来仍是同一份 JS 状态：允许它在下一次离页时再次落盘。
   window.addEventListener("pageshow", event => {
     if (event.persisted) {
       unloading = false;
+      busPageShow();
       void refreshConfigFromDisk();
       if (currentId) void catchUpFromDisk([currentId]);
       void refreshEnv();
