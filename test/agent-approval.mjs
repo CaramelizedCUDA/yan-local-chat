@@ -1,7 +1,9 @@
 // 通过 CDP 驱动无头 Edge，跑一遍执事模式：发送 → 工具调用 → 等待确认 → 运行 → 收尾；再测跳过、停止、轮次上限
 import { mkdirSync, writeFileSync } from "node:fs";
+import { shellCommand } from "./shell-command.mjs";
 import { connect, check, sleep, PAGE, WORK, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
+const greetingCommand = shellCommand("Write-Output '你好，世界'", "printf '你好，世界\n'");
 // 先在不跑 support.js 的同源页面写入配置（主页面离开时会把内存里的旧 store 存回去，覆盖掉写入）
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(800);
@@ -45,7 +47,7 @@ check("meta 待你定夺", (await evalJs(`document.querySelector(".tool-stack-me
 check(
   "approval bar above composer shows the command",
   await evalJs(
-    `!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelector("#approvalBar .approval-cmd").textContent === "Write-Output '你好，世界'" && document.querySelector("#approvalBar").dataset.stepId === document.querySelector('.tool-step[data-status="pending"]').dataset.stepId`
+    `!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelector("#approvalBar .approval-cmd").textContent === ${JSON.stringify(greetingCommand)} && document.querySelector("#approvalBar").dataset.stepId === document.querySelector('.tool-step[data-status="pending"]').dataset.stepId`
   )
 );
 // 请示条入场时输入区还在长高；留白由 ResizeObserver 在下一帧跟上，等它站定再量
