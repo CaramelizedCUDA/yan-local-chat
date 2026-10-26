@@ -571,6 +571,7 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       overrides,
       tally,
       roundLimit: toolRoundLimit(),
+      kind: "side",
       onFrame
     });
     // 末轮的流已读完、正文还在逐字显示时也能按停；与主答一样，收尾前再认一次中止。
@@ -594,7 +595,8 @@ async function streamSideReply(conversation, thread, assistant, profile) {
       partialRound: tally.roundOpen,
       roundStart: tally.roundStart,
       steered: tally.steered,
-      spent: tally.spent
+      spent: tally.spent,
+      kind: "side"
     });
     if (requestJobs.get(key) === job) requestJobs.delete(key);
     markDirty(conversation.id);

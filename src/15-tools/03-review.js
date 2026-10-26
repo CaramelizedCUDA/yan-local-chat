@@ -147,7 +147,7 @@ async function reviewGate(step, args, ctx, why) {
 }
 /** 两步判：先只要一个字；疑了再同一段话换个末句要理由（前头一字不差，走缓存） @returns {Promise<{ ok: boolean, why: string }>} */
 async function askReviewer(step, args, ctx, why) {
-  // 另配的那份拼成一份临时的模型配置：不记用量、不认思考档位
+  // 另配的那份拼成一份临时的模型配置：不扣余墨、不认思考档位；花的墨只记进用量簿的「审查」
   /** @type {Profile} */
   const duty = { id: "duty-review", name: "", quota: "", usedTokens: 0, ...store.settings.dutyReview },
     base = reviewCase(step, args, ctx.conversation, why),
@@ -162,6 +162,7 @@ async function askReviewer(step, args, ctx, why) {
       const reply = { id: `review-${uid()}`, role: "assistant", content: "", timestamp: now() };
       if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, reply);
       else takeWholeReply(await response.json(), reply);
+      noteUsage("review", Number(reply.usage?.total_tokens) || estimateTokens([{ content: `${base}\n\n${tail}` }, { content: reply.content }]));
       return String(reply.content || "").trim();
     };
   if (reviewWord(await ask(prompt("review.quick"), 1500)).startsWith("准")) return { ok: true, why: "" };

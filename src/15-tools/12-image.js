@@ -13,8 +13,9 @@ defineTool({
     const text = String(args.prompt || "").trim();
     step.title = text.replace(/\s+/g, " ").slice(0, 60);
     step.note = text;
-    const { images } = await bridge("/api/image", { profile: profileForRequest(store.settings.dutyImage), prompt: text, size: args.size }, signal),
-      { data, revised } = images[0],
+    const { images } = await bridge("/api/image", { profile: profileForRequest(store.settings.dutyImage), prompt: text, size: args.size }, signal);
+    noteUsage("image", images.length);
+    const { data, revised } = images[0],
       mime = data.slice(5, data.indexOf(";")),
       base =
         String(args.name || "")

@@ -178,6 +178,8 @@ const STAGE = STAGE_LIB({ root: () => STORE.paths().root });
 const BUS = require("./server/bus.js")({ dispatch });
 // 模型转发：测试连接、列模型、对话；各家接口的差异都在 server/model/ 的登记表里（ChatGPT 订阅的登录凭证随存储根）
 const MODEL = require("./server/model/index.js")({ home: () => STORE.paths().root });
+// 用量簿：按日记各类花了多少，给设置里的用量卡看（见 server/usage.js）
+const USAGE = require("./server/usage.js")({ file: () => path.join(STORE.paths().root, "用量.json") });
 
 // 接口表：「方法 路径」→ 处理函数。受信的那一半能碰本机磁盘与本机服务（执事、卷宗、对话目录、存储、附件，以及能打本机的 http_request），
 // 只受理本站页面与本机脚本；另一半（引导、转发、检索、翻网页）凡是本机桥接认得的来源都可调
@@ -198,7 +200,8 @@ const OPEN_ROUTES = {
     ...MCP.routes,
     ...ENV.routes,
     ...STAGE.routes,
-    ...MODEL.routes
+    ...MODEL.routes,
+    ...USAGE.routes
   };
 const ROUTES = new Map(Object.entries({ ...OPEN_ROUTES, ...TRUSTED_ROUTES }));
 const TRUSTED_PATHS = new Set(Object.keys(TRUSTED_ROUTES).map(key => key.split(" ")[1]));

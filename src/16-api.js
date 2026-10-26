@@ -67,13 +67,50 @@ function reserveTokens(profile, amount) {
     else reservedTokens.delete(profile.id);
   };
 }
-// 记下花掉的墨。记在此刻表里的那一份上：请求开工时拿住的模型对象，作答途中可能已被配置同步整份换掉，记在旧的上就丢了
-/** @param {Profile} profile @returns {Profile} 记上账的那一份 */
-function spendTokens(profile, amount) {
+// 记下花掉的墨。记在此刻表里的那一份上：请求开工时拿住的模型对象，作答途中可能已被配置同步整份换掉，记在旧的上就丢了。
+// kind 是用量簿里记在哪一类（见 noteUsage）
+/** @param {Profile} profile @param {UsageKind} [kind] @returns {Profile} 记上账的那一份 */
+function spendTokens(profile, amount, kind = "main") {
   const live = profiles().find(p => p.id === profile.id) || profile;
   live.usedTokens = Math.max(0, Number(live.usedTokens || 0)) + amount;
   noteSpend(live.id, amount);
+  noteUsage(kind, amount);
   return live;
+}
+// 用量簿（设置 → 模型 顶上的用量卡）：每花一笔按本地日期、按类记下——主答（拟题、整理前文随它）、帮手、旁注、审查记墨，生图记张数。
+// 攒几秒一并报给桥接，由它往 用量.json 上加（见 server/usage.js）；报不上的留着下回再报，离页时随 keepalive 送出
+/** @typedef {"main"|"helper"|"side"|"review"|"image"} UsageKind */
+let usagePending = new Map(),
+  usageTimer = 0;
+function localDay(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+/** @param {UsageKind} kind */
+function noteUsage(kind, amount) {
+  if (!(amount > 0)) return;
+  const key = `${localDay()}|${kind}`;
+  usagePending.set(key, (usagePending.get(key) || 0) + amount);
+  usageTimer ||= setTimeout(flushUsage, 3000);
+}
+async function flushUsage(leaving = false) {
+  clearTimeout(usageTimer);
+  usageTimer = 0;
+  if (!usagePending.size) return;
+  const sent = usagePending,
+    items = [...sent].map(([key, amount]) => ({ day: key.split("|")[0], kind: key.split("|")[1], amount }));
+  usagePending = new Map();
+  if (leaving) {
+    fetch(`${apiBase}/api/usage/add`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }), keepalive: true }).catch(
+      () => {}
+    );
+    return;
+  }
+  try {
+    await bridge("/api/usage/add", { items });
+  } catch {
+    for (const [key, amount] of sent) usagePending.set(key, (usagePending.get(key) || 0) + amount);
+    usageTimer ||= setTimeout(flushUsage, 30000);
+  }
 }
 /** @param {Profile} profile */
 function quotaExhausted(profile) {
