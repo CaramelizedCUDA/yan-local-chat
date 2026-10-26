@@ -24,7 +24,7 @@ test("环境备好了：接在原来的 Path 前面，不另起 PATH；pip、uv�
   const parts = out.Path.split(path.delimiter);
   assert.deepEqual(parts.slice(0, 3), [
     path.join(home, "bin"),
-    path.join(home, "py", process.platform === "win32" ? "Scripts" : "bin"),
+    path.join(home, "py", "Scripts"), // 环境工具包只备 Windows 版
     path.join(home, "node")
   ]);
   assert.equal(parts.at(-1), "C:\\Windows");

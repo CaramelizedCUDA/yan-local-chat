@@ -11,9 +11,10 @@ const createWork = require("../../server/work/index.js");
 const { screenStorePath, screenStoreCommand } = require("../../server/sandbox.js");
 
 const R = "E:\\聊天记录\\.yan",
-  J = (...p) => [R, ...p].join("\\");
+  J = (...p) => [R, ...p].join("\\"),
+  onlyWindows = { skip: process.platform !== "win32" && "用例写的是 Windows 路径" };
 
-test("screenStoreCommand：点名配置、备份、登录文件且靠近存储根的拦下，别处的同名字样放行", () => {
+test("screenStoreCommand：点名配置、备份、登录文件且靠近存储根的拦下，别处的同名字样放行", onlyWindows, () => {
   for (const [command, workdir] of [
     [`Get-Content "${J("配置.json")}"`, "D:\\x"],
     ["type ..\\配置.json", J("卷宗")],
@@ -31,7 +32,7 @@ test("screenStoreCommand：点名配置、备份、登录文件且靠近存储�
   assert.equal(screenStoreCommand(`Get-Content "${J("配置.json")}"`, "", "D:\\x"), null, "没给存储根不判");
 });
 
-test("screenStorePath：根下这几样（含备份目录里的）拦下，卷宗里同名的放行，大小写不论", () => {
+test("screenStorePath：根下这几样（含备份目录里的）拦下，卷宗里同名的放行，大小写不论", onlyWindows, () => {
   for (const p of [J("配置.json"), J("配置备份", "2026.json"), J("ChatGPT 登录.json"), "e:\\聊天记录\\.YAN\\配置.JSON"])
     assert.ok(screenStorePath(p, R), p);
   for (const p of [J("卷宗", "a.md"), J("卷宗", "配置.json"), J("对话")]) assert.equal(screenStorePath(p, R), null, p);

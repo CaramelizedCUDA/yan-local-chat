@@ -48,7 +48,8 @@ class Mutex {
 const stopped = () => Object.assign(Error("已停止"), { stopped: true });
 module.exports = function createLocks() {
   const pathLocks = new Map();
-  const lockKey = file => (process.platform === "win32" ? file.toLowerCase() : file);
+  // Windows 与 macOS 默认都不分大小写；分大小写的盘上只差大小写的两个文件多排一回队，无妨
+  const lockKey = file => file.toLowerCase();
   // 同一个文件有几种写法（目录链接、junction、符号链接）：按真实路径认锁，不然两条路各拿一把、同时改同一份。
   // 还不存在的文件取最深一层在的上级的真实路径，再把余下几段接回去
   async function canonical(file) {

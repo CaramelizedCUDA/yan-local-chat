@@ -35,13 +35,13 @@ test("已经停了的请求拿不到锁，锁也不被占着", async () => {
 test("同一文件按先后排队，不同文件各走各的", async () => {
   const { lockFile } = createLocks();
   const a = await lockFile("D:/w/a.txt");
-  // Windows 上路径不分大小写：同一个文件
+  // 路径不分大小写：同一个文件
   let second = false;
   const queued = lockFile("D:/W/A.txt").then(release => ((second = true), release));
   const other = await lockFile("D:/w/b.txt");
   other();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(second, process.platform !== "win32");
+  assert.equal(second, false);
   a();
   (await queued)();
 });

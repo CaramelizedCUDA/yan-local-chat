@@ -300,9 +300,11 @@ function screenStoreCommand(command, root, workdir) {
   const text = String(command || "")
       .replace(/\//g, "\\")
       .toLowerCase(),
-    base = normalizeLower(path.resolve(root)).replace(/\//g, "\\"),
+    rootPath = normalizeLower(path.resolve(root)),
+    // 对指令文本的那份换成反斜杠；比目录用原样的，不然 macOS 上两边斜杠对不上、在根下跑也认不出
+    base = rootPath.replace(/\//g, "\\"),
     named = STORE_SECRETS.some(name => text.includes(name.toLowerCase())),
-    near = text.includes(base) || /\\\.yan(?:\\|["'\s]|$)/.test(text) || inside(base, normalizeLower(path.resolve(workdir || "")));
+    near = text.includes(base) || /\\\.yan(?:\\|["'\s]|$)/.test(text) || inside(rootPath, normalizeLower(path.resolve(workdir || "")));
   if (named && near) return `拒绝：${STORE_WHY}`;
   const wild = new RegExp(`(?:${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}|\\\\\\.yan)\\\\\\*`);
   return wild.test(text) ? `拒绝：${STORE_WHY}` : null;
