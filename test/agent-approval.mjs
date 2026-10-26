@@ -234,7 +234,11 @@ await evalJs(
 );
 await sleep(1500);
 await send("Page.navigate", { url: PAGE });
-await waitFor(`typeof __yanState === "function" && __yanState().conversations.some(c => c.messages.some(m => m.id === "a9"))`, 5000);
+// 页面完成启动与租约核对后才做恢复；别只等磁盘记录出现，否则 macOS 较慢启动时会读到尚未收束的旧状态。
+await waitFor(
+  `typeof __yanState === "function" && (() => { const m = __yanState().conversations.flatMap(c => c.messages).find(m => m.id === "a9"); return m?.status === "interrupted" && m.steps?.[0]?.status === "skipped" && m.steps[0].result === "连接中断"; })()`,
+  15000
+);
 const recovered = await evalJs(
   `(() => { const m = __yanState().conversations.flatMap(c => c.messages).find(m => m.id === "a9"); return { status: m.status, step: m.steps[0].status, result: m.steps[0].result }; })()`
 );

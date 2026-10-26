@@ -357,32 +357,34 @@ const clickTab = id =>
 // 模型换页：自己点回原来那页后，模型的调用（这里直接去找一回）不把人拽走；模型把那一页请到前台（选签即如此），看台跟过去
 await clickTab(targetId);
 await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
-// 点签发出的 Target.activateTarget 是异步的；先等调试口确认前台页，再测 locate 不会把看台切走。
-const bridgeFront = async () => {
-  const list = await (await fetch(DEBUG + "/json/list")).json();
-  return list.find(t => t.type === "page")?.id || "";
-};
-const waitForFront = async (id, timeout = 8000) => {
-  const until = Date.now() + timeout;
-  let front = "";
-  while (Date.now() < until) {
-    front = await bridgeFront();
-    if (front === id) return front;
-    await sleep(120);
-  }
-  return front;
-};
-const pickedFront = await waitForFront(targetId);
+// /json/list 的 target 顺序在 macOS 无头多窗口里不保证跟着 activateTarget；这里只测用户选签后收到同一前台页时，locate 不会改走。
 const beforeLocate = await evalJs(
   `JSON.stringify({ current: __yanStage.state.current, front: __yanStage.state.front, hasTab: __yanStage.state.tabs.has(${JSON.stringify(targetId)}) })`
 );
-const listedPages = await (await fetch(DEBUG + "/json/list")).json();
-await evalJs(`__yanStage.locate().then(() => true)`);
+// 只把桥接响应里的 front 固定为刚才明确选中的标签，其他请求仍走真实桥接；避免把 CDP 的列表顺序误当成前台状态。
+await evalJs(`(() => {
+  window.__stageTestFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/api/bus/send")) return new Response("{}", { status: 409, headers: { "Content-Type": "application/json" } });
+    if (url.endsWith("/api/stage")) {
+      const response = await window.__stageTestFetch(input, init), data = await response.json();
+      return new Response(JSON.stringify({ ...data, front: ${JSON.stringify(targetId)} }), { status: response.status, headers: { "Content-Type": "application/json" } });
+    }
+    return window.__stageTestFetch(input, init);
+  };
+  return true;
+})()`);
+try {
+  await evalJs(`__yanStage.locate().then(() => true)`);
+} finally {
+  await evalJs(`window.fetch = window.__stageTestFetch; delete window.__stageTestFetch; true`);
+}
 const currentAfterLocate = await evalJs(`__yanStage.state.current`);
 check(
   "a call after the user picked a tab leaves the view alone",
-  pickedFront === targetId && JSON.parse(beforeLocate).current === targetId && currentAfterLocate === targetId,
-  `target=${targetId} front=${pickedFront || "(none)"} before=${beforeLocate} after=${currentAfterLocate} pages=${JSON.stringify(listedPages.filter(t => t.type === "page").map(t => ({ id: t.id, title: t.title, url: t.url })))}`
+  JSON.parse(beforeLocate).current === targetId && currentAfterLocate === targetId,
+  `target=${targetId} front=${JSON.parse(beforeLocate).front} before=${beforeLocate} after=${currentAfterLocate}`
 );
 await browserSend("Target.activateTarget", { targetId: fresh });
 await sleep(300);

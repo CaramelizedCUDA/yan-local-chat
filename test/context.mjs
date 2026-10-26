@@ -32,9 +32,9 @@ check(
 );
 const before = await evalJs(`document.querySelector("#contextGauge .context-gauge-value").textContent`);
 await evalJs(
-  `document.querySelector("#chatInput").value = "字".repeat(600); document.querySelector("#chatInput").dispatchEvent(new Event("input")); true`
+  `document.querySelector("#chatInput").value = "字".repeat(1600); document.querySelector("#chatInput").dispatchEvent(new Event("input")); true`
 );
-await sleep(500);
+await waitFor(`document.querySelector("#contextGauge .context-gauge-value").textContent !== ${JSON.stringify(before)}`, 5000);
 const typing = await evalJs(`document.querySelector("#contextGauge .context-gauge-value").textContent`);
 check("typing grows the count live", typing !== before, `${before} → ${typing}`);
 await ask("#chatInput", "PLAIN 第二问", "#chatSend");

@@ -1754,19 +1754,24 @@ http
       }
       if (typeof lastUser === "string" && lastUser.includes("EDIT")) {
         const n = toolResults.length,
-          call = (name, args) => [
-            delta({ reasoning_content: `想一想 ${n + 1}` }),
-            delta({ reasoning_content: "，再想想。" }),
-            delta({ content: `步骤 ${n + 1}。` }),
-            delta({ tool_calls: [{ index: 0, id: `call_e${n}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] }),
-            delta({}, { usage: { total_tokens: 5 } })
-          ];
-        if (n === 0) return sse(res, call("edit_file", { path: "src/a.js", old: "return 1;", new: "return 2;" }));
-        if (n === 1) return sse(res, call("read_file", { path: "src/a.js" }));
-        if (n === 2) return sse(res, call("edit_file", { path: "src/a.js", old: "return 1;", new: "return 2;" }));
-        if (n === 3) return sse(res, call("run_command", { command: shellCommand("Get-Content src/a.js", "cat src/a.js") }));
-        if (n === 4) return sse(res, call("search_files", { query: "return", glob: "*.js" }));
-        if (n === 5) return sse(res, call("list_files", { pattern: "**/*.js" }));
+          call = (name, args) => {
+            const encoded = JSON.stringify(args), split = Math.floor(encoded.length / 2);
+            return [
+              delta({ reasoning_content: `想一想 ${n + 1}` }),
+              delta({ reasoning_content: "，再想想。" }),
+              delta({ content: `步骤 ${n + 1}。` }),
+              delta({ tool_calls: [{ index: 0, id: `call_e${n}`, type: "function", function: { name, arguments: encoded.slice(0, split) } }] }),
+              delta({ tool_calls: [{ index: 0, function: { arguments: encoded.slice(split) } }] }),
+              delta({}, { usage: { total_tokens: 5 } })
+            ];
+          },
+          respond = chunks => sse(res, chunks, 60);
+        if (n === 0) return respond(call("edit_file", { path: "src/a.js", old: "return 1;", new: "return 2;" }));
+        if (n === 1) return respond(call("read_file", { path: "src/a.js" }));
+        if (n === 2) return respond(call("edit_file", { path: "src/a.js", old: "return 1;", new: "return 2;" }));
+        if (n === 3) return respond(call("run_command", { command: shellCommand("Get-Content src/a.js", "cat src/a.js") }));
+        if (n === 4) return respond(call("search_files", { query: "return", glob: "*.js" }));
+        if (n === 5) return respond(call("list_files", { pattern: "**/*.js" }));
         return sse(res, [
           delta({ reasoning_content: "最后想一想。" }),
           delta({ content: `EDIT done｜${toolResults.map(t => String(t.content).slice(0, 40)).join(" ▸ ")}` }),
