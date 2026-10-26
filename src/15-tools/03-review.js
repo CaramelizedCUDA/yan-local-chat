@@ -178,11 +178,30 @@ async function askReviewer(step, args, ctx, why) {
 function reviewWord(text) {
   return text.replace(/^[\s*_`#>"'「『“‘【\[(（-]+/, "");
 }
-/** 交给审查的那段话：用户历次的原话（新的在后、过长截去旧的）、意里的目标与守、将要做的、规则的缘由 @param {Conversation} conversation */
+/**
+ * 交给审查的那段话：用户历次的原话（新的在后、过长截去旧的）、意里的目标与守、将要做的、规则的缘由。
+ * 用户在请示上的定夺也是亲口说的，按先后插在其间：表单的作答、守的关口上的准许（连这一步也算）——只让审查知道人选了什么，照样由它判：
+ * 人批的是要做这件事，审查还看模型这一步有没有写歪
+ * @param {Conversation} conversation
+ */
 function reviewCase(step, args, conversation, why) {
   const said = conversation.messages
-      .filter(m => m.role === "user" && !m.relay)
-      .map(m => [String(m.content || "").trim(), ...(m.attachments || []).map(a => `［附件 ${a.name}］`)].filter(Boolean).join(" "))
+      .flatMap(m =>
+        m.role === "user"
+          ? m.relay
+            ? []
+            : [[String(m.content || "").trim(), ...(m.attachments || []).map(a => `［附件 ${a.name}］`)].filter(Boolean).join(" ")]
+          : allSteps(m).flatMap(s =>
+              s.name === "ask_user" && s.answers
+                ? // 问句里写着问的是哪件事，单看答案「授权上述操作」不知所指
+                  [
+                    `［请示作答］${s.form?.questions?.map((q, i) => `${q.question} → ${s.answers?.[i] || "（未答）"}`).join("；") || s.note || ""}`
+                  ]
+                : s.granted
+                  ? [s === step ? "［守请示］准许了下面将要做的这一步" : `［守请示］准许了 ${s.name}${s.title ? `：${s.title}` : ""}`]
+                  : []
+            )
+      )
       .filter(Boolean),
     lines = [];
   let room = 6000;

@@ -43,6 +43,43 @@ test("交给审查的「用户的原话」里没有回报", () => {
   assert.doesNotMatch(text, /回报|用户已同意/);
 });
 
+test("请示表单上的作答是用户亲口说的：问句连答案按先后交给审查", () => {
+  const chat = {
+    id: "c",
+    messages: [
+      { role: "user", content: "修好后先给我审，批了再发 PR" },
+      {
+        role: "assistant",
+        steps: [
+          {
+            name: "ask_user",
+            status: "done",
+            form: { questions: [{ question: "是否授权 fork 仓库、推送分支并开 PR？", header: "发布授权" }] },
+            answers: ["授权上述操作"]
+          },
+          { name: "ask_user", status: "skipped", form: { questions: [{ question: "没答的不算" }] } }
+        ]
+      }
+    ]
+  };
+  const text = f.reviewCase({ name: "mcp_call" }, {}, chat, "缘由");
+  assert.match(text, /1\. 修好后先给我审.*\n2\. ［请示作答］是否授权 fork 仓库、推送分支并开 PR？ → 授权上述操作/s);
+  assert.doesNotMatch(text, /没答的不算/);
+  // 守的关口上准许过的：早先那步写出做了什么，正审的这一步写「下面将要做的」
+  const now = { name: "mcp_call", granted: true },
+    gated = {
+      id: "c",
+      messages: [
+        { role: "user", content: "发布前给我审" },
+        { role: "assistant", steps: [{ name: "run_command", title: "git push origin fix", granted: true }, now] }
+      ]
+    };
+  assert.match(
+    f.reviewCase(now, {}, gated, "缘由"),
+    /2\. ［守请示］准许了 run_command：git push origin fix\n3\. ［守请示］准许了下面将要做的这一步/
+  );
+});
+
 test("往技能目录写：带 . 与 .. 的相对、绝对路径都认得出", () => {
   const chat = { id: "c", messages: [], workdir: "E:\\聊天记录\\.yan\\卷宗" };
   assert.equal(f.insideSkills("../技能/x/SKILL.md", chat), true);
