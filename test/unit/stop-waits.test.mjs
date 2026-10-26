@@ -1,9 +1,6 @@
 // 「停止」要盖住等待的那一段：排队等写锁时停了不再动文件；等连接、重拉工具时停了不再发 tools/call
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -37,24 +34,16 @@ test("已经停了的请求拿不到锁，锁也不被占着", async () => {
 
 test("同一文件按先后排队，不同文件各走各的", async () => {
   const { lockFile } = createLocks();
-  const root = mkdtempSync(path.join(os.tmpdir(), "yan-lock-waits-"));
-  try {
-    const lower = path.join(root, "a.txt"), upper = path.join(root, "A.txt"), otherPath = path.join(root, "b.txt");
-    writeFileSync(lower, "a");
-    writeFileSync(otherPath, "b");
-    const aliasesSameFile = existsSync(upper);
-    const a = await lockFile(lower);
-    let second = false;
-    const queued = lockFile(upper).then(release => ((second = true), release));
-    const other = await lockFile(otherPath);
-    other();
-    await new Promise(resolve => setTimeout(resolve, 20));
-    assert.equal(second, !aliasesSameFile, "按当前文件系统的大小写别名行为判断");
-    a();
-    (await queued)();
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  const a = await lockFile("D:/w/a.txt");
+  // 路径不分大小写：同一个文件
+  let second = false;
+  const queued = lockFile("D:/W/A.txt").then(release => ((second = true), release));
+  const other = await lockFile("D:/w/b.txt");
+  other();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(second, false);
+  a();
+  (await queued)();
 });
 
 function fakeClient() {
