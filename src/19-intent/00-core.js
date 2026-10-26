@@ -634,7 +634,7 @@ function applyIntentOps(intent, ops, { at = "", conversation = "", ask = "", pri
     node.seal = {
       rev: node.rev,
       anchors: [...node.anchors],
-      premises: node.state === "done" ?Object.fromEntries(liveNeeds(next, id).map(need => [need, next.nodes[need].rev])) : {},
+      premises: node.state === "done" ? Object.fromEntries(liveNeeds(next, id).map(need => [need, next.nodes[need].rev])) : {},
       prints: Object.fromEntries(node.anchors.filter(key => key in prints).map(key => [key, prints[key]]))
     };
   }

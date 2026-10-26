@@ -113,7 +113,7 @@
 .tool-step-fold > .tool-note {
   padding: 4px 12px 9px 50px;
   color: var(--ink-2);
-  font: var(--fs-small)/1.75 var(--title);
+  font: var(--fs-small) / 1.75 var(--title);
 }
 .tool-step-fold > .tool-note :is(ul, ol) {
   margin: 0;

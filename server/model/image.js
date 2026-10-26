@@ -53,7 +53,10 @@ module.exports = function createImage({ resolveProfile, upstreamError }) {
       console.log(`${stamp()} → ${config.model}：生图${size ? ` ${size}` : ""}`);
       const response = await fetch(imagesUrl(config.baseUrl), {
         method: "POST",
-        headers: { "Content-Type": "application/json; charset=utf-8", ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) },
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {})
+        },
         body: JSON.stringify(request),
         signal: AbortSignal.any([abort.signal, AbortSignal.timeout(300000)])
       }).catch(error => {
@@ -65,7 +68,9 @@ module.exports = function createImage({ resolveProfile, upstreamError }) {
       const images = await Promise.all(
         items.map(async item => ({
           data: item?.b64_json
-            ? (bytes => `data:${sniff(bytes) || "image/png"};base64,${item.b64_json}`)(Buffer.from(String(item.b64_json).slice(0, 64), "base64"))
+            ? (bytes => `data:${sniff(bytes) || "image/png"};base64,${item.b64_json}`)(
+                Buffer.from(String(item.b64_json).slice(0, 64), "base64")
+              )
             : await fetchImage(String(item?.url || ""), abort.signal),
           ...(item?.revised_prompt ? { revised: String(item.revised_prompt) } : {})
         }))
@@ -74,7 +79,8 @@ module.exports = function createImage({ resolveProfile, upstreamError }) {
       console.log(`${stamp()} ← ${config.model}：生图 ${images.length} 幅`);
       sendJson(res, 200, { images });
     } catch (error) {
-      if (!res.headersSent) sendJson(res, error.status >= 400 ? error.status : 400, { error: String(error.message || error).slice(0, 500) });
+      if (!res.headersSent)
+        sendJson(res, error.status >= 400 ? error.status : 400, { error: String(error.message || error).slice(0, 500) });
     }
   }
   return { "POST /api/image": handleImage };

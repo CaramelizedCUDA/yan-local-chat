@@ -169,7 +169,9 @@ function helperTrail(runs) {
     .map((run, i) => {
       const sub = /** @type {SubAgent} */ (run.sub),
         content = String(sub.content || ""),
-        lines = [t`第 ${i + 1} 趟（${run.status === "running" ? t("还在做") : stepText(run.result) || run.status}）· 领命：${clipForModel(sub.task, 1500)}`],
+        lines = [
+          t`第 ${i + 1} 趟（${run.status === "running" ? t("还在做") : stepText(run.result) || run.status}）· 领命：${clipForModel(sub.task, 1500)}`
+        ],
         said = text => {
           if (text.trim()) lines.push(t`【帮手】${clipForModel(text.trim(), 1500, { tail: true })}`);
         };
@@ -220,14 +222,7 @@ function delegateInBackground(step, args, ctx) {
  * @param {boolean} [resume]
  * @param {Profile|null} [profile] 续写时在认领前拿住，等待期间换了对话也不改用别处的模型
  */
-function launchHelper(
-  step,
-  args,
-  ctx,
-  past = null,
-  resume = false,
-  profile = requestJob(ctx.conversation.id)?.profile || activeProfile()
-) {
+function launchHelper(step, args, ctx, past = null, resume = false, profile = requestJob(ctx.conversation.id)?.profile || activeProfile()) {
   const { conversation, assistant } = ctx;
   // 进展：帮手只剩等后台、睡下之前交的那一份。这一步仍在做，回报照常寄
   const progress = outcome =>
@@ -506,10 +501,10 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
     const ledger = await loadLedger(conversation, box.controller.signal, "sub");
     box.controller.signal.throwIfAborted();
     const lead = past ? settledDigest(past.sub) : "";
-    history.push(
-      ...(past ? helperHistory(conversation, past) : []),
-      { role: "user", content: `${ledgerNote(conversation, "sub", profile, ledger)}${lead ? `${lead}\n\n` : ""}${task}` }
-    );
+    history.push(...(past ? helperHistory(conversation, past) : []), {
+      role: "user",
+      content: `${ledgerNote(conversation, "sub", profile, ledger)}${lead ? `${lead}\n\n` : ""}${task}`
+    });
     // 续上：已写的话与传话照原处排上，做过的步骤也让它知道，再请它接着做。
     if (resume) {
       const before = { content: sub.content, steps: [...sub.steps] },

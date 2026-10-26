@@ -73,7 +73,10 @@ await fresh();
 state = await ask("REVIEW-HARD");
 check(
   "藏字的指令：不交审查，照规则回绝",
-  state.steps[0]?.status === "error" && !state.steps[0].reviewed && /隐藏或动态拼接/.test(state.reply) && !existsSync(`${TMP}/review-duty/hard.txt`),
+  state.steps[0]?.status === "error" &&
+    !state.steps[0].reviewed &&
+    /隐藏或动态拼接/.test(state.reply) &&
+    !existsSync(`${TMP}/review-duty/hard.txt`),
   JSON.stringify({ step: state.steps[0], reply: state.reply.slice(0, 200) })
 );
 check("藏字的指令：审查员一问也没收到", (await asks()).length === 0);

@@ -162,7 +162,10 @@ async function askReviewer(step, args, ctx, why) {
       const reply = { id: `review-${uid()}`, role: "assistant", content: "", timestamp: now() };
       if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, reply);
       else takeWholeReply(await response.json(), reply);
-      noteUsage("review", Number(reply.usage?.total_tokens) || estimateTokens([{ content: `${base}\n\n${tail}` }, { content: reply.content }]));
+      noteUsage(
+        "review",
+        Number(reply.usage?.total_tokens) || estimateTokens([{ content: `${base}\n\n${tail}` }, { content: reply.content }])
+      );
       return String(reply.content || "").trim();
     };
   if (reviewWord(await ask(prompt("review.quick"), 1500)).startsWith("准")) return { ok: true, why: "" };

@@ -74,9 +74,7 @@ function usageBodyHtml() {
       const at = rows.find(r => r.date.getMonth() === m && r.date.getDate() === 1);
       return `<span style="left:${((at.col * S) / (cols * S)) * 100}%">${escapeHtml(monthName.format(at.date))}</span>`;
     }).join(""),
-    totals = Object.fromEntries(
-      USAGE_KINDS.map(([k]) => [k, rows.reduce((sum, r) => sum + (Number(r.row?.[k]) || 0), 0)])
-    ),
+    totals = Object.fromEntries(USAGE_KINDS.map(([k]) => [k, rows.reduce((sum, r) => sum + (Number(r.row?.[k]) || 0), 0)])),
     legend = USAGE_KINDS.map(
       ([k, name, c]) =>
         `<button type="button" data-usage-kind="${k}" aria-pressed="${usageKind === k}"><i style="background:${c}"></i>${name()}<b>${usageAmount(k, totals[k])}</b></button>`
@@ -117,7 +115,8 @@ function bindUsageCard() {
     const button = /** @type {HTMLElement} */ (e.target).closest("button");
     if (!button) return;
     if (button.dataset.usageYear) usageYear = Number(button.dataset.usageYear);
-    else if (button.dataset.usageKind) usageKind = usageKind === button.dataset.usageKind ? "" : /** @type {UsageKind} */ (button.dataset.usageKind);
+    else if (button.dataset.usageKind)
+      usageKind = usageKind === button.dataset.usageKind ? "" : /** @type {UsageKind} */ (button.dataset.usageKind);
     else return;
     renderUsageBody();
   });

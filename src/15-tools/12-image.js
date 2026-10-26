@@ -13,7 +13,11 @@ defineTool({
     const text = String(args.prompt || "").trim();
     step.title = text.replace(/\s+/g, " ").slice(0, 60);
     step.note = text;
-    const { images } = await bridge("/api/image", { profile: profileForRequest(store.settings.dutyImage), prompt: text, size: args.size }, signal);
+    const { images } = await bridge(
+      "/api/image",
+      { profile: profileForRequest(store.settings.dutyImage), prompt: text, size: args.size },
+      signal
+    );
     noteUsage("image", images.length);
     const { data, revised } = images[0],
       mime = data.slice(5, data.indexOf(";")),
@@ -23,14 +27,19 @@ defineTool({
           .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "")
           .trim() || `图-${step.id.slice(-6)}`,
       // 不走 putArchiveFile：那是人放进卷宗的记法，记了答末的成品条就不列它
-      saved = await bridge("/api/archive/put", { root: workRoot(conversation), name: `${base}.${mime.split("/")[1]?.replace("jpeg", "jpg") || "png"}`, data }, signal),
+      saved = await bridge(
+        "/api/archive/put",
+        { root: workRoot(conversation), name: `${base}.${mime.split("/")[1]?.replace("jpeg", "jpg") || "png"}`, data },
+        signal
+      ),
       meta = { id: uid(), kind: /** @type {const} */ ("image"), name: saved.name, mime, size: saved.size, modifiedAt: Date.now() };
     await putAttachment({ ...meta, data }).catch(() => {});
     step.attachments = [meta];
     step.title = saved.path;
     return {
       ok: true,
-      content: prompt("image.saved", { path: saved.path, name: saved.name }) + (revised ? `\n${prompt("image.revised", { text: revised })}` : ""),
+      content:
+        prompt("image.saved", { path: saved.path, name: saved.name }) + (revised ? `\n${prompt("image.revised", { text: revised })}` : ""),
       display: "",
       images: [data]
     };

@@ -346,7 +346,7 @@
   width: 14px;
   margin-top: 1px;
   color: var(--ink-3);
-  font: var(--fs-note)/1.65 var(--title);
+  font: var(--fs-note) / 1.65 var(--title);
   transition: color var(--dur-quick);
 }
 .side-index-item.here .side-index-num {
@@ -361,7 +361,7 @@
 }
 .side-index-copy strong {
   display: -webkit-box;
-  font: var(--fs-small)/1.65 var(--body);
+  font: var(--fs-small) / 1.65 var(--body);
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -399,7 +399,7 @@
   padding: 34px 8px;
   text-align: center;
   color: var(--ink-3);
-  font: var(--fs-small)/1.9 var(--title);
+  font: var(--fs-small) / 1.9 var(--title);
   letter-spacing: 0.06em;
 }
 /* 输入与主页同一个框：寄在框里右下，模型签在它左边（回目录在页头最左）。窄栏里字小一号、阴影浅些 */
@@ -443,7 +443,7 @@ sup.note-ref {
   margin: 0 1px 0 2px;
   padding: 0 1px;
   color: var(--ink-3);
-  font: var(--fs-mark)/12px var(--title);
+  font: var(--fs-mark) / 12px var(--title);
   vertical-align: super;
   cursor: pointer;
   user-select: none;
@@ -459,7 +459,7 @@ sup.note-ref.active {
   align-items: center;
   margin-left: 8px;
   color: var(--ink-3);
-  font: var(--fs-mark)/15px var(--title);
+  font: var(--fs-mark) / 15px var(--title);
   letter-spacing: 0.06em;
   white-space: nowrap;
   transition: color var(--dur-quick);

@@ -182,7 +182,7 @@
   border-left: 2px solid var(--accent);
   background: var(--paper-2);
   color: var(--ink-3);
-  font: var(--fs-note)/1.6 var(--body);
+  font: var(--fs-note) / 1.6 var(--body);
 }
 .source-stack {
   margin: 18px 0 4px;
@@ -612,7 +612,7 @@ button.source-local {
 .file-viewer-empty {
   margin: auto;
   color: var(--ink-3);
-  font: var(--fs-small)/2.2 var(--title);
+  font: var(--fs-small) / 2.2 var(--title);
   letter-spacing: 0.1em;
   text-align: center;
 }

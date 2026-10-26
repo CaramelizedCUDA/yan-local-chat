@@ -22,7 +22,10 @@ export async function usageOf(kind, timeout = 8000) {
   for (;;) {
     let n = 0;
     try {
-      n = Object.values(JSON.parse(readFileSync(`${HOME}/用量.json`, "utf8")).days || {}).reduce((sum, row) => sum + (Number(row[kind]) || 0), 0);
+      n = Object.values(JSON.parse(readFileSync(`${HOME}/用量.json`, "utf8")).days || {}).reduce(
+        (sum, row) => sum + (Number(row[kind]) || 0),
+        0
+      );
     } catch {}
     if (n > 0 || Date.now() - started > timeout) return n;
     await sleep(300);

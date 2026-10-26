@@ -157,9 +157,16 @@ await waitFor(
   20000
 );
 check("once resumed it finishes and the report wakes the main model", true);
-const gone = await waitFor(`document.querySelector("#helperBar").classList.contains("hidden") || !document.querySelector("#helperBar .work-held")`, 3000).then(
+const gone = await waitFor(
+  `document.querySelector("#helperBar").classList.contains("hidden") || !document.querySelector("#helperBar .work-held")`,
+  3000
+).then(
   () => true,
   () => false
 );
-check("once resumed the work bar lets it go", gone, gone ? "" : await evalJs(`document.querySelector("#helperBar").className + " | " + document.querySelector("#helperBar").textContent`));
+check(
+  "once resumed the work bar lets it go",
+  gone,
+  gone ? "" : await evalJs(`document.querySelector("#helperBar").className + " | " + document.querySelector("#helperBar").textContent`)
+);
 close();

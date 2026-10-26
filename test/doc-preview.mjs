@@ -51,7 +51,10 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   R = `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`,
   rels = links =>
     `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${Object.entries(links)
-      .map(([id, [type, target]]) => `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}"/>`)
+      .map(
+        ([id, [type, target]]) =>
+          `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}"/>`
+      )
       .join("")}</Relationships>`;
 const W = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`,
   run = (text, props = "") => `<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ""}<w:t xml:space="preserve">${text}</w:t></w:r>`;
@@ -162,7 +165,11 @@ const sheet = JSON.parse(
 );
 check(
   "xlsx: one tab per sheet by its name, cells land in their own columns, shared and rich strings read, a picture under its anchor cell",
-  sheet.tabs.join() === "销量,说明" && sheet.head.join() === "品名,,价格" && sheet.row.join() === "藜麦,富文本,48.9" && sheet.second && sheet.img.join() === "D5：|data:image/png",
+  sheet.tabs.join() === "销量,说明" &&
+    sheet.head.join() === "品名,,价格" &&
+    sheet.row.join() === "藜麦,富文本,48.9" &&
+    sheet.second &&
+    sheet.img.join() === "D5：|data:image/png",
   JSON.stringify(sheet)
 );
 await evalJs(`document.querySelectorAll("[data-viewer-tab]")[1].click(); true`);

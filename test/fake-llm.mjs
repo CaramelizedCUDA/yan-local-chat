@@ -219,14 +219,31 @@ http
           const results = msgs.slice(asked + 1).filter(m => m.role === "tool");
           if (!results.length)
             return sse(res, [
-              delta({ tool_calls: [{ index: 0, id: "call_image_0", type: "function", function: { name: "generate_image", arguments: JSON.stringify({ prompt: "一只墨色的猫", size: "1024x1024", name: "墨猫" }) } }] }),
+              delta({
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_image_0",
+                    type: "function",
+                    function: {
+                      name: "generate_image",
+                      arguments: JSON.stringify({ prompt: "一只墨色的猫", size: "1024x1024", name: "墨猫" })
+                    }
+                  }
+                ]
+              }),
               delta({}, { usage: { total_tokens: 5 } })
             ]);
-          const seen = msgs.slice(asked + 1).flatMap(m => (Array.isArray(m.content) ? m.content : [])).filter(part => part.type === "image_url").length;
+          const seen = msgs
+            .slice(asked + 1)
+            .flatMap(m => (Array.isArray(m.content) ? m.content : []))
+            .filter(part => part.type === "image_url").length;
           return sse(res, [
-            delta({ content: `IMAGE-DUTY done｜${String(results[0].content).replace(/\s+/g, " ").slice(0, 160)}｜看到图 ${seen} 幅
+            delta({
+              content: `IMAGE-DUTY done｜${String(results[0].content).replace(/\s+/g, " ").slice(0, 160)}｜看到图 ${seen} 幅
 
-![墨猫](墨猫.png)` }),
+![墨猫](墨猫.png)`
+            }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
         }
@@ -235,10 +252,22 @@ http
       if (typeof lastUser === "string" && lastUser.includes("REVIEW-HARD")) {
         if (!toolResults.length)
           return sse(res, [
-            delta({ tool_calls: [{ index: 0, id: "call_hard_0", type: "function", function: { name: "run_command", arguments: JSON.stringify({ command: "Invoke-Expression 'Set-Content hard.txt x'" }) } }] }),
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_hard_0",
+                  type: "function",
+                  function: { name: "run_command", arguments: JSON.stringify({ command: "Invoke-Expression 'Set-Content hard.txt x'" }) }
+                }
+              ]
+            }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
-        return sse(res, [delta({ content: `REVIEW-HARD done｜${String(toolResults[0].content).replace(/\s+/g, " ").slice(0, 160)}` }), delta({}, { usage: { total_tokens: 5 } })]);
+        return sse(res, [
+          delta({ content: `REVIEW-HARD done｜${String(toolResults[0].content).replace(/\s+/g, " ").slice(0, 160)}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
       }
       // REVIEW-DUTY：审而后行里先发一条宽沙箱会拦的指令（定义别名），再翻一个网址里带长串参数的网页；收尾把两步的结果报回去
       if (typeof lastUser === "string" && lastUser.includes("REVIEW-DUTY")) {
@@ -246,7 +275,11 @@ http
           results = msgs.slice(lastUserIndex + 1).filter(m => m.role === "tool"),
           call = (name, args) =>
             sse(res, [
-              delta({ tool_calls: [{ index: 0, id: `call_duty_${results.length}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] }),
+              delta({
+                tool_calls: [
+                  { index: 0, id: `call_duty_${results.length}`, type: "function", function: { name, arguments: JSON.stringify(args) } }
+                ]
+              }),
               delta({}, { usage: { total_tokens: 5 } })
             ]);
         if (results.length === 0) return call("run_command", { command: "Set-Alias yanrv Get-Date; Set-Content duty-ok.txt ok" });

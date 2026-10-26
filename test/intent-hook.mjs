@@ -98,7 +98,9 @@ try {
     await evalJs(
       `document.querySelector(".intent-keep-head small").textContent === "2 条" && document.querySelector('.intent-roll [data-intent-node="远端"] .intent-mk')?.dataset.mark === "hook" && document.querySelector('.intent-roll [data-intent-node="测过"] .intent-mk')?.dataset.mark === "check"`
     ),
-    await evalJs(`[...document.querySelectorAll(".intent-keep-head small, .intent-roll .intent-mk")].map(e => e.textContent || e.dataset.mark).join(" | ")`)
+    await evalJs(
+      `[...document.querySelectorAll(".intent-keep-head small, .intent-roll .intent-mk")].map(e => e.textContent || e.dataset.mark).join(" | ")`
+    )
   );
   check(
     "the card leaves 守 off the graph and lists it in its own section after the roll",
@@ -114,7 +116,10 @@ try {
   await evalJs(
     `document.querySelector("${input}").value = "HOOK6 发布前给我审"; document.querySelector("${input}").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
   );
-  await waitFor(`!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelector("#approvalBar").textContent.includes("守请示")`, 30000);
+  await waitFor(
+    `!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelector("#approvalBar").textContent.includes("守请示")`,
+    30000
+  );
   check(
     "a keep marked ask stops for the user even in 径行, showing its claim and no 径行 button",
     await evalJs(

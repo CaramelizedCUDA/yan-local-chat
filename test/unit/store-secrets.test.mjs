@@ -32,7 +32,8 @@ test("screenStoreCommand：点名配置、备份、登录文件且靠近存储�
 });
 
 test("screenStorePath：根下这几样（含备份目录里的）拦下，卷宗里同名的放行，大小写不论", () => {
-  for (const p of [J("配置.json"), J("配置备份", "2026.json"), J("ChatGPT 登录.json"), "e:\\聊天记录\\.YAN\\配置.JSON"]) assert.ok(screenStorePath(p, R), p);
+  for (const p of [J("配置.json"), J("配置备份", "2026.json"), J("ChatGPT 登录.json"), "e:\\聊天记录\\.YAN\\配置.JSON"])
+    assert.ok(screenStorePath(p, R), p);
   for (const p of [J("卷宗", "a.md"), J("卷宗", "配置.json"), J("对话")]) assert.equal(screenStorePath(p, R), null, p);
 });
 

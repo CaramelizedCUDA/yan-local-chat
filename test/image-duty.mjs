@@ -33,16 +33,27 @@ const ask = async () => {
 let state = await ask();
 check(
   "配了生图：画好收进卷宗，挂在步骤上",
-  state.steps[0]?.name === "generate_image" && state.steps[0].status === "done" && state.steps[0].files[0] === "墨猫.png" && existsSync(`${ARCHIVE}/墨猫.png`),
+  state.steps[0]?.name === "generate_image" &&
+    state.steps[0].status === "done" &&
+    state.steps[0].files[0] === "墨猫.png" &&
+    existsSync(`${ARCHIVE}/墨猫.png`),
   JSON.stringify(state.steps)
 );
 const log = await asks();
 check(
   "硅基流动的参数名：image_size、batch_size",
-  log.length === 1 && log[0].model === "Kwai-Kolors/Kolors" && log[0].image_size === "1024x1024" && log[0].batch_size === 1 && log[0].prompt === "一只墨色的猫",
+  log.length === 1 &&
+    log[0].model === "Kwai-Kolors/Kolors" &&
+    log[0].image_size === "1024x1024" &&
+    log[0].batch_size === 1 &&
+    log[0].prompt === "一只墨色的猫",
   JSON.stringify(log)
 );
-check("工具结果写明存处，图随结果附给模型", /存为 墨猫\.png/.test(state.reply) && /看到图 1 幅/.test(state.reply), state.reply.slice(0, 300));
+check(
+  "工具结果写明存处，图随结果附给模型",
+  /存为 墨猫\.png/.test(state.reply) && /看到图 1 幅/.test(state.reply),
+  state.reply.slice(0, 300)
+);
 check("答末成品条列出这幅", state.deliverables.includes("墨猫.png"), JSON.stringify(state.deliverables));
 await waitFor(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`, 5000).catch(() => {});
 check("正文引文件名就地画出", await evalJs(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`));

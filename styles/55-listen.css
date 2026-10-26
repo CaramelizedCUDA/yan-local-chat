@@ -98,7 +98,7 @@
 .listen-where {
   margin: 0 0 12px;
   color: var(--ink-3);
-  font: var(--fs-note)/1.6 var(--title);
+  font: var(--fs-note) / 1.6 var(--title);
   letter-spacing: 0.06em;
   overflow-wrap: anywhere;
 }

@@ -239,7 +239,7 @@ input.memory-cat-new {
   border-radius: var(--radius-m) var(--radius-l) var(--radius-l) var(--radius-l);
   background: color-mix(in srgb, var(--paper-2) 60%, transparent);
   color: var(--ink-2);
-  font: var(--fs-small)/1.6 var(--title);
+  font: var(--fs-small) / 1.6 var(--title);
   letter-spacing: 0.02em;
 }
 .welcome-notice .seal {

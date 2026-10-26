@@ -100,9 +100,12 @@ async function flushUsage(leaving = false) {
     items = [...sent].map(([key, amount]) => ({ day: key.split("|")[0], kind: key.split("|")[1], amount }));
   usagePending = new Map();
   if (leaving) {
-    fetch(`${apiBase}/api/usage/add`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }), keepalive: true }).catch(
-      () => {}
-    );
+    fetch(`${apiBase}/api/usage/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+      keepalive: true
+    }).catch(() => {});
     return;
   }
   try {

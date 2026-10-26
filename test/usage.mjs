@@ -13,8 +13,12 @@ await send("Page.navigate", { url: PAGE });
 await sleep(900);
 
 const post = (path, body) =>
-  evalJs(`fetch(${JSON.stringify(path)}, { method: "POST", headers: { "Content-Type": "application/json" }, body: ${JSON.stringify(JSON.stringify(body))} }).then(r => r.json())`);
-const today = await evalJs(`(d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"))(new Date())`);
+  evalJs(
+    `fetch(${JSON.stringify(path)}, { method: "POST", headers: { "Content-Type": "application/json" }, body: ${JSON.stringify(JSON.stringify(body))} }).then(r => r.json())`
+  );
+const today = await evalJs(
+  `(d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"))(new Date())`
+);
 
 await evalJs(
   `document.querySelector("#welcomeInput").value = "PLAIN USAGE"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
@@ -29,7 +33,11 @@ check("答完一问，主答的墨记在今天", book.days?.[today]?.main > 0, J
 const card = await evalJs(
   `({ today: !!document.querySelector("#usageCard .usage-today"), years: document.querySelectorAll("#usageCard [data-usage-year]").length, legend: [...document.querySelectorAll("#usageCard [data-usage-kind]")].map(b => b.dataset.usageKind).join(",") })`
 );
-check("一卷一日一点，今天圈朱，只一年时不列可翻的年份", card.today && card.years === 0 && card.legend === "main,helper,side,review,image", JSON.stringify(card));
+check(
+  "一卷一日一点，今天圈朱，只一年时不列可翻的年份",
+  card.today && card.years === 0 && card.legend === "main,helper,side,review,image",
+  JSON.stringify(card)
+);
 
 await evalJs(
   `document.querySelector('#usageCard [data-usage-day="${today}"]').dispatchEvent(new PointerEvent("pointerover", { bubbles: true })); true`
@@ -37,7 +45,9 @@ await evalJs(
 const tip = await evalJs(`(t => ({ shown: !t.classList.contains("hidden"), text: t.textContent }))(document.querySelector("#usageTip"))`);
 check("指上今天那一点，浮出各类的数", tip.shown && /主答\s*\d/.test(tip.text) && tip.text.includes("—"), JSON.stringify(tip));
 // 最下面一行（周日）：浮签伸出卡外，不能被卡片滑开用的 overflow: clip 截掉——浮签不在卡里，整张都露着
-await evalJs(`document.querySelector('#usageCard [data-usage-day][y="72"]').dispatchEvent(new PointerEvent("pointerover", { bubbles: true })); true`);
+await evalJs(
+  `document.querySelector('#usageCard [data-usage-day][y="72"]').dispatchEvent(new PointerEvent("pointerover", { bubbles: true })); true`
+);
 const low = await evalJs(
   `(t => { const r = t.getBoundingClientRect(), card = document.querySelector("#usageCard").getBoundingClientRect(); return { inCard: !!t.closest("details"), rows: t.querySelectorAll("span").length, past: r.bottom > card.bottom, height: Math.round(r.height) }; })(document.querySelector("#usageTip"))`
 );
@@ -55,17 +65,28 @@ await post("/api/usage/add", {
 const after = JSON.parse(readFileSync(`${HOME}/用量.json`, "utf8")).days;
 check(
   "桥接只认合法的日子与类别，往上加不覆盖",
-  after["2025-06-01"]?.helper === 5000 && !after["2025-06-01"].bogus && !after["昨天"] && after[today].image === 2 && !after[today].side && after[today].main === book.days[today].main,
+  after["2025-06-01"]?.helper === 5000 &&
+    !after["2025-06-01"].bogus &&
+    !after["昨天"] &&
+    after[today].image === 2 &&
+    !after[today].side &&
+    after[today].main === book.days[today].main,
   JSON.stringify(after)
 );
 
-await evalJs(`document.querySelector('.tab-btn[data-tab="general"]').click(); document.querySelector('.tab-btn[data-tab="models"]').click(); true`);
+await evalJs(
+  `document.querySelector('.tab-btn[data-tab="general"]').click(); document.querySelector('.tab-btn[data-tab="models"]').click(); true`
+);
 await waitFor(`document.querySelectorAll("#usageCard [data-usage-year]").length === 2`, 10000);
 await evalJs(`document.querySelector('#usageCard [data-usage-kind="image"]').click(); true`);
 const image = await evalJs(
   `({ pressed: document.querySelector('#usageCard [data-usage-kind="image"]').getAttribute("aria-pressed"), dots: [...document.querySelectorAll("#usageCard circle[fill-opacity]")].map(c => c.getAttribute("fill")), total: document.querySelector('#usageCard [data-usage-kind="image"] b').textContent })`
 );
-check("图例点生图：只剩生过图的那天，换胭脂色", image.pressed === "true" && image.dots.length === 1 && image.dots[0] === "var(--rouge)" && /2/.test(image.total), JSON.stringify(image));
+check(
+  "图例点生图：只剩生过图的那天，换胭脂色",
+  image.pressed === "true" && image.dots.length === 1 && image.dots[0] === "var(--rouge)" && /2/.test(image.total),
+  JSON.stringify(image)
+);
 await shot("usage.png");
 await evalJs(`document.querySelector('#usageCard [data-usage-year="2025"]').click(); true`);
 const past = await evalJs(

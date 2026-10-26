@@ -186,5 +186,5 @@
   border-left: 2px solid var(--danger);
   background: color-mix(in srgb, var(--danger) 7%, transparent);
   color: var(--danger);
-  font: var(--fs-mid)/1.6 var(--body);
+  font: var(--fs-mid) / 1.6 var(--body);
 }

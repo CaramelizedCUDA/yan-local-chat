@@ -22,7 +22,11 @@ const rows = await evalJs(
 check(
   "三张卡：拟题开（朱点）、审查关照规则、生图未配，收起时都不写模型",
   JSON.stringify(rows.map(r => [r.id, r.on, r.tip, r.gist])) ===
-    JSON.stringify([["title", true, "开", ""], ["review", false, "关，照规则", ""], ["image", false, "未配", ""]]),
+    JSON.stringify([
+      ["title", true, "开", ""],
+      ["review", false, "关，照规则", ""],
+      ["image", false, "未配", ""]
+    ]),
   JSON.stringify(rows)
 );
 check("题下导语", (await evalJs(`document.querySelector("#settingsContent .settings-lead").textContent`)) === "尺有所短，寸有所长。");
@@ -47,7 +51,11 @@ check(
     (await evalJs(`document.querySelector('[data-duty="review"]').open`))
 );
 check("开了没填完：空圈、悬停说未填完", (await evalJs(`document.querySelector('[data-duty="review"] .duty-mark').title`)) === "未填完");
-for (const [field, value] of [["baseUrl", "http://127.0.0.1:8798/v1"], ["apiKey", "k"], ["model", "fake-review"]])
+for (const [field, value] of [
+  ["baseUrl", "http://127.0.0.1:8798/v1"],
+  ["apiKey", "k"],
+  ["model", "fake-review"]
+])
   await evalJs(
     `(i => { i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event("input")); })(document.querySelector('[data-duty="review"] [data-duty-field="${field}"]')); true`
   );
@@ -61,7 +69,9 @@ await sleep(1500);
 check("测试连接接得通", /可用/.test(await evalJs(`document.querySelector('[data-duty="review"] .profile-status').textContent`)));
 
 // 生图：开即替它填好硅基流动的地址，接口只给两种
-await evalJs(`document.querySelector('[data-duty="image"] summary').click(); document.querySelector('[data-duty-on="image"][data-value="true"]').click(); true`);
+await evalJs(
+  `document.querySelector('[data-duty="image"] summary').click(); document.querySelector('[data-duty-on="image"][data-value="true"]').click(); true`
+);
 await sleep(100);
 check(
   "生图开了：硅基流动、地址已填、接口两种",

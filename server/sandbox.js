@@ -297,7 +297,9 @@ function screenStorePath(full, root) {
  */
 function screenStoreCommand(command, root, workdir) {
   if (!root) return null;
-  const text = String(command || "").replace(/\//g, "\\").toLowerCase(),
+  const text = String(command || "")
+      .replace(/\//g, "\\")
+      .toLowerCase(),
     base = normalizeLower(path.resolve(root)).replace(/\//g, "\\"),
     named = STORE_SECRETS.some(name => text.includes(name.toLowerCase())),
     near = text.includes(base) || /\\\.yan(?:\\|["'\s]|$)/.test(text) || inside(base, normalizeLower(path.resolve(workdir || "")));
@@ -306,4 +308,14 @@ function screenStoreCommand(command, root, workdir) {
   return wild.test(text) ? `拒绝：${STORE_WHY}` : null;
 }
 
-module.exports = { screenCommand, screenLoose, screenAutoReview, screenUnreviewable, sandboxEnv, screenPath, screenStorePath, screenStoreCommand, SECRET_ENV };
+module.exports = {
+  screenCommand,
+  screenLoose,
+  screenAutoReview,
+  screenUnreviewable,
+  sandboxEnv,
+  screenPath,
+  screenStorePath,
+  screenStoreCommand,
+  SECRET_ENV
+};

@@ -401,7 +401,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
   color: var(--ink-2);
-  font: var(--fs-mark)/1.6 var(--body);
+  font: var(--fs-mark) / 1.6 var(--body);
 }
 .intent-fields {
   display: grid;

@@ -520,7 +520,7 @@
   padding: 60px 10px;
   text-align: center;
   color: var(--ink-3);
-  font: var(--fs-small)/1.9 var(--title);
+  font: var(--fs-small) / 1.9 var(--title);
 }
 
 /* 分组页：与卷宗同一本簿。列表一组一条（组名 · 段 · 预设 · 目录 · 日期）；一组的详情是两行设置加组里的对话 */
