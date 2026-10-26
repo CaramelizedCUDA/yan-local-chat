@@ -357,9 +357,29 @@ const clickTab = id =>
 // 模型换页：自己点回原来那页后，模型的调用（这里直接去找一回）不把人拽走；模型把那一页请到前台（选签即如此），看台跟过去
 await clickTab(targetId);
 await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
-await sleep(300);
+// 点签发出的 Target.activateTarget 是异步的；先等调试口确认前台页，再测 locate 不会把看台切走。
+const bridgeFront = async () => {
+  const list = await (await fetch(DEBUG + "/json/list")).json();
+  return list.find(t => t.type === "page")?.id || "";
+};
+const waitForFront = async (id, timeout = 8000) => {
+  const until = Date.now() + timeout;
+  let front = "";
+  while (Date.now() < until) {
+    front = await bridgeFront();
+    if (front === id) return front;
+    await sleep(120);
+  }
+  return front;
+};
+const pickedFront = await waitForFront(targetId);
 await evalJs(`__yanStage.locate().then(() => true)`);
-check("a call after the user picked a tab leaves the view alone", await evalJs(`__yanStage.state.current === ${JSON.stringify(targetId)}`));
+const currentAfterLocate = await evalJs(`__yanStage.state.current`);
+check(
+  "a call after the user picked a tab leaves the view alone",
+  pickedFront === targetId && currentAfterLocate === targetId,
+  `front=${pickedFront || "(none)"} current=${currentAfterLocate}`
+);
 await browserSend("Target.activateTarget", { targetId: fresh });
 await sleep(300);
 await evalJs(`__yanStage.locate().then(() => true)`);
