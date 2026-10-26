@@ -12,7 +12,7 @@ await evalJs(
   `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 4, settings: { name: "测", theme: "light", inkMotion: "off", mode: "work", activeProfileId: "p1", pendingWorkdir: ${JSON.stringify(WORK)}, autoTitle: true }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, maxTokens: 8192, quota: "100k", usedTokens: 0, systemPrompt: "" }], conversations: [], library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
-await sleep(1200);
+await waitFor(`document.readyState === "complete" && !!document.documentElement && !document.documentElement.hasAttribute("data-booting") && typeof window.__yanState === "function" && __yanState().settings.mode === "work" && document.querySelector("#welcomeMode").textContent === "执事" && !document.querySelector("#workdirChip").classList.contains("hidden") && document.querySelector("#workdirChip").classList.contains("on")`, 10000);
 check("boot: bridge connected", await evalJs(`__yanBridgeFetch("/api/store/config/load", "{}").then(r => r.ok, () => false)`));
 console.log(
   "  debug:",

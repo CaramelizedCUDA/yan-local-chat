@@ -8,7 +8,7 @@ await sleep(600);
 await evalJs(`localStorage.clear(); true`);
 await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
 await send("Page.navigate", { url: PAGE });
-await sleep(1200);
+await waitFor(`document.readyState === "complete" && !!document.documentElement && !document.documentElement.hasAttribute("data-booting") && typeof window.__yanState === "function" && !!document.querySelector("#welcomeInput")`, 10000);
 check(
   "fresh installs default to the light theme even when the system is dark",
   await evalJs(`document.documentElement.dataset.theme === "light" && window.__yanState().settings.theme === "light"`)

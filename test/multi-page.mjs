@@ -35,15 +35,18 @@ await evalJs(
 );
 await send("Page.navigate", { url: PAGE });
 await waitFor(`!!document.querySelector('[data-conversation="multi-1"]')`, 8000);
-// 侧栏读完磁盘就画出来了，点它的处理要等开页时问过租约才绑上（bindEvents）：CI 的机器慢，先点就白点，这段对话始终打不开
+// 等页面读完磁盘并绑好侧栏点击事件后再操作，避免慢 CI 上点击落空。
 await waitFor(`typeof document.querySelector("#openLibrary")?.onclick === "function"`, 8000);
 const status = id => evalJs(`__yanState().conversations.find(c => c.id === "${id}")?.messages[1]?.status`);
 check("opening the page does not mark an answer still being written elsewhere as interrupted", (await status("multi-1")) === "streaming");
 await evalJs(`document.querySelector('[data-conversation="multi-1"] .history-open').click(); true`);
-await waitFor(`document.querySelector("#chatSend").title === "另一个页面正在这段对话里作答，这里跟着看"`, 8000).catch(() => {});
+// 等这段对话真打开了再看：CI 的机器慢，固定等 300 毫秒常常还没开，后面几条都跟着落空
+await waitFor(`document.querySelector("#chatSend").title === "另一个页面正在这段对话里作答，这里跟着看"`, 15000).catch(() => {});
+const remoteStatus = await evalJs(`({ title: document.querySelector("#chatSend").title, message: __yanState().conversations.find(c => c.id === "multi-1")?.messages[1]?.status, current: __yanState().conversations.find(c => c.id === "multi-1")?.id })`);
 check(
   "the status shows it is being answered elsewhere",
-  (await evalJs(`document.querySelector("#chatSend").title`)) === "另一个页面正在这段对话里作答，这里跟着看"
+  remoteStatus.title === "另一个页面正在这段对话里作答，这里跟着看",
+  JSON.stringify(remoteStatus)
 );
 await evalJs(
   `(i => { i.value = "这边插一句"; i.dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); })(document.querySelector("#chatInput")); true`
@@ -57,7 +60,7 @@ check(
 );
 // 那一处接着写：这边跟得上
 await save(conversation("multi-1", "别处作答中", "写到一半，又写了一些", "streaming"));
-await waitFor(`document.querySelector("#messages .message.assistant")?.textContent.includes("又写了一些")`, 8000).catch(() => {});
+await waitFor(`document.querySelector("#messages .message.assistant")?.textContent.includes("又写了一些")`, 15000).catch(() => {});
 check(
   "this page follows the progress written elsewhere",
   await evalJs(`document.querySelector("#messages .message.assistant")?.textContent.includes("又写了一些")`)
@@ -67,13 +70,13 @@ await save(conversation("multi-1", "别处作答中", "写完了。", "complete"
 leased = [];
 await lease();
 clearInterval(beat);
-await waitFor(`__yanState().conversations.find(c => c.id === "multi-1")?.messages[1]?.status === "complete"`, 8000).catch(() => {});
+await waitFor(`__yanState().conversations.find(c => c.id === "multi-1")?.messages[1]?.status === "complete"`, 15000).catch(() => {});
 check(
   "when the other page finishes, this page shows the finished answer",
   (await status("multi-1")) === "complete" &&
     (await evalJs(`document.querySelector("#messages .message.assistant")?.textContent.includes("写完了")`))
 );
-await waitFor(`__yanState().conversations.find(c => c.id === "multi-2")?.messages[1]?.status === "interrupted"`, 8000).catch(() => {});
+await waitFor(`__yanState().conversations.find(c => c.id === "multi-2")?.messages[1]?.status === "interrupted"`, 15000).catch(() => {});
 check("an answer the other page left unfinished is settled as interrupted once it lets go", (await status("multi-2")) === "interrupted");
 check(
   "and sending here works again",

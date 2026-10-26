@@ -1593,17 +1593,15 @@ http
             120
           );
         // 回报里带上帮手这一趟收到的思考档位（主模型派它时给了 low），与上一轮的思绪有没有随工具调用送回
-        return sse(
-          res,
-          [
-            delta({
-              // 两个字段名都得带：新版 vLLM 只认 reasoning
-              content: `回报乙：已新建 src/b.js。｜echo:${[msgs.find(m => m.role === "assistant" && m.tool_calls)].every(m => String(m?.reasoning_content || "").startsWith("帮手乙想第 1 步。") && m.reasoning === m.reasoning_content) ? "yes" : "no"}｜effort:${payload.reasoning_effort ?? "none"}`
-            }),
-            delta({}, { usage: { total_tokens: 7 } })
-          ],
-          300
-        );
+        return sse(res, [
+          // 工具已完成后再流一段思考：让侧栏同时显示已完成步骤与正在形成的下一段思绪
+          ...Array.from({ length: 18 }, (_, i) => delta({ reasoning_content: `帮手乙整理回报第 ${i + 1} 步。` })),
+          delta({
+            // 两个字段名都得带：新版 vLLM 只认 reasoning
+            content: `回报乙：已新建 src/b.js。｜echo:${[msgs.find(m => m.role === "assistant" && m.tool_calls)].every(m => String(m?.reasoning_content || "").startsWith("帮手乙想第 1 步。") && m.reasoning === m.reasoning_content) ? "yes" : "no"}｜effort:${payload.reasoning_effort ?? "none"}`
+          }),
+          delta({}, { usage: { total_tokens: 7 } })
+        ], 120);
       }
       if (typeof lastUser === "string" && lastUser.includes("SUBTASK")) {
         // 帮手那一侧：读 → 改 → 回报。系统提示里须带着帮手的那段话，且不该再有 delegate / ask_user 可用

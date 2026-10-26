@@ -41,8 +41,19 @@ await waitFor(
   `__yanState().conversations.find(c => c.id === "stale-1").messages.some(m => m.role === "assistant" && m.status === "complete" && !m.id.startsWith("s-"))`,
   10000
 ).catch(() => {});
-await sleep(2500);
-let ids = ((await disk())?.conversation.messages || []).map(m => m.id);
+// Saving while a turn is streaming is rate-limited; wait for the actual persisted six-message merge,
+// not a fixed delay that can expire before the queued write reaches disk.
+let saved = await disk();
+const persistedTurn = item => {
+  const messages = item?.conversation?.messages || [], ids = messages.map(m => m.id);
+  return ids.length === 6 && ids.includes("s-u2") && ids.includes("s-a2");
+};
+const persistDeadline = Date.now() + 15000;
+while (!persistedTurn(saved) && Date.now() < persistDeadline) {
+  await sleep(250);
+  saved = await disk();
+}
+let ids = (saved?.conversation.messages || []).map(m => m.id);
 check("the other page's answer is still on disk after this page speaks", ids.includes("s-u2") && ids.includes("s-a2"), JSON.stringify(ids));
 check("this page's new turn follows it on disk", ids.length === 6 && ids.indexOf("s-a2") === 3, JSON.stringify(ids));
 check("and this page shows the merged conversation", JSON.stringify(await state()) === JSON.stringify(ids), JSON.stringify(await state()));
