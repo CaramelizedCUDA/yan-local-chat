@@ -58,6 +58,7 @@ const INTENT_LIMIT = 60,
   INTENT_MARK_ALIASES = {
     pending: "open",
     todo: "open",
+    not_started: "open",
     in_progress: "doing",
     blocked: "waiting",
     on_hold: "waiting",
@@ -357,6 +358,30 @@ function intentSealedAnchors(intent) {
   ];
 }
 // ---------- 模型交来的改动：理顺、查错，查出错的整批不收 ----------
+/** 进度照写法宽认：In Progress、not-started 与 in_progress、not_started 同 @param {any} raw */
+const intentStateWord = raw =>
+  String(raw)
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+/**
+ * 上一批整批没收，这一批是改正：按 id 叠上去——提到的字段盖过，没提的项照旧带着；只在上一批里的项给了 removed 即从中拿掉。
+ * 模型改正时多半只重给出错的几项，以为别的已经收下；叠上去就成了它本想交的那一整批
+ * @param {Intent} intent @param {any[]} prior 上一批没收的原样 @param {any[]} items 这一批 @returns {any[]}
+ */
+function intentRetryBatch(intent, prior, items) {
+  const key = item => (item && typeof item === "object" ? tidyIntentId(String(item.id ?? "").trim()) : null),
+    merged = [...prior];
+  // 一项都不沾上一批的：不是改正，是丢下那批另改别处——照它自己的判，原样交回，旧错不跟着带进来
+  if (!items.some(item => key(item) && prior.some(old => key(old) === key(item)))) return items;
+  for (const item of items) {
+    const at = key(item) ? merged.findIndex(old => key(old) === key(item)) : -1;
+    if (at < 0) merged.push(item);
+    else if (item.state !== undefined && INTENT_REMOVE.has(intentStateWord(item.state)) && !intent.nodes[key(item)]) merged.splice(at, 1);
+    else merged[at] = { ...merged[at], ...item };
+  }
+  return merged;
+}
 /**
  * @param {Intent} intent 此刻的意
  * @param {any} raw 模型给的 nodes
@@ -406,7 +431,8 @@ function normalizeIntentOps(intent, raw, workdir = "") {
     if (item.any !== undefined) op.any = item.any === true || item.any === "true";
     if (item.keep !== undefined) op.keep = item.keep === true || item.keep === "true";
     if (item.on !== undefined && item.on !== null) {
-      op.on = clip(item.on, 300);
+      // 本就不分大小写：照别家写法带的 (?i) 之类内联标记 JS 不认，去掉
+      op.on = clip(item.on, 300).replace(/^\(\?[imsux]+\)/, "");
       if (op.on && !keepTrigger({ keep: true, on: op.on })) problems.push(t`${id} 的 on 不是合法的正则`);
     }
     if (item.ask !== undefined) op.ask = item.ask === true || item.ask === "true";
@@ -419,21 +445,21 @@ function normalizeIntentOps(intent, raw, workdir = "") {
         problems.push(t`${id} 改名为 ${to}：这个名字已有`);
       else if (to !== id) op.rename = to;
     }
-    // 凭据：带前缀的是那一种，裸的是文件。模型照旧写 files 的也认
-    const anchors = item.anchors !== undefined ? item.anchors : item.files;
+    // 凭据：带前缀的是那一种，裸的是文件。模型照旧写 files、写成单数 anchor 的也认
+    const anchors = item.anchors ?? item.anchor ?? item.files;
     if (anchors !== undefined) {
       const parsed = list(anchors).map(raw => parseAnchor(clip(raw, 400), workdir));
       for (const one of parsed) if ("problem" in one) problems.push(t`${id} 的${one.problem}`);
       op.anchors = [...new Set(parsed.flatMap(one => ("key" in one ? [one.key] : [])))].slice(0, 20);
     }
-    if (item.state !== undefined && INTENT_REMOVE.has(String(item.state).trim().toLowerCase())) {
+    const state = item.state === undefined ? undefined : intentStateWord(item.state);
+    if (state !== undefined && INTENT_REMOVE.has(state)) {
       if (intent.nodes[id]) ops.push({ id, remove: true });
       else problems.push(t`${id} 不存在，无可撤`);
       continue;
     }
-    if (item.state !== undefined) {
-      const state = String(item.state).trim().toLowerCase(),
-        mark = INTENT_MARKS.has(state) ? state : Object.hasOwn(INTENT_MARK_ALIASES, state) ? INTENT_MARK_ALIASES[state] : undefined;
+    if (state !== undefined) {
+      const mark = INTENT_MARKS.has(state) ? state : Object.hasOwn(INTENT_MARK_ALIASES, state) ? INTENT_MARK_ALIASES[state] : undefined;
       if (!mark) problems.push(t`${id} 的 state「${item.state}」不认得：只有 open / doing / waiting / done / assumed / dropped / removed`);
       else op.state = /** @type {IntentMark} */ (mark);
     }

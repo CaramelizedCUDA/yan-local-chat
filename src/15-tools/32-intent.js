@@ -1,5 +1,8 @@
 // 言 · 意：长活的结论图，存在目录里、跨对话沿用（见 src/19-intent/）。只给主模型：意由主答立、主答维护，帮手不改。
 // 回给模型的是改完的整份意（与每一问附着的同一个写法）；行迹里只留一行，图本身属于任务，不在对话里画
+// 整批没收的那一批记到这一答结束：下一回只给改正的几项也成，叠上去再判（见 intentRetryBatch）。键是对话，answer 是那一答的 id
+/** @type {Map<string, { answer: string, items: any[] }>} */
+const intentRejects = new Map();
 defineTool({
   name: "update_intent",
   group: "work",
@@ -21,9 +24,13 @@ defineTool({
       workdir = workRoot(conversation),
       at = conversation.messages.indexOf(assistant),
       user = (at < 0 ? conversation.messages : conversation.messages.slice(0, at)).findLast(m => m.role === "user"),
-      ask = user ? quotedText(user) : "";
+      ask = user ? quotedText(user) : "",
+      held = intentRejects.get(conversation.id),
+      prior = held?.answer === assistant.id && Array.isArray(args.nodes) ? held.items : null;
+    let batch = args.nodes;
     const outcome = await changeIntent(conversation, signal, async intent => {
-      const { ops, problems, tidied } = normalizeIntentOps(intent, args.nodes, workdir);
+      batch = prior ? intentRetryBatch(intent, prior, args.nodes) : args.nodes;
+      const { ops, problems, tidied } = normalizeIntentOps(intent, batch, workdir);
       if (problems.length) return { problems, ops, tidied };
       // 标成立、标假定的各项：先取一回所挂凭据此刻的指纹记下
       const sealing = intentSealing(intent, ops),
@@ -37,12 +44,15 @@ defineTool({
         next: applyIntentOps(intent, ops, { at: new Date().toISOString(), conversation: conversation.id, ask, prints })
       };
     });
-    if (!outcome.next)
+    if (!outcome.next) {
+      if (Array.isArray(batch)) intentRejects.set(conversation.id, { answer: assistant.id, items: batch });
       return {
         ok: false,
-        content: t`意没有改：\n${outcome.problems.map(p => `- ${p}`).join("\n")}\n改正后这一批重给。`,
+        content: t`意没有改，${prior && batch !== args.nodes ? "连同上回没收的，" : ""}这一批都没收：\n${outcome.problems.map(p => `- ${p}`).join("\n")}\n改正时只重给要改的项即可：按 id 叠到这一批上，没提的照旧带着；这一批里不要的项给 state: removed。`,
         display: "未改"
       };
+    }
+    intentRejects.delete(conversation.id);
     // 此刻的指纹：便宜的几种现取；探针不再跑一遍——刚标的用刚取的，其余用这一答开工时取的
     const next = outcome.next,
       now = {

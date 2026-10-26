@@ -85,7 +85,8 @@ const TOOL_ARG_ALIASES = {
   task: ["prompt", "instruction", "instructions", "description"],
   name: ["document", "doc", "file"],
   id: ["conversation_id", "conversationId", "memory_id"],
-  params: ["arguments", "args", "input"]
+  params: ["arguments", "args", "input"],
+  nodes: ["items"]
 };
 function coerceToolValue(value, rule) {
   const type = rule?.type;
