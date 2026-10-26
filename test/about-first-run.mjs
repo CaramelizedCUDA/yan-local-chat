@@ -8,7 +8,12 @@ await sleep(600);
 await evalJs(`localStorage.clear(); true`);
 await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
 await send("Page.navigate", { url: PAGE });
-await waitFor(`document.readyState === "complete" && !!document.documentElement && !document.documentElement.hasAttribute("data-booting") && typeof window.__yanState === "function" && !!document.querySelector("#welcomeInput")`, 10000);
+try {
+  await waitFor(`document.readyState === "complete" && !!document.documentElement && !document.documentElement.hasAttribute("data-booting") && typeof window.__yanState === "function" && !!document.querySelector("#welcomeInput")`, 10000);
+} catch (error) {
+  const startup = await evalJs(`(() => ({ ready: document.readyState, booting: document.documentElement?.hasAttribute("data-booting"), stateType: typeof window.__yanState, welcomeInput: !!document.querySelector("#welcomeInput"), url: location.href, body: document.body?.innerText?.slice(0, 1000), scripts: [...document.scripts].map(s => s.src).filter(Boolean).slice(-12), resources: performance.getEntriesByType("resource").filter(r => r.initiatorType === "script").map(r => ({ name: r.name.split("/").at(-1), duration: Math.round(r.duration), size: r.transferSize })).slice(-12) }))()`);
+  throw new Error(`${error.message}; startup=${JSON.stringify(startup)}`);
+}
 check(
   "fresh installs default to the light theme even when the system is dark",
   await evalJs(`document.documentElement.dataset.theme === "light" && window.__yanState().settings.theme === "light"`)

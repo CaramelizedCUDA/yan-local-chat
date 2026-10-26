@@ -30,7 +30,17 @@ await evalJs(
 await send("Page.navigate", { url: PAGE });
 await waitFor(`!!document.querySelector('[data-conversation="ux-1"]')`, 8000);
 await evalJs(`document.querySelector('[data-conversation="ux-1"] .history-open').click(); true`);
-await waitFor(`!!document.querySelector("#messages pre code")`);
+try {
+  await waitFor(`!!document.querySelector("#messages pre code")`);
+} catch (error) {
+  let snapshot;
+  try {
+    snapshot = await evalJs(`(() => { const c = __yanState().conversations.find(c => c.id === "ux-1"), pane = document.querySelector("#messages"); return { ready: document.readyState, page: location.href, active: pane?.dataset.conversation || pane?.dataset.chat || null, paneText: pane?.innerText?.slice(0, 1000), paneHtml: pane?.innerHTML?.slice(0, 1400), visibleMessages: [...(pane?.querySelectorAll(".message") || [])].map(m => ({ role: m.className, text: m.innerText?.slice(0, 180) })).slice(-4), storedMessages: c?.messages?.map(m => ({ id: m.id, role: m.role, status: m.status, content: String(m.content || "").slice(0, 220) })) }; })()`);
+  } catch (diagnosticError) {
+    snapshot = { diagnosticError: String(diagnosticError) };
+  }
+  throw new Error(`${error.message}; uxLayout=${JSON.stringify(snapshot)}`);
+}
 
 const code = await evalJs(
   `(() => { const code = document.querySelector("#messages pre code"), lines = code.textContent.replace(/\\n$/, "").split("\\n").length, lh = parseFloat(getComputedStyle(code).lineHeight); pre = code.closest("pre"), ps = getComputedStyle(pre); return { per: (pre.clientHeight - parseFloat(ps.paddingTop) - parseFloat(ps.paddingBottom)) / lines, lh }; })()`
