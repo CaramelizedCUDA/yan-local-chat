@@ -43,6 +43,10 @@ Your browser opens `http://127.0.0.1:8787`. In **Settings → Model**, fill in a
 
 On macOS, double-click `start.command` (if it's blocked the first time, right-click it in Finder and choose **Open**). The **Environment** toolkit is Windows-only, and the sandbox rules are written for PowerShell, so they are looser on macOS.
 
+## Contributing
+
+Issues and PRs are welcome. Before you start, please read [Contributing to Yan](CONTRIBUTING.en.md): workflow, running locally, and the project's trade-offs.
+
 ## License and credits
 
 Released under Apache-2.0; see `LICENSE`. Open-source libraries shipped with the project: marked (MIT), DOMPurify (Apache-2.0), highlight.js (BSD-3-Clause), KaTeX (MIT), Mermaid (MIT), Apache ECharts (Apache-2.0), PDF.js (Apache-2.0). Full license texts are in `vendor/`.

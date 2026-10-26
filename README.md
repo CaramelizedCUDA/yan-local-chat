@@ -43,6 +43,10 @@ npm start
 
 macOS 上双击 `start.command`（头一回若被拦，在访达里右键选「打开」）。「环境」工具包只备了 Windows 版；沙箱规则按 PowerShell 写，在 macOS 上拦得较松。
 
+## 参与开发
+
+欢迎提 issue 与 PR。动手前请读 [参与言的开发](CONTRIBUTING.md)：流程、本地怎么跑、项目的几条取舍。
+
 ## 许可与致谢
 
 本项目以 Apache-2.0 发布，全文见 `LICENSE`。随项目本地分发的开源库：marked（MIT）、DOMPurify（Apache-2.0）、highlight.js（BSD-3-Clause）、KaTeX（MIT）、Mermaid（MIT）、Apache ECharts（Apache-2.0）、PDF.js（Apache-2.0）。许可全文见 `vendor/`。
