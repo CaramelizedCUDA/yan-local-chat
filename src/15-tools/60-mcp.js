@@ -277,7 +277,9 @@ function stageResultNote(tool, args, result) {
   const said = (result.content || []).map((/** @type {any} */ item) => (item.type === "text" ? item.text : "")).join("\n");
   for (const [, name, path] of said.matchAll(/- Downloaded file (.+?) to "(.+?)"/g)) stageNoteDownload(name, path);
   const pins = tool === "browser_resize" || (tool === "browser_run_code_unsafe" && /setViewportSize\s*\(/.test(String(args.code || "")));
-  return pins && !result.isError ? `\n\n${prompt("mcp.stagePinned")}` : "";
+  if (!pins || result.isError) return "";
+  stageMarkExecutorPinned();
+  return `\n\n${prompt("mcp.stagePinned")}`;
 }
 // 结果里的图（游目截的画面之类）：原件照附件存，挂在这一步上，步骤卡里画缩略、点开即看；data: 地址交回轮次循环，随工具结果给模型看（见 attachToolImages）。
 // 名字取服务自己报的文件名（Playwright 截图会说存成了 page-….png，模型多半照它写）；回复里引这个名字，正文就画出这幅（见 renderReplyShots）

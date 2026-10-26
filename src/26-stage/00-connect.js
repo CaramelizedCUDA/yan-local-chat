@@ -52,6 +52,9 @@ const stage = {
   output: "",
   /** @type {{ width: number, height: number } | null} 正看的这一页视口被定死了多大；没定死是 null */
   pinned: null,
+  // 执事亲手定过视口（browser_resize、setViewportSize）：「适应页面」只在这时才等它歇手后自动放开。
+  // 光凭量出来的尺寸不作数——量的那一下窗口可能还没跟上，而放开是新开一页，网页里挂着的脚本、填了一半的表都会冲掉
+  executorPinned: false,
   // 放开过的那一页与时刻：放不开时不一回回再试
   released: { url: "", at: 0 },
   // 缩放：调那扇窗的宽，窗窄一档网页里的字就大一档（浏览器自己的缩放调不动，见 docs/stage.md）

@@ -92,6 +92,7 @@ async function stageFit() {
 function stagePin(size) {
   if (JSON.stringify(size) === JSON.stringify(stage.pinned)) return;
   stage.pinned = size;
+  if (!size) stage.executorPinned = false;
   stageRenderLetter();
   stageMaybeRelease();
 }
@@ -101,11 +102,16 @@ function stageRenderLetter() {
     size = stage.pinned;
   letter.classList.toggle("hidden", !size);
   if (size)
-    letter.innerHTML = `${t(`执事把视口定在`)} <b>${size.width}×${size.height}</b>${stageFitOn() ? t("，它歇手后铺满") : `<button type="button" data-stage-release>${t(`放开`)}</button>`}`;
+    letter.innerHTML = `${t(`执事把视口定在`)} <b>${size.width}×${size.height}</b>${stageFitOn() && stage.executorPinned ? t("，它歇手后铺满") : `<button type="button" data-stage-release>${t(`放开`)}</button>`}`;
+}
+// 执事调了 browser_resize 或 setViewportSize（见 60-mcp.js 的 stageResultNote）
+function stageMarkExecutorPinned() {
+  stage.executorPinned = true;
+  stageRenderLetter();
 }
 // 放开定死的视口：执事那头（Playwright）记着那个尺寸，换页也会再钉回去，游目这头清不掉——只有新开一页最干净。
 // 经那个 MCP 服务的 browser_tabs 办：同一网址新开一页、关掉旧的，执事那边的标签账也对得上（它下回调用时看得到）。
-// 「适应页面」开着：执事歇手（没有在途的浏览器调用、也没有在答的对话）才放；关着：只在人点「放开」时放
+// 「适应页面」开着且确是执事定的：它歇手（没有在途的浏览器调用、也没有在答的对话）才放；其余只在人点「放开」时放
 /** @param {boolean} [now] 人点了「放开」 */
 async function stageRelease(now = false) {
   const server = stageServer(),
@@ -126,6 +132,7 @@ async function stageRelease(now = false) {
     if (!old) return;
     await call({ action: "new", url });
     await call({ action: "close", index: Number(old[1]) });
+    stage.executorPinned = false;
   } catch (error) {
     if (now) toast(t`未能放开：${String(/** @type {any} */ (error).message || error).slice(0, 80)}`);
   }
@@ -135,7 +142,7 @@ function stageIdle() {
   return !stage.busy && !requestJobs.size && !crews.size;
 }
 function stageMaybeRelease() {
-  if (stageFitOn() && stage.pinned && stageIdle() && stageVisible()) void stageRelease();
+  if (stageFitOn() && stage.pinned && stage.executorPinned && stageIdle() && stageVisible()) void stageRelease();
 }
 // 适应页面（纸签里的开关，默认开，记在配置里）
 const stageFitOn = () => store.settings.stageFit !== false;
