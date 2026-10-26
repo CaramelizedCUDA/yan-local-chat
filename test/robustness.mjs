@@ -110,7 +110,17 @@ await waitFor(`document.querySelectorAll(".message.assistant").length === 5 && !
   throw new Error(`${error.message}; sketchState=${JSON.stringify(sketchState)}`);
 });
 const lines1 = await evalJs(`Number(${lastAssistant}.querySelector(".viz-pending")?.dataset.lines)`);
-await waitFor(`Number(${lastAssistant}.querySelector(".viz-pending")?.dataset.lines || 0) > ${lines1}`, 5000);
+try {
+  await waitFor(`Number(${lastAssistant}.querySelector(".viz-pending")?.dataset.lines || 0) > ${lines1}`, 5000);
+} catch (error) {
+  let growthState;
+  try {
+    growthState = await evalJs(`(() => { const a = ${lastAssistant}, v = a?.querySelector(".viz-pending"), m = __yanState().conversations?.[0]?.messages?.at(-1); return { status: a?.dataset.status, pending: !!v, lines: v?.dataset.lines, kind: v?.dataset.vizPending, sketch: !!a?.querySelector(".viz-sketch"), app: !!a?.querySelector(".html-app"), text: (a?.querySelector(".assistant-block > .markdown")?.textContent || "").slice(-180), storedStatus: m?.status, storedTail: String(m?.content || "").slice(-180) }; })()`);
+  } catch (diagnosticError) {
+    growthState = { diagnosticError: String(diagnosticError) };
+  }
+  throw new Error(`${error.message}; lineGrowthState=${JSON.stringify({ lines1, growthState })}`);
+}
 const sketch = await evalJs(
   `(v => ({ lines: Number(v.dataset.lines), ink: v.querySelectorAll(".viz-sketch path").length >= 5, kind: v.dataset.vizPending, label: v.getAttribute("aria-label") }))(${lastAssistant}.querySelector(".viz-pending"))`
 );

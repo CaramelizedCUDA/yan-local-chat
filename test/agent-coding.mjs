@@ -175,6 +175,7 @@ await evalJs(`document.querySelector('#approvalBar .ask-q[data-q="0"] .ask-opt[d
 await evalJs(`document.querySelector('#approvalBar [data-form="next"]').click(); true`);
 await sleep(80);
 await evalJs(`document.querySelector('#approvalBar .ask-q[data-q="1"] .ask-opt[data-opt="0"]').click(); true`);
+await evalJs(`(() => { const a = [...document.querySelectorAll('.message.assistant')].at(-1); window.__reasoningProbeTrace = []; let prev = ''; const sample = () => [...a.querySelectorAll('.reasoning')].map(d => ({ state: d.dataset.state, reused: d.dataset.reuseProbe || '', text: d.querySelector('.reasoning-body')?.textContent.slice(0, 40) })); const record = () => { const nodes = sample(), key = JSON.stringify(nodes); if (key !== prev) { window.__reasoningProbeTrace.push({ at: Math.round(performance.now()), nodes }); prev = key; if (window.__reasoningProbeTrace.length > 80) window.__reasoningProbeTrace.shift(); } }; const observer = new MutationObserver(record); observer.observe(a, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-state', 'data-reuse-probe'] }); window.__reasoningProbeObserver = observer; record(); return true; })()`);
 await evalJs(`document.querySelector('#approvalBar [data-form="submit"]').click(); true`);
 let reusedThought = false;
 try {
@@ -185,7 +186,7 @@ check(
   "the same work-trail thought marker resumes as a breathing dot after the tool",
   reusedThought,
   await evalJs(
-    `JSON.stringify([...[...document.querySelectorAll('.message.assistant')].at(-1).querySelectorAll('.reasoning')].map(d => ({ state: d.dataset.state, reused: d.dataset.reuseProbe || '', text: d.querySelector('.reasoning-body')?.textContent.slice(0, 30) })))`
+    `(() => { window.__reasoningProbeObserver?.disconnect(); return JSON.stringify({ nodes: [...[...document.querySelectorAll('.message.assistant')].at(-1).querySelectorAll('.reasoning')].map(d => ({ state: d.dataset.state, reused: d.dataset.reuseProbe || '', text: d.querySelector('.reasoning-body')?.textContent.slice(0, 30) })), trace: window.__reasoningProbeTrace || [] }); })()`
   )
 );
 await waitFor(`[...document.querySelectorAll('.message.assistant')].at(-1)?.dataset.status === "complete"`, 15000);

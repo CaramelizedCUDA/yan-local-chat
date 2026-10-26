@@ -28,7 +28,19 @@ try {
     `document.querySelector("#welcomeInput").value = "BOOKSTALE 开工"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
   );
   const stale = `(__yanState().conversations.find(c => c.messages[0]?.content?.startsWith("BOOKSTALE"))?.messages || []).filter(m => m.role === "assistant" && m.status === "complete").map(m => m.content || "")`;
-  await waitFor(`${stale}.some(c => c.startsWith("BOOKSTALE|"))`, 40000);
+  try {
+    await waitFor(`${stale}.some(c => c.startsWith("BOOKSTALE|"))`, 40000);
+  } catch (error) {
+    let state;
+    try {
+      state = await evalJs(`(() => { const c = __yanState().conversations.find(c => c.messages[0]?.content?.startsWith("BOOKSTALE")); return { messages: (c?.messages || []).map(m => ({ role: m.role, status: m.status, content: String(m.content || "").slice(0, 160), steps: (m.steps || []).map(s => ({ name: s.name, status: s.status, result: String(s.result || "").slice(0, 160) })) })) }; })()`);
+    } catch (diagnosticError) {
+      state = { diagnosticError: String(diagnosticError) };
+    }
+    let ledger;
+    try { ledger = readFileSync(WORK + "/.yan/账本.md", "utf8"); } catch (readError) { ledger = String(readError); }
+    throw new Error(`${error.message}; BOOKSTALE state=${JSON.stringify({ state, ledger })}`);
+  }
   const book = readFileSync(WORK + "/.yan/账本.md", "utf8");
   check("a helper's fresh read of the ledger does not let the main answer overwrite a change it never saw", book.includes("乙"), book);
 } finally {
