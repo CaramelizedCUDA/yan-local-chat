@@ -13,9 +13,6 @@ async function askApproval(step, { conversation, assistant, signal }) {
   const job = requestJob(conversation.id);
   step.status = "pending";
   if (job) setJobLabel(conversation, job, AWAITING);
-  refreshSteps(assistant);
-  saveStore();
-  renderHistory();
   const answer = await new Promise((resolve, reject) => {
     const done = value => {
       pendingApprovals.delete(step.id);
@@ -28,7 +25,11 @@ async function askApproval(step, { conversation, assistant, signal }) {
     };
     signal.addEventListener("abort", onAbort, { once: true });
     pendingApprovals.set(step.id, { conversationId: conversation.id, resolve: done, step });
+    // 先入册再画行迹：行迹据它认出哪一步已在请示条上（见 inApprovalBar）
     renderApprovalBar();
+    refreshSteps(assistant);
+    saveStore();
+    renderHistory();
   }).finally(renderApprovalBar);
   step.status = "running";
   if (job) setJobLabel(conversation, job);
@@ -44,6 +45,11 @@ function pendingApprovalHere() {
   if (!c) return null;
   for (const entry of pendingApprovals.values()) if (entry.conversationId === c.id) return entry;
   return null;
+}
+// 请示条上正摆着这一步：行迹里那一行只标「待你定夺」，不再摊开第二份；同时等着的其余几步，请示条一次只摆一件，仍在行迹里各自摊开
+/** @param {Step} step */
+function inApprovalBar(step) {
+  return pendingApprovalHere()?.step.id === step.id;
 }
 function renderApprovalBar() {
   const bar = $("#approvalBar");

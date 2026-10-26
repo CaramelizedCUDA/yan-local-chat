@@ -29,11 +29,14 @@ check(
 await evalJs(
   `document.querySelector("#welcomeInput").value = "帮我打个招呼"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
 );
-await waitFor(`!!document.querySelector('.tool-step[data-status="pending"] [data-approve="run"]')`);
+await waitFor(
+  `!!document.querySelector('#approvalBar [data-approve="run"]') && !!document.querySelector('.tool-step[data-status="pending"]')`
+);
 check(
-  "approval card shown with full command",
-  (await evalJs(`document.querySelector('.tool-step[data-status="pending"] .tool-cmd-preview')?.textContent`)) ===
-    "Write-Output '你好，世界'"
+  "the pending row only marks 待你定夺; the bar carries the command and buttons",
+  await evalJs(
+    `(s => !s.querySelector("[data-approve], .tool-cmd-preview") && s.querySelector(".tool-meta").textContent === "待你定夺")(document.querySelector('.tool-step[data-status="pending"]'))`
+  )
 );
 check("tool stack forced open", await evalJs(`document.querySelector(".tool-stack").open`));
 check("work strip leaves 等待确认 to the approval bar", await evalJs(`!document.querySelector("#helperBar .work-notice")`));
@@ -131,8 +134,10 @@ check("auto title applied", (await evalJs(`document.querySelector("#chatTitle").
 await evalJs(
   `document.querySelector("#chatInput").value = "再来一次"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
-await waitFor(`document.querySelectorAll('.tool-step[data-status="pending"]').length === 1`);
-await evalJs(`document.querySelector('.tool-step[data-status="pending"] [data-approve="skip"]').click(); true`);
+await waitFor(
+  `document.querySelectorAll('.tool-step[data-status="pending"]').length === 1 && !!document.querySelector('#approvalBar [data-approve="skip"]')`
+);
+await evalJs(`document.querySelector('#approvalBar [data-approve="skip"]').click(); true`);
 await waitFor(`[...document.querySelectorAll('.message.assistant')].at(-1)?.dataset.status === "complete"`);
 const step2 = await evalJs(
   `(s => ({ status: s.dataset.status, meta: s.querySelector(".tool-meta").textContent }))([...document.querySelectorAll(".tool-step")].at(-1))`

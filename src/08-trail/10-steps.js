@@ -175,8 +175,9 @@ function workStepHtml(step, title) {
   const meta = status === "running" ? "" : status === "pending" ? t(AWAITING) : escapeHtml(stepText(step.result || step.note));
   let body = "",
     more = "";
-  // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头
-  if (status === "pending" && step.gate) body = keepGateHtml(step, !gist);
+  // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头；已摆在请示条上的不再摊第二份
+  if (status === "pending" && inApprovalBar(step)) body = "";
+  else if (status === "pending" && step.gate) body = keepGateHtml(step, !gist);
   else if (status === "pending")
     body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre>${sandboxWhyHtml(step)}<div class="tool-approve"><button type="button" data-approve="run">${t(`运行`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button><button type="button" data-approve="auto" title="${t(`径行：此对话中后续指令不再询问`)}">${t(`径行`)}</button></div>`;
   else if (step.diff) {
