@@ -1,5 +1,7 @@
 // 言 · 设置 · 模型栏顶上的用量卡：一年一卷的年历，一日一点墨（设计稿/114 丁、116 乙）。
 // 墨分五色：按这一年有用量的日子分五等（分位），清、淡、重、浓、焦，点随之深、也随之大；没用的日子一粒尘点，今天圈一道朱。
+// 墨点罩一层洇墨（设计稿/119 乙二）：噪声把边扰毛、外晕一圈淡墨，各点毛得不一样，像墨落在纸上渗开；尘点、朱圈不洇。
+// 洇得再轻原尺寸下看不出（119 乙一），再重浓点的晕连成一片（乙三）；也试过金芯、画心（118 丙、丁）
 // 图例兼开关：点一类只看那一类，点墨换成那一类的色，再点回到总量。指上一点浮出那天各类的数。
 // 数取自桥接的用量簿（见 server/usage.js、16-api.js 的 noteUsage）；收起一行只写「用量」，今天的数指今天那一点看。
 // 落选的：标题旁写今日与本月、右上清至焦的色阶、卡底「某日起记」（都嫌多余）；方格、稿纸界格（116 甲、丙）；一日一笔（115）
@@ -19,7 +21,9 @@ const USAGE_KINDS = [
   ["image", () => t("生图"), "var(--rouge)"]
 ];
 const USAGE_SHADES = [0.16, 0.32, 0.52, 0.74, 0.95],
-  USAGE_CELL = 12;
+  USAGE_CELL = 12,
+  // 洇墨：粗噪声把边推毛，再晕一圈淡墨叠在下面
+  USAGE_BLEED = `<defs><filter id="usageBleed" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".6" numOctaves="2" seed="3"/><feDisplacementMap in="SourceGraphic" scale="2.6" result="rough"/><feGaussianBlur in="rough" stdDeviation="1.3" result="blur"/><feComponentTransfer in="blur" result="halo"><feFuncA type="linear" slope=".55"/></feComponentTransfer><feMerge><feMergeNode in="halo"/><feMergeNode in="rough"/></feMerge></filter></defs>`;
 // 墨（token）是四类之和；生图另计张数，不并进总量
 const usageInk = row => (row ? ["main", "helper", "side", "review"].reduce((sum, k) => sum + (Number(row[k]) || 0), 0) : 0);
 const usageValue = row => (usageKind ? Number(row?.[usageKind]) || 0 : usageInk(row));
@@ -56,7 +60,10 @@ function usageBodyHtml() {
     most = values.at(-1) || 1,
     color = usageKind ? USAGE_KINDS.find(([k]) => k === usageKind)[2] : "var(--ink)",
     S = USAGE_CELL;
-  let dots = "";
+  // 分三层：尘点垫底，墨点一层罩洇墨，朱圈与指的格子在上
+  let dust = "",
+    dots = "",
+    marks = "";
   for (const { day, row, col, wd } of rows) {
     const v = usageValue(row),
       cx = col * S + S / 2,
@@ -64,10 +71,10 @@ function usageBodyHtml() {
     if (v > 0) {
       const level = Math.max(cuts.filter(c => v > c).length, Math.min(4, Math.floor(Math.sqrt(v / most) * 5)));
       dots += `<circle cx="${cx}" cy="${cy}" r="${(2.6 + level * 0.66).toFixed(2)}" fill="${color}" fill-opacity="${USAGE_SHADES[level]}"/>`;
-    } else dots += `<circle cx="${cx}" cy="${cy}" r=".9" class="usage-dust${day > today ? " later" : ""}"/>`;
-    if (day === today) dots += `<circle cx="${cx}" cy="${cy}" r="${S / 2 + 0.2}" class="usage-today"/>`;
+    } else dust += `<circle cx="${cx}" cy="${cy}" r=".9" class="usage-dust${day > today ? " later" : ""}"/>`;
+    if (day === today) marks += `<circle cx="${cx}" cy="${cy}" r="${S / 2 + 0.2}" class="usage-today"/>`;
     // 指的是这一整格：尘点太小、指不准
-    if (day <= today) dots += `<rect x="${col * S}" y="${wd * S}" width="${S}" height="${S}" data-usage-day="${day}"/>`;
+    if (day <= today) marks += `<rect x="${col * S}" y="${wd * S}" width="${S}" height="${S}" data-usage-day="${day}"/>`;
   }
   const monthName = new Intl.DateTimeFormat(usageLocale(), { month: LANG === "en" ? "short" : "long" }),
     months = Array.from({ length: 12 }, (_, m) => {
@@ -79,7 +86,7 @@ function usageBodyHtml() {
       ([k, name, c]) =>
         `<button type="button" data-usage-kind="${k}" aria-pressed="${usageKind === k}"><i style="background:${c}"></i>${name()}<b>${usageAmount(k, totals[k])}</b></button>`
     ).join("");
-  return `${years.length > 1 ? `<div class="usage-years">${years.map(y => `<button type="button" data-usage-year="${y}"${y === usageYear ? ' aria-current="true"' : ""}>${y}</button>`).join("")}</div>` : `<div class="usage-years"><span aria-current="true">${usageYear}</span></div>`}<div class="usage-chart"><div class="usage-months">${months}</div><svg viewBox="0 0 ${cols * S} ${7 * S}" role="img" aria-label="${escapeHtml(t`${usageYear} 年逐日用量`)}">${dots}</svg></div><div class="usage-legend${usageKind ? " filtered" : ""}">${legend}</div>`;
+  return `${years.length > 1 ? `<div class="usage-years">${years.map(y => `<button type="button" data-usage-year="${y}"${y === usageYear ? ' aria-current="true"' : ""}>${y}</button>`).join("")}</div>` : `<div class="usage-years"><span aria-current="true">${usageYear}</span></div>`}<div class="usage-chart"><div class="usage-months">${months}</div><svg viewBox="0 0 ${cols * S} ${7 * S}" role="img" aria-label="${escapeHtml(t`${usageYear} 年逐日用量`)}">${USAGE_BLEED}${dust}<g filter="url(#usageBleed)">${dots}</g>${marks}</svg></div><div class="usage-legend${usageKind ? " filtered" : ""}">${legend}</div>`;
 }
 // 浮签：那天各类的数，没用到的淡下去；只看一类时其余也淡下
 function usageTipHtml(day) {

@@ -38,6 +38,12 @@ check(
   card.today && card.years === 0 && card.legend === "main,helper,side,review,image",
   JSON.stringify(card)
 );
+check(
+  "墨点罩着洇墨，尘点与朱圈不洇",
+  await evalJs(
+    `!!document.querySelector("#usageCard #usageBleed feDisplacementMap") && !!document.querySelector('#usageCard g[filter="url(#usageBleed)"] circle[fill-opacity]') && !document.querySelector('#usageCard g[filter] .usage-dust, #usageCard g[filter] .usage-today')`
+  )
+);
 
 await evalJs(
   `document.querySelector('#usageCard [data-usage-day="${today}"]').dispatchEvent(new PointerEvent("pointerover", { bubbles: true })); true`
