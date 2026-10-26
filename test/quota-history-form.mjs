@@ -339,11 +339,25 @@ await waitFor(
   3000
 );
 check("thinking before the form is stamped done and settles closed while the form waits", true);
+await evalJs(`(() => { const host = document.querySelector("#messages"), started = performance.now(); window.__quotaHistoryFormTrace = []; window.__quotaHistoryFormObserver = new MutationObserver(records => { for (const r of records) { const node = r.target.nodeType === 1 ? r.target : r.target.parentElement, d = node?.closest?.(".reasoning"); if (!d) continue; const trace = window.__quotaHistoryFormTrace; trace.push({ ms: Math.round(performance.now() - started), type: r.type, attr: r.attributeName || null, state: d.dataset.state || null, open: d.open === true, text: (d.innerText || "").slice(-120) }); if (trace.length > 100) trace.shift(); } }); window.__quotaHistoryFormObserver.observe(host, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["data-state", "open"] }); return true; })()`);
 await evalJs(`document.querySelector('#approvalBar [data-form="submit"]').click(); true`);
-await waitFor(
-  `(d => d?.dataset.state === "live" && d.open)([...document.querySelectorAll('#messages .message.assistant')].at(-1).querySelector(".reasoning"))`,
-  3000
-);
+try {
+  await waitFor(
+    `(d => d?.dataset.state === "live" && d.open)([...document.querySelectorAll('#messages .message.assistant')].at(-1).querySelector(".reasoning"))`,
+    3000
+  );
+  await evalJs(`window.__quotaHistoryFormObserver?.disconnect(); true`);
+} catch (error) {
+  let snapshot;
+  try {
+    await evalJs(`window.__quotaHistoryFormObserver?.disconnect(); true`);
+    snapshot = await evalJs(`(() => { const dom = [...document.querySelectorAll("#messages .message.assistant")].slice(-3).map(m => { const d = m.querySelector(".reasoning"); return { status: m.dataset.status || null, text: m.innerText?.slice(-500), reasoning: d ? { state: d.dataset.state || null, open: d.open === true, text: d.innerText?.slice(-300) } : null }; }), stored = (__yanState().conversations[0]?.messages || []).slice(-3).map(m => ({ status: m.status, content: String(m.content || "").slice(-300), reasoning: String(m.reasoning || "").slice(-300), keys: Object.keys(m) })); return { ready: document.readyState, page: location.href, approvalHidden: document.querySelector("#approvalBar")?.classList.contains("hidden"), approvalText: document.querySelector("#approvalBar")?.innerText?.slice(0, 500), dom, stored, trace: window.__quotaHistoryFormTrace || [] }; })()`);
+  } catch (diagnosticError) {
+    snapshot = { diagnosticError: String(diagnosticError), trace: await evalJs(`window.__quotaHistoryFormTrace || []`).catch(() => []) };
+  }
+  try { await shot("quota-history-form-reasoning-failure.png"); } catch {}
+  throw new Error(`${error.message}; quotaReasoning=${JSON.stringify(snapshot)}`);
+}
 check("thinking after the answer turns the block live again and opens it", true);
 await waitFor(`[...document.querySelectorAll('#messages .message.assistant')].at(-1)?.dataset.status === "complete"`);
 await waitFor(

@@ -1,7 +1,7 @@
 // 账本中途才立：主模型先立账本、再差遣（最常见的顺序），帮手领命时附的须是刚立的那份，不是开工时读到的（空的）
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK } from "./lib.mjs";
-const { send, evalJs, waitFor, close } = await connect();
+const { send, evalJs, waitFor, shot, close } = await connect();
 mkdirSync(WORK, { recursive: true });
 rmSync(WORK + "/.yan", { recursive: true, force: true });
 await send("Page.navigate", { url: PAGE + "preview.html" });
@@ -16,7 +16,20 @@ try {
   await evalJs(
     `document.querySelector("#welcomeInput").value = "BOOKMID 开工"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
   );
-  await waitFor(`${replies}.some(c => c.startsWith("BOOKMID|"))`, 30000);
+  try {
+    await waitFor(`${replies}.some(c => c.startsWith("BOOKMID|"))`, 30000);
+  } catch (error) {
+    let state;
+    try {
+      state = await evalJs(`(() => { const app = __yanState(), c = app.conversations[0], pane = document.querySelector("#messages"); return { ready: document.readyState, page: location.href, active: pane?.dataset.conversation || pane?.dataset.chat || null, messages: (c?.messages || []).map(m => ({ role: m.role, status: m.status, content: String(m.content || "").slice(0, 220), reasoning: String(m.reasoning || "").slice(0, 160), steps: (m.steps || []).map(s => ({ name: s.name, status: s.status, result: String(s.result || "").slice(0, 160) })) })), visible: [...(pane?.querySelectorAll(".message") || [])].map(m => ({ role: m.className, text: m.innerText?.slice(0, 220) })).slice(-5), paneText: pane?.innerText?.slice(-1200) }; })()`);
+    } catch (diagnosticError) {
+      state = { diagnosticError: String(diagnosticError) };
+    }
+    let ledger;
+    try { ledger = readFileSync(WORK + "/.yan/账本.md", "utf8"); } catch (readError) { ledger = String(readError); }
+    try { await shot("ledger-mid-BOOKMID-failure.png"); } catch {}
+    throw new Error(`${error.message}; BOOKMID=${JSON.stringify({ state, ledger })}`);
+  }
   const last = (await evalJs(replies)).find(c => c.startsWith("BOOKMID|"));
   check("a helper sent after the ledger was set up mid-answer gets the new ledger", last.includes("ledger:yes"), last);
 
