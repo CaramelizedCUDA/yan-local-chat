@@ -1,5 +1,6 @@
 // 假的 OpenAI 兼容接口：第一轮回 run_command 工具调用，收到 tool 结果后回正文；可通过 X-Mode 切换行为
 import http from "node:http";
+import { shellCommand } from "./shell-command.mjs";
 const sse = (res, chunks, gap = 30) => {
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   let i = 0;
@@ -306,7 +307,14 @@ http
               }),
               delta({}, { usage: { total_tokens: 5 } })
             ]);
-        if (results.length === 0) return call("run_command", { command: "Set-Alias yanrv Get-Date; Set-Content duty-ok.txt ok" });
+        if (results.length === 0)
+          return call("run_command", {
+            // sh 下用一个无副作用的引号参数留住「定义别名」这一幕，写文件用 sh 自己的写法
+            command: shellCommand(
+              "Set-Alias yanrv Get-Date; Set-Content duty-ok.txt ok",
+              ": 'Set-Alias yanrv Get-Date'; printf ok > duty-ok.txt"
+            )
+          });
         if (results.length === 1) return call("fetch_page", { url: "https://example.com/c?k=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789xyz" });
         return sse(res, [
           delta({ content: `REVIEW-DUTY done｜${results.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 120)).join(" ▸ ")}` }),
@@ -552,7 +560,10 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: "Start-Sleep -Seconds 4; Write-Output 'BG-OUT-42'", background: true })
+                    arguments: JSON.stringify({
+                      command: shellCommand("Start-Sleep -Seconds 4; Write-Output 'BG-OUT-42'", "sleep 4; printf 'BG-OUT-42\n'"),
+                      background: true
+                    })
                   }
                 }
               ]
@@ -633,7 +644,9 @@ http
           delta({ tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] });
         if (firstTurn && !toolResults.length)
           return sse(res, [
-            call("call_bs0", "run_command", { command: "Add-Content -Path .yan/账本.md -Value '- 乙' -Encoding utf8" }),
+            call("call_bs0", "run_command", {
+              command: shellCommand("Add-Content -Path .yan/账本.md -Value '- 乙' -Encoding utf8", "printf '%s\n' '- 乙' >> .yan/账本.md")
+            }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
         if (firstTurn && toolResults.length === 1)
@@ -744,7 +757,13 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: `Start-Sleep -Seconds ${sleepFor}; Write-Output wake-ok`, ...runArgs })
+                    arguments: JSON.stringify({
+                      command: shellCommand(
+                        `Start-Sleep -Seconds ${sleepFor}; Write-Output wake-ok`,
+                        `sleep ${sleepFor}; printf 'wake-ok\n'`
+                      ),
+                      ...runArgs
+                    })
                   }
                 }
               ]
@@ -1783,7 +1802,7 @@ http
         if (n === 0) return sse(res, call("edit_file", { path: "src/a.js", old: "return 1;", new: "return 2;" }));
         if (n === 1) return sse(res, call("read_file", { path: "src/a.js" }));
         if (n === 2) return sse(res, call("edit_file", { path: "src/a.js", old: "return 1;", new: "return 2;" }));
-        if (n === 3) return sse(res, call("run_command", { command: "Get-Content src/a.js" }));
+        if (n === 3) return sse(res, call("run_command", { command: shellCommand("Get-Content src/a.js", "cat src/a.js") }));
         if (n === 4) return sse(res, call("search_files", { query: "return", glob: "*.js" }));
         if (n === 5) return sse(res, call("list_files", { pattern: "**/*.js" }));
         return sse(res, [
@@ -1982,7 +2001,12 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: `Write-Output 'chat-${turnToolResults.length + 1}'` })
+                    arguments: JSON.stringify({
+                      command: shellCommand(
+                        `Write-Output 'chat-${turnToolResults.length + 1}'`,
+                        `printf 'chat-${turnToolResults.length + 1}\n'`
+                      )
+                    })
                   }
                 }
               ]
@@ -2005,7 +2029,12 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: "Set-Content ../escalate-probe.txt ok; Write-Output wrote" })
+                    arguments: JSON.stringify({
+                      command: shellCommand(
+                        "Set-Content ../escalate-probe.txt ok; Write-Output wrote",
+                        "printf ok > ../escalate-probe.txt; printf wrote"
+                      )
+                    })
                   }
                 }
               ]
@@ -2028,8 +2057,9 @@ http
               }),
               delta({}, { usage: { total_tokens: 5 } })
             ]);
-        if (n === 0) return call("run_command", { command: "Set-Content review-ok.txt ok" });
-        if (n === 1) return call("run_command", { command: "Set-ExecutionPolicy Unrestricted" });
+        if (n === 0) return call("run_command", { command: shellCommand("Set-Content review-ok.txt ok", "printf ok > review-ok.txt") });
+        // POSIX 用无副作用的 sudo 探针覆盖“禁止提权”；执行策略本身仍由 sandbox 单测直接覆盖。
+        if (n === 1) return call("run_command", { command: shellCommand("Set-ExecutionPolicy Unrestricted", "sudo -n true") });
         return sse(res, [
           delta({
             content: `POLICY-REVIEW done｜${turnToolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 100)).join(" ▸ ")}`
@@ -2041,7 +2071,14 @@ http
         return sse(res, [
           delta({ content: "我先执行一条指令。" }),
           delta({ tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "run_command", arguments: "" } }] }),
-          delta({ tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ command: "Write-Output '你好，世界'" }) } }] }),
+          delta({
+            tool_calls: [
+              {
+                index: 0,
+                function: { arguments: JSON.stringify({ command: shellCommand("Write-Output '你好，世界'", "printf '你好，世界\n'") }) }
+              }
+            ]
+          }),
           delta({}, { usage: { total_tokens: 20 } })
         ]);
       const result = String(toolResults.at(-1).content);
