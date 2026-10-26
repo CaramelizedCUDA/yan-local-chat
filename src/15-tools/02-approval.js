@@ -152,10 +152,12 @@ function bindApprovalEvents() {
     if (block?.dataset.multi !== "true" && event.target.value.trim())
       block.querySelectorAll(".ask-opt").forEach(b => b.setAttribute("aria-checked", "false"));
   });
+  // 表单里按 Enter 一律是下一题 / 提交：点过选项焦点就停在那个钮上，Enter 照浏览器默认是再点它一下——刚选的那项反被取消；勾选留给点与空格
   $("#approvalBar").addEventListener("keydown", event => {
-    if (event.key !== "Enter" || !event.target.classList.contains("ask-other")) return;
+    if (event.key !== "Enter" || event.shiftKey || event.isComposing || !event.target.closest(".ask-other, .ask-opt")) return;
     event.preventDefault();
-    formEnter($("#approvalBar"));
+    if (event.repeat) return;
+    if (!formEnter($("#approvalBar"))) toast(t("请先在上方作答"));
   });
   $("#workAuto").onclick = () => {
     const c = currentConversation();

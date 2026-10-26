@@ -275,8 +275,17 @@ check(
     `document.querySelector('#approvalBar .ask-q[data-q="0"] .ask-other').value === "" && document.querySelector('#approvalBar .ask-q[data-q="0"] .ask-opt[data-opt="0"]').getAttribute("aria-checked") === "true"`
   )
 );
-await evalJs(`document.querySelector('#approvalBar [data-form="next"]').click(); true`);
+// 点过选项，焦点停在那个钮上：Enter 翻到下一题，不是再点它一下把刚选的取消
+await evalJs(
+  `(b => { b.focus(); b.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); })(document.querySelector('#approvalBar .ask-q[data-q="0"] .ask-opt[data-opt="0"]')); true`
+);
 await sleep(100);
+check(
+  "Enter on a focused option goes to the next question and keeps the pick",
+  await evalJs(
+    `document.querySelector('#approvalBar').dataset.page === "1" && document.querySelector('#approvalBar .ask-q[data-q="0"] .ask-opt[data-opt="0"]').getAttribute("aria-checked") === "true"`
+  )
+);
 check(
   "next page shows the second question with submit",
   await evalJs(
