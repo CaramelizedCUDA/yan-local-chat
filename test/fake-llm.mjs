@@ -1490,7 +1490,7 @@ http
       const userText = Array.isArray(lastUser) ? lastUser.map(part => part.text || "").join("\n") : String(lastUser);
       if (userText.includes("SKILLCMD"))
         return sse(res, [
-          delta({ content: `CMD|body:${userText.includes("先写称谓") ? "yes" : "no"}|slash:${userText.includes("/写信") ? "yes" : "no"}` }),
+          delta({ content: `CMD|body:${userText.includes("先写称谓") ? "yes" : "no"}|slash:${userText.split("\n\n--- 附件：")[0].includes("/写信") ? "yes" : "no"}` }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       if (typeof lastUser === "string" && lastUser.includes("SKILLTEST")) {
