@@ -733,6 +733,7 @@ var YAN_EN = {
   已装: "Installed",
   待装: "To install",
   待卸: "To remove",
+  必备: "Required",
   "卸载 {0} 组工具？": "Remove {0} {0|tool pack|tool packs}?",
   "当前已安装、但未勾选的 {0} 将在更新环境时卸载。": "{0}, installed but unchecked, will be removed when the environment updates.",
   卸载并更新: "Remove and update",
