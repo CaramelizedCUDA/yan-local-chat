@@ -33,7 +33,10 @@ check(
   JSON.stringify(open)
 );
 await evalJs(`document.querySelector("#clepsydra .clepsydra-row").click(); true`);
-await sleep(400);
+// 等待原有行为断言跨过详情自动收起的 700ms 窗口：导航回后台步骤后，行迹应保持展开。
+const revealReady = `(() => { const list = document.querySelector("#clepsydra .clepsydra-list"), card = document.querySelector('#messages .tool-step[data-tool="run_command"]'), stack = card?.closest(".tool-stack"); return list?.classList.contains("hidden") && stack?.open; })()`;
+const stableUntil = await evalJs(`Date.now() + 900`);
+await waitFor(`Date.now() >= ${stableUntil} && ${revealReady}`, 10000).catch(() => {});
 const revealState = await evalJs(
   `(() => { const list = document.querySelector("#clepsydra .clepsydra-list"), card = document.querySelector('#messages .tool-step[data-tool="run_command"]'), stack = card?.closest(".tool-stack"); return { listHidden: list?.classList.contains("hidden"), rowConversation: document.querySelector("#clepsydra .clepsydra-row")?.dataset.conversation, rowStep: document.querySelector("#clepsydra .clepsydra-row")?.dataset.step, cardFound: !!card, cardStepId: card?.dataset.stepId, stackOpen: stack?.open, stackClass: stack?.className, currentConversation: __yanState().conversations?.find(c => c.messages?.some(m => m.steps?.some(s => s.name === "run_command")))?.id }; })()`
 );
