@@ -1,5 +1,5 @@
 // 端到端用例共用的一小套工具：连上无头浏览器的调试口、在页面里求值、等待条件、记一条 PASS / FAIL
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -16,6 +16,18 @@ export const ARCHIVE = `${HOME}/卷宗`;
 export const CHATS = `${HOME}/对话`;
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 export const check = (label, ok, detail = "") => console.log(`${ok ? "PASS" : "FAIL"} ${label}${detail ? " — " + detail : ""}`);
+// 用量簿（存储根/用量.json）里某一类各日之和：页面攒几秒才报给桥接，等它报上来（见 src/16-api.js 的 noteUsage）
+export async function usageOf(kind, timeout = 8000) {
+  const started = Date.now();
+  for (;;) {
+    let n = 0;
+    try {
+      n = Object.values(JSON.parse(readFileSync(`${HOME}/用量.json`, "utf8")).days || {}).reduce((sum, row) => sum + (Number(row[kind]) || 0), 0);
+    } catch {}
+    if (n > 0 || Date.now() - started > timeout) return n;
+    await sleep(300);
+  }
+}
 
 export async function connect() {
   let ws,

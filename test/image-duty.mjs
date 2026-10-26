@@ -1,7 +1,7 @@
 // 生图（设置 → 专司）：配好了才把 generate_image 交给模型；画好的图收进卷宗、挂在步骤上、随工具结果附给模型，正文引文件名就地画出；
 // 硅基流动交回的是网址，桥接取成 data: 地址。没配生图时工具不交出，生图接口一问也收不到
 import { existsSync } from "node:fs";
-import { connect, check, sleep, PAGE, ARCHIVE } from "./lib.mjs";
+import { connect, check, usageOf, sleep, PAGE, ARCHIVE } from "./lib.mjs";
 
 const asks = async () => (await fetch("http://127.0.0.1:8798/image-asks")).json();
 const { send, evalJs, waitFor, close } = await connect();
@@ -53,4 +53,6 @@ await sleep(400);
 state = await ask();
 check("没配生图：工具不交出", state.steps[0]?.status !== "done" && !existsSync(`${ARCHIVE}/墨猫 (2).png`), JSON.stringify(state.steps));
 check("没配生图：生图接口一问也没收到", (await asks()).length === 0);
+const used = await usageOf("image");
+check("生图记进用量簿，按张数", used > 0, String(used));
 await close();

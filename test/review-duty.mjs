@@ -1,7 +1,7 @@
 // 审查（设置 → 专司）：审而后行里规则标疑的那一步交另配的审查模型判——准了照做（宽沙箱会拦的指令也跑），驳了理由回给主模型、不请示；
 // 没开审查照旧按规则回绝；审查连不上退回规则
 import { existsSync, rmSync } from "node:fs";
-import { connect, check, sleep, PAGE, TMP } from "./lib.mjs";
+import { connect, check, usageOf, sleep, PAGE, TMP } from "./lib.mjs";
 
 const WORK = `${TMP}/review-duty`.split("/").join(process.platform === "win32" ? "\\" : "/");
 rmSync(`${TMP}/review-duty`, { recursive: true, force: true });
@@ -98,4 +98,6 @@ check(
   state.steps[0]?.status === "error" && /沙箱拒绝/.test(state.reply) && !state.steps[0].reviewed && !state.steps[1]?.reviewed,
   JSON.stringify({ steps: state.steps, reply: state.reply.slice(0, 200) })
 );
+const used = await usageOf("review");
+check("审查花的墨记进用量簿的「审查」", used > 0, String(used));
 await close();
