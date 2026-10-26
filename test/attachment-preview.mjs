@@ -190,7 +190,17 @@ await evalJs(`document.querySelector("#fileViewerStage").click(); true`);
 await sleep(200);
 check("leaving without playing hangs nothing", await evalJs(`document.querySelector("#listenPendant").classList.contains("hidden")`));
 await openPending("一片.webm");
-await waitFor(`document.querySelector("#fileViewerStage video")?.readyState >= 1`, 8000);
+await waitFor(`document.querySelector("#fileViewerStage video")?.readyState >= 1`, 8000).catch(async error => {
+  let videoState;
+  try {
+    videoState = await evalJs(
+      `(() => { const v = document.querySelector("#fileViewerStage video"); return { present: !!v, readyState: v?.readyState, networkState: v?.networkState, errorCode: v?.error?.code, errorMessage: v?.error?.message, videoWidth: v?.videoWidth, duration: v?.duration, currentSrc: v?.currentSrc, canPlayWebm: v?.canPlayType("video/webm"), recorderSupportsWebm: typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("video/webm") }; })()`
+    );
+  } catch (diagnosticError) {
+    videoState = { diagnosticError: String(diagnosticError) };
+  }
+  throw new Error(`${error.message}; videoState=${JSON.stringify(videoState)}`);
+});
 await evalJs(`document.querySelector("#fileViewerStage video").currentTime = 0.5; true`);
 await sleep(500);
 await shot("attachment-video.png");

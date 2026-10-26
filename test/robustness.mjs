@@ -98,7 +98,17 @@ check(
 await evalJs(
   `document.querySelector("#chatInput").value = "SLOWHTML 画个页"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
-await waitFor(`document.querySelectorAll(".message.assistant").length === 5 && !!${lastAssistant}.querySelector(".viz-sketch")`, 20000);
+await waitFor(`document.querySelectorAll(".message.assistant").length === 5 && !!${lastAssistant}.querySelector(".viz-sketch")`, 20000).catch(async error => {
+  let sketchState;
+  try {
+    sketchState = await evalJs(
+      `(() => { const a = ${lastAssistant}, c = __yanState().conversations?.[0], m = c?.messages?.at(-1), v = a?.querySelector(".viz-pending"); return { assistantCount: document.querySelectorAll(".message.assistant").length, status: a?.dataset.status, text: (a?.querySelector(".assistant-block > .markdown")?.textContent || "").slice(0, 120), pendingViz: !!v, vizLines: v?.dataset.lines, sketch: !!a?.querySelector(".viz-sketch"), htmlApp: !!a?.querySelector(".html-app"), stored: m ? { status: m.status, content: (m.content || "").slice(0, 100), steps: (m.steps || []).map(s => [s.name, s.status]) } : null }; })()`
+    );
+  } catch (diagnosticError) {
+    sketchState = { diagnosticError: String(diagnosticError) };
+  }
+  throw new Error(`${error.message}; sketchState=${JSON.stringify(sketchState)}`);
+});
 const lines1 = await evalJs(`Number(${lastAssistant}.querySelector(".viz-pending")?.dataset.lines)`);
 await waitFor(`Number(${lastAssistant}.querySelector(".viz-pending")?.dataset.lines || 0) > ${lines1}`, 5000);
 const sketch = await evalJs(

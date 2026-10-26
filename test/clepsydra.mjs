@@ -34,11 +34,13 @@ check(
 );
 await evalJs(`document.querySelector("#clepsydra .clepsydra-row").click(); true`);
 await sleep(400);
+const revealState = await evalJs(
+  `(() => { const list = document.querySelector("#clepsydra .clepsydra-list"), card = document.querySelector('#messages .tool-step[data-tool="run_command"]'), stack = card?.closest(".tool-stack"); return { listHidden: list?.classList.contains("hidden"), rowConversation: document.querySelector("#clepsydra .clepsydra-row")?.dataset.conversation, rowStep: document.querySelector("#clepsydra .clepsydra-row")?.dataset.step, cardFound: !!card, cardStepId: card?.dataset.stepId, stackOpen: stack?.open, stackClass: stack?.className, currentConversation: __yanState().conversations?.find(c => c.messages?.some(m => m.steps?.some(s => s.name === "run_command")))?.id }; })()`
+);
 check(
   "clicking a row closes the list and opens the trail at the step that hung it",
-  await evalJs(
-    `document.querySelector("#clepsydra .clepsydra-list").classList.contains("hidden") && !!document.querySelector('#messages .tool-step[data-tool="run_command"]')?.closest(".tool-stack")?.open`
-  )
+  revealState.listHidden && revealState.stackOpen,
+  JSON.stringify(revealState)
 );
 await waitFor(`document.querySelector("#clepsydra").classList.contains("hidden")`, 20000).catch(() => {});
 check("when it ends the clepsydra goes away", await evalJs(`document.querySelector("#clepsydra").classList.contains("hidden")`));

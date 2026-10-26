@@ -58,7 +58,17 @@ await evalJs(
   `document.querySelector("#welcomeInput").value = "MCPTEST 试试"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
 );
 // 会写的那件在「问而后行」下请示：请示条浮出，写明服务与工具
-await waitFor(`!!document.querySelector('#approvalBar:not(.hidden) [data-approve="run"]')`, 60000);
+await waitFor(`!!document.querySelector('#approvalBar:not(.hidden) [data-approve="run"]')`, 60000).catch(async error => {
+  let mcpState;
+  try {
+    mcpState = await evalJs(
+      `(() => { const a = ${lastAssistant}, c = __yanState().conversations?.[0]; return { approvalHidden: document.querySelector("#approvalBar")?.classList.contains("hidden"), approvalText: document.querySelector("#approvalBar")?.textContent?.slice(0, 120), approvalButtons: [...document.querySelectorAll("#approvalBar [data-approve]")].map(b => b.dataset.approve), assistant: a ? { status: a.dataset.status, text: (a.textContent || "").slice(0, 180), steps: [...a.querySelectorAll(".tool-step")].map(s => [s.querySelector(".tool-label")?.textContent, s.dataset.status]) } : null, stored: c?.messages?.at(-1) ? { status: c.messages.at(-1).status, content: (c.messages.at(-1).content || "").slice(0, 120), steps: (c.messages.at(-1).steps || []).map(s => [s.name, s.status, s.title]) } : null }; })()`
+    );
+  } catch (diagnosticError) {
+    mcpState = { diagnosticError: String(diagnosticError) };
+  }
+  throw new Error(`${error.message}; mcpState=${JSON.stringify({ webExit: web.exitCode, sseExit: old.exitCode, ...mcpState })}`);
+});
 const bar = await evalJs(`document.querySelector("#approvalBar").textContent`);
 check("a writing MCP tool asks first under 问而后行, naming server and tool", /web/.test(bar) && /write_note/.test(bar), bar.slice(0, 200));
 await evalJs(`document.querySelector('#approvalBar [data-approve="run"]').click(); true`);

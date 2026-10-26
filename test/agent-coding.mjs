@@ -11,10 +11,11 @@ await evalJs(
 );
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
+const suggestions = await evalJs(`[...document.querySelectorAll("#welcome .suggestion")].map(b => b.textContent).join("|")`);
 check(
   "suggestions are code-oriented",
-  (await evalJs(`[...document.querySelectorAll("#welcome .suggestion")].map(b => b.textContent).join("|")`)) ===
-    "项目梳理|深度调研|网页操作|原型演示"
+  suggestions === "项目梳理|深度调研|网页操作|原型演示",
+  suggestions
 );
 await evalJs(
   `document.querySelector("#welcomeInput").value = "EDIT"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
@@ -70,15 +71,19 @@ check(
 const steps = await evalJs(
   `[...document.querySelectorAll(".tool-step")].map(s => ({ label: s.querySelector(".tool-label").textContent, status: s.dataset.status, meta: s.querySelector(".tool-meta").textContent, diff: !!s.querySelector(".tool-diff"), out: s.querySelector(".tool-output")?.textContent?.slice(0, 60) || "" }))`
 );
+const failedRound = await evalJs(
+  `(() => { const a = [...document.querySelectorAll(".message.assistant")].at(-1), c = __yanState().conversations?.at(-1), m = c?.messages?.at(-1); return { ui: a ? { status: a.dataset.status, text: (a.querySelector(".assistant-block > .markdown")?.textContent || "").slice(0, 100), steps: [...a.querySelectorAll(".tool-step")].map(s => [s.querySelector(".tool-label")?.textContent, s.dataset.status]) } : null, stored: m ? { status: m.status, text: (m.content || "").slice(0, 100), steps: (m.steps || []).map(s => [s.name, s.status, s.title]) } : null }; })()`
+);
 console.log("  steps:", JSON.stringify(steps));
-check("edit before read is refused", steps[0].label === "修改" && steps[0].status === "error" && steps[0].meta === "需先读取");
+check("edit before read is refused", steps[0]?.label === "修改" && steps[0]?.status === "error" && steps[0]?.meta === "需先读取", JSON.stringify({ steps, failedRound }));
 check(
   "read then edit succeeds with diff",
-  steps[1].label === "读取" &&
-    steps[2].label === "修改" &&
-    steps[2].status === "done" &&
-    steps[2].diff &&
-    /第 2 行 · 1 处/.test(steps[2].meta)
+  steps[1]?.label === "读取" &&
+    steps[2]?.label === "修改" &&
+    steps[2]?.status === "done" &&
+    steps[2]?.diff &&
+    /第 2 行 · 1 处/.test(steps[2]?.meta || ""),
+  JSON.stringify({ steps, failedRound })
 );
 check("file actually changed", readFileSync(WORK + "/src/a.js", "utf8").includes("return 2;"));
 check(
@@ -108,13 +113,13 @@ check(
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
 check(
   "read-only command ran without approval",
-  steps[3].label === "运行" && steps[3].status === "done" && steps[3].meta.includes("只读免确认") && steps[3].out.includes("return 2")
+  steps[3]?.label === "运行" && steps[3]?.status === "done" && steps[3]?.meta.includes("只读免确认") && steps[3]?.out.includes("return 2")
 );
 check(
   "search_files results",
-  steps[4].label === "搜索" && steps[4].status === "done" && steps[4].out.includes("src/a.js:2:") && /1 处 · 1 文件/.test(steps[4].meta)
+  steps[4]?.label === "搜索" && steps[4]?.status === "done" && steps[4]?.out.includes("src/a.js:2:") && /1 处 · 1 文件/.test(steps[4]?.meta)
 );
-check("list_files with pattern", steps[5].label === "览目录" && steps[5].out.includes("src/a.js") && !steps[5].out.includes("src/\n"));
+check("list_files with pattern", steps[5]?.label === "览目录" && steps[5]?.out.includes("src/a.js") && !steps[5]?.out.includes("src/\n"));
 check(
   "no pending approval happened",
   await evalJs(`!document.querySelector('#messages [data-approve]') && document.querySelector('#approvalBar').classList.contains('hidden')`)
