@@ -9,6 +9,34 @@ await evalJs(
 );
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
+await evalJs(`(() => {
+  const trace = window.__vizLoadTrace = { started: performance.now(), frames: [], messages: [], states: [] };
+  const stamp = () => Math.round(performance.now() - trace.started);
+  const recordApp = app => trace.states.push({ at: stamp(), id: app.dataset.appId || "", state: app.dataset.appState || "inserted", label: app.querySelector(".code-lang")?.textContent || "" });
+  const recordNode = node => {
+    if (!(node instanceof Element)) return;
+    if (node.matches(".html-app")) recordApp(node);
+    for (const app of node.querySelectorAll(".html-app")) recordApp(app);
+  };
+  const observer = new MutationObserver(records => {
+    for (const record of records) {
+      if (record.type === "attributes" && record.target.matches(".html-app")) recordApp(record.target);
+      for (const node of record.addedNodes || []) recordNode(node);
+    }
+  });
+  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-app-state"] });
+  window.__vizLoadObserver = observer;
+  document.addEventListener("load", event => {
+    if (event.target instanceof HTMLIFrameElement && event.target.closest(".html-app"))
+      trace.frames.push({ at: stamp(), id: event.target.closest(".html-app").dataset.appId || "", src: event.target.getAttribute("src") || "" });
+  }, true);
+  window.addEventListener("message", event => {
+    const data = event.data;
+    if (data && ["yan-preview-ready", "yan-preview-state"].includes(data.type))
+      trace.messages.push({ at: stamp(), id: data.id || "", type: data.type, state: data.state || "", detail: String(data.detail || "").slice(0, 160) });
+  }, true);
+  return true;
+})()`);
 await evalJs(
   `document.querySelector("#welcomeInput").value = "VIZDEMO 画几张"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
 );
@@ -17,15 +45,16 @@ await waitFor(
   `[...document.querySelectorAll(".html-app")].length === 4 && [...document.querySelectorAll(".html-app")].every(a => a.dataset.appState === "ready" || a.dataset.appState === "error")`,
   20000
 ).catch(() => {});
-const apps = JSON.parse(
+const diagnostics = JSON.parse(
   await evalJs(
-    `JSON.stringify([...document.querySelectorAll(".html-app")].map(a => ({ state: a.dataset.appState, label: a.querySelector(".code-lang").textContent, detail: a.querySelector(".code-lang").title, height: a.querySelector(".html-app-stage").getBoundingClientRect().height })))`
+    `(() => { window.__vizLoadObserver?.disconnect(); return JSON.stringify({ apps: [...document.querySelectorAll(".html-app")].map(a => ({ id: a.dataset.appId, state: a.dataset.appState, label: a.querySelector(".code-lang").textContent, detail: a.querySelector(".code-lang").title, height: a.querySelector(".html-app-stage").getBoundingClientRect().height, frameSrc: a.querySelector("iframe")?.getAttribute("src") || "", sandbox: a.querySelector("iframe")?.getAttribute("sandbox") || "" })), trace: window.__vizLoadTrace || {} }); })()`
   )
 );
+const apps = diagnostics.apps;
 check(
   "all four blocks mount as html apps and run without error",
   apps.length === 4 && apps.every(a => a.state === "ready"),
-  JSON.stringify(apps)
+  JSON.stringify(apps.every(a => a.state === "ready") ? apps : diagnostics)
 );
 check("no mermaid / echarts is loaded into the page itself", await evalJs(`!window.mermaid && !window.echarts`));
 check(
