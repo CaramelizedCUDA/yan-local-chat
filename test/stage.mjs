@@ -373,12 +373,16 @@ const waitForFront = async (id, timeout = 8000) => {
   return front;
 };
 const pickedFront = await waitForFront(targetId);
+const beforeLocate = await evalJs(
+  `JSON.stringify({ current: __yanStage.state.current, front: __yanStage.state.front, hasTab: __yanStage.state.tabs.has(${JSON.stringify(targetId)}) })`
+);
+const listedPages = await (await fetch(DEBUG + "/json/list")).json();
 await evalJs(`__yanStage.locate().then(() => true)`);
 const currentAfterLocate = await evalJs(`__yanStage.state.current`);
 check(
   "a call after the user picked a tab leaves the view alone",
-  pickedFront === targetId && currentAfterLocate === targetId,
-  `front=${pickedFront || "(none)"} current=${currentAfterLocate}`
+  pickedFront === targetId && JSON.parse(beforeLocate).current === targetId && currentAfterLocate === targetId,
+  `target=${targetId} front=${pickedFront || "(none)"} before=${beforeLocate} after=${currentAfterLocate} pages=${JSON.stringify(listedPages.filter(t => t.type === "page").map(t => ({ id: t.id, title: t.title, url: t.url })))}`
 );
 await browserSend("Target.activateTarget", { targetId: fresh });
 await sleep(300);

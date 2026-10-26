@@ -231,11 +231,14 @@ await waitFor(
   40000
 );
 const text = await evalJs(`__yanState().conversations[0].messages.at(-1).content`);
+const finalState = await evalJs(
+  `JSON.stringify(__yanState().conversations[0].messages.slice(-8).map(m => ({ role: m.role, status: m.status, content: String(m.content || "").slice(0, 180) })))`
+);
 // 先到的那份可能在第一答里就递上了（那一答还在说「等回报」），后到的另起一答；收尾那一答前冠着派活那一答的行迹
 check(
   "the last answer closes on the reports, behind the digest of the answer that sent the helpers",
   text.startsWith("DELEGATE done｜trail:yes") && /帮手「(改 a\.js|建 b\.js)」已完成（\d 步，改了 1 个文件：src\/[ab]\.js/.test(text),
-  text.slice(0, 400)
+  `last=${text.slice(0, 400)} messages=${finalState}`
 );
 check(
   "change bar counts both helpers' changes",

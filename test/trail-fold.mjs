@@ -233,13 +233,10 @@ check(
 );
 await shot("trail-helper-panel.png");
 await evalJs(`document.querySelector("#helperFoldHead").click(); true`);
-await sleep(500);
-check(
-  "folding leaves the report in view",
-  await evalJs(
-    `document.querySelector("#helperPanelBody .sub-trail").classList.contains("folded") && getComputedStyle(document.querySelector("#helperPanelBody .sub-timeline")).display === "none" && !!document.querySelector("#helperPanelBody .sub-report") && !document.querySelector("#helperFoldHead").classList.contains("shown")`
-  )
-);
+const foldedReportInView =
+  `document.querySelector("#helperPanelBody .sub-trail").classList.contains("folded") && getComputedStyle(document.querySelector("#helperPanelBody .sub-timeline")).display === "none" && !!document.querySelector("#helperPanelBody .sub-report") && !document.querySelector("#helperFoldHead").classList.contains("shown")`;
+await waitFor(foldedReportInView, 5000);
+check("folding leaves the report in view", await evalJs(foldedReportInView));
 await evalJs(`document.querySelector('#helperNav [data-helper-step="1"]').click(); true`);
 await sleep(300);
 check(
