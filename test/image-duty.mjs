@@ -58,7 +58,7 @@ check("答末成品条列出这幅", state.deliverables.includes("墨猫.png"), 
 await waitFor(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`, 5000).catch(() => {});
 check("正文引文件名就地画出", await evalJs(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`));
 
-// 一轮四稿：四件一起画，正文里接连几幅（同段换行的、另起一段的）并成一排，不一路往下堆
+// 一轮四稿：四件一起画，正文里接连几幅（同段换行的、另起一段的）收成一叠，不一路往下堆
 await evalJs(`document.querySelector("#newChat").click(); true`);
 await sleep(400);
 await asks();
@@ -77,9 +77,9 @@ check(
 );
 await waitFor(`document.querySelectorAll(".message.assistant .markdown .reply-shots > .reply-shot").length === 4`, 5000).catch(() => {});
 check(
-  "接连几幅并成一排",
+  "接连几幅收成一叠",
   await evalJs(
-    `(m => m.querySelectorAll(".reply-shots").length === 1 && m.querySelectorAll(".reply-shots > .reply-shot").length === 4 && !m.querySelector(".reply-shots + br, .reply-shots ~ p:empty"))(document.querySelector(".message.assistant .markdown"))`
+    `(m => m.querySelectorAll(".reply-shots").length === 1 && m.querySelectorAll(".reply-shots > .reply-shot").length === 4 && m.querySelector(".reply-shots").dataset.count === "共 4 幅" && !m.querySelector(".reply-shots + br, .reply-shots ~ p:empty"))(document.querySelector(".message.assistant .markdown"))`
   )
 );
 

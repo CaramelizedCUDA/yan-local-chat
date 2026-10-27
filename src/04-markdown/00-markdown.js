@@ -231,8 +231,8 @@ function renderReplyShots(root) {
   groupReplyShots(root);
   void loadThumbnails(root);
 }
-// 接连几幅（一轮画的几稿）并成一排，不一路往下堆：同段里只隔着换行的，或这段以图收尾、下一段只有图的。
-// 流式时已收尾的段落一段段补进来，这里每回把新到的接进前面那一排；只在同一个容器里挪，尾段重画时不会多出一份
+// 接连几幅（一轮画的几稿）收成一叠，不一路往下堆：同段里只隔着换行的，或这段以图收尾、下一段只有图的。
+// 流式时已收尾的段落一段段补进来，这里每回把新到的接进前面那一叠；只在同一个容器里挪，尾段重画时不会多出一份
 /** @param {Element} root */
 function groupReplyShots(root) {
   const isGap = node => (node.nodeType === Node.TEXT_NODE ? !node.textContent.trim() : node.nodeName === "BR"),
@@ -264,6 +264,8 @@ function groupReplyShots(root) {
       trimAround(row);
     }
   }
+  // 叠上只露最上一幅，角上写共几幅（见 40-markdown.css）；各幅都在答末成品条与卷宗里
+  for (const row of root.querySelectorAll(".reply-shots")) row.dataset.count = t`共 ${row.children.length} 幅`;
 }
 defineEmbed({ name: "shot", mount: renderReplyShots });
 function downloadHref(href, name, revoke = false) {

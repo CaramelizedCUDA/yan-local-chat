@@ -189,30 +189,79 @@
   object-fit: cover;
   object-position: top;
 }
-/* 接连几幅并成一排（见 groupReplyShots）：一律等大的方格，正文宽的四分之一（窄了不小于 160，折成三列、两列），
-   不足四幅的靠左、不撑大；按中心取景，长截图从顶上取，各幅的真比例点开看。
-   试过按宽高比分宽的一排（设计稿/122 乙）：比例一杂就参差，用户定方格规整（10-27）；两列方格竖着仍占两幅高；一条横滚藏住了末一幅 */
+/* 接连几幅收成一叠（见 groupReplyShots）：最上一幅照真比例（高不过 300），后两张同大、往右错开露一道边、一层比一层暗，
+   再多的不画；左下一枚纸签写共几幅。各幅都在答末成品条与卷宗里，正文只作一份。
+   试过摊开成排（设计稿/122–125）：按宽高比分宽的比例一杂就参差，等大方格裁掉要紧处，幅数一多正文成了一面图墙 */
 :is(.markdown, .trail-note, .sub-report) .reply-shots {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(max(160px, calc((100% - 24px) / 4)), 1fr));
-  gap: 8px;
+  position: relative;
+  isolation: isolate;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding-right: 20px;
   margin: 10px 0 4px;
 }
-:is(.markdown, .trail-note, .sub-report) .reply-shots .fi.reply-shot {
-  width: auto;
-  max-width: none;
+:is(.markdown, .trail-note, .sub-report) .reply-shots:has(> :nth-child(2):last-child) {
+  padding-right: 10px;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot {
+  position: relative;
+  z-index: 3;
+  max-width: min(100%, 420px);
   margin: 0;
 }
-:is(.markdown, .trail-note, .sub-report) .reply-shots .fi.reply-shot img {
-  width: 100%;
-  height: auto;
-  max-height: none;
-  aspect-ratio: 1;
-  object-fit: cover;
-  object-position: center;
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot img {
+  max-height: 300px;
 }
-:is(.markdown, .trail-note, .sub-report) .reply-shots .fi.reply-shot.long img {
-  object-position: top;
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot.long {
+  width: min(100%, 320px);
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot.long img {
+  height: 300px;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(n + 2) {
+  position: absolute;
+  inset: 0 20px 0 0;
+  width: auto;
+  max-width: none;
+  transform-origin: right center;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(n + 2) img {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots:has(> :nth-child(2):last-child) > .fi.reply-shot:nth-child(2) {
+  right: 10px;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(2) {
+  z-index: 2;
+  transform: translateX(10px) scale(0.93);
+  filter: brightness(0.86);
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(3) {
+  z-index: 1;
+  transform: translateX(20px) scale(0.86);
+  filter: brightness(0.72);
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(n + 4) {
+  display: none;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots[data-count]:after {
+  content: attr(data-count);
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 4;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  color: var(--ink-2);
+  font-size: var(--fs-note);
+  white-space: nowrap;
+  pointer-events: none;
 }
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot:hover,
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot:focus-visible {
