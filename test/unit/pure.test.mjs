@@ -14,6 +14,7 @@ const repairEchartsOption = new Function(
 const f = load([
   "parseToolArguments",
   "normalizeToolArguments",
+  "normalizeArguments",
   "repairTruncatedJson",
   "stableCut",
   "diffCounts",
@@ -100,6 +101,13 @@ test("normalizeToolArguments：别名归位、类型理顺、缺必填才报", (
   const ask = f.normalizeToolArguments("ask_user", { question: "哪种？", options: ["甲", "乙"] }).args;
   assert.equal(ask.questions.length, 1);
   assert.equal(ask.questions[0].question, "哪种？");
+  // 带默认值的必填（Playwright MCP 截图的 scale）：没给就照默认填，不报缺
+  const shot = {
+    type: "object",
+    properties: { fullPage: { type: "boolean" }, scale: { type: "string", default: "css" } },
+    required: ["scale"]
+  };
+  assert.deepEqual(f.normalizeArguments(shot, { fullPage: true }), { args: { fullPage: true, scale: "css" }, problems: [] });
 });
 test("stableCut：在最后一个空行切，不切进未闭合的代码围栏或列表中间", () => {
   assert.equal(f.stableCut("a\n\nb\n\nc"), 4);

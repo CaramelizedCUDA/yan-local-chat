@@ -148,7 +148,12 @@ function normalizeArguments(spec, raw) {
   }
   for (const [key, rule] of Object.entries(spec.properties)) args[key] = coerceToolValue(args[key], rule);
   const problems = [];
-  for (const key of spec.required || []) if (args[key] === undefined || args[key] === null) problems.push(t`缺少必填参数 ${key}`);
+  for (const key of spec.required || []) {
+    if (args[key] !== undefined && args[key] !== null) continue;
+    // 带默认值的也被列成必填（Playwright MCP 由 zod 导出的参数表即此：截图的 scale、控制台的 level），没给就照默认填
+    if (spec.properties[key]?.default !== undefined) args[key] = spec.properties[key].default;
+    else problems.push(t`缺少必填参数 ${key}`);
+  }
   return { args, problems };
 }
 // 参数出错时回给模型的一行 schema 摘要
