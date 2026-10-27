@@ -330,30 +330,81 @@ function showInFileViewer(title, html, trigger = null, seal = t("览")) {
 let imageViewerArchivePath = null,
   imageViewerArchiveRoot = "",
   imageViewerRevision = 0;
-// 卷宗里的图；root 给了是别处目录里的（正文引的工作目录里的图），那里没有件数大小可报
-function openArchiveImage(path, trigger = null, root = archiveDir()) {
-  imageViewerRevision++;
-  const entry = root === archiveDir() ? (archiveEntries || []).find(file => file.path === path) : null;
-  imageViewerAttachmentId = null;
-  imageViewerArchivePath = path;
-  imageViewerArchiveRoot = root;
-  showImageViewer(
-    archiveFileUrl(path, false, root),
-    entry?.name || "",
-    entry ? `${entry.name} · ${formatFileSize(entry.size || 0)}` : path.split("/").pop(),
+// 卷宗里的图；root 给了是别处目录里的（正文引的工作目录里的图），那里没有件数大小可报。
+// paths 是同看的一组（卷宗此刻列着的图），看图框底下排成一条小样、左右翻
+function openArchiveImage(path, trigger = null, root = archiveDir(), paths = [path]) {
+  openImageSet(
+    paths.map(item => ({ path: item, root })),
+    Math.max(0, paths.indexOf(path)),
     trigger
   );
 }
-// 看图框摊开一张图（附件、卷宗共用），先按窗口大小看
-function showImageViewer(src, name, label, trigger) {
+// 看图框一回看的一组：每件是附件 { id } 或目录里的图 { path, root }；只一件时不出小样
+let imageViewerSet = [],
+  imageViewerIndex = 0;
+/** @param {{ id?: string, path?: string, root?: string }[]} items @param {number} index @param {Element|null} trigger */
+function openImageSet(items, index, trigger = null) {
+  imageViewerSet = items;
   imageViewerReturnFocus = trigger || document.activeElement;
+  const strip = $("#imageViewerStrip"),
+    many = items.length > 1;
+  $("#imageViewer").classList.toggle("has-strip", many);
+  strip.classList.toggle("hidden", !many);
+  strip.innerHTML = many
+    ? items
+        .map(
+          (item, i) =>
+            `<button type="button" data-strip-index="${i}"${item.path ? ` title="${escapeHtml(item.path.split("/").pop())}"` : ""}>${
+              item.id
+                ? `<img data-thumb="${escapeHtml(item.id)}" alt="">`
+                : `<img src="${escapeHtml(archiveFileUrl(item.path, false, item.root))}" loading="lazy" decoding="async" alt="">`
+            }</button>`
+        )
+        .join("")
+    : "";
+  if (many) void loadThumbnails(strip);
+  void showImageAt(index, true);
+}
+// 摊开组里的第几件，先按窗口大小看；附件要先从库里取，取到时已换了别件就作罢
+async function showImageAt(index, opening = false) {
+  const item = imageViewerSet[index];
+  if (!item) return;
+  const revision = ++imageViewerRevision;
+  let src, name, label;
+  if (item.id) {
+    let file;
+    try {
+      file = await getAttachment(item.id);
+    } catch {
+      if (revision === imageViewerRevision) toast(t("图片读取失败"));
+      return;
+    }
+    if (revision !== imageViewerRevision) return;
+    if (!file) return toast(t("图片原件已找不到"));
+    if (file.kind !== "image") return openFileViewer({ attachmentId: item.id }, file.name, imageViewerReturnFocus);
+    [src, name, label] = [file.data, file.name, `${file.name || t("图片")} · ${formatFileSize(file.size)}`];
+  } else {
+    const entry = item.root === archiveDir() ? (archiveEntries || []).find(file => file.path === item.path) : null;
+    src = archiveFileUrl(item.path, false, item.root);
+    name = entry?.name || "";
+    label = entry ? `${entry.name} · ${formatFileSize(entry.size || 0)}` : item.path.split("/").pop();
+  }
+  imageViewerIndex = index;
+  imageViewerAttachmentId = item.id || null;
+  imageViewerArchivePath = item.path || null;
+  imageViewerArchiveRoot = item.root || "";
   $("#imageViewerName").textContent = label;
   const image = $("#imageViewerImage");
   image.src = src;
   image.alt = name || t("图片预览");
   setImageViewerZoom(false);
-  showNow($("#imageViewer"));
-  $("#imageViewerClose").focus();
+  const marks = $("#imageViewerStrip").children;
+  for (const mark of marks) mark.classList.toggle("on", mark === marks[index]);
+  if (opening) {
+    showNow($("#imageViewer"));
+    $("#imageViewerClose").focus();
+  }
+  marks[index]?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 function downloadArchiveFile(path, root = archiveDir()) {
   const anchor = document.createElement("a");
@@ -402,6 +453,18 @@ function bindViewerEvents() {
     if (e.target === $("#imageViewerImage")) toggleImageViewerZoom();
     else if (e.target === $("#imageViewerStage")) closeImageViewer();
   });
+  // 一组里：点小样换那幅，← → 翻上一幅、下一幅，到头不绕回
+  $("#imageViewerStrip").addEventListener("click", e => {
+    const mark = /** @type {HTMLElement|null} */ (e.target.closest("[data-strip-index]"));
+    if (mark) void showImageAt(Number(mark.dataset.stripIndex));
+  });
+  document.addEventListener("keydown", e => {
+    const step = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+    if (!step || e.altKey || e.ctrlKey || e.metaKey || imageViewerSet.length < 2 || !isShown("#imageViewer")) return;
+    e.preventDefault();
+    const next = imageViewerIndex + step;
+    if (next >= 0 && next < imageViewerSet.length) void showImageAt(next);
+  });
 }
 function toggleImageViewerZoom() {
   setImageViewerZoom(!$("#imageViewerStage").classList.contains("actual"));
@@ -423,26 +486,17 @@ function closeImageViewer() {
   setTimeout(() => {
     if (revision !== imageViewerRevision) return;
     $("#imageViewerImage").removeAttribute("src");
+    $("#imageViewerStrip").innerHTML = "";
     setImageViewerZoom(false);
   }, 180);
+  imageViewerSet = [];
   imageViewerAttachmentId = null;
   const target = imageViewerReturnFocus;
   imageViewerReturnFocus = null;
   if (target?.isConnected) target.focus();
 }
-async function openImageViewer(id, trigger = null) {
-  const revision = ++imageViewerRevision;
-  try {
-    const file = await getAttachment(id);
-    if (revision !== imageViewerRevision) return;
-    if (!file) return toast(t("图片原件已找不到"));
-    if (file.kind !== "image") return openFileViewer({ attachmentId: id }, file.name, trigger);
-    imageViewerAttachmentId = id;
-    imageViewerArchivePath = null;
-    showImageViewer(file.data, file.name, `${file.name || t("图片")} · ${formatFileSize(file.size)}`, trigger);
-  } catch {
-    if (revision === imageViewerRevision) toast(t("图片读取失败"));
-  }
+function openImageViewer(id, trigger = null) {
+  openImageSet([{ id }], 0, trigger);
 }
 // 图片查看器盖在卷宗预览之上，先收它（连同底下的预览）；CSV、Markdown、PDF 这些预览单独开着时，Esc 也得关得掉
 defineLayer({

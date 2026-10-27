@@ -521,11 +521,14 @@ function bindLibraryEvents() {
     const crumb = e.target.closest("[data-library-dir]");
     if (crumb) enterLibraryDir(crumb.dataset.libraryDir);
   });
-  // 一件：点条子即预览（图进看图，余者进预览器）；一夹：点条子即入。条尾悬停露出的几样动作另算
+  // 一件：点条子即预览（图进看图，同此刻列着的图一起左右翻；余者进预览器）；一夹：点条子即入。条尾悬停露出的几样动作另算
   const openItem = (row, trigger = row) => {
     if (row.dataset.libraryDisk === undefined) return enterLibraryDir(row.dataset.libraryDir);
-    const path = row.dataset.libraryDisk;
-    fileKind(path).group === "image" ? openArchiveImage(path, trigger) : void openFileViewer(path, "", trigger);
+    const path = row.dataset.libraryDisk,
+      images = [...$("#libraryGrid").querySelectorAll("[data-library-disk]")]
+        .map(item => /** @type {HTMLElement} */ (item).dataset.libraryDisk)
+        .filter(item => fileKind(item).group === "image");
+    fileKind(path).group === "image" ? openArchiveImage(path, trigger, archiveDir(), images) : void openFileViewer(path, "", trigger);
   };
   $("#libraryGrid").addEventListener("click", e => {
     if (e.target.closest(".strip-rename")) return;
