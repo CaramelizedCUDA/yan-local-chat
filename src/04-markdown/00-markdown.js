@@ -265,7 +265,7 @@ function groupReplyShots(root) {
       trimAround(row);
     }
   }
-  // 叠上只露最上一幅，角上写共几幅（见 40-markdown.css）；各幅都在答末成品条与卷宗里
+  // 叠上只露最上一幅，叠下写共几幅（见 40-markdown.css）；各幅都在答末成品条与卷宗里
   for (const row of root.querySelectorAll(".reply-shots")) row.dataset.count = t`共 ${row.children.length} 幅`;
 }
 defineEmbed({ name: "shot", mount: renderReplyShots });
