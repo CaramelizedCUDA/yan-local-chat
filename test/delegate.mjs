@@ -239,6 +239,11 @@ check(
 // 合上那扇窗，后面几项看的是正文
 await evalJs(`document.querySelector("#helperClose").click(); true`);
 check("second helper's file exists", readFileSync(WORK + "/src/b.js", "utf8").includes("export const b = 2;"));
+// 等收尾那一答生成出来
+await waitFor(
+  `typeof __yanState === "function" && __yanState().conversations[0]?.messages.at(-1)?.content?.startsWith("DELEGATE done")`,
+  15000
+);
 const text = await evalJs(`__yanState().conversations[0].messages.at(-1).content`);
 // 先到的那份可能在第一答里就递上了（那一答还在说「等回报」），后到的另起一答；收尾那一答前冠着派活那一答的行迹
 check(
