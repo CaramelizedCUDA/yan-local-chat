@@ -189,27 +189,29 @@
   object-fit: cover;
   object-position: top;
 }
-/* 接连几幅并成一排（见 groupReplyShots）：各幅的宽按它的宽高比（--ar）分，一排等高、铺满正文宽；窄了折行，
-   落单的一幅不撑满整行（高不过 300）。长截图的比例记作 0.5，从顶上取景。
-   试过固定排高（220）：正文宽一变就剩一幅落单在下一行；两列方格竖着仍占两幅高；一条横滚藏住了末一幅 */
+/* 接连几幅并成一排（见 groupReplyShots）：一律等大的方格，正文宽的四分之一（窄了不小于 160，折成三列、两列），
+   不足四幅的靠左、不撑大；按中心取景，长截图从顶上取，各幅的真比例点开看。
+   试过按宽高比分宽的一排（设计稿/122 乙）：比例一杂就参差，用户定方格规整（10-27）；两列方格竖着仍占两幅高；一条横滚藏住了末一幅 */
 :is(.markdown, .trail-note, .sub-report) .reply-shots {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(max(160px, calc((100% - 24px) / 4)), 1fr));
   gap: 8px;
   margin: 10px 0 4px;
 }
 :is(.markdown, .trail-note, .sub-report) .reply-shots .fi.reply-shot {
-  flex: var(--ar, 1) var(--ar, 1) calc(var(--ar, 1) * 160px);
   width: auto;
-  max-width: calc(var(--ar, 1) * 300px);
+  max-width: none;
   margin: 0;
 }
 :is(.markdown, .trail-note, .sub-report) .reply-shots .fi.reply-shot img {
   width: 100%;
   height: auto;
   max-height: none;
-  aspect-ratio: var(--ar, 1);
+  aspect-ratio: 1;
   object-fit: cover;
+  object-position: center;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots .fi.reply-shot.long img {
   object-position: top;
 }
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot:hover,
