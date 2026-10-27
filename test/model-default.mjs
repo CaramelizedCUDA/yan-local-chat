@@ -1,19 +1,7 @@
 // 默认模型只在设置里「设为默认」时改：打开旧对话、在菜单里换模型都只动眼前这段；新对话起手照默认。设置里的模型平时收成一行
 import { connect, check, sleep, PAGE } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
-// 导航会换掉执行上下文，waitFor 在那一刻求值可能报错；这里的等待只认新页面的就绪条件，旧上下文的错直接跳过
-const waitForPage = async (expression, timeout = 20000) => {
-  const started = Date.now();
-  for (;;) {
-    try {
-      if (await evalJs(expression)) return;
-    } catch {}
-    if (Date.now() - started > timeout) throw Error("timeout: " + expression);
-    await sleep(120);
-  }
-};
 await send("Page.navigate", { url: PAGE + "preview.html" });
-await waitForPage(`location.href === ${JSON.stringify(PAGE + "preview.html")} && document.readyState === "complete"`);
 const t = new Date().toISOString(),
   profile = (id, name) => ({
     id,
@@ -44,11 +32,6 @@ await evalJs(
   `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false }, profiles: [${JSON.stringify(profile("p1", "甲"))}, ${JSON.stringify(profile("p2", "乙"))}], conversations: [${JSON.stringify(old)}], library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
-// 等 boot 真正画完（data-booting 撤下、侧栏已有旧对话、模型名已不是开页时的占位），再断言默认模型
-await waitForPage(
-  `location.href === ${JSON.stringify(PAGE)} && typeof __yanState === "function" && !document.documentElement.hasAttribute("data-booting") && !!document.querySelector('[data-conversation="b"]') && document.querySelector("#welcome .model-name")?.textContent !== "尚未接入模型"`,
-  20000
-);
 const trigger = scope => evalJs(`document.querySelector("${scope} .model-trigger .model-name").textContent`),
   defaultId = () => evalJs(`__yanState().settings.activeProfileId`);
 const offered = await trigger("#welcome");

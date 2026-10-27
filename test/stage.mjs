@@ -31,7 +31,6 @@ await evalJs(
   `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false, mcpServers: ${JSON.stringify(mcpServers)} }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, quota: "", usedTokens: 0 }], conversations: [], library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
-await sleep(1200);
 
 // 「模型的页」：在另一个浏览器实例的同一个窗口里新开一个标签（言的页面留在测试浏览器，不会被切到后台）。
 // 左上一块大按钮，右边一个输入框，标题随之变
