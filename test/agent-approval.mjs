@@ -1,6 +1,6 @@
 // 通过 CDP 驱动无头 Edge，跑一遍执事模式：发送 → 工具调用 → 等待确认 → 运行 → 收尾；再测跳过、停止、轮次上限
 import { mkdirSync, writeFileSync } from "node:fs";
-import { shellCommand } from "./shell-command.mjs";
+import { shellCommand } from "./helpers/shell-command.mjs";
 import { connect, check, sleep, PAGE, WORK, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
 const greetingCommand = shellCommand("Write-Output '你好，世界'", "printf '你好，世界\n'");
