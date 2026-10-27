@@ -1,0 +1,53 @@
+name: macOS
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Environment
+        run: |
+          sw_vers
+          uname -m
+          node -v
+          ls "/Applications/Google Chrome.app/Contents/MacOS/" || true
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        if: ${{ !cancelled() }}
+        run: npm run unit
+
+      - name: E2E tests
+        if: ${{ !cancelled() }}
+        env:
+          YAN_TEST_BROWSER: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+        run: node test/run.mjs
+
+      - name: Upload test temp on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: yan-test-tmp-${{ matrix.os }}
+          path: test/.tmp
+          if-no-files-found: ignore
+          retention-days: 7
