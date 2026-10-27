@@ -1525,10 +1525,13 @@ http
         ]);
       }
       // 人点名的技能：问话里「/写信」已换成一件附件，说明正文随问附上
-      const userText = Array.isArray(lastUser) ? lastUser.map(part => part.text || "").join("\n") : String(lastUser);
+      const userText = Array.isArray(lastUser) ? lastUser.map(part => part.text || "").join("\n") : String(lastUser),
+        promptText = userText.split("\n\n--- 附件：")[0];
       if (userText.includes("SKILLCMD"))
         return sse(res, [
-          delta({ content: `CMD|body:${userText.includes("先写称谓") ? "yes" : "no"}|slash:${userText.includes("/写信") ? "yes" : "no"}` }),
+          delta({
+            content: `CMD|body:${userText.includes("先写称谓") ? "yes" : "no"}|slash:${promptText.includes("/写信") ? "yes" : "no"}`
+          }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       if (typeof lastUser === "string" && lastUser.includes("SKILLTEST")) {

@@ -357,6 +357,7 @@ const clickTab = id =>
 // 模型换页：自己点回原来那页后，模型的调用（这里直接去找一回）不把人拽走；模型把那一页请到前台（选签即如此），看台跟过去
 await clickTab(targetId);
 await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
+await waitFor(`!__yanStage.state.activating`, 5000).catch(() => {});
 await sleep(300);
 await evalJs(`__yanStage.locate().then(() => true)`);
 check("a call after the user picked a tab leaves the view alone", await evalJs(`__yanStage.state.current === ${JSON.stringify(targetId)}`));

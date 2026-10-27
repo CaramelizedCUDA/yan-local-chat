@@ -89,14 +89,17 @@ const stage = {
   // 人最近一回在画面上按下的时刻：网页报来的按下若紧跟着它，是人按的，不当执事落笔
   userAt: 0,
   /** @type {PointerEvent | null} */
-  moved: null
+  moved: null,
+  /** @type {Promise<unknown> | null} */
+  activating: null
 };
 
 // ---------- 连上浏览器 ----------
 // 已连着时也问一回：模型若把别的页请到了前台（选签、新开），看台跟过去
 function stageLocate() {
   if (stage.locating) return stage.locating;
-  stage.locating = bridge("/api/stage", stageService())
+  stage.locating = Promise.resolve(stage.activating)
+    .then(() => bridge("/api/stage", stageService()))
     .then(({ ws, front, marks, port, output }) => {
       stage.marks = !!marks;
       stage.port = port;

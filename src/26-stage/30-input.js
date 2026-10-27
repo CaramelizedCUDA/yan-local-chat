@@ -323,7 +323,11 @@ function bindStage() {
     const tab = /** @type {HTMLElement | null} */ (target.closest("[data-stage-tab]"));
     if (!tab || tab.dataset.stageTab === stage.current) return;
     // 换到后台的那一页：先请到前台，不然它不重绘、没有画面
-    void stageSend("Target.activateTarget", { targetId: tab.dataset.stageTab }).catch(() => {});
+    stage.activating = stageSend("Target.activateTarget", { targetId: tab.dataset.stageTab })
+      .catch(() => {})
+      .finally(() => {
+        stage.activating = null;
+      });
     stage.front = tab.dataset.stageTab || "";
     stageShow(stage.front);
   });
