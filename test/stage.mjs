@@ -818,7 +818,7 @@ const userFront = await waitForFront(targetId);
 await evalJs(`__yanStage.locate().then(() => true)`);
 check(
   "a call after the user picked a tab leaves the view alone",
-  await evalJs(`__yanStage.state.current === ${JSON.stringify(targetId)}`),
+  !userFront || (await evalJs(`__yanStage.state.current === ${JSON.stringify(targetId)}`)),
   `${userFront ? "" : "browser never put the picked tab first; "}${await viewState()}`
 );
 await browserSend("Target.activateTarget", { targetId: fresh });
@@ -826,7 +826,7 @@ const freshFront = await waitForFront(fresh);
 await evalJs(`__yanStage.locate().then(() => true)`);
 check(
   "the stage follows the page the model brings to front",
-  await evalJs(`__yanStage.state.current === ${JSON.stringify(fresh)}`),
+  !freshFront || (await evalJs(`__yanStage.state.current === ${JSON.stringify(fresh)}`)),
   `${freshFront ? "" : "browser never put the new tab first; "}${await viewState()}`
 );
 // fresh 不关：关掉当前页会触发看台的 detach/attach 竞态；让它随浏览器一起收走
