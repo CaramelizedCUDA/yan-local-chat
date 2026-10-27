@@ -8,8 +8,6 @@ await sleep(600);
 await evalJs(`localStorage.clear(); true`);
 await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
 await send("Page.navigate", { url: PAGE });
-// 等开页跑完再看：固定等 1.2 秒，CI 的机器慢时脚本还没执行，__yanState 都还没有
-await waitFor(`typeof document.querySelector("#openLibrary")?.onclick === "function"`, 10000);
 check(
   "fresh installs default to the light theme even when the system is dark",
   await evalJs(`document.documentElement.dataset.theme === "light" && window.__yanState().settings.theme === "light"`)

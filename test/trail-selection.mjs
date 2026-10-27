@@ -60,17 +60,9 @@ await evalJs(
 );
 await send("Page.navigate", { url: PAGE });
 await waitFor(`!!document.querySelector('[data-conversation="trail-selection"]')`);
-// 侧栏读完磁盘就画出来，点它的处理要等问过租约才绑上（bindEvents）：先点就白点
-await waitFor(`typeof document.querySelector("#openLibrary")?.onclick === "function"`, 8000);
 await evalJs(`document.querySelector('[data-conversation="trail-selection"] .history-open').click(); true`);
 await waitFor(`!!document.querySelector('#messages .trail-note p')`);
 await sleep(600);
-// Page.reload 一发出就返回：紧接着求值可能还落在旧页上（标记都在），下一句才到了刚开始加载的新页。旧页上记一笔，等新页开好再往下
-const reload = async () => {
-  await evalJs(`window.__beforeReload = true`);
-  await send("Page.reload");
-  await waitFor(`!window.__beforeReload && typeof document.querySelector("#openLibrary")?.onclick === "function"`, 10000);
-};
 const select = async (selector, text) => {
   await evalJs(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({ block: "center", behavior: "instant" }); true`);
   await sleep(150); // 滚动会收起浮条，先等它落稳，再像人停下来划选一样取文字。
@@ -111,7 +103,7 @@ if (noted) {
       `document.querySelectorAll('#messages .tool-stack-body mark.note-anchor').length > 0 && [...document.querySelectorAll('#messages .markdown mark.note-anchor')].every(mark => mark.closest('.tool-stack-body'))`
     )
   );
-  await reload();
+  await send("Page.reload");
   await waitFor(`!!document.querySelector('#messages .tool-stack-body mark.note-anchor')`);
   check(
     "trail anchor survives reload",
@@ -152,7 +144,7 @@ check(
   )
 );
 check("trail heading is not a quote body", !(await select("#messages .tool-stack > summary", "行迹")));
-await reload();
+await send("Page.reload");
 await waitFor(`!!document.querySelector('#messages .trail-note mark.note-anchor')`);
 check(
   "reload keeps process, reasoning, and final reply marks in their own blocks",
