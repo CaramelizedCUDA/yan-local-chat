@@ -161,21 +161,33 @@
 :is(.markdown, .trail-note, .sub-report) a[data-open-image] {
   cursor: zoom-in;
 }
+/* 画面整幅见：宽不过 560、高不过七成屏，竖幅的照比例收窄（生图常是 3:4、9:16），小图不放大 */
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot {
   display: block;
-  width: min(100%, 560px);
+  width: fit-content;
+  max-width: min(100%, 560px);
   height: auto;
   margin: 10px 0 4px;
   cursor: zoom-in;
   outline: 1px solid var(--line);
   outline-offset: -1px;
 }
-/* 整页长截图不把正文撑成一长条：高过七成屏就从顶上取景，点开看全幅 */
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot img {
+  width: auto;
+  max-width: 100%;
   height: auto;
   max-height: 70vh;
-  object-position: top;
+  object-fit: contain;
   border-radius: 0;
+}
+/* 整页长截图（高过宽的两倍）不把正文撑成一长条，也不缩成一道细条：铺满宽、从顶上取景，点开看全幅 */
+:is(.markdown, .trail-note, .sub-report) .fi.reply-shot.long {
+  width: min(100%, 560px);
+}
+:is(.markdown, .trail-note, .sub-report) .fi.reply-shot.long img {
+  width: 100%;
+  object-fit: cover;
+  object-position: top;
 }
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot:hover,
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot:focus-visible {

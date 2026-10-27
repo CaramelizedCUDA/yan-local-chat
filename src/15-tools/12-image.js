@@ -5,6 +5,7 @@ defineTool({
   name: "generate_image",
   group: "image",
   label: t("生图"),
+  busy: t("作画中"),
   mainOnly: true,
   offer: ctx => ctx.files && dutyReady(store.settings.dutyImage),
   sideEffect: true,

@@ -192,6 +192,12 @@ function bindAttachmentEvents() {
       void openImageViewer(preview.dataset.openImage, preview);
       return;
     }
+    // 正文引的目录里的图（见 renderReplyShots）
+    const archived = e.target.closest("[data-open-archive]");
+    if (archived) {
+      openArchiveImage(archived.dataset.openArchive, archived, archived.dataset.root);
+      return;
+    }
     const open = e.target.closest("[data-open-attachment]");
     if (open) {
       void openFileViewer({ attachmentId: open.dataset.openAttachment }, open.dataset.name || "", open);
@@ -205,6 +211,9 @@ function bindAttachmentEvents() {
     if (e.target.matches?.("[data-open-image]")) {
       e.preventDefault();
       void openImageViewer(e.target.dataset.openImage, e.target);
+    } else if (e.target.matches?.("[data-open-archive]")) {
+      e.preventDefault();
+      openArchiveImage(e.target.dataset.openArchive, e.target, e.target.dataset.root);
     } else if (e.target.matches?.("[data-open-attachment]")) {
       e.preventDefault();
       void openFileViewer({ attachmentId: e.target.dataset.openAttachment }, e.target.dataset.name || "", e.target);

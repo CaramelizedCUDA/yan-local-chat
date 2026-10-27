@@ -261,6 +261,7 @@ var YAN_EN = {
   "只看前 {0} 行": "Show first {0} {0|line|lines}",
   工具执行失败: "Tool failed",
   查阅中: "Looking up",
+  作画中: "Drawing",
   失败: "Failed",
   "{0} 步": "{0} {0|step|steps}",
   领命中: "Starting",

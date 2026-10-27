@@ -328,13 +328,21 @@ function showInFileViewer(title, html, trigger = null, seal = t("览")) {
   $("#fileViewerClose").focus();
 }
 let imageViewerArchivePath = null,
+  imageViewerArchiveRoot = "",
   imageViewerRevision = 0;
-function openArchiveImage(path, trigger = null) {
+// 卷宗里的图；root 给了是别处目录里的（正文引的工作目录里的图），那里没有件数大小可报
+function openArchiveImage(path, trigger = null, root = archiveDir()) {
   imageViewerRevision++;
-  const entry = (archiveEntries || []).find(file => file.path === path);
+  const entry = root === archiveDir() ? (archiveEntries || []).find(file => file.path === path) : null;
   imageViewerAttachmentId = null;
   imageViewerArchivePath = path;
-  showImageViewer(archiveFileUrl(path), entry?.name || "", `${entry?.name || path} · ${formatFileSize(entry?.size || 0)}`, trigger);
+  imageViewerArchiveRoot = root;
+  showImageViewer(
+    archiveFileUrl(path, false, root),
+    entry?.name || "",
+    entry ? `${entry.name} · ${formatFileSize(entry.size || 0)}` : path.split("/").pop(),
+    trigger
+  );
 }
 // 看图框摊开一张图（附件、卷宗共用），先按窗口大小看
 function showImageViewer(src, name, label, trigger) {
@@ -387,7 +395,7 @@ function bindViewerEvents() {
   $("#imageViewerClose").onclick = closeImageViewer;
   $("#imageViewerDownload").onclick = () => {
     if (imageViewerAttachmentId) void downloadAttachment(imageViewerAttachmentId);
-    else if (imageViewerArchivePath) downloadArchiveFile(imageViewerArchivePath);
+    else if (imageViewerArchivePath) downloadArchiveFile(imageViewerArchivePath, imageViewerArchiveRoot);
   };
   $("#imageViewerZoom").onclick = toggleImageViewerZoom;
   $("#imageViewerStage").addEventListener("click", e => {

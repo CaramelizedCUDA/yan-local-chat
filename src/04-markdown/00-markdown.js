@@ -174,8 +174,9 @@ function renderEnhancements(root) {
   for (const embed of EMBEDS) embed.mount?.(root);
 }
 defineEmbed({ name: "math", mount: root => void renderPendingMath(root) });
-// 正文里引了这一答工具交回的画面（模型写「![截图](page-1.png)」或「[查看截图](page-1.png)」）：就地画出那幅，点开进图片查看器。
-// 原件本就作附件挂在那一步上（见 mcpResultImages），不另存；引的不是这一答的画面，照旧当卷宗里的文件
+// 正文里引了工具交回的画面（模型写「![截图](page-1.png)」或「[查看截图](page-1.png)」）：就地画出那幅，点开进图片查看器。
+// 原件本就作附件挂在那一步上（见 mcpResultImages、generate_image），不另存；先认这一答的，再认前几答的（「把刚才那幅再放出来」）。
+// 都不是的：链接照旧当目录里的文件，图到落脚处按路取（模型自己存的图表、前几回收进卷宗的图），取不到留下说明文字，不画破图
 /** @param {Element} root */
 function renderReplyShots(root) {
   const refs = root.querySelectorAll?.(":is(.markdown, .trail-note, .sub-report) [data-file]") || [];
@@ -184,18 +185,41 @@ function renderReplyShots(root) {
     messages = c ? everyMessage(c) : [];
   for (const ref of refs) {
     const id = ref.closest("[data-message]")?.getAttribute("data-message"),
-      message = messages.find(item => item.id === id),
-      file = allSteps(message)
-        .flatMap(step => step.attachments || [])
-        .findLast(item => item.kind === "image" && item.name === ref.getAttribute("data-file"));
-    if (!file) continue;
-    const shot = document.createElement("span");
+      name = ref.getAttribute("data-file"),
+      upTo = messages.findIndex(item => item.id === id),
+      file = (upTo < 0 ? [] : [messages[upTo], ...messages.slice(0, upTo).reverse()])
+        .map(message =>
+          allSteps(message)
+            .flatMap(step => step.attachments || [])
+            .findLast(item => item.kind === "image" && item.name === name)
+        )
+        .find(Boolean),
+      target = !file && ref.tagName === "IMG" ? localLinkTarget(ref.getAttribute("data-path")) : null,
+      words = ref.getAttribute("alt") || name || "";
+    if (!file && !target) {
+      if (ref.tagName === "IMG") ref.replaceWith(words);
+      continue;
+    }
+    const shot = document.createElement("span"),
+      alt = escapeHtml(words);
     shot.className = "fi fi-thumb reply-shot";
     shot.setAttribute("role", "button");
     shot.tabIndex = 0;
-    shot.dataset.openImage = file.id;
-    shot.title = t`查看 ${file.name}`;
-    shot.innerHTML = `<img data-thumb="${escapeHtml(file.id)}" alt="${escapeHtml(ref.getAttribute("alt") || file.name)}">`;
+    shot.title = t`查看 ${file?.name || name}`;
+    if (file) {
+      shot.dataset.openImage = file.id;
+      shot.innerHTML = `<img data-thumb="${escapeHtml(file.id)}" alt="${alt}">`;
+    } else {
+      shot.dataset.openArchive = target.path;
+      shot.dataset.root = target.root;
+      shot.innerHTML = `<img src="${escapeHtml(archiveFileUrl(target.path, false, target.root))}" alt="${alt}">`;
+      shot.querySelector("img").onerror = () => shot.replaceWith(words);
+    }
+    // 整页长截图（高过宽的两倍）从顶上取景，点开看全幅；别的整幅见（见 40-markdown.css）
+    shot.querySelector("img").addEventListener("load", e => {
+      const img = /** @type {HTMLImageElement} */ (e.target);
+      shot.classList.toggle("long", img.naturalHeight > img.naturalWidth * 2);
+    });
     // 图换成那幅；链接留着字（点了也是看图），画面接在后面
     if (ref.tagName === "IMG") ref.replaceWith(shot);
     else {
