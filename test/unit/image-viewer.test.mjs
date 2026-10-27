@@ -4,7 +4,7 @@ import { load } from "./harness.mjs";
 
 function viewer() {
   const f = load([
-    "openImageViewer",
+    "openImageSet",
     "openArchiveImage",
     "closeImageViewer",
     "doc: () => document",
@@ -27,6 +27,8 @@ function viewer() {
           delete this[n];
         },
         focus() {},
+        children: [],
+        innerHTML: "",
         src: "",
         textContent: ""
       });
@@ -45,9 +47,10 @@ for (const next of ["attachment", "archive", "close"])
     const gate = new Promise(resolve => (release = resolve));
     f.setup(id => (id === "A" ? gate : Promise.resolve(image(id))));
     try {
-      await f.openImageViewer("B");
-      const loading = f.openImageViewer("A");
-      if (next === "attachment") await f.openImageViewer("C");
+      const open = id => f.openImageSet([{ id }], 0);
+      await open("B");
+      const loading = open("A");
+      if (next === "attachment") await open("C");
       else if (next === "archive") f.openArchiveImage("archive.png");
       else f.closeImageViewer();
       const expected = node("#imageViewerImage").src;

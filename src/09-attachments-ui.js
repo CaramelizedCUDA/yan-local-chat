@@ -187,15 +187,10 @@ function bindAttachmentEvents() {
       void saveToLibrary(save.dataset.saveAttachment);
       return;
     }
-    const preview = e.target.closest("[data-open-image]");
+    // 附件里的图，或正文引的目录里的图（见 renderReplyShots）
+    const preview = e.target.closest("[data-open-image], [data-open-archive]");
     if (preview) {
-      void openImageViewer(preview.dataset.openImage, preview);
-      return;
-    }
-    // 正文引的目录里的图（见 renderReplyShots）
-    const archived = e.target.closest("[data-open-archive]");
-    if (archived) {
-      openArchiveImage(archived.dataset.openArchive, archived, archived.dataset.root);
+      openImageFrom(preview);
       return;
     }
     const open = e.target.closest("[data-open-attachment]");
@@ -208,12 +203,9 @@ function bindAttachmentEvents() {
   });
   document.addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
-    if (e.target.matches?.("[data-open-image]")) {
+    if (e.target.matches?.("[data-open-image], [data-open-archive]")) {
       e.preventDefault();
-      void openImageViewer(e.target.dataset.openImage, e.target);
-    } else if (e.target.matches?.("[data-open-archive]")) {
-      e.preventDefault();
-      openArchiveImage(e.target.dataset.openArchive, e.target, e.target.dataset.root);
+      openImageFrom(/** @type {Element} */ (e.target));
     } else if (e.target.matches?.("[data-open-attachment]")) {
       e.preventDefault();
       void openFileViewer({ attachmentId: e.target.dataset.openAttachment }, e.target.dataset.name || "", e.target);
@@ -222,6 +214,18 @@ function bindAttachmentEvents() {
       void downloadAttachment(e.target.dataset.downloadAttachment);
     }
   });
+}
+// 点开一幅：正文里收成一叠的，叠里几幅同在一组（看图框底下一条小样、左右翻）；别处只看这一幅
+/** @param {Element} el */
+function openImageFrom(el) {
+  const members = /** @type {HTMLElement[]} */ ([...(el.closest(".reply-shots")?.children || [el])]);
+  openImageSet(
+    members.map(node =>
+      node.dataset.openImage ? { id: node.dataset.openImage } : { path: node.dataset.openArchive, root: node.dataset.root || archiveDir() }
+    ),
+    Math.max(0, members.indexOf(/** @type {HTMLElement} */ (el))),
+    el
+  );
 }
 // 图片缩略图：原件在 IndexedDB，渲染后异步补上 src；缓存最近 40 张
 async function loadThumbnails(root) {

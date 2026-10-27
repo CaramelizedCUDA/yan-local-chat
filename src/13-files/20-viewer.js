@@ -363,7 +363,7 @@ function openImageSet(items, index, trigger = null) {
         .join("")
     : "";
   if (many) void loadThumbnails(strip);
-  void showImageAt(index, true);
+  return showImageAt(index, true);
 }
 // 摊开组里的第几件，先按窗口大小看；附件要先从库里取，取到时已换了别件就作罢
 async function showImageAt(index, opening = false) {
@@ -494,9 +494,6 @@ function closeImageViewer() {
   const target = imageViewerReturnFocus;
   imageViewerReturnFocus = null;
   if (target?.isConnected) target.focus();
-}
-function openImageViewer(id, trigger = null) {
-  openImageSet([{ id }], 0, trigger);
 }
 // 图片查看器盖在卷宗预览之上，先收它（连同底下的预览）；CSV、Markdown、PDF 这些预览单独开着时，Esc 也得关得掉
 defineLayer({
