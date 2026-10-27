@@ -1,4 +1,4 @@
-// 端到端测试运行器（零依赖）：起一个假模型接口、一个测试桥接、一个无头 Edge / Chrome，逐个跑 test/ 下的用例，按 PASS / FAIL 行统计
+// 端到端测试运行器（零依赖）：起一个假模型接口、一个测试桥接、一个无头 Edge / Chrome（stage 用例另起一个模型浏览器），逐个跑 test/ 下的用例，按 PASS / FAIL 行统计
 // 用法：node test/run.mjs [用例名…]      例：node test/run.mjs memory side-notes
 import { spawn, spawnSync } from "node:child_process";
 import { connect } from "./lib.mjs";
@@ -11,7 +11,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url)),
   TMP = path.join(HERE, ".tmp");
 const BRIDGE_PORT = 8799,
   SECURITY_PORT = 8797,
-  DEBUG_PORT = 9333;
+  DEBUG_PORT = 9333,
+  // 看台的模型浏览器单独一个实例：模型页必须在单窗口里，看台的前台检测才成立
+  STAGE_DEBUG_PORT = 9334;
 const only = process.argv.slice(2);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const browsers =
@@ -73,6 +75,25 @@ const start = (cmd, args, extra = {}) => {
   children.push(child);
   return child;
 };
+// 测试浏览器与 stage 的模型浏览器共用同一套参数；各自独立 profile，互不干扰
+const browserArgs = (port, profile, extra = []) => [
+  "--headless=new",
+  "--disable-gpu",
+  "--disable-gpu-sandbox",
+  "--disable-software-rasterizer",
+  "--no-sandbox",
+  "--no-first-run",
+  "--lang=zh-CN",
+  "--no-default-browser-check",
+  // Edge 起来后会为兼容层自己重启一回：重启出的进程不再是这里的子进程，收尾的 taskkill /T 够不着，占着调试口留到下一回（playwright 也带这一项）
+  "--edge-skip-compat-layer-relaunch",
+  `--remote-debugging-port=${port}`,
+  // 看台（test/stage.mjs）从言的页面直连这个调试口，得放行言的来源
+  `--remote-allow-origins=http://127.0.0.1:${BRIDGE_PORT}`,
+  `--user-data-dir=${profile}`,
+  ...extra,
+  "about:blank"
+];
 const waitPort = async (port, timeout = 8000) => {
   const t = Date.now();
   while (Date.now() - t < timeout) {
@@ -171,6 +192,28 @@ try {
     .filter(f => f.endsWith(".mjs") && !["run.mjs", "lib.mjs", "fake-llm.mjs", "fake-mcp.mjs", "bridge-security.mjs"].includes(f))
     .filter(wants)
     .sort();
+  // 看台用例的模型浏览器：单独一个实例，模型页与 fresh 才会落在同一个窗口里。
+  // 言的页面留在主测试浏览器中，不进入模型的标签列表，也不会因模型换页被切到后台。
+  if (specs.includes("stage.mjs")) {
+    const busy = await fetch(`http://127.0.0.1:${STAGE_DEBUG_PORT}/`, { signal: AbortSignal.timeout(1000) }).then(
+      () => true,
+      () => false
+    );
+    if (busy) {
+      console.error(`端口 ${STAGE_DEBUG_PORT} 已被占用，请先关掉占着它的进程（上次的模型浏览器）再跑测试`);
+      process.exit(2);
+    }
+    const profile = path.join(TMP, `browser-profile-stage-${Date.now().toString(36)}`);
+    // 本机装的扩展（如 ChatGPT）会自己开一页，看台照合约跟过去，测试的标签断言便对不上：模型浏览器不带扩展
+    const stageBrowser = start(browser, browserArgs(STAGE_DEBUG_PORT, profile, ["--disable-extensions"]));
+    let stageErrors = "";
+    stageBrowser.stderr.on("data", data => (stageErrors = (stageErrors + data.toString()).slice(-1200)));
+    try {
+      await waitPort(STAGE_DEBUG_PORT, 15000);
+    } catch (error) {
+      throw Error(`模型浏览器调试口未就绪（退出码 ${stageBrowser.exitCode ?? "尚未退出"}）：${stageErrors || error.message}`);
+    }
+  }
   if (specs.length) {
     // 存储根指到临时目录，别把测试的对话、卷宗与配置写进用户的 ~/.yan
     start(process.execPath, ["server.js"], {
@@ -192,23 +235,7 @@ try {
     await waitPort(BRIDGE_PORT);
     await waitPort(8798);
     const profile = path.join(TMP, `browser-profile-${Date.now().toString(36)}`);
-    const browserProcess = start(browser, [
-      "--headless=new",
-      "--disable-gpu",
-      "--disable-gpu-sandbox",
-      "--disable-software-rasterizer",
-      "--no-sandbox",
-      "--no-first-run",
-      "--lang=zh-CN",
-      "--no-default-browser-check",
-      // Edge 起来后会为兼容层自己重启一回：重启出的进程不再是这里的子进程，收尾的 taskkill /T 够不着，占着调试口留到下一回（playwright 也带这一项）
-      "--edge-skip-compat-layer-relaunch",
-      `--remote-debugging-port=${DEBUG_PORT}`,
-      // 看台（test/stage.mjs）从言的页面直连这个调试口，得放行言的来源
-      `--remote-allow-origins=http://127.0.0.1:${BRIDGE_PORT}`,
-      `--user-data-dir=${profile}`,
-      "about:blank"
-    ]);
+    const browserProcess = start(browser, browserArgs(DEBUG_PORT, profile));
     let browserErrors = "";
     browserProcess.stderr.on("data", data => (browserErrors = (browserErrors + data.toString()).slice(-1200)));
     try {
