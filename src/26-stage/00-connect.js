@@ -94,14 +94,17 @@ const stage = {
   // 人最近一回经游目开网址的时刻（地址栏、收藏、开本机文件）：随后浏览器要「下载」的本机文件是人要开的
   goAt: 0,
   /** @type {PointerEvent | null} */
-  moved: null
+  moved: null,
+  /** @type {Promise<unknown> | null} */
+  activating: null
 };
 
 // ---------- 连上浏览器 ----------
 // 已连着时也问一回：模型若把别的页请到了前台（选签、新开），看台跟过去
 function stageLocate() {
   if (stage.locating) return stage.locating;
-  stage.locating = bridge("/api/stage", stageService())
+  stage.locating = Promise.resolve(stage.activating)
+    .then(() => bridge("/api/stage", stageService()))
     .then(({ ws, front, marks, port, output }) => {
       stage.marks = !!marks;
       stage.port = port;
