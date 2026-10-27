@@ -4,15 +4,28 @@ import { shellCommand } from "./helpers/shell-command.mjs";
 import { connect, check, sleep, PAGE, WORK, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
 const greetingCommand = shellCommand("Write-Output '你好，世界'", "printf '你好，世界\n'");
+// 导航会换掉执行上下文，waitFor 在那一刻求值可能报错；这里的等待只认新页面的就绪条件，旧上下文的错直接跳过
+const waitForPage = async (expression, timeout = 20000) => {
+  const started = Date.now();
+  for (;;) {
+    try {
+      if (await evalJs(expression)) return;
+    } catch {}
+    if (Date.now() - started > timeout) throw Error("timeout: " + expression);
+    await sleep(120);
+  }
+};
 // 先在不跑 support.js 的同源页面写入配置（主页面离开时会把内存里的旧 store 存回去，覆盖掉写入）
 await send("Page.navigate", { url: PAGE + "preview.html" });
-await sleep(800);
+await waitForPage(`location.href === ${JSON.stringify(PAGE + "preview.html")} && document.readyState === "complete"`);
 // 写入模型配置与执事默认目录，再打开主页面
 await evalJs(
   `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 4, settings: { name: "测", theme: "light", inkMotion: "off", mode: "work", activeProfileId: "p1", pendingWorkdir: ${JSON.stringify(WORK)}, autoTitle: true }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, maxTokens: 8192, quota: "100k", usedTokens: 0, systemPrompt: "" }], conversations: [], library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
-await sleep(1200);
+await waitForPage(
+  `location.href === ${JSON.stringify(PAGE)} && typeof __yanState === "function" && !document.documentElement.hasAttribute("data-booting") && !document.querySelector("#workdirChip")?.classList.contains("hidden") && document.querySelector("#welcomeMode")?.textContent === "执事"`
+);
 check("boot: bridge connected", await evalJs(`__yanBridgeFetch("/api/store/config/load", "{}").then(r => r.ok, () => false)`));
 console.log(
   "  debug:",
