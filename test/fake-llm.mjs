@@ -1,6 +1,6 @@
 // 假的 OpenAI 兼容接口：第一轮回 run_command 工具调用，收到 tool 结果后回正文；可通过 X-Mode 切换行为
 import http from "node:http";
-import { shellCommand } from "./shell-command.mjs";
+import { shellCommand } from "./helpers/shell-command.mjs";
 const sse = (res, chunks, gap = 30) => {
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   let i = 0;
