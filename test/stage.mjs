@@ -73,14 +73,8 @@ await waitFor(`!document.querySelector("#stagePin").classList.contains("hidden")
 check("pin appears once the browser is found", true);
 check("tabs mirror the browser", await evalJs(`[...__yanStage.state.tabs.values()].some(t => t.title === "看台测试")`));
 
-// 点入口开看台：入口刚出现时偶尔点不中（无头下事件的投递），再点两回；真开不了还是照常在下面报超时
-for (let i = 0; i < 3; i++) {
-  await evalJs(`document.querySelector("#stagePin").click(); true`);
-  try {
-    await waitFor(`!document.querySelector("#stagePanel").classList.contains("hidden")`, 3000);
-    break;
-  } catch {}
-}
+// 点入口开看台
+await evalJs(`document.querySelector("#stagePin").click(); true`);
 await waitFor(`!document.querySelector("#stagePanel").classList.contains("hidden")`);
 check("pin hides while the stage is open", await evalJs(`document.querySelector("#stagePin").classList.contains("hidden")`));
 // 换到那一页：点它的签
