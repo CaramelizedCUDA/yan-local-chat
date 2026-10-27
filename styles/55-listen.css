@@ -263,11 +263,21 @@
   color: var(--ink-2);
   font: var(--fs-small) var(--title);
 }
-.listen-acts button:hover {
-  color: var(--ink);
+.listen-acts button {
+  display: grid;
+  place-items: center;
 }
-.listen-acts .listen-toggle {
-  color: var(--accent);
+.listen-acts .brush {
+  width: 16px;
+  height: 16px;
+}
+.listen-acts button:hover .brush {
+  transform: translateY(-1px);
+}
+/* 奏止两个都画着，只显此刻能按的那个 */
+.listen-pendant.playing .listen-mk-play,
+.listen-pendant:not(.playing) .listen-mk-pause {
+  display: none;
 }
 .listen-acts .listen-stop {
   margin-left: auto;

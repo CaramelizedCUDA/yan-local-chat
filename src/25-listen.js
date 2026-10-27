@@ -348,6 +348,7 @@ function listenRenderPage() {
 
 // ---------- 另一面：右上角垂下的一缕（设计稿/30 甲）：墨线自页顶垂下，坠一个小圆相——放过的那段浓墨、笔尖一粒朱，与整页的圆相同一个意思 ----------
 // 点它垂下一张纸签（方角顶朱）：题名（点回整页）、时刻、上一首 · 奏 / 止 · 下一首、×。随声而摆仍在，摆的是这一缕。
+// 动作都用笔意记号（设计稿/121 乙）：上下首同整页那两笔，奏止两个都画好、随 .playing 换着显；落选的：奏止缩成小朱印（甲，印里仍是字）、连题名时刻也收起（丙）
 // 落选的：顶栏上一整件玉佩（衡、冲牙、璧、穗——染玉的立体小器物，与平的顶栏、笔意小画不是一套；见 设计稿/19–23）
 const listenN = n => +n.toFixed(2);
 // 28 × 64 的画幅：线长 cord，圆相半径 r
@@ -360,7 +361,7 @@ function listenPendantHtml() {
   <div class="listen-card">
     <button type="button" class="listen-name" data-listen="page" title="${t(`回整页`)}"></button>
     <small class="listen-time"></small>
-    <div class="listen-acts"><button type="button" data-listen="prev">${t(`上一首`)}</button><button type="button" class="listen-toggle" data-listen="toggle">${t(`止`)}</button><button type="button" data-listen="next">${t(`下一首`)}</button><button type="button" class="listen-stop" data-listen="stop" title="${t(`停止`)}" aria-label="${t(`停止`)}">✕</button></div>
+    <div class="listen-acts"><button type="button" data-listen="prev" title="${t(`上一首`)}" aria-label="${t(`上一首`)}">${brushIcon("back")}</button><button type="button" class="listen-toggle" data-listen="toggle">${brushIcon("play", "listen-mk-play")}${brushIcon("pause", "listen-mk-pause")}</button><button type="button" data-listen="next" title="${t(`下一首`)}" aria-label="${t(`下一首`)}">${brushIcon("forward")}</button><button type="button" class="listen-stop" data-listen="stop" title="${t(`停止`)}" aria-label="${t(`停止`)}">✕</button></div>
   </div>`;
 }
 function listenPendant() {
@@ -407,7 +408,6 @@ function listenRenderPendant() {
     now.setAttribute("cy", String(listenN(cy + r * Math.sin((end * Math.PI) / 180))));
   }
   box.querySelector(".listen-time").textContent = `${listenClock(el.currentTime)} / ${listenClock(el.duration)}`;
-  box.querySelector(".listen-toggle").textContent = el.paused ? t("奏") : t("止");
 }
 
 // ---------- 两面何时各现：都由喇叭此刻的样子推出来 ----------
@@ -426,6 +426,8 @@ function listenSync() {
   } else box?.classList.remove("open");
   box?.classList.toggle("hidden", !hang);
   box?.classList.toggle("playing", !!listenTrack && !el.paused);
+  const toggle = box?.querySelector(".listen-toggle");
+  if (toggle) toggle.title = toggle.ariaLabel = el.paused ? t("播放") : t("暂停");
   listenRenderPage();
   if (listenTrack && !el.paused && !listenFrameId) listenFrameId = requestAnimationFrame(listenFrame);
 }
