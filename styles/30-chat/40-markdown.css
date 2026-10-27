@@ -189,6 +189,29 @@
   object-fit: cover;
   object-position: top;
 }
+/* 接连几幅并成一排（见 groupReplyShots）：各幅的宽按它的宽高比（--ar）分，一排等高、铺满正文宽；窄了折行，
+   落单的一幅不撑满整行（高不过 300）。长截图的比例记作 0.5，从顶上取景。
+   试过固定排高（220）：正文宽一变就剩一幅落单在下一行；两列方格竖着仍占两幅高；一条横滚藏住了末一幅 */
+:is(.markdown, .trail-note, .sub-report) .reply-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots .fi.reply-shot {
+  flex: var(--ar, 1) var(--ar, 1) calc(var(--ar, 1) * 160px);
+  width: auto;
+  max-width: calc(var(--ar, 1) * 300px);
+  margin: 0;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots .fi.reply-shot img {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  aspect-ratio: var(--ar, 1);
+  object-fit: cover;
+  object-position: top;
+}
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot:hover,
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot:focus-visible {
   outline-color: var(--ink-3);

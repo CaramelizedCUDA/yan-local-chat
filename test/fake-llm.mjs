@@ -212,6 +212,30 @@ http
         const answer = text.includes("Set-Alias") ? "准" : quick ? "疑" : "驳，用户没让把这串参数发出去";
         return sse(res, [delta({ content: answer }), delta({}, { usage: { total_tokens: 3 } })]);
       }
+      // IMAGE-FOUR：一轮画四幅（并行），正文前两幅同段换行、后两幅另起一段，再接一句话
+      // 画好的图随工具结果另作一条用户消息附回，最后一条用户话就不是这句了：按原话找
+      const fourAt = msgs.findLastIndex(m => m.role === "user" && typeof m.content === "string" && m.content.includes("IMAGE-FOUR"));
+      if (fourAt >= 0) {
+        const names = ["墨猫甲", "墨猫乙", "墨猫丙", "墨猫丁"];
+        if (!msgs.slice(fourAt + 1).some(m => m.role === "tool"))
+          return sse(res, [
+            delta({
+              tool_calls: names.map((name, index) => ({
+                index,
+                id: `call_image_${index}`,
+                type: "function",
+                function: { name: "generate_image", arguments: JSON.stringify({ prompt: `一只墨色的猫，第 ${index + 1} 稿`, name }) }
+              }))
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({
+            content: `四稿如下：\n![甲](墨猫甲.png)\n![乙](墨猫乙.png)\n\n![丙](墨猫丙.png)\n![丁](墨猫丁.png)\n\n挑一幅，我再细化。`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // IMAGE-DUTY：画一幅，下一轮报回工具结果、请求里附了几幅图，正文引那幅图的文件名
       {
         const asked = msgs.findLastIndex(m => m.role === "user" && typeof m.content === "string" && m.content.includes("IMAGE-DUTY"));

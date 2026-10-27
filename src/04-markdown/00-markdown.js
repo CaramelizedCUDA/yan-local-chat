@@ -215,10 +215,12 @@ function renderReplyShots(root) {
       shot.innerHTML = `<img src="${escapeHtml(archiveFileUrl(target.path, false, target.root))}" alt="${alt}">`;
       shot.querySelector("img").onerror = () => shot.replaceWith(words);
     }
-    // 整页长截图（高过宽的两倍）从顶上取景，点开看全幅；别的整幅见（见 40-markdown.css）
+    // 整页长截图（高过宽的两倍）从顶上取景，点开看全幅；别的整幅见。几幅成排时按宽高比分宽（见 40-markdown.css）
     shot.querySelector("img").addEventListener("load", e => {
-      const img = /** @type {HTMLImageElement} */ (e.target);
-      shot.classList.toggle("long", img.naturalHeight > img.naturalWidth * 2);
+      const img = /** @type {HTMLImageElement} */ (e.target),
+        ratio = img.naturalWidth / img.naturalHeight || 1;
+      shot.classList.toggle("long", ratio < 0.5);
+      shot.style.setProperty("--ar", Math.max(ratio, 0.5).toFixed(3));
     });
     // 图换成那幅；链接留着字（点了也是看图），画面接在后面
     if (ref.tagName === "IMG") ref.replaceWith(shot);
@@ -228,7 +230,42 @@ function renderReplyShots(root) {
       ref.after(shot);
     }
   }
+  groupReplyShots(root);
   void loadThumbnails(root);
+}
+// 接连几幅（一轮画的几稿）并成一排，不一路往下堆：同段里只隔着换行的，或这段以图收尾、下一段只有图的。
+// 流式时已收尾的段落一段段补进来，这里每回把新到的接进前面那一排；只在同一个容器里挪，尾段重画时不会多出一份
+/** @param {Element} root */
+function groupReplyShots(root) {
+  const isGap = node => (node.nodeType === Node.TEXT_NODE ? !node.textContent.trim() : node.nodeName === "BR"),
+    isShot = node => node?.nodeType === Node.ELEMENT_NODE && node.matches(".reply-shot, .reply-shots"),
+    onlyShots = node => node?.nodeName === "P" && [...node.childNodes].every(child => isGap(child) || isShot(child)),
+    after = node => {
+      for (let next = node.nextSibling; next; next = next.nextSibling) if (!isGap(next)) return isShot(next) ? next : null;
+      const following = node.parentElement?.nodeName === "P" ? node.parentElement.nextElementSibling : null;
+      return onlyShots(following) ? [...following.childNodes].find(isShot) : null;
+    },
+    trimAround = node => {
+      while (node.previousSibling && isGap(node.previousSibling) && node.previousSibling.nodeName === "BR") node.previousSibling.remove();
+      while (node.nextSibling && isGap(node.nextSibling)) node.nextSibling.remove();
+    };
+  for (const first of root.querySelectorAll(".reply-shots, .reply-shot")) {
+    if (!first.isConnected || first.parentElement.classList.contains("reply-shots") || !after(first)) continue;
+    let row = first;
+    if (!first.classList.contains("reply-shots")) {
+      row = document.createElement("span");
+      row.className = "reply-shots";
+      first.before(row);
+      row.append(first);
+    }
+    for (let next = after(row); next; next = after(row)) {
+      const from = next.parentElement;
+      row.append(...(next.classList.contains("reply-shots") ? next.children : [next]));
+      if (next.classList.contains("reply-shots")) next.remove();
+      if (from !== row.parentElement && [...from.childNodes].every(isGap)) from.remove();
+      trimAround(row);
+    }
+  }
 }
 defineEmbed({ name: "shot", mount: renderReplyShots });
 function downloadHref(href, name, revoke = false) {

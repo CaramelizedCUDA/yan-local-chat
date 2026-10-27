@@ -58,6 +58,31 @@ check("答末成品条列出这幅", state.deliverables.includes("墨猫.png"), 
 await waitFor(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`, 5000).catch(() => {});
 check("正文引文件名就地画出", await evalJs(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`));
 
+// 一轮四稿：四件一起画，正文里接连几幅（同段换行的、另起一段的）并成一排，不一路往下堆
+await evalJs(`document.querySelector("#newChat").click(); true`);
+await sleep(400);
+await asks();
+const before = await evalJs(`__yanState().conversations.length`);
+await evalJs(
+  `document.querySelector("#welcomeInput").value = "IMAGE-FOUR"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
+);
+await waitFor(
+  `__yanState().conversations.length > ${before} && (m => m?.role === "assistant" && m.status === "complete")(__yanState().conversations[0].messages.at(-1))`,
+  30000
+);
+check(
+  "一轮四稿都画好",
+  (await asks()).length === 4 &&
+    (await evalJs(`__yanState().conversations[0].messages.at(-1).steps.filter(s => s.status === "done").length`)) === 4
+);
+await waitFor(`document.querySelectorAll(".message.assistant .markdown .reply-shots > .reply-shot").length === 4`, 5000).catch(() => {});
+check(
+  "接连几幅并成一排",
+  await evalJs(
+    `(m => m.querySelectorAll(".reply-shots").length === 1 && m.querySelectorAll(".reply-shots > .reply-shot").length === 4 && !m.querySelector(".reply-shots + br, .reply-shots ~ p:empty"))(document.querySelector(".message.assistant .markdown"))`
+  )
+);
+
 // 没配生图：工具不交出，接口一问也没收到
 await evalJs(`__yanState().settings.dutyImage.on = false; document.querySelector("#newChat").click(); true`);
 await sleep(400);

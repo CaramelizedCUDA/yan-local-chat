@@ -261,7 +261,8 @@ function paintMarkdown(el, text, { streaming = false, fresh = [] } = {}) {
   el._mdText = src;
   el._mdFinal = !streaming;
   if (!streaming) {
-    if (cached) {
+    // 已收尾的段落以图收尾、尾段又以图起头（几稿各占一段写到末尾）：两处容器里的并不成一排（见 groupReplyShots），整段画
+    if (cached && !(/!\[[^\]]*\]\([^)]*\)\s*$/.test(stable) && /^\s*!\[/.test(src.slice(stable.length)))) {
       tail.innerHTML = renderMarkdown(src.slice(stable.length));
       if (el.isConnected) renderEnhancements(tail);
     } else {

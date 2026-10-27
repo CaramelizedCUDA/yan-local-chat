@@ -7,6 +7,8 @@ defineTool({
   label: t("生图"),
   busy: t("作画中"),
   mainOnly: true,
+  // 一轮要几稿就几件一起画；落盘是独占写（见 server/work/archive.js 的 placeFree），同名的各自让开
+  parallel: true,
   offer: ctx => ctx.files && dutyReady(store.settings.dutyImage),
   sideEffect: true,
   writes: true,
