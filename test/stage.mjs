@@ -605,7 +605,10 @@ const windowOf = async id => (await browserSend("Browser.getWindowForTarget", { 
 const modelWindow = await windowOf(targetId),
   freshWindow = await windowOf(fresh);
 check("the model page and the new tab share one window", modelWindow === freshWindow, JSON.stringify({ modelWindow, freshWindow }));
-const viewState = () => evalJs(`JSON.stringify({ current: __yanStage.state.current, front: __yanStage.state.front })`);
+const viewState = () =>
+  evalJs(`JSON.stringify({ current: __yanStage.state.current, front: __yanStage.state.front, activating: !!__yanStage.state.activating })`).catch(
+    e => String(e)
+  );
 // 激活是异步的：等浏览器自己把要请到前台的页排到 /json/list 首位，再让看台去问，别用固定等待赌它已经生效
 const pageIds = async () => (await (await fetch(MODEL_DEBUG + "/json/list")).json()).filter(t => t.type === "page").map(t => t.id);
 const waitForFront = async (id, timeout = 8000) => {
@@ -621,22 +624,28 @@ const waitForFront = async (id, timeout = 8000) => {
 // 模型换页：自己点回原来那页后，模型的调用（这里直接去找一回）不把人拽走；模型把那一页请到前台（选签即如此），看台跟过去
 await clickTab(targetId);
 await browserSend("Target.activateTarget", { targetId });
-await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
-await waitFor(`!__yanStage.state.activating`, 5000).catch(() => {});
+const tabActivated = await waitFor(
+  `__yanStage.state.current === ${JSON.stringify(targetId)} && !__yanStage.state.activating`,
+  5000
+).then(() => true, () => false);
+check("stage switches to picked tab and settles activation", tabActivated, await viewState());
 const userFront = await waitForFront(targetId);
+check("browser put the picked tab first", userFront);
 await evalJs(`__yanStage.locate().then(() => true)`);
 check(
   "a call after the user picked a tab leaves the view alone",
-  !userFront || (await evalJs(`__yanStage.state.current === ${JSON.stringify(targetId)}`)),
-  `${userFront ? "" : "browser never put the picked tab first; "}${await viewState()}`
+  await evalJs(`__yanStage.state.current === ${JSON.stringify(targetId)}`),
+  await viewState()
 );
-await browserSend("Target.activateTarget", { targetId: fresh });
+const { sessionId: freshSession } = await browserSend("Target.attachToTarget", { targetId: fresh, flatten: true });
+await browserSend("Page.bringToFront", {}, freshSession);
 const freshFront = await waitForFront(fresh);
+check("browser put the new tab first", freshFront);
 await evalJs(`__yanStage.locate().then(() => true)`);
 check(
   "the stage follows the page the model brings to front",
-  !freshFront || (await evalJs(`__yanStage.state.current === ${JSON.stringify(fresh)}`)),
-  `${freshFront ? "" : "browser never put the new tab first; "}${await viewState()}`
+  await evalJs(`__yanStage.state.current === ${JSON.stringify(fresh)}`),
+  await viewState()
 );
 // fresh 不关：关掉当前页会触发看台的 detach/attach 竞态；让它随浏览器一起收走
 
