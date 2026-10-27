@@ -105,7 +105,9 @@ function countOccurrences(haystack, needle) {
   for (let at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) count += 1;
   return count;
 }
-// 正文里此刻划选的一段：所在消息、文字、第几次出现，以及它在页面上的位置。没划、划在正文之外、太短，都是 null
+// 可引用的文字：正文、过程话、思绪与工具内容。生成中的字还会挪位，只给引用（补言可带）；收尾后稳定的文字块才可建旁注，旁注记下第几块。
+const QUOTE_BODIES = ".markdown, .user-bubble, .trail-note, .reasoning-body, .tool-output, .tool-results, .tool-note, .sub-report";
+/** @returns {{ text: string, messageId: string, rect: DOMRect, occurrence?: number, part?: number, quoteOnly?: boolean } | null} */
 function selectionAnchor() {
   const selection = getSelection();
   if (!selection || selection.isCollapsed || !selection.rangeCount || view !== "chat" || !currentId) return null;
@@ -117,13 +119,17 @@ function selectionAnchor() {
     picked.querySelectorAll("sup.note-ref").forEach(node => node.remove());
     text = picked.textContent.trim();
   }
-  const host = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
-  const body = host?.closest("#messages .message .markdown, #messages .message .user-bubble"),
-    article = body?.closest("[data-message]");
-  if (!body || !article || text.length < 2 || body.closest(".message-editor")) return null;
+  const host = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement,
+    article = host?.closest("#messages .message[data-message]"),
+    quoted = host?.closest(QUOTE_BODIES);
+  if (!quoted || !article || text.length < 2 || quoted.closest(".message-editor")) return null;
   const rect = range.getBoundingClientRect();
   if (!rect.width && !rect.height) return null;
-  return { text: text.slice(0, 1200), messageId: article.dataset.message, occurrence: occurrenceBefore(body, range, text), rect };
+  const anchor = { text: text.slice(0, 1200), messageId: article.dataset.message, rect };
+  if (article.dataset.status === "streaming") return { ...anchor, quoteOnly: true };
+  const parts = noteBodies(article),
+    part = parts.findIndex(body => body.contains(host));
+  return part >= 0 ? { ...anchor, occurrence: occurrenceBefore(parts[part], range, text), part } : { ...anchor, quoteOnly: true };
 }
 function setupQuoteTip() {
   const tip = $("#quoteTip");
@@ -138,6 +144,7 @@ function setupQuoteTip() {
     if (!picked) return hide();
     const { rect, ...anchor } = picked;
     current = anchor;
+    tip.querySelectorAll('[data-tip="note"], .quote-tip-sep').forEach(el => el.classList.toggle("hidden", !!anchor.quoteOnly));
     tip.style.left = `${Math.min(innerWidth - 40, Math.max(40, rect.left + rect.width / 2))}px`;
     tip.style.top = `${Math.max(8, rect.top - 34)}px`;
     tip.classList.remove("hidden");
@@ -151,10 +158,10 @@ function setupQuoteTip() {
   tip.addEventListener("click", event => {
     const button = event.target.closest("[data-tip]");
     if (!button || !current) return hide();
-    const picked = current;
+    const { quoteOnly, ...picked } = current;
     getSelection()?.removeAllRanges();
     hide();
-    if (button.dataset.tip === "note") return createThread(picked);
+    if (button.dataset.tip === "note") return quoteOnly || createThread(picked);
     pendingQuote = picked;
     renderQuote();
     persistDraft();

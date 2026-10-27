@@ -1,0 +1,53 @@
+# 推到 main 与每个 PR 都跑一遍。言以 Windows 为准：check 一项挡合并；端到端先试跑、macOS 只跑单测，失败都不挡
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: 单测 · 类型 · 格式
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm run unit
+      - run: npm run check
+      - run: npx --yes prettier@3.3.3 --check .
+
+  e2e:
+    name: 端到端（试跑）
+    runs-on: windows-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node test/run.mjs
+
+  unit-macos:
+    name: macOS 单测（不挡合并）
+    runs-on: macos-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm run unit

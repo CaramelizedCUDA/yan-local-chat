@@ -55,4 +55,29 @@ check("the imported conversation finds its group again", state.group === "旧组
 check("and its preset with the prompt", state.preset === "旧的提示词");
 check("MCP services come back too", state.server === "python");
 check("what is already here is not overwritten", state.kept === "本机的话" && state.local === "node");
+
+// 导出备份不带密钥：模型的，连同专司里审查、生图另配的那两份
+await evalJs(`(() => {
+  const s = __yanState().settings;
+  s.dutyReview.apiKey = "sk-review-secret";
+  s.dutyImage.apiKey = "sk-image-secret";
+  window.__exportBlobs = new Map();
+  window.__download = null;
+  const createUrl = URL.createObjectURL;
+  URL.createObjectURL = blob => { const url = createUrl(blob); window.__exportBlobs.set(url, blob); return url; };
+  HTMLAnchorElement.prototype.click = function () { if (this.download) window.__download = { name: this.download, url: this.href }; };
+  document.querySelector("#exportData").click();
+  return true;
+})()`);
+await waitFor(`!!window.__download`, 8000);
+const exported = await evalJs(`window.__exportBlobs.get(window.__download.url).text()`);
+check(
+  "the exported backup carries no API key, duty keys included",
+  !exported.includes("sk-review-secret") &&
+    !exported.includes("sk-image-secret") &&
+    !/"apiKey":\s*"k"/.test(exported) &&
+    exported.includes('"dutyReview"')
+);
+// 改回原样：留着没存的改动，下一个用例开页时会从磁盘换进配置
+await evalJs(`(s => { s.dutyReview.apiKey = ""; s.dutyImage.apiKey = ""; return true; })(__yanState().settings)`);
 await close();

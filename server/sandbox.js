@@ -68,6 +68,19 @@ function callsBridge(text) {
   return new RegExp(String.raw`(?:localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])\s*:\s*${BRIDGE_PORT}(?!\d)`, "i").test(text);
 }
 const BRIDGE_WHY = "指令不调言的本机桥接（它的接口不经请示与沙箱）；要读写文件、跑指令直接用相应的工具";
+// 藏字：编码过的指令、拿 Invoke-Expression 跑拼出来的字串——筛查与审查都只看得到一串编码，判不了它要做什么
+const HIDDEN = /\bInvoke-Expression\b|(^|[\s;&|(])iex\s|-EncodedCommand\b|(^|\s)-(enc|ec|e)\s+[A-Za-z0-9+=]{32,}/i,
+  HIDDEN_WHY = "不代为执行隐藏或动态拼接的指令";
+/**
+ * 审查准了也不放行的两样（与存储根那一道一样是底线）：调言自己的桥接——它的接口不经请示与沙箱，跑指令那个口子还认「已审准」，
+ * 等于自己给自己盖章；藏字——审查看不见它实际要跑什么，准与驳都只能猜。通过返回 null
+ * @param {string} command
+ */
+function screenUnreviewable(command) {
+  const text = String(command || "");
+  if (callsBridge(text)) return BRIDGE_WHY;
+  return HIDDEN.test(text) ? HIDDEN_WHY : null;
+}
 // 文件工具会用 screenPath 拦机密文件；指令通道也得拦显式点名，否则 `Get-Content .env` 能从 shell 绕过去。
 // 这里只认完整的路径片段，避免把 `dotnet user-secrets list`、`env.d.ts` 这类正常参数误判成文件。
 const SECRET_PATH_IN_COMMAND =
@@ -109,7 +122,7 @@ const REVIEW_FORBIDDEN = [
   [cmd("runas|shutdown|bcdedit|diskpart|reagentc|sfc|dism|takeown|icacls|cacls|logoff"), "不代为提权或修改系统、磁盘与权限"],
   [cmd("format", String.raw`(?:\.com)?\s+[a-z]:`), "不代为格式化磁盘"],
   [/\bSet-ExecutionPolicy\b|\b(Set|Add|Remove)-MpPreference\b/i, "不代为修改执行策略与安全设置"],
-  [/\bInvoke-Expression\b|(^|[\s;&|(])iex\s|-EncodedCommand\b|(^|\s)-(enc|ec|e)\s+[A-Za-z0-9+=]{32,}/i, "不代为执行隐藏或动态拼接的指令"],
+  [HIDDEN, HIDDEN_WHY],
   [/\bwmic(?:\.exe)?\b[^\n]*\b(?:call|delete)\b/i, "不代为通过 WMI 修改系统"]
 ];
 // 审而后行只守系统目录；POSIX 的 /usr、/etc、macOS 的 /System 等也认。用户目录、临时目录、别的项目照常可写。
@@ -267,4 +280,45 @@ function screenPath(rel, { write = false } = {}) {
   return null;
 }
 
-module.exports = { screenCommand, screenLoose, screenAutoReview, sandboxEnv, screenPath, SECRET_ENV };
+// 存储根里装着 API Key 与登录令牌的几样：配置（连每小时一份的备份）与 ChatGPT 登录。模型没有正当理由碰它们——改设置有界面；
+// 读得到就能被一段网页里的话骗去拼进网址发走，写得到就能自己关沙箱、改预设。所以不论档位、沙箱开不开都守，只认桥接此刻的存储根，
+// 开发言自己时仓库里的同名字样不受牵连。静态筛查：脚本里拼出来的路径管不到
+const STORE_SECRETS = ["配置.json", "配置备份", "ChatGPT 登录.json"];
+const STORE_WHY = "不碰言的配置与登录文件（内有 API Key 与令牌）；要改设置，请用户在设置里改";
+/** 一个绝对路径是不是落在存储根的这几样上（或就是存储根里它们之下）。是则返回原因 @param {string} full @param {string} root */
+function screenStorePath(full, root) {
+  if (!root) return null;
+  const base = normalizeLower(path.resolve(root)),
+    target = normalizeLower(path.resolve(full));
+  return STORE_SECRETS.some(name => inside(normalizeLower(path.join(base, name)), target)) ? `拒绝：${STORE_WHY}` : null;
+}
+/**
+ * 指令文本里点没点到这几样：写了它们的名字，且又写了存储根（或 .yan），或就在存储根里跑（卷宗、工作都在根下，..\配置.json 即到）；
+ * 对存储根顶层用通配（.yan\*）也算。 @param {string} command @param {string} root @param {string} workdir
+ */
+function screenStoreCommand(command, root, workdir) {
+  if (!root) return null;
+  const text = String(command || "")
+      .replace(/\//g, "\\")
+      .toLowerCase(),
+    rootPath = normalizeLower(path.resolve(root)),
+    // 对指令文本的那份换成反斜杠；比目录用原样的，不然 macOS 上两边斜杠对不上、在根下跑也认不出
+    base = rootPath.replace(/\//g, "\\"),
+    named = STORE_SECRETS.some(name => text.includes(name.toLowerCase())),
+    near = text.includes(base) || /\\\.yan(?:\\|["'\s]|$)/.test(text) || inside(rootPath, normalizeLower(path.resolve(workdir || "")));
+  if (named && near) return `拒绝：${STORE_WHY}`;
+  const wild = new RegExp(`(?:${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}|\\\\\\.yan)\\\\\\*`);
+  return wild.test(text) ? `拒绝：${STORE_WHY}` : null;
+}
+
+module.exports = {
+  screenCommand,
+  screenLoose,
+  screenAutoReview,
+  screenUnreviewable,
+  sandboxEnv,
+  screenPath,
+  screenStorePath,
+  screenStoreCommand,
+  SECRET_ENV
+};

@@ -80,7 +80,10 @@ test("帮手续派建立身份后才退役旧趟：旧续写入口不能再开�
     await f.resumeHelpers(f.c, [f.old]);
     await tick();
     assert.equal(f.crews.get(f.c.id).length, 1);
-    assert.deepEqual(f.started.map(item => item.task), ["new-task"]);
+    assert.deepEqual(
+      f.started.map(item => item.task),
+      ["new-task"]
+    );
   } finally {
     f.stopGeneration(f.c.id);
     await tick();
@@ -103,7 +106,10 @@ test("旧记录里同一名帮手几趟都断着：一并续写也只启动最�
   try {
     assert.equal(f.old.status, "error");
     assert.equal(f.crews.get(f.c.id).length, 1);
-    assert.deepEqual(f.started.map(item => item.task), ["new-task"]);
+    assert.deepEqual(
+      f.started.map(item => item.task),
+      ["new-task"]
+    );
   } finally {
     f.stopGeneration(f.c.id);
     await tick();
@@ -126,7 +132,10 @@ test("点了旧签的续：旧签收掉，续上的是这名帮手最后一趟",
   try {
     assert.equal(f.old.status, "error");
     assert.equal(next.status, "running");
-    assert.deepEqual(f.started.map(item => item.task), ["new-task"]);
+    assert.deepEqual(
+      f.started.map(item => item.task),
+      ["new-task"]
+    );
   } finally {
     f.stopGeneration(f.c.id);
     await tick();

@@ -164,40 +164,50 @@
 .side-panel[data-mode="index"] #sideRemove {
   display: none;
 }
-/* 页头右边：「阔」「删」只用字、丝栏相隔（与请示条「运行 · 跳过」同一写法）；收起的 × 隔一道细竖线另立。
-   左边的「注」印留着，是这一栏唯一的印。早先两枚字也各框成小印，连同正文序号、「注 n」、目录一列朱印，满屏是框（设计稿/37 现状） */
+/* 页头右边：阔（往两角撑开）、删（一笔划去）都是笔意小画，形制照游目页头的 .stage-tool，铺满时转朱；
+   删不可撤，与阔隔一道丝栏；收起的 × 再隔一道另立（设计稿/109 甲）。
+   左边的「注」印留着，是这一栏唯一的印。早先两件是字、更早各框成小印，满屏是框（设计稿/37） */
 .side-tools {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 2px;
   margin-left: 6px;
 }
-.side-tools .icon-btn {
-  width: auto;
-  height: 24px;
-  padding: 0 5px;
-  color: var(--ink-3);
-  font: var(--fs-small)/1 var(--title);
-  transition: color var(--dur-quick);
+.side-tools #sideExpand,
+.side-tools #sideRemove {
+  width: 26px;
+  height: 26px;
 }
-.side-tools .icon-btn:hover,
+.side-tools #sideExpand .brush,
+.side-tools #sideRemove .brush {
+  width: 17px;
+  height: 17px;
+}
+.side-tools #sideExpand:hover,
+.side-tools #sideRemove:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
 .side-tools #sideExpand[aria-pressed="true"] {
-  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.side-tools #sideExpand[aria-pressed="true"] .brush .ink,
+.side-tools #sideExpand[aria-pressed="true"] .brush .ink2 {
+  fill: var(--accent);
 }
 .side-tools #sideRemove {
   position: relative;
-  margin-left: 6px;
+  margin-left: 7px;
 }
 .side-tools #sideRemove::before {
   content: "";
   position: absolute;
-  left: -6px;
+  left: -5px;
   top: 6px;
   bottom: 6px;
   border-left: 1px solid var(--line);
 }
-.side-tools #sideRemove:hover {
-  color: var(--danger);
+.side-tools #sideRemove:hover .brush .ink {
+  fill: var(--danger);
 }
 .side-tools #sideClose {
   position: relative;
@@ -336,7 +346,7 @@
   width: 14px;
   margin-top: 1px;
   color: var(--ink-3);
-  font: var(--fs-note)/1.65 var(--title);
+  font: var(--fs-note) / 1.65 var(--title);
   transition: color var(--dur-quick);
 }
 .side-index-item.here .side-index-num {
@@ -351,7 +361,7 @@
 }
 .side-index-copy strong {
   display: -webkit-box;
-  font: var(--fs-small)/1.65 var(--body);
+  font: var(--fs-small) / 1.65 var(--body);
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -389,7 +399,7 @@
   padding: 34px 8px;
   text-align: center;
   color: var(--ink-3);
-  font: var(--fs-small)/1.9 var(--title);
+  font: var(--fs-small) / 1.9 var(--title);
   letter-spacing: 0.06em;
 }
 /* 输入与主页同一个框：寄在框里右下，模型签在它左边（回目录在页头最左）。窄栏里字小一号、阴影浅些 */
@@ -433,7 +443,7 @@ sup.note-ref {
   margin: 0 1px 0 2px;
   padding: 0 1px;
   color: var(--ink-3);
-  font: var(--fs-mark)/12px var(--title);
+  font: var(--fs-mark) / 12px var(--title);
   vertical-align: super;
   cursor: pointer;
   user-select: none;
@@ -449,7 +459,7 @@ sup.note-ref.active {
   align-items: center;
   margin-left: 8px;
   color: var(--ink-3);
-  font: var(--fs-mark)/15px var(--title);
+  font: var(--fs-mark) / 15px var(--title);
   letter-spacing: 0.06em;
   white-space: nowrap;
   transition: color var(--dur-quick);

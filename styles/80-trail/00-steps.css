@@ -52,7 +52,7 @@
   scrollbar-color: color-mix(in srgb, var(--ink-3) 30%, transparent) transparent;
 }
 .thinking {
-  font: var(--fs-small)/1.6 var(--body);
+  font: var(--fs-small) / 1.6 var(--body);
   color: var(--ink-3);
 }
 .tool-stack {

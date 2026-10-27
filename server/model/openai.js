@@ -35,9 +35,9 @@ function filePart(part) {
 }
 module.exports = {
   url: config => endpoint(config.baseUrl),
-  modelsUrl(config) {
+  modelsUrl(config, kind) {
     const url = modelsUrl(config.baseUrl);
-    if (SILICONFLOW(config)) url.searchParams.set("sub_type", "chat");
+    if (SILICONFLOW(config)) url.searchParams.set("sub_type", kind === "image" ? "text-to-image" : "chat");
     return url;
   },
   headers: config => ({

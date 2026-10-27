@@ -148,6 +148,7 @@ function bindEvents() {
   const flushPageState = () => {
     persistDraft();
     flushOnUnload();
+    void flushUsage(true);
     releaseLeases();
   };
   // beforeunload 比 pagehide 早，给 IndexedDB 事务多一点提交时间；pagehide 仍兜住不派 beforeunload 的移动端 / 缓存路径。

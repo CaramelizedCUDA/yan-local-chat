@@ -59,6 +59,21 @@
     }
   },
 
+  // 生图：专司里配了生图的模型才给
+  generate_image: {
+    description: "按描述画一幅图，存进工作目录根。描述写画面本身：主体、构图、风格、光色；图中要有字的写明原字。",
+    brief: "按描述画一幅图，存进卷宗。描述写画面本身：主体、构图、风格、光色；图中要有字的写明原字。",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "画面描述" },
+        size: { type: "string", description: "宽x高，如 1024x1024；省略由接口定" },
+        name: { type: "string", description: "文件名（不带扩展名），省略自动取" }
+      },
+      required: ["prompt"]
+    }
+  },
+
   // 计划：行里给用户看的任务清单，每次给完整清单；只给主模型
   update_plan: {
     description:
@@ -101,7 +116,7 @@
               when: { type: "string", description: "只在什么情形下须成立（文字说明，不是表达式）；空串撤去" },
               needs: { type: "array", items: { type: "string" }, description: "前提的 id，可跨模块" },
               any: { type: "boolean", description: "true：前提里一项立住即可（几条路线择一）" },
-              in: { type: "string", description: "所属模块的 id：一项拆开还有许多步即作模块，细项写 in 指向它；不写即全局，至多两层" },
+              in: { type: "string", description: "所属模块的 id：一项拆开还有许多步即作模块，细项写 in 指向它；不写即全局" },
               anchors: { type: "array", items: { type: "string" }, description: "凭据，标成立或假定后它变了即转待复核" },
               state: {
                 type: "string",
@@ -116,12 +131,16 @@
               keep: {
                 type: "boolean",
                 description:
-                  "守：一直要守住的条件，不是要交付一次的结论——用户定的界限（「只用某几台机器」），或往下做不能破的（原有测试要过、保持零依赖）。能对上某类动作的写 on 作钩子；余下能用指令验的挂 test: 或 cmd:（现成没有可写一条），动过手的那一答收尾前重查，不过即拦下。不标进度，不挂前提也不作前提，不守了给 removed"
+                  "守：一直要守住的条件，不是要交付一次的结论——用户定的界限（「只用某几台机器」），或往下做不能破的（原有测试要过、保持零依赖）。能对上某类动作的写 on 作钩子；余下能用指令验的挂 test: 或 cmd:（现成没有可写一条），动过手的那一答收尾前重查，不过即拦下"
               },
               on: {
                 type: "string",
                 description:
-                  "守的钩子：一条正则，比将要做的那一步（指令原文、文件路径、网址或工具名）。对得上即动手前先跑这条守挂的 test:，不过即不做——将要做的经环境变量 YAN_TOOL（工具名）、YAN_TARGET 交给它；空串撤去"
+                  "守的钩子：一条正则（不分大小写、含有即中，写窄到动作本身，如 git\\s+push 而非 push），比将要做的那一步（指令原文、文件路径、网址或工具名），对上即动手前把关：挂了 test: 的先跑它，不过即不做（将要做的经环境变量 YAN_TOOL（工具名）、YAN_TARGET 交给它）；没挂的就不做；空串撤去"
+              },
+              ask: {
+                type: "boolean",
+                description: "true：钩子对上时请用户批，准了才做——用户留给自己拍板的关口（「发布前给我审」）；限制不标"
               }
             },
             required: ["id"]
@@ -139,6 +158,7 @@
       type: "object",
       properties: {
         command: { type: "string", description: "要执行的指令" },
+        description: { type: "string", description: "一句白话说这条要做什么，给不看指令的用户看，如「在本地跑 codegen 的测试」" },
         timeout: { type: "number", description: "前台最多等几秒，默认 120，最多 600；到时还没结束就转入后台接着跑，不会被终止" },
         background: {
           type: "boolean",
@@ -253,13 +273,14 @@
 
   helper: {
     description:
-      "给帮手递话。正做着的，话在它说到落点时读到（补充、改向）；已收工的即续派，它带着先前的经过接着做，同样回报。stop 叫停正做着的，它已做的随后送到。",
+      "给帮手递话。正做着的，话在它说到落点时读到（补充、改向）；已收工的即续派，它带着先前的经过接着做，同样回报。stop 叫停正做着的，它已做的随后送到。read 只翻它的经过（说的话、做的步骤与指令输出），核对回报时用。",
     parameters: {
       type: "object",
       properties: {
         helper: { type: "string", description: "差遣时起的任务名" },
         message: { type: "string", description: "要递的话或续派的活" },
-        stop: { type: "boolean", description: "true 即叫停" }
+        stop: { type: "boolean", description: "true 即叫停" },
+        read: { type: "boolean", description: "true 即只翻它的经过，不递话" }
       },
       required: ["helper"]
     }

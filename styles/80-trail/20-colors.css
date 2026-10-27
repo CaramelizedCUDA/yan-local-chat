@@ -77,7 +77,7 @@
   flex: none;
   margin-left: 6px;
   color: var(--gold);
-  font: var(--fs-mark)/1 var(--title);
+  font: var(--fs-mark) / 1 var(--title);
   letter-spacing: 0.08em;
   opacity: 0.85;
 }

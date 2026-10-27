@@ -1,5 +1,5 @@
 // 旁注：划选 → 旁注 → 面板；上下文只到所注消息；正文不受污染；收起 / 重开 / 刷新后仍在；编辑后锚点标记为另一版本
-import { connect, check, sleep, PAGE, WORK, TMP } from "./lib.mjs";
+import { connect, check, usageOf, sleep, PAGE, WORK, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
 const mainDone = n =>
   `document.querySelectorAll('#messages .message.assistant').length === ${n} && [...document.querySelectorAll('#messages .message.assistant')].at(-1)?.dataset.status === "complete"`;
@@ -305,7 +305,7 @@ await sleep(400);
 check(
   "阔 fills the whole page",
   await evalJs(
-    `document.querySelector("#sidePanel").classList.contains("wide") && Math.round(document.querySelector("#sidePanel").getBoundingClientRect().width) === innerWidth && document.querySelector("#sideExpand").textContent === "窄"`
+    `document.querySelector("#sidePanel").classList.contains("wide") && Math.round(document.querySelector("#sidePanel").getBoundingClientRect().width) === innerWidth && document.querySelector("#sideExpand").getAttribute("aria-pressed") === "true"`
   )
 );
 await shot("side.png");
@@ -396,4 +396,6 @@ check(
   cut.status === "complete" && cut.content === "写到一半接着写完。",
   JSON.stringify(cut)
 );
+const used = await usageOf("side");
+check("旁注花的墨记进用量簿的「旁注」", used > 0, String(used));
 close();

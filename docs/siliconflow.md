@@ -1,5 +1,7 @@
 # 在言中使用硅基流动
 
+[← 文档目录](README.md) · [English](en/siliconflow.md)
+
 图文完整版见硅基流动官方文档：[在言中使用硅基流动](https://docs.siliconflow.cn/docs/usercases/use-siliconcloud-in-yan)。这里只留三步：
 
 1. 在硅基流动的 [API 密钥](https://cloud.siliconflow.cn/account/ak) 页新建一个密钥并复制。

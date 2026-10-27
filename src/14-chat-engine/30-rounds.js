@@ -23,10 +23,11 @@ function newTally() {
  * @param {Message|SubAgent} target 写进哪里：主答、旁注的消息，或帮手
  * @param {Array<Record<string, any>>} history 送给接口的消息，就地追加
  * @param {{ profile: Profile, conversation: Conversation, host: Message, signal: AbortSignal, overrides: Record<string, any>,
- *   tally: ReturnType<typeof newTally>, roundLimit: number, scope?: string, inbox?: any, budget?: number,
+ *   tally: ReturnType<typeof newTally>, roundLimit: number, scope?: string, kind?: UsageKind, inbox?: any, budget?: number,
  *   onFrame?: (() => void)|null, onStatus?: (label?: string) => void, afterRound?: () => Promise<string>,
  *   beforeEnd?: () => Promise<Record<string, any>|null> }} run
- *   host：步骤画在哪条消息上（帮手的步骤画在主答的差遣卡里）；scope：步骤记上属于哪名帮手；onStatus：网络重试这类状态；
+ *   host：步骤画在哪条消息上（帮手的步骤画在主答的差遣卡里）；scope：步骤记上属于哪名帮手；kind：墨记进用量簿的哪一类（帮手按 scope 认）；
+ *   onStatus：网络重试这类状态；
  *   afterRound：一轮工具做完、要接在工具结果后让它知道的话（主答的意，见 19-intent/10-store.js 的 intentRound）；
  *   beforeEnd：模型说完要收尾时，递回一条消息即接着做，给 null 即收尾（主答的意，见 intentGate）
  */
@@ -38,7 +39,7 @@ async function runRounds(target, history, run) {
   const spend = amount => {
     if (!(amount > 0)) return;
     tally.spent += amount;
-    spendTokens(profile, amount);
+    spendTokens(profile, amount, run.scope ? "helper" : run.kind || "main");
     renderQuota();
   };
   // 轮次按这一趟算（帮手睡醒再进来是新的一趟）：上一趟到顶时收回的工具还给它，不然醒来就再也调不了工具
@@ -489,13 +490,13 @@ function accountUsage(
   assistant,
   requestMessages,
   conversation,
-  { opened = true, partialRound = false, roundStart = 0, steered = false, spent = 0 } = {}
+  { opened = true, partialRound = false, roundStart = 0, steered = false, spent = 0, kind = /** @type {UsageKind} */ ("main") } = {}
 ) {
   const exact = Number(assistant.usage?.total_tokens || 0);
   const estimate = from => estimateTokens(requestMessages) + estimateTokens([{ content: String(assistant.content || "").slice(from) }]);
   const consumed = exact > 0 ? exact + (partialRound ? estimate(roundStart) : 0) : opened ? estimate(0) : 0;
   if (!(consumed > 0)) return;
-  const live = spendTokens(profile, Math.max(0, consumed - spent));
+  const live = spendTokens(profile, Math.max(0, consumed - spent), kind);
   assistant.tokenCount = consumed;
   assistant.tokenEstimated = !(exact > 0) || partialRound || steered;
   if (quotaExhausted(live)) toast(t("此答写毕，余墨已尽；换个模型可续"));

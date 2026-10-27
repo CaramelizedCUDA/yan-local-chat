@@ -514,7 +514,8 @@ button:focus:not(:focus-visible) {
 .resume-note.is-new {
   animation: rise 0.3s var(--ease-ink);
 }
-.tool-step.status-new .tool-state {
+/* 翻成「进行中」的（批过请示、续上帮手）不弹：转圈自己的动画不能被这一下盖掉，否则弹完就停住不转 */
+.tool-step.status-new .tool-state:not(.spinning) {
   animation: popIn 0.28s var(--ease-ink);
 }
 .leaving {
@@ -557,7 +558,7 @@ button:focus:not(:focus-visible) {
   .source-stack.is-new,
   .message-error.is-new,
   .resume-note.is-new,
-  .tool-step.status-new .tool-state,
+  .tool-step.status-new .tool-state:not(.spinning),
   .message.is-new,
   .tool-step.is-new,
   .tool-stack.is-new,

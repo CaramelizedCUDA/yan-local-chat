@@ -122,7 +122,7 @@ for (const change of ["同一对话换新意", "同目录另一对话换新意",
   });
 
 // 守的钩子：写了 on 的守，对得上的那一步动手前先跑它挂的测试；平时不取它的指纹，收尾时也不重查
-function hookRuntime({ policy = "auto", exitCode = 1 } = {}) {
+function hookRuntime({ policy = "auto", exitCode = 1, keep = {}, grant = true } = {}) {
   const f = load([
     "asIntent",
     "applyIntentOps",
@@ -133,8 +133,8 @@ function hookRuntime({ policy = "auto", exitCode = 1 } = {}) {
     "intentGate",
     "keepIntent",
     "keepHook",
-    `setup: (request, prompts, policy) => {
-      bridge = request; Object.assign(PROMPTS, prompts);
+    `setup: (request, prompts, policy, ask) => {
+      bridge = request; Object.assign(PROMPTS, prompts); askApproval = ask;
       workScope = c => ({ workdir: c.workdir }); commandPolicyOf = () => policy;
       currentConversation = () => null; refreshSteps = saveStoreSoon = () => {};
     }`
@@ -143,10 +143,19 @@ function hookRuntime({ policy = "auto", exitCode = 1 } = {}) {
     { ops, problems } = f.normalizeIntentOps(f.asIntent(null), [
       { id: "上线", claim: "能部署", check: "可访问", root: true, needs: ["部署"] },
       { id: "部署", claim: "推上去", check: "看得到" },
-      { id: "算力", claim: "只用获准的机器", check: "守卫脚本过", keep: true, on: "ssh|10\\.1\\.", anchors: ["test:python guard.py"] }
+      {
+        id: "算力",
+        claim: "只用获准的机器",
+        check: "守卫脚本过",
+        keep: true,
+        on: "ssh|10\\.1\\.",
+        anchors: ["test:python guard.py"],
+        ...keep
+      }
     ]),
     intent = f.applyIntentOps(f.asIntent(null), ops, { prints: {} }),
-    runs = [];
+    runs = [],
+    asked = [];
   f.setup(
     async (url, body) => {
       if (url === "/api/work/intent") return { data: intent, version: "1" };
@@ -155,11 +164,15 @@ function hookRuntime({ policy = "auto", exitCode = 1 } = {}) {
       return { exitCode, stdout: "预约已过截止", stderr: "" };
     },
     win.YAN_PROMPTS,
-    policy
+    policy,
+    async step => {
+      asked.push(step.gate);
+      return grant;
+    }
   );
   f.keepIntent(conversation, intent, {});
   const ctx = { conversation, assistant: { steps: [] } };
-  return { ...f, conversation, intent, problems, runs, ctx };
+  return { ...f, conversation, intent, problems, runs, asked, ctx };
 }
 
 test("钩子：对得上的指令动手前跑守的测试，将要做的交给它；不过即不做", async () => {
@@ -211,12 +224,51 @@ test("撤了钩子的守转收尾重查：撤时补记测试的指纹", () => {
   assert.deepEqual(f.intentSealedAnchors(next), ["test:python guard.py"]);
 });
 
-test("on 的写法：只给守、要挂 test:、须是合法的正则", () => {
+test("没挂测试的钩子即禁令：对上就不做，不请示", async () => {
+  const f = hookRuntime({ keep: { anchors: [] } }),
+    out = await f.keepHook({ name: "run_command" }, { command: "ssh gpu-9" }, f.ctx);
+  assert.deepEqual(f.problems, []);
+  assert.equal(out.display, "守拦下 · 算力");
+  assert.match(out.content, /守「算力」拦下了这一步，没有执行：只用获准的机器/);
+  assert.equal(f.runs.length + f.asked.length, 0);
+  assert.equal(await f.keepHook({ name: "run_command" }, { command: "ls" }, f.ctx), null);
+});
+
+test("标了 ask 的钩子是关口：测试过了再请用户批，准了放行且这一步不再另问，跳过即不做", async () => {
+  const granted = hookRuntime({ exitCode: 0, keep: { ask: true } }),
+    step = { name: "run_command" };
+  assert.equal(await granted.keepHook(step, { command: "ssh gpu-9" }, granted.ctx), null);
+  assert.equal(granted.runs.length, 1);
+  assert.deepEqual(granted.asked, [{ id: "算力", claim: "只用获准的机器", target: "ssh gpu-9" }]);
+  assert.equal(step.granted, true);
+  assert.equal(step.gate, undefined);
+  const failing = hookRuntime({ keep: { ask: true } });
+  assert.equal((await failing.keepHook({ name: "run_command" }, { command: "ssh gpu-9" }, failing.ctx)).display, "守拦下 · 算力");
+  assert.equal(failing.asked.length, 0);
+  const declined = hookRuntime({ keep: { ask: true, anchors: [] }, grant: false }),
+    skipped = { name: "run_command" },
+    out = await declined.keepHook(skipped, { command: "ssh gpu-9" }, declined.ctx);
+  assert.equal(out.display, "守未准 · 算力");
+  assert.equal(skipped.skipped, true);
+  assert.equal(declined.runs.length, 0);
+});
+
+test("on 的写法：只给守、须是合法的正则；ask 要有 on，撤了 on 关口随之撤", () => {
   const f = load(["asIntent", "normalizeIntentOps"]),
     problems = ops => f.normalizeIntentOps(f.asIntent(null), ops).problems.join("\n"),
     goal = { id: "上线", claim: "能部署", check: "可访问", root: true };
   assert.match(problems([goal, { id: "部署", claim: "推上去", check: "看得到", on: "ssh", root: true }]), /部署 不是守：on 只给守/);
-  assert.match(problems([goal, { id: "算力", claim: "限机器", check: "看", keep: true, on: "ssh" }]), /算力 写了 on，要挂一条 test:/);
+  assert.doesNotMatch(problems([goal, { id: "算力", claim: "限机器", check: "看", keep: true, on: "ssh" }]), /算力/);
+  assert.match(problems([goal, { id: "算力", claim: "限机器", check: "看", keep: true, ask: true }]), /算力 没写 on/);
+  const g = load(["asIntent", "normalizeIntentOps", "applyIntentOps"]),
+    gated = g.normalizeIntentOps(g.asIntent(null), [
+      goal,
+      { id: "发布", claim: "发前给我审", check: "批过", keep: true, on: "push", ask: true }
+    ]),
+    intent = g.applyIntentOps(g.asIntent(null), gated.ops);
+  assert.doesNotMatch(gated.problems.join("\n"), /发布/);
+  assert.equal(intent.nodes["发布"].ask, true);
+  assert.equal(g.applyIntentOps(intent, [{ id: "发布", on: "" }]).nodes["发布"].ask, undefined);
   assert.match(
     problems([goal, { id: "算力", claim: "限机器", check: "看", keep: true, on: "ssh(", anchors: ["test:x"] }]),
     /算力 的 on 不是合法的正则/

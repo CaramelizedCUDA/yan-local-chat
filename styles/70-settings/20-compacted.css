@@ -30,7 +30,7 @@
   border: 1px dashed color-mix(in srgb, var(--line) 85%, transparent);
   border-radius: var(--radius-l);
   color: var(--ink-2);
-  font: var(--fs-small)/1.75 var(--title);
+  font: var(--fs-small) / 1.75 var(--title);
   letter-spacing: 0.02em;
   text-align: left;
 }

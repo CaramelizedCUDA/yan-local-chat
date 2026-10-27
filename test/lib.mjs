@@ -1,5 +1,5 @@
 // 端到端用例共用的一小套工具：连上无头浏览器的调试口、在页面里求值、等待条件、记一条 PASS / FAIL
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -16,19 +16,51 @@ export const ARCHIVE = `${HOME}/卷宗`;
 export const CHATS = `${HOME}/对话`;
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 export const check = (label, ok, detail = "") => console.log(`${ok ? "PASS" : "FAIL"} ${label}${detail ? " — " + detail : ""}`);
+// 用量簿（存储根/用量.json）里某一类各日之和：页面攒几秒才报给桥接，等它报上来（见 src/16-api.js 的 noteUsage）
+export async function usageOf(kind, timeout = 8000) {
+  const started = Date.now();
+  for (;;) {
+    let n = 0;
+    try {
+      n = Object.values(JSON.parse(readFileSync(`${HOME}/用量.json`, "utf8")).days || {}).reduce(
+        (sum, row) => sum + (Number(row[kind]) || 0),
+        0
+      );
+    } catch {}
+    if (n > 0 || Date.now() - started > timeout) return n;
+    await sleep(300);
+  }
+}
 
 export async function connect() {
   let ws,
     seq = 0;
   const pending = new Map();
-  const send = (method, params = {}) =>
+  const raw = (method, params = {}) =>
     new Promise((resolve, reject) => {
       const id = ++seq;
       pending.set(id, { resolve, reject });
       ws.send(JSON.stringify({ id, method, params }));
     });
+  // 开页、刷新后等页面开好（boot 末尾 bindEvents 绑上点击）再交回：侧栏读完磁盘就先画出来，事件要等问过租约才绑上，
+  // CI 的机器慢，固定等一两秒常常还没好，先点就白点。Page.reload 还不等新页接手就返回，紧接着求值会落在旧页上，所以先在旧页记一笔。
+  // 开不好（桥接没起之类）的等满就照旧往下，由用例自己断言
+  const send = async (method, params = {}) => {
+    const app =
+      method === "Page.reload"
+        ? await evalJs(`location.href.startsWith(${JSON.stringify(PAGE)}) && !location.pathname.endsWith(".html")`).catch(() => false)
+        : method === "Page.navigate" && String(params.url).startsWith(PAGE) && !/\.html\b/.test(String(params.url).slice(PAGE.length));
+    if (!app) return raw(method, params);
+    await evalJs(`window.__leaving = true`).catch(() => {});
+    const result = await raw(method, params);
+    // 换页那一下求值可能撞上旧的执行上下文刚销毁：报错当作没好，接着等
+    for (const t = Date.now(); Date.now() - t < 15000; await sleep(120))
+      if (await evalJs(`!window.__leaving && typeof document.querySelector("#openLibrary")?.onclick === "function"`).catch(() => false))
+        break;
+    return result;
+  };
   const evalJs = async (expression, awaitPromise = true) => {
-    const r = await send("Runtime.evaluate", { expression, awaitPromise, returnByValue: true });
+    const r = await raw("Runtime.evaluate", { expression, awaitPromise, returnByValue: true });
     if (r.exceptionDetails) throw Error(r.exceptionDetails.exception?.description || JSON.stringify(r.exceptionDetails).slice(0, 400));
     return r.result.value;
   };

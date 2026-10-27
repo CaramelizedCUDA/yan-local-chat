@@ -56,6 +56,7 @@
  * @property {string} arguments 模型给的参数原文（JSON）
  * @property {StepStatus} status
  * @property {string} [title] 标题行：指令、路径、关键词……
+ * @property {string} [gist] 模型用白话说这一步要做什么（参数里的 description）：有它，指令那一行题头写它，指令原文退到底下
  * @property {boolean} [keep] 收尾前对照是因守转待复核而拦的（右侧事由画朱）
  * @property {string} [label] 这一步另有名目时的标签（存中文原文），盖过工具自己的（翻技能记作「技能」）
  * @property {string} [result] 标题行右侧的一句结果
@@ -68,6 +69,9 @@
  * @property {number} [exitCode]
  * @property {boolean} [readOnly] 只读指令，免确认
  * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
+ * @property {{ id: string, claim: string, target: string }} [gate] 正等用户批的守的关口（见 keepHook），批完即去
+ * @property {boolean} [granted] 守的关口批过了：这件工具自己不再另问
+ * @property {{ ok: boolean, why: string }} [reviewed] 审而后行里交专司的审查模型判过：准了照做（指令带 reviewed 交桥接），驳了即不做
  * @property {boolean} [background] 后台指令
  * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", quiet?: boolean, started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；quiet：那一答已停，结束时不叫醒；started：起跑的时刻，书眉的漏据它算已跑多久）
  * @property {{ old: string, new: string }} [diff]
@@ -87,7 +91,7 @@
  * @property {boolean} [full] 输出看全 / 只看前 10 行
  * @property {boolean} [folded] 差遣卡片整张折起
  * @property {SubAgent} [sub]
- * @property {"tell"|"resume"|"stop"} [mode] 传话一步做的是哪样：递话、续派、叫停
+ * @property {"tell"|"resume"|"stop"|"read"} [mode] 传话一步做的是哪样：递话、续派、叫停、翻看
  * @property {string} [ref] 传话、叫停说到的那一趟（步骤 id）
  * @property {string} [noteId] 传话递去的那句话在帮手时间线里的步骤 id
  * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }} [relay] 作答途中回来的回报（relay_note）是谁
@@ -134,7 +138,7 @@
  */
 /** @typedef {{ at: string, why: string, auto?: boolean }} Break 途中断过的一回：何时、为何；auto 是自动接着写上了的。续写不清，查「为何总断」时翻它 */
 /** @typedef {{ id: string, parentId: string|null, messages: Message[], createdAt: string }} Fork 被换下来的一段尾巴 */
-/** @typedef {{ id: string, anchor: { messageId: string, text: string, occurrence?: number }, createdAt: string, updatedAt: string, messages: Message[] }} Thread 旁注；occurrence 是所注的那段在正文里第几次出现（从 0 起） */
+/** @typedef {{ id: string, anchor: { messageId: string, text: string, occurrence?: number, part?: number }, createdAt: string, updatedAt: string, messages: Message[] }} Thread 旁注；occurrence 是所注文字在所在块里的第几次出现（从 0 起），part 是收尾后第几块可读文字；旧旁注没有 part */
 /**
  * @typedef {Object} Conversation
  * @property {string} id
@@ -187,6 +191,8 @@
  * @property {string} profileId 选它时换到这个模型；空则不换
  * @property {CommandPolicy|""} policy 选它时的指令权限；空则照设置里的默认
  */
+/** @typedef {Pick<Profile, "baseUrl"|"apiKey"|"model"|"api">} Endpoint 发一次请求要的那几样：模型配置与专司里另配的一份都够 */
+/** @typedef {{ on: boolean, api: "openai"|"anthropic"|"siliconflow", baseUrl: string, apiKey: string, model: string, modelList: string[] }} Duty 专司里另配的一份（审查、生图各一）：与模型配置同形，只认接口、地址、Key、模型；on 是开没开 */
 /** @typedef {{ id: string, text: string, category?: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
 /** @typedef {{ text: string, attachments: Attachment[], quote?: Quote|null, updatedAt?: string }} Draft */
 /**
@@ -202,7 +208,9 @@
  * @property {string} presetId 新对话用的预设（上回选的）；空即本色
  * @property {{ id: string, name: string, createdAt: string, presetId: string, workdir: string }[]} groups 分组：自立的几组，对话各记 groupId；组里新起的对话用组的预设、绑组的默认目录
  * @property {string} [pendingGroupId] 从组首「＋」另起的新对话归进这一组（用过即清）
- * @property {boolean} autoTitle
+ * @property {boolean} autoTitle 自动拟题（设置 → 专司）：随对话的模型，只有开关
+ * @property {Duty} dutyReview 审查（设置 → 专司）：审而后行里规则标疑的那一步交它再判；关着即照规则回绝
+ * @property {Duty} dutyImage 生图（设置 → 专司）：配了才把生图交给模型
  * @property {string} [pendingWorkdir] 欢迎页目录签里待绑的目录
  * @property {string[]} collapsedRepos
  * @property {CommandPolicy} commandPolicyDefault 新对话默认的指令权限模式
@@ -242,7 +250,7 @@ function prompt(path, vars = {}) {
 function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
-const APP_VERSION = "1.0.2"; // 与 package.json 同步；以桥接返回的为准
+const APP_VERSION = "1.1.3"; // 与 package.json 同步；以桥接返回的为准
 const FOLLOW_THRESHOLD = 80;
 // 一次回答里最多几轮工具调用（帮手另计），超过后收回工具、请模型直接收尾；按轮计，同一轮并发的几次调用只算一轮。
 // 默认值在这里，实际值在「设置 → 工具」里可改，留空（记作 0）即不限

@@ -25,10 +25,11 @@ defineTool({
       step.sandboxWhy = screened?.why || undefined;
     }
     let escalated = false;
-    if (policy === "ask" && (!step.readOnly || step.sandboxWhy)) {
+    // 守的关口刚批过这一条（见 keepHook）：不再另问，除非还要出沙箱
+    if (policy === "ask" && (!step.readOnly || step.sandboxWhy) && !(step.granted && !step.sandboxWhy)) {
       if (!(await askApproval(step, ctx))) {
         step.skipped = true;
-        return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
+        return { ok: false, content: prompt("assistant.declined"), display: "" };
       }
       escalated = !!step.sandboxWhy;
     }
@@ -43,6 +44,7 @@ defineTool({
         workdir,
         sandbox: sandbox && !escalated,
         permission: policy,
+        reviewed: step.reviewed?.ok === true,
         command: step.title,
         timeout: Number(args.timeout) || 120,
         background,
@@ -80,7 +82,7 @@ defineTool({
     return {
       ok: data.exitCode === 0,
       content: t`退出码：${data.exitCode}，用时 ${took}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
-      display: `${data.exitCode === 0 ? `完成 · ${took}` : `退出码 ${data.exitCode} · ${took}`}${marks}`
+      display: `${data.exitCode === 0 ? took : `退出码 ${data.exitCode} · ${took}`}${marks}`
     };
   }
 });
@@ -267,5 +269,5 @@ function sandboxWhyHtml(step) {
 }
 /** @param {Step} step */
 function commandApprovalHtml(step) {
-  return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">${t(`问`)}</span><span class="approval-title">${isWork(currentConversation()) ? t("执事请示") : t("本机请示")} ${t(`· 运行此指令`)}${step.background ? t("（后台）") : ""}</span><span class="approval-hint" title="${t(`输入框留空时，Enter 即运行`)}">${t(`Enter 运行`)}</span></div><pre class="approval-cmd">${escapeHtml(step.title)}</pre>${sandboxWhyHtml(step)}<div class="approval-actions"><button type="button" data-approve="run">${t(`运行`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button><button type="button" data-approve="auto" title="${t(`径行：此对话中后续指令不再询问`)}">${t(`径行`)}</button></div>`;
+  return `<div class="approval-head"><span class="seal approval-seal" aria-hidden="true">${t(`问`)}</span><span class="approval-title">${isWork(currentConversation()) ? t("执事请示") : t("本机请示")} ${t(`· 运行此指令`)}${step.background ? t("（后台）") : ""}</span><span class="approval-hint" title="${t(`输入框留空时，Enter 即运行`)}">${t(`Enter 运行`)}</span></div>${gistHtml(step)}<pre class="approval-cmd">${escapeHtml(step.title)}</pre>${sandboxWhyHtml(step)}<div class="approval-actions"><button type="button" data-approve="run">${t(`运行`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button><button type="button" data-approve="auto" title="${t(`径行：此对话中后续指令不再询问`)}">${t(`径行`)}</button></div>`;
 }

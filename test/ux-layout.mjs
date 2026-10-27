@@ -30,7 +30,7 @@ await evalJs(
 await send("Page.navigate", { url: PAGE });
 await waitFor(`!!document.querySelector('[data-conversation="ux-1"]')`, 8000);
 await evalJs(`document.querySelector('[data-conversation="ux-1"] .history-open').click(); true`);
-await waitFor(`!!document.querySelector("#messages pre code")`, 5000);
+await waitFor(`!!document.querySelector("#messages pre code")`);
 
 const code = await evalJs(
   `(() => { const code = document.querySelector("#messages pre code"), lines = code.textContent.replace(/\\n$/, "").split("\\n").length, lh = parseFloat(getComputedStyle(code).lineHeight); pre = code.closest("pre"), ps = getComputedStyle(pre); return { per: (pre.clientHeight - parseFloat(ps.paddingTop) - parseFloat(ps.paddingBottom)) / lines, lh }; })()`

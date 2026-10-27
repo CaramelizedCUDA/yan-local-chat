@@ -98,7 +98,9 @@ try {
     await evalJs(
       `document.querySelector(".intent-keep-head small").textContent === "2 条" && document.querySelector('.intent-roll [data-intent-node="远端"] .intent-mk')?.dataset.mark === "hook" && document.querySelector('.intent-roll [data-intent-node="测过"] .intent-mk')?.dataset.mark === "check"`
     ),
-    await evalJs(`[...document.querySelectorAll(".intent-keep-head small, .intent-roll .intent-mk")].map(e => e.textContent || e.dataset.mark).join(" | ")`)
+    await evalJs(
+      `[...document.querySelectorAll(".intent-keep-head small, .intent-roll .intent-mk")].map(e => e.textContent || e.dataset.mark).join(" | ")`
+    )
   );
   check(
     "the card leaves 守 off the graph and lists it in its own section after the roll",
@@ -106,6 +108,30 @@ try {
       `!document.querySelector('.intent-svg [data-intent-node="测过"]') && !!document.querySelector('.intent-svg [data-intent-node="上线"]') && document.querySelector(".intent-keep-head + .intent-roll [data-intent-node]")?.dataset.intentNode === "测过" && /进度\\s*0\\s*\\/\\s*2/.test(document.querySelector(".intent-card .page-facts").textContent)`
     )
   );
+  // 没挂测试的钩子即禁令：对上就不做
+  const five = await ask("HOOK5 不推 main", 4);
+  check("a keep with on but no test blocks the matching step outright", /HOOK5\|main:blocked/.test(five.content), JSON.stringify(five));
+  // 标了 ask 的是关口：对上即请用户批——这段对话是径行，照样问；请示条写守的原话，只有准许与跳过
+  const input = "#chatInput";
+  await evalJs(
+    `document.querySelector("${input}").value = "HOOK6 发布前给我审"; document.querySelector("${input}").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
+  );
+  await waitFor(
+    `!document.querySelector("#approvalBar").classList.contains("hidden") && document.querySelector("#approvalBar").textContent.includes("守请示")`,
+    30000
+  );
+  check(
+    "a keep marked ask stops for the user even in 径行, showing its claim and no 径行 button",
+    await evalJs(
+      `(b => b.textContent.includes("发布前给我审") && b.textContent.includes("publish-one") && !b.querySelector('[data-approve="auto"]'))(document.querySelector("#approvalBar"))`
+    )
+  );
+  await evalJs(`document.querySelector('#approvalBar [data-approve="run"]').click(); true`);
+  await waitFor(`document.querySelector("#approvalBar").textContent.includes("publish-two")`, 30000);
+  await evalJs(`document.querySelector('#approvalBar [data-approve="skip"]').click(); true`);
+  await waitFor(`${answers}.length === 6`, 60000);
+  const six = await evalJs(`${answers}[5].content`);
+  check("allowed runs once without asking again, skipped is not run", /HOOK6\|one:ran\|two:declined/.test(six), six);
 } finally {
   close();
 }

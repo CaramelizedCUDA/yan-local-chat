@@ -14,6 +14,7 @@ const { sendJson, readJson } = require("../http.js");
 const openai = require("./openai.js");
 const anthropic = require("./anthropic.js");
 const { hinted } = require("./chatgpt.js");
+const createImage = require("./image.js");
 
 // 工具定义一次最多带多少件：超过不再静默截掉后面的，明确报错，接入更多工具时一眼能看出来
 const TOOLS_LIMIT = 128;
@@ -60,10 +61,10 @@ module.exports = function createModel({ home }) {
       throw Error(requireModel ? "请填写 Base URL 和模型 ID" : "请填写 Base URL");
     return { config, provider };
   }
-  // 列模型；接口没给出列表（不是 { data } 或 { models } 的样子）回 null
-  async function listModels(provider, config) {
+  // 列模型；接口没给出列表（不是 { data } 或 { models } 的样子）回 null。kind 为 image 时列画图的（专司里的生图）
+  async function listModels(provider, config, kind = "") {
     if (provider.models) return provider.models(config);
-    const response = await fetch(provider.modelsUrl(config), {
+    const response = await fetch(provider.modelsUrl(config, kind), {
       headers: await provider.headers(config),
       signal: AbortSignal.timeout(20000)
     });
@@ -85,8 +86,9 @@ module.exports = function createModel({ home }) {
   }
   async function handleModels(req, res) {
     try {
-      const { config, provider } = resolveProfile((await readJson(req)).profile, false);
-      sendJson(res, 200, { models: (await listModels(provider, config)) || [] });
+      const body = await readJson(req),
+        { config, provider } = resolveProfile(body.profile, false);
+      sendJson(res, 200, { models: (await listModels(provider, config, String(body.kind || ""))) || [] });
     } catch (error) {
       sendJson(res, 400, { error: String(error.message || error).slice(0, 500) });
     }
@@ -215,7 +217,12 @@ module.exports = function createModel({ home }) {
   }
   return {
     // 引导、转发、列模型凡是本机桥接认得的来源都可调；ChatGPT 的登录与退出碰本机凭证，归受信的一半
-    openRoutes: { "POST /api/test": handleTest, "POST /api/models": handleModels, "POST /api/chat": handleChat },
+    openRoutes: {
+      "POST /api/test": handleTest,
+      "POST /api/models": handleModels,
+      "POST /api/chat": handleChat,
+      ...createImage({ resolveProfile, upstreamError })
+    },
     routes: chatgpt.routes
   };
 };

@@ -23,7 +23,7 @@ defineTool({
       Object.assign(existing, { text, category, updatedAt: now(), source });
       saveStore();
       refreshMemorySettings();
-      return { ok: true, content: t`已更新 ${memoryLine(existing, true)}`, display: "已更新" };
+      return { ok: true, content: t`已更新 ${memoryLine(existing, true)}`, display: "合并" };
     }
     if (items.length >= MAX_MEMORY_ITEMS)
       return {
@@ -33,7 +33,7 @@ defineTool({
       };
     const item = addMemory(text, source, category);
     refreshMemorySettings();
-    return { ok: true, content: t`已记入 ${memoryLine(item, true)}`, display: "已记入" };
+    return { ok: true, content: t`已记入 ${memoryLine(item, true)}`, display: "" };
   }
 });
 
@@ -52,7 +52,7 @@ defineTool({
     items.splice(index, 1);
     saveStore();
     refreshMemorySettings();
-    return { ok: true, content: t("已删除"), display: "已删除" };
+    return { ok: true, content: t("已删除"), display: "" };
   }
 });
 

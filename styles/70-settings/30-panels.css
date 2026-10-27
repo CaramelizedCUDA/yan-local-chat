@@ -269,6 +269,19 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 专司那几张卡的记号：一行最右一粒——朱点是开或已配，淡墨空圈是关或未配（设计稿/112 甲） */
+.duty-mark {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 5px 0 auto;
+  border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  border-radius: 50%;
+}
+.duty-mark.on {
+  border-color: transparent;
+  background: var(--accent);
+}
 .profile-badge {
   flex: none;
   color: var(--accent);

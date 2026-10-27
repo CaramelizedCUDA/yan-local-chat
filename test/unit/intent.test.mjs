@@ -7,6 +7,7 @@ const f = load([
   "asIntent",
   "intentPath",
   "normalizeIntentOps",
+  "intentRetryBatch",
   "applyIntentOps",
   "intentSealing",
   "intentState",
@@ -66,6 +67,46 @@ test("结构：新的一项要写全，前提要在、不成环；有错整批�
   assert.match(problems(intent, [{ id: "甲", state: "finished" }])[0], /不认得/);
   // 别名照收：模型照计划卡的习惯写 complete
   assert.equal(f.normalizeIntentOps(intent, [{ id: "乙", state: "complete" }]).ops[0].state, "done");
+  // 写法宽认：带空格、连字符的进度，单数的 anchor，别家正则的 (?i)
+  assert.equal(f.normalizeIntentOps(intent, [{ id: "乙", state: "In Progress" }]).ops[0].state, "doing");
+  assert.equal(f.normalizeIntentOps(intent, [{ id: "乙", state: "not-started" }]).ops[0].state, "open");
+  assert.deepEqual(f.normalizeIntentOps(intent, [{ id: "乙", anchor: "file:a.md" }]).ops[0].anchors, ["file:a.md"]);
+  const gate = f.normalizeIntentOps(intent, [
+    { id: "守发布", claim: "批准前不发布", check: "发布前问过", keep: true, on: "(?i)git\\s+push" }
+  ]);
+  assert.deepEqual(
+    gate.problems.filter(p => /正则/.test(p)),
+    []
+  );
+  assert.equal(gate.ops[0].on, "git\\s+push");
+});
+
+test("改正：整批没收后只重给改了的项，按 id 叠到上一批上；只在上一批里的给 removed 即拿掉", () => {
+  const intent = empty(),
+    prior = [
+      { id: "总", claim: "做完", check: "能跑", root: true },
+      { id: "甲", claim: "一半", check: "半边能跑" },
+      { id: "乙", claim: "另一半", check: "另半边能跑", needs: ["丙"] }
+    ];
+  // 上一批「甲」孤悬、「乙」的前提丙不存在；改正只给两项
+  assert.ok(problems(intent, prior).length);
+  const merged = f.intentRetryBatch(intent, prior, [
+    { id: "总", needs: ["甲"] },
+    { id: "乙", state: "removed" }
+  ]);
+  assert.deepEqual(
+    merged.map(item => item.id),
+    ["总", "甲"]
+  );
+  assert.equal(merged[0].claim, "做完");
+  assert.deepEqual(merged[0].needs, ["甲"]);
+  assert.deepEqual(problems(intent, merged), []);
+  // 一项都不沾上一批的：丢下那批另改别处，原样交回
+  const other = [{ id: "丁", claim: "别处", check: "别处能跑" }];
+  assert.equal(f.intentRetryBatch(intent, prior, other), other);
+  // 已在意里的项给 removed 是撤它，照常叠上去交给后面判
+  const held = change(intent, merged);
+  assert.equal(f.intentRetryBatch(held, [{ id: "甲", note: "x" }], [{ id: "甲", state: "removed" }])[0].state, "removed");
 });
 
 test("传播：标成立要前提先立住（同一批也算），事后前提退回去，上面的就不算立住；any 的一项立住即可", () => {

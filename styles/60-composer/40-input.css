@@ -93,7 +93,7 @@
   border-radius: 50%;
   background: var(--accent);
   color: var(--paper);
-  font: 500 var(--fs-mid)/1 var(--title);
+  font: 500 var(--fs-mid) / 1 var(--title);
   isolation: isolate;
   transition:
     background-color 0.25s,

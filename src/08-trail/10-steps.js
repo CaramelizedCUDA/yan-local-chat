@@ -127,7 +127,7 @@ function delegateDoing(step) {
     steps = sub?.steps || [],
     current = [...steps].reverse().find(s => s.status === "running" || s.status === "pending") || steps.at(-1);
   if (current && (current.status === "running" || current.status === "pending"))
-    return `${current.status === "pending" ? t(AWAITING) : t("正在")} ${toolLabel(current.name)} ${String(current.title || "").slice(0, 60)}`.trim();
+    return `${current.status === "pending" ? t(AWAITING) : t("正在")} ${toolLabel(current.name)} ${String(current.gist || current.title || "").slice(0, 60)}`.trim();
   // 睡着等自己挂的后台指令
   if (sub?.waiting)
     return t`等后台 ${helperWaits(sub)
@@ -169,12 +169,16 @@ function clampLines(text, full) {
 /** @param {Step} step */
 function workStepHtml(step, title) {
   const status = step.status || "done",
-    command = step.name === "run_command";
+    command = step.name === "run_command",
+    // 模型说了要做什么的：题头写那一句，指令原文退到展开后的头一段（悬停也看得到）
+    gist = command && step.gist;
   const meta = status === "running" ? "" : status === "pending" ? t(AWAITING) : escapeHtml(stepText(step.result || step.note));
   let body = "",
     more = "";
-  // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头
-  if (status === "pending")
+  // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头；已摆在请示条上的不再摊第二份
+  if (status === "pending" && inApprovalBar(step)) body = "";
+  else if (status === "pending" && step.gate) body = keepGateHtml(step, !gist);
+  else if (status === "pending")
     body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre>${sandboxWhyHtml(step)}<div class="tool-approve"><button type="button" data-approve="run">${t(`运行`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button><button type="button" data-approve="auto" title="${t(`径行：此对话中后续指令不再询问`)}">${t(`径行`)}</button></div>`;
   else if (step.diff) {
     const diff = splitDiffHtml(step.diff.old, step.diff.new, { limit: step.full ? Infinity : DIFF_SHOW_ROWS, wrap: !!step.full });
@@ -187,11 +191,12 @@ function workStepHtml(step, title) {
     if (out.clipped) more = t`展开全部 · ${out.total} 行`;
     else if (step.full && out.total > STEP_SHOW_LINES) more = t`只看前 ${STEP_SHOW_LINES} 行`;
   } else if (step.note && !command) body = `<div class="tool-note">${escapeHtml(stepText(step.note))}</div>`;
+  if (gist && title && status !== "pending") body = `<pre class="tool-output tool-code">${escapeHtml(title)}</pre>${body}`;
   if (more) body += `<button type="button" class="tool-more" data-step-more>${more}</button>`;
   const foldable = !!body && status !== "pending",
     openByDefault = status !== "error" && (!!step.diff || step.name === "list_files"),
     folded = foldable && (step.expanded === undefined ? !openByDefault : !step.expanded);
-  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}${step.readOnly ? " is-read-only" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? t("展开输出") : t("收起输出")}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title${command ? " tool-cmd" : ""}" title="${escapeHtml(title)}">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || t("执行失败")) : ""}">${meta}</span>${stepStateHtml(status)}</div>${body}</div>`;
+  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}${step.readOnly ? " is-read-only" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? t("展开输出") : t("收起输出")}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title${command && !gist ? " tool-cmd" : ""}" title="${escapeHtml(title)}">${escapeHtml(gist || title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || t("执行失败")) : ""}">${meta}</span>${stepStateHtml(status)}</div>${body}</div>`;
 }
 // 步骤有了变动（入册、跑完、请示、帮手有进展）：照这一答此刻的样子重画，工作条与差遣面板跟着更新
 /** @param {Message} assistant */

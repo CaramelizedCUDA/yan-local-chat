@@ -42,14 +42,14 @@ defineTool({
     const answers = await askApproval(step, ctx);
     if (!Array.isArray(answers)) {
       step.skipped = true;
-      return { ok: false, content: t("用户没有作答。请按你的最佳判断继续，并在正文里说明你做了什么假设。"), display: "未作答" };
+      return { ok: false, content: t("用户没有作答。请按你的最佳判断继续，并在正文里说明你做了什么假设。"), display: "" };
     }
     step.answers = answers;
     step.note = questions.map((q, i) => `${q.header || q.question}：${answers[i] || "（未答）"}`).join("；");
     return {
       ok: true,
       content: `${questions.map((q, i) => `${q.question}\n→ ${answers[i] || t("（未答）")}`).join("\n\n")}${missing ? t`\n\n（有 ${missing} 题没给够选项，只能由用户自填；下次每题给 2–4 个选项。）` : ""}`,
-      display: "已作答"
+      display: ""
     };
   }
 });
@@ -75,10 +75,10 @@ function askStepHtml(step) {
       status === "pending"
         ? t("待作答")
         : status === "skipped"
-          ? escapeHtml(stepText(step.result) || t("未作答"))
+          ? escapeHtml(stepText(step.result))
           : status === "error"
             ? escapeHtml(stepText(step.result) || t("失败"))
-            : escapeHtml(stepText(step.result) || t("已作答"));
+            : escapeHtml(stepText(step.result));
   const body =
     status === "done" && step.answers
       ? `<div class="tool-note">${escapeHtml(step.note || "")}</div>`

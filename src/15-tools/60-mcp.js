@@ -237,10 +237,23 @@ async function runMcpTool(step, server, tool, args, ctx) {
   if (!config || !spec || !presetAllows(presetOf(ctx.conversation), /** @type {Tool} */ ({ server }))) return mcpUnknown(server, tool);
   step.title ||= spec.title || tool;
   step.code = JSON.stringify(args, null, 2);
-  const ask = !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
+  // 守的关口刚批过这一步（见 keepHook）：不再另问
+  const ask =
+    !step.granted && !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
   if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
-    return { ok: false, content: prompt("assistant.declined"), display: "已跳过" };
+    return { ok: false, content: prompt("assistant.declined"), display: "" };
+  }
+  // 审而后行里的写操作：开了审查就交它判（见 03-review.js）；游目的浏览器只审可能把东西带出去的那几样
+  if (reviewOn(ctx.conversation)) {
+    const why =
+      server === STAGE_SERVER
+        ? stageReviewWhy(tool, args, ctx.conversation)
+        : !mcpReadOnly(spec) && !(config.autoApprove || []).includes(tool)
+          ? `调外部服务 ${server} 的写操作 ${tool}`
+          : "";
+    const denied = why && (await reviewGate(step, args, ctx, why));
+    if (denied) return denied;
   }
   const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal).finally(
     stageWatch(tool, args)
@@ -264,7 +277,9 @@ function stageResultNote(tool, args, result) {
   const said = (result.content || []).map((/** @type {any} */ item) => (item.type === "text" ? item.text : "")).join("\n");
   for (const [, name, path] of said.matchAll(/- Downloaded file (.+?) to "(.+?)"/g)) stageNoteDownload(name, path);
   const pins = tool === "browser_resize" || (tool === "browser_run_code_unsafe" && /setViewportSize\s*\(/.test(String(args.code || "")));
-  return pins && !result.isError ? `\n\n${prompt("mcp.stagePinned")}` : "";
+  if (!pins || result.isError) return "";
+  stageMarkExecutorPinned();
+  return `\n\n${prompt("mcp.stagePinned")}`;
 }
 // 结果里的图（游目截的画面之类）：原件照附件存，挂在这一步上，步骤卡里画缩略、点开即看；data: 地址交回轮次循环，随工具结果给模型看（见 attachToolImages）。
 // 名字取服务自己报的文件名（Playwright 截图会说存成了 page-….png，模型多半照它写）；回复里引这个名字，正文就画出这幅（见 renderReplyShots）

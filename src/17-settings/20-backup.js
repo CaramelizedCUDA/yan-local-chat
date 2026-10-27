@@ -1,12 +1,17 @@
 // 言 · 备份：导出与导入
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 async function exportData(includeFiles) {
-  // 备份不带密钥：模型的 API Key，MCP 配置里的环境变量与请求头（令牌多在这两处）；可选带上附件原件
+  // 备份不带密钥：模型与专司（审查、生图）的 API Key，MCP 配置里的环境变量与请求头（令牌多在这两处）；可选带上附件原件
   const mcpServers = Object.fromEntries(Object.entries(store.settings.mcpServers).map(([name, { env, headers, ...rest }]) => [name, rest]));
   /** @type {Store & { exportedAt: string, attachments?: Attachment[] }} */
   const safeStore = {
     ...store,
-    settings: { ...store.settings, mcpServers },
+    settings: {
+      ...store.settings,
+      mcpServers,
+      dutyReview: { ...store.settings.dutyReview, apiKey: "" },
+      dutyImage: { ...store.settings.dutyImage, apiKey: "" }
+    },
     profiles: store.profiles.map(profile => ({ ...profile, apiKey: "" })),
     exportedAt: now()
   };

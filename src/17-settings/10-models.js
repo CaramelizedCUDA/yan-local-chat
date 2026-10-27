@@ -5,7 +5,7 @@ const SILICONFLOW_BASE = "https://api.siliconflow.cn/v1";
 // 模型设置里摊开着的那几个（一个模型平时收成一行，点开才是整张表）
 const profileOpen = new Set();
 function modelsSettingsHtml() {
-  return `<h2>${t(`模型`)}</h2><div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">${t(`＋ 接入模型`)}</button>`;
+  return `<h2>${t(`模型`)}</h2>${usageCardHtml()}<div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">${t(`＋ 接入模型`)}</button>`;
 }
 function quotaParts(value) {
   const match = String(value ?? "")
@@ -193,14 +193,16 @@ async function handleProfileAction(profile, action, card) {
     }
   }
 }
-/** @param {Profile} profile */
-async function fetchModelList(profile) {
+/** @param {Endpoint} profile */
+/** @param {"image"} [kind] 列画图的（专司里的生图；硅基流动据此筛） */
+async function fetchModelList(profile, kind) {
   if (!String(profile.baseUrl || "").trim() && profileApi(profile) !== "chatgpt") throw Error(t("请先填写 Base URL"));
-  const data = await bridge("/api/models", { profile: profileForRequest(profile) });
+  const data = await bridge("/api/models", { profile: profileForRequest(profile), ...(kind ? { kind } : {}) });
   return [...new Set(data.models || [])].sort();
 }
 // 模型一栏：添一个模型、各张模型卡里的输入与按钮
 function bindModelSettings() {
+  bindUsageCard();
   $("#addProfile")?.addEventListener("click", () => {
     /** @type {Profile} */
     const p = {

@@ -275,8 +275,17 @@ check(
     `document.querySelector('#approvalBar .ask-q[data-q="0"] .ask-other').value === "" && document.querySelector('#approvalBar .ask-q[data-q="0"] .ask-opt[data-opt="0"]').getAttribute("aria-checked") === "true"`
   )
 );
-await evalJs(`document.querySelector('#approvalBar [data-form="next"]').click(); true`);
+// 点过选项，焦点停在那个钮上：Enter 翻到下一题，不是再点它一下把刚选的取消
+await evalJs(
+  `(b => { b.focus(); b.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); })(document.querySelector('#approvalBar .ask-q[data-q="0"] .ask-opt[data-opt="0"]')); true`
+);
 await sleep(100);
+check(
+  "Enter on a focused option goes to the next question and keeps the pick",
+  await evalJs(
+    `document.querySelector('#approvalBar').dataset.page === "1" && document.querySelector('#approvalBar .ask-q[data-q="0"] .ask-opt[data-opt="0"]').getAttribute("aria-checked") === "true"`
+  )
+);
 check(
   "next page shows the second question with submit",
   await evalJs(
@@ -353,10 +362,10 @@ check(
   askText
 );
 check(
-  "supplement was handed to the model after the tool result, marked as said mid-reply; trail step now 已递",
+  "supplement was handed to the model after the tool result, marked as said mid-reply; trail step ticked",
   askText.includes("|note:［作答途中用户补充的话，仍是这一答］补一句：ASK 顺便看看卷宗") &&
     (await evalJs(
-      `(s => s.dataset.status === "done" && s.querySelector(".tool-meta").textContent === "已递")(document.querySelector('#messages .tool-step-note'))`
+      `(s => s.dataset.status === "done" && s.querySelector(".tool-meta").textContent === "")(document.querySelector('#messages .tool-step-note'))`
     )),
   askText
 );

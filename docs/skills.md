@@ -1,6 +1,6 @@
 # 技能
 
-[← 文档目录](README.md)
+[← 文档目录](README.md) · [English](en/skills.md)
 
 一份技能是一段用到才看的做法：名字、何时用、正文。它存作一个目录，里面有一个 `SKILL.md`，头上用 YAML 写 `name` 与 `description`（做什么、何时用），正文写怎么做，同目录可另附参考文档、模板与脚本。写法与 Claude Code 的 skills 相同，现成的技能拷进来即可用。
 

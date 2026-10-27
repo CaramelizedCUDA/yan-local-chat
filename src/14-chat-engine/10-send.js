@@ -274,7 +274,7 @@ async function deliverSupplements(job, history, budget, host, options = {}) {
     mark.at = target.content.length;
     mark.rat = String(target.reasoning || "").length;
     mark.status = "done";
-    mark.result = steer ? "已递 · 引路" : "已递";
+    mark.result = steer ? "引路" : "";
   }
   // 递出去就立刻打勾。不补这一下，纯文字作答里没有下一个工具轮来顺带重画，
   // 那枚「待寄」会一直转到整答写完——模型早读到了，页面上还像没送出去

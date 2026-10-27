@@ -178,7 +178,7 @@ defineEmbed({ name: "math", mount: root => void renderPendingMath(root) });
 // 原件本就作附件挂在那一步上（见 mcpResultImages），不另存；引的不是这一答的画面，照旧当卷宗里的文件
 /** @param {Element} root */
 function renderReplyShots(root) {
-  const refs = root.querySelectorAll?.(".markdown [data-file]") || [];
+  const refs = root.querySelectorAll?.(":is(.markdown, .trail-note, .sub-report) [data-file]") || [];
   if (!refs.length) return;
   const c = currentConversation(),
     messages = c ? everyMessage(c) : [];

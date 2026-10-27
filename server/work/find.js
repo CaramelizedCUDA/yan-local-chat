@@ -11,7 +11,7 @@ const { decodeText } = require("./text.js");
 const WORK_LIST_LIMIT = 300;
 
 module.exports = function createFind(work) {
-  const { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox } = work;
+  const { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, storeRoot } = work;
   // 极简 glob：**/ 跨目录（末尾的 ** 是其下一切）、* 不跨目录、? 单字符、{a,b} 任一；没有 / 的模式只匹配文件名
   function globToRegExp(pattern) {
     const text = String(pattern || "")
@@ -149,6 +149,7 @@ module.exports = function createFind(work) {
     // 搜一件：rel 是它相对于搜索起点的路径（glob 与沙箱筛查按它认）
     const scanFile = async (full, rel) => {
       if (boxed && sandbox.screenPath(rel)) return; // 沙箱不借检索带出机密文件
+      if (sandbox.screenStorePath(full, storeRoot())) return; // 存储根的配置与登录文件，不论档位
       if (++scanned > SEARCH_FILE_LIMIT) {
         truncated = limited = true;
         return;

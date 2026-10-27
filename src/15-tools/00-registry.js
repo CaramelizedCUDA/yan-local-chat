@@ -53,6 +53,7 @@ const MIN_TOOL_STATUS_MS = 240;
 const TOOL_GROUPS = {
   web: t("联网"),
   compute: t("计算"),
+  image: t("生图"),
   work: t("指令与文件"),
   docs: t("翻文档"),
   ask: t("请示"),
@@ -152,9 +153,16 @@ async function runTool(step, ctx) {
       content: t`调用 ${step.name} 的参数不合要求：${problems.join("；")}。这件工具收的参数：${toolSchemaHint(step.name)}；实际收到的键：${Object.keys(parsed.args).join("、") || t("（无）")}${parsed.truncated ? t("\n（参数 JSON 不完整，可能是输出被截断）") : ""}\n\n收到的原文（前 300 字）：${step.arguments.slice(0, 300)}`,
       display: "参数不合要求"
     };
+  // 给人看的一句（工具参数里的 description）：请示条与行迹题头用它，守的关口在工具跑之前就问，所以这里先记下
+  if (toolSpec(step.name)?.parameters?.properties?.description && typeof args.description === "string" && args.description.trim())
+    step.gist = args.description.trim();
   try {
-    // 意里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）
-    return (await keepHook(step, args, ctx)) || (await tool.run(step, args, ctx));
+    // 意里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）；
+    // 审而后行里规则标疑的，再交专司的审查模型判（见 03-review.js）
+    const stopped = (await keepHook(step, args, ctx)) || (await reviewHook(step, args, ctx));
+    if (stopped) return stopped;
+    const outcome = await tool.run(step, args, ctx);
+    return step.reviewed?.ok ? { ...outcome, display: [outcome.display, "审准"].filter(Boolean).join(" · ") } : outcome;
   } catch (error) {
     if (error.name === "AbortError") throw error;
     const message = String(error.message || error);
@@ -214,7 +222,7 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
       step.cached = true;
       outcome = structuredClone(cached.outcome);
       outcome.content = t`（与本答先前一次同样的调用，结果照搬）\n${outcome.content}`;
-      outcome.display = `复用 · ${outcome.display}`;
+      outcome.display = ["复用", outcome.display].filter(Boolean).join(" · ");
     } else {
       outcome = await runTool(step, ctx);
       // 动过外头的（写了文件、跑了指令、调了接口）：先前查到的可能已经不是那样，一概作废

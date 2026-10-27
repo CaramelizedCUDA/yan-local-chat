@@ -29,11 +29,14 @@ check(
 await evalJs(
   `document.querySelector("#welcomeInput").value = "帮我打个招呼"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
 );
-await waitFor(`!!document.querySelector('.tool-step[data-status="pending"] [data-approve="run"]')`);
+await waitFor(
+  `!!document.querySelector('#approvalBar [data-approve="run"]') && !!document.querySelector('.tool-step[data-status="pending"]')`
+);
 check(
-  "approval card shown with full command",
-  (await evalJs(`document.querySelector('.tool-step[data-status="pending"] .tool-cmd-preview')?.textContent`)) ===
-    "Write-Output '你好，世界'"
+  "the pending row only marks 待你定夺; the bar carries the command and buttons",
+  await evalJs(
+    `(s => !s.querySelector("[data-approve], .tool-cmd-preview") && s.querySelector(".tool-meta").textContent === "待你定夺")(document.querySelector('.tool-step[data-status="pending"]'))`
+  )
 );
 check("tool stack forced open", await evalJs(`document.querySelector(".tool-stack").open`));
 check("work strip leaves 等待确认 to the approval bar", await evalJs(`!document.querySelector("#helperBar .work-notice")`));
@@ -113,7 +116,7 @@ const step1 = await evalJs(
 );
 check(
   "step completed with output",
-  step1.status === "done" && /^完成 · /.test(step1.meta) && step1.output.includes("你好，世界"),
+  step1.status === "done" && /^[\d.]+s/.test(step1.meta) && step1.output.includes("你好，世界"),
   JSON.stringify(step1)
 );
 const text1 = await evalJs(`document.querySelector(".message.assistant .assistant-block > .markdown").textContent`);
@@ -131,13 +134,15 @@ check("auto title applied", (await evalJs(`document.querySelector("#chatTitle").
 await evalJs(
   `document.querySelector("#chatInput").value = "再来一次"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
-await waitFor(`document.querySelectorAll('.tool-step[data-status="pending"]').length === 1`);
-await evalJs(`document.querySelector('.tool-step[data-status="pending"] [data-approve="skip"]').click(); true`);
+await waitFor(
+  `document.querySelectorAll('.tool-step[data-status="pending"]').length === 1 && !!document.querySelector('#approvalBar [data-approve="skip"]')`
+);
+await evalJs(`document.querySelector('#approvalBar [data-approve="skip"]').click(); true`);
 await waitFor(`[...document.querySelectorAll('.message.assistant')].at(-1)?.dataset.status === "complete"`);
 const step2 = await evalJs(
   `(s => ({ status: s.dataset.status, meta: s.querySelector(".tool-meta").textContent }))([...document.querySelectorAll(".tool-step")].at(-1))`
 );
-check("skipped step state", step2.status === "skipped" && step2.meta === "已跳过", JSON.stringify(step2));
+check("skipped step state", step2.status === "skipped" && step2.meta === "", JSON.stringify(step2));
 check(
   "model told about skip",
   (await evalJs(`[...document.querySelectorAll(".message.assistant .markdown")].at(-1).textContent`)).includes("被跳过")

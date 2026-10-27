@@ -16,7 +16,7 @@ const createFiles = require("./files.js");
 const createFind = require("./find.js");
 const createIntent = require("./intent.js");
 
-module.exports = function createWork({ archiveHome, workHome, toolEnv, playable }) {
+module.exports = function createWork({ archiveHome, workHome, storeRoot = () => "", toolEnv, playable }) {
   // ---- 执事模式：给模型一个工作目录，能跑指令、读写文件 ----
   // 只做四件事：跑一条指令、写文件、读文件、列目录。路径默认限定在工作目录之内（页面放开后绝对路径可指向目录之外）；指令在工作目录里用本机 shell 执行。
   // 不做进程隔离——这是用户自己的机器，页面上每条指令都看得见，并按问而后行 / 审而后行 / 径行三档处理。
@@ -50,6 +50,9 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
     const boxed = strictBox(body),
       target = resolveTarget(workdir, body.path, body.roam === true && !boxed);
     await assertReachable(workdir, target);
+    // 存储根里的配置与登录文件：不论档位与沙箱（见 server/sandbox.js 的 screenStorePath）
+    const guarded = sandbox.screenStorePath(target, storeRoot());
+    if (guarded) throw Error(guarded);
     if (boxed) {
       const why = sandbox.screenPath(relPath(workdir, target), { write });
       if (why) throw Error(why);
@@ -119,12 +122,18 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
         command = String(body.command || "").trim();
       if (!command) throw Error("指令不能为空");
       if (!fs.existsSync(workdir)) throw Error("工作目录已不存在，请重新发送以重建，或另起对话");
-      const boxed = body.sandbox === true;
-      if (boxed) {
+      const guarded = sandbox.screenStoreCommand(command, storeRoot(), workdir);
+      if (guarded) throw Error(guarded);
+      const boxed = body.sandbox === true,
+        // 审而后行里规则拦下、审查模型照用户的原话准了的这一条：不再过宽的沙箱与审查规则（存储根那一道、调桥接与藏字仍守）
+        reviewed = body.permission === "review" && body.reviewed === true;
+      const unreviewable = reviewed && sandbox.screenUnreviewable(command);
+      if (unreviewable) throw Error(`审查拒绝：${unreviewable}`);
+      if (boxed && !reviewed) {
         const why = looseTier(body) ? sandbox.screenLoose(command) : sandbox.screenCommand(command, workdir);
         if (why) throw Error(why);
       }
-      if (body.permission === "review") {
+      if (body.permission === "review" && !reviewed) {
         const why = sandbox.screenAutoReview(command);
         if (why) throw Error(why);
       }
@@ -188,13 +197,21 @@ module.exports = function createWork({ archiveHome, workHome, toolEnv, playable 
       sendJson(res, 400, { error: failed(error) });
     }
   }
-  // 问而后行：发指令前先问一声严的沙箱会不会拦——会拦的照样请示，请示条上写明原因，用户批了这一条就出沙箱跑
+  // 发指令前先问一声会不会拦。问而后行（没说档位的也算）问严的沙箱——会拦的照样请示，用户批了这一条就出沙箱跑；
+  // 审而后行问宽的沙箱与审查规则——会拦的交专司里的审查模型再判（见 src/15-tools/03-review.js），准了即带 reviewed 来跑；
+  // 审查也不放行的（调桥接、藏字）标 hard，不必去问
   const handleWorkScreen = jsonRoute(async body => {
-    const workdir = resolveWorkdir(body.workdir);
-    return { why: sandbox.screenCommand(String(body.command || ""), workdir) };
+    const workdir = resolveWorkdir(body.workdir),
+      command = String(body.command || "");
+    if (body.permission === "review")
+      return {
+        why: (body.sandbox === true && sandbox.screenLoose(command)) || sandbox.screenAutoReview(command),
+        hard: !!sandbox.screenUnreviewable(command)
+      };
+    return { why: sandbox.screenCommand(command, workdir) };
   }, failed);
   // 文件、列与搜、意各一段，共用上面的落点、沙箱筛查与报错写法
-  const work = { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile };
+  const work = { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile, storeRoot };
 
   return {
     workHome,

@@ -4,6 +4,18 @@ const STORAGE_KEY = "yan-chat-v1";
 const STORAGE_META_KEY = "__yanStorage";
 const STORE_VERSION = 6;
 const NEW_DRAFT_ID = "__new__";
+/** 专司里另配的一份：缺的补上，认不得的接口换回各职的起手（审查 OpenAI 兼容、生图硅基流动） @returns {Duty} */
+function normalizeDuty(raw, api) {
+  const d = raw && typeof raw === "object" ? raw : {};
+  return {
+    on: d.on === true,
+    api: ["openai", "anthropic", "siliconflow"].includes(d.api) ? d.api : api,
+    baseUrl: String(d.baseUrl || ""),
+    apiKey: String(d.apiKey || ""),
+    model: String(d.model || ""),
+    modelList: Array.isArray(d.modelList) ? d.modelList.map(String) : []
+  };
+}
 /** @type {Store} */
 const defaultStore = {
   version: STORE_VERSION,
@@ -18,6 +30,8 @@ const defaultStore = {
     presetId: "",
     groups: [],
     autoTitle: true,
+    dutyReview: normalizeDuty(null, "openai"),
+    dutyImage: normalizeDuty(null, "siliconflow"),
     pendingWorkdir: "",
     collapsedRepos: [],
     commandPolicyDefault: "ask",
@@ -55,6 +69,8 @@ function normalizeStoreData(value) {
     // 不再有的东西：浏览器内的旧卷宗、旧版的对话 / 卷宗目录（都已迁进存储根）
     delete data.library;
     const settings = { ...defaultStore.settings, ...(data.settings || {}) };
+    settings.dutyReview = normalizeDuty(settings.dutyReview, "openai");
+    settings.dutyImage = normalizeDuty(settings.dutyImage, "siliconflow");
     delete settings.chatsDir;
     delete settings.archiveDir;
     delete settings.reasoning;

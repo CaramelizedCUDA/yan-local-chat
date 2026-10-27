@@ -529,7 +529,9 @@ async function extractZipDocumentText(extension, bytes) {
   if (extension === "xlsx")
     return xlsxMarkdown(
       await unzipSelected(bytes, name =>
-        /^xl\/(sharedStrings|workbook)\.xml$|^xl\/_rels\/workbook\.xml\.rels$|^xl\/(worksheets|drawings)\/(_rels\/)?(sheet|drawing)\d+\.xml(\.rels)?$/.test(name)
+        /^xl\/(sharedStrings|workbook)\.xml$|^xl\/_rels\/workbook\.xml\.rels$|^xl\/(worksheets|drawings)\/(_rels\/)?(sheet|drawing)\d+\.xml(\.rels)?$/.test(
+          name
+        )
       )
     );
   const entries = await unzipSelected(bytes, name => name === "content.xml");

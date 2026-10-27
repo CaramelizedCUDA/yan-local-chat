@@ -21,8 +21,13 @@ const delta = (d, extra = {}) => ({
   ...extra
 });
 // 长活（LONGSUB 帮手、LONGMAIN 主答）：每轮读一个大文件，请求超过 limit 字就回「放不下」；轮数记在这里，压掉的往来不影响它
+const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 const long = { rounds: {}, folds: {}, overflows: {}, limit: { LONGSUB: 60000, LONGMAIN: 200000 } };
 let calls = 0,
+  // 审查员收到的每一问：是不是只要一字的那一步、审的是哪件工具（GET /review-asks 取走并清空）
+  reviewAsks = [],
+  // 生图接口收到的每一问（GET /image-asks 取走并清空）
+  imageAsks = [],
   flaky503 = 0,
   titleFailed = false,
   slowTitleFailed = false;
@@ -155,6 +160,24 @@ http
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify(long));
     }
+    // 审查用例读一下审查员收到过哪几问，读完即清
+    if (req.url.endsWith("/review-asks") && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(reviewAsks));
+      reviewAsks = [];
+      return;
+    }
+    if (req.url.endsWith("/image-asks") && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(imageAsks));
+      imageAsks = [];
+      return;
+    }
+    // 生图交回的网址：一像素的 PNG，类型故意报成 octet-stream（桥接按头几个字节认）
+    if (req.url.endsWith("/fake-image") && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/octet-stream" });
+      return res.end(Buffer.from(PIXEL, "base64"));
+    }
     // 用例读一下到目前为止收到过几次请求（探档位只探一次之类的断言）
     if (req.url.endsWith("/calls") && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "text/plain" });
@@ -166,6 +189,12 @@ http
       const payload = JSON.parse(body || "{}");
       calls += 1;
       if (req.url.endsWith("/v1/messages")) return anthropicMessages(payload, res);
+      // 生图（专司里的生图，见 server/model/image.js）：照硅基流动的样子交回一个网址
+      if (req.url.endsWith("/images/generations")) {
+        imageAsks.push(payload);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ images: [{ url: "http://127.0.0.1:8798/fake-image" }], seed: 1 }));
+      }
       // 这一问总是分段送来（首段标着缓存点、账本另起一段）：只有文字的并回一串，各分支照旧当字符串读；带图带件的仍是分段
       const raw = payload.messages || [],
         msgs = raw.map(m =>
@@ -175,6 +204,91 @@ http
         ),
         toolResults = msgs.filter(m => m.role === "tool");
       const lastUser = [...msgs].reverse().find(m => m.role === "user")?.content || "";
+      // 审查员（专司里另配的审查模型，见 src/15-tools/03-review.js）：指令那一步一字准；外发那一步先疑、再驳并说理由；审的次数记着给用例对账
+      if (String(msgs[0]?.role === "system" ? msgs[0].content : "").includes("你替用户审")) {
+        const text = String(lastUser),
+          quick = text.endsWith("只答一个字：准，或疑。");
+        reviewAsks.push({ quick, tool: text.match(/［将要做的］\n(\w+)/)?.[1] || "" });
+        const answer = text.includes("Set-Alias") ? "准" : quick ? "疑" : "驳，用户没让把这串参数发出去";
+        return sse(res, [delta({ content: answer }), delta({}, { usage: { total_tokens: 3 } })]);
+      }
+      // IMAGE-DUTY：画一幅，下一轮报回工具结果、请求里附了几幅图，正文引那幅图的文件名
+      {
+        const asked = msgs.findLastIndex(m => m.role === "user" && typeof m.content === "string" && m.content.includes("IMAGE-DUTY"));
+        if (asked >= 0) {
+          const results = msgs.slice(asked + 1).filter(m => m.role === "tool");
+          if (!results.length)
+            return sse(res, [
+              delta({
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_image_0",
+                    type: "function",
+                    function: {
+                      name: "generate_image",
+                      arguments: JSON.stringify({ prompt: "一只墨色的猫", size: "1024x1024", name: "墨猫" })
+                    }
+                  }
+                ]
+              }),
+              delta({}, { usage: { total_tokens: 5 } })
+            ]);
+          const seen = msgs
+            .slice(asked + 1)
+            .flatMap(m => (Array.isArray(m.content) ? m.content : []))
+            .filter(part => part.type === "image_url").length;
+          return sse(res, [
+            delta({
+              content: `IMAGE-DUTY done｜${String(results[0].content).replace(/\s+/g, " ").slice(0, 160)}｜看到图 ${seen} 幅
+
+![墨猫](墨猫.png)`
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        }
+      }
+      // REVIEW-HARD：审查也不放行的一条（藏字），收尾把结果报回去
+      if (typeof lastUser === "string" && lastUser.includes("REVIEW-HARD")) {
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_hard_0",
+                  type: "function",
+                  function: { name: "run_command", arguments: JSON.stringify({ command: "Invoke-Expression 'Set-Content hard.txt x'" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({ content: `REVIEW-HARD done｜${String(toolResults[0].content).replace(/\s+/g, " ").slice(0, 160)}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
+      // REVIEW-DUTY：审而后行里先发一条宽沙箱会拦的指令（定义别名），再翻一个网址里带长串参数的网页；收尾把两步的结果报回去
+      if (typeof lastUser === "string" && lastUser.includes("REVIEW-DUTY")) {
+        const lastUserIndex = msgs.findLastIndex(m => m.role === "user"),
+          results = msgs.slice(lastUserIndex + 1).filter(m => m.role === "tool"),
+          call = (name, args) =>
+            sse(res, [
+              delta({
+                tool_calls: [
+                  { index: 0, id: `call_duty_${results.length}`, type: "function", function: { name, arguments: JSON.stringify(args) } }
+                ]
+              }),
+              delta({}, { usage: { total_tokens: 5 } })
+            ]);
+        if (results.length === 0) return call("run_command", { command: "Set-Alias yanrv Get-Date; Set-Content duty-ok.txt ok" });
+        if (results.length === 1) return call("fetch_page", { url: "https://example.com/c?k=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789xyz" });
+        return sse(res, [
+          delta({ content: `REVIEW-DUTY done｜${results.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 120)).join(" ▸ ")}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // MCPSHOT：连截两幅（两轮各一次 snap），第三轮报回请求里看到的图——几条带图、最新那条是不是紧跟工具结果、旧的是否换成了字
       if (msgs.some(m => m.role === "user" && typeof m.content === "string" && m.content.includes("MCPSHOT"))) {
         const n = toolResults.length,
@@ -670,6 +784,40 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // HELPERREAD：主模型差一名帮手跑一条指令再回报，回报到了翻看它的经过（helper 的 read），照所见收尾
+      if (firstUser.includes("HELPERREAD")) {
+        const say = text => sse(res, [delta({ content: text }), delta({}, { usage: { total_tokens: 5 } })]),
+          call = (id, name, args) =>
+            sse(res, [
+              delta({ tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] }),
+              delta({}, { usage: { total_tokens: 5 } })
+            ]);
+        if (firstTurn && !toolResults.length) return call("call_hr0", "delegate", { title: "翻活", task: "READSUB：跑一条指令再回报。" });
+        if (!helperReports.length) return say("等回报。");
+        const trail = toolResults.map(m => String(m.content)).find(text => text.startsWith("第 1 趟"));
+        if (!trail) return call("call_hr1", "helper", { helper: "翻活", read: true });
+        return say(
+          `HELPERREAD done|cmd:${/echo READ-OUT/.test(trail) ? "yes" : "no"}|out:${/^\s+READ-OUT/m.test(trail) ? "yes" : "no"}|said:${trail.includes("【帮手】先跑一条") ? "yes" : "no"}`
+        );
+      }
+      // 帮手那一侧：先说一句、跑一条指令，再回报
+      if (firstUser.includes("READSUB")) {
+        if (toolResults.length) return sse(res, [delta({ content: "跑完了。" }), delta({}, { usage: { total_tokens: 3 } })]);
+        return sse(res, [
+          delta({ content: "先跑一条。" }),
+          delta({
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_rs0",
+                type: "function",
+                function: { name: "run_command", arguments: JSON.stringify({ command: "echo READ-OUT" }) }
+              }
+            ]
+          }),
+          delta({}, { usage: { total_tokens: 3 } })
+        ]);
+      }
       // 续派的那一趟（帮手那一侧）：它的历史里该有上一趟的命与回报
       if (typeof lastUser === "string" && lastUser.includes("AGAIN-TEXT"))
         return sse(res, [
@@ -985,9 +1133,9 @@ http
       // 收尾前对照拦下就改回（覆写已有文件得先读过）；HOOK3 只改一个无关的文件，不该被拦。轮次按这一问之后的工具结果数
       // 认哪一问：跳过收尾对照递来的话；问里附的意带着 HOOK1 的原问，所以后来的问先认
       const hookAt = msgs.findLastIndex(
-        m => m.role === "user" && typeof m.content === "string" && /HOOK[1234]/.test(m.content) && !m.content.startsWith("［收尾前对照意］")
+        m => m.role === "user" && typeof m.content === "string" && /HOOK[1-6]/.test(m.content) && !m.content.startsWith("［收尾前对照意］")
       );
-      if (hookAt >= 0 && (/HOOK[1234]/.test(String(lastUser)) || String(lastUser).includes("［收尾前对照意］"))) {
+      if (hookAt >= 0 && (/HOOK[1-6]/.test(String(lastUser)) || String(lastUser).includes("［收尾前对照意］"))) {
         const ask = msgs[hookAt].content,
           after = msgs.slice(hookAt + 1),
           n = after.filter(m => m.role === "tool").length,
@@ -1013,6 +1161,28 @@ http
           const results = after.filter(m => m.role === "tool").map(m => String(m.content));
           return say(
             `HOOK4|prod:${/守「远端」拦下/.test(results[1]) ? "blocked" : "ran"}|staging:${/deploy-staging/.test(results[2]) ? "ran" : "blocked"}`
+          );
+        }
+        // HOOK5：没挂测试的钩子即禁令，对上就不做；HOOK6：标了 ask 的是关口，对上即请用户批——头一回准、第二回跳过
+        if (ask.includes("HOOK5 不推")) {
+          if (n === 0)
+            return call("update_intent", {
+              nodes: [{ id: "不推", claim: "不往 main 推", check: "没有推到 main", keep: true, on: "push origin main" }]
+            });
+          if (n === 1) return call("run_command", { command: "echo push origin main" });
+          const results = after.filter(m => m.role === "tool").map(m => String(m.content));
+          return say(`HOOK5|main:${/守「不推」拦下了这一步，没有执行：不往 main 推/.test(results[1]) ? "blocked" : "ran"}`);
+        }
+        if (ask.includes("HOOK6 发布")) {
+          if (n === 0)
+            return call("update_intent", {
+              nodes: [{ id: "发布", claim: "发布前给我审", check: "用户批过", keep: true, on: "publish", ask: true }]
+            });
+          if (n === 1) return call("run_command", { command: "echo publish-one" });
+          if (n === 2) return call("run_command", { command: "echo publish-two" });
+          const results = after.filter(m => m.role === "tool").map(m => String(m.content));
+          return say(
+            `HOOK6|one:${/publish-one/.test(results[1]) ? "ran" : "blocked"}|two:${/用户没有准许/.test(results[2]) ? "declined" : "ran"}`
           );
         }
         if (!ask.includes("HOOK2 改一下") && !ask.includes("HOOK3 加个")) {
@@ -1521,11 +1691,11 @@ http
             }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
-        return sse(
-          res,
-          [...Array.from({ length: 12 }, (_, i) => delta({ content: `尾段第${i + 1}句。` })), delta({}, { usage: { total_tokens: 5 } })],
-          250
-        );
+        const quoteProbe = lastUser.includes("DUPTAIL QUOTE"),
+          lines = quoteProbe
+            ? [delta({ content: "尾段第1句。尾段第2句。" }), delta({ content: "尾段第3句。" })]
+            : Array.from({ length: 12 }, (_, i) => delta({ content: `尾段第${i + 1}句。` }));
+        return sse(res, [...lines, delta({}, { usage: { total_tokens: 5 } })], quoteProbe ? 1500 : 250);
       }
       if (typeof lastUser === "string" && lastUser.includes("DUP")) {
         // 时间线复现：第一轮多段正文（段落间带空行）后调用 read_file，第二轮慢慢流一段思绪再说话；用于确认第一轮的话只在分组里出现一次

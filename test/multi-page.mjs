@@ -38,7 +38,7 @@ await waitFor(`!!document.querySelector('[data-conversation="multi-1"]')`, 8000)
 const status = id => evalJs(`__yanState().conversations.find(c => c.id === "${id}")?.messages[1]?.status`);
 check("opening the page does not mark an answer still being written elsewhere as interrupted", (await status("multi-1")) === "streaming");
 await evalJs(`document.querySelector('[data-conversation="multi-1"] .history-open').click(); true`);
-await sleep(300);
+await waitFor(`document.querySelector("#chatSend").title === "另一个页面正在这段对话里作答，这里跟着看"`, 8000).catch(() => {});
 check(
   "the status shows it is being answered elsewhere",
   (await evalJs(`document.querySelector("#chatSend").title`)) === "另一个页面正在这段对话里作答，这里跟着看"

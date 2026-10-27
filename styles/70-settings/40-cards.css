@@ -141,11 +141,14 @@
   text-align: left;
   cursor: pointer;
 }
-.card.pickable:hover {
+.card.pickable:not([aria-disabled="true"]):hover {
   border-color: var(--ink-3);
 }
 .card.pickable[aria-disabled="true"] {
   cursor: default;
+}
+.card.pickable[aria-disabled="true"][data-state="done"] .env-pack-word {
+  color: var(--ink-3);
 }
 .card-tick {
   flex: none;

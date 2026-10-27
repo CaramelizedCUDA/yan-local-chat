@@ -1,7 +1,7 @@
 // 差遣（子 Agent）：主模型把子任务交给帮手，帮手用同样的工具另起一段跑完并回报；步骤嵌在差遣卡片里，改动计入本答，主模型没读过的文件仍不能直接改
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { connect, check, sleep, PAGE, WORK } from "./lib.mjs";
+import { connect, check, usageOf, sleep, PAGE, WORK } from "./lib.mjs";
 const { bundleStyles } = createRequire(import.meta.url)("../build.js");
 const { send, evalJs, waitFor, shot, close } = await connect();
 mkdirSync(WORK + "/src", { recursive: true });
@@ -278,4 +278,6 @@ check(
   after?.folds.length > 0 && after.folds.every(f => f.startsWith("closed:")),
   JSON.stringify(after?.folds)
 );
+const used = await usageOf("helper");
+check("帮手花的墨记进用量簿的「帮手」", used > 0, String(used));
 close();

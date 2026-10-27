@@ -127,7 +127,7 @@
   padding-left: 10px;
   border-left: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   color: var(--accent);
-  font: var(--fs-note)/1.7 var(--title);
+  font: var(--fs-note) / 1.7 var(--title);
 }
 .guide-note b {
   display: block;

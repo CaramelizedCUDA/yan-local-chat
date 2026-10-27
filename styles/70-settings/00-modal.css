@@ -41,5 +41,5 @@
 .settings-nav-foot {
   padding: 0 10px;
   color: var(--ink-3);
-  font: var(--fs-note)/1.7 var(--title);
+  font: var(--fs-note) / 1.7 var(--title);
 }

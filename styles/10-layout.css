@@ -498,8 +498,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   height: 430px;
   pointer-events: none;
   opacity: 0.045;
-  background:
-    radial-gradient(ellipse at 50% 65%, transparent 43%, var(--ink) 44% 45%, transparent 46%),
+  background: radial-gradient(ellipse at 50% 65%, transparent 43%, var(--ink) 44% 45%, transparent 46%),
     radial-gradient(ellipse at 32% 55%, transparent 39%, var(--ink) 40% 41%, transparent 42%);
   transform: rotate(-12deg);
 }

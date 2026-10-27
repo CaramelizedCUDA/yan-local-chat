@@ -1,0 +1,148 @@
+/* 模型栏顶上的用量卡：一年一卷，一日一点墨（设计稿/116 乙）。开合同模型卡；上接题头的墨线，下与模型列表共用那一道线 */
+.usage-card {
+  border-bottom: 0;
+}
+.usage-body {
+  padding: 0 0 16px 17px;
+}
+.usage-body:empty {
+  min-height: 120px;
+}
+/* 年份：题字，当前那年墨重；只一年时也写着，是这一卷的题 */
+.usage-years {
+  display: flex;
+  gap: 14px;
+  margin: 0 0 8px;
+  color: var(--ink-3);
+  font: var(--fs-small) var(--title);
+}
+.usage-years button {
+  color: inherit;
+  font: inherit;
+  transition: color var(--dur-quick);
+}
+.usage-years button:hover {
+  color: var(--ink-2);
+}
+.usage-years [aria-current="true"] {
+  color: var(--ink);
+}
+.usage-chart {
+  position: relative;
+}
+.usage-months {
+  position: relative;
+  height: 16px;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--title);
+}
+.usage-months span {
+  position: absolute;
+  white-space: nowrap;
+}
+.usage-chart svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.usage-dust {
+  fill: var(--ink);
+  fill-opacity: 0.2;
+}
+.usage-dust.later {
+  fill-opacity: 0.08;
+}
+/* 今天：一圈朱（朱只给「此刻」） */
+.usage-today {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.1;
+}
+.usage-chart [data-usage-day] {
+  fill: transparent;
+}
+/* 浮签同全局的纸签：方角、发丝边、极淡的影，暗色里底用 paper-3 */
+.usage-tip {
+  position: absolute;
+  z-index: 2;
+  padding: 7px 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--paper);
+  box-shadow: 0 3px 10px rgba(61, 49, 32, 0.1);
+  font-size: var(--fs-note);
+  line-height: 1.75;
+  white-space: nowrap;
+  pointer-events: none;
+}
+:root[data-theme="dark"] .usage-tip {
+  background: var(--paper-3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+.usage-tip strong {
+  display: block;
+  margin-bottom: 2px;
+  font: 600 var(--fs-note) var(--title);
+}
+.usage-tip small {
+  margin-left: 6px;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--body);
+}
+.usage-tip span {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--ink-2);
+}
+.usage-tip span.zero {
+  color: var(--ink-3);
+  opacity: 0.6;
+}
+.usage-tip em {
+  font-style: normal;
+}
+.usage-tip i,
+.usage-legend i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 1px;
+  vertical-align: 0.5px;
+}
+/* 图例兼开关，同分段钮：字＋丝栏相隔，点中的墨重、其余淡下；数是这一卷的合计 */
+.usage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
+  margin-top: 12px;
+}
+.usage-legend button {
+  padding: 0 12px;
+  color: var(--ink-3);
+  font: var(--fs-note) var(--body);
+  transition:
+    color var(--dur-quick),
+    opacity var(--dur-quick);
+}
+.usage-legend button:first-child {
+  padding-left: 0;
+}
+.usage-legend button + button {
+  background: linear-gradient(var(--line), var(--line)) left center / 1px 11px no-repeat;
+}
+.usage-legend button:hover {
+  color: var(--ink-2);
+}
+.usage-legend b {
+  margin-left: 6px;
+  font-weight: normal;
+}
+.usage-legend [aria-pressed="true"] {
+  color: var(--ink);
+}
+.usage-legend.filtered button:not([aria-pressed="true"]) {
+  opacity: 0.55;
+}
