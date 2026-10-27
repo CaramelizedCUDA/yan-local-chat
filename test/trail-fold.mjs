@@ -144,6 +144,8 @@ await fetch(PAGE + "api/chats/save", {
 const { send, evalJs, waitFor, shot, close } = await connect();
 await send("Page.navigate", { url: PAGE });
 await waitFor(`!!document.querySelector('[data-conversation="trail-fold"]')`, 10000);
+// 侧栏读完磁盘就画出来，点它的处理要等问过租约才绑上（bindEvents）：CI 的机器慢，先点就白点
+await waitFor(`typeof document.querySelector("#openLibrary")?.onclick === "function"`, 8000);
 await evalJs(`document.querySelector('[data-conversation="trail-fold"] .history-open').click(); true`);
 await waitFor(`!!document.querySelector(".message.assistant .tool-stack[open]")`, 8000);
 await sleep(600);
