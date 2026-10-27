@@ -215,10 +215,11 @@ function renderReplyShots(root) {
       shot.innerHTML = `<img src="${escapeHtml(archiveFileUrl(target.path, false, target.root))}" alt="${alt}">`;
       shot.querySelector("img").onerror = () => shot.replaceWith(words);
     }
-    // 整页长截图（高过宽的两倍）从顶上取景，点开看全幅；别的整幅见（见 40-markdown.css）
+    // 整页长截图（高过宽的两倍）从顶上取景，点开看全幅；别的整幅见。横幅在一叠里斜开得少（见 40-markdown.css）
     shot.querySelector("img").addEventListener("load", e => {
       const img = /** @type {HTMLImageElement} */ (e.target);
       shot.classList.toggle("long", img.naturalHeight > img.naturalWidth * 2);
+      shot.classList.toggle("wide", img.naturalWidth > img.naturalHeight * 1.2);
     });
     // 图换成那幅；链接留着字（点了也是看图），画面接在后面
     if (ref.tagName === "IMG") ref.replaceWith(shot);
