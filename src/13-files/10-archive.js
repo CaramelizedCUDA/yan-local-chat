@@ -14,15 +14,21 @@ let archiveEntries = null,
   libraryDir = "",
   // 正在就地改名的那一项（文件或夹的路径）；空即没有
   libraryRenaming = "";
-// 页面这头（人）收入、改名、挪动的件与夹：路径 → 何时。答末认成品照的是开工前后卷宗的差，作答途中人收进来的也在差里，得凭这份剔掉
-/** @type {Map<string, number>} */
-const archiveOwnWrites = new Map();
-function noteOwnArchiveWrite(path) {
-  if (path) archiveOwnWrites.set(path, Date.now());
+// 卷宗里谁动过的件与夹：路径 → 何时、谁。谁空着是人在页面上收入、改名、挪动的，是对话 id 的是那段对话里的工具写的（生图、写文件、下载）。
+// 答末认成品照的是开工前后卷宗的差：作答途中人收进来的、别的对话同时写出的也在差里，得凭这份剔掉
+/** @type {Map<string, { at: number, by: string }>} */
+const archiveWrites = new Map();
+function noteArchiveWrite(path, by = "") {
+  if (path) archiveWrites.set(path, { at: Date.now(), by });
 }
-/** 这件（或它所在的夹）是不是 since 之后人在页面上放进来、挪过来的 */
-function ownArchiveWriteSince(path, since) {
-  for (const [own, at] of archiveOwnWrites) if (at >= since && (path === own || path.startsWith(`${own}/`))) return true;
+// 工具在这段对话的落脚处写了件：言的落脚处就是卷宗，记下是这段对话写的（行写在自己的目录里，不碰卷宗的账）
+function noteToolWrite(conversation, path) {
+  if (!isWork(conversation)) noteArchiveWrite(path, conversation.id);
+}
+/** 这件（或它所在的夹）是不是 since 之后别人放进来的：人，或 by 以外的对话 */
+function archiveWrittenByOther(path, since, by) {
+  for (const [own, write] of archiveWrites)
+    if (write.at >= since && write.by !== by && (path === own || path.startsWith(`${own}/`))) return true;
   return false;
 }
 const ARCHIVE_DRAG = "application/x-yan-archive";
@@ -268,7 +274,7 @@ async function commitLibraryRename(value) {
   if (!path || !name || name === path.split("/").pop()) return renderLibrary();
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, name }, AbortSignal.timeout(20000));
-    noteOwnArchiveWrite(moved.path);
+    noteArchiveWrite(moved.path);
     rebaseDeliverables(path, moved.path);
   } catch (error) {
     toast(t`改名失败：${String(error.message || error).slice(0, 80)}`);
@@ -302,7 +308,7 @@ function dataUrlFromText(text, mime = "text/plain") {
 /** dir：落进卷宗的哪一层，缺省为根（导出、附件上的「藏」都落在根上；卷宗页上拖入的落在此刻所在的那一层） */
 async function putArchiveFile(name, data, dir = "", root = archiveDir()) {
   const saved = await bridge("/api/archive/put", { root, name, data, dir }, AbortSignal.timeout(120000));
-  noteOwnArchiveWrite(saved.path);
+  noteArchiveWrite(saved.path);
   return saved;
 }
 // 答末成品条记的是路径：件挪了、改了名，或它所在的夹挪了、改了名，条子跟着改，不然就成了「已移出卷宗」
@@ -325,7 +331,7 @@ async function moveArchiveItem(path, dir) {
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
       renamed = moved.name !== path.split("/").pop();
-    noteOwnArchiveWrite(moved.path);
+    noteArchiveWrite(moved.path);
     rebaseDeliverables(path, moved.path);
     toast(t`已移入「${dir ? dir.split("/").pop() : t("卷宗")}」${renamed ? t`，同名已有，改作 ${moved.name}` : ""}`);
   } catch (error) {

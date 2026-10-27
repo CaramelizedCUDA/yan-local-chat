@@ -151,11 +151,14 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     assistant.status = "complete";
     conversation.updatedAt = now();
     if (watch.kept) void intentSettleKeeps(conversation);
-    // 言里动过文件的，卷宗目录多半有了新东西：重新翻一遍，新出的、改过的成品挂在答末，侧栏的件数跟着更新
+    // 言里动过文件的，卷宗目录多半有了新东西：重新翻一遍，新出的、改过的成品挂在答末，侧栏的件数跟着更新。
+    // 人途中收进来的、别的对话同时写出的不算（指令写出的件认不出是谁的，仍按差算）
     if (archiveBefore && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) {
       await refreshArchive();
       assistant.deliverables = (archiveEntries || [])
-        .filter(entry => archiveBefore.get(entry.path) !== entry.modifiedAt && !ownArchiveWriteSince(entry.path, archiveSince))
+        .filter(
+          entry => archiveBefore.get(entry.path) !== entry.modifiedAt && !archiveWrittenByOther(entry.path, archiveSince, conversation.id)
+        )
         .map(entry => ({ path: entry.path, name: entry.name, size: entry.size }));
       if (!assistant.deliverables.length) delete assistant.deliverables;
     }

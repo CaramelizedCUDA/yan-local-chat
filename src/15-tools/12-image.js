@@ -39,6 +39,7 @@ defineTool({
     await putAttachment({ ...meta, data }).catch(() => {});
     step.attachments = [meta];
     step.title = saved.path;
+    noteToolWrite(conversation, saved.path);
     return {
       ok: true,
       content:
