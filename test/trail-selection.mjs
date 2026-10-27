@@ -60,6 +60,8 @@ await evalJs(
 );
 await send("Page.navigate", { url: PAGE });
 await waitFor(`!!document.querySelector('[data-conversation="trail-selection"]')`);
+// 侧栏读完磁盘就画出来，点它的处理要等问过租约才绑上（bindEvents）：先点就白点
+await waitFor(`typeof document.querySelector("#openLibrary")?.onclick === "function"`, 8000);
 await evalJs(`document.querySelector('[data-conversation="trail-selection"] .history-open').click(); true`);
 await waitFor(`!!document.querySelector('#messages .trail-note p')`);
 await sleep(600);
@@ -169,5 +171,18 @@ check("completed final text offers a note", await select("#messages .assistant-b
 check(
   "note button returns after completion",
   await evalJs(`!document.querySelector('#quoteTip [data-tip="note"]').classList.contains('hidden')`)
+);
+// 没调工具、字直接写在正文里的也一样：生成中只引用
+await evalJs(`document.querySelector('#newChat').click(); true`);
+await waitFor(`!!document.querySelector('#welcome:not(.hidden)')`);
+await evalJs(
+  `document.querySelector('#welcomeInput').value = 'SLOWTEXT 划选'; document.querySelector('#welcomeInput').dispatchEvent(new Event('input')); document.querySelector('#welcome .send-trigger').click(); true`
+);
+const liveBody = `#messages .message.assistant[data-status="streaming"] .markdown`;
+await waitFor(`document.querySelector(${JSON.stringify(liveBody)})?.textContent.includes('第2段')`, 10000);
+check("streaming reply text can be quoted", await select(liveBody, "第1段"));
+check(
+  "streaming reply text does not offer a note",
+  await evalJs(`document.querySelector('#quoteTip [data-tip="note"]').classList.contains('hidden')`)
 );
 close();

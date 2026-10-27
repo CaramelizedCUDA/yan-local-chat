@@ -105,7 +105,7 @@ function countOccurrences(haystack, needle) {
   for (let at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) count += 1;
   return count;
 }
-// 可引用的文字：正文、过程话、思绪与工具内容；只有收尾后稳定的文字块可以建旁注。
+// 可引用的文字：正文、过程话、思绪与工具内容。生成中的字还会挪位，只给引用（补言可带）；收尾后稳定的文字块才可建旁注，旁注记下第几块。
 const QUOTE_BODIES = ".markdown, .user-bubble, .trail-note, .reasoning-body, .tool-output, .tool-results, .tool-note, .sub-report";
 /** @returns {{ text: string, messageId: string, rect: DOMRect, occurrence?: number, part?: number, quoteOnly?: boolean } | null} */
 function selectionAnchor() {
@@ -125,16 +125,11 @@ function selectionAnchor() {
   if (!quoted || !article || text.length < 2 || quoted.closest(".message-editor")) return null;
   const rect = range.getBoundingClientRect();
   if (!rect.width && !rect.height) return null;
-  const anchor = { text: text.slice(0, 1200), messageId: article.dataset.message, rect },
-    quoteOnly =
-      !!quoted.closest(".tool-step, .tool-run") || (article.dataset.status === "streaming" && !!quoted.closest(".tool-stack-body")),
-    parts = quoteOnly || article.dataset.status === "streaming" ? [] : noteBodies(article),
+  const anchor = { text: text.slice(0, 1200), messageId: article.dataset.message, rect };
+  if (article.dataset.status === "streaming") return { ...anchor, quoteOnly: true };
+  const parts = noteBodies(article),
     part = parts.findIndex(body => body.contains(host));
-  if (part >= 0) return { ...anchor, occurrence: occurrenceBefore(parts[part], range, text), part };
-  if (quoteOnly) return { ...anchor, quoteOnly: true };
-  // 生成中仍在正文位置的字沿用原来的旁注入口；其余仅可引用。
-  const body = host.closest(".markdown, .user-bubble");
-  return body ? { ...anchor, occurrence: occurrenceBefore(body, range, text) } : { ...anchor, quoteOnly: true };
+  return part >= 0 ? { ...anchor, occurrence: occurrenceBefore(parts[part], range, text), part } : { ...anchor, quoteOnly: true };
 }
 function setupQuoteTip() {
   const tip = $("#quoteTip");
