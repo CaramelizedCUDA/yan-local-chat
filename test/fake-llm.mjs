@@ -1691,11 +1691,11 @@ http
             }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
-        return sse(
-          res,
-          [...Array.from({ length: 12 }, (_, i) => delta({ content: `尾段第${i + 1}句。` })), delta({}, { usage: { total_tokens: 5 } })],
-          250
-        );
+        const quoteProbe = lastUser.includes("DUPTAIL QUOTE"),
+          lines = quoteProbe
+            ? [delta({ content: "尾段第1句。尾段第2句。" }), delta({ content: "尾段第3句。" })]
+            : Array.from({ length: 12 }, (_, i) => delta({ content: `尾段第${i + 1}句。` }));
+        return sse(res, [...lines, delta({}, { usage: { total_tokens: 5 } })], quoteProbe ? 1500 : 250);
       }
       if (typeof lastUser === "string" && lastUser.includes("DUP")) {
         // 时间线复现：第一轮多段正文（段落间带空行）后调用 read_file，第二轮慢慢流一段思绪再说话；用于确认第一轮的话只在分组里出现一次

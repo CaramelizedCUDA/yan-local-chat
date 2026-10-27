@@ -45,7 +45,8 @@ function createThread(anchor) {
     anchor: {
       messageId: anchor.messageId,
       text: whole ? "" : String(anchor.text).slice(0, 1200),
-      occurrence: whole ? 0 : Number(anchor.occurrence) || 0
+      occurrence: whole ? 0 : Number(anchor.occurrence) || 0,
+      ...(!whole && Number.isInteger(anchor.part) ? { part: anchor.part } : {})
     },
     createdAt: now(),
     updatedAt: now(),
@@ -97,11 +98,21 @@ function decorateNoteAnchors(article) {
   const bodies = [...article.querySelectorAll(".markdown, .user-bubble")].filter(
     body => !body.closest(".message-editor") && !body.parentElement?.closest(".markdown")
   );
-  for (const body of bodies) clearNoteAnchors(body);
+  const parts = noteBodies(article);
+  for (const body of new Set([...bodies, ...parts])) clearNoteAnchors(body);
   const threads = threadsOf(c).filter(t => t.anchor.messageId === article.dataset.message && t.anchor.text);
-  if (!threads.length || !bodies.length) return; // 整条回复的旁注没有落点，靠元信息行的「注」标进入
-  // 正文可能不止一段（执事时间线里边做边说的话各在自己的分组里，末尾才是总结）：哪段里找得到就落在哪段
-  threads.forEach((thread, index) => bodies.some(body => markAnchor(body, thread, index + 1)));
+  if (!threads.length || (!bodies.length && !parts.length)) return; // 整条回复的旁注没有落点，靠元信息行的「注」标进入
+  threads.forEach((thread, index) => {
+    const part = parts[thread.anchor.part ?? -1];
+    if (!(part && markAnchor(part, thread, index + 1))) bodies.some(body => markAnchor(body, thread, index + 1));
+  });
+}
+// 收尾后按页面顺序找可建旁注的文字块；工具内容会收短或续写，不参与编号。
+function noteBodies(article) {
+  const kinds = ".markdown, .user-bubble, .trail-note, .reasoning-body";
+  return [...article.querySelectorAll(kinds)].filter(
+    body => !body.closest(".message-editor, .tool-step, .tool-run") && !body.parentElement?.closest(kinds)
+  );
 }
 function clearNoteAnchors(body) {
   if (!body.querySelector("mark.note-anchor, sup.note-ref")) return;
@@ -264,7 +275,8 @@ function renderSideIndex(c) {
 /** @param {Conversation} c */
 function indexNewAnchor(c) {
   const picked = selectionAnchor();
-  if (picked) return { messageId: picked.messageId, text: picked.text, occurrence: picked.occurrence };
+  if (picked)
+    return picked.quoteOnly ? null : { messageId: picked.messageId, text: picked.text, occurrence: picked.occurrence, part: picked.part };
   const id =
     (sideIndexFor && c.messages.some(m => m.id === sideIndexFor) ? sideIndexFor : null) ||
     [...c.messages].reverse().find(m => m.role === "assistant" && m.status !== "streaming")?.id ||
