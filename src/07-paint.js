@@ -241,9 +241,8 @@ function paintThought(details, text, live, { touched = false, force = false } = 
   }
   details.dataset.state = live ? "live" : "done";
   if (touched) return;
-  if (live) {
-    if (!details.open) settleDetails(details, true);
-  } else if (details.open) settleDetails(details, false, null, force);
+  if (live) settleDetails(details, true);
+  else if (details.open) settleDetails(details, false, null, force);
 }
 /**
  * 一段正文画进 el：已收尾的段落（空行分开、不在代码围栏里）画一次存进 md-stable，每回只重画最后一段 md-tail，长回复不会越写越卡；

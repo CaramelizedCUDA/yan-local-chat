@@ -346,7 +346,9 @@ function wheelScrollsInner(event) {
     if (el.scrollTop > 0 && el.scrollHeight > el.clientHeight && /auto|scroll/.test(getComputedStyle(el).overflowY)) return true;
   return false;
 }
-// force：做完就收，不看读者是否正停在这块、用户是否亲手开过——运行中摊开、运行完收起，是行迹与帮手时间线的定例
+// force：做完就收，不看读者是否正停在这块、用户是否亲手开过——运行中摊开、运行完收起，是行迹与帮手时间线的定例。
+// 程序要打开的一律走这里、别先看 details.open：收起排着还没到（700 毫秒）、正在收的动画没放完时它都还是 true，
+// 照它判断就当已开着、什么也不做，眼看着又收了
 function settleDetails(details, open, onClose = null, force = false) {
   if (!details) return;
   if (open) {
