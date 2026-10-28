@@ -1,4 +1,4 @@
-# 推到 main 与每个 PR 都跑一遍。言以 Windows 为准：check 一项挡合并；端到端先试跑、macOS 只跑单测，失败都不挡
+# 推到 main 与每个 PR 都跑一遍。言以 Windows 为准：check 一项挡合并；端到端与 macOS 先试跑，失败都不挡
 name: CI
 
 on:
@@ -40,14 +40,25 @@ jobs:
           node-version: 22
       - run: node test/run.mjs
 
-  unit-macos:
-    name: macOS 单测（不挡合并）
+  macos:
+    name: macOS 测试（不挡合并）
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - run: npm run check
       - run: npm run unit
+      - run: node test/run.mjs
+        env:
+          YAN_TEST_BROWSER: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+      - if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: yan-test-tmp-macos
+          path: test/.tmp
+          if-no-files-found: ignore
+          retention-days: 7
