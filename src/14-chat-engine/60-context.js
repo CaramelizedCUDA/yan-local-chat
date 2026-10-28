@@ -133,25 +133,31 @@ const FOLD_KEEP_ROUNDS = 2;
 // 各家接口「放不下」的说法：OpenAI 系 maximum context length、Anthropic prompt is too long / exceed context limit、
 // Gemini exceeds the maximum number of tokens、Qwen Range of input length、Kimi token limit、GLM exceeds max length……
 // 输出上限（max_tokens）太大、上游超时（context deadline exceeded）不算。vLLM 的说法两样都列（you requested 0 output tokens and
-// your prompt contains at least 32769 input tokens）：要的输出本身放得进窗口，就是输入太长、压了有用；输出一项就超窗口才是 max_tokens 给大了
+// your prompt contains at least 32769 input tokens）：要的输出本身放得进窗口，就是输入太长、压了有用；输出一项就超窗口才是 max_tokens 给大了。
+// 自建服务前头的网关另有写法（Input 86713 tokens + requested output 16384 + safety margin 256 exceeds context 98304），同样两样都列，同样判
 function contextOverflow(message) {
   const text = String(message || "");
   if (
-    !/context.{0,24}(length|window|limit|size)|prompt is too long|too many tokens|token.{0,20}limit|exceed.{0,40}(limit|length|tokens)|input.{0,20}(too long|length)|上下文.{0,8}(长度|窗口|上限|超)|超出.{0,12}(上下文|长度|限制)|超长/i.test(
+    !/context.{0,24}(length|window|limit|size)|prompt is too long|too many tokens|token.{0,20}limit|exceed.{0,40}(limit|length|tokens|context)|input.{0,20}(too long|length)|上下文.{0,8}(长度|窗口|上限|超)|超出.{0,12}(上下文|长度|限制)|超长/i.test(
       text
     ) ||
     /deadline|max_completion/i.test(text)
   )
     return false;
-  if (!/output tokens?/i.test(text)) return true;
-  const limit = Number(text.match(/context length is (\d+)/i)?.[1]),
-    output = Number(text.match(/(\d+) output tokens?/i)?.[1]);
-  return /input tokens?/i.test(text) && limit > 0 && output < limit;
+  if (!/output tokens?|requested output/i.test(text)) return true;
+  const limit = reportedWindow(text),
+    output = Number(text.match(/(\d+) output tokens?/i)?.[1] || text.match(/requested output (\d+)/i)?.[1]);
+  return /input (\d+ )?tokens?/i.test(text) && limit > 0 && output < limit;
 }
-// 报错里说了窗口多大（maximum context length is 32768 tokens）而模型上没填：记下来，此后送出前就按它提前压，不必每回先撞一次放不下
+// 报错里说的窗口多大：context length is 32768（vLLM 原话）、exceeds context 98304（网关的写法）
+const reportedWindow = text => {
+  const m = String(text || "").match(/context length is (\d+)|exceeds? (?:the )?context (?:window |length )?(?:of )?(\d+)/i);
+  return Number(m?.[1] || m?.[2]) || 0;
+};
+// 报错里说了窗口多大而模型上没填：记下来，此后送出前就按它提前压，不必每回先撞一次放不下
 /** @param {Profile} profile */
 function learnContextWindow(profile, message) {
-  const limit = Number(String(message || "").match(/context length is (\d+)/i)?.[1]);
+  const limit = reportedWindow(message);
   if (Number(profile.contextWindow) > 0 || !(limit >= 1000)) return;
   profile.contextWindow = limit;
   saveStoreSoon();

@@ -672,6 +672,13 @@ test("contextOverflow / learnContextWindow：vLLM 连带列出 0 个输出 token
   const set = { contextWindow: 20000 };
   f.learnContextWindow(set, vllm);
   assert.equal(set.contextWindow, 20000);
+  // 自建服务前头网关的写法：输入超了算放不下、窗口记得下；要的输出一项就超窗口仍不算
+  const gateway = "Input 86713 tokens + requested output 16384 + safety margin 256 exceeds context 98304. Available output budget: 11335.";
+  assert.equal(f.contextOverflow(gateway), true);
+  assert.equal(f.contextOverflow("Input 20 tokens + requested output 500000 + safety margin 256 exceeds context 98304."), false);
+  const q = { contextWindow: "" };
+  f.learnContextWindow(q, gateway);
+  assert.equal(q.contextWindow, 98304);
 });
 test("upstreamError：各家报错的样子都取得出那句话，不是 JSON 的取原文", async () => {
   const says = (body, status = 400) => upstreamError(new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
