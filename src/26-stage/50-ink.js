@@ -44,7 +44,7 @@ const STAGE_READ = `(a => {
   return clean(out.join(" ")).slice(0, 120);
 })`;
 
-/** @type {{ kind: "loop" | "dot", pts: number[][], text: string }[]} 人圈点的各处：pts 是网页里的位置（视口坐标 + 滚动） */
+/** @type {{ kind: "loop" | "line" | "dot", pts: number[][], text: string }[]} 人圈点的各处：圈、划的一道线（下划、箭头、删去）、点；pts 是网页里的位置（视口坐标 + 滚动） */
 let stageNotes = [];
 /** @type {{ kind: string, x: number, y: number, w: number, h: number, at: number }[]} 执事新近落笔的几处，同样按网页里的位置 */
 let stageActs = [];
@@ -181,7 +181,7 @@ function stageInkMove(e) {
   }
   return true;
 }
-// 落笔：拖得开的是圈，几乎没动的是点；记下圈点处的字，随即引进输入框
+// 落笔：几乎没动的是点；拖开了的，首尾合拢是圈，不合拢是一道线（划在字下、画个箭头、删去一处都是）。记下那一处的字，随即引进输入框
 /** @param {PointerEvent} e */
 function stageInkEnd(e) {
   if (!stageInking) return false;
@@ -190,17 +190,23 @@ function stageInkEnd(e) {
   const xs = pts.map(p => p[0]),
     ys = pts.map(p => p[1]),
     box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) },
+    dot = Math.hypot(box.w, box.h) < 12,
+    [first, last] = [pts[0], pts.at(-1) || pts[0]],
+    closed = Math.hypot(last[0] - first[0], last[1] - first[1]) < Math.max(24, Math.hypot(box.w, box.h) * 0.3),
     note = {
-      kind: /** @type {"loop" | "dot"} */ (Math.hypot(box.w, box.h) < 12 ? "dot" : "loop"),
-      pts: Math.hypot(box.w, box.h) < 12 ? [pts[0]] : pts,
+      kind: /** @type {"loop" | "line" | "dot"} */ (dot ? "dot" : closed ? "loop" : "line"),
+      pts: dot ? [pts[0]] : pts,
       text: ""
-    };
+    },
+    // 读字的框：一道细线（多是划在字下）上下各放开些，字的中线才落得进来
+    padX = Math.max(0, (32 - box.w) / 2),
+    padY = Math.max(0, (32 - box.h) / 2);
   stageNotes.push(note);
   stageInkRender();
   const view =
     note.kind === "dot"
       ? { x: pts[0][0] - stage.scroll.x, y: pts[0][1] - stage.scroll.y }
-      : { ...box, x: box.x - stage.scroll.x, y: box.y - stage.scroll.y };
+      : { x: box.x - padX - stage.scroll.x, y: box.y - padY - stage.scroll.y, w: box.w + padX * 2, h: box.h + padY * 2 };
   void stageSend(
     "Runtime.evaluate",
     { expression: `(${STAGE_READ})(${JSON.stringify({ kind: note.kind, ...view })})`, returnByValue: true },
@@ -235,21 +241,24 @@ async function stageQuote() {
     boxes = stageNoteBoxes(),
     said = stageNotes.map(
       note =>
-        `${note.kind === "dot" ? t("点") : t("圈")}${note.text ? `「${note.text.slice(0, 24)}${note.text.length > 24 ? "…" : ""}」` : t("一处")}`
+        `${{ dot: t("点"), loop: t("圈"), line: t("划") }[note.kind]}${note.text ? `「${note.text.slice(0, 24)}${note.text.length > 24 ? "…" : ""}」` : t("一处")}`
     ),
     name = t`游目 · ${host || t("网页")}.jpg`,
     lines = stageNotes.map((note, i) => {
-      const b = boxes[i];
-      return note.kind === "dot"
-        ? t`点：网页左 ${b.x}、上 ${b.y}${note.text ? ` ——「${note.text}」` : ""}`
-        : t`圈：网页左 ${b.x}、上 ${b.y}，宽 ${b.w}、高 ${b.h}${note.text ? ` ——「${note.text}」` : ""}`;
+      const b = boxes[i],
+        said = note.text ? ` ——「${note.text}」` : "";
+      if (note.kind === "dot") return t`点：网页左 ${b.x}、上 ${b.y}${said}`;
+      if (note.kind === "loop") return t`圈：网页左 ${b.x}、上 ${b.y}，宽 ${b.w}、高 ${b.h}${said}`;
+      // 一道线记起止：箭头、删去的方向要看得出
+      const [from, to] = [stageToView([note.pts[0]])[0], stageToView([note.pts.at(-1) || note.pts[0]])[0]].map(p => p.map(Math.round));
+      return t`划：自网页左 ${from[0]}、上 ${from[1]} 至左 ${to[0]}、上 ${to[1]}${said}`;
     });
   stageQuoteMade = {
     text: t`游目 · ${place}　${said.join("　")}`,
     model: [
       t`游目 · ${stageReadable(tab.url)}${tab.title ? `（${tab.title}）` : ""}`,
       ...lines,
-      t`附图「${name}」，朱笔即所圈点；位置是网页视口里的 CSS 像素，与附图同一取景`
+      t`附图「${name}」上的朱笔是用户画上去的；位置是网页视口里的 CSS 像素，与附图同一取景`
     ].join("\n"),
     url: tab.url
   };

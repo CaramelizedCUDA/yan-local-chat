@@ -273,6 +273,28 @@ check(
   "removing the quote takes its picture along (no hidden attachment left behind)",
   await evalJs(`!document.querySelector("#welcomeQuote .quote-shot") && !(__yanState().drafts.__new__?.attachments || []).length`)
 );
+// 不合拢的一道（划在字下）是「划」：读得到线上方的字，给模型的话记起止、不说是圈
+const metaNow = await evalJs(`__yanStage.state.meta`),
+  under = [
+    [2 / metaNow.width, 21 / metaNow.height],
+    [40 / metaNow.width, 22 / metaNow.height]
+  ];
+await mouse("mousePressed", ...at(...under[0]));
+for (const step of [0.25, 0.5, 0.75, 1]) {
+  const p = [under[0][0] + (under[1][0] - under[0][0]) * step, under[0][1] + (under[1][1] - under[0][1]) * step];
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at(...p)[0], y: at(...p)[1], button: "left", buttons: 1 });
+  await sleep(30);
+}
+await mouse("mouseReleased", ...at(...under[1]));
+await waitFor(`!document.querySelector("#welcomeQuote").classList.contains("hidden")`, 5000).catch(() => {});
+await sleep(300);
+const lined = await evalJs(`__yanState().drafts.__new__?.quote || null`);
+check(
+  "a stroke under a word quotes it as a line, and the model's copy doesn't call it a circle",
+  !!lined && lined.text.includes("划「链接」") && /划：自网页左/.test(lined.model) && !/圈/.test(lined.model),
+  JSON.stringify(lined)
+);
+await evalJs(`document.querySelector("#welcomeQuote [data-quote-close]").click(); true`);
 await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
 check("Esc puts the pen down", await evalJs(`document.querySelector("#stagePen").getAttribute("aria-pressed") === "false"`));
 await evalJs(`document.querySelector("#welcomeAttachments [data-remove-attachment]")?.click(); true`);
