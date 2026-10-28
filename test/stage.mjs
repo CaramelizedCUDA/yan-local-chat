@@ -32,6 +32,9 @@ await evalJs(
   `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 5, settings: { name: "测", theme: "light", inkMotion: "off", activeProfileId: "p1", autoTitle: false, mcpServers: ${JSON.stringify(mcpServers)} }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, quota: "", usedTokens: 0 }], conversations: [], library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
+await evalJs(
+  `window.__yanExceptions = []; window.addEventListener("error", e => window.__yanExceptions.push(String(e.error || e.message))); window.addEventListener("unhandledrejection", e => window.__yanExceptions.push(String(e.reason))); true`
+);
 
 // 「模型的页」：在另一个浏览器实例的同一个窗口里新开一个标签（言的页面留在测试浏览器，不会被切到后台）。
 // 左上一块大按钮，右边一个输入框，标题随之变
@@ -643,7 +646,7 @@ for (const [act, word] of [
   const id = await evalJs(`[...__yanStage.state.tabs].find(([, t]) => /^(edge|chrome):/.test(t.url) && t.url.includes("${word}"))?.[0]`);
   if (id) await browserSend("Target.closeTarget", { targetId: id });
   await clickTab(targetId);
-  await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
+  await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)} && __yanStage.state.session !== ""`, 5000).catch(() => {});
 }
 check(
   "Edge's own dialogs (sync confirmation and the like) never become tabs",
@@ -831,7 +834,12 @@ check(
   await evalJs(`__yanStage.state.current === ${JSON.stringify(fresh)}`),
   await viewState()
 );
-// fresh 不关：关掉当前页会触发看台的 detach/attach 竞态；让它随浏览器一起收走
+await browserSend("Target.closeTarget", { targetId: fresh });
+await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).catch(() => {});
+check("stage falls back to the remaining tab", await evalJs(`__yanStage.state.current === ${JSON.stringify(targetId)}`), await viewState());
+await waitFor(`__yanStage.state.session !== ""`, 5000).catch(() => {});
+check("stage session is active on the remaining tab", await evalJs(`__yanStage.state.session !== ""`), await viewState());
+check("page has no uncaught exceptions after closing tab", await evalJs(`window.__yanExceptions.length === 0`), await evalJs(`JSON.stringify(window.__yanExceptions)`));
 
 // 收起：小屏回来；那一页关了，签跟着没了
 await evalJs(`document.querySelector("#stageClose").click(); true`);

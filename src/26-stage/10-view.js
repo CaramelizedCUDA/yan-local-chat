@@ -11,7 +11,7 @@ function stageShow(targetId) {
 async function stageAttach() {
   const target = stage.current,
     ws = stage.ws;
-  if (!stage.ws || !target || stage.attached === target) return;
+  if (!stage.ws || !target || (stage.attached === target && stage.session)) return;
   const detaching = stageDetach(),
     revision = stageAttachRevision,
     current = () => revision === stageAttachRevision && stage.ws === ws && stage.current === target && stageVisible();
@@ -23,6 +23,7 @@ async function stageAttach() {
     const { sessionId } = await stageSend("Target.attachToTarget", { targetId: target, flatten: true });
     if (!current()) {
       if (stage.ws === ws) void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
+      if (stage.attached === target) stage.attached = "";
       return;
     }
     stage.session = sessionId;
@@ -30,7 +31,11 @@ async function stageAttach() {
     void stageSend("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId).catch(() => {});
     // 收 Page 域的事件：载入、跳转、提示框（开着的提示框，enable 时会补报一回）
     await stageSend("Page.enable", {}, sessionId);
-    if (!current()) return;
+    if (!current()) {
+      if (stage.ws === ws) void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
+      if (stage.attached === target) stage.attached = stage.session = "";
+      return;
+    }
     // 网页要人选文件：不让浏览器在屏幕外开窗，报给看台
     void stageSend("Page.setInterceptFileChooserDialog", { enabled: true }, sessionId).catch(() => {});
     // 执事在网页上哪儿下手：网页里放一个只给看台听的耳目
@@ -38,7 +43,11 @@ async function stageAttach() {
     void stageReadHistory();
     await stageSend("Page.startScreencast", { format: "jpeg", quality: 90 }, sessionId);
     if (!current()) {
-      if (stage.ws === ws) void stageSend("Page.stopScreencast", {}, sessionId).catch(() => {});
+      if (stage.ws === ws) {
+        void stageSend("Page.stopScreencast", {}, sessionId).catch(() => {});
+        void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
+      }
+      if (stage.attached === target) stage.attached = stage.session = "";
       return;
     }
     streaming = true;
