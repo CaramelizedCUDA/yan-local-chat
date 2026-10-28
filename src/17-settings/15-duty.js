@@ -36,12 +36,15 @@ function dutyFormHtml(id) {
   const d = dutyOf(id),
     onOff = `<div class="segmented"><button data-duty-on="${id}" data-value="true" class="${d.on ? "active" : ""}">${t(`开`)}</button><button data-duty-on="${id}" data-value="false" class="${d.on ? "" : "active"}">${t(`关`)}</button></div>`;
   if (!d.on) return `<div class="profile-grid"><label class="profile-full">${t(`启用`)}${onOff}</label></div>`;
-  const listed = d.modelList.includes(d.model),
-    apis = DUTIES[id].apis
+  const apis = DUTIES[id].apis
       .map(api => `<button data-duty-api="${api}" class="${d.api === api ? "active" : ""}">${DUTY_API_LABEL[api]()}</button>`)
       .join(""),
-    model = `<div class="field-row">${d.modelList.length ? `<select class="field wide select" data-duty-select>${d.modelList.map(m => `<option value="${escapeHtml(m)}"${m === d.model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("")}<option value="__custom__"${listed ? "" : " selected"}>${t(`手动输入…`)}</option></select>` : ""}<input class="field wide${d.modelList.length && listed ? " hidden" : ""}" data-duty-field="model" value="${escapeHtml(d.model)}" placeholder="${id === "image" ? "Kwai-Kolors/Kolors" : t("如 gpt-4o-mini")}"><button class="outline-btn" data-duty-action="models" title="${t(`从接口的 /models 获取可用模型`)}">${d.modelList.length ? t("刷新") : t("获取列表")}</button></div>`;
-  return `<div class="profile-grid"><label class="profile-full">${t(`启用`)}${onOff}</label><label class="profile-full">${t(`接口`)}<div class="segmented">${apis}</div><small>${id === "image" ? "images/generations" : d.api === "anthropic" ? "Messages API" : "chat/completions"}</small></label><label class="profile-full">Base URL<input class="field wide" data-duty-field="baseUrl" value="${escapeHtml(d.baseUrl)}" placeholder="${d.api === "anthropic" ? "https://api.anthropic.com" : d.api === "siliconflow" ? SILICONFLOW_BASE : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-duty-field="apiKey" value="${escapeHtml(d.apiKey)}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">${t(`模型`)}${model}</label></div><div class="profile-actions">${id === "review" ? `<button class="outline-btn" data-duty-action="test">${t(`测试连接`)}</button>` : ""}<span class="profile-status"></span></div>`;
+    model = modelPickerHtml(d.modelList, d.model, id === "image" ? "Kwai-Kolors/Kolors" : t("如 gpt-4o-mini"), {
+      field: "data-duty-field",
+      select: "data-duty-select",
+      action: "data-duty-action"
+    });
+  return `<div class="profile-grid"><label class="profile-full">${t(`启用`)}${onOff}</label><label class="profile-full">${t(`接口`)}<div class="segmented">${apis}</div><small>${id === "image" ? "images/generations" : d.api === "anthropic" ? "Messages API" : "chat/completions"}</small></label><label class="profile-full">Base URL<input class="field wide" data-duty-field="baseUrl" value="${escapeHtml(d.baseUrl)}" placeholder="${baseUrlPlaceholder(d)}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-duty-field="apiKey" value="${escapeHtml(d.apiKey)}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">${t(`模型`)}${model}</label></div><div class="profile-actions">${id === "review" ? `<button class="outline-btn" data-duty-action="test">${t(`测试连接`)}</button>` : ""}<span class="profile-status"></span></div>`;
 }
 function dutySettingsHtml() {
   const title = store.settings.autoTitle,
@@ -78,10 +81,8 @@ function bindDutySettings() {
     card.querySelectorAll("[data-duty-api]").forEach(
       button =>
         (button.onclick = () => {
-          const api = /** @type {Duty["api"]} */ (button.dataset.dutyApi),
-            toSiliconflow = api === "siliconflow";
-          // 与模型栏同一个规矩：选硅基流动即填好地址，从它换走时清掉
-          if (toSiliconflow !== (d.api === "siliconflow")) d.baseUrl = toSiliconflow ? SILICONFLOW_BASE : "";
+          const api = /** @type {Duty["api"]} */ (button.dataset.dutyApi);
+          d.baseUrl = baseUrlAfterSwitch(d, api);
           d.api = api;
           saveStore();
           renderSettings();
@@ -95,14 +96,9 @@ function bindDutySettings() {
       })
     );
     card.querySelector("[data-duty-select]")?.addEventListener("change", e => {
-      const input = card.querySelector('[data-duty-field="model"]');
-      if (e.target.value === "__custom__") {
-        input.classList.remove("hidden");
-        input.focus();
-        return;
-      }
-      input.classList.add("hidden");
-      input.value = d.model = e.target.value;
+      const model = pickModel(/** @type {HTMLSelectElement} */ (e.target), card.querySelector('[data-duty-field="model"]'));
+      if (!model) return;
+      d.model = model;
       refreshHead();
       saveStoreSoon();
     });

@@ -4,6 +4,34 @@ const advancedOpen = new Set();
 const SILICONFLOW_BASE = "https://api.siliconflow.cn/v1";
 // 模型设置里摊开着的那几个（一个模型平时收成一行，点开才是整张表）
 const profileOpen = new Set();
+// 模型卡与专司卡共用的几件：模型一栏（取回的列表可选，末项「手动输入…」）、Base URL 的示例、换接口时地址怎么跟。
+// attrs 是这一栏各件挂的属性名（两种卡各绑各的）
+/** @param {string[]} models @param {string} model @param {string} placeholder @param {{ field: string, select: string, action: string }} attrs */
+function modelPickerHtml(models, model, placeholder, { field, select, action }) {
+  const listed = models.includes(model);
+  return `<div class="field-row">${models.length ? `<select class="field wide select" ${select}>${models.map(m => `<option value="${escapeHtml(m)}"${m === model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("")}<option value="__custom__"${listed ? "" : " selected"}>${t(`手动输入…`)}</option></select>` : ""}<input class="field wide${models.length && listed ? " hidden" : ""}" ${field}="model" value="${escapeHtml(model)}" placeholder="${escapeHtml(placeholder)}"><button class="outline-btn" ${action}="models" title="${t(`从接口的 /models 获取可用模型`)}">${models.length ? t("刷新") : t("获取列表")}</button></div>`;
+}
+/** 下拉换了：选「手动输入…」露出输入框给人填、交回空；选定一个即填进输入框并交回 @param {HTMLSelectElement} select @param {HTMLInputElement} input */
+function pickModel(select, input) {
+  const custom = select.value === "__custom__";
+  input.classList.toggle("hidden", !custom);
+  if (custom) {
+    input.focus();
+    return "";
+  }
+  return (input.value = select.value);
+}
+/** @param {Endpoint} endpoint */
+function baseUrlPlaceholder(endpoint) {
+  const api = profileApi(endpoint);
+  return api === "anthropic" ? "https://api.anthropic.com" : api === "siliconflow" ? SILICONFLOW_BASE : "https://example.com/v1";
+}
+// 选硅基流动即填好它的地址；从它换走时地址一并清掉，免得别家的请求还发去硅基流动
+/** @param {Endpoint} endpoint @param {string} api 换成的接口 */
+function baseUrlAfterSwitch(endpoint, api) {
+  const to = api === "siliconflow";
+  return to === (profileApi(endpoint) === "siliconflow") ? endpoint.baseUrl : to ? SILICONFLOW_BASE : "";
+}
 function modelsSettingsHtml() {
   return `<h2>${t(`模型`)}</h2>${usageCardHtml()}<div id="profileList">${profiles().map(profileCardHtml).join("")}</div><button id="addProfile" class="outline-btn profile-add">${t(`＋ 接入模型`)}</button>`;
 }
@@ -19,10 +47,13 @@ function profileCardHtml(p) {
   const invalidQuota = !!String(p.quota || "").trim() && parseTokenLimit(p.quota) === null,
     quota = quotaParts(p.quota),
     models = Array.isArray(p.modelList) ? p.modelList : [],
-    listed = models.includes(p.model),
     chatgpt = profileApi(p) === "chatgpt",
     siliconflow = profileApi(p) === "siliconflow";
-  const modelField = `<div class="field-row">${models.length ? `<select class="field wide select" data-model-select>${models.map(m => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("")}<option value="__custom__"${listed ? "" : " selected"}>${t(`手动输入…`)}</option></select>` : ""}<input class="field wide${models.length && listed ? " hidden" : ""}" data-field="model" value="${escapeHtml(p.model)}" placeholder="${t(`如 gpt-4o-mini`)}"><button class="outline-btn" data-profile-action="models" title="${t(`从接口的 /models 获取可用模型`)}">${models.length ? t("刷新") : t("获取列表")}</button></div>`;
+  const modelField = modelPickerHtml(models, p.model, t("如 gpt-4o-mini"), {
+    field: "data-field",
+    select: "data-model-select",
+    action: "data-profile-action"
+  });
   const quotaField = `<div class="field-row"><input type="number" min="0" step="any" class="field wide" data-quota-amount value="${escapeHtml(quota.amount)}" placeholder="${t(`不限`)}" ${invalidQuota ? `aria-invalid="true"` : ""}><select class="field select" data-quota-unit>${[
     ["k", t("千 (k)")],
     ["m", t("百万 (m)")],
@@ -31,7 +62,7 @@ function profileCardHtml(p) {
     .map(([v, label]) => `<option value="${v}"${quota.unit === v ? " selected" : ""}>${label}</option>`)
     .join("")}</select></div>`;
   // 平时收成一行：名字、模型 ID 与接口、是否默认；点开才是整张表。模型一多，一行一个翻得过来
-  return `<details class="profile-card" data-profile-card="${escapeHtml(p.id)}"${profileOpen.has(p.id) ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${escapeHtml(p.name)}</strong><span class="profile-gist">${escapeHtml(profileGist(p))}</span>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">${t(`默认`)}</span>` : ""}</summary><div class="profile-body"><div class="profile-grid"><label>${t(`显示名称`)}<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>${t`用量上限${quotaField}`}<small>${t(`留空不限`)}</small></label><label class="profile-full">${t(`接口`)}<div class="segmented"><button data-choice-field="api" data-value="siliconflow" class="${siliconflow ? "active" : ""}">${t(`硅基流动`)}</button><button data-choice-field="api" data-value="openai" class="${profileApi(p) === "openai" ? "active" : ""}">${t(`OpenAI 兼容`)}</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button><button data-choice-field="api" data-value="chatgpt" class="${chatgpt ? "active" : ""}">${t(`ChatGPT 订阅`)}</button></div><small>${chatgpt ? t("额度记在 ChatGPT 订阅上") : anthropicLike(p) ? "Messages API" : "chat/completions"}</small></label>${chatgpt ? chatgptAccountHtml() : `<label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${anthropicLike(p) ? "https://api.anthropic.com" : siliconflow ? SILICONFLOW_BASE : "https://example.com/v1"}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">${t`模型${modelField}`}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">${t(`高级配置`)}</span><small>${p.tools === false ? t("本机工具关") : ""}</small></summary><div class="profile-grid"><label>${t(`本机联网与文档工具`)}<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">${t(`开`)}</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">${t(`关`)}</button></div><small>${t(`需接口支持 function calling`)}</small></label>${chatgpt ? "" : `<label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number.isFinite(p.temperature) ? p.temperature : ""}" placeholder="${t(`接口默认`)}"><small>${t(`0–2，留空由接口定`)}</small></label>`}${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>${t`留空按 ${DEFAULT_MAX_TOKENS}`}</small></label>` : ""}<label>${t(`上下文窗口`)}<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="${t(`如 128000`)}"><small>${t(`过七成半自动压缩前文`)}</small></label><label>${t(`思考档位`)}<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>${t(`逗号分隔；选定模型时自动探测`)}</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">${t(`测试连接`)}</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">${t(`设为默认`)}</button>` : ""}<button class="danger-btn" data-profile-action="delete">${t(`删除`)}</button><span class="profile-status">${invalidQuota ? t("请填写大于 0 的数值，或留空不限") : ""}</span></div></div></details>`;
+  return `<details class="profile-card" data-profile-card="${escapeHtml(p.id)}"${profileOpen.has(p.id) ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${escapeHtml(p.name)}</strong><span class="profile-gist">${escapeHtml(profileGist(p))}</span>${p.id === store.settings.activeProfileId ? `<span class="profile-badge">${t(`默认`)}</span>` : ""}</summary><div class="profile-body"><div class="profile-grid"><label>${t(`显示名称`)}<input class="field wide" data-field="name" value="${escapeHtml(p.name)}"></label><label>${t`用量上限${quotaField}`}<small>${t(`留空不限`)}</small></label><label class="profile-full">${t(`接口`)}<div class="segmented"><button data-choice-field="api" data-value="siliconflow" class="${siliconflow ? "active" : ""}">${t(`硅基流动`)}</button><button data-choice-field="api" data-value="openai" class="${profileApi(p) === "openai" ? "active" : ""}">${t(`OpenAI 兼容`)}</button><button data-choice-field="api" data-value="anthropic" class="${anthropicLike(p) ? "active" : ""}">Anthropic</button><button data-choice-field="api" data-value="chatgpt" class="${chatgpt ? "active" : ""}">${t(`ChatGPT 订阅`)}</button></div><small>${chatgpt ? t("额度记在 ChatGPT 订阅上") : anthropicLike(p) ? "Messages API" : "chat/completions"}</small></label>${chatgpt ? chatgptAccountHtml() : `<label class="profile-full">Base URL<input class="field wide" data-field="baseUrl" value="${escapeHtml(p.baseUrl || "")}" placeholder="${baseUrlPlaceholder(p)}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-field="apiKey" value="${escapeHtml(p.apiKey || "")}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">${t`模型${modelField}`}</label></div><details class="profile-advanced"${advancedOpen.has(p.id) ? " open" : ""}><summary><span class="advanced-title">${t(`高级配置`)}</span><small>${p.tools === false ? t("本机工具关") : ""}</small></summary><div class="profile-grid"><label>${t(`本机联网与文档工具`)}<div class="segmented"><button data-toggle-field="tools" data-value="true" class="${p.tools !== false ? "active" : ""}">${t(`开`)}</button><button data-toggle-field="tools" data-value="false" class="${p.tools === false ? "active" : ""}">${t(`关`)}</button></div><small>${t(`需接口支持 function calling`)}</small></label>${chatgpt ? "" : `<label><code>temperature</code><input type="number" min="0" max="2" step="0.1" class="field wide" data-field="temperature" value="${Number.isFinite(p.temperature) ? p.temperature : ""}" placeholder="${t(`接口默认`)}"><small>${t(`0–2，留空由接口定`)}</small></label>`}${anthropicLike(p) ? `<label><code>max_tokens</code><input type="number" min="16" class="field wide" data-field="maxTokens" value="${Number(p.maxTokens) || ""}" placeholder="${DEFAULT_MAX_TOKENS}"><small>${t`留空按 ${DEFAULT_MAX_TOKENS}`}</small></label>` : ""}<label>${t(`上下文窗口`)}<input type="number" min="1000" step="1000" class="field wide" data-field="contextWindow" value="${Number(p.contextWindow) || ""}" placeholder="${t(`如 128000`)}"><small>${t(`过七成半自动压缩前文`)}</small></label><label>${t(`思考档位`)}<input class="field wide" data-field="reasoningLevels" value="${escapeHtml(p.reasoningLevels || "")}" placeholder="low, medium, high"><small>${t(`逗号分隔；选定模型时自动探测`)}</small></label></div></details><div class="profile-actions"><button class="outline-btn" data-profile-action="test">${t(`测试连接`)}</button>${p.id !== store.settings.activeProfileId ? `<button class="outline-btn" data-profile-action="default">${t(`设为默认`)}</button>` : ""}<button class="danger-btn" data-profile-action="delete">${t(`删除`)}</button><span class="profile-status">${invalidQuota ? t("请填写大于 0 的数值，或留空不限") : ""}</span></div></div></details>`;
 }
 // ChatGPT 订阅的账号：在浏览器里授权登录（OpenAI 的「Sign in with ChatGPT」），凭证只在桥接里，页面只问登没登、是谁。
 // 不用 label 包：label 里的按钮会被点标签文字连带按下
@@ -261,15 +292,9 @@ function bindModelSettings() {
     amount.addEventListener("input", applyQuota);
     unit.addEventListener("change", applyQuota);
     card.querySelector("[data-model-select]")?.addEventListener("change", e => {
-      const input = card.querySelector('[data-field="model"]');
-      if (e.target.value === "__custom__") {
-        input.classList.remove("hidden");
-        input.focus();
-        return;
-      }
-      input.classList.add("hidden");
-      input.value = e.target.value;
-      p.model = e.target.value;
+      const model = pickModel(/** @type {HTMLSelectElement} */ (e.target), card.querySelector('[data-field="model"]'));
+      if (!model) return;
+      p.model = model;
       card.querySelector(".profile-gist").textContent = profileGist(p);
       saveStoreSoon();
       renderHeader();
@@ -287,10 +312,8 @@ function bindModelSettings() {
       button =>
         (button.onclick = () => {
           if (button.disabled) return;
-          // 选硅基流动即填好它的地址；从它换走时地址一并清掉，免得别家的请求还发去硅基流动
-          const field = button.dataset.choiceField,
-            toSiliconflow = button.dataset.value === "siliconflow";
-          if (field === "api" && toSiliconflow !== (profileApi(p) === "siliconflow")) p.baseUrl = toSiliconflow ? SILICONFLOW_BASE : "";
+          const field = button.dataset.choiceField;
+          if (field === "api") p.baseUrl = baseUrlAfterSwitch(p, button.dataset.value);
           p[field] = button.dataset.value;
           saveStore();
           renderSettings();
