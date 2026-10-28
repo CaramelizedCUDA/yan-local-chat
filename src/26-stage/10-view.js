@@ -85,6 +85,7 @@ async function stageFit() {
     const width = Math.round(edgeX + want.width),
       height = Math.round(edgeY + want.height);
     if (bounds.windowState !== "normal" || (Math.abs(width - bounds.width) < 2 && Math.abs(height - bounds.height) < 2)) return;
+    stage.fittedAt = Date.now();
     await stageSend("Browser.setWindowBounds", { windowId, bounds: { width, height } });
   } catch {}
 }
@@ -183,8 +184,10 @@ async function stageDetach() {
   void stageSend("Target.detachFromTarget", { sessionId: session }).catch(() => {});
 }
 // 截图越出视口时（截比视口大的元素、整页截图，Playwright 带 captureBeyondViewport），浏览器把视口临时撑到要截的大小，
-// 撑开的那一两帧照样推来，画面一缩一放地抖。换了尺寸的帧先压着：稳住 300 毫秒才认（窗口真调了大小），其间回到原尺寸的就是截图那一下，丢掉
-const STAGE_RESIZE_SETTLE = 300;
+// 撑开的那一两帧照样推来，画面一缩一放地抖。换了尺寸的帧先压着：稳住 300 毫秒才认（窗口真调了大小），其间回到原尺寸的就是截图那一下，丢掉。
+// 游目自己刚调过窗（拖宽窄、阔、缩放）的那一阵，换尺寸是意料中的，随到随画——不然每回调完都要多僵一拍再跳过去
+const STAGE_RESIZE_SETTLE = 300,
+  STAGE_FIT_GRACE = 1500;
 let stageHeldFrame = null,
   stageHoldTimer = 0;
 function stageDropHeldFrame() {
@@ -194,7 +197,7 @@ function stageDropHeldFrame() {
 }
 /** @param {string} data @param {number} width @param {number} height @returns {Promise<void>} */
 function stageFrame(data, width, height) {
-  if (stage.framed && (width !== stage.meta.width || height !== stage.meta.height)) {
+  if (stage.framed && (width !== stage.meta.width || height !== stage.meta.height) && Date.now() - stage.fittedAt > STAGE_FIT_GRACE) {
     stageHeldFrame = { data, width, height };
     stageHoldTimer ||= window.setTimeout(() => {
       const held = stageHeldFrame;

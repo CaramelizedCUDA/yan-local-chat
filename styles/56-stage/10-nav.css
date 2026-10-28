@@ -35,23 +35,26 @@
 .stage-nav > button:first-child {
   margin-left: -6px;
 }
-/* 载入中：墨线下一道朱线自左往右走（不另做进度条，与分组靠线同一个意思） */
+/* 载入中：墨线下一道朱线自左往右走（不另做进度条，与分组靠线同一个意思）。
+   线本身铺满一行、走的是底色：画只落在这一行里，进出两头都不越过游目的边（先前挪整条线，起处伸进了正文） */
 .stage-nav.loading::after {
   content: "";
   position: absolute;
   left: 0;
+  right: 0;
   top: -1px;
-  width: 30%;
   height: 1.5px;
-  background: linear-gradient(90deg, transparent, var(--accent) 60%, transparent);
+  background: linear-gradient(90deg, transparent, var(--accent) 60%, transparent) no-repeat;
+  background-size: 30% 100%;
   animation: stageLoad 1.1s ease-in-out infinite;
 }
+/* 底色宽三成：位置 -43% 恰在左缘外、143% 恰在右缘外 */
 @keyframes stageLoad {
   from {
-    transform: translateX(-100%);
+    background-position-x: -43%;
   }
   to {
-    transform: translateX(340%);
+    background-position-x: 143%;
   }
 }
 .stage-nav > .stage-addr {
