@@ -84,10 +84,11 @@ function anthropicRequest(payload) {
     } else if (role === "user") push("user", anthropicUserBlocks(message.content));
     else if (role === "assistant") {
       const blocks = [];
-      // 思考块按原样、原次序回传；被遮蔽的（redacted_thinking）只有一段密文，同样要回传，少了它带工具调用的那一轮会被拒
+      // 思考块按原样、原次序回传；被遮蔽的（redacted_thinking）只有一段密文，同样要回传，少了它带工具调用的那一轮会被拒。
+      // 字是空的也照回：4.7 起思绪可不回（摘要也可能是空的），5.5 一代工具之间还夹着空的进度块，只剩签名；漏掉一块，签名与次序对不上就是 400
       for (const block of Array.isArray(message.thinking_blocks) ? message.thinking_blocks : [])
         if (block?.redacted) blocks.push({ type: "redacted_thinking", data: block.redacted });
-        else if (block?.thinking && block.signature)
+        else if (typeof block?.thinking === "string" && block.signature)
           blocks.push({ type: "thinking", thinking: block.thinking, signature: block.signature });
       const text = typeof message.content === "string" ? message.content : "";
       if (text.trim()) blocks.push({ type: "text", text });

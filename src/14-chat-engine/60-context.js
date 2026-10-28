@@ -149,10 +149,12 @@ function contextOverflow(message) {
     output = Number(text.match(/(\d+) output tokens?/i)?.[1] || text.match(/requested output (\d+)/i)?.[1]);
   return /input (\d+ )?tokens?/i.test(text) && limit > 0 && output < limit;
 }
-// 报错里说的窗口多大：context length is 32768（vLLM 原话）、exceeds context 98304（网关的写法）
+// 报错里说的窗口多大：context length is 32768（vLLM 原话）、exceeds context 98304（网关的写法）、210000 tokens > 200000 maximum（Anthropic）
 const reportedWindow = text => {
-  const m = String(text || "").match(/context length is (\d+)|exceeds? (?:the )?context (?:window |length )?(?:of )?(\d+)/i);
-  return Number(m?.[1] || m?.[2]) || 0;
+  const m = String(text || "").match(
+    /context length is (\d+)|exceeds? (?:the )?context (?:window |length )?(?:of )?(\d+)|tokens? > (\d+) maximum/i
+  );
+  return Number(m?.[1] || m?.[2] || m?.[3]) || 0;
 };
 // 报错里说了窗口多大而模型上没填：记下来，此后送出前就按它提前压，不必每回先撞一次放不下
 /** @param {Profile} profile */
