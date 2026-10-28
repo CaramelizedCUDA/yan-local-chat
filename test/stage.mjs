@@ -402,6 +402,66 @@ check(
   )
 );
 
+// 下拉框：浏览器那扇小窗收不到，游目贴着那一框浮纸签；选了一项网页收到 change。指针移出画面，网页收到离开。
+// 中键点链接开的是后台的一页，游目不跟过去
+const pickPage =
+  "data:text/html;charset=utf-8," +
+  encodeURIComponent(
+    `<title>选</title><body style="margin:0"><select id="s" style="position:fixed;left:5vw;top:5vh;width:30vw;height:8vh" onchange="document.title='选:'+this.value"><option>甲</option><optgroup label="组"><option>乙</option><option disabled>丙</option></optgroup></select><div style="position:fixed;left:50vw;top:5vh;width:40vw;height:30vh" onmouseenter="document.title='进'" onmouseleave="document.title='离'"></div><a href="${PAGE}icon.svg" style="position:fixed;left:5vw;top:60vh;width:30vw;height:20vh;display:block">链</a></body>`
+  );
+await evalJs(`__yanStage.go(${JSON.stringify(pickPage)}); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "选"`, 8000).catch(() => {});
+await sleep(400);
+await mouse("mousePressed", ...at(0.15, 0.09));
+await mouse("mouseReleased", ...at(0.15, 0.09));
+await waitFor(`!!document.querySelector(".chip-pop.stage-pick")`, 5000).catch(() => {});
+check(
+  "a select on the page opens as a card on the stage",
+  await evalJs(
+    `(p => !!p && [...p.querySelectorAll("[data-pick]")].map(b => b.textContent).join() === "甲,乙,丙" && p.textContent.includes("组") && p.querySelector("[data-pick='2']").disabled && p.querySelector("[data-pick='0']").classList.contains("active"))(document.querySelector(".chip-pop.stage-pick"))`
+  )
+);
+const pickAt = await evalJs(
+  `(r => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 }))(document.querySelector(".chip-pop.stage-pick [data-pick='1']").getBoundingClientRect())`
+);
+await shot("stage-pick.png");
+await send("Input.dispatchMouseEvent", { type: "mousePressed", x: pickAt.x, y: pickAt.y, button: "left", buttons: 1, clickCount: 1 });
+await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pickAt.x, y: pickAt.y, button: "left", clickCount: 1 });
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "选:乙"`, 5000).catch(() => {});
+check(
+  "picking an option reaches the page",
+  await evalJs(
+    `__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "选:乙" && !document.querySelector(".chip-pop.stage-pick")`
+  ),
+  await title()
+);
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at(0.7, 0.2)[0], y: at(0.7, 0.2)[1] });
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "进"`, 5000).catch(() => {});
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: geometry.x + geometry.w * 0.7, y: geometry.y - 30 });
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "离"`, 5000).catch(() => {});
+check("moving off the stage lets the page know the pointer left", (await title()) === "离", await title());
+const tabsBeforeMiddle = await evalJs(`__yanStage.state.tabs.size`);
+await send("Input.dispatchMouseEvent", {
+  type: "mousePressed",
+  x: at(0.2, 0.7)[0],
+  y: at(0.2, 0.7)[1],
+  button: "middle",
+  buttons: 4,
+  clickCount: 1
+});
+await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at(0.2, 0.7)[0], y: at(0.2, 0.7)[1], button: "middle", clickCount: 1 });
+await waitFor(`__yanStage.state.tabs.size > ${tabsBeforeMiddle}`, 5000).catch(() => {});
+await sleep(300);
+check(
+  "a middle-clicked link opens behind without pulling the stage over",
+  await evalJs(`__yanStage.state.tabs.size > ${tabsBeforeMiddle} && __yanStage.state.current === ${JSON.stringify(targetId)}`),
+  JSON.stringify(await evalJs(`[__yanStage.state.tabs.size, __yanStage.state.current]`))
+);
+for (const id of await evalJs(
+  `[...__yanStage.state.tabs.keys()].filter(id => id !== ${JSON.stringify(targetId)} && /icon\.svg$/.test(__yanStage.state.tabs.get(id).url))`
+))
+  await browserSend("Target.closeTarget", { targetId: id });
+
 // 纸签：缩放一档，窗按倍数收窄；复原。量窗口本身——静着的页不重绘就不出新帧，画面的尺寸会停在旧值
 await evalJs(`document.querySelector("#stageKeys").blur(); document.querySelector("#stageMenuBtn").click(); true`);
 check("the menu opens from the tune icon", await evalJs(`!!document.querySelector(".chip-pop.stage-menu [data-menu=find]")`));

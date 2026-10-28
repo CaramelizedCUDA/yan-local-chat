@@ -59,6 +59,8 @@ const stage = {
   released: { url: "", at: 0 },
   // 缩放：调那扇窗的宽，窗窄一档网页里的字就大一档（浏览器自己的缩放调不动，见 docs/stage.md）
   zoom: 1,
+  // 游目上回调那扇窗的时刻：此后一阵推来的换尺寸的帧是它调出来的，不当截图那一下压着（见 10-view.js 的 stageFrame）
+  fittedAt: 0,
   /** @type {{ guid: string, name: string, url: string, total: number, got: number, state: string, at: number, path?: string, by?: string }[]} 下载过的，新的在前 */
   downloads: [],
   // 下载签打开后才算看过：纸签上「下载」后的数目是没看过的
@@ -83,11 +85,13 @@ const stage = {
   poll: 0,
   fitTimer: 0,
   empty: "",
-  click: { at: 0, x: 0, y: 0, count: 0 },
+  click: { at: 0, x: 0, y: 0, count: 0, behind: false },
   // 圈点开着：画面上的点按是下笔，不递进网页（见 src/26-stage/50-ink.js）
   pen: false,
   // 人最近一回在画面上按下的时刻：网页报来的按下若紧跟着它，是人按的，不当执事落笔
   userAt: 0,
+  // 人最近一回在游目里按键的时刻（下拉框要开时认是不是人）
+  keyAt: 0,
   /** @type {PointerEvent | null} */
   moved: null
 };
@@ -170,8 +174,8 @@ function stageMessage(message) {
     if (stageNotTab(info)) return void stageDropTab(info.targetId);
     const fresh = !stage.tabs.has(info.targetId);
     stage.tabs.set(info.targetId, { title: info.title, url: info.url });
-    // 模型新开了一页：跟过去
-    if (fresh && !stage.listing) stageShow(info.targetId);
+    // 模型新开了一页：跟过去。人用中键、Ctrl 点链接开的是后台的一页，与浏览器一样留在原处
+    if (fresh && !stage.listing && !stageOpenedBehind()) stageShow(info.targetId);
     else stageRender();
   } else if (message.method === "Target.targetDestroyed") {
     stage.tabs.delete(params.targetId);
@@ -188,6 +192,10 @@ const stageTabType = info => info.type === "page" || (info.type === "browser_ui"
 // 它起初网址是空的、后来才补上，报来时与轮询时都要认
 /** @param {{ url: string }} info */
 const stageNotTab = info => /^edge:\/\/[\w-]*-(hub|dialog)\b/.test(info.url);
+// 人刚用中键或 Ctrl（不带 Shift）点了一下：这时冒出来的新页是在后台开的
+function stageOpenedBehind() {
+  return stage.click.behind && performance.now() - stage.click.at < 2000;
+}
 /** @param {string} id */
 function stageDropTab(id) {
   if (!stage.tabs.delete(id)) return;
@@ -214,8 +222,13 @@ function stagePageEvent(method, params) {
     // frameNavigated 由网页那头报来，常赶在浏览器记下这一步历史之前：载完再问一回
     if (!stage.loading) void stageReadHistory();
   } else if ((method === "Page.frameNavigated" && !params.frame.parentId) || method === "Page.navigatedWithinDocument") {
-    if (method === "Page.frameNavigated") stageInkClear();
+    if (method === "Page.frameNavigated") {
+      stageInkClear();
+      stagePickClose();
+    }
     void stageReadHistory();
+  } else if (method.startsWith("Runtime.executionContext")) {
+    stagePickWorld(method, params);
   } else if (method === "Runtime.bindingCalled" && params.name === STAGE_BINDING) {
     stageActSeen(params.payload);
   } else if (method === "Page.javascriptDialogOpening") {
@@ -255,6 +268,8 @@ function stageResetPage() {
   stagePin(null);
   stage.dialog = null;
   stageInkClear();
+  stagePickClose();
+  stagePickWorlds.clear();
   stageRenderNav();
   stageRenderDialog();
 }

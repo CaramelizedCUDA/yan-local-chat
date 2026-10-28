@@ -368,7 +368,13 @@ function bindStage() {
     // 连点计数自己数：pointerdown 不带 detail
     const click = stage.click,
       again = e.timeStamp - click.at < 450 && Math.hypot(e.clientX - click.x, e.clientY - click.y) < 6;
-    Object.assign(click, { at: e.timeStamp, x: e.clientX, y: e.clientY, count: again ? click.count + 1 : 1 });
+    Object.assign(click, {
+      at: e.timeStamp,
+      x: e.clientX,
+      y: e.clientY,
+      count: again ? click.count + 1 : 1,
+      behind: (e.button === 1 || e.ctrlKey || e.metaKey) && !e.shiftKey
+    });
     stageMouse("mousePressed", e, { button: STAGE_BUTTONS[e.button] || "left", clickCount: click.count });
   });
   frame.addEventListener("pointerup", e => {
@@ -395,16 +401,28 @@ function bindStage() {
     "wheel",
     e => {
       e.preventDefault();
+      stagePickClose();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
       stageMouse("mouseWheel", e, { deltaX: e.deltaX * unit, deltaY: e.deltaY * unit });
     },
     { passive: false }
   );
+  // 指针移出画面：网页那头也得知道它走了（悬停才展开的菜单收回去），递一下画面外的一点
+  frame.addEventListener("pointerleave", e => {
+    if (e.buttons || stageInking || !stage.session) return;
+    stage.moved = null;
+    void stageSend("Input.dispatchMouseEvent", { type: "mouseMoved", x: -1, y: -1, modifiers: stageMods(e) }, stage.session).catch(
+      () => {}
+    );
+    $("#stageFrame").style.cursor = "";
+  });
   frame.addEventListener("contextmenu", e => e.preventDefault());
   // 键盘：拦下来整个递进网页（包括 Esc、Ctrl+C / V——剪贴板本是同一台机器的），不让言自己的快捷键接走
   keys.addEventListener("keydown", e => {
     e.stopPropagation();
     e.preventDefault();
+    // 人按的键：此时要开的下拉框认是人开的（F4、Alt+↓、空格）
+    stage.keyAt = Date.now();
     if (stageShortcut(e)) return;
     const text = e.key === "Enter" ? "\r" : e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey ? e.key : "";
     stageKey(text ? "keyDown" : "rawKeyDown", e, text);

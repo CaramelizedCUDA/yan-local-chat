@@ -51,20 +51,24 @@ async function stageInkAttach(sessionId, frameId) {
     // 绑定要 Runtime 域开着才装得进各个脚本世界（网页的 console 也会随之报来，看台不理）
     await stageSend("Runtime.enable", {}, sessionId);
     await stageSend("Runtime.addBinding", { name: STAGE_BINDING, executionContextName: STAGE_WORLD }, sessionId);
-    await stageSend("Page.addScriptToEvaluateOnNewDocument", { source: STAGE_EAR, worldName: STAGE_WORLD }, sessionId);
+    // 下拉框那一段（55-pick.js）同住这个世界，一并装上
+    const source = `${STAGE_EAR};
+${STAGE_PICK_EAR}`;
+    await stageSend("Page.addScriptToEvaluateOnNewDocument", { source, worldName: STAGE_WORLD }, sessionId);
     const { executionContextId } = await stageSend("Page.createIsolatedWorld", { frameId, worldName: STAGE_WORLD }, sessionId);
-    await stageSend("Runtime.evaluate", { expression: STAGE_EAR, contextId: executionContextId }, sessionId);
+    await stageSend("Runtime.evaluate", { expression: source, contextId: executionContextId }, sessionId);
   } catch {}
 }
 /** @param {string} payload */
 function stageActSeen(payload) {
-  if (!stage.busy || Date.now() - stage.userAt < 600) return;
   let box;
   try {
     box = JSON.parse(payload);
   } catch {
     return;
   }
+  if (box.kind === "pick") return stagePickOpen(box);
+  if (!stage.busy || Date.now() - stage.userAt < 600) return;
   const act = { ...box, x: box.x + stage.scroll.x, y: box.y + stage.scroll.y, at: Date.now() };
   stageActs = [...stageActs.filter(a => Date.now() - a.at < 1800 && !(a.kind === "type" && act.kind === "type")), act];
   stageInkRender();

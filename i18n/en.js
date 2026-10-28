@@ -986,6 +986,7 @@ var YAN_EN = {
   查看控制台: "View console",
   查看网络请求: "View network requests",
   执事近几步: "Agent's recent steps",
+  筛选: "Filter",
   此刻: "Now",
   "{0} 分": "{0} min",
   自带内核: "Bundled Chromium",

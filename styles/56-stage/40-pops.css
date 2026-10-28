@@ -355,3 +355,58 @@ button.stage-mark-badge:hover .brush .ink,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 网页里的下拉框：浏览器那扇小窗收不到，游目贴着那一框浮一张纸签（同「调律」的方角顶朱）。选项是网页的字，用正文字体；当前选着的着朱 */
+.stage-pick-at {
+  position: absolute;
+  pointer-events: none;
+  visibility: hidden;
+}
+.stage-pick-list {
+  max-height: min(48vh, 340px);
+  max-width: min(420px, 80vw);
+  overflow-y: auto;
+}
+.chip-pop.floating.chip-menu.stage-pick button {
+  padding: 6px 10px;
+  font: var(--fs-small) var(--body);
+  letter-spacing: 0;
+}
+.chip-pop.floating.chip-menu.stage-pick button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-pop.floating.chip-menu.stage-pick button:focus-visible {
+  outline: none;
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.chip-pop.floating.chip-menu.stage-pick button.active {
+  color: var(--accent);
+}
+.chip-pop.floating.chip-menu.stage-pick button:disabled {
+  color: var(--ink-3);
+  opacity: 0.6;
+}
+.stage-pick .stage-pop-head {
+  padding: 8px 10px 3px;
+}
+.stage-pick-filter {
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 5px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font: var(--fs-small) var(--body);
+  outline: none;
+}
+.stage-pick-filter:focus {
+  border-bottom-color: var(--accent);
+}
+/* 组里的项比组名退一格 */
+.chip-pop.floating.chip-menu.stage-pick button.in {
+  padding-left: 20px;
+}
