@@ -171,6 +171,7 @@ function setupQuoteTip() {
   });
 }
 
+const FILE_TARGETS = "[data-open-image], [data-open-archive], [data-open-attachment], [data-download-attachment]";
 // 附件：案上的移除、收入卷宗，各处附件的预览、打开、下载（键盘同样可用）
 function bindAttachmentEvents() {
   document.addEventListener("click", e => {
@@ -187,33 +188,21 @@ function bindAttachmentEvents() {
       void saveToLibrary(save.dataset.saveAttachment);
       return;
     }
-    // 附件里的图，或正文引的目录里的图（见 renderReplyShots）
-    const preview = e.target.closest("[data-open-image], [data-open-archive]");
-    if (preview) {
-      openImageFrom(preview);
-      return;
-    }
-    const open = e.target.closest("[data-open-attachment]");
-    if (open) {
-      void openFileViewer({ attachmentId: open.dataset.openAttachment }, open.dataset.name || "", open);
-      return;
-    }
-    const download = e.target.closest("[data-download-attachment]");
-    if (download) void downloadAttachment(download.dataset.downloadAttachment);
+    const target = e.target.closest(FILE_TARGETS);
+    if (target) openFileTarget(/** @type {HTMLElement} */ (target));
   });
   document.addEventListener("keydown", e => {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    if (e.target.matches?.("[data-open-image], [data-open-archive]")) {
-      e.preventDefault();
-      openImageFrom(/** @type {Element} */ (e.target));
-    } else if (e.target.matches?.("[data-open-attachment]")) {
-      e.preventDefault();
-      void openFileViewer({ attachmentId: e.target.dataset.openAttachment }, e.target.dataset.name || "", e.target);
-    } else if (e.target.matches?.("[data-download-attachment]")) {
-      e.preventDefault();
-      void downloadAttachment(e.target.dataset.downloadAttachment);
-    }
+    if ((e.key !== "Enter" && e.key !== " ") || !e.target.matches?.(FILE_TARGETS)) return;
+    e.preventDefault();
+    openFileTarget(/** @type {HTMLElement} */ (e.target));
   });
+}
+// 点得开的件：附件里的图或正文引的目录里的图（见 renderReplyShots）进看图框，看得了的附件进预览器，看不了的下载。点与键盘同一条路
+/** @param {HTMLElement} el */
+function openFileTarget(el) {
+  if (el.matches("[data-open-image], [data-open-archive]")) openImageFrom(el);
+  else if (el.dataset.openAttachment) void openFileViewer({ attachmentId: el.dataset.openAttachment }, el.dataset.name || "", el);
+  else void downloadAttachment(el.dataset.downloadAttachment);
 }
 // 点开一幅：正文里收成一叠的，叠里几幅同在一组（看图框底下一条小样、左右翻）；别处只看这一幅
 /** @param {Element} el */
