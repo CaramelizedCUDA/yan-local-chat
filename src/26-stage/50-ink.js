@@ -7,7 +7,7 @@
 
 const STAGE_BINDING = "__yanStageSeen",
   STAGE_WORLD = "yan-stage";
-// 耳目：按下报所按的那一件（太大的整块只报指针那一小方），输入报那一栏
+// 耳目：按下报所按的那一件（太大的整块只报指针那一小方），输入报那一栏；指针形状变了报一声（链接上是手、输入框里是竖线）
 const STAGE_EAR = `(() => {
   if (window.__yanStageEar) return;
   window.__yanStageEar = 1;
@@ -18,6 +18,15 @@ const STAGE_EAR = `(() => {
     tell("press", r.width * r.height > 300 * 120 ? new DOMRect(e.clientX - 12, e.clientY - 12, 24, 24) : r);
   }, true);
   addEventListener("input", e => e.target instanceof Element && tell("type", e.target.getBoundingClientRect()), true);
+  let shape = "";
+  addEventListener("mousemove", e => {
+    if (!e.isTrusted || !(e.target instanceof Element)) return;
+    let c = getComputedStyle(e.target).cursor;
+    if (c === "auto") c = e.target.closest("input:not([type=button],[type=submit],[type=reset],[type=checkbox],[type=radio],[type=range],[type=color],[type=file]),textarea,[contenteditable]:not([contenteditable=false])") ? "text" : "";
+    if (c === shape) return;
+    shape = c;
+    try { ${STAGE_BINDING}(JSON.stringify({ kind: "cursor", cursor: c })); } catch {}
+  }, true);
 })()`;
 // 圈住的字：圈是框里看得见的文字，点是那一处那一件的字
 const STAGE_READ = `(a => {
@@ -66,6 +75,7 @@ function stageActSeen(payload) {
   } catch {
     return;
   }
+  if (box.kind === "cursor") return void ($("#stageFrame").style.cursor = /^[a-z-]+$/.test(box.cursor) ? box.cursor : "");
   if (box.kind === "pick") return stagePickOpen(box);
   if (box.kind === "menu") return stageMenuOpen(box);
   if (!stage.busy || Date.now() - stage.userAt < 600) return;

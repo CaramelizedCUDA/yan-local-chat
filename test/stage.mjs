@@ -85,6 +85,26 @@ check(
   await evalJs(`Math.abs(__yanStage.state.meta.width - ${want.w}) < 4`),
   JSON.stringify({ want, meta: await evalJs(`__yanStage.state.meta`) })
 );
+// 宽够时（阔开着）画面一比一：画幅正是网页的原大、落在整像素上，静下来换成一张 PNG
+await evalJs(`document.querySelector("#stageWide").click(); true`);
+const sharp = `(() => { const img = document.querySelector("#stageFrame"), r = img.getBoundingClientRect(), m = __yanStage.state.meta; return r.width === m.width && r.height === m.height && img.naturalWidth === Math.round(m.width * devicePixelRatio) && Number.isInteger(r.left * devicePixelRatio) && Number.isInteger(r.top * devicePixelRatio); })()`;
+await waitFor(sharp, 8000).catch(() => {});
+check(
+  "with room to spare the frame shows one to one on whole pixels",
+  await evalJs(sharp),
+  JSON.stringify(
+    await evalJs(
+      `(img => ({ rect: img.getBoundingClientRect(), natural: [img.naturalWidth, img.naturalHeight], meta: __yanStage.state.meta }))(document.querySelector("#stageFrame"))`
+    )
+  )
+);
+await waitFor(`document.querySelector("#stageFrame").src.startsWith("data:image/png")`, 5000).catch(() => {});
+check("a still page settles into a lossless frame", await evalJs(`document.querySelector("#stageFrame").src.startsWith("data:image/png")`));
+await evalJs(`document.querySelector("#stageWide").click(); true`);
+await waitFor(
+  `Math.abs(__yanStage.state.meta.width - ${want.w}) < 4 && Math.abs(__yanStage.state.meta.height - ${want.h}) < 4`,
+  8000
+).catch(() => {});
 await sleep(300);
 const geometry = await evalJs(
   `(r => ({ x: r.left, y: r.top, w: r.width, h: r.height, ratio: r.width / r.height }))(document.querySelector("#stageFrame").getBoundingClientRect())`

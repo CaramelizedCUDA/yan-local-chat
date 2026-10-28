@@ -67,28 +67,6 @@ function stageShortcut(e) {
   else return false;
   return true;
 }
-// 指针形状跟着网页：停在链接上是手、输入框里是竖线。问网页那一处的 cursor，一秒至多问十回、上一问没回来不再问
-/** @param {MouseEvent} e */
-function stageCursor(e) {
-  if (!stage.session || stage.cursorAsking || e.timeStamp - stage.cursorAt < 100) return;
-  stage.cursorAt = e.timeStamp;
-  stage.cursorAsking = true;
-  const { x, y } = stagePoint(e);
-  void stageSend(
-    "Runtime.evaluate",
-    {
-      expression: `(() => { const el = document.elementFromPoint(${x}, ${y}); if (!el) return ""; const c = getComputedStyle(el).cursor; if (c !== "auto") return c; return el.closest("input:not([type=button],[type=submit],[type=reset],[type=checkbox],[type=radio],[type=range],[type=color],[type=file]),textarea,[contenteditable]:not([contenteditable=false])") ? "text" : ""; })()`,
-      returnByValue: true
-    },
-    stage.session
-  )
-    .then(({ result }) => {
-      const cursor = String(result?.value || "");
-      $("#stageFrame").style.cursor = /^[a-z-]+$/.test(cursor) ? cursor : "";
-    })
-    .catch(() => {})
-    .finally(() => (stage.cursorAsking = false));
-}
 // 打字经一个看不见的输入框：输入法的候选框浮在它那里，所以它要跟着网页里的光标走——先挪到点下的地方，
 // 网页把光标放好后再量一回光标挪过去（stageCaretSoon）。组字中的字随打随递（Input.imeSetComposition），网页里带着下划线现出来，与原生一样
 /** @param {MouseEvent} e */
@@ -300,11 +278,14 @@ function bindStage() {
   });
   // 看台一变大小（拖宽窄、阔、窗口缩放），停手片刻后把浏览器的窗口跟上；被旁注挤开、又回来的，停收或接上画面
   new ResizeObserver(() => {
+    stageSnap();
     if (stageVisible() !== stage.seen) stageWake();
     clearTimeout(stage.fitTimer);
     stage.fitTimer = window.setTimeout(() => void stageFit(), 250);
   }).observe($("#stageView"));
   document.addEventListener("visibilitychange", () => stageShown() && stageWake());
+  // 开合、阔的动效落定后再对一回像素（动着时量的不作数）
+  for (const type of ["animationend", "transitionend"]) $("#stagePanel").addEventListener(type, () => stageSnap());
   // 网页的提示框：Enter 即确定，Esc 即取消（不让 Esc 再去收别的）
   const dialog = $("#stageDialog");
   dialog.addEventListener("click", e => {
@@ -389,7 +370,6 @@ function bindStage() {
         const last = stage.moved;
         stage.moved = null;
         if (last) stageMouse("mouseMoved", last, { button: last.buttons & 1 ? "left" : last.buttons & 2 ? "right" : "none" });
-        if (last && !last.buttons) stageCursor(last);
       });
     stage.moved = e;
   });

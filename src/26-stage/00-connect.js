@@ -70,9 +70,6 @@ const stage = {
   // 执事最近一步的时刻：地址行那两字「执事」在它歇手后再留一会儿
   lastAct: 0,
   actTimer: 0,
-  // 指针形状跟着网页：上一回问的时刻、是否还在问
-  cursorAt: 0,
-  cursorAsking: false,
   // 输入法：正在组字（组字当中不挪隐藏输入框）、量光标的计时
   composing: false,
   caretTimer: 0,

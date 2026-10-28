@@ -11,7 +11,8 @@
 }
 .stage-sheet {
   position: relative;
-  width: min(calc(100cqw - 26px), calc((100cqh - 20px) * var(--ar, 1.7778)), calc(var(--fw, 1280) * 1px));
+  /* 与 stageFit 要的窗同减 24：宽够时画幅正好是网页的原大，一比一不重采 */
+  width: min(calc(100cqw - 24px), calc((100cqh - 24px) * var(--ar, 1.7778)), calc(var(--fw, 1280) * 1px));
   aspect-ratio: var(--ar, 1.7778);
 }
 .stage-frame {
