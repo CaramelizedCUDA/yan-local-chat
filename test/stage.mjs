@@ -810,7 +810,6 @@ const waitForFront = async (id, timeout = 8000) => {
 };
 // 模型换页：自己点回原来那页后，模型的调用（这里直接去找一回）不把人拽走；模型把那一页请到前台（选签即如此），看台跟过去
 await clickTab(targetId);
-await browserSend("Target.activateTarget", { targetId });
 const tabActivated = await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)} && !__yanStage.state.activating`, 5000).then(
   () => true,
   () => false

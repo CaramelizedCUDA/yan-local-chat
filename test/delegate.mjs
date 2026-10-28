@@ -35,7 +35,7 @@ await evalJs(`(() => {
   const modal = document.querySelector("#helperModal");
   if (modal) {
     const checkLive = () => {
-      if (modal.querySelector('.sub-timeline .reasoning[data-state="live"]') || modal.querySelector('.sub-timeline .reasoning')) {
+      if (modal.querySelector('.sub-timeline .reasoning[data-state="live"]')) {
         window.__helperThoughtLive = true;
       }
     };
