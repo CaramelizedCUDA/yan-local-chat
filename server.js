@@ -17,7 +17,7 @@ function currentBundler() {
   }
   return bundler;
 }
-const { sendJson } = require("./server/http.js");
+const { sendJson, stamp } = require("./server/http.js");
 const { openUrl, systemProxy } = require("./server/platform.js");
 // 出网跟代理走：环境变量里设了就用它，没设再看系统代理；只交给 Node 的 fetch 与 http 全局代理，不写进 process.env——
 // 模型跑的 pip、npm 照旧各凭各的。联网翻页（web.js）自带地址门禁、另起连接，不经这里。Node 24 起才有这个口子，旧版照旧直连
@@ -281,7 +281,6 @@ function serveStatic(req, res) {
 
 // YAN_DEBUG=1：把每个请求与异常断开都打到控制台，排查「页面说桥接没起」这类问题时用
 const DEBUG = /^(1|true|yes)$/i.test(String(process.env.YAN_DEBUG || ""));
-const stamp = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
 // 一次请求的分发：直接发来的与总线转进来的（server/bus.js）走同一套门禁与接口表
 async function dispatch(req, res) {
   if (DEBUG) {

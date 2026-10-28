@@ -55,6 +55,8 @@ function requestSignal(res) {
     });
   return abort.signal;
 }
+// 桥接日志每行打头的时刻
+const stamp = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
 function jsonRoute(handle, describe = errorText) {
   return async (req, res) => {
     try {
@@ -212,6 +214,7 @@ module.exports = {
   readJson,
   jsonRoute,
   requestSignal,
+  stamp,
   errorText,
   writeAtomic,
   fileMime,

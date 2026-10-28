@@ -2,7 +2,7 @@
 // 文件读写见 files.js，列与搜见 find.js，意与指纹见 intent.js，卷宗目录见 archive.js
 // 由 server.js 装配：require("./server/work/index.js")({ archiveHome, workHome, toolEnv })
 "use strict";
-const { sendJson, readJson, jsonRoute, requestSignal, errorText } = require("../http.js");
+const { sendJson, readJson, jsonRoute, requestSignal, stamp, errorText } = require("../http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const sandbox = require("../sandbox.js");
@@ -139,7 +139,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
       }
       if (body.background === true) {
         if (res.destroyed) return;
-        console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ （后台）${command.slice(0, 120)}`);
+        console.log(`${stamp()} $ （后台）${command.slice(0, 120)}`);
         const job = startBackground(command, workdir, boxed);
         let delivered = false;
         const disconnected = () => {
@@ -154,7 +154,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
         if (res.destroyed) return disconnected();
         return sendJson(res, 200, report);
       }
-      console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ ${command.slice(0, 120)}`);
+      console.log(`${stamp()} $ ${command.slice(0, 120)}`);
       // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉。指令不拿目录锁，见 locks.js
       const signal = requestSignal(res);
       // 模型的 run_command 带 ticket：到时不掐，转入后台接着跑（见 runForeground）。前台最多等十分钟——
@@ -174,7 +174,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
         env = hook ? { YAN_TOOL: String(hook.tool || ""), YAN_TARGET: String(hook.target || "") } : {};
       const started = Date.now(),
         result = await runShell(command, workdir, timeoutMs, signal, { boxed, env });
-      if (result.aborted) console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })}   已中止：${command.slice(0, 80)}`);
+      if (result.aborted) console.log(`${stamp()}   已中止：${command.slice(0, 80)}`);
       if (!res.writableEnded && !res.destroyed) sendJson(res, 200, { ...result, durationMs: Date.now() - started });
     } catch (error) {
       sendJson(res, 400, { error: failed(error) });
