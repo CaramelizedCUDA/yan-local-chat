@@ -292,15 +292,8 @@ function stageRevisit(url) {
   openStage();
   if (!stage.ws) return toast(t("浏览器未开"));
   const open = [...stage.tabs].find(([, tab]) => tab.url === url);
-  if (open) {
-    stage.activating = stageSend("Target.activateTarget", { targetId: open[0] })
-      .catch(() => {})
-      .finally(() => {
-        stage.activating = null;
-      });
-    stage.front = open[0];
-    stageShow(open[0]);
-  } else stageGo(url);
+  if (open) stageActivate(open[0]);
+  else stageGo(url);
 }
 
 function bindStageInk() {

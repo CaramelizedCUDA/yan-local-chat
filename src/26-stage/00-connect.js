@@ -91,27 +91,47 @@ const stage = {
   /** @type {PointerEvent | null} */
   moved: null,
   /** @type {Promise<unknown> | null} */
-  activating: null
+  activating: null,
+  frontRevision: 0
 };
 
 // ---------- 连上浏览器 ----------
 // 已连着时也问一回：模型若把别的页请到了前台（选签、新开），看台跟过去
 function stageLocate() {
   if (stage.locating) return stage.locating;
+  let revision = 0;
   stage.locating = Promise.resolve(stage.activating)
-    .then(() => bridge("/api/stage", stageService()))
+    .then(() => {
+      revision = stage.frontRevision;
+      return bridge("/api/stage", stageService());
+    })
     .then(({ ws, front, marks, port, output }) => {
       stage.marks = !!marks;
       stage.port = port;
       stage.output = output || "";
       if (!stage.ws) return ws ? stageConnect(ws, front) : stageSync();
-      if (front && front !== stage.front && stage.tabs.has(front)) stageShow(front);
-      stage.front = front || stage.front;
+      if (revision === stage.frontRevision) {
+        if (front && front !== stage.front && stage.tabs.has(front)) stageShow(front);
+        stage.front = front || stage.front;
+      }
       stageSync();
     })
     .catch(() => {})
     .finally(() => (stage.locating = null));
   return stage.locating;
+}
+// 换到后台的那一页：先请到前台，不然它不重绘、没有画面
+/** @param {string} id */
+function stageActivate(id) {
+  const activating = stageSend("Target.activateTarget", { targetId: id })
+    .catch(() => {})
+    .finally(() => {
+      if (stage.activating === activating) stage.activating = null;
+    });
+  stage.activating = activating;
+  stage.front = id;
+  stage.frontRevision++;
+  stageShow(id);
 }
 /** @param {string} url @param {string} front */
 function stageConnect(url, front) {
