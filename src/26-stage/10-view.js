@@ -11,7 +11,7 @@ function stageShow(targetId) {
 async function stageAttach() {
   const target = stage.current,
     ws = stage.ws;
-  if (!stage.ws || !target || (stage.attached === target && stage.session)) return;
+  if (!stage.ws || !target || stage.attached === target) return;
   const detaching = stageDetach(),
     revision = stageAttachRevision,
     current = () => revision === stageAttachRevision && stage.ws === ws && stage.current === target && stageVisible();
@@ -23,7 +23,7 @@ async function stageAttach() {
     const { sessionId } = await stageSend("Target.attachToTarget", { targetId: target, flatten: true });
     if (!current()) {
       if (stage.ws === ws) void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
-      if (stage.attached === target) stage.attached = "";
+      if (revision === stageAttachRevision) stage.attached = "";
       return;
     }
     stage.session = sessionId;
@@ -33,7 +33,7 @@ async function stageAttach() {
     await stageSend("Page.enable", {}, sessionId);
     if (!current()) {
       if (stage.ws === ws) void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
-      if (stage.attached === target) stage.attached = stage.session = "";
+      if (revision === stageAttachRevision) stage.attached = stage.session = "";
       return;
     }
     // 网页要人选文件：不让浏览器在屏幕外开窗，报给看台
@@ -47,7 +47,7 @@ async function stageAttach() {
         void stageSend("Page.stopScreencast", {}, sessionId).catch(() => {});
         void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
       }
-      if (stage.attached === target) stage.attached = stage.session = "";
+      if (revision === stageAttachRevision) stage.attached = stage.session = "";
       return;
     }
     streaming = true;
