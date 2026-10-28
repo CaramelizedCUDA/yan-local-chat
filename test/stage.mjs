@@ -603,15 +603,15 @@ check(
   (await evalJs(`__yanStage.state.tabs.size === ${before + 1} && __yanStage.state.current !== ${JSON.stringify(targetId)}`)) &&
     (await evalJs(`document.activeElement === document.querySelector("#stageUrl")`))
 );
-// 前提：模型页与 fresh 同窗。跨窗口时浏览器对“前台”的排序在无头 macOS 上不可靠，断言也就无从谈起
+// 前提：模型页与 fresh 同窗。跨窗口时浏览器对「前台」的排序在无头 macOS 上不可靠，断言也就无从谈起
 const windowOf = async id => (await browserSend("Browser.getWindowForTarget", { targetId: id })).windowId;
 const modelWindow = await windowOf(targetId),
   freshWindow = await windowOf(fresh);
 check("the model page and the new tab share one window", modelWindow === freshWindow, JSON.stringify({ modelWindow, freshWindow }));
 const viewState = () =>
-  evalJs(`JSON.stringify({ current: __yanStage.state.current, front: __yanStage.state.front, activating: !!__yanStage.state.activating })`).catch(
-    e => String(e)
-  );
+  evalJs(
+    `JSON.stringify({ current: __yanStage.state.current, front: __yanStage.state.front, activating: !!__yanStage.state.activating })`
+  ).catch(e => String(e));
 // 激活是异步的：等浏览器自己把要请到前台的页排到 /json/list 首位，再让看台去问，别用固定等待赌它已经生效
 const pageIds = async () => (await (await fetch(MODEL_DEBUG + "/json/list")).json()).filter(t => t.type === "page").map(t => t.id);
 const waitForFront = async (id, timeout = 8000) => {
@@ -627,10 +627,10 @@ const waitForFront = async (id, timeout = 8000) => {
 // 模型换页：自己点回原来那页后，模型的调用（这里直接去找一回）不把人拽走；模型把那一页请到前台（选签即如此），看台跟过去
 await clickTab(targetId);
 await browserSend("Target.activateTarget", { targetId });
-const tabActivated = await waitFor(
-  `__yanStage.state.current === ${JSON.stringify(targetId)} && !__yanStage.state.activating`,
-  5000
-).then(() => true, () => false);
+const tabActivated = await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)} && !__yanStage.state.activating`, 5000).then(
+  () => true,
+  () => false
+);
 check("stage switches to picked tab and settles activation", tabActivated, await viewState());
 const userFront = await waitForFront(targetId);
 check("browser put the picked tab first", userFront);
@@ -655,7 +655,11 @@ await waitFor(`__yanStage.state.current === ${JSON.stringify(targetId)}`, 5000).
 check("stage falls back to the remaining tab", await evalJs(`__yanStage.state.current === ${JSON.stringify(targetId)}`), await viewState());
 await waitFor(`__yanStage.state.session !== ""`, 5000).catch(() => {});
 check("stage session is active on the remaining tab", await evalJs(`__yanStage.state.session !== ""`), await viewState());
-check("page has no uncaught exceptions after closing tab", await evalJs(`window.__yanExceptions.length === 0`), await evalJs(`JSON.stringify(window.__yanExceptions)`));
+check(
+  "page has no uncaught exceptions after closing tab",
+  await evalJs(`window.__yanExceptions.length === 0`),
+  await evalJs(`JSON.stringify(window.__yanExceptions)`)
+);
 
 // 收起：小屏回来；那一页关了，签跟着没了
 await evalJs(`document.querySelector("#stageClose").click(); true`);
