@@ -10,6 +10,14 @@ let viewerPath = "",
   viewerSource = null,
   viewerReturnFocus = null,
   viewerObjectUrls = [];
+// 关了浮层，焦点交还给点开它的那一件；键盘移到那儿打开的才照旧露焦点框。鼠标点开的、哪怕按 Esc 关，也不露——
+// 浏览器见了按键就当键盘在那儿，正文里那一叠会以为有人移到上头，一直斜开着
+/** @param {Element|null} el */
+const focusReturn = el => (el ? { el, visible: el.matches(":focus-visible") } : null);
+/** @param {{ el: Element, visible: boolean } | null} target */
+function returnFocus(target) {
+  if (target?.el.isConnected) target.el.focus({ focusVisible: target.visible });
+}
 function viewerBlobUrl(blob) {
   const url = URL.createObjectURL(blob);
   viewerObjectUrls.push(url);
@@ -71,7 +79,7 @@ async function openFileViewer(target, name = "", trigger = null) {
     kind = fileKind(title).view || "none";
   viewerPath = source.path || "";
   viewerSource = source;
-  viewerReturnFocus = trigger || document.activeElement;
+  viewerReturnFocus = focusReturn(trigger || document.activeElement);
   revokeViewerUrls();
   showNow(viewer);
   setViewerSeal();
@@ -305,7 +313,7 @@ function closeFileViewer(stop = false) {
     // 预览里全屏着的作品随预览一起没了：页上的 work-mode 也得撤，不然对话区滚不动
     if (!document.querySelector(".work-expanded")) closeExpandedWork();
   }, 180);
-  if (target?.isConnected) target.focus();
+  returnFocus(target);
 }
 // 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起
 /** 顶栏那一枚印：预览一律「览」，意的卡片换它自己的石青「意」（全页仍只一枚印） @param {string} [glyph] */
@@ -318,7 +326,7 @@ function showInFileViewer(title, html, trigger = null, seal = t("览")) {
   viewerRevision++;
   viewerPath = "";
   viewerSource = null;
-  viewerReturnFocus = trigger || document.activeElement;
+  viewerReturnFocus = focusReturn(trigger || document.activeElement);
   revokeViewerUrls();
   showNow($("#fileViewer"));
   setViewerSeal(seal);
@@ -345,7 +353,7 @@ let imageViewerSet = [],
 /** @param {{ id?: string, path?: string, root?: string }[]} items @param {number} index @param {Element|null} trigger */
 function openImageSet(items, index, trigger = null) {
   imageViewerSet = items;
-  imageViewerReturnFocus = trigger || document.activeElement;
+  imageViewerReturnFocus = focusReturn(trigger || document.activeElement);
   const strip = $("#imageViewerStrip"),
     many = items.length > 1;
   $("#imageViewer").classList.toggle("has-strip", many);
@@ -381,7 +389,7 @@ async function showImageAt(index, opening = false) {
     }
     if (revision !== imageViewerRevision) return;
     if (!file) return toast(t("图片原件已找不到"));
-    if (file.kind !== "image") return openFileViewer({ attachmentId: item.id }, file.name, imageViewerReturnFocus);
+    if (file.kind !== "image") return openFileViewer({ attachmentId: item.id }, file.name, imageViewerReturnFocus?.el);
     [src, name, label] = [file.data, file.name, `${file.name || t("图片")} · ${formatFileSize(file.size)}`];
   } else {
     const entry = item.root === archiveDir() ? (archiveEntries || []).find(file => file.path === item.path) : null;
@@ -493,7 +501,7 @@ function closeImageViewer() {
   imageViewerAttachmentId = null;
   const target = imageViewerReturnFocus;
   imageViewerReturnFocus = null;
-  if (target?.isConnected) target.focus();
+  returnFocus(target);
 }
 // 图片查看器盖在卷宗预览之上，先收它（连同底下的预览）；CSV、Markdown、PDF 这些预览单独开着时，Esc 也得关得掉
 defineLayer({

@@ -190,7 +190,8 @@
   object-position: top;
 }
 /* 接连几幅收成一叠（见 groupReplyShots）：最上一幅照真比例（高不过 300），后两张同大的素纸往右错开、上下等距收，露一道纸边，
-   再多的不画；叠下一行淡墨小字写共几幅。指针靠近，后两张绕左下角斜开、露出画来（宽图斜得少，免得右下角探出太多）。
+   再多的不画；叠下一行淡墨小字写共几幅。指针靠近（或用键盘移到上头），后两张绕左下角斜开、露出画来（宽图斜得少，免得右下角探出太多）。
+   不用 :focus-within：点开看图再关，焦点交还给这一幅，指针早走了叠还斜开着。
    各幅都在答末成品条与卷宗里，正文只作一份。
    试过摊开成排（设计稿/122–125）：按宽高比分宽的比例一杂就参差，等大方格裁掉要紧处，幅数一多正文成了一面图墙。
    后两张原是缩放、压暗的画（设计稿/127 现状）：露边随画变色、亮图压成灰、彩图压成泥，缩放又像轮播卡片；罩纸色淡画（乙）、
@@ -210,14 +211,17 @@
 :is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot {
   position: relative;
   z-index: 3;
-  max-width: min(100%, 420px);
+  /* 不写 min(100%, 420px)：叠量自身宽（fit-content）时百分比上限不作数，按画的原比例量出 450 宽、画却收在 420，后两张就离出一道缝。
+     窄栏里由叠的 max-width: 100% 收住 */
+  max-width: 420px;
   margin: 0;
 }
 :is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot img {
   max-height: 300px;
 }
 :is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot.long {
-  width: min(100%, 320px);
+  width: 320px;
+  max-width: 100%;
 }
 :is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot.long img {
   height: 300px;
@@ -254,19 +258,23 @@
 :is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(n + 4) {
   display: none;
 }
-:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :focus-within) > .fi.reply-shot:nth-child(n + 2) img {
+:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :has(:focus-visible)) > .fi.reply-shot:nth-child(n + 2) img {
   opacity: 1;
 }
-:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :focus-within) > .fi.reply-shot:nth-child(2) {
+:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :has(:focus-visible)) > .fi.reply-shot:nth-child(2) {
   transform: rotate(3deg);
 }
-:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :focus-within) > .fi.reply-shot:nth-child(3) {
+:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :has(:focus-visible)) > .fi.reply-shot:nth-child(3) {
   transform: rotate(6deg);
 }
-:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :focus-within):has(> .wide:first-child) > .fi.reply-shot:nth-child(2) {
+:is(.markdown, .trail-note, .sub-report)
+  .reply-shots:is(:hover, :has(:focus-visible)):has(> .wide:first-child)
+  > .fi.reply-shot:nth-child(2) {
   transform: rotate(2deg);
 }
-:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :focus-within):has(> .wide:first-child) > .fi.reply-shot:nth-child(3) {
+:is(.markdown, .trail-note, .sub-report)
+  .reply-shots:is(:hover, :has(:focus-visible)):has(> .wide:first-child)
+  > .fi.reply-shot:nth-child(3) {
   transform: rotate(4deg);
 }
 :is(.markdown, .trail-note, .sub-report) .reply-shots[data-count]:after {

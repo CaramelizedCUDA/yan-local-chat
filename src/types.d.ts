@@ -84,3 +84,7 @@ interface Node {
 interface Event {
   key: string;
 }
+// TS 5.6 的 dom 库还没收 focusVisible（Chromium 已认）：交还焦点时不露焦点框，见 13-files/20-viewer.js
+interface FocusOptions {
+  focusVisible?: boolean;
+}
