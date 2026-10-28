@@ -176,13 +176,38 @@ async function stageDetach() {
   const session = stage.session;
   stage.session = stage.attached = "";
   stage.framed = false;
+  stageDropHeldFrame();
   stageResetPage();
   if (!session) return;
   await stageSend("Page.stopScreencast", {}, session).catch(() => {});
   void stageSend("Target.detachFromTarget", { sessionId: session }).catch(() => {});
 }
+// 截图越出视口时（截比视口大的元素、整页截图，Playwright 带 captureBeyondViewport），浏览器把视口临时撑到要截的大小，
+// 撑开的那一两帧照样推来，画面一缩一放地抖。换了尺寸的帧先压着：稳住 300 毫秒才认（窗口真调了大小），其间回到原尺寸的就是截图那一下，丢掉
+const STAGE_RESIZE_SETTLE = 300;
+let stageHeldFrame = null,
+  stageHoldTimer = 0;
+function stageDropHeldFrame() {
+  clearTimeout(stageHoldTimer);
+  stageHoldTimer = 0;
+  stageHeldFrame = null;
+}
 /** @param {string} data @param {number} width @param {number} height @returns {Promise<void>} */
 function stageFrame(data, width, height) {
+  if (stage.framed && (width !== stage.meta.width || height !== stage.meta.height)) {
+    stageHeldFrame = { data, width, height };
+    stageHoldTimer ||= window.setTimeout(() => {
+      const held = stageHeldFrame;
+      stageDropHeldFrame();
+      if (held && stage.framed) void stageShowFrame(held.data, held.width, held.height);
+    }, STAGE_RESIZE_SETTLE);
+    return Promise.resolve();
+  }
+  stageDropHeldFrame();
+  return stageShowFrame(data, width, height);
+}
+/** @param {string} data @param {number} width @param {number} height @returns {Promise<void>} */
+function stageShowFrame(data, width, height) {
   if (width !== stage.meta.width || height !== stage.meta.height || !stage.framed) {
     stage.meta = { width, height };
     stageFrameSize();
