@@ -85,6 +85,7 @@
  * @property {string} [drifted] 改时发现读后已被谁改过：这一处照原文改了，别处没看过，整份覆盖前须重读
  * @property {string} [root] 读、写、改文件时落在哪个目录（换了目录，先前读过的不算数）
  * @property {Attachment[]} [attachments] 补言（user_note）随带的附件
+ * @property {Quote} [quote] 补言带着的引文（行迹里画短的那句，递给模型时拼进给模型的那份）
  * @property {boolean} [cached] 结果是复用的
  * @property {boolean} [skipped]
  * @property {boolean} [expanded] 输出摊开 / 折起；未记则按状态定（报错折起）

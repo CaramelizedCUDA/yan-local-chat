@@ -187,7 +187,8 @@ function sendSupplement() {
     assistant = c?.messages.find(message => message.id === job?.assistantId);
   if (!c || !job || !assistant || assistant.status !== "streaming") return stopGeneration();
   const user = takeComposer($("#chatInput"));
-  const text = user.quote ? quotedText(user) : user.content;
+  // 引文另记在这一步上：行迹里画短的那句（游目圈点的连同画面），给模型的那份（带网址与各处的位置）递上时才拼进去（见 50-note.js 的 replay）
+  const text = user.content || user.quote?.text || "";
   /** @type {Step} */
   const step = {
     id: `note_${uid().slice(0, 8)}`,
@@ -195,7 +196,8 @@ function sendSupplement() {
     arguments: "{}",
     status: "running",
     title: text.split("\n").find(Boolean)?.slice(0, 80) || "",
-    note: text,
+    note: user.content,
+    ...(user.quote ? { quote: user.quote } : {}),
     attachments: user.attachments?.length ? user.attachments : undefined,
     at: assistant.content.length,
     rat: String(assistant.reasoning || "").length

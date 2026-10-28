@@ -361,3 +361,19 @@
   opacity: 0;
   pointer-events: none;
 }
+/* 补言带的引文：与问句上方的同式——一道淡朱线下短的那句（三行为限），游目圈点的画面接在下面 */
+.tool-note-quote {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 0 6px;
+  padding: 1px 0 1px 9px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+.tool-note-quote:not(:has(.quote-shot)) {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
