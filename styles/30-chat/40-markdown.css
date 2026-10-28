@@ -348,39 +348,69 @@
 .markdown .katex {
   font-size: 1.05em;
 }
-/* 外链图未取时（见 renderRemoteShots）：与取来后同一张折角素纸，只写图名与来处，点了才取；取不到的那行小字着朱 */
+/* 外链图未取时（见 renderRemoteShots；设计稿/129 丁）：与取来后同一张折角素纸，不描虚线、不铺灰；当中一枚淡远山，
+   图名与来处在下方作落款。要做的事只在指着时换上来（取来一看 / 改在浏览器里打开），平时不写说明。
+   落选：甲（虚线框灰底写「点此取图」，像表单占位）、乙（四笔空册，比正文的图还重）、丙（图注一行，与链接难分） */
 :is(.markdown, .trail-note, .sub-report) .fi.remote-shot {
+  position: relative;
+  display: block;
+  width: min(100%, 240px);
+  height: 136px;
+  margin: 10px 0 4px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--ink) 3.5%, var(--paper));
+}
+.remote-shot .remote-shot-hills {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  opacity: 0.55;
+  transition: opacity var(--dur-quick);
+}
+.remote-shot-foot {
+  position: absolute;
+  inset: auto 12px 10px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  width: fit-content;
-  min-width: 220px;
-  max-width: min(100%, 420px);
-  min-height: 64px;
-  margin: 10px 0 4px;
-  padding: 10px 18px 10px 14px;
-  cursor: pointer;
-  outline: 1px dashed var(--line);
-  outline-offset: -1px;
+  align-items: center;
+  gap: 2px;
 }
-.remote-shot .remote-shot-name {
+.remote-shot-foot b {
+  max-width: 100%;
   overflow: hidden;
   color: var(--ink-2);
-  font: var(--fs-small) var(--title);
+  font: 500 var(--fs-small) var(--title);
   letter-spacing: 0.03em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.remote-shot small {
+.remote-shot-foot small {
+  max-width: 100%;
+  overflow: hidden;
   color: var(--ink-3);
   font: var(--fs-mark) var(--body);
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.remote-shot:hover .remote-shot-name,
-.remote-shot:focus-visible .remote-shot-name {
-  color: var(--ink);
-}
-.remote-shot.failed small {
+.remote-shot-foot .act {
+  display: none;
   color: var(--accent);
+}
+.remote-shot:is(:hover, :focus-visible) .remote-shot-hills {
+  opacity: 0.9;
+}
+.remote-shot:is(:hover, :focus-visible) .remote-shot-foot .rest:has(+ .act) {
+  display: none;
+}
+.remote-shot:is(:hover, :focus-visible) .remote-shot-foot .act {
+  display: block;
+}
+.remote-shot.failed .remote-shot-foot .rest {
+  color: var(--accent);
+}
+.remote-shot.loading {
+  cursor: progress;
 }

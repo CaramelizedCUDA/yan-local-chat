@@ -62,7 +62,7 @@ await evalJs(`${chip}.click(); true`);
 await waitFor(`${chip}?.classList.contains("failed")`, 8000).catch(() => {});
 check(
   "a fetch the address gate refuses says why and offers the browser",
-  await evalJs(`(c => c.classList.contains("failed") && c.textContent.includes("取不到") && c.textContent.includes("浏览器"))(${chip})`),
+  await evalJs(`(c => c.classList.contains("failed") && c.textContent.includes("未能取来") && c.textContent.includes("浏览器"))(${chip})`),
   await evalJs(`${chip}?.textContent`)
 );
 await shot("remote-image-failed.png");

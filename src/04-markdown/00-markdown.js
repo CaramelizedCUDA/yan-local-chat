@@ -273,15 +273,20 @@ function remoteShotNode(url, words) {
     shotShape(shot);
     return shot;
   }
+  // 与取来后那幅同一张折角纸（设计稿/129 丁）：当中一枚淡远山，下方图名与来处作落款；
+  // 要做的事（取来、改在浏览器里开）只在指着时换上来，平时不写一句说明
   const trouble = remoteShotTrouble.get(url),
     host = stageHost(url),
-    note = trouble === undefined ? t`${host} · 点此取图` : trouble ? t`取不到：${trouble} · 再点交浏览器打开` : t("取图中…");
+    [rest, act] =
+      trouble === undefined ? [host, t("取来一看")] : trouble ? [t`未能取来：${trouble}`, t("改在浏览器里打开")] : [t("正在取来…"), ""];
   shot.classList.add("remote-shot");
-  if (trouble) shot.classList.add("failed");
+  shot.classList.toggle("failed", !!trouble);
+  shot.classList.toggle("loading", trouble === "");
   shot.dataset.remoteImage = url;
   shot.dataset.alt = words;
   shot.title = url;
-  shot.innerHTML = `<span class="remote-shot-name">${escapeHtml(words || t("外链图"))}</span><small>${escapeHtml(note)}</small>`;
+  shot.setAttribute("aria-label", `${words || t("外链图")} · ${host} · ${act || rest}`);
+  shot.innerHTML = `${brushIcon("stage", "remote-shot-hills")}<span class="remote-shot-foot"><b>${escapeHtml(words || t("外链图"))}</b><small class="rest">${escapeHtml(rest)}</small>${act ? `<small class="act">${escapeHtml(act)}</small>` : ""}</span>`;
   shot.addEventListener("click", () => void fetchRemoteShot(url));
   shot.addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
@@ -305,7 +310,7 @@ async function fetchRemoteShot(url) {
     remoteShots.set(url, await bridge("/api/remote-image", { url }));
     remoteShotTrouble.delete(url);
   } catch (error) {
-    remoteShotTrouble.set(url, tr(String(/** @type {any} */ (error).message || error).slice(0, 60)) || t("未知缘由"));
+    remoteShotTrouble.set(url, tr(String(/** @type {any} */ (error).message || error).slice(0, 28)) || t("未知缘由"));
   }
   refreshRemoteShots(url);
 }
