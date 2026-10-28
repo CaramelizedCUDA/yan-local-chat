@@ -152,20 +152,15 @@ async function askReviewer(step, args, ctx, why) {
   const duty = { id: "duty-review", name: "", quota: "", usedTokens: 0, ...store.settings.dutyReview },
     base = reviewCase(step, args, ctx.conversation, why),
     ask = async (tail, maxTokens) => {
-      const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(60000)]),
-        response = await requestChat(duty, [{ role: "user", content: `${base}\n\n${tail}` }], signal, {
+      const text = `${base}\n\n${tail}`,
+        signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(60000)]),
+        response = await requestChat(duty, [{ role: "user", content: text }], signal, {
           systemPrompt: prompt("review.system"),
           maxTokens
         });
       if (!response.ok) throw Error(await describeResponseError(response));
-      /** @type {Message} */
-      const reply = { id: `review-${uid()}`, role: "assistant", content: "", timestamp: now() };
-      if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, reply);
-      else takeWholeReply(await response.json(), reply);
-      noteUsage(
-        "review",
-        Number(reply.usage?.total_tokens) || estimateTokens([{ content: `${base}\n\n${tail}` }, { content: reply.content }])
-      );
+      const { reply, tokens } = await readWhole(response, text);
+      noteUsage("review", tokens);
       return String(reply.content || "").trim();
     };
   if (reviewWord(await ask(prompt("review.quick"), 1500)).startsWith("准")) return { ok: true, why: "" };

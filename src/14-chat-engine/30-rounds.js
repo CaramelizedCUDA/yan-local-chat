@@ -19,6 +19,13 @@ function newTally() {
     steered: false
   };
 }
+// 用量两份相加；都没有记作 null
+function usageSum(a, b) {
+  if (!a || !b) return a || b || null;
+  const sum = { ...a };
+  for (const [key, value] of Object.entries(b)) sum[key] = Number(sum[key] || 0) + Number(value || 0);
+  return sum;
+}
 /**
  * @param {Message|SubAgent} target 写进哪里：主答、旁注的消息，或帮手
  * @param {Array<Record<string, any>>} history 送给接口的消息，就地追加
@@ -404,13 +411,18 @@ function takeWholeReply(data, target) {
 // 一问一答的小请求（拟题、撮要）：答复读进一条不进对话的消息，流式、整份都认；花的墨记在模型上，接口没报用量的按字估
 /** @param {Profile} profile @param {string} ask 发出去的那一问 @returns {Promise<Message>} */
 async function readAside(response, profile, ask) {
-  /** @type {Message} */
-  const temp = { id: `aside-${uid()}`, role: "assistant", content: "", timestamp: now() };
-  if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, temp);
-  else takeWholeReply(await response.json(), temp);
-  spendTokens(profile, Number(temp.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: temp.content }]));
+  const { reply, tokens } = await readWhole(response, ask);
+  spendTokens(profile, tokens);
   renderQuota();
-  return temp;
+  return reply;
+}
+/** 一问一答的答复整段读下（流式与否都行），连同花了多少墨（接口没报就估） @param {Response} response @param {string} ask */
+async function readWhole(response, ask) {
+  /** @type {Message} */
+  const reply = { id: `aside-${uid()}`, role: "assistant", content: "", timestamp: now() };
+  if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, reply);
+  else takeWholeReply(await response.json(), reply);
+  return { reply, tokens: Number(reply.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: reply.content }]) };
 }
 // 写到输出上限、截在工具调用中间：拟好的调用照常交下去——参数残缺的由登记表回一句「太长了，分几次写」（见 15-tools/00-registry.js），
 // 模型才知道该改写法。当成断线重来，它每回都照样写到上限，烧满三遍落成中断
@@ -477,28 +489,25 @@ async function requestPatiently(profile, history, signal, overrides) {
     await restFor(wait, signal, local);
   }
 }
-// opened：接口至少接下过一次请求（没接下的——400、连不上——不花墨）；partialRound：最后一轮开了头却没等到它的 usage（停止、断网），
+// 一答收尾（停了、断了也算）照 tally 结算：用量记到答上，耗墨补进余墨。
+// opened：接口至少接下过一次请求（没接下的——400、连不上——不花墨）；roundOpen：最后一轮开了头却没等到它的 usage（停止、断网），
 // 那一轮按估算补上——提示全文加上这一轮写出的字；一次 usage 都没拿到的（接口不回 usage）整答按估算。
 // spent：各轮已当场扣进余墨的（见 runRounds 的 spend），这里只补其余
 /**
  * @param {Profile} profile
  * @param {Message} assistant
- * @param {Conversation} conversation
+ * @param {ReturnType<typeof newTally>} tally
+ * @param {UsageKind} [kind]
  */
-function accountUsage(
-  profile,
-  assistant,
-  requestMessages,
-  conversation,
-  { opened = true, partialRound = false, roundStart = 0, steered = false, spent = 0, kind = /** @type {UsageKind} */ ("main") } = {}
-) {
+function accountUsage(profile, assistant, requestMessages, tally, kind = "main") {
+  assistant.usage = tally.usageKnown ? tally.usage : null;
   const exact = Number(assistant.usage?.total_tokens || 0);
   const estimate = from => estimateTokens(requestMessages) + estimateTokens([{ content: String(assistant.content || "").slice(from) }]);
-  const consumed = exact > 0 ? exact + (partialRound ? estimate(roundStart) : 0) : opened ? estimate(0) : 0;
+  const consumed = exact > 0 ? exact + (tally.roundOpen ? estimate(tally.roundStart) : 0) : tally.opened ? estimate(0) : 0;
   if (!(consumed > 0)) return;
-  const live = spendTokens(profile, Math.max(0, consumed - spent), kind);
+  const live = spendTokens(profile, Math.max(0, consumed - tally.spent), kind);
   assistant.tokenCount = consumed;
-  assistant.tokenEstimated = !(exact > 0) || partialRound || steered;
+  assistant.tokenEstimated = !(exact > 0) || tally.roundOpen || tally.steered;
   if (quotaExhausted(live)) toast(t("此答写毕，余墨已尽；换个模型可续"));
   renderQuota();
 }

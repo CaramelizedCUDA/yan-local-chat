@@ -601,15 +601,7 @@ async function streamSideReply(conversation, thread, assistant, profile) {
     }
   } finally {
     // 停止或中断也结算：接口接下了请求就花了墨；查阅了几轮的，各轮用量相加
-    assistant.usage = tally.usageKnown ? tally.usage : null;
-    accountUsage(profile, assistant, history, conversation, {
-      opened: tally.opened,
-      partialRound: tally.roundOpen,
-      roundStart: tally.roundStart,
-      steered: tally.steered,
-      spent: tally.spent,
-      kind: "side"
-    });
+    accountUsage(profile, assistant, history, tally, "side");
     if (requestJobs.get(key) === job) requestJobs.delete(key);
     markDirty(conversation.id);
     saveStore();

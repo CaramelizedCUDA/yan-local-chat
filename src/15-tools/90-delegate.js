@@ -348,20 +348,12 @@ function resumeHelperStep(id) {
     step = conversation && helperRuns(conversation).find(run => run.id === id);
   if (step) void resumeHelpers(conversation, [step]);
 }
-// 用量两份相加；都没有记作 null
-function usageSum(a, b) {
-  if (!a || !b) return a || b || null;
-  const sum = { ...a };
-  for (const [key, value] of Object.entries(b)) sum[key] = Number(sum[key] || 0) + Number(value || 0);
-  return sum;
-}
 // 派它的那一答收尾时它还没做完，墨没算进这一答：做完了记回那一答（余墨各轮已当场扣过，见 runRounds 的 spend）
 /** @param {Message} assistant */
 function chargeHelper(assistant, usage) {
   const spent = Number(usage?.total_tokens || 0);
   if (!spent) return;
-  assistant.usage ||= { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-  for (const key of Object.keys(usage)) assistant.usage[key] = Number(assistant.usage[key] || 0) + Number(usage[key] || 0);
+  assistant.usage = usageSum(assistant.usage, usage);
   assistant.tokenCount = Number(assistant.tokenCount || 0) + spent;
 }
 // 续派时帮手先前的经过：每一趟一问一答（所领之命 → 回报），上一趟的行迹冠在下一趟的命前，与主对话的历史同一个写法
