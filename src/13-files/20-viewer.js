@@ -335,6 +335,8 @@ function showInFileViewer(title, html, trigger = null, seal = t("览")) {
   $("#fileViewerStage").innerHTML = html;
   $("#fileViewerClose").focus();
 }
+/** @type {{ src: string, name: string, url: string } | null} 正看的是取来的外链图 */
+let imageViewerRemote = null;
 let imageViewerArchivePath = null,
   imageViewerArchiveRoot = "",
   imageViewerRevision = 0;
@@ -347,10 +349,10 @@ function openArchiveImage(path, trigger = null, root = archiveDir(), paths = [pa
     trigger
   );
 }
-// 看图框一回看的一组：每件是附件 { id } 或目录里的图 { path, root }；只一件时不出小样
+// 看图框一回看的一组：每件是附件 { id }、目录里的图 { path, root }，或点了取来的外链图 { src, name, url }；只一件时不出小样
 let imageViewerSet = [],
   imageViewerIndex = 0;
-/** @param {{ id?: string, path?: string, root?: string }[]} items @param {number} index @param {Element|null} trigger */
+/** @param {{ id?: string, path?: string, root?: string, src?: string, name?: string, url?: string }[]} items @param {number} index @param {Element|null} trigger */
 function openImageSet(items, index, trigger = null) {
   imageViewerSet = items;
   imageViewerReturnFocus = focusReturn(trigger || document.activeElement);
@@ -365,7 +367,9 @@ function openImageSet(items, index, trigger = null) {
             `<button type="button" data-strip-index="${i}"${item.path ? ` title="${escapeHtml(item.path.split("/").pop())}"` : ""}>${
               item.id
                 ? `<img data-thumb="${escapeHtml(item.id)}" alt="">`
-                : `<img src="${escapeHtml(archiveFileUrl(item.path, false, item.root))}" loading="lazy" decoding="async" alt="">`
+                : item.src
+                  ? `<img src="${escapeHtml(item.src)}" alt="">`
+                  : `<img src="${escapeHtml(archiveFileUrl(item.path, false, item.root))}" loading="lazy" decoding="async" alt="">`
             }</button>`
         )
         .join("")
@@ -391,6 +395,8 @@ async function showImageAt(index, opening = false) {
     if (!file) return toast(t("图片原件已找不到"));
     if (file.kind !== "image") return openFileViewer({ attachmentId: item.id }, file.name, imageViewerReturnFocus?.el);
     [src, name, label] = [file.data, file.name, `${file.name || t("图片")} · ${formatFileSize(file.size)}`];
+  } else if (item.src) {
+    [src, name, label] = [item.src, item.name || "", `${item.name || t("图片")} · ${stageHost(item.url || "")}`];
   } else {
     const entry = item.root === archiveDir() ? (archiveEntries || []).find(file => file.path === item.path) : null;
     src = archiveFileUrl(item.path, false, item.root);
@@ -400,6 +406,7 @@ async function showImageAt(index, opening = false) {
   imageViewerIndex = index;
   imageViewerAttachmentId = item.id || null;
   imageViewerArchivePath = item.path || null;
+  imageViewerRemote = item.src ? { src: item.src, name: item.name || "", url: item.url || "" } : null;
   imageViewerArchiveRoot = item.root || "";
   $("#imageViewerName").textContent = label;
   const image = $("#imageViewerImage");
@@ -455,6 +462,13 @@ function bindViewerEvents() {
   $("#imageViewerDownload").onclick = () => {
     if (imageViewerAttachmentId) void downloadAttachment(imageViewerAttachmentId);
     else if (imageViewerArchivePath) downloadArchiveFile(imageViewerArchivePath, imageViewerArchiveRoot);
+    else if (imageViewerRemote) {
+      let name = imageViewerRemote.url.split(/[?#]/)[0].split("/").pop() || "";
+      try {
+        name = decodeURIComponent(name);
+      } catch {}
+      downloadHref(imageViewerRemote.src, name || imageViewerRemote.name || t("图片"));
+    }
   };
   $("#imageViewerZoom").onclick = toggleImageViewerZoom;
   $("#imageViewerStage").addEventListener("click", e => {

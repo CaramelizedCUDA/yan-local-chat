@@ -314,6 +314,30 @@ const handleHttp = jsonRoute(async body => {
     durationMs: Date.now() - started
   };
 });
+const IMAGE_LIMIT = 15 * 1024 * 1024;
+// 正文里的外链图：页面不直连外站（见 server.js 的 CSP），人点了才由这里取（见 src/04-markdown 的 renderRemoteShots）。
+// 地址门禁与逐跳再查同翻网页，只收图片、至多 15 MB，交回 data URL
+const handleImage = jsonRoute(async body => {
+  let url;
+  try {
+    url = new URL(String(body.url || "").trim());
+  } catch {
+    throw Error("网址无效");
+  }
+  if (!/^https?:$/.test(url.protocol)) throw Error("只取 http / https 的图");
+  const { response } = await fetchPublicResponse(url.href, {
+    headers: { Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.8" },
+    timeout: 20000
+  });
+  const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (!response.ok || !type.startsWith("image/")) {
+    await response.body?.cancel().catch(() => {});
+    throw Error(!response.ok ? `对方回 ${response.status}` : `不是图片（${type || "未知类型"}）`);
+  }
+  const { buffer, truncated } = await readLimitedBytes(response, IMAGE_LIMIT);
+  if (truncated) throw Error("图片超过 15 MB");
+  return { data: `data:${type};base64,${buffer.toString("base64")}`, size: buffer.length };
+});
 const FETCH_TEXT_LIMIT = 3 * 1024 * 1024;
 const charsetOf = text => (String(text).match(/charset=["']?([\w-]+)/i) || [])[1];
 // 认不得的字符集（写错、冷门）照 UTF-8 读，不让整页读不成
@@ -416,7 +440,7 @@ module.exports = {
   // 引导、翻网页：本机桥接认得的来源都可调（检索在 server/search.js）
   openRoutes: { "POST /api/fetch": handleFetch },
   // http_request 能打本机的服务，只给受信的页面
-  routes: { "POST /api/http": handleHttp },
+  routes: { "POST /api/http": handleHttp, "POST /api/remote-image": handleImage },
   OUTBOUND_MARK,
   decodeEntities,
   stripTags,

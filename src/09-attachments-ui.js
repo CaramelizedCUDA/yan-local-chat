@@ -171,7 +171,7 @@ function setupQuoteTip() {
   });
 }
 
-const FILE_TARGETS = "[data-open-image], [data-open-archive], [data-open-attachment], [data-download-attachment]";
+const FILE_TARGETS = "[data-open-image], [data-open-archive], [data-open-remote], [data-open-attachment], [data-download-attachment]";
 // 附件：案上的移除、收入卷宗，各处附件的预览、打开、下载（键盘同样可用）
 function bindAttachmentEvents() {
   document.addEventListener("click", e => {
@@ -200,7 +200,7 @@ function bindAttachmentEvents() {
 // 点得开的件：附件里的图或正文引的目录里的图（见 renderReplyShots）进看图框，看得了的附件进预览器，看不了的下载。点与键盘同一条路
 /** @param {HTMLElement} el */
 function openFileTarget(el) {
-  if (el.matches("[data-open-image], [data-open-archive]")) openImageFrom(el);
+  if (el.matches("[data-open-image], [data-open-archive], [data-open-remote]")) openImageFrom(el);
   else if (el.dataset.openAttachment) void openFileViewer({ attachmentId: el.dataset.openAttachment }, el.dataset.name || "", el);
   else void downloadAttachment(el.dataset.downloadAttachment);
 }
@@ -210,7 +210,11 @@ function openImageFrom(el) {
   const members = /** @type {HTMLElement[]} */ ([...(el.closest(".reply-shots")?.children || [el])]);
   openImageSet(
     members.map(node =>
-      node.dataset.openImage ? { id: node.dataset.openImage } : { path: node.dataset.openArchive, root: node.dataset.root || archiveDir() }
+      node.dataset.openImage
+        ? { id: node.dataset.openImage }
+        : node.dataset.openRemote
+          ? { src: remoteShots.get(node.dataset.openRemote)?.data || "", name: node.dataset.name || "", url: node.dataset.openRemote }
+          : { path: node.dataset.openArchive, root: node.dataset.root || archiveDir() }
     ),
     Math.max(0, members.indexOf(/** @type {HTMLElement} */ (el))),
     el

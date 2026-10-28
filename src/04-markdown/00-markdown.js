@@ -66,6 +66,12 @@ function setupMarkdown() {
     // 图片同理：![截图](page-1.png) 的 src 也记成 data-file，是这一答工具交回的画面就画成那幅（见 renderReplyShots）
     DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
       if (!((node.tagName === "A" && data.attrName === "href") || (node.tagName === "IMG" && data.attrName === "src"))) return;
+      // 外链图不让页面自己去取，记下图址，画成一张待取的素纸（见 renderRemoteShots）
+      if (node.tagName === "IMG" && /^https?:\/\//i.test(String(data.attrValue).trim())) {
+        node.setAttribute("data-remote", String(data.attrValue).trim());
+        data.keepAttr = false;
+        return;
+      }
       const name = localFileName(data.attrValue);
       if (!name) return;
       node.setAttribute("data-file", name);
@@ -179,8 +185,9 @@ defineEmbed({ name: "math", mount: root => void renderPendingMath(root) });
 // 都不是的：链接照旧当目录里的文件，图到落脚处按路取（模型自己存的图表、前几回收进卷宗的图），取不到留下说明文字，不画破图
 /** @param {Element} root */
 function renderReplyShots(root) {
-  const refs = root.querySelectorAll?.(":is(.markdown, .trail-note, .sub-report) [data-file]") || [];
-  if (!refs.length) return;
+  const remote = renderRemoteShots(root),
+    refs = root.querySelectorAll?.(":is(.markdown, .trail-note, .sub-report) [data-file]") || [];
+  if (!refs.length && !remote) return;
   const c = currentConversation(),
     messages = c ? everyMessage(c) : [];
   for (const ref of refs) {
@@ -215,12 +222,7 @@ function renderReplyShots(root) {
       shot.innerHTML = `<img src="${escapeHtml(archiveFileUrl(target.path, false, target.root))}" alt="${alt}">`;
       shot.querySelector("img").onerror = () => shot.replaceWith(words);
     }
-    // 整页长截图（高过宽的两倍）从顶上取景，点开看全幅；别的整幅见。横幅在一叠里斜开得少（见 40-markdown.css）
-    shot.querySelector("img").addEventListener("load", e => {
-      const img = /** @type {HTMLImageElement} */ (e.target);
-      shot.classList.toggle("long", img.naturalHeight > img.naturalWidth * 2);
-      shot.classList.toggle("wide", img.naturalWidth > img.naturalHeight * 1.2);
-    });
+    shotShape(shot);
     // 图换成那幅；链接留着字（点了也是看图），画面接在后面
     if (ref.tagName === "IMG") ref.replaceWith(shot);
     else {
@@ -231,6 +233,93 @@ function renderReplyShots(root) {
   }
   groupReplyShots(root);
   void loadThumbnails(root);
+}
+// 整页长截图（高过宽的两倍）从顶上取景，点开看全幅；别的整幅见。横幅在一叠里斜开得少（见 40-markdown.css）
+/** @param {HTMLElement} shot */
+function shotShape(shot) {
+  shot.querySelector("img")?.addEventListener("load", e => {
+    const img = /** @type {HTMLImageElement} */ (e.target);
+    shot.classList.toggle("long", img.naturalHeight > img.naturalWidth * 2);
+    shot.classList.toggle("wide", img.naturalWidth > img.naturalHeight * 1.2);
+  });
+}
+// 正文里的外链图（![图](https://…)）：页面不直连外站（CSP 的 img-src 只许本机）——不然一张图就能把对话里的字带出去
+// （网页里的话诱着模型写出带参数的图址，页面一画就发了）。所以先画一张素纸，写图名与来处，人点了才经桥接取来
+// （POST /api/remote-image：地址门禁同翻网页、只收图），就地画成与别的图一样的一幅；这一回开着页取过的都记着，重画不再问。
+// 取不到的写明缘由，再点交系统浏览器去开
+/** @type {Map<string, { data: string, size: number }>} */
+const remoteShots = new Map();
+/** @type {Map<string, string>} 正取着的（空串）与没取到的缘由 */
+const remoteShotTrouble = new Map();
+/** @param {Element} root @returns {number} 换了几处 */
+function renderRemoteShots(root) {
+  const imgs = root.querySelectorAll?.(":is(.markdown, .trail-note, .sub-report) img[data-remote]") || [];
+  for (const img of imgs) img.replaceWith(remoteShotNode(img.getAttribute("data-remote") || "", img.getAttribute("alt") || ""));
+  return imgs.length;
+}
+/** @param {string} url @param {string} words 图名（alt） */
+function remoteShotNode(url, words) {
+  const got = remoteShots.get(url),
+    shot = document.createElement("span");
+  shot.className = "fi fi-thumb";
+  shot.setAttribute("role", "button");
+  shot.tabIndex = 0;
+  if (got) {
+    shot.classList.add("reply-shot");
+    shot.dataset.openRemote = url;
+    shot.dataset.name = words;
+    shot.title = t`查看 ${words || stageHost(url)}`;
+    shot.innerHTML = `<img src="${escapeHtml(got.data)}" alt="${escapeHtml(words)}">`;
+    shotShape(shot);
+    return shot;
+  }
+  const trouble = remoteShotTrouble.get(url),
+    host = stageHost(url),
+    note = trouble === undefined ? t`${host} · 点此取图` : trouble ? t`取不到：${trouble} · 再点交浏览器打开` : t("取图中…");
+  shot.classList.add("remote-shot");
+  if (trouble) shot.classList.add("failed");
+  shot.dataset.remoteImage = url;
+  shot.dataset.alt = words;
+  shot.title = url;
+  shot.innerHTML = `<span class="remote-shot-name">${escapeHtml(words || t("外链图"))}</span><small>${escapeHtml(note)}</small>`;
+  shot.addEventListener("click", () => void fetchRemoteShot(url));
+  shot.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    void fetchRemoteShot(url);
+  });
+  return shot;
+}
+/** @param {string} url */
+async function fetchRemoteShot(url) {
+  const trouble = remoteShotTrouble.get(url);
+  if (trouble === "") return;
+  if (trouble)
+    return void bridge("/api/stage/open", { url }).then(
+      () => toast(t("已交给系统浏览器")),
+      error => toast(t`打开失败：${String(error.message || error).slice(0, 80)}`)
+    );
+  remoteShotTrouble.set(url, "");
+  refreshRemoteShots(url);
+  try {
+    remoteShots.set(url, await bridge("/api/remote-image", { url }));
+    remoteShotTrouble.delete(url);
+  } catch (error) {
+    remoteShotTrouble.set(url, tr(String(/** @type {any} */ (error).message || error).slice(0, 60)) || t("未知缘由"));
+  }
+  refreshRemoteShots(url);
+}
+// 同一图址在页上的各处一并换（流式重画过的、别的答里引了同一幅的）；取到的接进前后的一叠
+/** @param {string} url */
+function refreshRemoteShots(url) {
+  const roots = new Set();
+  for (const chip of document.querySelectorAll(`[data-remote-image="${CSS.escape(url)}"]`)) {
+    const next = remoteShotNode(url, /** @type {HTMLElement} */ (chip).dataset.alt || "");
+    chip.replaceWith(next);
+    const root = next.closest(".markdown, .trail-note, .sub-report");
+    if (root) roots.add(root);
+  }
+  if (remoteShots.has(url)) for (const root of roots) groupReplyShots(root);
 }
 // 接连几幅（一轮画的几稿）收成一叠，不一路往下堆：同段里只隔着换行的，或这段以图收尾、下一段只有图的。
 // 流式时已收尾的段落一段段补进来，这里每回把新到的接进前面那一叠；只在同一个容器里挪，尾段重画时不会多出一份
