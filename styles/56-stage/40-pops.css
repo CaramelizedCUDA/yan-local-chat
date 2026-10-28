@@ -410,3 +410,7 @@ button.stage-mark-badge:hover .brush .ink,
 .chip-pop.floating.chip-menu.stage-pick button.in {
   padding-left: 20px;
 }
+/* 右键的纸签：同「调律」，只是贴着指针 */
+.chip-pop.floating.chip-menu.stage-ctx {
+  min-width: 168px;
+}

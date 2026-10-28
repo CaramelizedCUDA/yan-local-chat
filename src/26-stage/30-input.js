@@ -368,13 +368,9 @@ function bindStage() {
     // 连点计数自己数：pointerdown 不带 detail
     const click = stage.click,
       again = e.timeStamp - click.at < 450 && Math.hypot(e.clientX - click.x, e.clientY - click.y) < 6;
-    Object.assign(click, {
-      at: e.timeStamp,
-      x: e.clientX,
-      y: e.clientY,
-      count: again ? click.count + 1 : 1,
-      behind: (e.button === 1 || e.ctrlKey || e.metaKey) && !e.shiftKey
-    });
+    Object.assign(click, { at: e.timeStamp, x: e.clientX, y: e.clientY, count: again ? click.count + 1 : 1 });
+    // 中键、Ctrl（不带 Shift）点链接：浏览器在后台开新页
+    if ((e.button === 1 || e.ctrlKey || e.metaKey) && !e.shiftKey) stage.behindAt = Date.now();
     stageMouse("mousePressed", e, { button: STAGE_BUTTONS[e.button] || "left", clickCount: click.count });
   });
   frame.addEventListener("pointerup", e => {

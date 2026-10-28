@@ -85,7 +85,9 @@ const stage = {
   poll: 0,
   fitTimer: 0,
   empty: "",
-  click: { at: 0, x: 0, y: 0, count: 0, behind: false },
+  click: { at: 0, x: 0, y: 0, count: 0 },
+  // 人要在后台开新页的那一下（中键、Ctrl 点链接，右键「新标签打开」）：随后冒出的新页不跟过去
+  behindAt: 0,
   // 圈点开着：画面上的点按是下笔，不递进网页（见 src/26-stage/50-ink.js）
   pen: false,
   // 人最近一回在画面上按下的时刻：网页报来的按下若紧跟着它，是人按的，不当执事落笔
@@ -192,9 +194,9 @@ const stageTabType = info => info.type === "page" || (info.type === "browser_ui"
 // 它起初网址是空的、后来才补上，报来时与轮询时都要认
 /** @param {{ url: string }} info */
 const stageNotTab = info => /^edge:\/\/[\w-]*-(hub|dialog)\b/.test(info.url);
-// 人刚用中键或 Ctrl（不带 Shift）点了一下：这时冒出来的新页是在后台开的
+// 人刚用中键或 Ctrl 点了链接、或在右键里点了「新标签打开」：这时冒出来的新页是在后台开的
 function stageOpenedBehind() {
-  return stage.click.behind && performance.now() - stage.click.at < 2000;
+  return Date.now() - stage.behindAt < 2000;
 }
 /** @param {string} id */
 function stageDropTab(id) {

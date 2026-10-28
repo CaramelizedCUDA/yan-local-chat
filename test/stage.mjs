@@ -407,7 +407,7 @@ check(
 const pickPage =
   "data:text/html;charset=utf-8," +
   encodeURIComponent(
-    `<title>选</title><body style="margin:0"><select id="s" style="position:fixed;left:5vw;top:5vh;width:30vw;height:8vh" onchange="document.title='选:'+this.value"><option>甲</option><optgroup label="组"><option>乙</option><option disabled>丙</option></optgroup></select><div style="position:fixed;left:50vw;top:5vh;width:40vw;height:30vh" onmouseenter="document.title='进'" onmouseleave="document.title='离'"></div><a href="${PAGE}icon.svg" style="position:fixed;left:5vw;top:60vh;width:30vw;height:20vh;display:block">链</a></body>`
+    `<title>选</title><body style="margin:0"><select id="s" style="position:fixed;left:5vw;top:5vh;width:30vw;height:8vh" onchange="document.title='选:'+this.value"><option>甲</option><optgroup label="组"><option>乙</option><option disabled>丙</option></optgroup></select><div style="position:fixed;left:50vw;top:5vh;width:40vw;height:30vh" onmouseenter="document.title='进'" onmouseleave="document.title='离'"></div><a href="${PAGE}icon.svg" style="position:fixed;left:5vw;top:60vh;width:30vw;height:20vh;display:block">链</a><p id="t" style="position:fixed;left:50vw;top:60vh;margin:0;font-size:30px">一段要引的话</p></body>`
   );
 await evalJs(`__yanStage.go(${JSON.stringify(pickPage)}); true`);
 await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "选"`, 8000).catch(() => {});
@@ -461,6 +461,49 @@ for (const id of await evalJs(
   `[...__yanStage.state.tabs.keys()].filter(id => id !== ${JSON.stringify(targetId)} && /icon\.svg$/.test(__yanStage.state.tabs.get(id).url))`
 ))
   await browserSend("Target.closeTarget", { targetId: id });
+
+// 右键：浏览器的菜单在画面外，游目在指针处浮一张纸签——链接上能后台新开，选中的字能引给执事，空白处是前后与重载
+const rightClick = async (fx, fy) => {
+  for (const type of ["mousePressed", "mouseReleased"])
+    await send("Input.dispatchMouseEvent", {
+      type,
+      x: at(fx, fy)[0],
+      y: at(fx, fy)[1],
+      button: "right",
+      buttons: type === "mousePressed" ? 2 : 0,
+      clickCount: 1
+    });
+  await waitFor(`!!document.querySelector(".chip-pop.stage-ctx")`, 5000).catch(() => {});
+  return evalJs(`[...document.querySelectorAll(".chip-pop.stage-ctx [data-menu]")].map(b => b.dataset.menu).join()`);
+};
+const ctxItem = id => evalJs(`document.querySelector(".chip-pop.stage-ctx [data-menu=${id}]").click(); true`);
+check("right-clicking a link offers to open or copy it", (await rightClick(0.2, 0.7)) === "link-open,link-copy");
+await shot("stage-ctx.png");
+const tabsBeforeCtx = await evalJs(`__yanStage.state.tabs.size`);
+await ctxItem("link-open");
+await waitFor(`__yanStage.state.tabs.size > ${tabsBeforeCtx}`, 5000).catch(() => {});
+await sleep(300);
+check(
+  "opening a link from the menu leaves the stage on this page",
+  await evalJs(`__yanStage.state.tabs.size > ${tabsBeforeCtx} && __yanStage.state.current === ${JSON.stringify(targetId)}`)
+);
+for (const id of await evalJs(
+  `[...__yanStage.state.tabs.keys()].filter(id => id !== ${JSON.stringify(targetId)} && /icon\.svg$/.test(__yanStage.state.tabs.get(id).url))`
+))
+  await browserSend("Target.closeTarget", { targetId: id });
+await browserSend("Runtime.evaluate", { expression: `getSelection().selectAllChildren(document.getElementById("t"))` }, modelSession);
+check("right-clicking selected text offers copy and quoting", (await rightClick(0.55, 0.63)) === "copy,quote");
+await ctxItem("quote");
+check(
+  "quoting hands the selection to the composer with the page's address",
+  await evalJs(
+    `(q => !!q && q.text.includes("一段要引的话") && q.model.includes("一段要引的话") && q.url.startsWith("data:"))(__yanState().drafts.__new__?.quote)`
+  ),
+  JSON.stringify(await evalJs(`__yanState().drafts.__new__?.quote`))
+);
+await evalJs(`document.querySelector("#welcomeQuote [data-quote-close]").click(); true`);
+check("right-clicking blank space offers back, forward and reload", (await rightClick(0.7, 0.9)) === "back,forward,reload");
+await evalJs(`document.body.click(); true`);
 
 // 纸签：缩放一档，窗按倍数收窄；复原。量窗口本身——静着的页不重绘就不出新帧，画面的尺寸会停在旧值
 await evalJs(`document.querySelector("#stageKeys").blur(); document.querySelector("#stageMenuBtn").click(); true`);

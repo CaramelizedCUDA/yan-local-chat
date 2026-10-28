@@ -51,9 +51,8 @@ async function stageInkAttach(sessionId, frameId) {
     // 绑定要 Runtime 域开着才装得进各个脚本世界（网页的 console 也会随之报来，看台不理）
     await stageSend("Runtime.enable", {}, sessionId);
     await stageSend("Runtime.addBinding", { name: STAGE_BINDING, executionContextName: STAGE_WORLD }, sessionId);
-    // 下拉框那一段（55-pick.js）同住这个世界，一并装上
-    const source = `${STAGE_EAR};
-${STAGE_PICK_EAR}`;
+    // 下拉框与右键那一段（55-popup.js）同住这个世界，一并装上
+    const source = `${STAGE_EAR};\n${STAGE_POPUP_EAR}`;
     await stageSend("Page.addScriptToEvaluateOnNewDocument", { source, worldName: STAGE_WORLD }, sessionId);
     const { executionContextId } = await stageSend("Page.createIsolatedWorld", { frameId, worldName: STAGE_WORLD }, sessionId);
     await stageSend("Runtime.evaluate", { expression: source, contextId: executionContextId }, sessionId);
@@ -68,6 +67,7 @@ function stageActSeen(payload) {
     return;
   }
   if (box.kind === "pick") return stagePickOpen(box);
+  if (box.kind === "menu") return stageMenuOpen(box);
   if (!stage.busy || Date.now() - stage.userAt < 600) return;
   const act = { ...box, x: box.x + stage.scroll.x, y: box.y + stage.scroll.y, at: Date.now() };
   stageActs = [...stageActs.filter(a => Date.now() - a.at < 1800 && !(a.kind === "type" && act.kind === "type")), act];
@@ -221,7 +221,7 @@ async function stageQuote() {
   const tab = stage.tabs.get(stage.current);
   if (!tab || !stageNotes.length) return;
   const host = stageHost(tab.url),
-    place = `${host || stageTitle(tab)}${host && tab.title && tab.title !== tab.url ? ` › ${tab.title}` : ""}`,
+    place = stagePlace(tab),
     boxes = stageNoteBoxes(),
     said = stageNotes.map(
       note =>
@@ -257,6 +257,26 @@ async function stageQuote() {
       renderAttachments();
     } else if (file) void deleteAttachments([file.id]);
   }
+  persistDraft();
+}
+// 引文里写的「哪一页」：域名 › 页题
+/** @param {{ title: string, url: string }} tab */
+function stagePlace(tab) {
+  const host = stageHost(tab.url);
+  return `${host || stageTitle(tab)}${host && tab.title && tab.title !== tab.url ? ` › ${tab.title}` : ""}`;
+}
+// 右键「引给执事」：网页里选中的一段作引文，与划选正文「引用」同一条路；给模型的那份另带网址
+/** @param {string} text */
+function stageQuoteText(text) {
+  const tab = stage.tabs.get(stage.current);
+  if (!tab) return;
+  const short = text.replace(/\s+/g, " ");
+  pendingQuote = {
+    text: t`游目 · ${stagePlace(tab)}　「${short.slice(0, 80)}${short.length > 80 ? "…" : ""}」`,
+    model: [t`游目 · ${stageReadable(tab.url)}${tab.title ? `（${tab.title}）` : ""}`, t`网页里选中的一段：${text}`].join("\n"),
+    url: tab.url
+  };
+  renderQuote();
   persistDraft();
 }
 /** @returns {Promise<Blob | null>} */
