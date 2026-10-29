@@ -1,7 +1,9 @@
 // 言 · 游目 · 画面：看哪一页，连上它、按大小收它的画面
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // ---------- 看哪一页：连上它、收它的画面 ----------
-let stageAttachRevision = 0;
+let stageAttachRevision = 0,
+  stageFitRevision = 0,
+  stageFitExpected = null;
 /** @param {string} targetId */
 function stageShow(targetId) {
   stage.current = targetId;
@@ -101,6 +103,36 @@ async function stageFit() {
     if (bounds.windowState !== "normal" || (width === bounds.width && height === bounds.height)) return;
     stage.fittedAt = Date.now();
     await stageSend("Browser.setWindowBounds", { windowId, bounds: { width, height } });
+    const fitRevision = ++stageFitRevision;
+    stageFitExpected = { width: want.width, height: want.height };
+    const current = () => fitRevision === stageFitRevision && stage.session === session && stageVisible();
+    // macOS 无头调窗后静页可能不出帧：确认视口已变，若仍未出帧主动补一截
+    const fitStart = Date.now();
+    let confirmed = null;
+    while (current() && Date.now() - fitStart < 2000) {
+      const metrics = await stageSend("Page.getLayoutMetrics", {}, session).catch(() => null);
+      if (!current()) return;
+      const vp = metrics?.cssVisualViewport;
+      if (vp) {
+        const cw = Math.round(vp.clientWidth),
+          ch = Math.round(vp.clientHeight);
+        if (Math.abs(cw - want.width) <= 2 && Math.abs(ch - want.height) <= 2) {
+          confirmed = { width: cw, height: ch };
+          break;
+        }
+      }
+      await new Promise(r => setTimeout(r, 50));
+    }
+    if (confirmed && current() && (!stage.framed || stage.meta.width !== confirmed.width || stage.meta.height !== confirmed.height)) {
+      const shot = await stageSend("Page.captureScreenshot", { format: "jpeg", quality: 90 }, session).catch(() => null);
+      if (shot && current() && (!stage.framed || stage.meta.width !== confirmed.width || stage.meta.height !== confirmed.height)) {
+        stageLastData = shot.data;
+        stageFrameSeq += 1;
+        stageSettleSoon();
+        stageDropHeldFrame();
+        void stageShowFrame(shot.data, confirmed.width, confirmed.height);
+      }
+    }
   } catch {}
 }
 /** @param {{ width: number, height: number } | null} size */
@@ -188,6 +220,8 @@ function stageZoomStep(step) {
 }
 async function stageDetach() {
   stageAttachRevision += 1;
+  stageFitRevision += 1;
+  stageFitExpected = null;
   const session = stage.session;
   stage.session = stage.attached = "";
   stage.framed = false;
@@ -246,7 +280,14 @@ function stageFrame(data, width, height) {
   stageLastData = data;
   stageFrameSeq += 1;
   stageSettleSoon();
-  if (stage.framed && (width !== stage.meta.width || height !== stage.meta.height) && Date.now() - stage.fittedAt > STAGE_FIT_GRACE) {
+  // 尺寸等于最近一次调窗期望尺寸的帧是意料中的，不走压帧逻辑，直接画
+  const expected = stageFitExpected && width === stageFitExpected.width && height === stageFitExpected.height;
+  if (
+    stage.framed &&
+    (width !== stage.meta.width || height !== stage.meta.height) &&
+    !expected &&
+    Date.now() - stage.fittedAt > STAGE_FIT_GRACE
+  ) {
     stageHeldFrame = { data, width, height };
     stageHoldTimer ||= window.setTimeout(() => {
       const held = stageHeldFrame;

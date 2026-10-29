@@ -91,15 +91,25 @@ check("chosen tab is marked", await evalJs(`document.querySelector(".stage-tab.o
 const want = await evalJs(
   `(r => ({ w: Math.max(960, Math.round(r.width - 24)), h: Math.max(600, Math.round(r.height - 24)) }))(document.querySelector("#stageView").getBoundingClientRect())`
 );
-await waitFor(
-  `Math.abs(__yanStage.state.meta.width - ${want.w}) < 4 && Math.abs(__yanStage.state.meta.height - ${want.h}) < 4`,
-  8000
-).catch(() => {});
+const tFollow = Date.now();
+let followOk = false;
+try {
+  await waitFor(`Math.abs(__yanStage.state.meta.width - ${want.w}) < 4 && Math.abs(__yanStage.state.meta.height - ${want.h}) < 4`, 8000);
+  followOk = true;
+} catch {}
+const metaFollow = await evalJs(`__yanStage.state.meta`).catch(() => null);
 check(
   "the browser window follows the stage size",
-  await evalJs(`Math.abs(__yanStage.state.meta.width - ${want.w}) < 4`),
-  JSON.stringify({ want, meta: await evalJs(`__yanStage.state.meta`) })
+  followOk,
+  JSON.stringify({ want, meta: metaFollow, elapsed: `${Date.now() - tFollow}ms` })
 );
+if (!followOk) {
+  close();
+  try {
+    browser.close();
+  } catch {}
+  process.exit(1);
+}
 // 宽够时（阔开着）画面一比一：画幅正是网页的原大、落在整像素上，静下来换成一张 PNG
 await evalJs(`document.querySelector("#stageWide").click(); true`);
 const sharp = `(() => { const img = document.querySelector("#stageFrame"), r = img.getBoundingClientRect(), m = __yanStage.state.meta; return r.width === m.width && r.height === m.height && img.naturalWidth === Math.round(m.width * devicePixelRatio) && Number.isInteger(r.left * devicePixelRatio) && Number.isInteger(r.top * devicePixelRatio); })()`;
@@ -116,11 +126,49 @@ check(
 await waitFor(`document.querySelector("#stageFrame").src.startsWith("data:image/png")`, 5000).catch(() => {});
 check("a still page settles into a lossless frame", await evalJs(`document.querySelector("#stageFrame").src.startsWith("data:image/png")`));
 await evalJs(`document.querySelector("#stageWide").click(); true`);
-await waitFor(
-  `Math.abs(__yanStage.state.meta.width - ${want.w}) < 4 && Math.abs(__yanStage.state.meta.height - ${want.h}) < 4`,
-  8000
-).catch(() => {});
-await sleep(300);
+const tRestore = Date.now();
+let restoreOk = false;
+try {
+  await waitFor(`Math.abs(__yanStage.state.meta.width - ${want.w}) < 4 && Math.abs(__yanStage.state.meta.height - ${want.h}) < 4`, 8000);
+  restoreOk = true;
+} catch {}
+const metaRestore = await evalJs(`__yanStage.state.meta`).catch(() => null);
+check(
+  "the browser window follows the stage size after wide toggled off",
+  restoreOk,
+  JSON.stringify({ want, meta: metaRestore, elapsed: `${Date.now() - tRestore}ms` })
+);
+if (!restoreOk) {
+  close();
+  try {
+    browser.close();
+  } catch {}
+  process.exit(1);
+}
+const tFrame = Date.now();
+let frameOk = false;
+try {
+  await waitFor(
+    `(() => {
+      const img = document.querySelector("#stageFrame"), m = __yanStage.state.meta;
+      return img && img.naturalWidth > 0 && Math.abs(img.naturalWidth - Math.round(m.width * devicePixelRatio)) <= 2;
+    })()`,
+    8000
+  );
+  frameOk = true;
+} catch {}
+const frameSize = await evalJs(`(() => {
+  const img = document.querySelector("#stageFrame"), m = __yanStage.state.meta;
+  return { naturalWidth: img?.naturalWidth || 0, expectedWidth: Math.round(m.width * devicePixelRatio), meta: m, dpr: devicePixelRatio };
+})()`).catch(() => null);
+check("frame size matches meta after wide toggled off", frameOk, JSON.stringify({ frameSize, elapsed: `${Date.now() - tFrame}ms` }));
+if (!frameOk) {
+  close();
+  try {
+    browser.close();
+  } catch {}
+  process.exit(1);
+}
 const geometry = await evalJs(
   `(r => ({ x: r.left, y: r.top, w: r.width, h: r.height, ratio: r.width / r.height }))(document.querySelector("#stageFrame").getBoundingClientRect())`
 );
@@ -487,19 +535,34 @@ check(
   )
 );
 const pickAt = await evalJs(
-  `(r => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 }))(document.querySelector(".chip-pop.stage-pick [data-pick='1']").getBoundingClientRect())`
+  `(() => {
+    const el = document.querySelector(".chip-pop.stage-pick [data-pick='1']");
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`
 );
-await shot("stage-pick.png");
-await send("Input.dispatchMouseEvent", { type: "mousePressed", x: pickAt.x, y: pickAt.y, button: "left", buttons: 1, clickCount: 1 });
-await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pickAt.x, y: pickAt.y, button: "left", clickCount: 1 });
-await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "选:乙"`, 5000).catch(() => {});
-check(
-  "picking an option reaches the page",
-  await evalJs(
-    `__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "选:乙" && !document.querySelector(".chip-pop.stage-pick")`
-  ),
-  await title()
-);
+if (!pickAt) {
+  check("picking an option reaches the page", false, "element .chip-pop.stage-pick [data-pick='1'] not found");
+} else {
+  await shot("stage-pick.png");
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: pickAt.x, y: pickAt.y, button: "left", buttons: 1, clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pickAt.x, y: pickAt.y, button: "left", clickCount: 1 });
+  const tPick = Date.now();
+  let pickOk = false;
+  try {
+    await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "选:乙"`, 5000);
+    pickOk = true;
+  } catch {}
+  check(
+    "picking an option reaches the page",
+    pickOk &&
+      (await evalJs(
+        `__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "选:乙" && !document.querySelector(".chip-pop.stage-pick")`
+      )),
+    `${await title()} (elapsed: ${Date.now() - tPick}ms)`
+  );
+}
 await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at(0.7, 0.2)[0], y: at(0.7, 0.2)[1] });
 await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "进"`, 5000).catch(() => {});
 await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: geometry.x + geometry.w * 0.7, y: geometry.y - 30 });
