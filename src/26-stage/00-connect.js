@@ -269,6 +269,7 @@ function stageResetPage() {
   stageInkClear();
   stagePickClose();
   stagePickWorlds.clear();
+  $("#stageFrame").style.cursor = "";
   stageRenderNav();
   stageRenderDialog();
 }

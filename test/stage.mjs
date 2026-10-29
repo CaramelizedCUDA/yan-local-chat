@@ -208,6 +208,22 @@ await sleep(400);
 await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at(0.2, 0.2)[0], y: at(0.2, 0.2)[1] });
 await waitFor(`document.querySelector("#stageFrame").style.cursor === "pointer"`, 3000).catch(() => {});
 check("the pointer turns into a hand over a link", await evalJs(`document.querySelector("#stageFrame").style.cursor === "pointer"`));
+// 换了一页、指针落在寻常的字上：手不该留着（新页的耳目头一回也得报）
+const plainPage =
+  "data:text/html;charset=utf-8," + encodeURIComponent(`<title>平</title><body style="margin:0;font-size:40px">寻常的字</body>`);
+await evalJs(`__yanStage.go(${JSON.stringify(plainPage)}); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "平"`, 8000).catch(() => {});
+await sleep(300);
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at(0.21, 0.21)[0], y: at(0.21, 0.21)[1] });
+await waitFor(`document.querySelector("#stageFrame").style.cursor === ""`, 3000).catch(() => {});
+check(
+  "the hand goes away on a new page over plain text",
+  await evalJs(`document.querySelector("#stageFrame").style.cursor === ""`),
+  await evalJs(`document.querySelector("#stageFrame").style.cursor`)
+);
+await evalJs(`__yanStage.go(${JSON.stringify(upload)}); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "传"`, 8000).catch(() => {});
+await sleep(400);
 await mouse("mousePressed", ...at(0.7, 0.7));
 await mouse("mouseReleased", ...at(0.7, 0.7));
 await waitFor(`__yanStage.state.dialog?.type === "file"`, 5000).catch(() => {});

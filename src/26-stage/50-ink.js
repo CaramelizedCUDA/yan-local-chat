@@ -18,7 +18,9 @@ const STAGE_EAR = `(() => {
     tell("press", r.width * r.height > 300 * 120 ? new DOMRect(e.clientX - 12, e.clientY - 12, 24, 24) : r);
   }, true);
   addEventListener("input", e => e.target instanceof Element && tell("type", e.target.getBoundingClientRect()), true);
-  let shape = "";
+  // 头一回动、指针从框外进来（换了页、出入同源的子框）都报一声：画面上留的可能是上一页、另一框的形状
+  let shape;
+  addEventListener("mouseout", e => e.relatedTarget || (shape = undefined), true);
   addEventListener("mousemove", e => {
     if (!e.isTrusted || !(e.target instanceof Element)) return;
     let c = getComputedStyle(e.target).cursor;
