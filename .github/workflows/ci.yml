@@ -55,6 +55,7 @@ jobs:
       - run: node test/run.mjs
         env:
           YAN_TEST_BROWSER: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+      - run: ls -la test/.tmp; exit 1
       # upload-artifact 默认跳过隐藏文件，test/.tmp 整个会被略过；只把顶层截图拷到非隐藏目录再传，不带测试用的配置与浏览器目录
       - if: ${{ failure() }}
         name: 拷出失败截图
