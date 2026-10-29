@@ -329,6 +329,7 @@ var YAN_EN = {
   "{0}问": "{0} {0|question|questions}",
   未问: "No questions",
   " · 作答中": " · replying",
+  作答中: "Replying",
   "{0}条旁注": "{0} {0|side thread|side threads}",
   另起一条旁注: "Start a new side thread",
   另起一条: "New",

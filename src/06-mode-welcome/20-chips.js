@@ -164,9 +164,17 @@ function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating =
   };
   setTimeout(() => input.focus(), 0);
 }
+// 这段正作答（连同开工前的准备、后台的帮手、别的页面在答）：目录不许换——写了一半的文件、读过的记录、帮手手上的活都落在旧目录，
+// 中途一换，余下的照新目录写，前后对不上
+/** @param {Conversation} c */
+function workdirLocked(c) {
+  return conversationRunning(c.id) || crewRunning(c.id) || runningElsewhere(c.id) || (sendPreparing && c.id === currentId);
+}
 // 对话中途绑上 / 解开目录：只是给对话记一个目录，下一问起工具与提示词随之而变，历史一字不丢
 /** @param {Conversation} c */
 async function bindWorkdir(c, dir) {
+  // 目录弹层可能在开答之前打开、开答之后才点定：落值时再看一回
+  if (workdirLocked(c)) return toast(t("作答中，稍后再改"));
   dir = String(dir || "").trim();
   if (!dir) {
     if (!isWork(c)) return;
@@ -180,6 +188,7 @@ async function bindWorkdir(c, dir) {
   try {
     const prepared = await bridge("/api/work/prepare", { workdir: dir }, AbortSignal.timeout(8000));
     if (prepared.workdir === c.workdir) return;
+    if (workdirLocked(c)) return toast(t("作答中，稍后再改"));
     c.workdir = prepared.workdir;
     c.commandPolicy = commandPolicyOf(c);
     saveStore();

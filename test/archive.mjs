@@ -230,6 +230,27 @@ const text2 = await evalJs(`document.querySelectorAll(".message.assistant")[4].q
 check("after binding the prompt is the 执事 one and history is intact", /work:yes\|archive:no\|n:10/.test(text2), text2);
 check("stored conversation carries the workdir", await evalJs(`__yanState().conversations[0].workdir.toLowerCase().endsWith("work")`));
 
+// ---- 作答中不许换目录：写了一半的落在旧目录，中途换了余下的就写进新目录
+await evalJs(
+  `document.querySelector("#chatInput").value = "SLOWTHINK 换目录"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
+);
+await waitFor(`document.querySelectorAll(".message.assistant")[5]?.dataset.status === "streaming"`);
+await evalJs(`document.querySelector('.history-item.active [data-history-action="menu"]').click(); true`);
+check(
+  "while replying the ⋯ menu greys out changing the directory",
+  await evalJs(`(b => !!b?.disabled && b.textContent.includes("作答中"))(document.querySelector('.chip-pop [data-menu="bind"]'))`),
+  await evalJs(`document.querySelector('.chip-pop [data-menu="bind"]')?.outerHTML`)
+);
+await evalJs(`document.body.click(); true`);
+await waitFor(`document.querySelectorAll(".message.assistant")[5]?.dataset.status === "complete"`, 20000);
+await evalJs(`document.querySelector('.history-item.active [data-history-action="menu"]').click(); true`);
+check(
+  "once the reply is done the directory can be changed again",
+  await evalJs(`!document.querySelector('.chip-pop [data-menu="bind"]')?.disabled`)
+);
+await evalJs(`document.body.click(); true`);
+await sleep(200);
+
 // ---- 解开：回到言
 await evalJs(
   `document.querySelector('.history-item.active [data-history-action="menu"]').click(); document.querySelector('.chip-pop [data-menu="bind"]').click(); true`
