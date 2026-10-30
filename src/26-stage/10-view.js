@@ -21,37 +21,29 @@ async function stageAttach() {
   if (!current()) return;
   stage.attached = target;
   let streaming = false;
+  const abort = (sessionId, screencast = false) => {
+    if (stage.ws === ws) {
+      if (screencast) void stageSend("Page.stopScreencast", {}, sessionId).catch(() => {});
+      void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
+    }
+    if (revision === stageAttachRevision) stage.attached = stage.session = "";
+  };
   try {
     const { sessionId } = await stageSend("Target.attachToTarget", { targetId: target, flatten: true });
-    if (!current()) {
-      if (stage.ws === ws) void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
-      if (revision === stageAttachRevision) stage.attached = "";
-      return;
-    }
+    if (!current()) return abort(sessionId);
     stage.session = sessionId;
     // 浏览器的窗口在屏幕外、不在焦点上：不模拟焦点，递进去的按键没人接（playwright 自己也这么做）
     void stageSend("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId).catch(() => {});
     // 收 Page 域的事件：载入、跳转、提示框（开着的提示框，enable 时会补报一回）
     await stageSend("Page.enable", {}, sessionId);
-    if (!current()) {
-      if (stage.ws === ws) void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
-      if (revision === stageAttachRevision) stage.attached = stage.session = "";
-      return;
-    }
+    if (!current()) return abort(sessionId);
     // 网页要人选文件：不让浏览器在屏幕外开窗，报给看台
     void stageSend("Page.setInterceptFileChooserDialog", { enabled: true }, sessionId).catch(() => {});
     // 执事在网页上哪儿下手：网页里放一个只给看台听的耳目
     void stageInkAttach(sessionId, target);
     void stageReadHistory();
     await stageSend("Page.startScreencast", { format: "jpeg", quality: 90 }, sessionId);
-    if (!current()) {
-      if (stage.ws === ws) {
-        void stageSend("Page.stopScreencast", {}, sessionId).catch(() => {});
-        void stageSend("Target.detachFromTarget", { sessionId }).catch(() => {});
-      }
-      if (revision === stageAttachRevision) stage.attached = stage.session = "";
-      return;
-    }
+    if (!current()) return abort(sessionId, true);
     streaming = true;
     // 静着的页不重绘就不出帧：先截一张垫底（后台的页截不出来，等不到就算了）
     const [shot, metrics] = await Promise.race([
