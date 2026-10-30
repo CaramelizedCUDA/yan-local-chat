@@ -150,10 +150,10 @@ function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating =
     button.disabled = true;
     button.textContent = t("择取中…");
     try {
-      const data = await bridge("/api/work/pick", { current: input.value.trim() }, AbortSignal.timeout(300000));
-      if (data.path) {
-        input.value = data.path;
-        commit(data.path, !live);
+      const data = await bridge("/api/work/pick", { current: input.value.trim() });
+      if (data.paths[0]) {
+        input.value = data.paths[0];
+        commit(data.paths[0], !live);
       }
     } catch (error) {
       toast(String(error.message || error).slice(0, 80));

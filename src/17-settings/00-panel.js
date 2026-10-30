@@ -204,14 +204,10 @@ function bindGeneralSettings() {
     const button = $("#settingStorePick");
     button.disabled = true;
     try {
-      const data = await bridge(
-        "/api/work/pick",
-        { current: storeInput.value.trim() || bootstrap.store?.parent || "" },
-        AbortSignal.timeout(300000)
-      );
-      if (data.path) {
-        storeInput.value = data.path;
-        commitStore(data.path);
+      const data = await bridge("/api/work/pick", { current: storeInput.value.trim() || bootstrap.store?.parent || "" });
+      if (data.paths[0]) {
+        storeInput.value = data.paths[0];
+        commitStore(data.paths[0]);
       }
     } catch (error) {
       toast(String(error.message || error).slice(0, 80));

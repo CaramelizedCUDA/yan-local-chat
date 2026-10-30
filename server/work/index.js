@@ -8,7 +8,7 @@ const path = require("node:path");
 const sandbox = require("../sandbox.js");
 const paths = require("./paths.js");
 const { SCRATCH_DIR, WORK_SKIP, describeFsError, clampNumber, pathIsInside, resolveTarget, assertReachable, relPath } = paths;
-const { pickFolder } = require("./folder-picker.js");
+const { pick } = require("./picker.js");
 const createShell = require("./shell.js");
 const createLocks = require("./locks.js");
 const createArchive = require("./archive.js");
@@ -92,10 +92,11 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
   function shownPath(workdir, file) {
     return pathIsInside(workdir, file) ? relPath(workdir, file) : file;
   }
+  // 系统的选择框：默认选目录；files 选文件（multiple 可多选）。给真路径，取消给空串
   const handleWorkPick = jsonRoute(async body => {
-    const result = await pickFolder(String(body.current || "").trim());
-    if (result.error) throw Error(result.error);
-    return { path: result.path };
+    const result = await pick({ files: !!body.files, multiple: !!body.multiple, current: String(body.current || "").trim() });
+    if ("error" in result) throw Error(result.error);
+    return { paths: result.paths };
   }, failed);
   const handleWorkPrepare = jsonRoute(async body => {
     const workdir = resolveWorkdir(body.workdir);

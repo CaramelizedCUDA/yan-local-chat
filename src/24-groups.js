@@ -240,9 +240,9 @@ $("#groups").addEventListener("click", async event => {
     pick.textContent = t("择取中…");
     try {
       const input = /** @type {HTMLInputElement} */ ($("#groupWorkdir"));
-      const data = await bridge("/api/work/pick", { current: input.value.trim() }, AbortSignal.timeout(300000));
-      if (data.path) {
-        input.value = data.path;
+      const data = await bridge("/api/work/pick", { current: input.value.trim() });
+      if (data.paths[0]) {
+        input.value = data.paths[0];
         input.dispatchEvent(new Event("change", { bubbles: true }));
       }
     } catch (error) {
