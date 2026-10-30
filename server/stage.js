@@ -3,7 +3,7 @@
 // 调试口与配置目录不另设：从那个 MCP 服务的参数里读——直接写在参数里的（--cdp-endpoint、--user-data-dir），或写在 --config 那份文件里的。
 // 标签页、画面、输入都在页面里（src/26-stage/），不过桥接，这里也不记任何东西。
 // 另读一份收藏：看台只转网页，浏览器自己的收藏栏看不到；收藏存在浏览器配置目录的 Default/Bookmarks 里。
-// 纸签的「用系统浏览器打开」：交给系统默认的浏览器（经 url.dll，不经 cmd——网址里的 & 会被当成命令分隔）
+// 纸签的「用系统浏览器打开」：交给系统默认的浏览器（经 url.dll，不经 cmd——网址里的 & 会被当成命令分隔）；游目显示不了的本机文件交给本机程序
 // 下载签的「打开所在文件夹」：在资源管理器里显出那个文件；没记着路径的，开那个服务存下载的目录（Playwright 默认是工作目录下的 .playwright-mcp）
 "use strict";
 const fs = require("node:fs");
@@ -11,7 +11,8 @@ const crypto = require("node:crypto");
 const { spawn, execFile } = require("node:child_process");
 const { fasterSide, pickSource } = require("./mirror.js");
 const path = require("node:path");
-const { sendJson, readJson } = require("./http.js");
+const { fileURLToPath } = require("node:url");
+const { sendJson, readJson, openWithSystem } = require("./http.js");
 const platform = require("./platform.js");
 
 // 参数里哪一项都没写调试口时的默认（见 docs/stage.md：避开常被端口转发占着的 9222 / 9223）
@@ -371,9 +372,17 @@ module.exports = function createStage({ root = () => "" } = {}) {
       sendJson(res, 500, { error: `没装上：${String(/** @type {any} */ (error).message || error).slice(0, 300)}` });
     }
   }
-  // 只收 http / https；测试里不真去开（YAN_NO_EXTERNAL）
+  // 网页交给系统浏览器；本机文件（游目显示不了、浏览器要当下载的）交给本机程序，可执行的不开。测试里不真去开（YAN_NO_EXTERNAL）
   async function open(req, res) {
     const url = String((await readJson(req)).url || "");
+    if (/^file:\/\//i.test(url)) {
+      try {
+        if (!process.env.YAN_NO_EXTERNAL) openWithSystem(fileURLToPath(url));
+      } catch (error) {
+        return sendJson(res, 400, { error: String(/** @type {any} */ (error).message || error) });
+      }
+      return sendJson(res, 200, { ok: true });
+    }
     if (!/^https?:\/\//i.test(url)) return sendJson(res, 400, { error: "只有网页（http / https）能交给系统浏览器" });
     if (!process.env.YAN_NO_EXTERNAL) platform.openUrl(url);
     sendJson(res, 200, { ok: true });

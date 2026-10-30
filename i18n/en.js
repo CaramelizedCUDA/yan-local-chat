@@ -935,6 +935,7 @@ var YAN_EN = {
   历史: "History",
   "整理收藏…": "Organize bookmarks…",
   "打开本机文件…": "Open local file…",
+  "游目显示不了，已交给本机程序打开": "The browser panel can't show this; opened it with its app",
   复制网址: "Copy URL",
   网址已复制: "URL copied",
   复制失败: "Copy failed",

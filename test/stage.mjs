@@ -257,6 +257,18 @@ await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "l", code: "KeyL
 await send("Input.dispatchKeyEvent", { type: "keyUp", key: "l", code: "KeyL", windowsVirtualKeyCode: 76, modifiers: 2 });
 check("Ctrl+L goes to the address bar", await evalJs(`document.activeElement === document.querySelector("#stageUrl")`));
 await evalJs(`document.querySelector("#stageUrl").blur(); true`);
+// 人开的本机文件浏览器显示不了（Office 文档）：不当下载，交给本机程序（测试的桥接不真开）
+const office = path.resolve(TMP, "测.docx");
+writeFileSync(office, "PK");
+await evalJs(`__yanStage.go(${JSON.stringify(office)}); true`);
+await waitFor(`document.querySelector("#toast").textContent.includes("本机程序")`, 5000).catch(() => {});
+check(
+  "a local file the stage can't show goes to its app, not downloads",
+  await evalJs(
+    `document.querySelector("#toast").textContent.includes("本机程序") && !__yanStage.state.downloads.some(d => d.url.startsWith("file:"))`
+  ),
+  await evalJs(`document.querySelector("#toast").textContent`)
+);
 
 // 圈点：开「圈」在画面上拖一圈，引文与带朱笔的图随即落进输入框；移除引文，画面上的圈随之清去
 await evalJs(`document.querySelector("#stagePen").click(); true`);

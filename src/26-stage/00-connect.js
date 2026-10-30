@@ -91,6 +91,8 @@ const stage = {
   userAt: 0,
   // 人最近一回在游目里按键的时刻（下拉框要开时认是不是人）
   keyAt: 0,
+  // 人最近一回经游目开网址的时刻（地址栏、收藏、开本机文件）：随后浏览器要「下载」的本机文件是人要开的
+  goAt: 0,
   /** @type {PointerEvent | null} */
   moved: null
 };
@@ -245,6 +247,17 @@ function stagePageEvent(method, params) {
       stageRenderDialog();
       void stageWatchChooser(dialog);
     }
+  } else if (
+    method === "Page.downloadWillBegin" &&
+    /^file:/i.test(params.url || "") &&
+    Date.now() - Math.max(stage.userAt, stage.keyAt, stage.goAt) < 3000
+  ) {
+    // 人开的本机文件浏览器显示不了（Office 文档、压缩包、csv 等）就会当下载：当场取消，不拷进下载目录，交给本机程序打开原件
+    void stageSend("Browser.cancelDownload", { guid: params.guid }).catch(() => {});
+    void bridge("/api/stage/open", { url: params.url }).then(
+      () => toast(t("游目显示不了，已交给本机程序打开")),
+      error => toast(t`打开失败：${String(error.message || error).slice(0, 80)}`)
+    );
   } else if (method === "Page.downloadWillBegin") {
     // 下载：浏览器在屏幕外存，游目只记一笔（名、来处、多大、到哪一步）；存到哪由 MCP 的结果补上（见 stageNoteDownload）
     stage.downloads = [

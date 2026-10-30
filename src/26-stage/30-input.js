@@ -130,11 +130,13 @@ function stageCaretSoon() {
 function stageGo(raw) {
   const url = stageUrlOf(raw);
   if (!url || !stage.ws) return;
+  stage.goAt = Date.now();
   // 一页都没开着：新开一页去
   const go = stage.session ? stageSend("Page.navigate", { url }, stage.session) : stageSend("Target.createTarget", { url });
   void go.catch(error => toast(t`打开失败：${String(error.message || error).slice(0, 80)}`));
 }
-// 开本机文件（纸签、Ctrl+O）：经桥接弹系统的选文件窗，拿真路径开 file://——不拷进临时目录，网页旁的样式、脚本、图才引得到
+// 开本机文件（纸签、Ctrl+O）：经桥接弹系统的选文件窗，拿真路径开 file://——不拷进临时目录，网页旁的样式、脚本、图才引得到。
+// 浏览器显示不了的（Office 文档等）会当下载，由 downloadWillBegin 那头转交本机程序
 async function stageOpenLocal() {
   if (!stage.ws) return void stageLaunch();
   try {
