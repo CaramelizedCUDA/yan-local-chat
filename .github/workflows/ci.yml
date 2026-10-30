@@ -54,29 +54,13 @@ jobs:
       - run: npm run unit
       - run: node test/run.mjs
         env:
+          # GitHub Actions 的 macOS 运行器未预装 Edge，使用其预装的 Google Chrome
           YAN_TEST_BROWSER: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
-      # upload-artifact 默认跳过隐藏文件，test/.tmp 整个会被略过；只把顶层截图拷到非隐藏目录再传，不带测试用的配置与浏览器目录
-      - if: ${{ failure() }}
-        name: 拷出失败截图
-        run: |
-          node --input-type=module <<'NODE'
-          import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-          import path from "node:path";
-
-          const source = "test/.tmp";
-          const destination = "test-diagnostics-macos";
-          mkdirSync(destination, { recursive: true });
-          if (existsSync(source)) {
-            for (const entry of readdirSync(source, { withFileTypes: true })) {
-              if (!entry.isFile() || entry.name.startsWith(".") || !entry.name.endsWith(".png")) continue;
-              copyFileSync(path.join(source, entry.name), path.join(destination, entry.name));
-            }
-          }
-          NODE
       - if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: yan-test-diagnostics-macos
-          path: test-diagnostics-macos
+          path: test/.tmp/*.png
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
