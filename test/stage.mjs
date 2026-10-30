@@ -3,10 +3,15 @@
 // 模型换页跟过去、网页的提示框画在画面上、前后按历史走、旁注开着时让位且停收画面、收起后入口回来、拖宽窄有界
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { connect, check, sleep, PAGE, TMP } from "./lib.mjs";
-// 模型浏览器由 test/run.mjs 另起：单窗口，模型页与后来新开的 fresh 同窗，看台的前台检测才有意义
-const MODEL_DEBUG = "http://127.0.0.1:9334";
+import { connect, check, sleep, PAGE, TMP, MODEL_DEBUG } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
+const bail = () => {
+  close();
+  try {
+    browser.close();
+  } catch {}
+  process.exit(1);
+};
 // 浏览器的配置目录与收藏：配置里一个停用的「浏览器」服务只为带出 --user-data-dir（真的 playwright 这里不起）
 const PROFILE = `${TMP}/stage-profile`;
 const markPage = "data:text/html;charset=utf-8," + encodeURIComponent("<title>收藏页</title>");
@@ -103,13 +108,7 @@ check(
   followOk,
   JSON.stringify({ want, meta: metaFollow, elapsed: `${Date.now() - tFollow}ms` })
 );
-if (!followOk) {
-  close();
-  try {
-    browser.close();
-  } catch {}
-  process.exit(1);
-}
+if (!followOk) bail();
 // 宽够时（阔开着）画面一比一：画幅正是网页的原大、落在整像素上，静下来换成一张 PNG
 await evalJs(`document.querySelector("#stageWide").click(); true`);
 const sharp = `(() => { const img = document.querySelector("#stageFrame"), r = img.getBoundingClientRect(), m = __yanStage.state.meta; return r.width === m.width && r.height === m.height && img.naturalWidth === Math.round(m.width * devicePixelRatio) && Number.isInteger(r.left * devicePixelRatio) && Number.isInteger(r.top * devicePixelRatio); })()`;
@@ -138,13 +137,7 @@ check(
   restoreOk,
   JSON.stringify({ want, meta: metaRestore, elapsed: `${Date.now() - tRestore}ms` })
 );
-if (!restoreOk) {
-  close();
-  try {
-    browser.close();
-  } catch {}
-  process.exit(1);
-}
+if (!restoreOk) bail();
 const tFrame = Date.now();
 let frameOk = false;
 try {
@@ -162,13 +155,7 @@ const frameSize = await evalJs(`(() => {
   return { naturalWidth: img?.naturalWidth || 0, expectedWidth: Math.round(m.width * devicePixelRatio), meta: m, dpr: devicePixelRatio };
 })()`).catch(() => null);
 check("frame size matches meta after wide toggled off", frameOk, JSON.stringify({ frameSize, elapsed: `${Date.now() - tFrame}ms` }));
-if (!frameOk) {
-  close();
-  try {
-    browser.close();
-  } catch {}
-  process.exit(1);
-}
+if (!frameOk) bail();
 const geometry = await evalJs(
   `(r => ({ x: r.left, y: r.top, w: r.width, h: r.height, ratio: r.width / r.height }))(document.querySelector("#stageFrame").getBoundingClientRect())`
 );

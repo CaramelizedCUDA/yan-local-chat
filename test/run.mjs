@@ -1,7 +1,7 @@
 // 端到端测试运行器（零依赖）：起一个假模型接口、一个测试桥接、一个无头 Edge / Chrome（stage 用例另起一个模型浏览器），逐个跑 test/ 下的用例，按 PASS / FAIL 行统计
 // 用法：node test/run.mjs [用例名…]      例：node test/run.mjs memory side-notes
 import { spawn, spawnSync } from "node:child_process";
-import { connect } from "./lib.mjs";
+import { connect, STAGE_DEBUG_PORT } from "./lib.mjs";
 import { existsSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -11,9 +11,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url)),
   TMP = path.join(HERE, ".tmp");
 const BRIDGE_PORT = 8799,
   SECURITY_PORT = 8797,
-  DEBUG_PORT = 9333,
-  // 看台的模型浏览器单独一个实例：模型页必须在单窗口里，看台的前台检测才成立
-  STAGE_DEBUG_PORT = 9334;
+  DEBUG_PORT = 9333;
 const only = process.argv.slice(2);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const browsers =

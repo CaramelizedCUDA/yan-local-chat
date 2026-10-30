@@ -83,6 +83,8 @@ async function stageFit() {
       width: Math.floor(Math.max(STAGE_FLOOR.width, view.width - 24) / stage.zoom),
       height: Math.floor(Math.max(STAGE_FLOOR.height, view.height - 24) / stage.zoom)
     };
+  const fitRevision = ++stageFitRevision;
+  stageFitExpected = { width: want.width, height: want.height, revision: fitRevision };
   try {
     const [{ windowId, bounds }, inner] = await Promise.all([
       stageSend("Browser.getWindowForTarget", { targetId: target }),
@@ -90,21 +92,28 @@ async function stageFit() {
     ]);
     const [innerWidth, innerHeight] = inner.result?.value || [0, 0],
       port = { clientWidth: Number(innerWidth) || 0, clientHeight: Number(innerHeight) || 0 };
-    if (!port.clientWidth) return;
+    if (!port.clientWidth) {
+      if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
+      return;
+    }
     const edgeX = bounds.width - port.clientWidth,
       edgeY = bounds.height - port.clientHeight;
     // 网页的视口被定死了（执事 setViewportSize / browser_resize 过）：窗口管不着它，多出的边不是边，再照着调只会一回小一圈。
     // 记下定死的大小：留白处写一行，开着「适应页面」的等执事歇手后放开
     const pinned = edgeX < 0 || edgeY < 0 || edgeX > 120 || edgeY > 320;
     stagePin(pinned ? { width: Math.round(port.clientWidth), height: Math.round(port.clientHeight) } : null);
-    if (pinned) return;
+    if (pinned) {
+      if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
+      return;
+    }
     const width = Math.round(edgeX + want.width),
       height = Math.round(edgeY + want.height);
-    if (bounds.windowState !== "normal" || (width === bounds.width && height === bounds.height)) return;
+    if (bounds.windowState !== "normal" || (width === bounds.width && height === bounds.height)) {
+      if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
+      return;
+    }
     stage.fittedAt = Date.now();
     await stageSend("Browser.setWindowBounds", { windowId, bounds: { width, height } });
-    const fitRevision = ++stageFitRevision;
-    stageFitExpected = { width: want.width, height: want.height };
     const current = () => fitRevision === stageFitRevision && stage.session === session && stageVisible();
     // macOS 无头调窗后静页可能不出帧：确认视口已变，若仍未出帧主动补一截
     const fitStart = Date.now();
@@ -123,7 +132,8 @@ async function stageFit() {
       }
       await new Promise(r => setTimeout(r, 50));
     }
-    if (confirmed && current() && (!stage.framed || stage.meta.width !== confirmed.width || stage.meta.height !== confirmed.height)) {
+    if (!current()) return;
+    if (confirmed && (!stage.framed || stage.meta.width !== confirmed.width || stage.meta.height !== confirmed.height)) {
       const shot = await stageSend("Page.captureScreenshot", { format: "jpeg", quality: 90 }, session).catch(() => null);
       if (shot && current() && (!stage.framed || stage.meta.width !== confirmed.width || stage.meta.height !== confirmed.height)) {
         stageLastData = shot.data;
@@ -133,7 +143,10 @@ async function stageFit() {
         void stageShowFrame(shot.data, confirmed.width, confirmed.height);
       }
     }
-  } catch {}
+    if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
+  } catch {
+    if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
+  }
 }
 /** @param {{ width: number, height: number } | null} size */
 function stagePin(size) {
@@ -281,7 +294,8 @@ function stageFrame(data, width, height) {
   stageFrameSeq += 1;
   stageSettleSoon();
   // 尺寸等于最近一次调窗期望尺寸的帧是意料中的，不走压帧逻辑，直接画
-  const expected = stageFitExpected && width === stageFitExpected.width && height === stageFitExpected.height;
+  const fitExpected = stageFitExpected,
+    expected = fitExpected && width === fitExpected.width && height === fitExpected.height;
   if (
     stage.framed &&
     (width !== stage.meta.width || height !== stage.meta.height) &&
@@ -297,7 +311,9 @@ function stageFrame(data, width, height) {
     return Promise.resolve();
   }
   stageDropHeldFrame();
-  return stageShowFrame(data, width, height);
+  const showing = stageShowFrame(data, width, height);
+  if (expected && stageFitExpected?.revision === fitExpected.revision) stageFitExpected = null;
+  return showing;
 }
 /** @param {string} data @param {number} width @param {number} height @param {"jpeg" | "png"} [type] @returns {Promise<void>} */
 function stageShowFrame(data, width, height, type = "jpeg") {

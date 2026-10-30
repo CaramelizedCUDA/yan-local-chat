@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 export const DEBUG = "http://127.0.0.1:9333";
+export const STAGE_DEBUG_PORT = 9334;
+export const MODEL_DEBUG = `http://127.0.0.1:${STAGE_DEBUG_PORT}`;
 export const PAGE = "http://127.0.0.1:8799/";
 export const TMP = path
   .join(path.dirname(fileURLToPath(import.meta.url)), ".tmp")
