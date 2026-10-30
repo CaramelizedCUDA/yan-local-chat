@@ -563,7 +563,9 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   transform: none;
   pointer-events: auto;
 }
-.main:has(#chat.hidden) .running-head {
+/* .main:has() 一律带 >（几件都是 .main 的直接子节点）：不带时 Chromium 每改一处正文都要在 .main 整棵子树里重找一遍，
+   长对话两万多个节点，作答中每帧样式重算约 2 ms；带上后与短对话一样 */
+.main:has(> #chat.hidden) .running-head {
   display: none;
 }
 .running-head-title {
@@ -619,7 +621,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   background: var(--paper-2);
   color: var(--ink);
 }
-.main:has(#chat.hidden) .trail-fold-head {
+.main:has(> #chat.hidden) .trail-fold-head {
   display: none;
 }
 .model-wrap {
@@ -768,11 +770,11 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   gap: 4px;
 }
 /* 右缘内侧自页顶垂下的游目一笔、听音一缕：顶栏右的两件给它们让出位置 */
-.main:has(#stagePin:not(.hidden)) .top-actions,
-.main:has(#listenPendant:not(.hidden)) .top-actions {
+.main:has(> #stagePin:not(.hidden)) .top-actions,
+.main:has(> #listenPendant:not(.hidden)) .top-actions {
   margin-right: 30px;
 }
-.main:has(#stagePin:not(.hidden)):has(#listenPendant:not(.hidden)) .top-actions {
+.main:has(> #stagePin:not(.hidden)):has(> #listenPendant:not(.hidden)) .top-actions {
   margin-right: 60px;
 }
 .top-sep {

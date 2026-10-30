@@ -189,7 +189,7 @@
   /* 上面全是按键与状态：点快了不选字，免得弹出引用条 */
   user-select: none;
 }
-.main:has(#stagePin:not(.hidden)) .listen-pendant {
+.main:has(> #stagePin:not(.hidden)) .listen-pendant {
   right: 52px;
 }
 .listen-svg {
