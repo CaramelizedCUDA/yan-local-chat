@@ -2,6 +2,7 @@
 // 调试口从服务的 --config 文件里读、找到浏览器挂出入口、标签照抄、画面送到、点按与打字（含输入法那一路）递进网页、
 // 模型换页跟过去、网页的提示框画在画面上、前后按历史走、旁注开着时让位且停收画面、收起后入口回来、拖宽窄有界
 import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { connect, check, sleep, PAGE, DEBUG, TMP } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
 // 浏览器的配置目录与收藏：配置里一个停用的「浏览器」服务只为带出 --user-data-dir（真的 playwright 这里不起）
@@ -224,20 +225,30 @@ check(
 await evalJs(`__yanStage.go(${JSON.stringify(upload)}); true`);
 await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "传"`, 8000).catch(() => {});
 await sleep(400);
+// 人在游目里点的：径直交给系统的选文件窗（测试的桥接不真弹），不浮纸签
 await mouse("mousePressed", ...at(0.7, 0.7));
 await mouse("mouseReleased", ...at(0.7, 0.7));
+await sleep(1600);
+check("a person's click goes to the system file dialog, not a card", await evalJs(`!__yanStage.state.dialog`));
+// 执事点的（不经游目）：浮纸签，不往人眼前弹窗
+const { sessionId: agent } = await browserSend("Target.attachToTarget", { targetId, flatten: true });
+await browserSend("Runtime.evaluate", { expression: `document.querySelector("input[type=file]").click()`, userGesture: true }, agent);
+await browserSend("Target.detachFromTarget", { sessionId: agent });
 await waitFor(`__yanStage.state.dialog?.type === "file"`, 5000).catch(() => {});
 check(
-  "a file chooser shows as a card on the stage",
+  "a file chooser the agent opens shows as a card on the stage",
   await evalJs(`__yanStage.state.dialog?.type === "file" && document.querySelector("#stageDialog").textContent.includes("选文件")`)
 );
 await shot("stage-file.png");
+// 系统的选文件窗点不了：照它选好的样子，把一个真文件的路径交下去
+const picked = path.resolve(TMP, "测.txt");
+writeFileSync(picked, "hi");
 await evalJs(
-  `(node => { document.querySelector("[data-stage-answer=no]").click(); return __yanStage.sendFiles([new File(["hi"], "测.txt")], node).then(() => true); })(__yanStage.state.dialog.node)`
+  `(node => { document.querySelector("[data-stage-answer=no]").click(); return __yanStage.sendFiles([${JSON.stringify(picked)}], node).then(() => true); })(__yanStage.state.dialog.node)`
 );
 await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "传:测.txt"`, 8000).catch(() => {});
 check(
-  "files picked in 言 reach the page's file input",
+  "picked paths reach the page's file input",
   await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "传:测.txt"`),
   await evalJs(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title`)
 );

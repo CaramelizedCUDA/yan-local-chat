@@ -389,6 +389,7 @@ function stageOpenMenu(anchor) {
       { id: "downloads", label: t("下载"), note: fresh ? String(fresh) : "", noteClass: "fresh", run: () => stageOpenDownloads(anchor) },
       { id: "favorites", label: t("整理收藏…"), run: () => stageOpenInside("favorites") },
       rule,
+      { id: "open-file", label: t("打开本机文件…"), note: "Ctrl+O", run: () => void stageOpenLocal() },
       {
         id: "copy",
         label: t("复制网址"),

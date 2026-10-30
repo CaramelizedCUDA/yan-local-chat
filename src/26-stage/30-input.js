@@ -51,7 +51,7 @@ function stageRenderSteps() {
       })
       .join("");
 }
-// 浏览器自己接的几个键（递进网页没人管）：Ctrl+L / Alt+D / F6 到地址栏，F5 / Ctrl+R 重载（加 Shift 不用缓存），Alt+← / → 前后。
+// 浏览器自己接的几个键（递进网页没人管）：Ctrl+L / Alt+D / F6 到地址栏，Ctrl+O 开本机文件，F5 / Ctrl+R 重载（加 Shift 不用缓存），Alt+← / → 前后。
 // Ctrl+T、Ctrl+W 外头的浏览器拦不住，不接
 /** @param {KeyboardEvent} e */
 function stageShortcut(e) {
@@ -60,6 +60,7 @@ function stageShortcut(e) {
   if (key === "escape" && stage.pen) stageSetPen(false);
   else if ((ctrl && key === "l") || (e.altKey && key === "d") || key === "f6") stageEditUrl();
   else if (ctrl && key === "f") stageFindOpen();
+  else if (ctrl && key === "o") void stageOpenLocal();
   else if (ctrl && (key === "=" || key === "+" || key === "-" || key === "0")) stageZoomStep(key === "0" ? 0 : key === "-" ? -1 : 1);
   else if (key === "f5" || (ctrl && key === "r")) {
     if (stage.session) void stageSend("Page.reload", { ignoreCache: e.shiftKey }, stage.session).catch(() => {});
@@ -133,13 +134,24 @@ function stageGo(raw) {
   const go = stage.session ? stageSend("Page.navigate", { url }, stage.session) : stageSend("Target.createTarget", { url });
   void go.catch(error => toast(t`打开失败：${String(error.message || error).slice(0, 80)}`));
 }
-// 地址栏里输的话换成网址：本机路径、本机服务、带协议的照走；像网址的（有点、没空格）补 https；余下当成要搜的话，交给纸签里选的那家
+// 开本机文件（纸签、Ctrl+O）：经桥接弹系统的选文件窗，拿真路径开 file://——不拷进临时目录，网页旁的样式、脚本、图才引得到
+async function stageOpenLocal() {
+  if (!stage.ws) return void stageLaunch();
+  try {
+    const { paths } = await bridge("/api/work/pick", { files: true });
+    if (paths[0]) stageGo(paths[0]);
+  } catch (error) {
+    toast(t`打开失败：${String(error.message || error).slice(0, 80)}`);
+  }
+}
+// 地址栏里输的话换成网址：本机路径（盘符起头的、/ 起头的）、本机服务、带协议的照走；像网址的（有点、没空格）补 https；余下当成要搜的话，交给纸签里选的那家。
+// 路径里的 % # ? 是文件名的一部分，转义了才不被当成网址的记号
 /** @param {string} raw */
 function stageUrlOf(raw) {
   const text = raw.trim();
   if (!text) return "";
-  return /^[a-z]:[\\/]/i.test(text)
-    ? `file:///${text.replace(/\\/g, "/")}`
+  return /^([a-z]:[\\/]|\/(?!\/))/i.test(text)
+    ? `file://${text.startsWith("/") ? "" : "/"}${text.replace(/\\/g, "/").replace(/[%#?]/g, encodeURIComponent)}`
     : /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(text)
       ? `http://${text}`
       : /^([a-z][\w+.-]*:\/\/|(about|data|file|javascript|mailto|view-source|edge|chrome):)/i.test(text)

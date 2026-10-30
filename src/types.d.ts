@@ -23,7 +23,7 @@ interface Window {
     state: any;
     locate: () => Promise<void>;
     go: (raw: string) => void;
-    sendFiles: (files: File[], node?: number) => Promise<void>;
+    sendFiles: (paths: string[], node?: number, session?: string) => Promise<void>;
     markPinned: () => void;
   }; // 端到端测试读看台的状态、立即去连、在当前页打开、递文件、当作执事亲手定了视口
 }

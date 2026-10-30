@@ -3,14 +3,12 @@
 // 调试口与配置目录不另设：从那个 MCP 服务的参数里读——直接写在参数里的（--cdp-endpoint、--user-data-dir），或写在 --config 那份文件里的。
 // 标签页、画面、输入都在页面里（src/26-stage/），不过桥接，这里也不记任何东西。
 // 另读一份收藏：看台只转网页，浏览器自己的收藏栏看不到；收藏存在浏览器配置目录的 Default/Bookmarks 里。
-// 再收几份要传给网页的文件：网页要人选文件时，浏览器的选文件窗口在屏幕外，人在言这边选好，落到临时目录，交路径给浏览器
 // 纸签的「用系统浏览器打开」：交给系统默认的浏览器（经 url.dll，不经 cmd——网址里的 & 会被当成命令分隔）
 // 下载签的「打开所在文件夹」：在资源管理器里显出那个文件；没记着路径的，开那个服务存下载的目录（Playwright 默认是工作目录下的 .playwright-mcp）
 "use strict";
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const { spawn, execFile } = require("node:child_process");
-const os = require("node:os");
 const { fasterSide, pickSource } = require("./mirror.js");
 const path = require("node:path");
 const { sendJson, readJson } = require("./http.js");
@@ -395,28 +393,10 @@ module.exports = function createStage({ root = () => "" } = {}) {
     platform.openPath(output);
     sendJson(res, 200, { ok: true });
   }
-  // 一回一个文件：{ name, data: dataURL } → 落盘的路径。一天前落的顺手清掉
-  async function upload(req, res) {
-    const { name, data } = await readJson(req),
-      text = String(data || ""),
-      comma = text.indexOf(","),
-      root = path.join(os.tmpdir(), "yan-stage-upload");
-    if (!text.startsWith("data:") || comma < 0) return sendJson(res, 400, { error: "文件内容无效" });
-    try {
-      for (const old of fs.readdirSync(root))
-        if (Date.now() - Number(old.split("-")[0]) > 86400000) fs.rmSync(path.join(root, old), { recursive: true, force: true });
-    } catch {}
-    const dir = path.join(root, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
-      file = path.join(dir, path.basename(String(name || "文件")).replace(/[<>:"/\\|?*]/g, "_") || "文件");
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, Buffer.from(text.slice(comma + 1), /;base64/i.test(text.slice(0, comma)) ? "base64" : "utf8"));
-    sendJson(res, 200, { path: file });
-  }
   return {
     routes: {
       "POST /api/stage": locate,
       "POST /api/stage/bookmarks": bookmarks,
-      "POST /api/stage/upload": upload,
       "POST /api/stage/reveal": reveal,
       "POST /api/stage/open": open,
       "POST /api/stage/home": home,

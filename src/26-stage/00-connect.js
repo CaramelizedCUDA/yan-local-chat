@@ -237,9 +237,14 @@ function stagePageEvent(method, params) {
     stage.dialog = null;
     stageRenderDialog();
   } else if (method === "Page.fileChooserOpened" && params.backendNodeId) {
-    stage.dialog = { type: "file", message: "", multiple: params.mode === "selectMultiple", node: params.backendNodeId };
-    stageRenderDialog();
-    void stageWatchChooser(stage.dialog);
+    const dialog = { type: "file", message: "", multiple: params.mode === "selectMultiple", node: params.backendNodeId };
+    // 人在游目里点的：径直弹系统的选文件窗；执事点的浮纸签，不往人眼前弹窗
+    if (stagePopupByUser()) void stagePickFiles(dialog);
+    else {
+      stage.dialog = dialog;
+      stageRenderDialog();
+      void stageWatchChooser(dialog);
+    }
   } else if (method === "Page.downloadWillBegin") {
     // 下载：浏览器在屏幕外存，游目只记一笔（名、来处、多大、到哪一步）；存到哪由 MCP 的结果补上（见 stageNoteDownload）
     stage.downloads = [
@@ -320,7 +325,7 @@ function stageAnswer(accept) {
   if (dialog?.type === "file") {
     stage.dialog = null;
     stageRenderDialog();
-    if (accept) stagePickFiles(dialog);
+    if (accept) void stagePickFiles(dialog);
     return;
   }
   const input = /** @type {HTMLInputElement | null} */ ($("#stageDialog .stage-dialog-input"));
@@ -356,26 +361,21 @@ async function stageWatchChooser(dialog) {
     stageRenderDialog();
   }
 }
-// 选文件用言这边的窗（点「选文件」那一下即是人手的动作，浏览器才许开窗）；选好的落到桥接的临时目录，路径交给网页里那个 <input type=file>
+// 选文件经桥接弹系统的窗：拿到的是真路径，径直交给网页里那个 <input type=file>，不经言的页面读、不拷
 /** @param {{ multiple?: boolean, node?: number }} dialog */
-function stagePickFiles(dialog) {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.multiple = !!dialog.multiple;
-  input.addEventListener("change", () => void stageSendFiles([...(input.files || [])], dialog.node));
-  input.click();
-}
-/** @param {File[]} files @param {number} [node] */
-async function stageSendFiles(files, node) {
+async function stagePickFiles(dialog) {
   const session = stage.session;
-  if (!files.length || !session) return;
   try {
-    const paths = [];
-    for (const file of files) paths.push((await bridge("/api/stage/upload", { name: file.name, data: await readFile(file, "data") })).path);
-    await stageSend("DOM.setFileInputFiles", { files: paths, backendNodeId: node }, session);
+    const { paths } = await bridge("/api/work/pick", { files: true, multiple: !!dialog.multiple });
+    await stageSendFiles(paths, dialog.node, session);
   } catch (error) {
     toast(t`文件未能传入网页：${String(error.message || error).slice(0, 80)}`);
   }
+}
+/** @param {string[]} paths @param {number} [node] @param {string} [session] 选窗开着时换了页，仍交给当初要文件的那一页 */
+async function stageSendFiles(paths, node, session = stage.session) {
+  if (!paths.length || !session) return;
+  await stageSend("DOM.setFileInputFiles", { files: paths, backendNodeId: node }, session);
 }
 /** @param {string} url */
 function stageHost(url) {

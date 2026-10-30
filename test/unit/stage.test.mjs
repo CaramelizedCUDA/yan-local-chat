@@ -17,6 +17,7 @@ test("地址栏：网址补 https，本机的照走，不像网址的交给搜�
   assert.equal(stageUrlOf("about:blank"), "about:blank");
   assert.equal(stageUrlOf("localhost:5173"), "http://localhost:5173");
   assert.equal(stageUrlOf("E:\\项目\\index.html"), "file:///E:/项目/index.html");
+  assert.equal(stageUrlOf("/Users/a/第 #1?.html"), "file:///Users/a/第 %231%3F.html");
   assert.equal(stageUrlOf("言 浏览器"), `https://www.bing.com/search?q=${encodeURIComponent("言 浏览器")}`);
   assert.equal(stageUrlOf("playwright"), "https://www.bing.com/search?q=playwright");
   assert.equal(stageUrlOf("   "), "");
