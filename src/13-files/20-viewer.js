@@ -110,7 +110,7 @@ async function openViewerWithSystem() {
     else if (source?.skillDir)
       await bridge("/api/skills/open-item", { dir: source.skillDir, path: source.skillPath }, AbortSignal.timeout(8000));
     else return;
-    toast(t("已交给本机程序打开"));
+    toast(t("已在本机程序中打开"));
   } catch (error) {
     toast(t`打开失败：${String(error.message || error).slice(0, 80)}`);
   }

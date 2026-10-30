@@ -19,7 +19,7 @@ const stage = {
   seq: 0,
   /** @type {Map<number, { resolve: (v: any) => void, reject: (e: Error) => void }>} */
   pending: new Map(),
-  /** @type {Map<string, { title: string, url: string }>} 浏览器里开着的页，按开的先后 */
+  /** @type {Map<string, { title: string, url: string, ctx?: string }>} 浏览器里开着的页，按开的先后；ctx 是所在的浏览器上下文 */
   tabs: new Map(),
   // setDiscoverTargets 会把已开着的页逐个报来：那些不算「新开」，别跟过去
   listing: false,
@@ -174,7 +174,7 @@ function stageMessage(message) {
     if (!stageTabType(info) || (stage.helperCtx && info.browserContextId === stage.helperCtx)) return;
     if (stageNotTab(info)) return void stageDropTab(info.targetId);
     const fresh = !stage.tabs.has(info.targetId);
-    stage.tabs.set(info.targetId, { title: info.title, url: info.url });
+    stage.tabs.set(info.targetId, { title: info.title, url: info.url, ctx: info.browserContextId });
     // 模型新开了一页：跟过去。人用中键、Ctrl 点链接开的是后台的一页，与浏览器一样留在原处
     if (fresh && !stage.listing && !stageOpenedBehind()) stageShow(info.targetId);
     else stageRender();
@@ -253,9 +253,9 @@ function stagePageEvent(method, params) {
     Date.now() - Math.max(stage.userAt, stage.keyAt, stage.goAt) < 3000
   ) {
     // 人开的本机文件浏览器显示不了（Office 文档、压缩包、csv 等）就会当下载：当场取消，不拷进下载目录，交给本机程序打开原件
-    void stageSend("Browser.cancelDownload", { guid: params.guid }).catch(() => {});
+    void stageSend("Browser.cancelDownload", { guid: params.guid, browserContextId: stage.tabs.get(stage.current)?.ctx }).catch(() => {});
     void bridge("/api/stage/open", { url: params.url }).then(
-      () => toast(t("游目显示不了，已交给本机程序打开")),
+      () => toast(t("游目阅不了此件，已在本机程序中打开")),
       error => toast(t`打开失败：${String(error.message || error).slice(0, 80)}`)
     );
   } else if (method === "Page.downloadWillBegin") {

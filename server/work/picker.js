@@ -171,7 +171,7 @@ function pick({ files = false, multiple = false, current = "" } = {}) {
       err += chunk.toString("utf8");
     });
     child.on("error", (/** @type {NodeJS.ErrnoException} */ error) => {
-      resolve({ error: `无法打开系统的选择框（${error.code === "ENOENT" ? `缺少 ${cmd}` : error.message}）` });
+      resolve({ error: `选择窗未能弹出（${error.code === "ENOENT" ? `缺少 ${cmd}` : error.message}）` });
     });
     child.on("close", code => {
       const paths = out
@@ -180,7 +180,7 @@ function pick({ files = false, multiple = false, current = "" } = {}) {
         .filter(Boolean)
         .map(line => (files ? line : line.replace(/(.)\/$/, "$1")));
       // macOS 点了取消是 -128 号错
-      if (code && !paths.length && !/-128/.test(err)) resolve({ error: "系统的选择框未能打开" });
+      if (code && !paths.length && !/-128/.test(err)) resolve({ error: "选择窗未能弹出" });
       else resolve({ paths });
     });
   });
