@@ -62,8 +62,16 @@ function egressWhy(name, args, conversation) {
 /** 用户亲口说的：帮手回报、后台指令结束另起的那一问（带 relay）也是 user 消息，可那是工具输出，不算 @param {Conversation} conversation */
 function userSaid(conversation) {
   return conversation.messages
-    .filter(m => m.role === "user" && !m.relay)
-    .map(m => String(m.content || ""))
+    .flatMap(m =>
+      m.role === "user"
+        ? m.relay
+          ? []
+          : [m.content]
+        : allSteps(m)
+            .filter(s => s.name === "user_note")
+            .map(s => s.note)
+    )
+    .map(text => String(text || ""))
     .join("\n");
 }
 // 游目的浏览器：点击、按键、翻页、等待都是在用户托付的事里走动，一概送审只是每步多等一回、审查也多半照准。
@@ -174,27 +182,37 @@ function reviewWord(text) {
   return text.replace(/^[\s*_`#>"'「『“‘【\[(（-]+/, "");
 }
 /**
- * 交给审查的那段话：用户历次的原话（新的在后、过长截去旧的）、意里的目标与守、将要做的、规则的缘由。
+ * 交给审查的那段话：用户历次的原话（新的在后、过长截去旧的；作答途中寄来的补言也是）、意里的目标与守、将要做的、规则的缘由。
  * 用户在请示上的定夺也是亲口说的，按先后插在其间：表单的作答、守的关口上的准许（连这一步也算）——只让审查知道人选了什么，照样由它判：
- * 人批的是要做这件事，审查还看模型这一步有没有写歪
+ * 人批的是要做这件事，审查还看模型这一步有没有写歪。
+ * 将要做的整段交上、不截：截了的尾巴审查看不到却照样发出去，审查也会把截断当成内容残缺而驳（10-29 开 PR 连驳三回，正文 3.9k 字截在 3000）
  * @param {Conversation} conversation
  */
 function reviewCase(step, args, conversation, why) {
-  const said = conversation.messages
+  const words = (text, attachments = []) =>
+      [String(text || "").trim(), ...attachments.map(a => `［附件 ${a.name}］`)].filter(Boolean).join(" "),
+    said = conversation.messages
       .flatMap(m =>
         m.role === "user"
           ? m.relay
             ? []
-            : [[String(m.content || "").trim(), ...(m.attachments || []).map(a => `［附件 ${a.name}］`)].filter(Boolean).join(" ")]
+            : [words(m.content, m.attachments)]
           : allSteps(m).flatMap(s =>
-              s.name === "ask_user" && s.answers
-                ? // 问句里写着问的是哪件事，单看答案「授权上述操作」不知所指
-                  [
-                    `［请示作答］${s.form?.questions?.map((q, i) => `${q.question} → ${s.answers?.[i] || "（未答）"}`).join("；") || s.note || ""}`
-                  ]
-                : s.granted
-                  ? [s === step ? "［守请示］准许了下面将要做的这一步" : `［守请示］准许了 ${s.name}${s.title ? `：${s.title}` : ""}`]
-                  : []
+              s.name === "user_note"
+                ? [words(s.note, s.attachments)]
+                : s.name === "ask_user" && s.answers
+                  ? // 问句里写着问的是哪件事，单看答案「授权上述操作」不知所指
+                    [
+                      `［请示作答］${s.form?.questions?.map((q, i) => `${q.question} → ${s.answers?.[i] || "（未答）"}`).join("；") || s.note || ""}`
+                    ]
+                  : s.granted
+                    ? // 守常写着「先给用户看、批了再做」：关口上那张请示就是给人看过这一步，写明了审查才对得上
+                      [
+                        s === step
+                          ? "［守请示］用户在关口上看过下面将要做的这一步，准许了"
+                          : `［守请示］准许了 ${s.name}${s.title ? `：${s.title}` : ""}`
+                      ]
+                    : []
             )
       )
       .filter(Boolean),
@@ -214,7 +232,7 @@ function reviewCase(step, args, conversation, why) {
   return prompt("review.case", {
     user: lines.join("\n") || "（无）",
     intent: intentText ? prompt("review.intent", { text: intentText }) : "",
-    action: `${step.name}\n${clipForModel(JSON.stringify(args, null, 1), 3000)}`,
+    action: `${step.name}\n${JSON.stringify(args, null, 1)}`,
     why
   });
 }
