@@ -1,19 +1,30 @@
 // 言 · 设置 · 专司：主答之外各司一事的几位——拟题随对话的模型、只有开关；审查与生图各自另配一份，
 // 不借模型栏里的那几份：同一份发，会挤掉主答的提示缓存，本机的模型还得多扛一路并发。
+// 审查可走 ChatGPT 订阅：借的是登录的账号、不是哪一份模型，另挑的小模型缓存各归各，免得只为审查另养一个 Key。
 // 一职一张卡，样子同模型栏：收起一行只写职名与模型名（拟题、没配的不写），最右一粒记号——朱点是开或已配，空圈是关或未配；
 // 点开先是开关，开了才铺开接口、地址、Key、模型（设计稿/110–112）
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 /** @type {Record<"review"|"image", { key: "dutyReview"|"dutyImage", name: () => string, apis: Duty["api"][], off: () => string }>} */
 const DUTIES = {
-  review: { key: "dutyReview", name: () => t("审查"), apis: ["siliconflow", "openai", "anthropic"], off: () => t("关，照规则") },
+  review: {
+    key: "dutyReview",
+    name: () => t("审查"),
+    apis: ["siliconflow", "openai", "anthropic", "chatgpt"],
+    off: () => t("关，照规则")
+  },
   image: { key: "dutyImage", name: () => t("生图"), apis: ["siliconflow", "openai"], off: () => t("未配") }
 };
-const DUTY_API_LABEL = { siliconflow: () => t("硅基流动"), openai: () => t("OpenAI 兼容"), anthropic: () => "Anthropic" };
+const DUTY_API_LABEL = {
+  siliconflow: () => t("硅基流动"),
+  openai: () => t("OpenAI 兼容"),
+  anthropic: () => "Anthropic",
+  chatgpt: () => t("ChatGPT 订阅")
+};
 // 哪几张卡开着：整栏重画后照样开着
 const dutyOpen = new Set();
-/** 开着且填够了（模型与地址；本机的服务可不要 Key）才算配好 @param {Duty} d */
+/** 开着且填够了（模型与地址；本机的服务可不要 Key，ChatGPT 订阅连地址也不要）才算配好 @param {Duty} d */
 function dutyReady(d) {
-  return !!(d?.on && d.model.trim() && d.baseUrl.trim());
+  return !!(d?.on && d.model.trim() && (d.api === "chatgpt" || d.baseUrl.trim()));
 }
 /** @param {"review"|"image"} id */
 function dutyOf(id) {
@@ -44,7 +55,7 @@ function dutyFormHtml(id) {
       select: "data-duty-select",
       action: "data-duty-action"
     });
-  return `<div class="profile-grid"><label class="profile-full">${t(`启用`)}${onOff}</label><label class="profile-full">${t(`接口`)}<div class="segmented">${apis}</div><small>${id === "image" ? "images/generations" : d.api === "anthropic" ? "Messages API" : "chat/completions"}</small></label><label class="profile-full">Base URL<input class="field wide" data-duty-field="baseUrl" value="${escapeHtml(d.baseUrl)}" placeholder="${baseUrlPlaceholder(d)}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-duty-field="apiKey" value="${escapeHtml(d.apiKey)}" placeholder="sk-…" autocomplete="off"></label><label class="profile-full">${t(`模型`)}${model}</label></div><div class="profile-actions">${id === "review" ? `<button class="outline-btn" data-duty-action="test">${t(`测试连接`)}</button>` : ""}<span class="profile-status"></span></div>`;
+  return `<div class="profile-grid"><label class="profile-full">${t(`启用`)}${onOff}</label><label class="profile-full">${t(`接口`)}<div class="segmented">${apis}</div><small>${id === "image" ? "images/generations" : d.api === "chatgpt" ? t("额度记在 ChatGPT 订阅上") : d.api === "anthropic" ? "Messages API" : "chat/completions"}</small></label>${d.api === "chatgpt" ? chatgptAccountHtml() : `<label class="profile-full">Base URL<input class="field wide" data-duty-field="baseUrl" value="${escapeHtml(d.baseUrl)}" placeholder="${baseUrlPlaceholder(d)}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-duty-field="apiKey" value="${escapeHtml(d.apiKey)}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">${t(`模型`)}${model}</label></div><div class="profile-actions">${id === "review" ? `<button class="outline-btn" data-duty-action="test">${t(`测试连接`)}</button>` : ""}<span class="profile-status"></span></div>`;
 }
 function dutySettingsHtml() {
   const title = store.settings.autoTitle,
@@ -132,4 +143,5 @@ function bindDutySettings() {
         })
     );
   });
+  if (document.querySelector("[data-duty] [data-chatgpt-account]")) void refreshChatgptAccount();
 }

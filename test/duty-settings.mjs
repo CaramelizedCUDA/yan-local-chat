@@ -68,6 +68,22 @@ await evalJs(`document.querySelector('[data-duty="review"] [data-duty-action="te
 await sleep(1500);
 check("测试连接接得通", /可用/.test(await evalJs(`document.querySelector('[data-duty="review"] .profile-status').textContent`)));
 
+// 审查可走 ChatGPT 订阅：账号一行代替地址与 Key，有模型即算配好；换回去，地址与 Key 还在
+await evalJs(`document.querySelector('[data-duty="review"] [data-duty-api="chatgpt"]').click(); true`);
+await sleep(200);
+check(
+  "审查换成 ChatGPT 订阅：账号一行代替地址与 Key，朱点",
+  !(await evalJs(`!!document.querySelector('[data-duty="review"] [data-duty-field="baseUrl"]')`)) &&
+    (await evalJs(`!!document.querySelector('[data-duty="review"] [data-chatgpt-account]')`)) &&
+    (await evalJs(`document.querySelector('[data-duty="review"] .duty-mark').classList.contains("on")`))
+);
+await evalJs(`document.querySelector('[data-duty="review"] [data-duty-api="openai"]').click(); true`);
+await sleep(200);
+check(
+  "换回 OpenAI 兼容，地址与 Key 还在",
+  (await evalJs(`(d => d.baseUrl + "|" + d.apiKey)(__yanState().settings.dutyReview)`)) === "http://127.0.0.1:8798/v1|k"
+);
+
 // 生图：开即替它填好硅基流动的地址，接口只给两种
 await evalJs(
   `document.querySelector('[data-duty="image"] summary').click(); document.querySelector('[data-duty-on="image"][data-value="true"]').click(); true`

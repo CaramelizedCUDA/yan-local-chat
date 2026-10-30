@@ -71,10 +71,11 @@ let chatgptAccount = null;
 function chatgptAccountHtml() {
   const a = chatgptAccount,
     text = !a ? "…" : a.signedIn ? t`已登录${a.email ? ` · ${a.email}` : ""}` : a.pending ? t("等待浏览器授权…") : t("未登录");
-  return `<div class="profile-full profile-cell">${t(`账号`)}<div class="field-row"><span class="field wide" data-chatgpt-account>${escapeHtml(text)}</span><button class="outline-btn" data-profile-action="${a?.signedIn ? "logout" : "login"}">${a?.signedIn ? t("退出登录") : t("登录")}</button></div><small>${t(`以 ChatGPT 账号授权，用量记在订阅上`)}</small></div>`;
+  return `<div class="profile-full profile-cell">${t(`账号`)}<div class="field-row"><span class="field wide" data-chatgpt-account>${escapeHtml(text)}</span><button class="outline-btn" data-chatgpt-action="${a?.signedIn ? "logout" : "login"}">${a?.signedIn ? t("退出登录") : t("登录")}</button></div><small>${t(`以 ChatGPT 账号授权，用量记在订阅上`)}</small></div>`;
 }
 // 问一回桥接，只改账号那一行，不重画整页（卡片里正填着的字不丢）
 async function refreshChatgptAccount() {
+  bindChatgptButtons();
   chatgptAccount = await bridge("/api/chatgpt/status", {}).catch(() => chatgptAccount);
   document.querySelectorAll("[data-chatgpt-account]").forEach(el => {
     const row = /** @type {HTMLElement} */ (el.closest(".profile-cell"));
@@ -83,19 +84,23 @@ async function refreshChatgptAccount() {
   bindChatgptButtons();
   return chatgptAccount;
 }
+// 账号那一行在模型卡里，也在专司审查的卡里：登录、退出不认是哪张卡
 function bindChatgptButtons() {
-  document.querySelectorAll("[data-profile-card] .profile-cell [data-profile-action]").forEach(button => {
-    const card = /** @type {HTMLElement} */ (button.closest("[data-profile-card]")),
-      p = profiles().find(item => item.id === card.dataset.profileCard);
-    if (p)
-      /** @type {HTMLElement} */ (button).onclick = () =>
-        handleProfileAction(p, /** @type {HTMLElement} */ (button).dataset.profileAction, card);
+  document.querySelectorAll("[data-chatgpt-action]").forEach(el => {
+    const button = /** @type {HTMLElement} */ (el),
+      card = /** @type {HTMLElement} */ (button.closest(".profile-card"));
+    button.onclick = () => (button.dataset.chatgptAction === "login" ? chatgptLogin(card) : chatgptLogout());
   });
 }
-// 登录：桥接开回调口、用系统浏览器打开授权页；这边每隔一会儿问一回，登上了就顺手取模型列表
-/** @param {Profile} profile */
-async function chatgptLogin(profile, card) {
-  const status = card.querySelector(".profile-status");
+async function chatgptLogout() {
+  await bridge("/api/chatgpt/logout", {}).catch(() => null);
+  await refreshChatgptAccount();
+}
+// 登录：桥接开回调口、用系统浏览器打开授权页；这边每隔一会儿问一回，登上了就顺手按下这张卡的「获取列表」
+/** @param {HTMLElement} card */
+async function chatgptLogin(card) {
+  const again = card.dataset.profileCard ? `[data-profile-card="${card.dataset.profileCard}"]` : `[data-duty="${card.dataset.duty}"]`,
+    status = card.querySelector(".profile-status");
   try {
     const { url } = await bridge("/api/chatgpt/login", {});
     status.innerHTML = `${t(`授权页已在浏览器中打开 ·`)} <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${t(`手动打开`)}</a>`;
@@ -105,9 +110,10 @@ async function chatgptLogin(profile, card) {
       const a = await refreshChatgptAccount();
       if (a?.signedIn || !a?.pending) break;
     }
-    const now = document.querySelector(`[data-profile-card="${profile.id}"]`);
+    const now = document.querySelector(again);
     if (!now) return;
-    if (chatgptAccount?.signedIn) await handleProfileAction(profile, "models", now);
+    if (chatgptAccount?.signedIn)
+      /** @type {HTMLElement|null} */ (now.querySelector('[data-profile-action="models"], [data-duty-action="models"]'))?.click();
     else now.querySelector(".profile-status").textContent = chatgptAccount?.error || t("未登录");
   } catch (error) {
     status.textContent = friendlyError(error.message);
@@ -180,12 +186,6 @@ async function handleProfileAction(profile, action, card) {
     saveStore();
     renderSettings();
     renderHeader();
-    return;
-  }
-  if (action === "login") return chatgptLogin(profile, card);
-  if (action === "logout") {
-    await bridge("/api/chatgpt/logout", {}).catch(() => null);
-    await refreshChatgptAccount();
     return;
   }
   if (action === "models") {

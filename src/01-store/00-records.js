@@ -9,7 +9,7 @@ function normalizeDuty(raw, api) {
   const d = raw && typeof raw === "object" ? raw : {};
   return {
     on: d.on === true,
-    api: ["openai", "anthropic", "siliconflow"].includes(d.api) ? d.api : api,
+    api: ["openai", "anthropic", "siliconflow", "chatgpt"].includes(d.api) ? d.api : api,
     baseUrl: String(d.baseUrl || ""),
     apiKey: String(d.apiKey || ""),
     model: String(d.model || ""),
