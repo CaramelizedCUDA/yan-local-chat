@@ -50,11 +50,12 @@ export async function connect() {
   const send = async (method, params = {}) => {
     const isNavigate = method === "Page.navigate";
     const targetUrl = isNavigate ? String(params.url || "") : "";
-    const isHtml = isNavigate && targetUrl.startsWith(PAGE) && /\.html\b/.test(targetUrl.slice(PAGE.length));
+    const onPage = isNavigate && targetUrl.startsWith(PAGE);
+    const isHtml = onPage && /\.html\b/.test(targetUrl.slice(PAGE.length));
     const app =
       method === "Page.reload"
         ? await evalJs(`location.href.startsWith(${JSON.stringify(PAGE)}) && !location.pathname.endsWith(".html")`).catch(() => false)
-        : isNavigate && targetUrl.startsWith(PAGE) && !/\.html\b/.test(targetUrl.slice(PAGE.length));
+        : onPage && !isHtml;
     if (!app && !isHtml) return raw(method, params);
     await evalJs(`window.__leaving = true`).catch(() => {});
     const result = await raw(method, params);

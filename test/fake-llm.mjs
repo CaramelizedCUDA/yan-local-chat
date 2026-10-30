@@ -2114,7 +2114,7 @@ http
               delta({}, { usage: { total_tokens: 5 } })
             ]);
         if (n === 0) return call("run_command", { command: shellCommand("Set-Content review-ok.txt ok", "printf ok > review-ok.txt") });
-        // POSIX 用无副作用的 sudo 探针覆盖“禁止提权”；执行策略本身仍由 sandbox 单测直接覆盖。
+        // POSIX 用无副作用的 sudo 探针覆盖「禁止提权」；执行策略本身仍由 sandbox 单测直接覆盖。
         if (n === 1) return call("run_command", { command: shellCommand("Set-ExecutionPolicy Unrestricted", "sudo -n true") });
         return sse(res, [
           delta({

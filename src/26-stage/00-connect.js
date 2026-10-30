@@ -95,8 +95,10 @@ const stage = {
   goAt: 0,
   /** @type {PointerEvent | null} */
   moved: null,
+  // 正在把某一页激活到前台的在途承诺：stageLocate 等它落定才查前台，免得撞上切签中途
   /** @type {Promise<unknown> | null} */
   activating: null,
+  // 人切签或主动激活的代数：切签即递增，stageLocate 拿回旧前台时不覆写已发生的新切签
   frontRevision: 0
 };
 
