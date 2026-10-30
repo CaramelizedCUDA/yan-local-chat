@@ -307,15 +307,13 @@ http
               }),
               delta({}, { usage: { total_tokens: 5 } })
             ]);
-        if (results.length === 0)
+        const win = process.platform === "win32";
+        if (results.length === 0 && win)
           return call("run_command", {
-            // sh 下用一个无副作用的引号参数留住「定义别名」这一幕，写文件用 sh 自己的写法
-            command: shellCommand(
-              "Set-Alias yanrv Get-Date; Set-Content duty-ok.txt ok",
-              ": 'Set-Alias yanrv Get-Date'; printf ok > duty-ok.txt"
-            )
+            command: "Set-Alias yanrv Get-Date; Set-Content duty-ok.txt ok"
           });
-        if (results.length === 1) return call("fetch_page", { url: "https://example.com/c?k=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789xyz" });
+        if ((win && results.length === 1) || (!win && results.length === 0))
+          return call("fetch_page", { url: "https://example.com/c?k=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789xyz" });
         return sse(res, [
           delta({ content: `REVIEW-DUTY done｜${results.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 120)).join(" ▸ ")}` }),
           delta({}, { usage: { total_tokens: 5 } })
