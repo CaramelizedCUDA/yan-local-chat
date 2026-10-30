@@ -134,6 +134,18 @@ async function ingestFile(original) {
 }
 
 async function downloadAttachment(id) {
+  // 原件在存储目录里：照同源地址直接下（桥接按原名回附件头），不把整份读进页面编成 data: URL。
+  // 只暂存在浏览器里的（落盘时桥接断着，还没推进目录）才从表里取
+  const onDisk = await bridge("/api/files/has", { ids: [id] }, AbortSignal.timeout(8000))
+    .then(data => data.has?.includes(id))
+    .catch(() => false);
+  if (onDisk) {
+    const anchor = document.createElement("a");
+    anchor.href = `${apiBase}/api/files/raw?id=${encodeURIComponent(id)}&download=1`;
+    anchor.download = "";
+    anchor.click();
+    return;
+  }
   try {
     const file = await getAttachment(id);
     if (!file) return toast(t("附件原件已找不到"));

@@ -23,8 +23,11 @@ function safeHost(url) {
     return t("未填写地址");
   }
 }
+// 格式器只立一回：toLocaleTimeString 每调一次都另起一个，作答中每帧画题头都要调
+const TIME_FORMAT = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 function formatTime(value) {
-  return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(date) : TIME_FORMAT.format(date);
 }
 // 汉字数字：一、十二、二十三；2 单独出现时用「两」（如「两问」）
 const DIGITS = "〇一二三四五六七八九";

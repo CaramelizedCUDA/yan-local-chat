@@ -501,8 +501,9 @@ async function syncChatsWithDisk() {
         }
         // 这边的不比目录里的旧：以这边的为准写过去（带上目录里那份的时间戳，免得被当成旧份拒掉）
         chatDiskStamps.set(c.id, item.savedAt);
-        chatBases.set(c.id, chatJson(normalizeConversation(item.conversation)));
-        if (item.savedAt < stamp || unsaved || hashText(chatJson(normalizeConversation(item.conversation))) !== hash) push.add(c.id);
+        const theirs = chatJson(normalizeConversation(item.conversation));
+        chatBases.set(c.id, theirs);
+        if (item.savedAt < stamp || unsaved || hashText(theirs) !== hash) push.add(c.id);
         else settled.add(c.id);
         return c;
       })
@@ -514,8 +515,9 @@ async function syncChatsWithDisk() {
         const c = normalizeConversation(item.conversation);
         chatStamps.set(c.id, item.savedAt);
         chatDiskStamps.set(c.id, item.savedAt);
-        chatBases.set(c.id, chatJson(c));
-        chatHashes.set(c.id, hashText(chatJson(c)));
+        const json = chatJson(c);
+        chatBases.set(c.id, json);
+        chatHashes.set(c.id, hashText(json));
         store.conversations.push(c);
         settled.add(c.id);
         changed = true;

@@ -54,7 +54,10 @@ function themeSheets() {
       ctx.globalCompositeOperation = "source-in";
       ctx.fillStyle = color;
       ctx.fillRect(0, 0, SHEET_PX, SHEET_PX);
-      return `url("${canvas.toDataURL("image/png")}")`;
+      // toBlob 在后台编码；toDataURL 在主线程上同步编四张 1024² 的 PNG，开页后那一下约 330 ms 一动不动
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw Error(name);
+      return `url("${URL.createObjectURL(blob)}")`;
     })
   )
     .then(urls => Object.fromEntries(THEME_SHEETS.map(([key], i) => [key, urls[i]])))
