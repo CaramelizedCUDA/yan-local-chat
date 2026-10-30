@@ -44,7 +44,7 @@ function errorText(error, limit = 500) {
   return String(error?.message || error).slice(0, limit);
 }
 // 接口的常见形状：读请求体，办完回 200 与结果；中途抛错就回 400，那句话由 describe 定（各模块的前缀、截断长度不同）。
-// handle(body, req, res) 返回的值即响应；自己写了响应（别的状态码、流）就返回 undefined
+// handle(body, req, res) 返回的值即响应；自己写了响应（别的状态码、流）就返回 undefined；limit 是请求体上限，缺省同 readJson
 // 对方在响应写出之前走了（页面点停止、断线；走总线时是 BusResponse 被 destroy）：接口据此放弃还没开始的事，如排队等锁
 function requestSignal(res) {
   const abort = new AbortController();
@@ -57,10 +57,10 @@ function requestSignal(res) {
 }
 // 桥接日志每行打头的时刻
 const stamp = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
-function jsonRoute(handle, describe = errorText) {
+function jsonRoute(handle, describe = errorText, limit = undefined) {
   return async (req, res) => {
     try {
-      const data = await handle(await readJson(req), req, res);
+      const data = await handle(await readJson(req, limit), req, res);
       if (data !== undefined && !res.writableEnded && !res.destroyed) sendJson(res, 200, data);
     } catch (error) {
       if (!res.headersSent) sendJson(res, 400, { error: describe(error) });

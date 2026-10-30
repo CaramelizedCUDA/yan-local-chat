@@ -70,8 +70,8 @@ test("技能保存后刷新目录期间继续编辑：新内容也必须保存",
   assert.equal(f.editing(), null);
 });
 
-for (const size of [1, 16 * 1024 * 1024])
-  test(size === 1 ? "两批附件同时置入：总数不超过十件" : "两批附件同时置入并换会话：原草稿总量不超过 64 MB", async () => {
+for (const away of [false, true])
+  test(away ? "两批附件同时置入并换会话：原草稿里总数也不超过十件" : "两批附件同时置入：总数不超过十件", async () => {
     const gate = deferred(),
       removed = [];
     const f = load([
@@ -87,18 +87,17 @@ for (const size of [1, 16 * 1024 * 1024])
       "switchAway: () => { currentId = 'B'; pendingAttachments = []; }"
     ]);
     f.setup(gate.promise, removed);
-    const batch = tag => Array.from({ length: size > 1 ? 3 : 6 }, (_, i) => ({ name: `${tag}${i}.pdf`, size }));
+    const batch = tag => Array.from({ length: 6 }, (_, i) => ({ name: `${tag}${i}.pdf`, size: 1 }));
     const a = f.addFiles(batch("a")),
       b = f.addFiles(batch("b"));
-    if (size > 1) f.switchAway();
+    if (away) f.switchAway();
     gate.resolve();
     await Promise.all([a, b]);
     await turn();
-    const files = size > 1 ? f.state().drafts.A.attachments : f.pending();
-    assert.equal(files.length, size > 1 ? 4 : 10);
-    assert.ok(files.reduce((sum, file) => sum + file.size, 0) <= 64 * 1024 * 1024);
+    const files = away ? f.state().drafts.A.attachments : f.pending();
+    assert.equal(files.length, 10);
     assert.ok(removed.length > 0, "放不下的附件原件会清理");
-    if (size > 1) assert.deepEqual(f.pending(), []);
+    if (away) assert.deepEqual(f.pending(), []);
   });
 
 test("卷宗附件读取期间案上已满：最终放入时重新校验并清理原件", async () => {

@@ -55,7 +55,7 @@ defineTool({
         return { ok: false, content: t`技能文件读取失败：${String(error.message || error).slice(0, 120)}`, display: "读取失败" };
       }
     } else {
-      const record = await getAttachment(doc.id);
+      const record = await getAttachmentMeta(doc.id);
       text = record ? (record.kind === "text" ? record.data : record.extractedText) || "" : "";
     }
     if (!text) return { ok: false, content: t("该文档无可读取的文本"), display: "无文本" };

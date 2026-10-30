@@ -67,6 +67,16 @@ async function getAttachment(id) {
   cacheAttachment(record);
   return record;
 }
+// 只取元数据与抽出的正文（文本附件连同正文）：发问时翻历史、read_document 只用得着这些，不必把整份原件编成 base64 取回
+async function getAttachmentMeta(id) {
+  if (!id) return null;
+  if (attachmentCache.has(id)) return attachmentCache.get(id);
+  try {
+    const record = (await bridge("/api/files/get", { id, meta: true }, AbortSignal.timeout(60000))).record;
+    if (record) return record;
+  } catch {}
+  return (await fileStoreRequest("readonly", db => db.get(id)).catch(() => null)) || null;
+}
 function deleteAttachment(id) {
   thumbCache.delete(id);
   uncacheAttachment(id);

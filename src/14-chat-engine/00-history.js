@@ -159,6 +159,7 @@ async function messageForApi(message, latest, budget = inlineTextBudget(), image
   for (const metadata of message.attachments) {
     // 模型接口通常不收压缩包；原件已经落在本机，给出可用的路径，让本机工具解包。
     // 历史里的包也保留这条索引。先复制到工作目录再解压，来源在目录外时也不必放宽沙箱。
+    // 没抽出正文、又大得不该整份送的文件同此：给路径，由模型用工具读
     if (fileKind(metadata.name).name === "archive") {
       try {
         const local = await bridge("/api/files/path", { id: metadata.id }, AbortSignal.timeout(8000));
@@ -174,7 +175,28 @@ async function messageForApi(message, latest, budget = inlineTextBudget(), image
       notes += t`\n\n[图片：${metadata.name}，${formatFileSize(metadata.size)}，先前发过，原图已不在上下文中]`;
       continue;
     }
-    const file = metadata.data !== undefined ? metadata : await getAttachment(metadata.id);
+    // 没抽出正文的文件：往后各问只留一行，用不着原件
+    const raw = metadata.kind === "file" && !metadata.extracted;
+    if (raw && !latest) {
+      notes += t`\n\n[${t("文件")}：${metadata.name}，${formatFileSize(metadata.size)}，先前发过，原件已不在上下文中]`;
+      continue;
+    }
+    if (raw && metadata.size > INLINE_FILE_BYTES) {
+      try {
+        const local = await bridge("/api/files/path", { id: metadata.id }, AbortSignal.timeout(8000));
+        notes += t`\n\n[文件：${metadata.name}，${formatFileSize(metadata.size)}，过大未随消息附上；本机原件路径：${local.path}。需要时用工具读取，不要修改原件。]`;
+      } catch (error) {
+        notes += t`\n\n[文件 ${metadata.name} 的本机原件暂不可用：${String(error.message || error)}]`;
+      }
+      continue;
+    }
+    // 图片与要整份送的文件取原件；文本、抽出正文的只取正文
+    const file =
+      metadata.data !== undefined
+        ? metadata
+        : metadata.kind === "image" || raw
+          ? await getAttachment(metadata.id)
+          : await getAttachmentMeta(metadata.id);
     if (!file) {
       notes += t`\n\n[附件 ${metadata.name} 的原件已找不到]`;
       continue;

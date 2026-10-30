@@ -369,8 +369,8 @@ async function addLibraryFiles(fileList, dir = libraryDir) {
 async function storeLibraryFiles(items, folders = 0, root = archiveDir()) {
   let added = 0;
   for (const { file, dir } of items) {
-    if (file.size > MAX_ARCHIVE_FILE_BYTES) {
-      toast(t`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
+    if (file.size > MAX_FILE_BYTES) {
+      toast(t`${file.name} 超过 ${limitLabel(MAX_FILE_BYTES)}，未收入`);
       continue;
     }
     try {
@@ -473,8 +473,6 @@ async function removeArchiveItem(path) {
 function canPlaceAttachment(size, attachments = pendingAttachments) {
   if (attachments.length >= 10) return toast(t("一次最多置入 10 件附件")), false;
   if (size > MAX_FILE_BYTES) return toast(t`单个附件不超过 ${limitLabel(MAX_FILE_BYTES)}`), false;
-  const total = attachments.reduce((sum, file) => sum + Number(file.size || 0), 0);
-  if (total + Number(size || 0) > MAX_PENDING_BYTES) return toast(t`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`), false;
   return true;
 }
 // 磁盘上的卷宗置于案上：取回原件，按普通附件收进浏览器（图片、可提取的文档照常处理）
@@ -635,7 +633,7 @@ function bindLibraryEvents() {
       ? libraryDir
         ? t`任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
         : t("任何文件 · 落到本机的卷宗目录")
-      : t`图片、文档与代码文件 · 单次共 ${limitLabel(MAX_PENDING_BYTES)}`;
+      : t`图片、文档与代码文件 · 单件 ${limitLabel(MAX_FILE_BYTES)}`;
     $("#dropVeil").classList.remove("hidden");
   };
   const hideDropVeil = () => {

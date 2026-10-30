@@ -5,6 +5,9 @@ var YAN_EN = {
   "\n\n[压缩包：{0}；本机原件路径：{1}。用 run_command 将原件复制到工作目录，再解压到独立的临时子目录并读取；不要修改原件。]":
     "\n\n[Archive: {0}; local original path: {1}. Use run_command to copy it into the working directory, then extract it into a separate temporary subdirectory and read the contents. Keep the original unchanged.]",
   "\n\n[压缩包 {0} 的本机原件暂不可用：{1}]": "\n\n[The local original of archive {0} is currently unavailable: {1}]",
+  "\n\n[文件：{0}，{1}，过大未随消息附上；本机原件路径：{2}。需要时用工具读取，不要修改原件。]":
+    "\n\n[File: {0}, {1}, too large to attach; local original path: {2}. Read it with tools when needed. Keep the original unchanged.]",
+  "\n\n[文件 {0} 的本机原件暂不可用：{1}]": "\n\n[The local original of file {0} is currently unavailable: {1}]",
   情形: "Condition",
   "带自定义认证请求头的请求不能跨来源跳转，请直接请求目标地址":
     "Requests with custom authentication headers cannot redirect to another origin. Request the destination directly",
@@ -1057,7 +1060,7 @@ var YAN_EN = {
   不入正文: "Kept out of the main chat",
   言之有物: "Local chat and agent",
   字字留痕: "Every word kept",
-  "图片、文档与代码文件 · 单次共 64 MB": "Images, documents and code · up to 64 MB total",
+  "图片、文档与代码文件 · 单件 {0}": "Images, documents and code · up to {0} each",
   "当前为言 · 对谈": "Current mode: Chat",
   另起一段对话: "New chat",
   查找对话: "Search chats",

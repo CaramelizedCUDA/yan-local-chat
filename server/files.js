@@ -9,6 +9,8 @@ const path = require("node:path");
 
 module.exports = function createFiles({ filesHome, playable }) {
   const ID = /^[A-Za-z0-9_-]{1,80}$/,
+    // 原件以 data: URL 送来，比原件大三成多：页面那头单件上限 256 MB（见 src/13-files/00-ingest.js），与收入卷宗同
+    PUT_LIMIT = 400 * 1024 * 1024,
     // 清理只动放了一天以上的：别的标签页刚置入、草稿还没来得及写进配置的那件，不能因为「没人引用」被当场删掉
     CLEAN_GRACE_MS = 24 * 60 * 60 * 1000;
   function checkId(value) {
@@ -64,14 +66,20 @@ module.exports = function createFiles({ filesHome, playable }) {
       if (previous && previous !== file) fs.rmSync(path.join(dir, previous), { force: true });
       return { id, bytes: bytes.length };
     },
-    error => `附件未能落盘：${errorText(error, 200)}`
+    error => `附件未能落盘：${errorText(error, 200)}`,
+    PUT_LIMIT
   );
+  // meta：只要元数据与抽出的正文（文本附件的正文就是原件，照给）——发问时翻历史里的文档只用得着这些，不必把整份原件编成 base64 取回
   const handleGet = jsonRoute(
     async (body, req, res) => {
       const id = checkId(body.id),
         dir = home(),
         meta = readMeta(dir, id);
       if (!meta) return sendJson(res, 404, { error: "附件不在存储目录里" });
+      if (body.meta && meta.kind !== "text") {
+        const { 言: _mark, file: _file, bytes: _bytes, ...record } = meta;
+        return { record };
+      }
       const raw = rawFileOf(dir, id, meta);
       if (!raw) return sendJson(res, 404, { error: "附件原件不在存储目录里" });
       const bytes = fs.readFileSync(path.join(dir, raw)),

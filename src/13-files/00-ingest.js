@@ -1,10 +1,11 @@
 // 言 · 文件 · 接入：选取、拖入、粘贴的文件读成附件；附件原件的下载
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
-// 附件的几道上限：单件、单次合计、卷宗与附件原件合计、收入卷宗的单件；界面上的提示都从这里取数（见 limitLabel），改一处即可
+// 附件的上限：单件（置于案上与收入卷宗同一道）；界面上的提示都从这里取数（见 limitLabel），改一处即可。
+// 单件卡在原件以 data: URL 经 JSON 交给桥接这一路：256 MB 编出来三百多 MB，再大就逼近浏览器的字符串上限。
+// 能过页面整份进上下文的另有一道 INLINE_FILE_BYTES：超过它的文本不当文本读、没抽出正文的不整份送，交给模型的是本机原件路径（同压缩包）
 const MB = 1024 * 1024;
-const MAX_FILE_BYTES = 32 * MB;
-const MAX_PENDING_BYTES = 64 * MB;
-const MAX_ARCHIVE_FILE_BYTES = 256 * MB;
+const MAX_FILE_BYTES = 256 * MB;
+const INLINE_FILE_BYTES = 32 * MB;
 const limitLabel = bytes => (bytes >= 1024 * MB ? `${bytes / (1024 * MB)} GB` : `${Math.round(bytes / MB)} MB`);
 const MAX_EXTRACTED_CHARS = 300000;
 async function handleFiles(event) {
@@ -17,8 +18,7 @@ async function addFiles(fileList) {
   if (view === "library") return addLibraryFiles(files);
   // 一件件读的工夫里人可能已换到别的对话：读好的仍归点选时那一段（见 placeAttachment）
   const key = draftKey();
-  let total = pendingAttachments.reduce((sum, file) => sum + Number(file.size || 0), 0),
-    count = pendingAttachments.length,
+  let count = pendingAttachments.length,
     added = 0;
   for (const file of files) {
     if (count >= 10) {
@@ -29,13 +29,8 @@ async function addFiles(fileList) {
       toast(t`${file.name} 超过 ${limitLabel(MAX_FILE_BYTES)}，未置入`);
       continue;
     }
-    if (total + file.size > MAX_PENDING_BYTES) {
-      toast(t`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`);
-      break;
-    }
     try {
       if (!placeAttachment(key, await ingestFile(file))) break;
-      total += file.size;
       count += 1;
       added += 1;
     } catch {
@@ -111,7 +106,7 @@ async function ingestFile(original) {
   const kind =
       file.type.startsWith("image/") && !unreadable
         ? "image"
-        : isTextFile(file) || (fileKind(file.name) === OTHER_FILE && (await sniffText(file)))
+        : file.size <= INLINE_FILE_BYTES && (isTextFile(file) || (fileKind(file.name) === OTHER_FILE && (await sniffText(file))))
           ? "text"
           : "file",
     id = uid();
