@@ -308,7 +308,10 @@ function bindTrailEvents() {
       step = stepInView(el.dataset.stepId);
     // 指令输出默认折起，开合记在步骤上，重画不丢
     const wasFolded = el.classList.contains("folded");
-    if (step) step.expanded = wasFolded;
+    if (step) {
+      step.expanded = wasFolded;
+      thawStep(step);
+    }
     morphHeight(el, () => el.classList.toggle("folded", !wasFolded));
     head.title = wasFolded ? t("收起输出") : t("展开输出");
     saveStoreSoon();
@@ -318,6 +321,7 @@ function bindTrailEvents() {
     if (!step) return;
     step.full = !step.full;
     step.expanded = true;
+    thawStep(step);
     saveStoreSoon();
     // 节点留在原处只换内容，高度才好从旧高动到新高
     const fresh = document.createElement("div");

@@ -79,7 +79,11 @@ function deleteAttachment(id) {
 // 消息上的，连同行迹步骤上的（补言带的附件、工具交回的画面）
 function attachmentIds(messages = []) {
   return messages
-    .flatMap(message => [...(message.attachments || []), ...allSteps(message).flatMap(step => step.attachments || [])])
+    .flatMap(message => [
+      ...(message.attachments || []),
+      ...allSteps(message).flatMap(step => step.attachments || []),
+      ...coldFiles(message)
+    ])
     .map(file => file.id)
     .filter(Boolean);
 }
@@ -101,7 +105,7 @@ function holdAttachments(files) {
     void deleteAttachments(ids);
   };
 }
-// 仍在用的附件：各段对话（含换下的版本、旁注，连同行迹里补言带的、工具交回的画面）、草稿、案上待发的与发送快照
+// 仍在用的附件：各段对话（含换下的版本、旁注，连同行迹里补言带的、工具交回的画面，另存出去的那几答记在 cold.files）、草稿、案上待发的与发送快照
 function attachmentKeepIds() {
   const ids = new Set(attachmentHolds.keys());
   const add = files => {
@@ -111,6 +115,7 @@ function attachmentKeepIds() {
     for (const m of everyMessage(c)) {
       add(m.attachments);
       for (const step of allSteps(m)) add(step.attachments);
+      add(coldFiles(m));
     }
   for (const value of Object.values(store.drafts || {})) add(value?.attachments);
   add(pendingAttachments);
@@ -127,6 +132,7 @@ function usedAttachmentBytes() {
     for (const m of everyMessage(c)) {
       count(m.attachments);
       for (const step of allSteps(m)) count(step.attachments);
+      count(coldFiles(m));
     }
   return [...seen.values()].reduce((a, b) => a + b, 0);
 }

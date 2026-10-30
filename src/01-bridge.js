@@ -163,7 +163,11 @@ function bridgeTimedOut(error) {
 }
 // 调本机桥接：存储、卷宗、工具都走这一个口子；桥接回的错误是一句话，原样抛出（状态码与回来的内容挂在 status / data 上）
 async function bridge(path, payload, signal) {
-  const response = await bridgeFetch(path, JSON.stringify(payload), signal);
+  return bridgeJson(path, JSON.stringify(payload), signal);
+}
+// 请求体已是 JSON 原文时（整段对话、一答的行迹）直接送：手上的串不必拆成对象再拼回去
+async function bridgeJson(path, body, signal) {
+  const response = await bridgeFetch(path, body, signal);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(Error(data.error || t`请求失败（${response.status}）`), { status: response.status, data });
   return data;

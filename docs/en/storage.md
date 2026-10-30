@@ -4,7 +4,7 @@
 
 Chats, Files, attachments and settings all live in one storage folder (`~/.yan/` by default). The folder names are in Chinese:
 
-- `对话/` (chats): one JSON file per chat; copying is backing up.
+- `对话/` (chats): one JSON file per chat; copying is backing up. For finished long replies, the reasoning and helper runs are stored separately under `对话/行迹/` and the chat file keeps only a reference; they are loaded back when you open the chat. Stored parts no chat refers to are cleared after a day.
 - `卷宗/` (Files): outputs and files you've saved.
 - `附件/` (attachments): originals of chat attachments, each an original plus a `.json` metadata file of the same name.
 - `技能/` (skills): the skills Yan recognizes (see [Skills](skills.md)).

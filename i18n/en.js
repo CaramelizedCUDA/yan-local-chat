@@ -682,6 +682,8 @@ var YAN_EN = {
   "言-备份-{0}.json": "yan-backup-{0}.json",
   "（含 {0} 件附件原件）": " (with {0} {0|attachment|attachments})",
   "备份已导出{0}；不含 API Key": "Backup exported{0}; API keys are not included",
+  "有 {0} 答另存的行迹没能取回，备份里缺它们的思绪与帮手经过":
+    "{0} {0|reply's|replies'} stored trail could not be loaded; the backup lacks their reasoning and helper runs",
   "不是言的备份文件，或版本不兼容": "Not a Yan backup file, or an incompatible version",
   "、{0} 个分组": ", {0} {0|group|groups}",
   "、{0} 个预设": ", {0} {0|preset|presets}",

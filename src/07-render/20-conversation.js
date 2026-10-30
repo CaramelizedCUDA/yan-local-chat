@@ -98,6 +98,8 @@ function renderConversation(shouldScroll = false) {
   scrollHost.classList.remove("converge");
   refreshNoteCounts(c);
   const { added } = syncMessages(c, converged);
+  // 另存出去的几答（见 01-store/35-cold.js）取回来，接上了再重画
+  warmInView(c);
   if (converged) {
     const articles = scrollHost.querySelectorAll("#messages .message");
     scrollHost.classList.add("converge");

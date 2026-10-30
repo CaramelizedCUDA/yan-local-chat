@@ -92,9 +92,13 @@ async function writeConversation(id) {
     if (deletedChatIds.has(id)) break;
     const queued = pendingChatWrites.get(id);
     pendingChatWrites.delete(id);
-    const conversation = store.conversations.find(item => item.id === id);
+    let conversation = store.conversations.find(item => item.id === id);
     if (!conversation) continue;
-    const json = JSON.stringify(conversation),
+    await coldify(conversation);
+    // 另存的那一会儿里可能被删、被并进来的新份换掉
+    conversation = store.conversations.find(item => item.id === id);
+    if (!conversation || deletedChatIds.has(id)) continue;
+    const json = chatJson(conversation),
       hash = hashText(json);
     if (!queued?.force && chatHashes.get(id) === hash) {
       if (!pendingChatWrites.has(id)) dirtyChatIds.delete(id);
@@ -108,9 +112,9 @@ async function writeConversation(id) {
       persisted = false;
     if (!spilled)
       try {
-        await bridge(
+        await bridgeJson(
           "/api/chats/save",
-          { root: chatsDir(), savedAt: pending.savedAt, base: chatDiskStamps.get(id) || 0, conversation: JSON.parse(pending.json) },
+          `{"root":${JSON.stringify(chatsDir())},"savedAt":${pending.savedAt},"base":${chatDiskStamps.get(id) || 0},"conversation":${pending.json}}`,
           AbortSignal.timeout(60000)
         );
         chatDiskStamps.set(id, pending.savedAt);
@@ -212,16 +216,17 @@ function catchUpConversation(item, { quiet = false } = {}) {
   if (index < 0) return null;
   const c = store.conversations[index],
     theirs = normalizeConversation(item.conversation),
-    theirJson = JSON.stringify(theirs),
+    theirJson = chatJson(theirs),
     stamp = chatStamps.get(c.id) || 0,
-    clean = chatHashes.get(c.id) === hashText(JSON.stringify(c)) && chatDiskStamps.get(c.id) === stamp && !busyHere(c.id),
+    clean = chatHashes.get(c.id) === hashText(chatJson(c)) && chatDiskStamps.get(c.id) === stamp && !busyHere(c.id),
     base = chatBases.has(c.id) ? JSON.parse(chatBases.get(c.id)) : null,
     next = clean ? theirs : mergeConversation(c, theirs, base);
+  carryWarm(c, next);
   store.conversations[index] = next;
   chatDiskStamps.set(c.id, item.savedAt);
   chatBases.set(c.id, theirJson);
   chatStamps.set(c.id, Math.max(stamp, item.savedAt));
-  if (JSON.stringify(next) === theirJson) {
+  if (chatJson(next) === theirJson) {
     chatStamps.set(c.id, item.savedAt);
     chatHashes.set(c.id, hashText(theirJson));
   } else {
@@ -337,7 +342,7 @@ function flushOnUnload() {
   const records = [];
   for (const conversation of store.conversations) {
     if (deletedChatIds.has(conversation.id)) continue;
-    const json = JSON.stringify(conversation),
+    const json = chatJson(conversation),
       hash = hashText(json);
     if (!pendingChatWrites.has(conversation.id) && !activeChatWrites.has(conversation.id) && chatHashes.get(conversation.id) === hash)
       continue;
@@ -364,7 +369,7 @@ function adoptRecord(record) {
   try {
     const c = normalizeConversation(JSON.parse(record.json));
     chatStamps.set(c.id, Number(record.savedAt) || 0);
-    chatHashes.set(c.id, hashText(JSON.stringify(c)));
+    chatHashes.set(c.id, hashText(chatJson(c)));
     if (record.baseJson) chatBases.set(c.id, record.baseJson);
     return c;
   } catch {
@@ -409,7 +414,7 @@ async function hydrateStore() {
         await dbBatch(db, CHATS_STORE_NAME, s => {
           s.clear();
           for (const c of store.conversations) {
-            const json = JSON.stringify(c);
+            const json = chatJson(c);
             chatStamps.set(c.id, stamp);
             chatHashes.set(c.id, hashText(json));
             s.put({ id: c.id, savedAt: stamp, json });
@@ -472,7 +477,7 @@ async function syncChatsWithDisk() {
       .map(c => {
         const item = disk.get(c.id),
           stamp = chatStamps.get(c.id) || 0,
-          hash = hashText(JSON.stringify(c)),
+          hash = hashText(chatJson(c)),
           unsaved = chatHashes.get(c.id) !== hash,
           busy = busyHere(c.id);
         if (!item) {
@@ -489,15 +494,15 @@ async function syncChatsWithDisk() {
         // 目录里的更新：这边没动过的换上，动过的并起来（见 catchUpConversation）
         if (item.savedAt > stamp) {
           const next = catchUpConversation(item, { quiet: true });
-          (chatHashes.get(c.id) === hashText(JSON.stringify(next)) ? settled : push).add(c.id);
+          (chatHashes.get(c.id) === hashText(chatJson(next)) ? settled : push).add(c.id);
           changed = true;
           if (c.id === currentId) currentReplaced = true;
           return next;
         }
         // 这边的不比目录里的旧：以这边的为准写过去（带上目录里那份的时间戳，免得被当成旧份拒掉）
         chatDiskStamps.set(c.id, item.savedAt);
-        chatBases.set(c.id, JSON.stringify(normalizeConversation(item.conversation)));
-        if (item.savedAt < stamp || unsaved || hashText(JSON.stringify(normalizeConversation(item.conversation))) !== hash) push.add(c.id);
+        chatBases.set(c.id, chatJson(normalizeConversation(item.conversation)));
+        if (item.savedAt < stamp || unsaved || hashText(chatJson(normalizeConversation(item.conversation))) !== hash) push.add(c.id);
         else settled.add(c.id);
         return c;
       })
@@ -509,8 +514,8 @@ async function syncChatsWithDisk() {
         const c = normalizeConversation(item.conversation);
         chatStamps.set(c.id, item.savedAt);
         chatDiskStamps.set(c.id, item.savedAt);
-        chatBases.set(c.id, JSON.stringify(c));
-        chatHashes.set(c.id, hashText(JSON.stringify(c)));
+        chatBases.set(c.id, chatJson(c));
+        chatHashes.set(c.id, hashText(chatJson(c)));
         store.conversations.push(c);
         settled.add(c.id);
         changed = true;

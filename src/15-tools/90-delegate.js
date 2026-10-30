@@ -491,6 +491,8 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
     box.controller.signal.throwIfAborted();
     // 领命这一刻现读主对话的账本（只读）：「先定下约束、再派活」时，开页读的那份往往还没有。
     const ledger = await loadLedger(conversation, box.controller.signal, "sub");
+    // 先前几趟的行迹若已另存出去，接回来再写进它的历史
+    await warmConversation(conversation);
     box.controller.signal.throwIfAborted();
     const lead = past ? settledDigest(past.sub) : "";
     history.push(...(past ? helperHistory(conversation, past) : []), {

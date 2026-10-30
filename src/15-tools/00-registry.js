@@ -158,6 +158,8 @@ async function runTool(step, ctx) {
   if (toolSpec(step.name)?.parameters?.properties?.description && typeof args.description === "string" && args.description.trim())
     step.gist = args.description.trim();
   try {
+    // 工具与审查都可能翻到先前几答的行迹（帮手的经过、看过的网址）：另存出去的先接回来
+    await warmConversation(ctx.conversation);
     // 意里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）；
     // 审而后行里规则标疑的，再交专司的审查模型判（见 03-review.js）
     const stopped = (await keepHook(step, args, ctx)) || (await reviewHook(step, args, ctx));
