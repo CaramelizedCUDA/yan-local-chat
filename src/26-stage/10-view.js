@@ -57,18 +57,18 @@ async function stageAttach() {
 /** @param {string} sessionId @param {{ width: number, height: number }} [want] */
 async function stageBaseFrame(sessionId, want) {
   try {
-    const [shot, metrics] = await Promise.race([
+    const [shot, inner] = await Promise.race([
       Promise.all([
         stageSend("Page.captureScreenshot", { format: "jpeg", quality: 90 }, sessionId),
-        stageSend("Page.getLayoutMetrics", {}, sessionId)
+        stageSend("Runtime.evaluate", { expression: "[innerWidth, innerHeight]", returnByValue: true }, sessionId)
       ]),
       new Promise((_, reject) => setTimeout(() => reject(Error("timeout")), 2000))
     ]);
     if (stage.session !== sessionId || !stageVisible()) return;
-    const vp = metrics?.cssVisualViewport;
-    if (!shot?.data || !vp) return;
-    const cw = Math.round(vp.clientWidth),
-      ch = Math.round(vp.clientHeight);
+    const [innerWidth, innerHeight] = inner?.result?.value || [0, 0],
+      cw = Math.round(Number(innerWidth) || 0),
+      ch = Math.round(Number(innerHeight) || 0);
+    if (!shot?.data || !cw || !ch) return;
     if (want && (Math.abs(cw - want.width) > 2 || Math.abs(ch - want.height) > 2)) return;
     if (!want && stage.framed) return;
     void stageFrame(shot.data, cw, ch);
