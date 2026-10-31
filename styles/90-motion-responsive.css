@@ -650,8 +650,10 @@ button:focus:not(:focus-visible) {
     padding: 0 14px;
   }
   .running-head {
-    left: 54px;
-    right: 230px;
+    margin-left: 8px;
+  }
+  .topbar:has(.trail-fold-head.shown) .running-head {
+    max-width: calc(50% - 104px); /* 前面多了侧栏钮一格，同样让到中线以左 64px */
   }
   .welcome {
     padding: 40px 20px 100px;

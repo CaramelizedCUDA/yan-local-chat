@@ -534,13 +534,13 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   z-index: 5;
 }
 /* 书眉：标题滚走后，顶栏左边靠侧栏留一行题名与问数（立了意的再带一枚意，点它开卡片）；没滚过标题时不显示，不与标题重复。点一下回到开头。
-   落选的：居中疏排只留题名（像书页页眉，但与右侧的状态挤在一条线上，题名一长就难看） */
+   落选的：居中疏排只留题名（像书页页眉，但与右侧的状态挤在一条线上，题名一长就难看）。
+   它是顶栏里占满中段的一格，右边让到右上角那几件实际的宽度为止；原先绝对定位、右边写死让 300px，
+   右上角平时只两件，窄窗里题名截成四五个字、旁边却空着一大块 */
 .running-head {
-  position: absolute;
-  top: 0;
-  left: 22px;
-  right: 300px;
+  flex: 1;
   height: 55px;
+  margin-right: 24px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -590,7 +590,8 @@ html[data-sidebar="collapsed"] .sidebar .wide {
    对着对话那一列的中线；它浮出时，左边的书眉让到中线以左，长题名不压到它底下。
    落选的：贴对话列的右缘（离正在读的地方远，眼睛要横跨过去找）；书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
 .topbar:has(.trail-fold-head.shown) .running-head {
-  right: calc(50% + 64px);
+  max-width: calc(50% - 64px); /* 百分比按顶栏内容宽算，左边距 22px 正好消掉：右缘落在中线以左 64px */
+  margin-right: auto; /* 让出的空归右边；不然顶栏的 space-between 把它匀到两侧，书眉被推向中间 */
 }
 .trail-fold-head {
   position: absolute;
