@@ -262,7 +262,6 @@ var YAN_EN = {
   "；提示里 {0}% 读自缓存": "; {0}% of the prompt was cached",
   "这一答共耗约 {0} token": "This reply used about {0} {0|token|tokens}",
   "（估算）": " (estimated)",
-  "；上下文已重，可撮要前文": "; context is getting long, consider summarizing",
   "耗墨 {0}{1}": "{0}{1} {1|token|tokens}",
   "耗墨 {0}": "{0} {0|token|tokens}",
   "这一趟共耗约 {0} token": "This run used about {0} {0|token|tokens}",

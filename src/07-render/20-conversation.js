@@ -327,16 +327,16 @@ function assistantActionsHtml(message) {
         ? `${message.content ? actionIcon("copy", t("复制已写的部分")) : ""}${actionIcon("resume", t("续写"))}${actionIcon("retry", t("从头重写"))}`
         : `${actionIcon("copy", t("复制答复"))}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", t("续写")) : ""}${actionIcon("regenerate", t("重新生成"))}${actionIcon("note", t("旁注"))}${messageCostHtml(message)}`;
 }
-// 这一答耗了多少墨：各轮请求的用量之和（含帮手），接口报了用量就用实数，没报则按字数估；当前上下文有多大另看右下角
+// 这一答耗了多少墨：各轮请求的用量之和（含帮手），接口报了用量就用实数，没报则按字数估。
+// 只记数、不着朱：多轮的和与上下文大小无关，带工具的一答几乎都过万；上下文重不重只由右下角的计数按模型窗口判
 /** @param {Message} message */
 function messageCostHtml(message) {
   const n = Number(message.tokenCount) || 0;
   if (!n) return "";
-  const heavy = n >= CONTEXT_HEAVY,
-    prompt = Number(message.usage?.prompt_tokens) || 0,
+  const prompt = Number(message.usage?.prompt_tokens) || 0,
     cached = Number(message.usage?.cached_tokens) || 0,
     hit = prompt && cached ? t`；提示里 ${Math.round((cached / prompt) * 100)}% 读自缓存` : "";
-  return `<span class="message-cost${heavy ? " heavy" : ""}" title="${t`这一答共耗约 ${formatTokens(n)} token`}${message.tokenEstimated ? t("（估算）") : ""}${hit}${heavy ? t("；上下文已重，可撮要前文") : ""}">${t`耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}`}</span>`;
+  return `<span class="message-cost" title="${t`这一答共耗约 ${formatTokens(n)} token`}${message.tokenEstimated ? t("（估算）") : ""}${hit}">${t`耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}`}</span>`;
 }
 // 一答收尾：就地画成定稿的样子（图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下）；这条不在页上就整段重画
 /**
