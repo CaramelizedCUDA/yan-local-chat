@@ -46,6 +46,17 @@ async function stageAttach() {
     if (!current()) return abort(sessionId, true);
     streaming = true;
     // 静着的页不重绘就不出帧：先截一张垫底（后台的页截不出来，等不到就算了）
+    if (current() && !stage.framed) await stageBaseFrame(sessionId);
+  } catch {
+    // 没连成（目标刚关、Page.enable 被拒）：不留「已连着」的空壳，否则同一页再也接不上；垫底那张截不出来不算
+    if (!streaming && current()) void stageDetach();
+  }
+  void stageFit();
+}
+// 静着的页不重绘就不出帧：截一张垫底；调窗后补的要视口尺寸对上才画，免得把旧画面画上去
+/** @param {string} sessionId @param {{ width: number, height: number }} [want] */
+async function stageBaseFrame(sessionId, want) {
+  try {
     const [shot, metrics] = await Promise.race([
       Promise.all([
         stageSend("Page.captureScreenshot", { format: "jpeg", quality: 90 }, sessionId),
@@ -53,13 +64,15 @@ async function stageAttach() {
       ]),
       new Promise((_, reject) => setTimeout(() => reject(Error("timeout")), 2000))
     ]);
-    if (current() && stage.session === sessionId && !stage.framed)
-      void stageFrame(shot.data, metrics.cssVisualViewport.clientWidth, metrics.cssVisualViewport.clientHeight);
-  } catch {
-    // 没连成（目标刚关、Page.enable 被拒）：不留「已连着」的空壳，否则同一页再也接不上；垫底那张截不出来不算
-    if (!streaming && current()) void stageDetach();
-  }
-  void stageFit();
+    if (stage.session !== sessionId || !stageVisible()) return;
+    const vp = metrics?.cssVisualViewport;
+    if (!shot?.data || !vp) return;
+    const cw = Math.round(vp.clientWidth),
+      ch = Math.round(vp.clientHeight);
+    if (want && (Math.abs(cw - want.width) > 2 || Math.abs(ch - want.height) > 2)) return;
+    if (!want && stage.framed) return;
+    void stageFrame(shot.data, cw, ch);
+  } catch {}
 }
 // 屏幕外那扇窗调成看台的大小：窗比网页多出的边（标签栏、地址栏、边框）照现量补上。窗口的尺寸与网页的 CSS 像素同一单位。
 // 画面要一比一才清楚：宽高都往下取整、与画幅的 CSS（见 20-view.css 的 .stage-sheet）同减 24，视口按 innerWidth 量（带滚动条，与推来的帧同宽）——
@@ -84,59 +97,23 @@ async function stageFit() {
     ]);
     const [innerWidth, innerHeight] = inner.result?.value || [0, 0],
       port = { clientWidth: Number(innerWidth) || 0, clientHeight: Number(innerHeight) || 0 };
-    if (!port.clientWidth) {
-      if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
-      return;
-    }
+    if (!port.clientWidth) return;
     const edgeX = bounds.width - port.clientWidth,
       edgeY = bounds.height - port.clientHeight;
     // 网页的视口被定死了（执事 setViewportSize / browser_resize 过）：窗口管不着它，多出的边不是边，再照着调只会一回小一圈。
     // 记下定死的大小：留白处写一行，开着「适应页面」的等执事歇手后放开
     const pinned = edgeX < 0 || edgeY < 0 || edgeX > 120 || edgeY > 320;
     stagePin(pinned ? { width: Math.round(port.clientWidth), height: Math.round(port.clientHeight) } : null);
-    if (pinned) {
-      if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
-      return;
-    }
+    if (pinned) return;
     const width = Math.round(edgeX + want.width),
       height = Math.round(edgeY + want.height);
-    if (bounds.windowState !== "normal" || (width === bounds.width && height === bounds.height)) {
-      if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
-      return;
-    }
+    if (bounds.windowState !== "normal" || (width === bounds.width && height === bounds.height)) return;
     stage.fittedAt = Date.now();
     await stageSend("Browser.setWindowBounds", { windowId, bounds: { width, height } });
-    const current = () => fitRevision === stageFitRevision && stage.session === session && stageVisible();
-    // macOS 无头调窗后静页可能不出帧：确认视口已变，若仍未出帧主动补一截
-    const fitStart = Date.now();
-    let confirmed = null;
-    while (current() && Date.now() - fitStart < 2000) {
-      const metrics = await stageSend("Page.getLayoutMetrics", {}, session).catch(() => null);
-      if (!current()) return;
-      const vp = metrics?.cssVisualViewport;
-      if (vp) {
-        const cw = Math.round(vp.clientWidth),
-          ch = Math.round(vp.clientHeight);
-        if (Math.abs(cw - want.width) <= 2 && Math.abs(ch - want.height) <= 2) {
-          confirmed = { width: cw, height: ch };
-          break;
-        }
-      }
-      await new Promise(r => setTimeout(r, 50));
-    }
-    if (!current()) return;
-    if (confirmed && (!stage.framed || stage.meta.width !== confirmed.width || stage.meta.height !== confirmed.height)) {
-      const shot = await stageSend("Page.captureScreenshot", { format: "jpeg", quality: 90 }, session).catch(() => null);
-      if (shot && current() && (!stage.framed || stage.meta.width !== confirmed.width || stage.meta.height !== confirmed.height)) {
-        stageLastData = shot.data;
-        stageFrameSeq += 1;
-        stageSettleSoon();
-        stageDropHeldFrame();
-        void stageShowFrame(shot.data, confirmed.width, confirmed.height);
-      }
-    }
-    if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
+    // 静着的页调窗后可能不重绘：补一张垫底
+    await stageBaseFrame(session, want);
   } catch {
+  } finally {
     if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
   }
 }
