@@ -74,6 +74,7 @@
  * @property {{ ok: boolean, why: string }} [reviewed] 审而后行里交专司的审查模型判过：准了照做（指令带 reviewed 交桥接），驳了即不做
  * @property {boolean} [background] 后台指令
  * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", quiet?: boolean, started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；quiet：那一答已停，结束时不叫醒；started：起跑的时刻，书眉的漏据它算已跑多久）
+ * @property {{ id: string, due: number, every?: number, state: "waiting"|"done"|"stopped", created?: number }} [timer] 等时刻的候（set_timer）：桥接那头的编号、几时叫（every：此后隔多久再叫）；waiting 时书眉的漏列着它
  * @property {{ old: string, new: string }} [diff]
  * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
  * @property {string} [previous] write_file 覆盖掉的原文（过长只留开头），与 written 比出红绿
@@ -95,7 +96,7 @@
  * @property {"tell"|"resume"|"stop"|"read"} [mode] 传话一步做的是哪样：递话、续派、叫停、翻看
  * @property {string} [ref] 传话、叫停说到的那一趟（步骤 id）
  * @property {string} [noteId] 传话递去的那句话在帮手时间线里的步骤 id
- * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }} [relay] 作答途中回来的回报（relay_note）是谁
+ * @property {Relay} [relay] 作答途中回来的回报（relay_note）是谁
  * @property {string} [report] 回报、传话递上时给模型的原话：往后重装这一答时插回原处（见 replay）
  * @property {boolean} [steer] 补言是把正在写的一轮停在句尾递上的（前缀与接在工具结果之后的不同）
  * @property {{ questions: AskQuestion[] }} [form]
@@ -105,10 +106,22 @@
  * @property {{ steps?: number, from?: number, to?: number, head?: boolean }} [fold] 撮要：并了几步、撮前撮后各几字；head 是压的这一问之前的前文（笔记在 note）
  */
 /**
+ * 回来的是谁（细线、行迹里的「回报」一步、导出都照它画，见 relayLabel）：帮手（不带 kind）、后台指令结束（bg）、时刻到（timer）、来信（letter）
+ * @typedef {Object} Relay
+ * @property {string} step 点它回到哪一步（帮手那一趟、挂候的那一步；来信没有）
+ * @property {string} title 帮手名、后台编号、候的那句话、来信的来处
+ * @property {boolean} ok
+ * @property {"bg"|"timer"|"letter"} [kind]
+ * @property {number} [exitCode]
+ * @property {string} [gist] 后台指令起时那句白话；来信是正文的头一句
+ * @property {boolean} [lost] 后台指令随桥接重启而止
+ * @property {number} [late] 时刻到时迟了多久（桥接那时没开）
+ */
+/**
  * @typedef {Object} Message
  * @property {string} id
  * @property {"user"|"assistant"|"context"} role context 是上下文分隔：带 summary 的是压缩，不带的是旧版硬切
- * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number, gist?: string }[]} [relay] 帮手的回报（或后台指令结束）另起的一问：谁回来了（内容是回报原文，只送给模型；gist：后台指令起时那句白话）
+ * @property {Relay[]} [relay] 帮手的回报（或候到了：后台指令结束、时刻到、来信）另起的一问：谁回来了（内容是回报原文，只送给模型）
  * @property {string} content
  * @property {string} timestamp
  * @property {"streaming"|"complete"|"stopped"|"error"|"interrupted"} [status]
@@ -162,7 +175,7 @@
  * @property {boolean} [titled]
  * @property {number} [titleTries]
  * @property {boolean} [showCompacted]
- * @property {{ report: string, relay: { step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number } }[]} [heldReports] 上一答断着时回来的回报，下一答开工时递上
+ * @property {{ report: string, relay: Relay }[]} [heldReports] 上一答断着时回来的回报，下一答开工时递上
  */
 /**
  * @typedef {Object} Profile 一份模型配置

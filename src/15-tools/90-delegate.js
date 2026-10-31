@@ -712,12 +712,15 @@ function helperStepHtml(step) {
 function relayStepHtml(step) {
   const relay = step.relay || { step: "", title: "", ok: true },
     status = step.status || "done",
-    bg = relay.kind === "bg",
-    what = bg
-      ? bgEndedText(relay) + (relay.ok ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`)
-      : t`帮手「${relay.title}」${relay.ok ? t("回报") : t("未完成")}`,
-    target = bg ? `data-relay-reveal="${escapeHtml(relay.step)}"` : `data-relay-step="${escapeHtml(relay.step)}"`;
-  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? t("回到挂它的那一步") : t("看这一趟的经过")}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? t("候") : t("遣")}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;
+    { seal, name, gist } = relayLabel(relay),
+    what = gist ? `${name} · ${gist}` : name,
+    target = !relay.kind
+      ? `data-relay-step="${escapeHtml(relay.step)}"`
+      : relay.kind === "letter"
+        ? ""
+        : `data-relay-reveal="${escapeHtml(relay.step)}"`,
+    hint = !relay.kind ? t("看这一趟的经过") : relay.kind === "letter" ? "" : t("回到挂它的那一步");
+  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${hint}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${seal}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 签的种类变了（参数拟完才知道是续派还是传话）就整张换；续派的签与差遣一样就地更新
 /** @param {Step} step */

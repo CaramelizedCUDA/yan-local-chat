@@ -22,9 +22,19 @@ function mailReport(conversation, item) {
     wakeWithReports(conversation, items);
   }, 0);
 }
-/** @returns {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }} */
+/** @returns {Relay} */
 function relayOf({ step, relay }) {
   return relay || { step: step.id, title: String(step.title || ""), ok: step.status === "done" };
+}
+// 回来的是谁：细线、行迹里的那一小步、导出都照它写。seal 是那一方印；gist 是名后淡墨的一句（来信的头一句、候迟了多久）
+/** @param {Relay} relay @returns {{ seal: string, name: string, gist: string }} */
+function relayLabel(relay) {
+  if (relay.kind === "letter") return { seal: t("信"), name: relay.title ? t`来信「${relay.title}」` : t("来信"), gist: relay.gist || "" };
+  if (relay.kind === "timer")
+    return { seal: t("候"), name: t`候「${relay.title}」到点`, gist: relay.late ? t`迟 ${spanText(relay.late)}` : "" };
+  if (relay.kind === "bg")
+    return { seal: t("候"), name: bgEndedText(relay) + (relay.ok || relay.lost ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`), gist: "" };
+  return { seal: t("遣"), name: t`帮手「${relay.title}」${relay.ok ? t("回报") : t("未完成")}`, gist: "" };
 }
 // 收信的那一个（主答的消息，或帮手的 sub）在自己的时间线末落一小步「回报」，递上后打勾；回这一步
 /** @param {{ content: string, reasoning?: string, steps?: Step[] }} owner @returns {Step} */
@@ -122,14 +132,14 @@ function wakeWithReports(conversation, items) {
   toast(profile ? t("余墨已尽，帮手的回报先记下了") : t("没有可用的模型，帮手的回报先记下了"));
 }
 // 断着时记下的回报交给开工的这一答：行迹里落一步「回报」，随后当即递上。派它的那一步已不在眼前这条路上的（重答把那一答收成了版本）不递，
-// 免得张冠李戴。返回交出去的几项，这一答一个字没等到就又断了，原样还回去
+// 免得张冠李戴；来信不出自哪一步，照递。返回交出去的几项，这一答一个字没等到就又断了，原样还回去
 /** @param {Conversation} conversation @returns {Array<{ report: string, relay: any, note?: Step }>} */
 function takeHeldReports(conversation, job) {
   const held = conversation.heldReports || [];
   delete conversation.heldReports;
   const onPath = new Set(conversation.messages.flatMap(message => (message.steps || []).map(step => step.id)));
   return held
-    .filter(item => onPath.has(item.relay.step))
+    .filter(item => item.relay.kind === "letter" || onPath.has(item.relay.step))
     .map(item => {
       deliverInline(conversation, job, item);
       return job.queue.at(-1);

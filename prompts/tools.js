@@ -162,8 +162,7 @@
         timeout: { type: "number", description: "前台最多等几秒，默认 120，最多 600；到时还没结束就转入后台接着跑，不会被终止" },
         background: {
           type: "boolean",
-          description:
-            "要跑一阵的（开发服务器、长任务）放后台：先回几秒输出与编号，结束时结果作为一条消息送到。要过一阵再做的事，也可挂一条先等待的后台指令"
+          description: "要跑一阵的（开发服务器、长任务）放后台：先回几秒输出与编号，结束时结果作为一条消息送到"
         }
       },
       required: ["command"]
@@ -171,16 +170,34 @@
   },
 
   check_command: {
-    description: "看后台指令（run_command 的 background）上次之后的新输出；stop 为 true 则结束它。",
-    brief: "看后台指令的新输出；stop 为 true 则结束它。",
+    description: "看一条候：后台指令（bg…）上次之后的新输出，或定时（t…）几时到；stop 为 true 则结束或取消它。",
+    brief: "看后台指令的新输出或定时几时到；stop 为 true 则结束或取消。",
     parameters: {
       type: "object",
       properties: {
-        id: { type: "string", description: "后台指令的编号，如 bg1" },
-        wait: { type: "number", description: "最多等几秒再取（等到结束或输出停下），默认 0" },
-        stop: { type: "boolean", description: "结束这条后台指令" }
+        id: { type: "string", description: "编号，如 bg1、t1" },
+        wait: { type: "number", description: "后台指令最多等几秒再取（等到结束或输出停下），默认 0" },
+        stop: { type: "boolean", description: "结束这条后台指令，或取消这个定时" }
       },
       required: ["id"]
+    }
+  },
+
+  // 信址写在这里：模型写盯守脚本、接别的程序时要知道往哪寄，{{mailUrl}} 与 {{conversationId}} 由登记的 vars 填
+  set_timer: {
+    description:
+      '到点叫醒自己：at 与 after 给一个，到时 note 作为一条消息送到；every 则此后每隔这么久再叫，直到 check_command 取消。桥接重启后照旧，错过的补叫。别的程序要叫醒这段对话，POST {{mailUrl}}，JSON 体 {"to":"{{conversationId}}","from":"来处","text":"正文"}。',
+    brief:
+      '到点叫醒自己：at 或 after 给一个，到时 note 作为消息送到；every 则周期再叫。别的程序可 POST {{mailUrl}}，JSON {"to":"{{conversationId}}","from":"…","text":"…"} 叫醒这段对话。',
+    parameters: {
+      type: "object",
+      properties: {
+        at: { type: "string", description: "本地时刻，如 2026-10-31 09:00；只写 09:00 即下一个这个钟点" },
+        after: { type: "number", description: "多少秒后" },
+        every: { type: "number", description: "此后每隔多少秒再叫" },
+        note: { type: "string", description: "到时给自己的话：要做什么、看什么" }
+      },
+      required: ["note"]
     }
   },
 

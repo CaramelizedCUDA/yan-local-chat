@@ -787,6 +787,38 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      // TIMERWAKE：约两秒后叫醒自己就收尾；到点时另起一答，把送到的那条消息写出来。工具说明里的信址也写出来，看填没填上
+      // LETTERWAIT：什么都不挂就收尾；外头寄来的信另起一答，把信写出来
+      const timerKey = ["TIMERWAKE", "LETTERWAIT"].find(k => firstUser.includes(k));
+      if (timerKey) {
+        const woke = msgs.findLast(m => m.role === "user" && /到点|来信 · /.test(String(m.content)));
+        if (woke)
+          return sse(res, [
+            delta({ content: `${timerKey} woke｜${String(woke.content).replace(/\s+/g, " ").slice(0, 200)}` }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (timerKey === "TIMERWAKE" && firstTurn && !toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_tm0",
+                  type: "function",
+                  function: { name: "set_timer", arguments: JSON.stringify({ after: 2, note: "看一眼构建" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        const timerTool = (payload.tools || []).find(tool => tool.function?.name === "set_timer");
+        return sse(res, [
+          delta({
+            content: `约好了。｜${String(toolResults.at(-1)?.content || "").slice(0, 80)}｜${/api\/mail.+"to":"[^"{]+"/.test(timerTool?.function?.description || "") ? "addr-ok" : "addr-missing"}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // HELPERAGAIN：主模型差一名慢帮手，等它回报后续派它再做一回（它该记得上一回），两份回报都到了收尾
       if (firstUser.includes("HELPERAGAIN")) {
         const call = (id, name, args) =>

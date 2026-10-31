@@ -245,18 +245,22 @@ function noteMarkHtml(message) {
 }
 // 用户消息与上下文分隔的整条 HTML；回复另有画法（见 07-paint.js）
 /** @param {Message} message */
-// 帮手的回报（或后台指令结束）另起的一问：不是用户的话，画成一道细线——谁回来了，点名字开它的那一趟（后台指令则回到挂它的那一步）
+// 帮手的回报（或候到了：后台指令结束、时刻到、来信）另起的一问：不是用户的话，画成一道细线——谁回来了，点名字开它的那一趟
+// （候回到挂它的那一步；来信没有那一步，名后淡墨摘它的头一句，悬停看这一句全文）
 /** @param {Message} message */
 function relayHtml(message, branch = null) {
   const items = message.relay || [],
     names = items
-      .map(item =>
-        item.kind === "bg"
-          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="${t(`回到所在一步`)}">${escapeHtml(bgEndedText(item))}${item.ok ? "" : t` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
-          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="${t(`查看经过`)}">${t`帮手「${escapeHtml(item.title)}」`}${item.ok ? t("回报") : t("未完成")}</button>`
-      )
+      .map(item => {
+        const { name, gist } = relayLabel(item),
+          tail = gist ? `<span class="relay-gist" title="${escapeHtml(gist)}">${escapeHtml(gist)}</span>` : "";
+        if (item.kind === "letter") return `<span class="relay-name">${escapeHtml(name)}</span>${tail}`;
+        return item.kind
+          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="${t(`回到所在一步`)}">${escapeHtml(name)}</button>${tail}`
+          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="${t(`查看经过`)}">${escapeHtml(name)}</button>`;
+      })
       .join(`<span class="relay-sep" aria-hidden="true">·</span>`),
-    seal = items.every(item => item.kind === "bg") ? t("候") : t("遣");
+    seal = items.length ? relayLabel(items[0]).seal : t("遣");
   return `<article class="message relay" data-message="${escapeHtml(message.id)}"><div class="relay-line"><span class="seal sub-seal" aria-hidden="true">${seal}</span>${names}</div>${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
 }
 function renderMessage(message, branch = null, side = false) {

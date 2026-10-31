@@ -55,6 +55,9 @@ async function boot() {
   await syncLeases();
   recoverInterruptedMessages();
   rewatchBackground();
+  // 候与信：对一遍桥接那头的时刻，再等着收信（页面关着时到的信这时递上）
+  void reconcileTimers();
+  void listenLetters();
   applyAppearance();
   bindEvents();
   // 模型所用的浏览器若已开着（页面刷新过、桥接重启过），看台直接接上

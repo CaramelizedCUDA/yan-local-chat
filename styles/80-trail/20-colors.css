@@ -129,12 +129,25 @@
   color: var(--gold);
   font: inherit;
   letter-spacing: inherit;
+  white-space: nowrap;
   cursor: pointer;
 }
-.relay-name:hover {
+span.relay-name {
+  cursor: default;
+}
+button.relay-name:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .relay-sep {
   color: var(--ink-3);
+}
+/* 名后淡墨的一句：来信的头一句、候迟了多久（设计稿/130 一乙）；线不加高，长了截断 */
+.relay-gist {
+  min-width: 0;
+  max-width: 22em;
+  overflow: hidden;
+  color: var(--ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

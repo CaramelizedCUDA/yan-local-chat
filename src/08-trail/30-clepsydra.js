@@ -1,18 +1,21 @@
-// 言 · 书眉的漏：哪段对话挂着后台指令（还在跑，跑完要叫醒它），右上角就有一只漏壶；一条都没有就不画（见 设计稿/73–75）。
+// 言 · 书眉的漏：哪段对话挂着候（后台指令还在跑、约好的时刻还没到，到了要叫醒它），右上角就有一只漏壶；一条都没有就不画（见 设计稿/73–75）。
 // 形是古漏：上壶滴水进受水壶，壶里一支箭随水浮起——箭的高低说挂得最久的那条已跑多久。两条起右下写条数。
-// 点开按对话列出各条：那句白话（没写的才是编号）与已跑多久，悬停浮出编号与整条指令；点一行去到那段对话、回到起它的那一步。
-// 数据取自各段存着的步骤（step.bg.state 为 running），别处页面挂的也在。
+// 点开按对话列出各条：那句白话（没写的才是编号），后台指令写已跑多久、等时刻的写几时到（同是候，不分节，设计稿/130）；
+// 悬停浮出编号与整条指令（或定的时刻）；点一行去到那段对话、回到起它的那一步。
+// 数据取自各段存着的步骤（step.bg.state 为 running、step.timer.state 为 waiting），别处页面挂的也在。
 // 落选的：工作条添一格（只是一行状态字）、流末一道虚线（翻远了看不见）、一炷香（设计稿/73）；直壶正滴读作高脚杯、侧嘴壶、一滴落水（设计稿/74）
 let clepsydraOpen = false,
   clepsydraTimer = 0;
-/** 还在跑的后台指令（帮手开的也算），各带所在对话与起跑时刻；没记起跑时刻的旧步骤按那一答开头算 */
+/** 还在等的候：跑着的后台指令（帮手开的也算）与没到点的时刻，各带所在对话与挂上的时刻；没记时刻的旧步骤按那一答开头算 */
 function runningBackground() {
   const list = [];
   for (const conversation of store.conversations)
     for (const message of conversation.messages)
-      for (const step of allSteps(message))
-        if (step.bg?.state === "running")
-          list.push({ conversation, step, started: Number(step.bg.started) || new Date(message.timestamp).getTime() || Date.now() });
+      for (const step of allSteps(message)) {
+        const since = new Date(message.timestamp).getTime() || Date.now();
+        if (step.bg?.state === "running") list.push({ conversation, step, started: Number(step.bg.started) || since });
+        else if (step.timer?.state === "waiting") list.push({ conversation, step, started: Number(step.timer.created) || since });
+      }
   return list;
 }
 // 箭的高低：已跑的分钟取对数，四小时齐顶（至多出壶口一截）
@@ -52,8 +55,14 @@ function clepsydraListHtml(list, now) {
     groups.get(item.conversation).push(item);
   }
   const ordered = [...groups].sort(([a], [b]) => Number(b.id === currentId) - Number(a.id === currentId)),
-    row = ({ conversation, step, started }) =>
-      `<button class="clepsydra-row" type="button" data-conversation="${escapeHtml(conversation.id)}" data-step="${escapeHtml(step.id)}" title="${escapeHtml([step.gist, [step.bg?.id, step.title].filter(Boolean).join(" · ")].filter(Boolean).join("\n"))}"><span class="clepsydra-id${step.gist ? " gist" : ""}">${escapeHtml(bgName(step))}</span><span class="clepsydra-age">${clepsydraSpan(now - started)}</span><span class="clepsydra-go" aria-hidden="true">›</span></button>`;
+    row = ({ conversation, step, started }) => {
+      const timer = step.timer?.state === "waiting" ? step.timer : null,
+        detail = timer ? `${timer.id} · ${clockText(timer.due)}` : [step.bg?.id, step.title].filter(Boolean).join(" · "),
+        when = timer
+          ? [dueLabel(timer.due), timer.every ? t`每 ${spanText(timer.every)}` : ""].filter(Boolean).join(" · ")
+          : clepsydraSpan(now - started);
+      return `<button class="clepsydra-row" type="button" data-conversation="${escapeHtml(conversation.id)}" data-step="${escapeHtml(step.id)}" title="${escapeHtml([step.gist, detail].filter(Boolean).join("\n"))}"><span class="clepsydra-id${step.gist ? " gist" : ""}">${escapeHtml(bgName(step))}</span><span class="clepsydra-age">${escapeHtml(when)}</span><span class="clepsydra-go" aria-hidden="true">›</span></button>`;
+    };
   return `<div class="clepsydra-head">${t`候 · ${list.length} 条`}</div>${ordered
     .map(
       ([conversation, items]) =>
@@ -78,7 +87,7 @@ function renderClepsydra() {
   host.querySelector("svg").innerHTML = list.length ? clepsydraInk(clepsydraAge(now - oldest)) : "";
   host.querySelector(".clepsydra-n").textContent = list.length > 1 ? String(list.length) : "";
   host.classList.toggle("counted", list.length > 1);
-  button.setAttribute("aria-label", t`后台指令 ${list.length} 条在跑`);
+  button.setAttribute("aria-label", t`候 ${list.length} 条`);
   button.setAttribute("aria-expanded", String(clepsydraOpen));
   panel.classList.toggle("hidden", !clepsydraOpen);
   if (clepsydraOpen) panel.innerHTML = clepsydraListHtml(list, now);

@@ -87,7 +87,8 @@ defineTool({
   }
 });
 
-// 后台指令：取上次之后的新输出，可顺带等一会儿，或结束它；跟着 run_command 走——言里也能开后台指令，开了就得看得了
+// 看一条候：后台指令取上次之后的新输出，可顺带等一会儿，或结束它；等时刻的（t 开头）看几时到，或取消它（见 23-timer.js）。
+// 跟着 run_command 走——言里也能开后台指令，开了就得看得了
 defineTool({
   name: "check_command",
   group: "work",
@@ -96,8 +97,9 @@ defineTool({
   html: workStepHtml,
   async run(step, args, { conversation, assistant, signal }) {
     const id = args.id.trim(),
-      stop = args.stop === true,
-      started = bgStepOf(conversation, id);
+      stop = args.stop === true;
+    if (/^t\d+$/.test(id)) return checkTimer(step, id, stop, conversation, signal);
+    const started = bgStepOf(conversation, id);
     step.title = `${id}${stop ? t(" · 结束") : ""}`;
     // 模型亲手结束它：不必再叫醒一回
     if (stop && started) bgWatches.get(started.id)?.abort();
@@ -142,7 +144,17 @@ function watchBackground(conversation, assistant, step) {
     .then(
       data => {
         if (data.superseded) return;
-        if (data.lost) return settleBackground(step, "lost", undefined, assistant);
+        // 随桥接重启而止：没有退出码与新输出，但开它的那一位得知道——主答照样叫醒它，要不要重开由它定（帮手开的不寄，见 mailHelper）
+        if (data.lost) {
+          settleBackground(step, "lost", undefined, assistant);
+          if (step.bg.quiet || step.scope) return;
+          return mailReport(conversation, {
+            report: prompt("work.bgLost", { id: step.bg.id, command: String(step.title).slice(0, 200) }),
+            step,
+            profile,
+            relay: { step: step.id, title: step.bg.id, ok: false, kind: "bg", lost: true, ...(step.gist ? { gist: step.gist } : {}) }
+          });
+        }
         // 模型自己看过它结束了（check_command），只把签改成已结束，不再叫醒
         const fresh = !data.reported;
         if (fresh) step.output = trimOutput([step.output, commandOutput(data)].filter(Boolean).join("\n"));
@@ -202,13 +214,14 @@ function settleBackground(step, state, exitCode, assistant) {
   // 帮手开的：它若睡着等，叫它看一眼——有信就接着做，等的都了结了就收工（随桥接重启而止的不寄信，见 mailHelper）
   if (step.scope && conversation) (crews.get(conversation.id) || []).find(box => box.sub.id === step.scope)?.wake?.();
 }
-// 后台指令在页面上叫什么：起它时那句白话（run_command 的 description），bg1 这样的编号只对模型有用；没写的才退回编号
+// 候在页面上叫什么：起它时那句白话（run_command 的 description、set_timer 的 note），bg1、t1 这样的编号只对模型有用；没写的才退回编号
 /** @param {Step} step */
 function bgName(step) {
-  return step.gist || step.bg?.id || "";
+  return step.gist || step.bg?.id || step.timer?.id || "";
 }
-/** 回报细线、行迹里那一小步、导出写的「谁结束了」 @param {{ title: string, gist?: string }} relay */
+/** 回报细线、行迹里那一小步、导出写的「谁结束了」 @param {Relay} relay */
 function bgEndedText(relay) {
+  if (relay.lost) return relay.gist ? t`后台「${relay.gist}」随桥接重启而止` : t`后台 ${relay.title} 随桥接重启而止`;
   return relay.gist ? t`后台「${relay.gist}」已结束` : t`后台 ${relay.title} 已结束`;
 }
 // 这段对话里编号为 id 的那条后台指令（编号在桥接重启后会重数：取最近的一条）
@@ -230,13 +243,18 @@ function rewatchBackground() {
       for (const step of allSteps(message)) if (step.bg?.state === "running") watchBackground(conversation, message, step);
   }
 }
-// 后台指令随它所属的那一答收口——停止、重答改问、删对话都经这里，不各写一份：
+// 候随它所属的那一答收口——停止、重答改问、删对话都经这里，不各写一份：
 // 用户停了那一答（kill 为假）：进程照跑（训练、开着的服务未必要断），只是结束时不再叫醒模型另起一答；
-// 那一答被换下或对话删了（kill）：连进程收掉，不然成了占着端口的孤儿，新的一版再起同一个服务就撞上
+// 那一答被换下或对话删了（kill）：连进程收掉，不然成了占着端口的孤儿，新的一版再起同一个服务就撞上。
+// 等时刻的候两样都取消：它除了叫醒什么也不做，不叫醒就没有留着的意思
 /** @param {Conversation} conversation @param {Message[]} messages */
 function releaseBackground(conversation, messages, { kill = false } = {}) {
   for (const message of messages)
     for (const step of allSteps(message)) {
+      if (step.timer?.state === "waiting") {
+        settleTimer(step, "stopped", message);
+        void bridge("/api/timer/cancel", { id: step.timer.id, to: conversation.id }).catch(() => {});
+      }
       if (step.bg?.state !== "running") continue;
       step.bg.quiet = true;
       if (!kill) continue;
