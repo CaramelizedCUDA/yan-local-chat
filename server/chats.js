@@ -303,7 +303,7 @@ module.exports = function createChats({ chatsHome }) {
     for (const lease of leases.values()) if (now - lease.at <= LEASE_MS) for (const id of lease.ids) ids.add(id);
     return ids.size;
   }
-  // 目录里有没有这段对话（寄信前认收信的）
+  // 目录里有没有这段对话（定时到点时认收的那一段还在不在）
   function exists(id) {
     try {
       return filesFor(chatsHome(), id).length > 0;

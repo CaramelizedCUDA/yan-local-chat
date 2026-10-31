@@ -106,14 +106,14 @@
  * @property {{ steps?: number, from?: number, to?: number, head?: boolean }} [fold] 撮要：并了几步、撮前撮后各几字；head 是压的这一问之前的前文（笔记在 note）
  */
 /**
- * 回来的是谁（细线、行迹里的「回报」一步、导出都照它画，见 relayLabel）：帮手（不带 kind）、后台指令结束（bg）、时刻到（timer）、来信（letter）
+ * 回来的是谁（细线、行迹里的「回报」一步、导出都照它画，见 relayLabel）：帮手（不带 kind）、后台指令结束（bg）、时刻到（timer）
  * @typedef {Object} Relay
- * @property {string} step 点它回到哪一步（帮手那一趟、挂候的那一步；来信没有）
- * @property {string} title 帮手名、后台编号、候的那句话、来信的来处
+ * @property {string} step 点它回到哪一步（帮手那一趟、挂候的那一步）
+ * @property {string} title 帮手名、后台编号、候的那句话
  * @property {boolean} ok
- * @property {"bg"|"timer"|"letter"} [kind]
+ * @property {"bg"|"timer"} [kind]
  * @property {number} [exitCode]
- * @property {string} [gist] 后台指令起时那句白话；来信是正文的头一句
+ * @property {string} [gist] 后台指令起时那句白话
  * @property {boolean} [lost] 后台指令随桥接重启而止
  * @property {number} [late] 时刻到时迟了多久（桥接那时没开）
  */
@@ -121,7 +121,7 @@
  * @typedef {Object} Message
  * @property {string} id
  * @property {"user"|"assistant"|"context"} role context 是上下文分隔：带 summary 的是压缩，不带的是旧版硬切
- * @property {Relay[]} [relay] 帮手的回报（或候到了：后台指令结束、时刻到、来信）另起的一问：谁回来了（内容是回报原文，只送给模型）
+ * @property {Relay[]} [relay] 帮手的回报（或候到了：后台指令结束、时刻到）另起的一问：谁回来了（内容是回报原文，只送给模型）
  * @property {string} content
  * @property {string} timestamp
  * @property {"streaming"|"complete"|"stopped"|"error"|"interrupted"} [status]

@@ -183,12 +183,10 @@
     }
   },
 
-  // 信址写在这里：模型写盯守脚本、接别的程序时要知道往哪寄，{{mailUrl}} 与 {{conversationId}} 由登记的 vars 填
   set_timer: {
     description:
-      '到点叫醒自己：at 与 after 给一个，到时 note 作为一条消息送到；every 则此后每隔这么久再叫，直到 check_command 取消。桥接重启后照旧，错过的补叫。别的程序要叫醒这段对话，POST {{mailUrl}}，JSON 体 {"to":"{{conversationId}}","from":"来处","text":"正文"}。',
-    brief:
-      '到点叫醒自己：at 或 after 给一个，到时 note 作为消息送到；every 则周期再叫。别的程序可 POST {{mailUrl}}，JSON {"to":"{{conversationId}}","from":"…","text":"…"} 叫醒这段对话。',
+      "到点叫醒自己：at 与 after 给一个，到时 note 作为一条消息送到；every 则此后每隔这么久再叫，直到 check_command 取消。桥接重启后照旧，错过的补叫。",
+    brief: "到点叫醒自己：at 或 after 给一个，到时 note 作为消息送到；every 则周期再叫。",
     parameters: {
       type: "object",
       properties: {

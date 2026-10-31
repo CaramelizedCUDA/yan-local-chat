@@ -1,5 +1,4 @@
-// 候 · 等时刻与来信：set_timer 挂上就收尾，书眉的漏列着它、写几时到；到点另起一答（细线「候「…」到点」）。
-// 工具说明里填着这段对话的信址；本机程序往 /api/mail 寄信，那段对话另起一答，细线「来信「来处」」后摘正文的头一句
+// 候 · 等时刻：set_timer 挂上就收尾，书眉的漏列着它、写几时到；到点另起一答（细线「候「…」到点」），签了结、漏里撤去
 import { mkdirSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
@@ -24,8 +23,8 @@ const first = await evalJs(
   `(m => ({ step: m.steps[0]?.name, timer: m.steps[0]?.timer, text: m.content, rows: [...document.querySelectorAll("#clepsydra .clepsydra-row")].length, hidden: document.querySelector("#clepsydra").classList.contains("hidden") }))(${conv("TIMERWAKE")}.messages[1])`
 );
 check(
-  "set_timer hangs a wait and the answer closes; the tool description carries this chat's mail address",
-  first.step === "set_timer" && /^t\d+$/.test(first.timer?.id || "") && first.timer.state === "waiting" && first.text.includes("addr-ok"),
+  "set_timer hangs a wait and the answer closes",
+  first.step === "set_timer" && /^t\d+$/.test(first.timer?.id || "") && first.timer.state === "waiting" && first.text.includes("约好了"),
   JSON.stringify(first)
 );
 await evalJs(`document.querySelector("#clepsydra .clepsydra-btn").click(); true`);
@@ -55,38 +54,5 @@ check(
   JSON.stringify(woke)
 );
 
-// ---- 来信
-await ask("LETTERWAIT");
-await waitFor(`${conv("LETTERWAIT")}?.messages[1]?.status === "complete"`, 15000);
-// 落盘之后桥接才认得这段对话
-await sleep(1500);
-const id = await evalJs(`${conv("LETTERWAIT")}.id`);
-const sent = await fetch(`${PAGE}api/mail`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ to: id, from: "CI · notes", text: "构建失败：test_08 两条未过\n详见日志" })
-}).then(r => r.json());
-const unknown = await fetch(`${PAGE}api/mail`, { method: "POST", body: JSON.stringify({ to: "nope", text: "x" }) });
-check(
-  "a local program can mail a chat by its id; an unknown id is refused",
-  sent.ok === true && unknown.status === 400,
-  JSON.stringify(sent)
-);
-await waitFor(
-  `${conv("LETTERWAIT")}.messages.at(-1)?.content.includes("LETTERWAIT woke") && ${conv("LETTERWAIT")}.messages.at(-1).status === "complete"`,
-  20000
-).catch(() => {});
-const letter = await evalJs(
-  `(c => ({ last: c.messages.at(-1).content, name: document.querySelector("#messages .message.relay .relay-name")?.textContent, gist: document.querySelector("#messages .message.relay .relay-gist")?.textContent, seal: document.querySelector("#messages .message.relay .seal")?.textContent }))(${conv("LETTERWAIT")})`
-);
-check(
-  "the letter wakes it: thin line with the sender and the first line of the text, the whole letter delivered",
-  letter.name === "来信「CI · notes」" &&
-    letter.gist === "构建失败：test_08 两条未过 详见日志" &&
-    letter.seal === "信" &&
-    letter.last.includes("来信 · CI · notes") &&
-    letter.last.includes("详见日志"),
-  JSON.stringify(letter)
-);
-await shot("timer-letter.png");
+await shot("timer-wake.png");
 await close();

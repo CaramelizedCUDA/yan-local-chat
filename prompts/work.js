@@ -70,8 +70,6 @@
   timerDue: "定时 {{id}} 到点（定于 {{due}}{{late}}）：{{note}}{{next}}",
   timerLate: "，迟了 {{late}}：桥接那时没开或电脑睡着",
   timerNext: "\n下一回：{{next}}",
-  // 外头寄来的信（POST /api/mail）
-  letter: "来信 · {{from}}（{{at}}）：\n{{text}}",
 
   // 桥接用 PowerShell 7 时（&& 可用）用前一句；本机没装、退回 Windows PowerShell 5.1 时用后一句
   windowsShell: "指令用 PowerShell 语法（cmdlet），不是 bash。",

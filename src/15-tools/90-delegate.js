@@ -714,12 +714,8 @@ function relayStepHtml(step) {
     status = step.status || "done",
     { seal, name, gist } = relayLabel(relay),
     what = gist ? `${name} · ${gist}` : name,
-    target = !relay.kind
-      ? `data-relay-step="${escapeHtml(relay.step)}"`
-      : relay.kind === "letter"
-        ? ""
-        : `data-relay-reveal="${escapeHtml(relay.step)}"`,
-    hint = !relay.kind ? t("看这一趟的经过") : relay.kind === "letter" ? "" : t("回到挂它的那一步");
+    target = !relay.kind ? `data-relay-step="${escapeHtml(relay.step)}"` : `data-relay-reveal="${escapeHtml(relay.step)}"`,
+    hint = !relay.kind ? t("看这一趟的经过") : t("回到挂它的那一步");
   return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${hint}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${seal}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 签的种类变了（参数拟完才知道是续派还是传话）就整张换；续派的签与差遣一样就地更新
