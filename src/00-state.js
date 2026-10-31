@@ -73,7 +73,7 @@
  * @property {string[] | boolean} [granted] 批过了哪几条守的关口（旧存盘是 true）：这件工具自己不再另问，审查也知道那几条守这一步已照过
  * @property {{ ok: boolean, why: string }} [reviewed] 审而后行里交专司的审查模型判过：准了照做（指令带 reviewed 交桥接），驳了即不做
  * @property {boolean} [background] 后台指令
- * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", quiet?: boolean, started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；quiet：那一答已停，结束时不叫醒；started：起跑的时刻，书眉的漏据它算已跑多久）
+ * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；started：起跑的时刻，书眉的漏据它算已跑多久）
  * @property {{ id: string, due: number, every?: number, state: "waiting"|"done"|"stopped", created?: number }} [timer] 等时刻的候（set_timer）：桥接那头的编号、几时叫（every：此后隔多久再叫）；waiting 时书眉的漏列着它
  * @property {{ old: string, new: string }} [diff]
  * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看

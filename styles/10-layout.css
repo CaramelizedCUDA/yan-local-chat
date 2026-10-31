@@ -955,22 +955,14 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   letter-spacing: 0.04em;
   animation: rise var(--dur-rise) var(--ease-ink);
 }
-.clepsydra-head {
-  padding: 0 0 5px;
+/* 两节的头：在跑 / 约定；第二节起与上一节隔开一点 */
+.clepsydra-sec {
+  padding: 8px 0 5px;
   color: var(--ink-2);
   font-size: var(--fs-small);
 }
-.clepsydra-grp {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 8px 0 3px;
-  color: var(--ink-2);
-  font-size: var(--fs-note);
-}
-.clepsydra-grp small {
-  color: var(--ink-3);
-  font-size: var(--fs-mark);
+.clepsydra-sec:first-child {
+  padding-top: 0;
 }
 .clepsydra-row {
   width: calc(100% + 8px);
@@ -978,6 +970,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   grid-template-columns: 1fr auto 14px;
   align-items: center;
   column-gap: 10px;
+  row-gap: 1px;
   margin: 0 -4px;
   padding: 6px 4px;
   border-top: 1px solid color-mix(in srgb, var(--accent) 13%, var(--line));
@@ -1012,6 +1005,19 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 }
 .clepsydra-row:hover .clepsydra-go {
   color: var(--ink);
+}
+/* 几段对话的候同在一张单子上：对话名退到每行下面的小字，当前这段朱字 */
+.clepsydra-from {
+  grid-column: 1 / span 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: var(--fs-mark);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clepsydra-from.here {
+  color: var(--accent);
 }
 .history-repo .group-rename {
   flex: 1;

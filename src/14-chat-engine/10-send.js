@@ -363,12 +363,13 @@ function haltJob(key, job) {
   }
   if (conversation) markDirty(conversation.id);
 }
-// 停下一段对话：主答连同后台的帮手（帮手停了不回报，也就不再叫醒谁）；后台指令照跑、结束时不再叫醒（见 releaseBackground）。
-// removing：对话要删了——旁注也停，后台指令连进程收掉
+// 停下一段对话：主答连同后台的帮手（帮手停了不回报，也就不再叫醒谁）。「止」只停生成，不碰候：后台指令照跑、结束照样叫醒，
+// 约好的时刻照旧——之前挂的事与眼前这一答无关，要撤跟模型说，它自己撤才心里有数。
+// removing：对话要删了——旁注也停，候连进程收掉（见 releaseBackground）
 function haltConversation(id, { removing = false } = {}) {
   stopCrew(id);
   const conversation = store.conversations.find(item => item.id === id);
-  if (conversation) releaseBackground(conversation, removing ? everyMessage(conversation) : conversation.messages, { kill: removing });
+  if (conversation && removing) releaseBackground(conversation, everyMessage(conversation));
   for (const [key, job] of [...requestJobs]) if (key === id || (removing && job.conversationId === id)) haltJob(key, job);
 }
 // 输入区那方印上的「止」

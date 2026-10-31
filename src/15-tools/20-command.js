@@ -147,7 +147,7 @@ function watchBackground(conversation, assistant, step) {
         // 随桥接重启而止：没有退出码与新输出，但开它的那一位得知道——主答照样叫醒它，要不要重开由它定（帮手开的不寄，见 mailHelper）
         if (data.lost) {
           settleBackground(step, "lost", undefined, assistant);
-          if (step.bg.quiet || step.scope) return;
+          if (step.scope) return;
           return mailReport(conversation, {
             report: prompt("work.bgLost", { id: step.bg.id, command: String(step.title).slice(0, 200) }),
             step,
@@ -159,8 +159,7 @@ function watchBackground(conversation, assistant, step) {
         const fresh = !data.reported;
         if (fresh) step.output = trimOutput([step.output, commandOutput(data)].filter(Boolean).join("\n"));
         settleBackground(step, "done", data.exitCode, assistant);
-        // 没人等它了（用户停了那一答，见 releaseBackground）：签照改，不再叫醒谁
-        if (!fresh || step.bg.quiet) return;
+        if (!fresh) return;
         mailReport(conversation, {
           report: prompt("work.bgDone", {
             id: data.id,
@@ -243,21 +242,17 @@ function rewatchBackground() {
       for (const step of allSteps(message)) if (step.bg?.state === "running") watchBackground(conversation, message, step);
   }
 }
-// 候随它所属的那一答收口——停止、重答改问、删对话都经这里，不各写一份：
-// 用户停了那一答（kill 为假）：进程照跑（训练、开着的服务未必要断），只是结束时不再叫醒模型另起一答；
-// 那一答被换下或对话删了（kill）：连进程收掉，不然成了占着端口的孤儿，新的一版再起同一个服务就撞上。
-// 等时刻的候只在 kill 时取消（挂它的那一步没了，到点也无处可报）；按「止」只停眼前这一答，约好的照旧——要撤跟模型说，它自己撤，心里有数
+// 候随它所属的那几答收口——重答改问、删对话都经这里，不各写一份：挂它的那一步没了，到时也无处可报，
+// 后台指令连进程收掉（不然成了占着端口的孤儿，新的一版再起同一个服务就撞上），约好的时刻取消。按「止」不经这里（见 haltConversation）
 /** @param {Conversation} conversation @param {Message[]} messages */
-function releaseBackground(conversation, messages, { kill = false } = {}) {
+function releaseBackground(conversation, messages) {
   for (const message of messages)
     for (const step of allSteps(message)) {
-      if (kill && step.timer?.state === "waiting") {
+      if (step.timer?.state === "waiting") {
         settleTimer(step, "stopped", message);
         void bridge("/api/timer/cancel", { id: step.timer.id, to: conversation.id }).catch(() => {});
       }
       if (step.bg?.state !== "running") continue;
-      step.bg.quiet = true;
-      if (!kill) continue;
       const { id, key } = step.bg;
       settleBackground(step, "stopped", undefined, message);
       void bridge("/api/work/check", { id, key, stop: true }).catch(() => {});
