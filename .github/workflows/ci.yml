@@ -3,7 +3,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci-stage-diag]
   pull_request:
   workflow_dispatch:
 
@@ -30,6 +30,7 @@ jobs:
 
   e2e:
     name: 端到端（试跑）
+    if: github.ref != 'refs/heads/ci-stage-diag'
     runs-on: windows-latest
     timeout-minutes: 30
     continue-on-error: true
@@ -52,7 +53,20 @@ jobs:
           node-version: 22
       - run: npm run check
       - run: npm run unit
-      - run: node test/run.mjs
+      - run: |
+          failed=0
+          for i in 1 2 3 4 5 6 7 8; do
+            echo "== 第 $i 次"
+            code=0
+            node test/run.mjs stage || code=$?
+            if [ $code -ne 0 ]; then
+              echo "== 第 $i 次失败（退出码 $code）"
+              failed=1
+            fi
+          done
+          if [ $failed -ne 0 ]; then
+            exit 1
+          fi
         env:
           # runner 上 Edge 和 Chrome 都有，不指定时 run.mjs 会先选 Edge。这里固定用 Chrome，是因为 macOS 上的验证（包括看台连跑）都是在 Chrome 上做的，也免得镜像变动时悄悄换了浏览器；macOS 上的 Edge 还没验证过
           YAN_TEST_BROWSER: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
