@@ -246,12 +246,12 @@ function rewatchBackground() {
 // 候随它所属的那一答收口——停止、重答改问、删对话都经这里，不各写一份：
 // 用户停了那一答（kill 为假）：进程照跑（训练、开着的服务未必要断），只是结束时不再叫醒模型另起一答；
 // 那一答被换下或对话删了（kill）：连进程收掉，不然成了占着端口的孤儿，新的一版再起同一个服务就撞上。
-// 等时刻的候两样都取消：它除了叫醒什么也不做，不叫醒就没有留着的意思
+// 等时刻的候只在 kill 时取消（挂它的那一步没了，到点也无处可报）；按「止」只停眼前这一答，约好的照旧——要撤跟模型说，它自己撤，心里有数
 /** @param {Conversation} conversation @param {Message[]} messages */
 function releaseBackground(conversation, messages, { kill = false } = {}) {
   for (const message of messages)
     for (const step of allSteps(message)) {
-      if (step.timer?.state === "waiting") {
+      if (kill && step.timer?.state === "waiting") {
         settleTimer(step, "stopped", message);
         void bridge("/api/timer/cancel", { id: step.timer.id, to: conversation.id }).catch(() => {});
       }
