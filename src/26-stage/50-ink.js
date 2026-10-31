@@ -255,7 +255,9 @@ async function stageQuote() {
       const [from, to] = [stageToView([note.pts[0]])[0], stageToView([note.pts.at(-1) || note.pts[0]])[0]].map(p => p.map(Math.round));
       return t`划：自网页左 ${from[0]}、上 ${from[1]} 至左 ${to[0]}、上 ${to[1]}${said}`;
     });
-  stageQuoteMade = {
+  // 生成附图要等：其间引文可能被撤（两者都成 null）或换成新圈的，回来只认这一条
+  /** @type {any} */
+  const made = (stageQuoteMade = {
     text: t`游目 · ${place}　${said.join("　")}`,
     model: [
       t`游目 · ${stageReadable(tab.url)}${tab.title ? `（${tab.title}）` : ""}`,
@@ -263,17 +265,17 @@ async function stageQuote() {
       t`附图「${name}」上的朱笔是用户画上去的；位置是网页视口里的 CSS 像素，与附图同一取景`
     ].join("\n"),
     url: tab.url
-  };
-  pendingQuote = stageQuoteMade;
+  });
+  pendingQuote = made;
   renderQuote();
   // 附图：此刻的画面，叠上朱笔
   const blob = await stageInkImage();
-  if (pendingQuote !== stageQuoteMade) return;
+  if (pendingQuote !== made) return;
   if (blob) {
     const file = await ingestFile(new File([blob], name, { type: "image/jpeg" })).catch(() => null);
-    if (file && pendingQuote === stageQuoteMade) {
+    if (file && pendingQuote === made) {
       pendingAttachments = [...pendingAttachments, { ...file, quoted: true }];
-      stageQuoteMade.image = file.id;
+      made.image = file.id;
       renderQuote();
       renderAttachments();
     } else if (file) void deleteAttachments([file.id]);
