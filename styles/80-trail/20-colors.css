@@ -120,24 +120,34 @@
   content: "";
   height: 1px;
   flex: 1;
+  min-width: 24px;
   background: color-mix(in srgb, var(--gold) 28%, var(--line));
 }
+.relay-line > .seal {
+  flex: none;
+}
+/* 几条一起回来（桥接重启，几条后台同时止）每条一道细线，叠着排，彼此靠近些（设计稿/133 乙；
+   甲一行各自截断，只剩开头几个字、挤着读累；丙首条在线上余下在线下，看着像有主次；丁名字全到线下，单条多条成了两种写法）。
+   名字比栏还长才截断，全名在悬停里 */
+.relay-line + .relay-line {
+  margin-top: 6px;
+}
 .relay-name {
+  min-width: 0;
+  overflow: hidden;
   padding: 0;
   border: 0;
   background: none;
   color: var(--gold);
   font: inherit;
   letter-spacing: inherit;
+  text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
 }
 .relay-name:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
-}
-.relay-sep {
-  color: var(--ink-3);
 }
 /* 名后淡墨的一句：候迟了多久（设计稿/130 一乙）；线不加高，长了截断 */
 .relay-gist {

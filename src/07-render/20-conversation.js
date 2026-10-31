@@ -246,21 +246,26 @@ function noteMarkHtml(message) {
 // 用户消息与上下文分隔的整条 HTML；回复另有画法（见 07-paint.js）
 /** @param {Message} message */
 // 帮手的回报（或候到了：后台指令结束、时刻到）另起的一问：不是用户的话，画成一道细线——谁回来了，点名字开它的那一趟
-// （候回到挂它的那一步；迟到的名后淡墨写迟了多久）
+// （候回到挂它的那一步；迟到的名后淡墨写迟了多久）。几条一起回来（桥接重启，几条后台同时止）每条一道，叠着排（设计稿/133 乙）
 /** @param {Message} message */
 function relayHtml(message, branch = null) {
-  const items = message.relay || [],
-    names = items
-      .map(item => {
-        const { name, gist } = relayLabel(item),
-          tail = gist ? `<span class="relay-gist" title="${escapeHtml(gist)}">${escapeHtml(gist)}</span>` : "";
-        return item.kind
-          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="${t(`回到所在一步`)}">${escapeHtml(name)}</button>${tail}`
-          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="${t(`查看经过`)}">${escapeHtml(name)}</button>`;
-      })
-      .join(`<span class="relay-sep" aria-hidden="true">·</span>`),
-    seal = items.length ? relayLabel(items[0]).seal : t("遣");
-  return `<article class="message relay" data-message="${escapeHtml(message.id)}"><div class="relay-line"><span class="seal sub-seal" aria-hidden="true">${seal}</span>${names}</div>${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
+  const line = (seal, inner = "") => `<div class="relay-line"><span class="seal sub-seal" aria-hidden="true">${seal}</span>${inner}</div>`,
+    items = message.relay || [],
+    lines = items.length
+      ? items
+          .map(item => {
+            const { seal, name, gist } = relayLabel(item),
+              tail = gist ? `<span class="relay-gist" title="${escapeHtml(gist)}">${escapeHtml(gist)}</span>` : "";
+            return line(
+              seal,
+              item.kind
+                ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="${escapeHtml(name)} · ${t(`回到所在一步`)}">${escapeHtml(name)}</button>${tail}`
+                : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="${escapeHtml(name)} · ${t(`查看经过`)}">${escapeHtml(name)}</button>`
+            );
+          })
+          .join("")
+      : line(t("遣"));
+  return `<article class="message relay" data-message="${escapeHtml(message.id)}">${lines}${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
 }
 function renderMessage(message, branch = null, side = false) {
   if (message.role === "context")

@@ -54,5 +54,28 @@ check(
   JSON.stringify(woke)
 );
 
+// 几条一起回来（桥接重启，三条后台同时止）：每条一道细线叠着排，都不出栏；比栏还长的那条截断，全名在悬停里
+const id = await evalJs(`(c => {
+  const step = c.messages[1].steps[0].id,
+    lost = gist => ({ step, title: "bg1", ok: false, kind: "bg", lost: true, gist });
+  c.messages.find(m => m.relay).relay = [lost("重启预览"), lost("为子目录中文稿开独立预览"), lost("很长".repeat(200))];
+  return c.id;
+})(${conv("TIMERWAKE")})`);
+await evalJs(`document.querySelector("#newChat").click(); true`);
+await sleep(300);
+await evalJs(`document.querySelector('[data-conversation="${id}"] .history-open').click(); true`);
+await waitFor(`document.querySelectorAll("#messages .message.relay .relay-line").length === 3`, 5000).catch(() => {});
+const crowded = await evalJs(`[...document.querySelectorAll("#messages .message.relay .relay-line")].map(line => {
+  const name = line.querySelector(".relay-name"), box = line.getBoundingClientRect(), right = name.getBoundingClientRect().right;
+  return { text: line.textContent.slice(0, 20), seal: line.querySelector(".seal").textContent, high: Math.round(box.height), inside: right <= box.right + 1 && line.scrollWidth <= line.clientWidth + 1, title: name.title.endsWith("随桥接重启而止 · 回到所在一步") };
+})`);
+check(
+  "several back at once stack one thin line each, each with its seal, all inside the column; the over-long one truncated with its full name on hover",
+  crowded.length === 3 &&
+    crowded.every(l => l.seal === "候" && l.inside && l.high < 30 && l.title) &&
+    crowded[0].text === "候后台「重启预览」随桥接重启而止",
+  JSON.stringify(crowded)
+);
+
 await shot("timer-wake.png");
 await close();
