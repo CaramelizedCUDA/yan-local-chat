@@ -104,12 +104,13 @@ const waitPort = async (port, timeout = 8000) => {
   }
   throw Error(`端口 ${port} 未就绪`);
 };
-const startBrowser = async (port, profile, extra = []) => {
+const BROWSER_START_TIMEOUT = 15000;
+const startBrowser = async (port, profile, extra = [], timeout = BROWSER_START_TIMEOUT) => {
   const p = start(browser, browserArgs(port, profile, extra));
   let errors = "";
   p.stderr.on("data", data => (errors = (errors + data.toString()).slice(-1200)));
   try {
-    await waitPort(port, 8000);
+    await waitPort(port, timeout);
     return p;
   } catch (error) {
     throw Error(`浏览器调试口未就绪（端口 ${port}，退出码 ${p.exitCode ?? "尚未退出"}）：${errors || error.message}`);
@@ -206,7 +207,7 @@ try {
   if (specs.includes("stage.mjs")) {
     const profile = path.join(TMP, `browser-profile-stage-${Date.now().toString(36)}`);
     // 本机装的扩展（如 ChatGPT）会自己开一页，看台照合约跟过去，测试的标签断言便对不上：模型浏览器不带扩展
-    await startBrowser(STAGE_DEBUG_PORT, profile, ["--disable-extensions"]);
+    await startBrowser(STAGE_DEBUG_PORT, profile, ["--disable-extensions"], BROWSER_START_TIMEOUT);
   }
   if (specs.length) {
     // 存储根指到临时目录，别把测试的对话、卷宗与配置写进用户的 ~/.yan
@@ -229,7 +230,7 @@ try {
     await waitPort(BRIDGE_PORT);
     await waitPort(8798);
     const profile = path.join(TMP, `browser-profile-${Date.now().toString(36)}`);
-    await startBrowser(DEBUG_PORT, profile);
+    await startBrowser(DEBUG_PORT, profile, [], BROWSER_START_TIMEOUT);
     for (const spec of specs) {
       // 上一个用例的页面还开着，会接着往对话目录写（巡检、卸载时的补写）：先把它领到空白页，再清目录
       try {
