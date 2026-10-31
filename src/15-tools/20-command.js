@@ -144,17 +144,9 @@ function watchBackground(conversation, assistant, step) {
     .then(
       data => {
         if (data.superseded) return;
-        // 随桥接重启而止：没有退出码与新输出，但开它的那一位得知道——主答照样叫醒它，要不要重开由它定（帮手开的不寄，见 mailHelper）
-        if (data.lost) {
-          settleBackground(step, "lost", undefined, assistant);
-          if (step.scope) return;
-          return mailReport(conversation, {
-            report: prompt("work.bgLost", { id: step.bg.id, command: String(step.title).slice(0, 200) }),
-            step,
-            profile,
-            relay: { step: step.id, title: step.bg.id, ok: false, kind: "bg", lost: true, ...(step.gist ? { gist: step.gist } : {}) }
-          });
-        }
+        // 随桥接重启而止：只把签改了，不叫醒。重启是人自己动的手，挂着的多是预览、服务，叫醒了模型多半挨个重开；
+        // 真等着结果的（训练），模型下一问从行迹摘要里看得到它止了
+        if (data.lost) return settleBackground(step, "lost", undefined, assistant);
         // 模型自己看过它结束了（check_command），只把签改成已结束，不再叫醒
         const fresh = !data.reported;
         if (fresh) step.output = trimOutput([step.output, commandOutput(data)].filter(Boolean).join("\n"));
@@ -220,6 +212,7 @@ function bgName(step) {
 }
 /** 回报细线、行迹里那一小步、导出写的「谁结束了」 @param {Relay} relay */
 function bgEndedText(relay) {
+  // 随桥接重启而止原先也叫醒、留了细线（已不再叫醒）：旧记录照原样写
   if (relay.lost) return relay.gist ? t`后台「${relay.gist}」随桥接重启而止` : t`后台 ${relay.title} 随桥接重启而止`;
   return relay.gist ? t`后台「${relay.gist}」已结束` : t`后台 ${relay.title} 已结束`;
 }

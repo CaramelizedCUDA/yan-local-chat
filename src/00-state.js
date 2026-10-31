@@ -114,7 +114,7 @@
  * @property {"bg"|"timer"} [kind]
  * @property {number} [exitCode]
  * @property {string} [gist] 后台指令起时那句白话
- * @property {boolean} [lost] 后台指令随桥接重启而止
+ * @property {boolean} [lost] 后台指令随桥接重启而止（旧记录：现已不为它叫醒）
  * @property {number} [late] 时刻到时迟了多久（桥接那时没开）
  */
 /**

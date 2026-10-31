@@ -62,7 +62,6 @@
   bgReleased: "有话递给你，这条指令已转入后台接着跑，编号 {{id}}（跑了 {{took}}，到此的输出如下）。结束时结果会作为一条消息送到。",
   bgDone:
     "后台指令 {{id}}（{{command}}）已结束，退出码 {{exitCode}}，共 {{duration}}。新的输出：\n--- stdout ---\n{{stdout}}\n--- stderr ---\n{{stderr}}",
-  bgLost: "后台指令 {{id}}（{{command}}）随桥接重启而止，没有退出码与之后的输出。",
 
   // 候 · 等时刻（set_timer）：timerSet 是挂上时回给模型的话；timerDue 是到点时送给它的一条消息（同 bgDone 的路子）
   timerSet: "定时 {{id}} 已挂上：{{due}}（还有 {{left}}）叫醒你{{every}}。到时 note 作为一条消息送到。",
