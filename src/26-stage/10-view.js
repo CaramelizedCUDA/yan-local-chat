@@ -1,9 +1,7 @@
 // 言 · 游目 · 画面：看哪一页，连上它、按大小收它的画面
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // ---------- 看哪一页：连上它、收它的画面 ----------
-let stageAttachRevision = 0,
-  stageFitRevision = 0,
-  stageFitExpected = null;
+let stageAttachRevision = 0;
 /** @param {string} targetId */
 function stageShow(targetId) {
   stage.current = targetId;
@@ -88,8 +86,6 @@ async function stageFit() {
       width: Math.floor(Math.max(STAGE_FLOOR.width, view.width - 24) / stage.zoom),
       height: Math.floor(Math.max(STAGE_FLOOR.height, view.height - 24) / stage.zoom)
     };
-  const fitRevision = ++stageFitRevision;
-  stageFitExpected = { width: want.width, height: want.height, revision: fitRevision };
   try {
     const [{ windowId, bounds }, inner] = await Promise.all([
       stageSend("Browser.getWindowForTarget", { targetId: target }),
@@ -112,10 +108,7 @@ async function stageFit() {
     await stageSend("Browser.setWindowBounds", { windowId, bounds: { width, height } });
     // 静着的页调窗后可能不重绘：补一张垫底
     await stageBaseFrame(session, want);
-  } catch {
-  } finally {
-    if (stageFitExpected?.revision === fitRevision) stageFitExpected = null;
-  }
+  } catch {}
 }
 /** @param {{ width: number, height: number } | null} size */
 function stagePin(size) {
@@ -202,8 +195,6 @@ function stageZoomStep(step) {
 }
 async function stageDetach() {
   stageAttachRevision += 1;
-  stageFitRevision += 1;
-  stageFitExpected = null;
   const session = stage.session;
   stage.session = stage.attached = "";
   stage.framed = false;
@@ -262,15 +253,7 @@ function stageFrame(data, width, height) {
   stageLastData = data;
   stageFrameSeq += 1;
   stageSettleSoon();
-  // 尺寸等于最近一次调窗期望尺寸的帧是意料中的，不走压帧逻辑，直接画
-  const fitExpected = stageFitExpected,
-    expected = fitExpected && width === fitExpected.width && height === fitExpected.height;
-  if (
-    stage.framed &&
-    (width !== stage.meta.width || height !== stage.meta.height) &&
-    !expected &&
-    Date.now() - stage.fittedAt > STAGE_FIT_GRACE
-  ) {
+  if (stage.framed && (width !== stage.meta.width || height !== stage.meta.height) && Date.now() - stage.fittedAt > STAGE_FIT_GRACE) {
     stageHeldFrame = { data, width, height };
     stageHoldTimer ||= window.setTimeout(() => {
       const held = stageHeldFrame;
@@ -280,9 +263,7 @@ function stageFrame(data, width, height) {
     return Promise.resolve();
   }
   stageDropHeldFrame();
-  const showing = stageShowFrame(data, width, height);
-  if (expected && stageFitExpected?.revision === fitExpected.revision) stageFitExpected = null;
-  return showing;
+  return stageShowFrame(data, width, height);
 }
 /** @param {string} data @param {number} width @param {number} height @param {"jpeg" | "png"} [type] @returns {Promise<void>} */
 function stageShowFrame(data, width, height, type = "jpeg") {
