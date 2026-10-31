@@ -1,10 +1,19 @@
-// 言 · 撮要：不是工具，是一答之内往来渐繁时，言替模型删繁就简——较早的往来并作一则工作笔记，或把这一问之前的前文压成摘要
-// （见 14-chat-engine/60-context.js 的 keepInWindow）。也记作行迹里的一步，在这张表里只登记画法，从不交给模型，不进行迹摘要
+// 言 · 撮要：一答之内往来渐繁时删繁就简——较早的往来并作一则工作笔记，或把这一问之前的前文压成摘要。两种来路，记作行迹里同一种步骤：
+// 执事与帮手做完一段时自己调，笔记由它自己写（见 14-chat-engine/60-context.js 的 foldByModel）；它没调、上下文将满时言替它撮（见 keepInWindow）。
+// 不进行迹摘要：下一问起前文本就是摘要，撮过几回与它无关
 defineTool({
   name: "fold",
   label: t("撮要"),
-  offer: false,
-  html: step => foldStepHtml(step)
+  offer: ctx => ctx.work,
+  html: step => foldStepHtml(step),
+  // 笔记记在步骤上；参数里那一份已随调用进了历史，步骤上不再存第二份。往来的替换等工具结果交回后由 runRounds 做
+  run(step, args) {
+    const note = String(args.note || "").trim();
+    if (!note) return { ok: false, content: t("note 为空：写下接着做要用的笔记"), display: "笔记为空" };
+    step.note = note;
+    step.arguments = "{}";
+    return { ok: true, content: "", display: "" };
+  }
 });
 // 字数只要个大概：「九万六千」「三千」「八百」
 function roughChars(n) {

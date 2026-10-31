@@ -97,6 +97,23 @@
     }
   },
 
+  // 撮要：执事与帮手自己在节点上把这一答此前的往来换成笔记（见 src/14-chat-engine/60-context.js 的 foldByModel）
+  fold: {
+    description:
+      "做完一段、此前的工具往来不必再逐字留着时可调：这一答此前的往来（连同先前的笔记）换成你写的笔记，原文此后不可见。上下文将满时言也会自动撮。",
+    parameters: {
+      type: "object",
+      properties: {
+        note: {
+          type: "string",
+          description:
+            "工作笔记，分点：查明的事实与结论（留关键的路径、行号、命令、数字）、改过的文件与现状、验证过与没验证的、走不通的路、下一步"
+        }
+      },
+      required: ["note"]
+    }
+  },
+
   // 意：一件工程要成立的结论图，存在目录里、跨对话沿用（见 src/19-intent/）；只给主模型
   update_intent: {
     description:

@@ -128,6 +128,7 @@ function maybeAutoCompact(c, profile) {
 // 上面的压缩只在两答之间动手；长活（执事连跑几百轮、帮手审一整个仓库）在一答之内就能把窗口撑破，接口回一句放不下，整段活就白做了。
 // 主答、旁注、帮手三条工具循环都经 readReply 发请求，所以在那里一并接上：overrides.head 记这一答自己的往来从 history 哪一格起，
 // 之前的（对话历史、任务说明）原样保留。两个时机：送出前估算已过窗口的七成半（填了上下文窗口才有）；接口回说放不下（没填窗口也接得住）。
+// 这两处是兜底：执事与帮手可在做完一段时自己撮（见下面的 foldByModel），笔记落在它选的节点上，往往等不到七成半
 // 这一答还没有可压的往来（刚开口，放不下的是前面的对话本身）：主答给了 compactHead 的，把这一问之前的对话压成摘要，与右下角「压缩前文」同一份，一答只压一回
 const FOLD_KEEP_ROUNDS = 2;
 // 各家接口「放不下」的说法：OpenAI 系 maximum context length、Anthropic prompt is too long / exceed context limit、
@@ -289,12 +290,7 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
       AbortSignal.any([signal, AbortSignal.timeout(300000)]),
       overrides.reasoning
     );
-    history.splice(
-      head,
-      cut - head,
-      { role: "assistant", content: t`［工作笔记］\n${note}` },
-      { role: "user", content: prompt("assistant.folded") }
-    );
+    history.splice(head, cut - head, ...noteMessages(note));
     if (mark) Object.assign(mark, { status: "done", note, fold: { ...mark.fold, to: note.length } });
     overrides.seen = null;
     overrides.folds = (overrides.folds || 0) + 1;
@@ -309,4 +305,30 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
   } finally {
     overrides.onFold?.(false);
   }
+}
+// 笔记代替被撮的往来：一条 assistant 是笔记，folded 紧随其后请它接着做。言替它撮、它自己撮，落下的都是这个样子
+const noteMessages = note => [
+  { role: "assistant", content: t`［工作笔记］\n${note}` },
+  { role: "user", content: prompt("assistant.folded") }
+];
+// 模型自己撮要（fold 工具，见 15-tools/51-fold.js）：它在一个节点上收笔，这一答从 head 起到这一轮为止的往来换成它写的笔记——
+// 笔记出自手握全部上下文的它，不必另起一回请求重读转写。工具结果刚交回、还没接别的话时调（见 runRounds）。
+// 同一批里另有工具的，那几步连同结果接在笔记之后照旧留着：它们的结果它写笔记时还没看到
+/** @param {Array<Record<string, any>>} history @param {Record<string, any>} overrides @param {Step[]} steps 这一轮的步骤 */
+function foldByModel(history, overrides, steps) {
+  const step = steps.findLast(s => s.name === "fold" && s.status === "done" && s.note),
+    head = overrides.head;
+  if (!step || typeof head !== "number") return;
+  const at = history.findLastIndex(m => m.tool_calls?.some(c => c.id === step.id));
+  if (at < head) return;
+  const call = history[at],
+    others = call.tool_calls.filter(c => c.function?.name !== "fold"),
+    kept = others.length
+      ? [{ ...call, content: null, tool_calls: others }, ...history.slice(at + 1).filter(m => others.some(c => c.id === m.tool_call_id))]
+      : [],
+    region = history.slice(head, at);
+  step.fold = { steps: region.filter(m => m.role === "tool").length, from: regionChars(region), to: step.note.length };
+  history.splice(head, history.length - head, ...noteMessages(step.note), ...kept);
+  overrides.seen = null;
+  overrides.folds = (overrides.folds || 0) + 1;
 }

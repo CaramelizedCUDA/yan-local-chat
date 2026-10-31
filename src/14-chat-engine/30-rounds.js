@@ -205,6 +205,8 @@ async function runRounds(target, history, run) {
     const offered = new Set(overrides.tools.map(tool => tool.function?.name)),
       { outcomes, images } = await runSteps(steps, conversation, host, signal, toolCache, offered);
     for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
+    // 它这一轮自己撮了要：此前的往来换成它写的笔记（见 60-context.js 的 foldByModel）
+    foldByModel(history, overrides, steps);
     // 一轮做完之后要让它知道的（意里新转待复核的几项）：接在这一轮末一条工具结果后
     const after = run.afterRound ? await run.afterRound() : "";
     if (after) history.at(-1).content = `${history.at(-1).content}\n\n${after}`;
