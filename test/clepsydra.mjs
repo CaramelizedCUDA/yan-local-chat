@@ -1,4 +1,4 @@
-// 书眉的漏：挂着后台指令时右上角有一只漏壶，点开按对话列各条（编号、已跑多久），点一行回到起它的那一步；跑完就不画
+// 书眉的漏：挂着后台指令时右上角有一只漏壶，点开按对话列各条（那句白话或编号、已跑多久），点一行回到起它的那一步；跑完就不画
 import { mkdirSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
@@ -46,8 +46,8 @@ check("when it ends the clepsydra goes away", await evalJs(`document.querySelect
 // 看样子：再记上两段挂了许久的（只记在步骤上、没人等，不会被收口），一段是当前这段
 await evalJs(`(() => {
   const s = __yanState(), cur = s.conversations.find(c => c.messages[0]?.content === "BGRELOAD"), at = Date.now();
-  const hang = (id, minutes, command) => ({ id: "st_" + id, name: "run_command", arguments: "{}", status: "done", title: command, background: true, bg: { id, key: "x-" + id, state: "running", started: at - minutes * 60000 } });
-  cur.messages[1].steps.push(hang("bg7", 26, "modal run run_j200_modal_a.py::build --detach"), hang("bg8", 4, "python poll_volume.py --until results/journal.json"));
+  const hang = (id, minutes, command, gist) => ({ id: "st_" + id, name: "run_command", arguments: "{}", status: "done", title: command, ...(gist ? { gist } : {}), background: true, bg: { id, key: "x-" + id, state: "running", started: at - minutes * 60000 } });
+  cur.messages[1].steps.push(hang("bg7", 26, "modal run run_j200_modal_a.py::build --detach", "在 Modal 上构建 j200 镜像"), hang("bg8", 4, "python poll_volume.py --until results/journal.json"));
   s.conversations.push({ ...structuredClone(cur), id: "c-other", title: "正大杯", messages: [{ ...structuredClone(cur.messages[0]), id: "m-o1" }, { ...structuredClone(cur.messages[1]), id: "m-o2", steps: [hang("bg1", 72, "Rscript sem_fit.R --boot 2000")] }] });
   document.querySelector("#themeToggle").click(); document.querySelector("#themeToggle").click();
   return true;
@@ -63,12 +63,12 @@ const groups = await evalJs(
   `({ head: document.querySelector("#clepsydra .clepsydra-head")?.textContent, grps: [...document.querySelectorAll("#clepsydra .clepsydra-grp")].map(g => g.textContent), rows: [...document.querySelectorAll("#clepsydra .clepsydra-row")].map(r => r.textContent) })`
 );
 check(
-  "across conversations: grouped, this one first and marked, longest in hours",
+  "across conversations: grouped, this one first and marked, longest in hours, the model's gist in place of the id when it gave one",
   groups.head === "候 · 3 条" &&
     groups.grps[0].endsWith("当前") &&
     groups.grps[1] === "正大杯" &&
     groups.rows.includes("bg11 小时 12 分›") &&
-    groups.rows.includes("bg726 分›"),
+    groups.rows.includes("在 Modal 上构建 j200 镜像26 分›"),
   JSON.stringify(groups)
 );
 await shot("clepsydra-open.png");

@@ -108,7 +108,7 @@
  * @typedef {Object} Message
  * @property {string} id
  * @property {"user"|"assistant"|"context"} role context 是上下文分隔：带 summary 的是压缩，不带的是旧版硬切
- * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }[]} [relay] 帮手的回报（或后台指令结束）另起的一问：谁回来了（内容是回报原文，只送给模型）
+ * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number, gist?: string }[]} [relay] 帮手的回报（或后台指令结束）另起的一问：谁回来了（内容是回报原文，只送给模型；gist：后台指令起时那句白话）
  * @property {string} content
  * @property {string} timestamp
  * @property {"streaming"|"complete"|"stopped"|"error"|"interrupted"} [status]

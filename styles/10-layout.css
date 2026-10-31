@@ -943,7 +943,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   z-index: 30;
   top: calc(100% + 6px);
   right: 0;
-  width: 240px;
+  width: 300px;
   padding: 8px 14px 6px;
   border: 1px solid var(--line);
   border-top: 2px solid var(--gold);
@@ -990,9 +990,19 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   background: color-mix(in srgb, var(--paper-3) 45%, transparent);
 }
 .clepsydra-id {
+  min-width: 0;
+  overflow: hidden;
   color: var(--gold);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 模型写了那句白话就写它：是字不是编号，随簿录的墨色与字体 */
+.clepsydra-id.gist {
+  color: var(--ink-2);
+  font-family: inherit;
+  letter-spacing: inherit;
 }
 .clepsydra-age {
   white-space: nowrap;

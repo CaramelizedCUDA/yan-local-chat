@@ -57,7 +57,7 @@ function conversationMarkdown(c) {
     }
     if (m.role === "user" && m.relay) {
       lines.push(
-        `*${m.relay.map(item => (item.kind === "bg" ? t`后台 ${item.title} 已结束 · 退出码 ${item.exitCode ?? "?"}` : t`帮手「${exportMarkdownLabel(item.title)}」${item.ok ? t("回报") : t("未完成")}`)).join(" · ")}*`,
+        `*${m.relay.map(item => (item.kind === "bg" ? exportMarkdownLabel(bgEndedText(item)) + t` · 退出码 ${item.exitCode ?? "?"}` : t`帮手「${exportMarkdownLabel(item.title)}」${item.ok ? t("回报") : t("未完成")}`)).join(" · ")}*`,
         ""
       );
       continue;

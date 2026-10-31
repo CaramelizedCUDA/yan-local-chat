@@ -1,6 +1,6 @@
 // 言 · 书眉的漏：哪段对话挂着后台指令（还在跑，跑完要叫醒它），右上角就有一只漏壶；一条都没有就不画（见 设计稿/73–75）。
 // 形是古漏：上壶滴水进受水壶，壶里一支箭随水浮起——箭的高低说挂得最久的那条已跑多久。两条起右下写条数。
-// 点开按对话列出各条：编号与已跑多久，悬停浮出整条指令；点一行去到那段对话、回到起它的那一步。
+// 点开按对话列出各条：那句白话（没写的才是编号）与已跑多久，悬停浮出编号与整条指令；点一行去到那段对话、回到起它的那一步。
 // 数据取自各段存着的步骤（step.bg.state 为 running），别处页面挂的也在。
 // 落选的：工作条添一格（只是一行状态字）、流末一道虚线（翻远了看不见）、一炷香（设计稿/73）；直壶正滴读作高脚杯、侧嘴壶、一滴落水（设计稿/74）
 let clepsydraOpen = false,
@@ -53,7 +53,7 @@ function clepsydraListHtml(list, now) {
   }
   const ordered = [...groups].sort(([a], [b]) => Number(b.id === currentId) - Number(a.id === currentId)),
     row = ({ conversation, step, started }) =>
-      `<button class="clepsydra-row" type="button" data-conversation="${escapeHtml(conversation.id)}" data-step="${escapeHtml(step.id)}" title="${escapeHtml(step.title || "")}"><span class="clepsydra-id">${escapeHtml(step.bg?.id || "")}</span><span class="clepsydra-age">${clepsydraSpan(now - started)}</span><span class="clepsydra-go" aria-hidden="true">›</span></button>`;
+      `<button class="clepsydra-row" type="button" data-conversation="${escapeHtml(conversation.id)}" data-step="${escapeHtml(step.id)}" title="${escapeHtml([step.gist, [step.bg?.id, step.title].filter(Boolean).join(" · ")].filter(Boolean).join("\n"))}"><span class="clepsydra-id${step.gist ? " gist" : ""}">${escapeHtml(bgName(step))}</span><span class="clepsydra-age">${clepsydraSpan(now - started)}</span><span class="clepsydra-go" aria-hidden="true">›</span></button>`;
   return `<div class="clepsydra-head">${t`候 · ${list.length} 条`}</div>${ordered
     .map(
       ([conversation, items]) =>

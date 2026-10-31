@@ -252,7 +252,7 @@ function relayHtml(message, branch = null) {
     names = items
       .map(item =>
         item.kind === "bg"
-          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="${t(`回到所在一步`)}">${t`后台 ${escapeHtml(item.title)} 已结束`}${item.ok ? "" : t` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
+          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="${t(`回到所在一步`)}">${escapeHtml(bgEndedText(item))}${item.ok ? "" : t` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
           : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="${t(`查看经过`)}">${t`帮手「${escapeHtml(item.title)}」`}${item.ok ? t("回报") : t("未完成")}</button>`
       )
       .join(`<span class="relay-sep" aria-hidden="true">·</span>`),

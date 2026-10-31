@@ -129,10 +129,7 @@ function delegateDoing(step) {
   if (current && (current.status === "running" || current.status === "pending"))
     return `${current.status === "pending" ? t(AWAITING) : t("正在")} ${toolLabel(current.name)} ${String(current.gist || current.title || "").slice(0, 60)}`.trim();
   // 睡着等自己挂的后台指令
-  if (sub?.waiting)
-    return t`等后台 ${helperWaits(sub)
-      .map(s => s.bg?.id)
-      .join("、")}`;
+  if (sub?.waiting) return t`等后台 ${helperWaits(sub).map(bgName).join("、").slice(0, 60)}`;
   const base = Math.max(0, ...steps.map(s => Number(s.at) || 0)),
     said = String(sub?.content || "")
       .slice(base)

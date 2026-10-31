@@ -712,7 +712,7 @@ function relayStepHtml(step) {
     status = step.status || "done",
     bg = relay.kind === "bg",
     what = bg
-      ? t`后台 ${relay.title} 已结束${relay.ok ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`}`
+      ? bgEndedText(relay) + (relay.ok ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`)
       : t`帮手「${relay.title}」${relay.ok ? t("回报") : t("未完成")}`,
     target = bg ? `data-relay-reveal="${escapeHtml(relay.step)}"` : `data-relay-step="${escapeHtml(relay.step)}"`;
   return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? t("回到挂它的那一步") : t("看这一趟的经过")}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? t("候") : t("遣")}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;

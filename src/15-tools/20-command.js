@@ -160,7 +160,14 @@ function watchBackground(conversation, assistant, step) {
           }),
           step,
           profile,
-          relay: { step: step.id, title: data.id, ok: data.exitCode === 0, kind: "bg", exitCode: data.exitCode }
+          relay: {
+            step: step.id,
+            title: data.id,
+            ok: data.exitCode === 0,
+            kind: "bg",
+            exitCode: data.exitCode,
+            ...(step.gist ? { gist: step.gist } : {})
+          }
         });
       },
       error => {
@@ -194,6 +201,15 @@ function settleBackground(step, state, exitCode, assistant) {
   renderClepsydra();
   // 帮手开的：它若睡着等，叫它看一眼——有信就接着做，等的都了结了就收工（随桥接重启而止的不寄信，见 mailHelper）
   if (step.scope && conversation) (crews.get(conversation.id) || []).find(box => box.sub.id === step.scope)?.wake?.();
+}
+// 后台指令在页面上叫什么：起它时那句白话（run_command 的 description），bg1 这样的编号只对模型有用；没写的才退回编号
+/** @param {Step} step */
+function bgName(step) {
+  return step.gist || step.bg?.id || "";
+}
+/** 回报细线、行迹里那一小步、导出写的「谁结束了」 @param {{ title: string, gist?: string }} relay */
+function bgEndedText(relay) {
+  return relay.gist ? t`后台「${relay.gist}」已结束` : t`后台 ${relay.title} 已结束`;
 }
 // 这段对话里编号为 id 的那条后台指令（编号在桥接重启后会重数：取最近的一条）
 /** @param {Conversation} conversation */
