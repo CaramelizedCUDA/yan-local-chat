@@ -324,14 +324,19 @@ test("三档筛查都不放指令调言的本机桥接：它的接口不经请�
     `curl -X POST http://127.0.0.1:${port}/api/work/run -d "{}"`,
     `Invoke-RestMethod http://localhost:${port}/api/store`,
     `node -e "fetch('http://[::1]:${port}/api/work/run')"`,
-    `wget 127.0.0.1:${port}/api/bootstrap`
+    `wget 127.0.0.1:${port}/api/bootstrap`,
+    `curl -X POST http://127.0.0.1:${port}/api/mail/take -d "{}"`
   ]) {
     assert.match(screen(command), /沙箱拒绝：指令不调言的本机桥接/, command);
     assert.match(screenLoose(command), /沙箱拒绝：指令不调言的本机桥接/, command);
     assert.match(screenAutoReview(command), /审查拒绝：指令不调言的本机桥接/, command);
   }
-  // 别的本机端口照常能测；端口只是前缀相同的不算
-  for (const command of ["curl http://127.0.0.1:3000/", `curl http://127.0.0.1:${port}0/`]) {
+  // 别的本机端口照常能测；端口只是前缀相同的不算；寄信的口子是给本机程序用的，放行
+  for (const command of [
+    "curl http://127.0.0.1:3000/",
+    `curl http://127.0.0.1:${port}0/`,
+    `curl -X POST http://127.0.0.1:${port}/api/mail -d '{"to":"c1","text":"x"}'`
+  ]) {
     assert.equal(screen(command), null, command);
     assert.equal(screenAutoReview(command), null, command);
   }

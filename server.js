@@ -160,6 +160,8 @@ const SKILLS = require("./server/skills.js")({
   bundled: process.env.YAN_BUILTIN_SKILLS ?? path.join(ROOT, "skills")
 });
 const CHATS = require("./server/chats.js")({ chatsHome: () => STORE.paths().chats });
+// 信：外头寄给某段对话的信与到点的候，先落进 存储根/信/ 再交给页面（见 server/mail.js）
+const MAIL = require("./server/mail.js")({ home: () => path.join(STORE.paths().root, "信"), known: CHATS.exists });
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable });
 const STAGE_LIB = require("./server/stage.js");
 // 检索与翻网页用的无头浏览器（直接请求被拦、网页要跑脚本时才起，见 server/headless.js）：配置目录只是 Cookie 与缓存，不算用户的东西，
@@ -195,6 +197,7 @@ const OPEN_ROUTES = {
     ...WORK.routes,
     ...SKILLS.routes,
     ...CHATS.routes,
+    ...MAIL.routes,
     ...STORE.routes,
     ...FILES.routes,
     ...MCP.routes,

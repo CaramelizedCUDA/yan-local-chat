@@ -62,9 +62,13 @@ const LOCAL_HOST = /^(localhost|127(\.\d{1,3}){3}|0\.0\.0\.0|\[::1\]|::1)$/i;
 // 严宽两档都拦（径行开着沙箱时也拦：径行放开的是这段对话的指令，不是桥接的门禁）；静态筛查，脚本里拼出来的地址管不到。
 // 这是有意不再往下堵：能跑脚本就已有用户的全部权限（node -e 删用户目录一样过得去），调桥接并不多出什么；
 // 加口令也藏不住——页面只能把它存进浏览器的 localStorage，那在磁盘上是明文。真要管住脚本得靠进程隔离
+// 唯一的例外是寄信的口子 /api/mail：它只往一段对话里放一封信、叫醒那里的模型，本就是给本机程序（含模型自己写的盯守脚本）用的
 const BRIDGE_PORT = Number(process.env.YAN_PORT || 8787);
 function callsBridge(text) {
-  return new RegExp(String.raw`(?:localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])\s*:\s*${BRIDGE_PORT}(?!\d)`, "i").test(text);
+  return new RegExp(
+    String.raw`(?:localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])\s*:\s*${BRIDGE_PORT}(?!\d)(?!/api/mail(?![\w/.-]))`,
+    "i"
+  ).test(text);
 }
 const BRIDGE_WHY = "指令不调言的本机桥接（它的接口不经请示与沙箱）；要读写文件、跑指令直接用相应的工具";
 // 藏字：编码过的指令、拿 Invoke-Expression 跑拼出来的字串——筛查与审查都只看得到一串编码，判不了它要做什么
