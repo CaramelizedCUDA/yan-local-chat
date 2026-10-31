@@ -205,7 +205,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }
     }
     if (requestJobs.get(conversation.id) === job) requestJobs.delete(conversation.id);
-    settleSupplements(conversation, assistant, job, profile);
+    const goesOn = settleSupplements(conversation, assistant, job, profile);
     if (currentId !== conversation.id || view !== "chat") conversation.unread = true;
     markDirty(conversation.id);
     saveStore();
@@ -217,6 +217,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       updateContextGauge();
     }
     renderSendButtons();
+    if (!goesOn) notifyAnswerEnd(conversation, assistant);
     // 压前文排在这一答撤下作业之后：之前排的话，言里收尾还在等卷宗重翻，这段仍算在作答，压缩会悄悄作罢
     if (assistant.status === "complete") {
       setTimeout(() => maybeAutoCompact(conversation, profile), 0);

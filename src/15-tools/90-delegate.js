@@ -236,7 +236,7 @@ function launchHelper(step, args, ctx, past = null, resume = false, profile = re
     .then(
       outcome => {
         // 断了：挂着等人续，不回报——断网时主模型多半也连不上，叫醒它只是让它跟着断
-        if (outcome.held) return holdHelper(step, outcome.display);
+        if (outcome.held) return holdHelper(step, outcome.display, conversation);
         step.status = outcome.ok ? "done" : "error";
         step.result = outcome.display;
         // 交过进展后没再做什么就收工了（等的后台随桥接重启而止）：进展已是最后的话，不再重报
@@ -247,7 +247,7 @@ function launchHelper(step, args, ctx, past = null, resume = false, profile = re
         if (error.name === "AbortError") return void Object.assign(step, { status: "error", result: "已止" });
         const reason = bridgeErrorText(String(error.message || error));
         // 领命途中断的（读账本连不上之类）：同样挂着等人续
-        if (step.sub) return holdHelper(step, reason);
+        if (step.sub) return holdHelper(step, reason, conversation);
         step.status = "error";
         step.result = reason;
         mailReport(conversation, {
@@ -280,14 +280,16 @@ function helperWaits(sub) {
 // ---------- 断着与续上 ----------
 // 不是谁叫停的就断了（连不上接口、额度用完、页面刷新）：挂着等人，签上状态位换成续写那一笔（设计稿/97 甲）。
 // 不按报错分类——连不上、额度、鉴权，主模型都救不了，只有人换 Key、调上限、等网回来；人点「续」从断处接着做，做完照常回报
-/** @param {Step} step @param {string} reason */
-function holdHelper(step, reason) {
+// 做着做着断的（传了 conversation）弹一条桌面通知；页面刷新时收束断着的那些不弹
+/** @param {Step} step @param {string} reason @param {Conversation} [conversation] */
+function holdHelper(step, reason, conversation) {
   step.status = "interrupted";
   step.result = reason;
   if (step.sub) {
     settleStepList(step.sub.steps, "已中断");
     step.sub.status = "interrupted";
   }
+  if (conversation) notifyDesktop(conversation, t`帮手「${step.title || ""}」断了，待你续：${reason}`);
 }
 /** 同一名帮手另起了新的一趟（续派）：先前断着的那几趟作罢 @param {Conversation} conversation @param {Step} step */
 function retireHeldRuns(conversation, step) {

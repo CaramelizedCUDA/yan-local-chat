@@ -290,6 +290,7 @@ async function deliverSupplements(job, history, budget, host, options = {}) {
  * @param {Conversation} conversation
  * @param {Message} assistant
  * @param {Profile} profile
+ * @returns {boolean} 这段对话接着还有一答（补言另起的一问、回报另起的一答）
  */
 function settleSupplements(conversation, assistant, job, profile) {
   const queue = (job.queue || []).filter(item => item.user),
@@ -301,7 +302,10 @@ function settleSupplements(conversation, assistant, job, profile) {
   for (const item of reports) delete item.note;
   // 收尾前才到、没来得及递的帮手回报：照没在作答时寄（见 mailReport）。补言若另起一问，回报就并进那一答——
   // 所以先排补言的那一问、后寄回报。用户按了停的，帮手一并停了，已到的回报也不再另起一答
-  const mail = () => assistant.status !== "stopped" && reports.forEach(item => mailReport(conversation, item));
+  const mail = () => {
+    if (assistant.status !== "stopped") reports.forEach(item => mailReport(conversation, item));
+    return mailbags.has(conversation.id);
+  };
   if (!queue.length) return mail();
   const ids = new Set(queue.map(item => item.step.id));
   assistant.steps = (assistant.steps || []).filter(step => !ids.has(step.id));
@@ -322,7 +326,8 @@ function settleSupplements(conversation, assistant, job, profile) {
       ...(quote ? { quote } : {})
     };
     setTimeout(() => void startTurn(conversation, user, profile, { follow: false }), 0);
-    return mail();
+    mail();
+    return true;
   }
   const key = draftKey(conversation.id),
     draft = draftRecord(conversation.id);
@@ -335,7 +340,7 @@ function settleSupplements(conversation, assistant, job, profile) {
   };
   if (currentId === conversation.id && view === "chat") restoreDraft();
   toast(t("这一答未写完，补言已放回案上"));
-  mail();
+  return mail();
 }
 function titleFrom(text, attachments) {
   // 按码点截：截在 emoji 中间会留下半个字

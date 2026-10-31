@@ -30,6 +30,7 @@ const defaultStore = {
     presetId: "",
     groups: [],
     autoTitle: true,
+    notify: false,
     dutyReview: normalizeDuty(null, "openai"),
     dutyImage: normalizeDuty(null, "siliconflow"),
     pendingWorkdir: "",

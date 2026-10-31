@@ -210,6 +210,7 @@
  * @property {string} presetId 新对话用的预设（上回选的）；空即本色
  * @property {{ id: string, name: string, createdAt: string, presetId: string, workdir: string }[]} groups 分组：自立的几组，对话各记 groupId；组里新起的对话用组的预设、绑组的默认目录
  * @property {string} [pendingGroupId] 从组首「＋」另起的新对话归进这一组（用过即清）
+ * @property {boolean} [notify] 桌面通知（设置 → 通用）：页面不在眼前时答毕、待你定夺、帮手断了弹系统通知；准许各浏览器自记
  * @property {boolean} autoTitle 自动拟题（设置 → 专司）：随对话的模型，只有开关
  * @property {Duty} dutyReview 审查（设置 → 专司）：审而后行里规则标疑的那一步交它再判；关着即照规则回绝
  * @property {Duty} dutyImage 生图（设置 → 专司）：配了才把生图交给模型

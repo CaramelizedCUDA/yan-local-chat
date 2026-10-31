@@ -534,6 +534,17 @@ var YAN_EN = {
   存储位置: "Storage location",
   语言: "Language",
   "界面所用的语言；切换后页面重新载入": "Interface language; the page reloads after switching",
+  桌面通知: "Desktop notifications",
+  "页面不在眼前时，答毕、待你定夺、帮手断了，弹一条系统通知":
+    "When the page isn't in front of you, show a system notification when an answer finishes, something awaits your decision, or a subagent breaks off",
+  此浏览器不支持系统通知: "This browser doesn't support system notifications",
+  "浏览器已拒绝通知，可在地址栏左侧的站点权限里放开":
+    "The browser blocked notifications; allow them in the site permissions left of the address bar",
+  "这个浏览器还没准许，再点一次「开」": "Not yet allowed in this browser; click On again",
+  "答毕：{0}": "Done: {0}",
+  "断了，待你续写：{0}": "Broke off, waiting for you to continue: {0}",
+  "待你定夺：{0}": "Awaiting your decision: {0}",
+  "帮手「{0}」断了，待你续：{1}": "Subagent “{0}” broke off, waiting for you to resume: {1}",
   通用: "General",
   显示名称: "Display name",
   侧栏中显示的称呼: "The name shown in the sidebar",
