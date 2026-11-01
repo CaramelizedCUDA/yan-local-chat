@@ -70,10 +70,6 @@
   font-variant-numeric: tabular-nums;
   cursor: default;
 }
-.message-cost.heavy {
-  opacity: 1;
-  color: color-mix(in srgb, var(--accent) 78%, var(--ink));
-}
 .roll-digit {
   display: inline-block;
   height: 1em;

@@ -15,6 +15,7 @@ function openHistoryMenu(id, anchor) {
       {
         id: "bind",
         label: isWork(c) ? t("更换目录") : t("绑定目录"),
+        ...(workdirLocked(c) ? { disabled: true, note: t("作答中") } : {}),
         run: () =>
           openWorkdirPop({
             anchor: row(),

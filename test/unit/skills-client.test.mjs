@@ -43,7 +43,7 @@ test("点名置入的那件附件带着技能名，仍照附件列、照附件�
       Object.assign(PROMPTS, prompts); store.settings.archiveRead = false;
       skillSet = { home: 'E:/skills', skills: [{ name: 'demo', description: '照格式写信', dir: 'E:/skills/demo', files: [{ path: 'SKILL.md' }] }] };
       bridge = async () => { throw Error('没有这份技能：undefined'); };
-      getAttachment = async () => ({ kind: 'text', data: '点名用技能「demo」，照它做。' });
+      getAttachmentMeta = async () => ({ kind: 'text', data: '点名用技能「demo」，照它做。' });
     }`
   ]);
   f.setup(win.YAN_PROMPTS);

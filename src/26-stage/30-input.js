@@ -51,7 +51,7 @@ function stageRenderSteps() {
       })
       .join("");
 }
-// 浏览器自己接的几个键（递进网页没人管）：Ctrl+L / Alt+D / F6 到地址栏，F5 / Ctrl+R 重载（加 Shift 不用缓存），Alt+← / → 前后。
+// 浏览器自己接的几个键（递进网页没人管）：Ctrl+L / Alt+D / F6 到地址栏，Ctrl+O 开本机文件，F5 / Ctrl+R 重载（加 Shift 不用缓存），Alt+← / → 前后。
 // Ctrl+T、Ctrl+W 外头的浏览器拦不住，不接
 /** @param {KeyboardEvent} e */
 function stageShortcut(e) {
@@ -60,34 +60,13 @@ function stageShortcut(e) {
   if (key === "escape" && stage.pen) stageSetPen(false);
   else if ((ctrl && key === "l") || (e.altKey && key === "d") || key === "f6") stageEditUrl();
   else if (ctrl && key === "f") stageFindOpen();
+  else if (ctrl && key === "o") void stageOpenLocal();
   else if (ctrl && (key === "=" || key === "+" || key === "-" || key === "0")) stageZoomStep(key === "0" ? 0 : key === "-" ? -1 : 1);
   else if (key === "f5" || (ctrl && key === "r")) {
     if (stage.session) void stageSend("Page.reload", { ignoreCache: e.shiftKey }, stage.session).catch(() => {});
   } else if (e.altKey && (key === "arrowleft" || key === "arrowright")) void stageTravel(key === "arrowleft" ? -1 : 1);
   else return false;
   return true;
-}
-// 指针形状跟着网页：停在链接上是手、输入框里是竖线。问网页那一处的 cursor，一秒至多问十回、上一问没回来不再问
-/** @param {MouseEvent} e */
-function stageCursor(e) {
-  if (!stage.session || stage.cursorAsking || e.timeStamp - stage.cursorAt < 100) return;
-  stage.cursorAt = e.timeStamp;
-  stage.cursorAsking = true;
-  const { x, y } = stagePoint(e);
-  void stageSend(
-    "Runtime.evaluate",
-    {
-      expression: `(() => { const el = document.elementFromPoint(${x}, ${y}); if (!el) return ""; const c = getComputedStyle(el).cursor; if (c !== "auto") return c; return el.closest("input:not([type=button],[type=submit],[type=reset],[type=checkbox],[type=radio],[type=range],[type=color],[type=file]),textarea,[contenteditable]:not([contenteditable=false])") ? "text" : ""; })()`,
-      returnByValue: true
-    },
-    stage.session
-  )
-    .then(({ result }) => {
-      const cursor = String(result?.value || "");
-      $("#stageFrame").style.cursor = /^[a-z-]+$/.test(cursor) ? cursor : "";
-    })
-    .catch(() => {})
-    .finally(() => (stage.cursorAsking = false));
 }
 // 打字经一个看不见的输入框：输入法的候选框浮在它那里，所以它要跟着网页里的光标走——先挪到点下的地方，
 // 网页把光标放好后再量一回光标挪过去（stageCaretSoon）。组字中的字随打随递（Input.imeSetComposition），网页里带着下划线现出来，与原生一样
@@ -151,17 +130,30 @@ function stageCaretSoon() {
 function stageGo(raw) {
   const url = stageUrlOf(raw);
   if (!url || !stage.ws) return;
+  stage.goAt = Date.now();
   // 一页都没开着：新开一页去
   const go = stage.session ? stageSend("Page.navigate", { url }, stage.session) : stageSend("Target.createTarget", { url });
   void go.catch(error => toast(t`打开失败：${String(error.message || error).slice(0, 80)}`));
 }
-// 地址栏里输的话换成网址：本机路径、本机服务、带协议的照走；像网址的（有点、没空格）补 https；余下当成要搜的话，交给纸签里选的那家
+// 开本机文件（纸签、Ctrl+O）：经桥接弹系统的选文件窗，拿真路径开 file://——不拷进临时目录，网页旁的样式、脚本、图才引得到。
+// 浏览器显示不了的（Office 文档等）会当下载，由 downloadWillBegin 那头转交本机程序
+async function stageOpenLocal() {
+  if (!stage.ws) return void stageLaunch();
+  try {
+    const { paths } = await bridge("/api/work/pick", { files: true });
+    if (paths[0]) stageGo(paths[0]);
+  } catch (error) {
+    toast(t`打开失败：${String(error.message || error).slice(0, 80)}`);
+  }
+}
+// 地址栏里输的话换成网址：本机路径（盘符起头的、/ 起头的）、本机服务、带协议的照走；像网址的（有点、没空格）补 https；余下当成要搜的话，交给纸签里选的那家。
+// 路径里的 % # ? 是文件名的一部分，转义了才不被当成网址的记号
 /** @param {string} raw */
 function stageUrlOf(raw) {
   const text = raw.trim();
   if (!text) return "";
-  return /^[a-z]:[\\/]/i.test(text)
-    ? `file:///${text.replace(/\\/g, "/")}`
+  return /^([a-z]:[\\/]|\/(?!\/))/i.test(text)
+    ? `file://${text.startsWith("/") ? "" : "/"}${text.replace(/\\/g, "/").replace(/[%#?]/g, encodeURIComponent)}`
     : /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(text)
       ? `http://${text}`
       : /^([a-z][\w+.-]*:\/\/|(about|data|file|javascript|mailto|view-source|edge|chrome):)/i.test(text)
@@ -300,11 +292,14 @@ function bindStage() {
   });
   // 看台一变大小（拖宽窄、阔、窗口缩放），停手片刻后把浏览器的窗口跟上；被旁注挤开、又回来的，停收或接上画面
   new ResizeObserver(() => {
+    stageSnap();
     if (stageVisible() !== stage.seen) stageWake();
     clearTimeout(stage.fitTimer);
     stage.fitTimer = window.setTimeout(() => void stageFit(), 250);
   }).observe($("#stageView"));
   document.addEventListener("visibilitychange", () => stageShown() && stageWake());
+  // 开合、阔的动效落定后再对一回像素（动着时量的不作数）
+  for (const type of ["animationend", "transitionend"]) $("#stagePanel").addEventListener(type, () => stageSnap());
   // 网页的提示框：Enter 即确定，Esc 即取消（不让 Esc 再去收别的）
   const dialog = $("#stageDialog");
   dialog.addEventListener("click", e => {
@@ -322,10 +317,7 @@ function bindStage() {
     if (close) return void stageSend("Target.closeTarget", { targetId: close.dataset.stageClose }).catch(() => {});
     const tab = /** @type {HTMLElement | null} */ (target.closest("[data-stage-tab]"));
     if (!tab || tab.dataset.stageTab === stage.current) return;
-    // 换到后台的那一页：先请到前台，不然它不重绘、没有画面
-    void stageSend("Target.activateTarget", { targetId: tab.dataset.stageTab }).catch(() => {});
-    stage.front = tab.dataset.stageTab || "";
-    stageShow(stage.front);
+    stageActivate(tab.dataset.stageTab || "");
   });
   for (const button of document.querySelectorAll("[data-stage-nav]"))
     button.addEventListener("click", () => {
@@ -369,6 +361,8 @@ function bindStage() {
     const click = stage.click,
       again = e.timeStamp - click.at < 450 && Math.hypot(e.clientX - click.x, e.clientY - click.y) < 6;
     Object.assign(click, { at: e.timeStamp, x: e.clientX, y: e.clientY, count: again ? click.count + 1 : 1 });
+    // 中键、Ctrl（不带 Shift）点链接：浏览器在后台开新页
+    if ((e.button === 1 || e.ctrlKey || e.metaKey) && !e.shiftKey) stage.behindAt = Date.now();
     stageMouse("mousePressed", e, { button: STAGE_BUTTONS[e.button] || "left", clickCount: click.count });
   });
   frame.addEventListener("pointerup", e => {
@@ -387,7 +381,6 @@ function bindStage() {
         const last = stage.moved;
         stage.moved = null;
         if (last) stageMouse("mouseMoved", last, { button: last.buttons & 1 ? "left" : last.buttons & 2 ? "right" : "none" });
-        if (last && !last.buttons) stageCursor(last);
       });
     stage.moved = e;
   });
@@ -395,16 +388,28 @@ function bindStage() {
     "wheel",
     e => {
       e.preventDefault();
+      stagePickClose();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
       stageMouse("mouseWheel", e, { deltaX: e.deltaX * unit, deltaY: e.deltaY * unit });
     },
     { passive: false }
   );
+  // 指针移出画面：网页那头也得知道它走了（悬停才展开的菜单收回去），递一下画面外的一点
+  frame.addEventListener("pointerleave", e => {
+    if (e.buttons || stageInking || !stage.session) return;
+    stage.moved = null;
+    void stageSend("Input.dispatchMouseEvent", { type: "mouseMoved", x: -1, y: -1, modifiers: stageMods(e) }, stage.session).catch(
+      () => {}
+    );
+    $("#stageFrame").style.cursor = "";
+  });
   frame.addEventListener("contextmenu", e => e.preventDefault());
   // 键盘：拦下来整个递进网页（包括 Esc、Ctrl+C / V——剪贴板本是同一台机器的），不让言自己的快捷键接走
   keys.addEventListener("keydown", e => {
     e.stopPropagation();
     e.preventDefault();
+    // 人按的键：此时要开的下拉框认是人开的（F4、Alt+↓、空格）
+    stage.keyAt = Date.now();
     if (stageShortcut(e)) return;
     const text = e.key === "Enter" ? "\r" : e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey ? e.key : "";
     stageKey(text ? "keyDown" : "rawKeyDown", e, text);

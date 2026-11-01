@@ -161,21 +161,132 @@
 :is(.markdown, .trail-note, .sub-report) a[data-open-image] {
   cursor: zoom-in;
 }
+/* 画面整幅见：宽不过 560、高不过七成屏，竖幅的照比例收窄（生图常是 3:4、9:16），小图不放大 */
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot {
   display: block;
-  width: min(100%, 560px);
+  width: fit-content;
+  max-width: min(100%, 560px);
   height: auto;
   margin: 10px 0 4px;
   cursor: zoom-in;
   outline: 1px solid var(--line);
   outline-offset: -1px;
 }
-/* 整页长截图不把正文撑成一长条：高过七成屏就从顶上取景，点开看全幅 */
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot img {
+  width: auto;
+  max-width: 100%;
   height: auto;
   max-height: 70vh;
-  object-position: top;
+  object-fit: contain;
   border-radius: 0;
+}
+/* 整页长截图（高过宽的两倍）不把正文撑成一长条，也不缩成一道细条：铺满宽、从顶上取景，点开看全幅 */
+:is(.markdown, .trail-note, .sub-report) .fi.reply-shot.long {
+  width: min(100%, 560px);
+}
+:is(.markdown, .trail-note, .sub-report) .fi.reply-shot.long img {
+  width: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+/* 接连几幅收成一叠（见 groupReplyShots）：最上一幅照真比例（高不过 300），后两张同大的素纸往右错开、上下等距收，露一道纸边，
+   再多的不画；叠下一行淡墨小字写共几幅。指针靠近（或用键盘移到上头），后两张绕左下角斜开、露出画来（宽图斜得少，免得右下角探出太多）。
+   不用 :focus-within：点开看图再关，焦点交还给这一幅，指针早走了叠还斜开着。
+   各幅都在答末成品条与卷宗里，正文只作一份。
+   试过摊开成排（设计稿/122–125）：按宽高比分宽的比例一杂就参差，等大方格裁掉要紧处，幅数一多正文成了一面图墙。
+   后两张原是缩放、压暗的画（设计稿/127 现状）：露边随画变色、亮图压成灰、彩图压成泥，缩放又像轮播卡片；罩纸色淡画（乙）、
+   整叠落影（丙）落选；纸签压在画上，暗色里成一块黑补丁，挪到叠下。靠近只扇开不露画（128 甲）像空翻一下，散开（丙）挤着上下文 */
+:is(.markdown, .trail-note, .sub-report) .reply-shots {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding-right: 20px;
+  margin: 10px 0 26px;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots:has(> :nth-child(2):last-child) {
+  padding-right: 10px;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot {
+  position: relative;
+  z-index: 3;
+  /* 不写 min(100%, 420px)：叠量自身宽（fit-content）时百分比上限不作数，按画的原比例量出 450 宽、画却收在 420，后两张就离出一道缝。
+     窄栏里由叠的 max-width: 100% 收住 */
+  max-width: 420px;
+  margin: 0;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot img {
+  max-height: 300px;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot.long {
+  width: 320px;
+  max-width: 100%;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot.long img {
+  height: 300px;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(n + 2) {
+  position: absolute;
+  width: auto;
+  max-width: none;
+  outline-color: color-mix(in srgb, var(--ink) 16%, transparent);
+  transform-origin: left bottom;
+  transition: transform 0.32s var(--ease-lay);
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(n + 2) img {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.32s;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(2) {
+  z-index: 2;
+  inset: 5px 14px 5px 6px;
+  background: var(--paper-2);
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(3) {
+  z-index: 1;
+  inset: 10px 8px 10px 12px;
+  background: var(--paper-3);
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots:has(> :nth-child(2):last-child) > .fi.reply-shot:nth-child(2) {
+  inset: 5px 4px 5px 6px;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots > .fi.reply-shot:nth-child(n + 4) {
+  display: none;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :has(:focus-visible)) > .fi.reply-shot:nth-child(n + 2) img {
+  opacity: 1;
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :has(:focus-visible)) > .fi.reply-shot:nth-child(2) {
+  transform: rotate(3deg);
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots:is(:hover, :has(:focus-visible)) > .fi.reply-shot:nth-child(3) {
+  transform: rotate(6deg);
+}
+:is(.markdown, .trail-note, .sub-report)
+  .reply-shots:is(:hover, :has(:focus-visible)):has(> .wide:first-child)
+  > .fi.reply-shot:nth-child(2) {
+  transform: rotate(2deg);
+}
+:is(.markdown, .trail-note, .sub-report)
+  .reply-shots:is(:hover, :has(:focus-visible)):has(> .wide:first-child)
+  > .fi.reply-shot:nth-child(3) {
+  transform: rotate(4deg);
+}
+:is(.markdown, .trail-note, .sub-report) .reply-shots[data-count]:after {
+  content: attr(data-count);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 5px);
+  color: var(--ink-3);
+  font-size: var(--fs-note);
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
 }
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot:hover,
 :is(.markdown, .trail-note, .sub-report) .fi.reply-shot:focus-visible {
@@ -236,4 +347,70 @@
 }
 .markdown .katex {
   font-size: 1.05em;
+}
+/* 外链图未取时（见 renderRemoteShots；设计稿/129 丁）：与取来后同一张折角素纸，不描虚线、不铺灰；当中一枚淡远山，
+   图名与来处在下方作落款。要做的事只在指着时换上来（取来一看 / 改在浏览器里打开），平时不写说明。
+   落选：甲（虚线框灰底写「点此取图」，像表单占位）、乙（四笔空册，比正文的图还重）、丙（图注一行，与链接难分） */
+:is(.markdown, .trail-note, .sub-report) .fi.remote-shot {
+  position: relative;
+  display: block;
+  width: min(100%, 240px);
+  height: 136px;
+  margin: 10px 0 4px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--ink) 3.5%, var(--paper));
+}
+.remote-shot .remote-shot-hills {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  opacity: 0.55;
+  transition: opacity var(--dur-quick);
+}
+.remote-shot-foot {
+  position: absolute;
+  inset: auto 12px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.remote-shot-foot b {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink-2);
+  font: 500 var(--fs-small) var(--title);
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-shot-foot small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink-3);
+  font: var(--fs-mark) var(--body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-shot-foot .act {
+  display: none;
+  color: var(--accent);
+}
+.remote-shot:is(:hover, :focus-visible) .remote-shot-hills {
+  opacity: 0.9;
+}
+.remote-shot:is(:hover, :focus-visible) .remote-shot-foot .rest:has(+ .act) {
+  display: none;
+}
+.remote-shot:is(:hover, :focus-visible) .remote-shot-foot .act {
+  display: block;
+}
+.remote-shot.failed .remote-shot-foot .rest {
+  color: var(--accent);
+}
+.remote-shot.loading {
+  cursor: progress;
 }

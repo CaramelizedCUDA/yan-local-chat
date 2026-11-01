@@ -2,6 +2,11 @@
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 async function exportData(includeFiles) {
   // 备份不带密钥：模型与专司（审查、生图）的 API Key，MCP 配置里的环境变量与请求头（令牌多在这两处）；可选带上附件原件
+  // 另存出去的行迹（见 01-store/35-cold.js）先一段段接回来；备份是整份的，不带 cold 记号——换一台机器导入，那边没有这些另存的文件
+  for (const c of store.conversations) await warmConversation(c);
+  const unwarmed = store.conversations.reduce((sum, c) => sum + everyMessage(c).filter(m => m.cold && !warmMessages.has(m)).length, 0),
+    whole = (/** @type {string} */ key, /** @type {any} */ value) => (key === "cold" ? undefined : value);
+  if (unwarmed) toast(t`有 ${unwarmed} 答另存的行迹没能取回，备份里缺它们的思绪与帮手经过`);
   const mcpServers = Object.fromEntries(Object.entries(store.settings.mcpServers).map(([name, { env, headers, ...rest }]) => [name, rest]));
   /** @type {Store & { exportedAt: string, attachments?: Attachment[] }} */
   const safeStore = {
@@ -21,7 +26,7 @@ async function exportData(includeFiles) {
     // 附件原件只带仍在用的那几件：存储目录与浏览器里的暂存都翻，谁有取谁。原件合起来可能上 GB，
     // 拼成一个大字符串会超出浏览器的字符串上限、点了没反应——一件一件接进 Blob，内存里只过一件
     toast(t("正在收拢附件原件…"));
-    blob = new Blob([`${JSON.stringify(safeStore).slice(0, -1)},"attachments":[`], { type: "application/json" });
+    blob = new Blob([`${JSON.stringify(safeStore, whole).slice(0, -1)},"attachments":[`], { type: "application/json" });
     for (const id of attachmentKeepIds()) {
       const record = await getAttachment(id).catch(() => null);
       if (!record) continue;
@@ -30,7 +35,7 @@ async function exportData(includeFiles) {
       files += 1;
     }
     blob = new Blob([blob, "]}"], { type: "application/json" });
-  } else blob = new Blob([JSON.stringify(safeStore, null, 2)], { type: "application/json" });
+  } else blob = new Blob([JSON.stringify(safeStore, whole, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = t`言-备份-${new Date().toISOString().slice(0, 10)}.json`;

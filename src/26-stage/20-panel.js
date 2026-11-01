@@ -389,15 +389,11 @@ function stageOpenMenu(anchor) {
       { id: "downloads", label: t("下载"), note: fresh ? String(fresh) : "", noteClass: "fresh", run: () => stageOpenDownloads(anchor) },
       { id: "favorites", label: t("整理收藏…"), run: () => stageOpenInside("favorites") },
       rule,
+      { id: "open-file", label: t("打开本机文件…"), note: "Ctrl+O", run: () => void stageOpenLocal() },
       {
         id: "copy",
         label: t("复制网址"),
-        run: () =>
-          url() &&
-          void navigator.clipboard.writeText(stageReadable(url())).then(
-            () => toast(t("网址已复制")),
-            () => toast(t("复制失败"))
-          )
+        run: () => url() && void copyText(stageReadable(url())).then(() => toast(t("网址已复制")))
       },
       // 交给系统默认的浏览器开（经桥接：言跑在 VS Code 里时 window.open 不管用）：要登自己的账号、或要看外头那扇窗时
       {

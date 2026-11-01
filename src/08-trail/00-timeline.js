@@ -83,7 +83,8 @@ function rollText(el, text) {
   }, 380);
 }
 // 帮手时间线里一轮的各步折成一行：一轮里几十次检索摊开要占几屏，帮手说的话与回报就被顶得看不见了。
-// 与主行迹同一套开合：这一轮还在跑时摊开，跑完收起，用户亲手开合过的不动。标题行是各工具的计数，点开才看各步
+// 与主行迹同一套开合：一趟只开一次、收一次——帮手做着时各轮都摊着，交了差（或断了）才一并收起；若每跑完一轮就收一回，
+// 整条行迹一路开合、高度上下跳。用户亲手开合过的不动。标题行是各工具的计数，点开才看各步
 /** @param {SubAgent} sub 帮手停了（中止、出错）的话，没跑完的步骤也不算还在跑 */
 function subStepsRunning(sub, steps) {
   return sub.status === "streaming" && steps.some(step => step.status === "running" || step.status === "pending");
@@ -107,9 +108,9 @@ function subStepsMeta(sub, steps) {
 /** @param {SubAgent} sub */
 function subStepsShell(sub, steps) {
   const running = subStepsRunning(sub, steps);
-  return `<details class="tool-stack sub-steps"${running ? " open" : ""} data-state="${running ? "streaming" : "complete"}"><summary><span class="tool-stack-label"></span><span class="tool-stack-meta"></span></summary><div class="tool-stack-body"><div class="tool-steps"></div></div></details>`;
+  return `<details class="tool-stack sub-steps"${sub.status === "streaming" ? " open" : ""} data-state="${running ? "streaming" : "complete"}"><summary><span class="tool-stack-label"></span><span class="tool-stack-meta"></span></summary><div class="tool-stack-body"><div class="tool-steps"></div></div></details>`;
 }
-// 一轮的折叠行就地更新：标题与计数跟着步骤走；这一轮跑完就收起（用户亲手开合过的不动）
+// 一轮的折叠行就地更新：标题与计数跟着这一轮的步骤走；开合跟着整趟（见上）
 /** @param {SubAgent} sub */
 function syncSubSteps(details, sub, steps) {
   if (!details) return;
@@ -119,7 +120,7 @@ function syncSubSteps(details, sub, steps) {
   if (label.textContent !== subStepsLabel(steps)) label.textContent = subStepsLabel(steps);
   rollText(details.querySelector(":scope > summary > .tool-stack-meta"), subStepsMeta(sub, steps));
   if (details.dataset.touched) return;
-  if (running) settleDetails(details, true);
+  if (sub.status === "streaming") settleDetails(details, true);
   else settleDetails(details, false, null, true);
 }
 // 用时：不足一秒不写

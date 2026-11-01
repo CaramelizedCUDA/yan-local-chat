@@ -6,19 +6,34 @@ defineTool({
   offer: false,
   html: step => noteStepHtml(step),
   replay: (step, { latest, budget }) =>
-    supplementForApi({ id: step.id, role: "user", content: step.note || "", timestamp: "", attachments: step.attachments }, budget, {
-      latest,
-      steer: !!step.steer
-    })
+    supplementForApi(
+      // 带引文的：与寻常一问一样拼成「> 引文」加话（旧的补言引文早已拼在 note 里，没有 quote）
+      {
+        id: step.id,
+        role: "user",
+        content: step.quote
+          ? quotedText({ id: step.id, role: "user", content: step.note || "", timestamp: "", quote: step.quote })
+          : step.note || "",
+        timestamp: "",
+        attachments: step.attachments
+      },
+      budget,
+      {
+        latest,
+        steer: !!step.steer
+      }
+    )
 });
-// 补言：作答途中用户寄来的话，落在行迹里它到达的那一刻；待寄时转着圈，递给模型后打勾。话不止一行、或带着附件时摊开在下面。
+// 补言：作答途中用户寄来的话，落在行迹里它到达的那一刻；待寄时转着圈，递给模型后打勾。话不止一行、或带着附件、引文时摊开在下面。
+// 引文与问句上方的一样：一道朱线下短的那句，游目圈点的画面接在后面（画面是随引文的附件，不再列进附件名）
 // 主模型递给帮手的话（传话）在帮手的时间线里也是这个样子，只是印与标签不同、没有「即刻递上」
 /** @param {Step} step */
 function noteStepHtml(step, { seal = t("补"), label = t("补言") } = {}) {
   const status = step.status || "done",
     text = String(step.note || "").trim(),
-    first = text.split("\n").find(Boolean)?.slice(0, 80) || "",
-    files = (step.attachments || []).map(file => file.name);
+    quote = step.quote,
+    first = (text || quote?.text || "").split("\n").find(Boolean)?.slice(0, 80) || "",
+    files = (step.attachments || []).filter(file => !quoteImageOf(file, quote)).map(file => file.name);
   const meta =
     status === "running"
       ? t("待寄")
@@ -26,9 +41,12 @@ function noteStepHtml(step, { seal = t("补"), label = t("补言") } = {}) {
         ? escapeHtml(stepText(step.result) || t("未送达"))
         : escapeHtml(stepText(step.result));
   // 一句短话只占题头一行；摊开了全文（多行、过长、带附件）题头就不再重复第一行
+  const quoted = quote
+    ? `<div class="tool-note-quote">${escapeHtml(quote.text)}${quote.image ? quoteShotHtml(quote.image, quote.text) : ""}</div>`
+    : "";
   const body =
-    text.length > first.length || files.length
-      ? `<div class="tool-note">${escapeHtml(text)}${files.length ? `<div class="tool-note-files">${files.map(name => escapeHtml(name)).join("、")}</div>` : ""}</div>`
+    text.length > first.length || files.length || quote
+      ? `<div class="tool-note">${quoted}${escapeHtml(text)}${files.length ? `<div class="tool-note-files">${files.map(name => escapeHtml(name)).join("、")}</div>` : ""}</div>`
       : "";
-  return `<div class="tool-step tool-step-note" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${seal}</span>${label}</span><span class="tool-title" title="${escapeHtml(text)}">${body ? "" : escapeHtml(first)}</span><span class="tool-meta">${meta}</span>${status === "running" && step.name === "user_note" ? `<button type="button" class="note-now" data-note-now title="${t(`不等落点，即刻递上`)}" aria-label="${t(`即刻递上`)}">↵</button>` : ""}${stepStateHtml(status)}</div>${body}</div>`;
+  return `<div class="tool-step tool-step-note" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${seal}</span>${label}</span><span class="tool-title" title="${escapeHtml(text || first)}">${body ? "" : escapeHtml(first)}</span><span class="tool-meta">${meta}</span>${status === "running" && step.name === "user_note" ? `<button type="button" class="note-now" data-note-now title="${t(`不等落点，即刻递上`)}" aria-label="${t(`即刻递上`)}">↵</button>` : ""}${stepStateHtml(status)}</div>${body}</div>`;
 }

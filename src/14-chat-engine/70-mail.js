@@ -22,9 +22,18 @@ function mailReport(conversation, item) {
     wakeWithReports(conversation, items);
   }, 0);
 }
-/** @returns {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }} */
+/** @returns {Relay} */
 function relayOf({ step, relay }) {
   return relay || { step: step.id, title: String(step.title || ""), ok: step.status === "done" };
+}
+// 回来的是谁：细线、行迹里的那一小步、导出都照它写。seal 是那一方印；gist 是名后淡墨的一句（候迟了多久）
+/** @param {Relay} relay @returns {{ seal: string, name: string, gist: string }} */
+function relayLabel(relay) {
+  if (relay.kind === "timer")
+    return { seal: t("候"), name: t`候「${relay.title}」到点`, gist: relay.late ? t`迟 ${spanText(relay.late)}` : "" };
+  if (relay.kind === "bg")
+    return { seal: t("候"), name: bgEndedText(relay) + (relay.ok || relay.lost ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`), gist: "" };
+  return { seal: t("遣"), name: t`帮手「${relay.title}」${relay.ok ? t("回报") : t("未完成")}`, gist: "" };
 }
 // 收信的那一个（主答的消息，或帮手的 sub）在自己的时间线末落一小步「回报」，递上后打勾；回这一步
 /** @param {{ content: string, reasoning?: string, steps?: Step[] }} owner @returns {Step} */

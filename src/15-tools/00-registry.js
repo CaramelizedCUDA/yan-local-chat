@@ -9,6 +9,7 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {Message} assistant 页面上的那一答（帮手的步骤也画在它的行迹里）
  * @property {AbortSignal} signal
  * @property {Set<string>} [offered] 这一轮交给模型的工具名：不在其中的一律不执行
+ * @property {boolean} [lookup] 旁注：只查不改（按需给的 MCP 只放只读的几件）
  *
  * @typedef {Object} OfferContext 此处给不给某件工具，看这几样
  * @property {Conversation} conversation
@@ -18,6 +19,7 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {string[]} offered 登记在前、此处已经给出的工具
  * @property {Preset|null} preset 这段对话用的预设：只给它挑中的几组与几个 MCP 服务
  * @property {Profile|null} profile 这一答用的模型：参数里有随模型而定的（帮手的思考档位）
+ * @property {boolean} [lookup] 旁注的一套：只查不改
  *
  * @typedef {{ ok: boolean, content: string, display: string, background?: boolean, images?: string[] }} ToolOutcome content 回给模型，display 写在标题行右侧；background：活在后台接着做，步骤由它自己收尾；images：交回的图（data: 地址），随工具结果给模型看
  * @typedef {{ url?: string, title?: string, read?: boolean, talk?: string, date?: string, memory?: string }} Source 答末「出处」的一条：网页、旧谈或记忆
@@ -39,6 +41,7 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {true | ((args: Record<string, any>) => Record<string, any> | null)} [cache] 同一答里同样的参数直接复用结果（其间做过有副作用的一步就作废）；函数给出规范化后的参数，给 null 即这次不复用。
  *   只给「外头不会自己变」的：本机开发服务、带时间与随机数的代码，参数一样结果也会变，不该登记
  * @property {(step: Step, args: Record<string, any>, ctx: ToolContext) => ToolOutcome | Promise<ToolOutcome>} [run]
+ * @property {string} [busy] 通用卡片上做着时右侧写的字；不写是「查阅中」
  * @property {(step: Step, title: string) => string} [html] 行迹卡片；不写用通用的一种
  * @property {(el: Element, step: Step, prev: { status: string } | undefined) => boolean} [sync] 卡片就地更新，返回真即已画好；不写或返回假则变了就整张换
  * @property {(step: Step) => string} [approval] 请示条的内容
@@ -87,7 +90,8 @@ function toolDefinitions(conversation, { sub = false, lookup = false, profile = 
     docs: availableDocuments(conversation),
     offered: [],
     preset: presetOf(conversation),
-    profile
+    profile,
+    lookup
   };
   const tools = [];
   for (const tool of TOOLS.values()) {
@@ -157,10 +161,14 @@ async function runTool(step, ctx) {
   if (toolSpec(step.name)?.parameters?.properties?.description && typeof args.description === "string" && args.description.trim())
     step.gist = args.description.trim();
   try {
+    // 工具与审查都可能翻到先前几答的行迹（帮手的经过、看过的网址）：另存出去的先接回来
+    await warmConversation(ctx.conversation);
     // 意里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）；
     // 审而后行里规则标疑的，再交专司的审查模型判（见 03-review.js）
     const stopped = (await keepHook(step, args, ctx)) || (await reviewHook(step, args, ctx));
     if (stopped) return stopped;
+    // 动文件的：这一答头一回动手前，先把目录此刻的样子记下，日后可退回（见 14-chat-engine/80-checkpoint.js）
+    if (tool.writes && !ctx.lookup) await checkpointBefore(ctx);
     const outcome = await tool.run(step, args, ctx);
     return step.reviewed?.ok ? { ...outcome, display: [outcome.display, "审准"].filter(Boolean).join(" · ") } : outcome;
   } catch (error) {
@@ -205,11 +213,12 @@ function toolPresentation(step) {
  * @param {Step[]} steps
  * @param {Conversation} conversation
  * @param {Message} assistant
+ * @param {boolean} [lookup] 旁注：只查不改
  */
-async function runSteps(steps, conversation, assistant, signal, toolCache, offered) {
+async function runSteps(steps, conversation, assistant, signal, toolCache, offered, lookup = false) {
   const outcomes = new Map(),
     images = [],
-    ctx = { conversation, assistant, signal, offered };
+    ctx = { conversation, assistant, signal, offered, lookup };
   const runOne = async step => {
     // 一批里前一件跑着时按了停：后面排着的不再动手（写记忆、起请示都算动手）
     signal.throwIfAborted();

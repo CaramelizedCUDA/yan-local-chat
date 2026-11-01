@@ -128,30 +128,39 @@ function maybeAutoCompact(c, profile) {
 // 上面的压缩只在两答之间动手；长活（执事连跑几百轮、帮手审一整个仓库）在一答之内就能把窗口撑破，接口回一句放不下，整段活就白做了。
 // 主答、旁注、帮手三条工具循环都经 readReply 发请求，所以在那里一并接上：overrides.head 记这一答自己的往来从 history 哪一格起，
 // 之前的（对话历史、任务说明）原样保留。两个时机：送出前估算已过窗口的七成半（填了上下文窗口才有）；接口回说放不下（没填窗口也接得住）。
+// 这两处是兜底：执事与帮手可在做完一段时自己撮（见下面的 foldByModel），笔记落在它选的节点上，往往等不到七成半
 // 这一答还没有可压的往来（刚开口，放不下的是前面的对话本身）：主答给了 compactHead 的，把这一问之前的对话压成摘要，与右下角「压缩前文」同一份，一答只压一回
 const FOLD_KEEP_ROUNDS = 2;
 // 各家接口「放不下」的说法：OpenAI 系 maximum context length、Anthropic prompt is too long / exceed context limit、
 // Gemini exceeds the maximum number of tokens、Qwen Range of input length、Kimi token limit、GLM exceeds max length……
 // 输出上限（max_tokens）太大、上游超时（context deadline exceeded）不算。vLLM 的说法两样都列（you requested 0 output tokens and
-// your prompt contains at least 32769 input tokens）：要的输出本身放得进窗口，就是输入太长、压了有用；输出一项就超窗口才是 max_tokens 给大了
+// your prompt contains at least 32769 input tokens）：要的输出本身放得进窗口，就是输入太长、压了有用；输出一项就超窗口才是 max_tokens 给大了。
+// 自建服务前头的网关另有写法（Input 86713 tokens + requested output 16384 + safety margin 256 exceeds context 98304），同样两样都列，同样判
 function contextOverflow(message) {
   const text = String(message || "");
   if (
-    !/context.{0,24}(length|window|limit|size)|prompt is too long|too many tokens|token.{0,20}limit|exceed.{0,40}(limit|length|tokens)|input.{0,20}(too long|length)|上下文.{0,8}(长度|窗口|上限|超)|超出.{0,12}(上下文|长度|限制)|超长/i.test(
+    !/context.{0,24}(length|window|limit|size)|prompt is too long|too many tokens|token.{0,20}limit|exceed.{0,40}(limit|length|tokens|context)|input.{0,20}(too long|length)|上下文.{0,8}(长度|窗口|上限|超)|超出.{0,12}(上下文|长度|限制)|超长/i.test(
       text
     ) ||
     /deadline|max_completion/i.test(text)
   )
     return false;
-  if (!/output tokens?/i.test(text)) return true;
-  const limit = Number(text.match(/context length is (\d+)/i)?.[1]),
-    output = Number(text.match(/(\d+) output tokens?/i)?.[1]);
-  return /input tokens?/i.test(text) && limit > 0 && output < limit;
+  if (!/output tokens?|requested output/i.test(text)) return true;
+  const limit = reportedWindow(text),
+    output = Number(text.match(/(\d+) output tokens?/i)?.[1] || text.match(/requested output (\d+)/i)?.[1]);
+  return /input (\d+ )?tokens?/i.test(text) && limit > 0 && output < limit;
 }
-// 报错里说了窗口多大（maximum context length is 32768 tokens）而模型上没填：记下来，此后送出前就按它提前压，不必每回先撞一次放不下
+// 报错里说的窗口多大：context length is 32768（vLLM 原话）、exceeds context 98304（网关的写法）、210000 tokens > 200000 maximum（Anthropic）
+const reportedWindow = text => {
+  const m = String(text || "").match(
+    /context length is (\d+)|exceeds? (?:the )?context (?:window |length )?(?:of )?(\d+)|tokens? > (\d+) maximum/i
+  );
+  return Number(m?.[1] || m?.[2] || m?.[3]) || 0;
+};
+// 报错里说了窗口多大而模型上没填：记下来，此后送出前就按它提前压，不必每回先撞一次放不下
 /** @param {Profile} profile */
 function learnContextWindow(profile, message) {
-  const limit = Number(String(message || "").match(/context length is (\d+)/i)?.[1]);
+  const limit = reportedWindow(message);
   if (Number(profile.contextWindow) > 0 || !(limit >= 1000)) return;
   profile.contextWindow = limit;
   saveStoreSoon();
@@ -281,12 +290,7 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
       AbortSignal.any([signal, AbortSignal.timeout(300000)]),
       overrides.reasoning
     );
-    history.splice(
-      head,
-      cut - head,
-      { role: "assistant", content: t`［工作笔记］\n${note}` },
-      { role: "user", content: prompt("assistant.folded") }
-    );
+    history.splice(head, cut - head, ...noteMessages(note));
     if (mark) Object.assign(mark, { status: "done", note, fold: { ...mark.fold, to: note.length } });
     overrides.seen = null;
     overrides.folds = (overrides.folds || 0) + 1;
@@ -301,4 +305,30 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
   } finally {
     overrides.onFold?.(false);
   }
+}
+// 笔记代替被撮的往来：一条 assistant 是笔记，folded 紧随其后请它接着做。言替它撮、它自己撮，落下的都是这个样子
+const noteMessages = note => [
+  { role: "assistant", content: t`［工作笔记］\n${note}` },
+  { role: "user", content: prompt("assistant.folded") }
+];
+// 模型自己撮要（fold 工具，见 15-tools/51-fold.js）：它在一个节点上收笔，这一答从 head 起到这一轮为止的往来换成它写的笔记——
+// 笔记出自手握全部上下文的它，不必另起一回请求重读转写。工具结果刚交回、还没接别的话时调（见 runRounds）。
+// 同一批里另有工具的，那几步连同结果接在笔记之后照旧留着：它们的结果它写笔记时还没看到
+/** @param {Array<Record<string, any>>} history @param {Record<string, any>} overrides @param {Step[]} steps 这一轮的步骤 */
+function foldByModel(history, overrides, steps) {
+  const step = steps.findLast(s => s.name === "fold" && s.status === "done" && s.note),
+    head = overrides.head;
+  if (!step || typeof head !== "number") return;
+  const at = history.findLastIndex(m => m.tool_calls?.some(c => c.id === step.id));
+  if (at < head) return;
+  const call = history[at],
+    others = call.tool_calls.filter(c => c.function?.name !== "fold"),
+    kept = others.length
+      ? [{ ...call, content: null, tool_calls: others }, ...history.slice(at + 1).filter(m => others.some(c => c.id === m.tool_call_id))]
+      : [],
+    region = history.slice(head, at);
+  step.fold = { steps: region.filter(m => m.role === "tool").length, from: regionChars(region), to: step.note.length };
+  history.splice(head, history.length - head, ...noteMessages(step.note), ...kept);
+  overrides.seen = null;
+  overrides.folds = (overrides.folds || 0) + 1;
 }

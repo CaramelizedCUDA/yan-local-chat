@@ -97,6 +97,23 @@
     }
   },
 
+  // 撮要：执事与帮手自己在节点上把这一答此前的往来换成笔记（见 src/14-chat-engine/60-context.js 的 foldByModel）
+  fold: {
+    description:
+      "做完一段、此前的工具往来不必再逐字留着时可调：这一答此前的往来（连同先前的笔记）换成你写的笔记，原文此后不可见。上下文将满时言也会自动撮。",
+    parameters: {
+      type: "object",
+      properties: {
+        note: {
+          type: "string",
+          description:
+            "工作笔记，分点：查明的事实与结论（留关键的路径、行号、命令、数字）、改过的文件与现状、验证过与没验证的、走不通的路、下一步"
+        }
+      },
+      required: ["note"]
+    }
+  },
+
   // 意：一件工程要成立的结论图，存在目录里、跨对话沿用（见 src/19-intent/）；只给主模型
   update_intent: {
     description:
@@ -162,8 +179,7 @@
         timeout: { type: "number", description: "前台最多等几秒，默认 120，最多 600；到时还没结束就转入后台接着跑，不会被终止" },
         background: {
           type: "boolean",
-          description:
-            "要跑一阵的（开发服务器、长任务）放后台：先回几秒输出与编号，结束时结果作为一条消息送到。要过一阵再做的事，也可挂一条先等待的后台指令"
+          description: "要跑一阵的（开发服务器、长任务）放后台：先回几秒输出与编号，结束时结果作为一条消息送到"
         }
       },
       required: ["command"]
@@ -171,16 +187,32 @@
   },
 
   check_command: {
-    description: "看后台指令（run_command 的 background）上次之后的新输出；stop 为 true 则结束它。",
-    brief: "看后台指令的新输出；stop 为 true 则结束它。",
+    description: "看一条候：后台指令（bg…）上次之后的新输出，或定时（t…）几时到；stop 为 true 则结束或取消它。",
+    brief: "看后台指令的新输出或定时几时到；stop 为 true 则结束或取消。",
     parameters: {
       type: "object",
       properties: {
-        id: { type: "string", description: "后台指令的编号，如 bg1" },
-        wait: { type: "number", description: "最多等几秒再取（等到结束或输出停下），默认 0" },
-        stop: { type: "boolean", description: "结束这条后台指令" }
+        id: { type: "string", description: "编号，如 bg1、t1" },
+        wait: { type: "number", description: "后台指令最多等几秒再取（等到结束或输出停下），默认 0" },
+        stop: { type: "boolean", description: "结束这条后台指令，或取消这个定时" }
       },
       required: ["id"]
+    }
+  },
+
+  set_timer: {
+    description:
+      "到点叫醒自己：at 与 after 给一个，到时 note 作为一条消息送到；every 则此后每隔这么久再叫，直到 check_command 取消。桥接重启后照旧，错过的补叫。",
+    brief: "到点叫醒自己：at 或 after 给一个，到时 note 作为消息送到；every 则周期再叫。",
+    parameters: {
+      type: "object",
+      properties: {
+        at: { type: "string", description: "本地时刻，如 2026-10-31 09:00；只写 09:00 即下一个这个钟点" },
+        after: { type: "number", description: "多少秒后" },
+        every: { type: "number", description: "此后每隔多少秒再叫" },
+        note: { type: "string", description: "到时给自己的话：要做什么、看什么" }
+      },
+      required: ["note"]
     }
   },
 

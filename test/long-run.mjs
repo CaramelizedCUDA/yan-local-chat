@@ -78,6 +78,24 @@ check(
   main.steps.join(",")
 );
 
+// 自己撮要：执事做完一段调 fold，此前的往来换成它写的笔记；同一批里的另一步连同结果留在笔记之后，fold 那一下不留在历史里
+await evalJs(`__yanState().profiles[0].contextWindow = 0; document.querySelector("#newChat").click(); true`);
+await sleep(400);
+const self = await run("LONGSELF 读几个文件，读完一段自己撮要", "LONGSELF done");
+check(
+  "the model folded on its own: note in, old rounds out, the read in the same batch kept, its fold call gone",
+  self.status === "complete" && self.content.includes("LONGSELF done|offered:yes|old:no|kept:yes|call:no|folded:yes"),
+  JSON.stringify(self).slice(0, 400)
+);
+const selfSlip = await evalJs(
+  `(el => el && { title: el.querySelector(".tool-title").textContent, meta: el.querySelector(".tool-meta").textContent, note: __yanState().conversations.find(c => c.messages[0]?.content.startsWith("LONGSELF")).messages.at(-1).steps.find(s => s.name === "fold").note })(document.querySelector(".message.assistant .tool-step-fold"))`
+);
+check(
+  "its fold step reads like the automatic one and carries the model's note",
+  selfSlip?.title === "已删繁就简，前二步并作一则笔记" && /→ .+字$/.test(selfSlip.meta) && selfSlip.note === "SELFNOTE 已读 big0、big1",
+  JSON.stringify(selfSlip)
+);
+
 // 前文放不下：放不下的不是这一答的工具往来，而是此前的对话本身。主答把这一问之前的压成摘要（落成分隔，下一问也用得上）再发一回
 const askHere = async text => {
   await evalJs(

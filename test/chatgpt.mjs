@@ -24,7 +24,7 @@ await waitFor(`${card}.querySelector("[data-chatgpt-account]")?.textContent === 
 check("the card shows the account row instead of Base URL and key", !(await evalJs(`!!${card}.querySelector('[data-field="baseUrl"]')`)));
 
 // 登录：桥接回一个授权网址（测试里不开系统浏览器），用例代浏览器打开它，假授权端 302 回桥接的回调口
-await evalJs(`${card}.querySelector('[data-profile-action="login"]').click(); true`);
+await evalJs(`${card}.querySelector('[data-chatgpt-action="login"]').click(); true`);
 await waitFor(`!!${card}.querySelector(".profile-status a")`, 5000);
 const url = await evalJs(`${card}.querySelector(".profile-status a").href`);
 const landing = await (await fetch(url)).text();
@@ -67,11 +67,11 @@ await evalJs(`document.querySelector("#openSettings").click(); true`);
 await sleep(300);
 await evalJs(`document.querySelector('.tab-btn[data-tab="models"]').click(); true`);
 await evalJs(`${card}.open = true; true`);
-await waitFor(`!!${card}.querySelector('[data-profile-action="logout"]')`, 5000);
-await evalJs(`${card}.querySelector('[data-profile-action="logout"]').click(); true`);
+await waitFor(`!!${card}.querySelector('[data-chatgpt-action="logout"]')`, 5000);
+await evalJs(`${card}.querySelector('[data-chatgpt-action="logout"]').click(); true`);
 await waitFor(`${card}.querySelector("[data-chatgpt-account]")?.textContent === "未登录"`, 5000);
 check("signing out revokes the refresh token", (await log()).revoked === before.revoked + 1);
-await evalJs(`${card}.querySelector('[data-profile-action="login"]').click(); true`);
+await evalJs(`${card}.querySelector('[data-chatgpt-action="login"]').click(); true`);
 await waitFor(`!!${card}.querySelector(".profile-status a")`, 5000);
 await fetch(await evalJs(`${card}.querySelector(".profile-status a").href`));
 await waitFor(`${card}.querySelector("[data-chatgpt-account]")?.textContent.includes("me@example.com")`, 8000);

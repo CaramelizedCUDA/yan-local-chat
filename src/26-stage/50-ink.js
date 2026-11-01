@@ -7,7 +7,7 @@
 
 const STAGE_BINDING = "__yanStageSeen",
   STAGE_WORLD = "yan-stage";
-// 耳目：按下报所按的那一件（太大的整块只报指针那一小方），输入报那一栏
+// 耳目：按下报所按的那一件（太大的整块只报指针那一小方），输入报那一栏；指针形状变了报一声（链接上是手、输入框里是竖线）
 const STAGE_EAR = `(() => {
   if (window.__yanStageEar) return;
   window.__yanStageEar = 1;
@@ -18,6 +18,17 @@ const STAGE_EAR = `(() => {
     tell("press", r.width * r.height > 300 * 120 ? new DOMRect(e.clientX - 12, e.clientY - 12, 24, 24) : r);
   }, true);
   addEventListener("input", e => e.target instanceof Element && tell("type", e.target.getBoundingClientRect()), true);
+  // 头一回动、指针从框外进来（换了页、出入同源的子框）都报一声：画面上留的可能是上一页、另一框的形状
+  let shape;
+  addEventListener("mouseout", e => e.relatedTarget || (shape = undefined), true);
+  addEventListener("mousemove", e => {
+    if (!e.isTrusted || !(e.target instanceof Element)) return;
+    let c = getComputedStyle(e.target).cursor;
+    if (c === "auto") c = e.target.closest("input:not([type=button],[type=submit],[type=reset],[type=checkbox],[type=radio],[type=range],[type=color],[type=file]),textarea,[contenteditable]:not([contenteditable=false])") ? "text" : "";
+    if (c === shape) return;
+    shape = c;
+    try { ${STAGE_BINDING}(JSON.stringify({ kind: "cursor", cursor: c })); } catch {}
+  }, true);
 })()`;
 // 圈住的字：圈是框里看得见的文字，点是那一处那一件的字
 const STAGE_READ = `(a => {
@@ -35,7 +46,7 @@ const STAGE_READ = `(a => {
   return clean(out.join(" ")).slice(0, 120);
 })`;
 
-/** @type {{ kind: "loop" | "dot", pts: number[][], text: string }[]} 人圈点的各处：pts 是网页里的位置（视口坐标 + 滚动） */
+/** @type {{ kind: "loop" | "line" | "dot", pts: number[][], text: string }[]} 人圈点的各处：圈、划的一道线（下划、箭头、删去）、点；pts 是网页里的位置（视口坐标 + 滚动） */
 let stageNotes = [];
 /** @type {{ kind: string, x: number, y: number, w: number, h: number, at: number }[]} 执事新近落笔的几处，同样按网页里的位置 */
 let stageActs = [];
@@ -51,20 +62,25 @@ async function stageInkAttach(sessionId, frameId) {
     // 绑定要 Runtime 域开着才装得进各个脚本世界（网页的 console 也会随之报来，看台不理）
     await stageSend("Runtime.enable", {}, sessionId);
     await stageSend("Runtime.addBinding", { name: STAGE_BINDING, executionContextName: STAGE_WORLD }, sessionId);
-    await stageSend("Page.addScriptToEvaluateOnNewDocument", { source: STAGE_EAR, worldName: STAGE_WORLD }, sessionId);
+    // 下拉框与右键那一段（55-popup.js）同住这个世界，一并装上
+    const source = `${STAGE_EAR};\n${STAGE_POPUP_EAR}`;
+    await stageSend("Page.addScriptToEvaluateOnNewDocument", { source, worldName: STAGE_WORLD }, sessionId);
     const { executionContextId } = await stageSend("Page.createIsolatedWorld", { frameId, worldName: STAGE_WORLD }, sessionId);
-    await stageSend("Runtime.evaluate", { expression: STAGE_EAR, contextId: executionContextId }, sessionId);
+    await stageSend("Runtime.evaluate", { expression: source, contextId: executionContextId }, sessionId);
   } catch {}
 }
 /** @param {string} payload */
 function stageActSeen(payload) {
-  if (!stage.busy || Date.now() - stage.userAt < 600) return;
   let box;
   try {
     box = JSON.parse(payload);
   } catch {
     return;
   }
+  if (box.kind === "cursor") return void ($("#stageFrame").style.cursor = /^[a-z-]+$/.test(box.cursor) ? box.cursor : "");
+  if (box.kind === "pick") return stagePickOpen(box);
+  if (box.kind === "menu") return stageMenuOpen(box);
+  if (!stage.busy || Date.now() - stage.userAt < 600) return;
   const act = { ...box, x: box.x + stage.scroll.x, y: box.y + stage.scroll.y, at: Date.now() };
   stageActs = [...stageActs.filter(a => Date.now() - a.at < 1800 && !(a.kind === "type" && act.kind === "type")), act];
   stageInkRender();
@@ -167,7 +183,7 @@ function stageInkMove(e) {
   }
   return true;
 }
-// 落笔：拖得开的是圈，几乎没动的是点；记下圈点处的字，随即引进输入框
+// 落笔：几乎没动的是点；拖开了的，首尾合拢是圈，不合拢是一道线（划在字下、画个箭头、删去一处都是）。记下那一处的字，随即引进输入框
 /** @param {PointerEvent} e */
 function stageInkEnd(e) {
   if (!stageInking) return false;
@@ -176,17 +192,23 @@ function stageInkEnd(e) {
   const xs = pts.map(p => p[0]),
     ys = pts.map(p => p[1]),
     box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) },
+    dot = Math.hypot(box.w, box.h) < 12,
+    [first, last] = [pts[0], pts.at(-1) || pts[0]],
+    closed = Math.hypot(last[0] - first[0], last[1] - first[1]) < Math.max(24, Math.hypot(box.w, box.h) * 0.3),
     note = {
-      kind: /** @type {"loop" | "dot"} */ (Math.hypot(box.w, box.h) < 12 ? "dot" : "loop"),
-      pts: Math.hypot(box.w, box.h) < 12 ? [pts[0]] : pts,
+      kind: /** @type {"loop" | "line" | "dot"} */ (dot ? "dot" : closed ? "loop" : "line"),
+      pts: dot ? [pts[0]] : pts,
       text: ""
-    };
+    },
+    // 读字的框：一道细线（多是划在字下）上下各放开些，字的中线才落得进来
+    padX = Math.max(0, (32 - box.w) / 2),
+    padY = Math.max(0, (32 - box.h) / 2);
   stageNotes.push(note);
   stageInkRender();
   const view =
     note.kind === "dot"
       ? { x: pts[0][0] - stage.scroll.x, y: pts[0][1] - stage.scroll.y }
-      : { ...box, x: box.x - stage.scroll.x, y: box.y - stage.scroll.y };
+      : { x: box.x - padX - stage.scroll.x, y: box.y - padY - stage.scroll.y, w: box.w + padX * 2, h: box.h + padY * 2 };
   void stageSend(
     "Runtime.evaluate",
     { expression: `(${STAGE_READ})(${JSON.stringify({ kind: note.kind, ...view })})`, returnByValue: true },
@@ -217,42 +239,67 @@ async function stageQuote() {
   const tab = stage.tabs.get(stage.current);
   if (!tab || !stageNotes.length) return;
   const host = stageHost(tab.url),
-    place = `${host || stageTitle(tab)}${host && tab.title && tab.title !== tab.url ? ` › ${tab.title}` : ""}`,
+    place = stagePlace(tab),
     boxes = stageNoteBoxes(),
     said = stageNotes.map(
       note =>
-        `${note.kind === "dot" ? t("点") : t("圈")}${note.text ? `「${note.text.slice(0, 24)}${note.text.length > 24 ? "…" : ""}」` : t("一处")}`
+        `${{ dot: t("点"), loop: t("圈"), line: t("划") }[note.kind]}${note.text ? `「${note.text.slice(0, 24)}${note.text.length > 24 ? "…" : ""}」` : t("一处")}`
     ),
     name = t`游目 · ${host || t("网页")}.jpg`,
     lines = stageNotes.map((note, i) => {
-      const b = boxes[i];
-      return note.kind === "dot"
-        ? t`点：网页左 ${b.x}、上 ${b.y}${note.text ? ` ——「${note.text}」` : ""}`
-        : t`圈：网页左 ${b.x}、上 ${b.y}，宽 ${b.w}、高 ${b.h}${note.text ? ` ——「${note.text}」` : ""}`;
+      const b = boxes[i],
+        said = note.text ? ` ——「${note.text}」` : "";
+      if (note.kind === "dot") return t`点：网页左 ${b.x}、上 ${b.y}${said}`;
+      if (note.kind === "loop") return t`圈：网页左 ${b.x}、上 ${b.y}，宽 ${b.w}、高 ${b.h}${said}`;
+      // 一道线记起止：箭头、删去的方向要看得出
+      const [from, to] = [stageToView([note.pts[0]])[0], stageToView([note.pts.at(-1) || note.pts[0]])[0]].map(p => p.map(Math.round));
+      return t`划：自网页左 ${from[0]}、上 ${from[1]} 至左 ${to[0]}、上 ${to[1]}${said}`;
     });
-  stageQuoteMade = {
+  // 生成附图要等：其间引文可能被撤（两者都成 null）或换成新圈的，回来只认这一条
+  /** @type {any} */
+  const made = (stageQuoteMade = {
     text: t`游目 · ${place}　${said.join("　")}`,
     model: [
       t`游目 · ${stageReadable(tab.url)}${tab.title ? `（${tab.title}）` : ""}`,
       ...lines,
-      t`附图「${name}」，朱笔即所圈点；位置是网页视口里的 CSS 像素，与附图同一取景`
+      t`附图「${name}」上的朱笔是用户画上去的；位置是网页视口里的 CSS 像素，与附图同一取景`
     ].join("\n"),
     url: tab.url
-  };
-  pendingQuote = stageQuoteMade;
+  });
+  pendingQuote = made;
   renderQuote();
   // 附图：此刻的画面，叠上朱笔
   const blob = await stageInkImage();
-  if (pendingQuote !== stageQuoteMade) return;
+  if (pendingQuote !== made) return;
   if (blob) {
     const file = await ingestFile(new File([blob], name, { type: "image/jpeg" })).catch(() => null);
-    if (file && pendingQuote === stageQuoteMade) {
+    if (file && pendingQuote === made) {
       pendingAttachments = [...pendingAttachments, { ...file, quoted: true }];
-      stageQuoteMade.image = file.id;
+      made.image = file.id;
       renderQuote();
       renderAttachments();
     } else if (file) void deleteAttachments([file.id]);
   }
+  persistDraft();
+}
+// 引文里写的「哪一页」：域名 › 页题
+/** @param {{ title: string, url: string }} tab */
+function stagePlace(tab) {
+  const host = stageHost(tab.url);
+  return `${host || stageTitle(tab)}${host && tab.title && tab.title !== tab.url ? ` › ${tab.title}` : ""}`;
+}
+// 右键「引给执事」：网页里选中的一段作引文，与划选正文「引用」同一条路；给模型的那份另带网址
+/** @param {string} text */
+function stageQuoteText(text) {
+  const tab = stage.tabs.get(stage.current);
+  if (!tab) return;
+  const short = text.replace(/\s+/g, " ");
+  pendingQuote = {
+    text: t`游目 · ${stagePlace(tab)}　「${short.slice(0, 80)}${short.length > 80 ? "…" : ""}」`,
+    model: [t`游目 · ${stageReadable(tab.url)}${tab.title ? `（${tab.title}）` : ""}`, t`网页里选中的一段：${text}`].join("\n"),
+    url: tab.url
+  };
+  renderQuote();
   persistDraft();
 }
 /** @returns {Promise<Blob | null>} */
@@ -292,11 +339,8 @@ function stageRevisit(url) {
   openStage();
   if (!stage.ws) return toast(t("浏览器未开"));
   const open = [...stage.tabs].find(([, tab]) => tab.url === url);
-  if (open) {
-    void stageSend("Target.activateTarget", { targetId: open[0] }).catch(() => {});
-    stage.front = open[0];
-    stageShow(open[0]);
-  } else stageGo(url);
+  if (open) stageActivate(open[0]);
+  else stageGo(url);
 }
 
 function bindStageInk() {

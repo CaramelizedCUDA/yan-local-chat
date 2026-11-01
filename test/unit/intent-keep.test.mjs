@@ -240,7 +240,7 @@ test("标了 ask 的钩子是关口：测试过了再请用户批，准了放行
   assert.equal(await granted.keepHook(step, { command: "ssh gpu-9" }, granted.ctx), null);
   assert.equal(granted.runs.length, 1);
   assert.deepEqual(granted.asked, [{ id: "算力", claim: "只用获准的机器", target: "ssh gpu-9" }]);
-  assert.equal(step.granted, true);
+  assert.deepEqual(step.granted, ["算力"]);
   assert.equal(step.gate, undefined);
   const failing = hookRuntime({ keep: { ask: true } });
   assert.equal((await failing.keepHook({ name: "run_command" }, { command: "ssh gpu-9" }, failing.ctx)).display, "守拦下 · 算力");

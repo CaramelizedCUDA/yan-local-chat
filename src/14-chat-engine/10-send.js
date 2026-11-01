@@ -187,7 +187,8 @@ function sendSupplement() {
     assistant = c?.messages.find(message => message.id === job?.assistantId);
   if (!c || !job || !assistant || assistant.status !== "streaming") return stopGeneration();
   const user = takeComposer($("#chatInput"));
-  const text = user.quote ? quotedText(user) : user.content;
+  // 引文另记在这一步上：行迹里画短的那句（游目圈点的连同画面），给模型的那份（带网址与各处的位置）递上时才拼进去（见 50-note.js 的 replay）
+  const text = user.content || user.quote?.text || "";
   /** @type {Step} */
   const step = {
     id: `note_${uid().slice(0, 8)}`,
@@ -195,7 +196,8 @@ function sendSupplement() {
     arguments: "{}",
     status: "running",
     title: text.split("\n").find(Boolean)?.slice(0, 80) || "",
-    note: text,
+    note: user.content,
+    ...(user.quote ? { quote: user.quote } : {}),
     attachments: user.attachments?.length ? user.attachments : undefined,
     at: assistant.content.length,
     rat: String(assistant.reasoning || "").length
@@ -288,6 +290,7 @@ async function deliverSupplements(job, history, budget, host, options = {}) {
  * @param {Conversation} conversation
  * @param {Message} assistant
  * @param {Profile} profile
+ * @returns {boolean} 这段对话接着还有一答（补言另起的一问、回报另起的一答）
  */
 function settleSupplements(conversation, assistant, job, profile) {
   const queue = (job.queue || []).filter(item => item.user),
@@ -299,7 +302,10 @@ function settleSupplements(conversation, assistant, job, profile) {
   for (const item of reports) delete item.note;
   // 收尾前才到、没来得及递的帮手回报：照没在作答时寄（见 mailReport）。补言若另起一问，回报就并进那一答——
   // 所以先排补言的那一问、后寄回报。用户按了停的，帮手一并停了，已到的回报也不再另起一答
-  const mail = () => assistant.status !== "stopped" && reports.forEach(item => mailReport(conversation, item));
+  const mail = () => {
+    if (assistant.status !== "stopped") reports.forEach(item => mailReport(conversation, item));
+    return mailbags.has(conversation.id);
+  };
   if (!queue.length) return mail();
   const ids = new Set(queue.map(item => item.step.id));
   assistant.steps = (assistant.steps || []).filter(step => !ids.has(step.id));
@@ -320,7 +326,8 @@ function settleSupplements(conversation, assistant, job, profile) {
       ...(quote ? { quote } : {})
     };
     setTimeout(() => void startTurn(conversation, user, profile, { follow: false }), 0);
-    return mail();
+    mail();
+    return true;
   }
   const key = draftKey(conversation.id),
     draft = draftRecord(conversation.id);
@@ -333,7 +340,7 @@ function settleSupplements(conversation, assistant, job, profile) {
   };
   if (currentId === conversation.id && view === "chat") restoreDraft();
   toast(t("这一答未写完，补言已放回案上"));
-  mail();
+  return mail();
 }
 function titleFrom(text, attachments) {
   // 按码点截：截在 emoji 中间会留下半个字
@@ -356,12 +363,13 @@ function haltJob(key, job) {
   }
   if (conversation) markDirty(conversation.id);
 }
-// 停下一段对话：主答连同后台的帮手（帮手停了不回报，也就不再叫醒谁）；后台指令照跑、结束时不再叫醒（见 releaseBackground）。
-// removing：对话要删了——旁注也停，后台指令连进程收掉
+// 停下一段对话：主答连同后台的帮手（帮手停了不回报，也就不再叫醒谁）。「止」只停生成，不碰候：后台指令照跑、结束照样叫醒，
+// 约好的时刻照旧——之前挂的事与眼前这一答无关，要撤跟模型说，它自己撤才心里有数。
+// removing：对话要删了——旁注也停，候连进程收掉（见 releaseBackground）
 function haltConversation(id, { removing = false } = {}) {
   stopCrew(id);
   const conversation = store.conversations.find(item => item.id === id);
-  if (conversation) releaseBackground(conversation, removing ? everyMessage(conversation) : conversation.messages, { kill: removing });
+  if (conversation && removing) releaseBackground(conversation, everyMessage(conversation));
   for (const [key, job] of [...requestJobs]) if (key === id || (removing && job.conversationId === id)) haltJob(key, job);
 }
 // 输入区那方印上的「止」

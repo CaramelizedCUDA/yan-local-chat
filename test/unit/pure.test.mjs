@@ -14,6 +14,7 @@ const repairEchartsOption = new Function(
 const f = load([
   "parseToolArguments",
   "normalizeToolArguments",
+  "normalizeArguments",
   "repairTruncatedJson",
   "stableCut",
   "diffCounts",
@@ -100,6 +101,13 @@ test("normalizeToolArguments：别名归位、类型理顺、缺必填才报", (
   const ask = f.normalizeToolArguments("ask_user", { question: "哪种？", options: ["甲", "乙"] }).args;
   assert.equal(ask.questions.length, 1);
   assert.equal(ask.questions[0].question, "哪种？");
+  // 带默认值的必填（Playwright MCP 截图的 scale）：没给就照默认填，不报缺
+  const shot = {
+    type: "object",
+    properties: { fullPage: { type: "boolean" }, scale: { type: "string", default: "css" } },
+    required: ["scale"]
+  };
+  assert.deepEqual(f.normalizeArguments(shot, { fullPage: true }), { args: { fullPage: true, scale: "css" }, problems: [] });
 });
 test("stableCut：在最后一个空行切，不切进未闭合的代码围栏或列表中间", () => {
   assert.equal(f.stableCut("a\n\nb\n\nc"), 4);
@@ -346,7 +354,10 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
         role: "assistant",
         content: "我读一下",
         tool_calls: [{ id: "t1", type: "function", function: { name: "read_file", arguments: '{"path":"a.js"}' } }],
-        thinking_blocks: [{ thinking: "想", signature: "sig" }]
+        thinking_blocks: [
+          { thinking: "想", signature: "sig" },
+          { thinking: "", signature: "sig2" }
+        ]
       },
       { role: "tool", tool_call_id: "t1", content: "const a = 1" },
       { role: "user", content: "补一句" }
@@ -374,9 +385,11 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
   assert.deepEqual(body.messages[0].content[1].source, { type: "base64", media_type: "image/png", data: "AAAA" });
   assert.deepEqual(
     body.messages[1].content.map(b => b.type),
-    ["thinking", "text", "tool_use"]
+    ["thinking", "thinking", "text", "tool_use"]
   );
-  assert.deepEqual(body.messages[1].content[2].input, { path: "a.js" });
+  // 字是空的思考块（思绪不回、进度块）只剩签名，照样回传
+  assert.deepEqual(body.messages[1].content[1], { type: "thinking", thinking: "", signature: "sig2" });
+  assert.deepEqual(body.messages[1].content[3].input, { path: "a.js" });
   assert.deepEqual(
     body.messages[2].content.map(b => b.type),
     ["tool_result", "text"]
@@ -661,9 +674,19 @@ test("contextOverflow / learnContextWindow：vLLM 连带列出 0 个输出 token
   const p = { contextWindow: "" };
   f.learnContextWindow(p, vllm);
   assert.equal(p.contextWindow, 32768);
+  const claude = { contextWindow: "" };
+  f.learnContextWindow(claude, "prompt is too long: 210000 tokens > 200000 maximum");
+  assert.equal(claude.contextWindow, 200000);
   const set = { contextWindow: 20000 };
   f.learnContextWindow(set, vllm);
   assert.equal(set.contextWindow, 20000);
+  // 自建服务前头网关的写法：输入超了算放不下、窗口记得下；要的输出一项就超窗口仍不算
+  const gateway = "Input 86713 tokens + requested output 16384 + safety margin 256 exceeds context 98304. Available output budget: 11335.";
+  assert.equal(f.contextOverflow(gateway), true);
+  assert.equal(f.contextOverflow("Input 20 tokens + requested output 500000 + safety margin 256 exceeds context 98304."), false);
+  const q = { contextWindow: "" };
+  f.learnContextWindow(q, gateway);
+  assert.equal(q.contextWindow, 98304);
 });
 test("upstreamError：各家报错的样子都取得出那句话，不是 JSON 的取原文", async () => {
   const says = (body, status = 400) => upstreamError(new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));

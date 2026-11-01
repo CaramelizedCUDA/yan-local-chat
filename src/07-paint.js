@@ -241,9 +241,8 @@ function paintThought(details, text, live, { touched = false, force = false } = 
   }
   details.dataset.state = live ? "live" : "done";
   if (touched) return;
-  if (live) {
-    if (!details.open) settleDetails(details, true);
-  } else if (details.open) settleDetails(details, false, null, force);
+  if (live) settleDetails(details, true);
+  else if (details.open) settleDetails(details, false, null, force);
 }
 /**
  * 一段正文画进 el：已收尾的段落（空行分开、不在代码围栏里）画一次存进 md-stable，每回只重画最后一段 md-tail，长回复不会越写越卡；
@@ -261,7 +260,8 @@ function paintMarkdown(el, text, { streaming = false, fresh = [] } = {}) {
   el._mdText = src;
   el._mdFinal = !streaming;
   if (!streaming) {
-    if (cached) {
+    // 已收尾的段落以图收尾、尾段又以图起头（几稿各占一段写到末尾）：两处容器里的并不成一排（见 groupReplyShots），整段画
+    if (cached && !(/!\[[^\]]*\]\([^)]*\)\s*$/.test(stable) && /^\s*!\[/.test(src.slice(stable.length)))) {
       tail.innerHTML = renderMarkdown(src.slice(stable.length));
       if (el.isConnected) renderEnhancements(tail);
     } else {

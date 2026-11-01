@@ -307,4 +307,28 @@ check(
   turned.includes("正文回答") && !turned.includes("SLOWTHINK done"),
   turned.slice(0, 200)
 );
+
+// ---- 带引文的补言：行迹里同问句上方一样画一道朱线下短的那句，不把「> 引文」整段摊进去；话照旧在下面
+await ask("SLOWTEXT 带引文");
+await waitFor(`(${lastAssistant}?.textContent || "").includes("第2段")`, 20000);
+await evalJs(
+  `(p => { const r = document.createRange(); r.selectNodeContents(p); getSelection().removeAllRanges(); getSelection().addRange(r); })(${lastAssistant}.querySelector(".markdown p")); true`
+);
+await waitFor(`!document.querySelector("#quoteTip").classList.contains("hidden")`, 5000);
+await evalJs(`document.querySelector('#quoteTip [data-tip="quote"]').click(); true`);
+await type("PLAIN 照这句改");
+await enter();
+await sleep(300);
+const noted = await evalJs(
+  `(s => s && { quote: s.querySelector(".tool-note-quote")?.textContent || "", text: s.querySelector(".tool-note")?.textContent || "" })(${lastAssistant}.querySelector(".tool-step-note"))`
+);
+check(
+  "a quoted supplement shows the quote as a short ruled line, not a pasted block",
+  !!noted && noted.quote.includes("第1段") && noted.text.endsWith("PLAIN 照这句改") && !noted.text.includes(">"),
+  JSON.stringify(noted)
+);
+await evalJs(`${lastAssistant}.querySelector(".tool-step-note").scrollIntoView({ block: "center" }); true`);
+await shot("note-quote.png");
+await evalJs(`document.querySelector("#chatSend").click(); true`);
+await sleep(300);
 close();

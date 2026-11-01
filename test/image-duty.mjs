@@ -54,9 +54,60 @@ check(
   /存为 墨猫\.png/.test(state.reply) && /看到图 1 幅/.test(state.reply),
   state.reply.slice(0, 300)
 );
-check("答末成品条列出这幅", state.deliverables.includes("墨猫.png"), JSON.stringify(state.deliverables));
+await waitFor(
+  '((m) => (m?.deliverables || []).some(d => d.name === "墨猫.png"))(__yanState().conversations[0]?.messages.at(-1))',
+  10000
+).catch(() => {});
+const deliverables = await evalJs("(__yanState().conversations[0]?.messages.at(-1)?.deliverables || []).map(d => d.name)");
+check("答末成品条列出这幅", deliverables.includes("墨猫.png"), JSON.stringify(deliverables));
 await waitFor(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`, 5000).catch(() => {});
 check("正文引文件名就地画出", await evalJs(`!!document.querySelector(".message.assistant .markdown .reply-shot img")`));
+
+// 一轮四稿：四件一起画，正文里接连几幅（同段换行的、另起一段的）收成一叠，不一路往下堆
+await evalJs(`document.querySelector("#newChat").click(); true`);
+await sleep(400);
+await asks();
+const before = await evalJs(`__yanState().conversations.length`);
+await evalJs(
+  `document.querySelector("#welcomeInput").value = "IMAGE-FOUR"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
+);
+await waitFor(
+  `__yanState().conversations.length > ${before} && (m => m?.role === "assistant" && m.status === "complete")(__yanState().conversations[0].messages.at(-1))`,
+  30000
+);
+check(
+  "一轮四稿都画好",
+  (await asks()).length === 4 &&
+    (await evalJs(`__yanState().conversations[0].messages.at(-1).steps.filter(s => s.status === "done").length`)) === 4
+);
+await waitFor(`document.querySelectorAll(".message.assistant .markdown .reply-shots > .reply-shot").length === 4`, 5000).catch(() => {});
+check(
+  "接连几幅收成一叠",
+  await evalJs(
+    `(m => m.querySelectorAll(".reply-shots").length === 1 && m.querySelectorAll(".reply-shots > .reply-shot").length === 4 && m.querySelector(".reply-shots").dataset.count === "共 4 幅" && !m.querySelector(".reply-shots + br, .reply-shots ~ p:empty"))(document.querySelector(".message.assistant .markdown"))`
+  )
+);
+// 点开那一叠：叠里四幅同在一组，从最上那幅看起，← → 翻
+const viewed = () =>
+  evalJs(
+    `JSON.stringify({ name: document.querySelector("#imageViewerName").textContent, marks: document.querySelectorAll("#imageViewerStrip [data-strip-index]").length, on: [...document.querySelectorAll("#imageViewerStrip [data-strip-index]")].findIndex(b => b.classList.contains("on")) })`
+  ).then(JSON.parse);
+await evalJs(`document.querySelector(".message.assistant .reply-shots > .reply-shot").click(); true`);
+await waitFor(
+  `!document.querySelector("#imageViewer").classList.contains("hidden") && document.querySelector("#imageViewerName").textContent.startsWith("墨猫甲")`,
+  5000
+).catch(() => {});
+let seen = await viewed();
+check(
+  "点开那一叠：四幅同在一组，从最上那幅看起",
+  seen.marks === 4 && seen.on === 0 && seen.name.startsWith("墨猫甲"),
+  JSON.stringify(seen)
+);
+await evalJs(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); true`);
+await waitFor(`document.querySelector("#imageViewerName").textContent.startsWith("墨猫乙")`, 5000).catch(() => {});
+seen = await viewed();
+check("→ 翻到叠里的下一幅", seen.on === 1 && seen.name.startsWith("墨猫乙"), JSON.stringify(seen));
+await evalJs(`document.querySelector("#imageViewerClose").click(); true`);
 
 // 没配生图：工具不交出，接口一问也没收到
 await evalJs(`__yanState().settings.dutyImage.on = false; document.querySelector("#newChat").click(); true`);

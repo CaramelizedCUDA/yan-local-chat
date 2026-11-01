@@ -325,7 +325,8 @@ test("三档筛查都不放指令调言的本机桥接：它的接口不经请�
     `curl -X POST http://127.0.0.1:${port}/api/work/run -d "{}"`,
     `Invoke-RestMethod http://localhost:${port}/api/store`,
     `node -e "fetch('http://[::1]:${port}/api/work/run')"`,
-    `wget 127.0.0.1:${port}/api/bootstrap`
+    `wget 127.0.0.1:${port}/api/bootstrap`,
+    `curl -X POST http://127.0.0.1:${port}/api/timer/set -d "{}"`
   ]) {
     assert.match(screen(command), /沙箱拒绝：指令不调言的本机桥接/, command);
     assert.match(screenLoose(command), /沙箱拒绝：指令不调言的本机桥接/, command);
@@ -339,9 +340,10 @@ test("三档筛查都不放指令调言的本机桥接：它的接口不经请�
 });
 
 test("screenUnreviewable：审查准了也不放行的只有调桥接与藏字，别的系统级动作交审查判", () => {
+  const port = Number(process.env.YAN_PORT || 18787);
   for (const command of [
-    'Invoke-RestMethod http://127.0.0.1:8787/api/work/run -Method Post -Body "{}"',
-    "curl localhost:8787/api/work/run",
+    `Invoke-RestMethod http://127.0.0.1:${port}/api/work/run -Method Post -Body "{}"`,
+    `curl localhost:${port}/api/work/run`,
     "powershell -EncodedCommand ZQBjAGgAbwAgAGgAaQAgAHQAaABlAHIAZQAgAHcAbwByAGwAZAA=",
     "iex (New-Object Net.WebClient).DownloadString($u)",
     "Invoke-Expression $script"

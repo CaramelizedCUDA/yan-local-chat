@@ -1,5 +1,6 @@
 // 假的 OpenAI 兼容接口：第一轮回 run_command 工具调用，收到 tool 结果后回正文；可通过 X-Mode 切换行为
 import http from "node:http";
+import { shellCommand } from "./helpers/shell-command.mjs";
 const sse = (res, chunks, gap = 30) => {
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   let i = 0;
@@ -212,6 +213,30 @@ http
         const answer = text.includes("Set-Alias") ? "准" : quick ? "疑" : "驳，用户没让把这串参数发出去";
         return sse(res, [delta({ content: answer }), delta({}, { usage: { total_tokens: 3 } })]);
       }
+      // IMAGE-FOUR：一轮画四幅（并行），正文前两幅同段换行、后两幅另起一段，再接一句话
+      // 画好的图随工具结果另作一条用户消息附回，最后一条用户话就不是这句了：按原话找
+      const fourAt = msgs.findLastIndex(m => m.role === "user" && typeof m.content === "string" && m.content.includes("IMAGE-FOUR"));
+      if (fourAt >= 0) {
+        const names = ["墨猫甲", "墨猫乙", "墨猫丙", "墨猫丁"];
+        if (!msgs.slice(fourAt + 1).some(m => m.role === "tool"))
+          return sse(res, [
+            delta({
+              tool_calls: names.map((name, index) => ({
+                index,
+                id: `call_image_${index}`,
+                type: "function",
+                function: { name: "generate_image", arguments: JSON.stringify({ prompt: `一只墨色的猫，第 ${index + 1} 稿`, name }) }
+              }))
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({
+            content: `四稿如下：\n![甲](墨猫甲.png)\n![乙](墨猫乙.png)\n\n![丙](墨猫丙.png)\n![丁](墨猫丁.png)\n\n挑一幅，我再细化。`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       // IMAGE-DUTY：画一幅，下一轮报回工具结果、请求里附了几幅图，正文引那幅图的文件名
       {
         const asked = msgs.findLastIndex(m => m.role === "user" && typeof m.content === "string" && m.content.includes("IMAGE-DUTY"));
@@ -282,8 +307,13 @@ http
               }),
               delta({}, { usage: { total_tokens: 5 } })
             ]);
-        if (results.length === 0) return call("run_command", { command: "Set-Alias yanrv Get-Date; Set-Content duty-ok.txt ok" });
-        if (results.length === 1) return call("fetch_page", { url: "https://example.com/c?k=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789xyz" });
+        const win = process.platform === "win32";
+        if (results.length === 0 && win)
+          return call("run_command", {
+            command: "Set-Alias yanrv Get-Date; Set-Content duty-ok.txt ok"
+          });
+        if ((win && results.length === 1) || (!win && results.length === 0))
+          return call("fetch_page", { url: "https://example.com/c?k=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789xyz" });
         return sse(res, [
           delta({ content: `REVIEW-DUTY done｜${results.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 120)).join(" ▸ ")}` }),
           delta({}, { usage: { total_tokens: 5 } })
@@ -430,6 +460,34 @@ http
           delta({}, { usage: { total_tokens: 9 } })
         ]);
       }
+      // 自己撮要（LONGSELF）：读两个文件后调 fold，同一批里再读一个；之后照实写见到了什么
+      if (firstUser.includes("LONGSELF") && !firstUser.includes("LONGRUN")) {
+        const noted = msgs.some(m => m.role === "assistant" && String(m.content || "").startsWith("［工作笔记］\nSELFNOTE")),
+          call = (index, name, args) => ({
+            index,
+            id: `call_self_${name}_${index}_${toolResults.length}`,
+            type: "function",
+            function: { name, arguments: JSON.stringify(args) }
+          });
+        if (!noted && toolResults.length < 2)
+          return sse(res, [
+            delta({ tool_calls: [call(0, "read_file", { path: `big${toolResults.length}.txt` })] }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (!noted)
+          return sse(res, [
+            delta({ content: "两个读完了，记一笔。" }),
+            delta({ tool_calls: [call(0, "fold", { note: "SELFNOTE 已读 big0、big1" }), call(1, "read_file", { path: "big2.txt" })] }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        const said = msgs.map(m => String(m.content || "")).join("\n");
+        return sse(res, [
+          delta({
+            content: `LONGSELF done|offered:${(payload.tools || []).some(t => t.function?.name === "fold") ? "yes" : "no"}|old:${said.includes("file 0") ? "yes" : "no"}|kept:${said.includes("file 2") ? "yes" : "no"}|call:${msgs.some(m => m.tool_calls?.some(c => c.function?.name === "fold")) ? "yes" : "no"}|folded:${said.includes("原文不再保留") ? "yes" : "no"}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       if (longKey) {
         const size = JSON.stringify(msgs).length;
         if (size > long.limit[longKey]) {
@@ -528,7 +586,10 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: "Start-Sleep -Seconds 4; Write-Output 'BG-OUT-42'", background: true })
+                    arguments: JSON.stringify({
+                      command: shellCommand("Start-Sleep -Seconds 4; Write-Output 'BG-OUT-42'", "sleep 4; printf 'BG-OUT-42\n'"),
+                      background: true
+                    })
                   }
                 }
               ]
@@ -609,7 +670,9 @@ http
           delta({ tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] });
         if (firstTurn && !toolResults.length)
           return sse(res, [
-            call("call_bs0", "run_command", { command: "Add-Content -Path .yan/账本.md -Value '- 乙' -Encoding utf8" }),
+            call("call_bs0", "run_command", {
+              command: shellCommand("Add-Content -Path .yan/账本.md -Value '- 乙' -Encoding utf8", "printf '%s\n' '- 乙' >> .yan/账本.md")
+            }),
             delta({}, { usage: { total_tokens: 5 } })
           ]);
         if (firstTurn && toolResults.length === 1)
@@ -720,7 +783,13 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: `Start-Sleep -Seconds ${sleepFor}; Write-Output wake-ok`, ...runArgs })
+                    arguments: JSON.stringify({
+                      command: shellCommand(
+                        `Start-Sleep -Seconds ${sleepFor}; Write-Output wake-ok`,
+                        `sleep ${sleepFor}; printf 'wake-ok\n'`
+                      ),
+                      ...runArgs
+                    })
                   }
                 }
               ]
@@ -760,6 +829,33 @@ http
               ? `挂上了，等它。｜${steered ? "steer" : "-"}｜${String(toolResults.at(-1)?.content || "").slice(0, 160)}`
               : "挂上了，等它。"
           }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
+      // TIMERWAKE：约两秒后叫醒自己就收尾；到点时另起一答，把送到的那条消息写出来
+      if (firstUser.includes("TIMERWAKE")) {
+        const woke = msgs.findLast(m => m.role === "user" && String(m.content).includes("到点"));
+        if (woke)
+          return sse(res, [
+            delta({ content: `TIMERWAKE woke｜${String(woke.content).replace(/\s+/g, " ").slice(0, 200)}` }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        if (firstTurn && !toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_tm0",
+                  type: "function",
+                  function: { name: "set_timer", arguments: JSON.stringify({ after: 2, note: "看一眼构建" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({ content: `约好了。｜${String(toolResults.at(-1)?.content || "").slice(0, 80)}` }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
@@ -1046,6 +1142,93 @@ http
       }
       // MCPTEST：接入的 MCP 服务一轮全用上——逐件给的 echo（stdio）、按需给的先查再调（stdio，工具多）、HTTP 服务上会写的 write_note（要请示）；
       // 第二轮把看到的报回去：系统提示里有没有服务自带的用法、拿到了哪几件、各结果是什么
+      // CHKPT：一轮里新建一件、用指令改一件已有的（检查点要连指令的改动一起退得回）；CHKNOTE：报回这一问开头有没有「退回过」那一句
+      if (typeof lastUser === "string" && lastUser.includes("CHKNOTE"))
+        return sse(res, [
+          delta({ content: `CHKNOTE|note:${/已把目录里的文件退回/.test(lastUser)}` }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      if (typeof lastUser === "string" && lastUser.includes("CHKPT")) {
+        const call = (index, name, args) => ({
+          index,
+          id: `call_ck${index}`,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) }
+        });
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                call(0, "write_file", { path: "ck/new.txt", content: "新出的" }),
+                call(1, "run_command", {
+                  command:
+                    process.platform === "win32" ? "Set-Content -Path ck/old.txt -Value 改过 -NoNewline" : "printf 改过 > ck/old.txt",
+                  description: "改旧件"
+                })
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [delta({ content: "CHKPT|done" }), delta({}, { usage: { total_tokens: 5 } })]);
+      }
+      // SIDEREAD：旁注里读文件、跑只读与会写的指令、发 POST——读的照办，会写的回绝；第二轮报回拿到了哪几件与各结果
+      if (typeof lastUser === "string" && lastUser.includes("SIDEREAD")) {
+        const names = (payload.tools || []).map(t => t.function.name),
+          call = (index, name, args) => ({
+            index,
+            id: `call_sr${index}`,
+            type: "function",
+            function: { name, arguments: JSON.stringify(args) }
+          });
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                call(0, "read_file", { path: "note.txt" }),
+                call(1, "run_command", { command: process.platform === "win32" ? "Get-ChildItem" : "ls" }),
+                call(2, "run_command", {
+                  command: process.platform === "win32" ? "Set-Content -Path side.txt -Value x" : "echo x > side.txt"
+                }),
+                call(3, "http_request", { url: "http://127.0.0.1:8798/v1/models", method: "POST" }),
+                call(4, "search_files", { query: "旁注可读" })
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({
+            content: `SIDEREAD|tools:${["read_file", "list_files", "search_files", "run_command", "write_file", "edit_file"].filter(n => names.includes(n)).join("+")}|${toolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 50)).join(" ▸ ")}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
+      // SIDEMCP：旁注里用按需给的 MCP——只读的照调，会写的不调；第二轮报回拿到了哪几件、目录里列没列会写的、各结果
+      if (typeof lastUser === "string" && lastUser.includes("SIDEMCP")) {
+        const names = (payload.tools || []).map(t => t.function.name),
+          call = (index, args) => ({
+            index,
+            id: `call_side${index}`,
+            type: "function",
+            function: { name: "mcp_call", arguments: JSON.stringify(args) }
+          });
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                call(0, { server: "big", tool: "tool_07", params: { n: 3 } }),
+                call(1, { server: "big", tool: "write_note", params: { text: "不该写" } })
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        const describe = payload.tools.find(t => t.function.name === "mcp_describe")?.function.description || "";
+        return sse(res, [
+          delta({
+            content: `SIDEMCP|lazy:${names.includes("mcp_call")}|dirRead:${/tool_07/.test(describe)}|dirWrite:${/write_note/.test(describe)}|${toolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 60)).join(" ▸ ")}`
+          }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       if (typeof lastUser === "string" && lastUser.includes("MCPTEST")) {
         const n = toolResults.length,
           names = (payload.tools || []).map(t => t.function.name);
@@ -1455,6 +1638,33 @@ http
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
+      if (typeof lastUser === "string" && lastUser.includes("DELIVER")) {
+        // 交成品：写一份报告与一份杂项，答复里只链报告——成品条只列模型链到的那件
+        if (!toolResults.length)
+          return sse(res, [
+            delta({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_dv1",
+                  type: "function",
+                  function: { name: "write_file", arguments: JSON.stringify({ path: "docs/报告.md", content: "# 报告\n\n结论在此。\n" }) }
+                },
+                {
+                  index: 1,
+                  id: "call_dv2",
+                  type: "function",
+                  function: { name: "write_file", arguments: JSON.stringify({ path: "杂项.txt", content: "中间产物\n" }) }
+                }
+              ]
+            }),
+            delta({}, { usage: { total_tokens: 5 } })
+          ]);
+        return sse(res, [
+          delta({ content: "写好了，见 [调研报告](docs/报告.md)；不存在的 [旧稿](docs/旧稿.md) 不列。" }),
+          delta({}, { usage: { total_tokens: 5 } })
+        ]);
+      }
       if (typeof lastUser === "string" && lastUser.includes("ARCHIVE")) {
         // 言里做文件：写一份表到卷宗，再把系统提示里的线索回出来（该是卷宗那段，不是执事那段）
         const sys = String(msgs[0]?.role === "system" ? msgs[0].content : ""),
@@ -1476,16 +1686,19 @@ http
           ]);
         return sse(res, [
           delta({
-            content: `ARCHIVE done｜archive:${sys.includes("卷宗") ? "yes" : "no"}|work:${sys.includes("「行」（执事）") ? "yes" : "no"}|run:${names.includes("run_command") ? "yes" : "no"}|result:${String(toolResults.at(-1).content).slice(0, 40)}`
+            content: `ARCHIVE done｜archive:${sys.includes("卷宗") ? "yes" : "no"}|work:${sys.includes("「行」（执事）") ? "yes" : "no"}|run:${names.includes("run_command") ? "yes" : "no"}|result:${String(toolResults.at(-1).content).slice(0, 40)}\n\n表在 [报表](报表.csv)。`
           }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       }
       // 人点名的技能：问话里「/写信」已换成一件附件，说明正文随问附上
-      const userText = Array.isArray(lastUser) ? lastUser.map(part => part.text || "").join("\n") : String(lastUser);
+      const userText = Array.isArray(lastUser) ? lastUser.map(part => part.text || "").join("\n") : String(lastUser),
+        promptText = userText.split("\n\n--- 附件：")[0];
       if (userText.includes("SKILLCMD"))
         return sse(res, [
-          delta({ content: `CMD|body:${userText.includes("先写称谓") ? "yes" : "no"}|slash:${userText.includes("/写信") ? "yes" : "no"}` }),
+          delta({
+            content: `CMD|body:${userText.includes("先写称谓") ? "yes" : "no"}|slash:${promptText.includes("/写信") ? "yes" : "no"}`
+          }),
           delta({}, { usage: { total_tokens: 5 } })
         ]);
       if (typeof lastUser === "string" && lastUser.includes("SKILLTEST")) {
@@ -1759,7 +1972,7 @@ http
         if (n === 0) return sse(res, call("edit_file", { path: "src/a.js", old: "return 1;", new: "return 2;" }));
         if (n === 1) return sse(res, call("read_file", { path: "src/a.js" }));
         if (n === 2) return sse(res, call("edit_file", { path: "src/a.js", old: "return 1;", new: "return 2;" }));
-        if (n === 3) return sse(res, call("run_command", { command: "Get-Content src/a.js" }));
+        if (n === 3) return sse(res, call("run_command", { command: shellCommand("Get-Content src/a.js", "cat src/a.js") }));
         if (n === 4) return sse(res, call("search_files", { query: "return", glob: "*.js" }));
         if (n === 5) return sse(res, call("list_files", { pattern: "**/*.js" }));
         return sse(res, [
@@ -1958,7 +2171,12 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: `Write-Output 'chat-${turnToolResults.length + 1}'` })
+                    arguments: JSON.stringify({
+                      command: shellCommand(
+                        `Write-Output 'chat-${turnToolResults.length + 1}'`,
+                        `printf 'chat-${turnToolResults.length + 1}\n'`
+                      )
+                    })
                   }
                 }
               ]
@@ -1981,7 +2199,12 @@ http
                   type: "function",
                   function: {
                     name: "run_command",
-                    arguments: JSON.stringify({ command: "Set-Content ../escalate-probe.txt ok; Write-Output wrote" })
+                    arguments: JSON.stringify({
+                      command: shellCommand(
+                        "Set-Content ../escalate-probe.txt ok; Write-Output wrote",
+                        "printf ok > ../escalate-probe.txt; printf wrote"
+                      )
+                    })
                   }
                 }
               ]
@@ -2004,8 +2227,9 @@ http
               }),
               delta({}, { usage: { total_tokens: 5 } })
             ]);
-        if (n === 0) return call("run_command", { command: "Set-Content review-ok.txt ok" });
-        if (n === 1) return call("run_command", { command: "Set-ExecutionPolicy Unrestricted" });
+        if (n === 0) return call("run_command", { command: shellCommand("Set-Content review-ok.txt ok", "printf ok > review-ok.txt") });
+        // POSIX 用无副作用的 sudo 探针覆盖「禁止提权」；执行策略本身仍由 sandbox 单测直接覆盖。
+        if (n === 1) return call("run_command", { command: shellCommand("Set-ExecutionPolicy Unrestricted", "sudo -n true") });
         return sse(res, [
           delta({
             content: `POLICY-REVIEW done｜${turnToolResults.map(t => String(t.content).replace(/\s+/g, " ").slice(0, 100)).join(" ▸ ")}`
@@ -2017,7 +2241,14 @@ http
         return sse(res, [
           delta({ content: "我先执行一条指令。" }),
           delta({ tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "run_command", arguments: "" } }] }),
-          delta({ tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ command: "Write-Output '你好，世界'" }) } }] }),
+          delta({
+            tool_calls: [
+              {
+                index: 0,
+                function: { arguments: JSON.stringify({ command: shellCommand("Write-Output '你好，世界'", "printf '你好，世界\n'") }) }
+              }
+            ]
+          }),
           delta({}, { usage: { total_tokens: 20 } })
         ]);
       const result = String(toolResults.at(-1).content);

@@ -23,8 +23,11 @@ function safeHost(url) {
     return t("未填写地址");
   }
 }
+// 格式器只立一回：toLocaleTimeString 每调一次都另起一个，作答中每帧画题头都要调
+const TIME_FORMAT = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 function formatTime(value) {
-  return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(date) : TIME_FORMAT.format(date);
 }
 // 汉字数字：一、十二、二十三；2 单独出现时用「两」（如「两问」）
 const DIGITS = "〇一二三四五六七八九";
@@ -76,6 +79,19 @@ function toast(message, ms = 2200) {
   showNow(el);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => hideWithFade(el), ms);
+}
+// 写进剪贴板；页面没得到剪贴板的准许（VS Code 内置预览、非安全上下文）时借一个文本框走 execCommand
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
 }
 // 把正文里的某条消息滚到视口：只滚 #chatScroll 自己，不用 scrollIntoView——它会连带滚动外层容器（页面整体跟着偏一截，尤其在 VS Code 预览与移动端）。
 // 要去看别处就不再贴底：生成中落墨的下一帧会把平滑滚动拽回底部，只抖一下
@@ -346,7 +362,9 @@ function wheelScrollsInner(event) {
     if (el.scrollTop > 0 && el.scrollHeight > el.clientHeight && /auto|scroll/.test(getComputedStyle(el).overflowY)) return true;
   return false;
 }
-// force：做完就收，不看读者是否正停在这块、用户是否亲手开过——运行中摊开、运行完收起，是行迹与帮手时间线的定例
+// force：做完就收，不看读者是否正停在这块、用户是否亲手开过——运行中摊开、运行完收起，是行迹与帮手时间线的定例。
+// 程序要打开的一律走这里、别先看 details.open：收起排着还没到（700 毫秒）、正在收的动画没放完时它都还是 true，
+// 照它判断就当已开着、什么也不做，眼看着又收了
 function settleDetails(details, open, onClose = null, force = false) {
   if (!details) return;
   if (open) {

@@ -1,5 +1,5 @@
 // 言 · 内置提示词 · 行 · 执事 / 言 · 卷宗
-// role + hint 是执事对话（绑了工作目录）的系统提示；archive + deliver 是对谈（没绑目录、但桥接在线）的：文件工具落在卷宗，检查电脑走终端，不带执事的作风。
+// role + hint 是执事对话（绑了工作目录）的系统提示；archive 是对谈（没绑目录、但桥接在线）的，deliver 两种都给：文件工具落在卷宗，检查电脑走终端，不带执事的作风。
 // 何时带上见 assistant.js 末的 order 表；各行按顺序拼接；windowsShell / windowsShellLegacy 仅在 Windows 上填进 {{shellNote}}。
 // 六件工具各自做什么、edit_file 的逐字规则、run_command 的 timeout 等，都在 tools.js 的工具说明里，这里不重复；这里只放环境、做法与确认规则。
 // unread、stale、drift 是工具结果里回给模型的话（未读先改、读后被别人改过），不是系统提示；用户没批的回话是 assistant.declined。
@@ -39,8 +39,10 @@
   intentGateAsk:
     "对照各根的原问，看这一答能否就此收尾：未尽的可接着做；能收尾的，前面那段话仍是给用户的答复，不必复述，对照出要补的（如卡在要用户定夺的事）补上，没有就一句话收住。",
 
-  // 成品怎么交到用户手上：只给主答——帮手的话是回报给主模型的，页面不替它列成品
-  deliver: "答末页面自会列出成品供预览下载，说文件名即可，链接由页面给出。",
+  // 成品怎么交到用户手上：答复里链到的本机文件即成品（见 src/15-tools/22-changes.js 的 replyDeliverables），列哪几件由模型定。
+  // 只给主答——帮手的话是回报给主模型的，页面不替它列成品。图另说一句：不说时模型把画好的图也只写成链接，不在正文画出
+  deliver:
+    "交给用户看的文件（报告、文档、表格、图之类）在答复里写成链接 [名](路径)，页面据此在答末列为成品、可预览下载；改过的代码不必列。图片写成 ![说明](路径) 即在正文就地画出。",
 
   // 文件工具的可及范围，填进 {{reach}}：设置里放开时可用绝对路径出目录，否则只在目录内
   reachAnywhere: "路径相对此目录；目录之外的文件用完整的绝对路径，动目录之外的东西前先说明。",
@@ -53,6 +55,10 @@
   // 沙箱环境备好时接在后面（{{kits}} 是装了什么）：python、pip、npm 已指向它，缺的装进它，不必动系统
   env: "此机另备一套开发环境：{{kits}}。python、pip、uv、npm 与所列工具链都指向它，缺的库直接 pip / npm i -g / go get / cargo 装进来，不动系统。",
 
+  // 旁注里的 run_command 只跑明确只读的（见 src/15-tools/20-command.js 的 isReadOnlyCommand）：不在其列时回给模型的话
+  sideReadOnly:
+    "旁注只查不改：这条指令不算只读，不跑。可跑 git status / log / diff / show、ls、cat、type、Get-Content、Get-ChildItem、Select-String 这类，接管道过滤也行，不带重定向、分号与脚本块。",
+
   // 后台指令：bgStarted 是挂上时回给模型的话（结束会叫醒开它的那一个：主模型，或帮手自己）；
   // bgDone 是结束时送给它的一条消息（正作答就进这一答，没在作答就另起一答、帮手则睡醒接着做），不是系统提示
   bgStarted: "后台指令 {{id}} 已开始（头 {{seconds}} 秒的输出如下）。它结束时结果会作为一条消息送到，不必轮询。",
@@ -61,6 +67,13 @@
   bgReleased: "有话递给你，这条指令已转入后台接着跑，编号 {{id}}（跑了 {{took}}，到此的输出如下）。结束时结果会作为一条消息送到。",
   bgDone:
     "后台指令 {{id}}（{{command}}）已结束，退出码 {{exitCode}}，共 {{duration}}。新的输出：\n--- stdout ---\n{{stdout}}\n--- stderr ---\n{{stderr}}",
+
+  // 候 · 等时刻（set_timer）：timerSet 是挂上时回给模型的话；timerDue 是到点时送给它的一条消息（同 bgDone 的路子）
+  timerSet: "定时 {{id}} 已挂上：{{due}}（还有 {{left}}）叫醒你{{every}}。到时 note 作为一条消息送到。",
+  timerEvery: "，此后每 {{every}} 再叫",
+  timerDue: "定时 {{id}} 到点（定于 {{due}}{{late}}）：{{note}}{{next}}",
+  timerLate: "，迟了 {{late}}：桥接那时没开或电脑睡着",
+  timerNext: "\n下一回：{{next}}",
 
   // 桥接用 PowerShell 7 时（&& 可用）用前一句；本机没装、退回 Windows PowerShell 5.1 时用后一句
   windowsShell: "指令用 PowerShell 语法（cmdlet），不是 bash。",

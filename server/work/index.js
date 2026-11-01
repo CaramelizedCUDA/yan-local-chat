@@ -2,13 +2,13 @@
 // 文件读写见 files.js，列与搜见 find.js，意与指纹见 intent.js，卷宗目录见 archive.js
 // 由 server.js 装配：require("./server/work/index.js")({ archiveHome, workHome, toolEnv })
 "use strict";
-const { sendJson, readJson, jsonRoute, requestSignal, errorText } = require("../http.js");
+const { sendJson, readJson, jsonRoute, requestSignal, stamp, errorText } = require("../http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const sandbox = require("../sandbox.js");
 const paths = require("./paths.js");
 const { SCRATCH_DIR, WORK_SKIP, describeFsError, clampNumber, pathIsInside, resolveTarget, assertReachable, relPath } = paths;
-const { pickFolder } = require("./folder-picker.js");
+const { pick } = require("./picker.js");
 const createShell = require("./shell.js");
 const createLocks = require("./locks.js");
 const createArchive = require("./archive.js");
@@ -37,7 +37,8 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
       backgroundReport,
       discardBackground,
       checkBackground,
-      watchBackground
+      watchBackground,
+      backgroundRunning
     } = createShell({
       toolEnv
     }),
@@ -92,10 +93,11 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
   function shownPath(workdir, file) {
     return pathIsInside(workdir, file) ? relPath(workdir, file) : file;
   }
+  // 系统的选择框：默认选目录；files 选文件（multiple 可多选）。给真路径，取消给空串
   const handleWorkPick = jsonRoute(async body => {
-    const result = await pickFolder(String(body.current || "").trim());
-    if (result.error) throw Error(result.error);
-    return { path: result.path };
+    const result = await pick({ files: !!body.files, multiple: !!body.multiple, current: String(body.current || "").trim() });
+    if ("error" in result) throw Error(result.error);
+    return { paths: result.paths };
   }, failed);
   const handleWorkPrepare = jsonRoute(async body => {
     const workdir = resolveWorkdir(body.workdir);
@@ -139,7 +141,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
       }
       if (body.background === true) {
         if (res.destroyed) return;
-        console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ （后台）${command.slice(0, 120)}`);
+        console.log(`${stamp()} $ （后台）${command.slice(0, 120)}`);
         const job = startBackground(command, workdir, boxed);
         let delivered = false;
         const disconnected = () => {
@@ -154,7 +156,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
         if (res.destroyed) return disconnected();
         return sendJson(res, 200, report);
       }
-      console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })} $ ${command.slice(0, 120)}`);
+      console.log(`${stamp()} $ ${command.slice(0, 120)}`);
       // 页面那头停止生成会中止这个请求：响应还没写就断开，即是中止，把指令连同它起的子进程一并杀掉。指令不拿目录锁，见 locks.js
       const signal = requestSignal(res);
       // 模型的 run_command 带 ticket：到时不掐，转入后台接着跑（见 runForeground）。前台最多等十分钟——
@@ -174,7 +176,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
         env = hook ? { YAN_TOOL: String(hook.tool || ""), YAN_TARGET: String(hook.target || "") } : {};
       const started = Date.now(),
         result = await runShell(command, workdir, timeoutMs, signal, { boxed, env });
-      if (result.aborted) console.log(`${new Date().toLocaleTimeString("zh-CN", { hour12: false })}   已中止：${command.slice(0, 80)}`);
+      if (result.aborted) console.log(`${stamp()}   已中止：${command.slice(0, 80)}`);
       if (!res.writableEnded && !res.destroyed) sendJson(res, 200, { ...result, durationMs: Date.now() - started });
     } catch (error) {
       sendJson(res, 400, { error: failed(error) });
@@ -217,6 +219,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
     workHome,
     SCRATCH_DIR,
     WORK_SHELL,
+    backgroundRunning,
     // 都碰本机磁盘或本机进程：只受理本站页面与 VS Code Webview（见 server.js 的接口表）
     routes: {
       "POST /api/work/prepare": handleWorkPrepare,

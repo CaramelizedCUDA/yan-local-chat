@@ -331,7 +331,7 @@ function renderHelperPanel(fresh = false) {
   });
   if (follow) stage.scrollTop = stage.scrollHeight;
 }
-// 回到当前对话行迹里的那一步（行迹折着就摊开）；帮手手上的一步不在正文行迹里，就回到派它的那枚签
+// 回到当前对话行迹里的那一步（摊开并取消尚未到期的自动收起）；帮手手上的一步不在正文行迹里，就回到派它的那枚签
 function revealStep(id) {
   const cardOf = stepId => document.querySelector(`#messages .tool-step[data-step-id="${CSS.escape(stepId)}"]`),
     owner = currentConversation()
@@ -339,7 +339,7 @@ function revealStep(id) {
       .find(step => step.sub?.steps?.some(sub => sub.id === id)),
     card = cardOf(id) || (owner ? cardOf(owner.id) : null),
     stack = card?.closest(".tool-stack");
-  if (stack && !stack.open) setProcessDetails(stack, true);
+  if (stack) settleDetails(stack, true);
   if (card) scrollChatTo(card, "center");
 }
 // 差遣面板：帮手条与行迹里的签打开它，遮罩与合起关上它，‹ › 与列表翻帮手
@@ -411,7 +411,7 @@ function bindHelperEvents() {
     const card = document.querySelector(`#messages .tool-step-delegate[data-step-id="${CSS.escape(id || "")}"]`);
     if (!card) return;
     const stack = card.closest(".tool-stack");
-    if (stack && !stack.open) setProcessDetails(stack, true);
+    if (stack) settleDetails(stack, true);
     scrollChatTo(card, "center");
   };
   // 点遮罩、按 Esc 都关得掉，与设置、文件查看器一个脾气。纸张之外的空白由 .helper-stage 铺满，点在它上面也算点了遮罩；

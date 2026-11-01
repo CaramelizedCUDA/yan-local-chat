@@ -73,6 +73,8 @@ const MESSAGE_ACTIONS = {
       await resumeAnswer(c, message, profile);
     }
   },
+  // 把目录里的文件退回到这一答开工前（见 14-chat-engine/80-checkpoint.js）；作答途中不放行
+  rewind: { brush: "back", run: ({ c, message }) => rewindAnswer(c, message) },
   regenerate: { brush: "reload", run: regenerateAt },
   retry: { brush: "reload", run: regenerateAt }
 };
@@ -156,19 +158,6 @@ async function saveEditedMessage(conversation, index, value) {
   if (sidePanelOpen()) renderSidePanel();
   await streamReply(conversation, assistant, profile);
 }
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const t = document.createElement("textarea");
-    t.value = text;
-    document.body.append(t);
-    t.select();
-    document.execCommand("copy");
-    t.remove();
-  }
-}
-
 // 消息上的动作（复制、编辑、重答……）；编辑框里 Ctrl+Enter 保存
 function bindMessageActionEvents() {
   $("#messages").addEventListener("click", handleMessageAction);

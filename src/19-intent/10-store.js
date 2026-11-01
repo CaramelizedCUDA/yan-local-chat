@@ -215,7 +215,7 @@ async function keepHook(step, args, ctx) {
       step.skipped = true;
       return { ok: false, content: prompt("work.keepDeclined", { id }).trim(), display: `守未准 · ${id}` };
     }
-    step.granted = true;
+    step.granted = [...(Array.isArray(step.granted) ? step.granted : []), id];
   }
   return null;
 }

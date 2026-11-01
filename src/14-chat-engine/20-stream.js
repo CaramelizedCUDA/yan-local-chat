@@ -32,9 +32,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     assistant.durationMs = Date.now() - assistant.startedAt;
     tickTrailClock(assistant);
   }, 1000);
-  // 言里做文件：记下开工前卷宗的样子，收尾时新出的、改过的成品挂在答末
-  const archiveBefore = !isWork(conversation) ? new Map((archiveEntries || []).map(e => [e.path, e.modifiedAt])) : null,
-    archiveSince = Date.now();
   // 用量在 finally 里结算：停止、断网、工具链中途出错，前面几轮已经花掉的墨也得记上，不能只在整答顺利收尾时记账
   const tally = newTally(),
     stepsBefore = (assistant.steps || []).length,
@@ -151,14 +148,10 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     assistant.status = "complete";
     conversation.updatedAt = now();
     if (watch.kept) void intentSettleKeeps(conversation);
-    // 言里动过文件的，卷宗目录多半有了新东西：重新翻一遍，新出的、改过的成品挂在答末，侧栏的件数跟着更新
-    if (archiveBefore && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) {
-      await refreshArchive();
-      assistant.deliverables = (archiveEntries || [])
-        .filter(entry => archiveBefore.get(entry.path) !== entry.modifiedAt && !ownArchiveWriteSince(entry.path, archiveSince))
-        .map(entry => ({ path: entry.path, name: entry.name, size: entry.size }));
-      if (!assistant.deliverables.length) delete assistant.deliverables;
-    }
+    // 答复里链到的本机文件即成品，挂在答末（见 replyDeliverables）；言里动过文件的，卷宗多半有了新东西，侧栏的件数跟着更新
+    if (!isWork(conversation) && allSteps(assistant).some(step => TOOLS.get(step.name)?.writes)) await refreshArchive();
+    assistant.deliverables = await replyDeliverables(conversation, assistant.content);
+    if (!assistant.deliverables.length) delete assistant.deliverables;
   } catch (error) {
     // 一个字没等到就又断了：模型没读到那几份回报，原样还回去等下一答
     if (!tally.opened) returnHeldReports(conversation, assistant, held);
@@ -192,28 +185,17 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
         // 帮手各轮的墨已当场扣进余墨，这里只算进这一答
         tally.spent += Number(step.sub.usage.total_tokens || 0) - Number(billed.total_tokens || 0);
       }
-    assistant.usage = tally.usageKnown ? tally.usage : null;
     releaseQuota();
-    accountUsage(profile, assistant, history, conversation, {
-      opened: tally.opened,
-      partialRound: tally.roundOpen,
-      roundStart: tally.roundStart,
-      steered: tally.steered,
-      spent: tally.spent
-    });
+    accountUsage(profile, assistant, history, tally);
     if (prior) {
-      if (prior.usage) {
-        const sum = { ...prior.usage };
-        for (const [key, value] of Object.entries(assistant.usage || {})) sum[key] = Number(sum[key] || 0) + Number(value || 0);
-        assistant.usage = sum;
-      }
+      if (prior.usage) assistant.usage = usageSum(prior.usage, assistant.usage);
       if (prior.tokens) {
         assistant.tokenCount = prior.tokens + (Number(assistant.tokenCount) || 0);
         assistant.tokenEstimated = prior.estimated || !!assistant.tokenEstimated;
       }
     }
     if (requestJobs.get(conversation.id) === job) requestJobs.delete(conversation.id);
-    settleSupplements(conversation, assistant, job, profile);
+    const goesOn = settleSupplements(conversation, assistant, job, profile);
     if (currentId !== conversation.id || view !== "chat") conversation.unread = true;
     markDirty(conversation.id);
     saveStore();
@@ -225,6 +207,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       updateContextGauge();
     }
     renderSendButtons();
+    if (!goesOn) notifyAnswerEnd(conversation, assistant);
     // 压前文排在这一答撤下作业之后：之前排的话，言里收尾还在等卷宗重翻，这段仍算在作答，压缩会悄悄作罢
     if (assistant.status === "complete") {
       setTimeout(() => maybeAutoCompact(conversation, profile), 0);

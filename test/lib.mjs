@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 export const DEBUG = "http://127.0.0.1:9333";
+export const STAGE_DEBUG_PORT = 9334;
+export const MODEL_DEBUG = `http://127.0.0.1:${STAGE_DEBUG_PORT}`;
 export const PAGE = "http://127.0.0.1:8799/";
 export const TMP = path
   .join(path.dirname(fileURLToPath(import.meta.url)), ".tmp")
@@ -46,17 +48,26 @@ export async function connect() {
   // CI 的机器慢，固定等一两秒常常还没好，先点就白点。Page.reload 还不等新页接手就返回，紧接着求值会落在旧页上，所以先在旧页记一笔。
   // 开不好（桥接没起之类）的等满就照旧往下，由用例自己断言
   const send = async (method, params = {}) => {
+    const isNavigate = method === "Page.navigate";
+    const targetUrl = isNavigate ? String(params.url || "") : "";
+    const onPage = isNavigate && targetUrl.startsWith(PAGE);
+    const isHtml = onPage && /\.html\b/.test(targetUrl.slice(PAGE.length));
     const app =
       method === "Page.reload"
         ? await evalJs(`location.href.startsWith(${JSON.stringify(PAGE)}) && !location.pathname.endsWith(".html")`).catch(() => false)
-        : method === "Page.navigate" && String(params.url).startsWith(PAGE) && !/\.html\b/.test(String(params.url).slice(PAGE.length));
-    if (!app) return raw(method, params);
+        : onPage && !isHtml;
+    if (!app && !isHtml) return raw(method, params);
     await evalJs(`window.__leaving = true`).catch(() => {});
     const result = await raw(method, params);
     // 换页那一下求值可能撞上旧的执行上下文刚销毁：报错当作没好，接着等
-    for (const t = Date.now(); Date.now() - t < 15000; await sleep(120))
-      if (await evalJs(`!window.__leaving && typeof document.querySelector("#openLibrary")?.onclick === "function"`).catch(() => false))
-        break;
+    for (const t = Date.now(); Date.now() - t < 15000; await sleep(120)) {
+      const ready = isHtml
+        ? await evalJs(`!window.__leaving && document.readyState === "complete" && location.href === ${JSON.stringify(targetUrl)}`).catch(
+            () => false
+          )
+        : await evalJs(`!window.__leaving && typeof document.querySelector("#openLibrary")?.onclick === "function"`).catch(() => false);
+      if (ready) break;
+    }
     return result;
   };
   const evalJs = async (expression, awaitPromise = true) => {
@@ -95,8 +106,10 @@ export async function connect() {
       const p = pending.get(m.id);
       pending.delete(m.id);
       m.error ? p.reject(Error(m.error.message)) : p.resolve(m.result);
-    } else if (m.method === "Runtime.exceptionThrown")
-      console.log("  [exception]", JSON.stringify(m.params.exceptionDetails).slice(0, 300));
+    } else if (m.method === "Inspector.targetCrashed")
+      // 页面崩了（多半是内存撑爆）：此后求值都不再回话，先记一笔，免得只看到一串超时
+      console.log("  [crashed] 页面崩了");
+    else if (m.method === "Runtime.exceptionThrown") console.log("  [exception]", JSON.stringify(m.params.exceptionDetails).slice(0, 300));
     else if (m.method === "Runtime.consoleAPICalled" && ["error", "warning"].includes(m.params.type))
       console.log(
         `  [console.${m.params.type}]`,
@@ -107,6 +120,7 @@ export async function connect() {
       );
   };
   await send("Page.enable");
+  await send("Inspector.enable");
   // 默认中文，不依赖执行机器的系统语言；i18n 用例仍可显式切换语言。
   await send("Page.addScriptToEvaluateOnNewDocument", {
     source: `Object.defineProperty(navigator, "language", { get: () => "zh-CN", configurable: true }); Object.defineProperty(navigator, "languages", { get: () => ["zh-CN", "zh"], configurable: true });`

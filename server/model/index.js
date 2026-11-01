@@ -10,7 +10,7 @@
 //   needsBaseUrl              是否要填 Base URL（ChatGPT 订阅不用）
 const { Readable } = require("node:stream");
 const { finished } = require("node:stream/promises");
-const { sendJson, readJson } = require("../http.js");
+const { sendJson, readJson, requestSignal, stamp } = require("../http.js");
 const openai = require("./openai.js");
 const anthropic = require("./anthropic.js");
 const { hinted } = require("./chatgpt.js");
@@ -18,7 +18,6 @@ const createImage = require("./image.js");
 
 // 工具定义一次最多带多少件：超过不再静默截掉后面的，明确报错，接入更多工具时一眼能看出来
 const TOOLS_LIMIT = 128;
-const stamp = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
 
 // 上游没接下请求时回的那句话。OpenAI 系 { error: { message } }、有的中转站 { error: "…" }、旧版 vLLM { message }、
 // FastAPI 写的自建服务 { detail }（参数校验错是一串对象，整串交出去，思考档位的报错才读得出它认哪几档）；
@@ -128,10 +127,6 @@ module.exports = function createModel({ home }) {
             status: 400
           });
       }
-      const abort = new AbortController();
-      res.on("close", () => {
-        if (!res.writableEnded) abort.abort();
-      });
       console.log(`${stamp()} → ${config.model}：${messages.length} 条消息${payload.tools ? `，工具 ${payload.tools.length} 个` : ""}`);
       // 上游的状态码原样带回页面（连不上记作 502）：429、5xx、过载这些页面会等一等再试，参数错之类的 4xx 不试
       const upstream = provider.request(payload, config);
@@ -139,7 +134,7 @@ module.exports = function createModel({ home }) {
         method: "POST",
         headers: await provider.headers(config, upstream),
         body: JSON.stringify(upstream),
-        signal: abort.signal
+        signal: requestSignal(res)
       }).catch(error => {
         throw Object.assign(Error(`连不上上游接口：${error.cause?.code || error.cause?.message || error.message}`), {
           status: 502,

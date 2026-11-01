@@ -5,6 +5,8 @@ defineTool({
   group: "work",
   label: t("运行"),
   offer: ctx => ctx.files,
+  // 旁注也给，只跑明确只读的那几类（git log、Get-Content、ls……，见 isReadOnlyCommand），不请示、不转后台
+  lookup: true,
   sideEffect: true,
   writes: true,
   html: workStepHtml,
@@ -16,7 +18,8 @@ defineTool({
     step.title = args.command.trim();
     if (!step.title) return { ok: false, content: t("指令为空"), display: "指令为空" };
     step.readOnly = isReadOnlyCommand(step.title);
-    const background = args.background === true;
+    if (ctx.lookup && !step.readOnly) return { ok: false, content: prompt("work.sideReadOnly"), display: "非只读" };
+    const background = args.background === true && !ctx.lookup;
     if (background) step.background = true;
     let policy = commandPolicyOf(conversation);
     // 问而后行开着沙箱：先问一声严的沙箱会不会拦。会拦的也请示（只读的也不例外），请示条写明原因；批了这一条就出沙箱跑
@@ -26,6 +29,7 @@ defineTool({
     }
     let escalated = false;
     // 守的关口刚批过这一条（见 keepHook）：不再另问，除非还要出沙箱
+    if (ctx.lookup && step.sandboxWhy) return { ok: false, content: t`旁注里不出沙箱：${step.sandboxWhy}`, display: "沙箱拦下" };
     if (policy === "ask" && (!step.readOnly || step.sandboxWhy) && !(step.granted && !step.sandboxWhy)) {
       if (!(await askApproval(step, ctx))) {
         step.skipped = true;
@@ -36,7 +40,8 @@ defineTool({
     // 用户可能在请示条上把这一段对话切成了径行：执行前再取一次，不沿用旧档位
     policy = commandPolicyOf(conversation);
     // 前台的带上 ticket：等满 timeout、或有话要递（见 releaseForeground），桥接就把它转入后台接着跑，回话里带 handedOff
-    const ticket = background ? undefined : `${step.id}-${uid().slice(0, 6)}`;
+    // 旁注不带：等满 timeout 就作罢，不转后台（后台结束要叫醒的是正文那一答）
+    const ticket = background || ctx.lookup ? undefined : `${step.id}-${uid().slice(0, 6)}`;
     if (ticket) foregroundRuns.set(ticket, { conversation: conversation.id, scope: step.scope });
     const data = await bridge(
       "/api/work/run",
@@ -87,7 +92,8 @@ defineTool({
   }
 });
 
-// 后台指令：取上次之后的新输出，可顺带等一会儿，或结束它；跟着 run_command 走——言里也能开后台指令，开了就得看得了
+// 看一条候：后台指令取上次之后的新输出，可顺带等一会儿，或结束它；等时刻的（t 开头）看几时到，或取消它（见 23-timer.js）。
+// 跟着 run_command 走——言里也能开后台指令，开了就得看得了
 defineTool({
   name: "check_command",
   group: "work",
@@ -96,8 +102,9 @@ defineTool({
   html: workStepHtml,
   async run(step, args, { conversation, assistant, signal }) {
     const id = args.id.trim(),
-      stop = args.stop === true,
-      started = bgStepOf(conversation, id);
+      stop = args.stop === true;
+    if (/^t\d+$/.test(id)) return checkTimer(step, id, stop, conversation, signal);
+    const started = bgStepOf(conversation, id);
     step.title = `${id}${stop ? t(" · 结束") : ""}`;
     // 模型亲手结束它：不必再叫醒一回
     if (stop && started) bgWatches.get(started.id)?.abort();
@@ -142,13 +149,14 @@ function watchBackground(conversation, assistant, step) {
     .then(
       data => {
         if (data.superseded) return;
+        // 随桥接重启而止：只把签改了，不叫醒。重启是人自己动的手，挂着的多是预览、服务，叫醒了模型多半挨个重开；
+        // 真等着结果的（训练），模型下一问从行迹摘要里看得到它止了
         if (data.lost) return settleBackground(step, "lost", undefined, assistant);
         // 模型自己看过它结束了（check_command），只把签改成已结束，不再叫醒
         const fresh = !data.reported;
         if (fresh) step.output = trimOutput([step.output, commandOutput(data)].filter(Boolean).join("\n"));
         settleBackground(step, "done", data.exitCode, assistant);
-        // 没人等它了（用户停了那一答，见 releaseBackground）：签照改，不再叫醒谁
-        if (!fresh || step.bg.quiet) return;
+        if (!fresh) return;
         mailReport(conversation, {
           report: prompt("work.bgDone", {
             id: data.id,
@@ -160,7 +168,14 @@ function watchBackground(conversation, assistant, step) {
           }),
           step,
           profile,
-          relay: { step: step.id, title: data.id, ok: data.exitCode === 0, kind: "bg", exitCode: data.exitCode }
+          relay: {
+            step: step.id,
+            title: data.id,
+            ok: data.exitCode === 0,
+            kind: "bg",
+            exitCode: data.exitCode,
+            ...(step.gist ? { gist: step.gist } : {})
+          }
         });
       },
       error => {
@@ -195,6 +210,17 @@ function settleBackground(step, state, exitCode, assistant) {
   // 帮手开的：它若睡着等，叫它看一眼——有信就接着做，等的都了结了就收工（随桥接重启而止的不寄信，见 mailHelper）
   if (step.scope && conversation) (crews.get(conversation.id) || []).find(box => box.sub.id === step.scope)?.wake?.();
 }
+// 候在页面上叫什么：起它时那句白话（run_command 的 description、set_timer 的 note），bg1、t1 这样的编号只对模型有用；没写的才退回编号
+/** @param {Step} step */
+function bgName(step) {
+  return step.gist || step.bg?.id || step.timer?.id || "";
+}
+/** 回报细线、行迹里那一小步、导出写的「谁结束了」 @param {Relay} relay */
+function bgEndedText(relay) {
+  // 随桥接重启而止原先也叫醒、留了细线（已不再叫醒）：旧记录照原样写
+  if (relay.lost) return relay.gist ? t`后台「${relay.gist}」随桥接重启而止` : t`后台 ${relay.title} 随桥接重启而止`;
+  return relay.gist ? t`后台「${relay.gist}」已结束` : t`后台 ${relay.title} 已结束`;
+}
 // 这段对话里编号为 id 的那条后台指令（编号在桥接重启后会重数：取最近的一条）
 /** @param {Conversation} conversation */
 function bgStepOf(conversation, id) {
@@ -214,16 +240,17 @@ function rewatchBackground() {
       for (const step of allSteps(message)) if (step.bg?.state === "running") watchBackground(conversation, message, step);
   }
 }
-// 后台指令随它所属的那一答收口——停止、重答改问、删对话都经这里，不各写一份：
-// 用户停了那一答（kill 为假）：进程照跑（训练、开着的服务未必要断），只是结束时不再叫醒模型另起一答；
-// 那一答被换下或对话删了（kill）：连进程收掉，不然成了占着端口的孤儿，新的一版再起同一个服务就撞上
+// 候随它所属的那几答收口——重答改问、删对话都经这里，不各写一份：挂它的那一步没了，到时也无处可报，
+// 后台指令连进程收掉（不然成了占着端口的孤儿，新的一版再起同一个服务就撞上），约好的时刻取消。按「止」不经这里（见 haltConversation）
 /** @param {Conversation} conversation @param {Message[]} messages */
-function releaseBackground(conversation, messages, { kill = false } = {}) {
+function releaseBackground(conversation, messages) {
   for (const message of messages)
     for (const step of allSteps(message)) {
+      if (step.timer?.state === "waiting") {
+        settleTimer(step, "stopped", message);
+        void bridge("/api/timer/cancel", { id: step.timer.id, to: conversation.id }).catch(() => {});
+      }
       if (step.bg?.state !== "running") continue;
-      step.bg.quiet = true;
-      if (!kill) continue;
       const { id, key } = step.bg;
       settleBackground(step, "stopped", undefined, message);
       void bridge("/api/work/check", { id, key, stop: true }).catch(() => {});

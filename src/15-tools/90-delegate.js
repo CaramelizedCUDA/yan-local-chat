@@ -236,7 +236,7 @@ function launchHelper(step, args, ctx, past = null, resume = false, profile = re
     .then(
       outcome => {
         // 断了：挂着等人续，不回报——断网时主模型多半也连不上，叫醒它只是让它跟着断
-        if (outcome.held) return holdHelper(step, outcome.display);
+        if (outcome.held) return holdHelper(step, outcome.display, conversation);
         step.status = outcome.ok ? "done" : "error";
         step.result = outcome.display;
         // 交过进展后没再做什么就收工了（等的后台随桥接重启而止）：进展已是最后的话，不再重报
@@ -247,7 +247,7 @@ function launchHelper(step, args, ctx, past = null, resume = false, profile = re
         if (error.name === "AbortError") return void Object.assign(step, { status: "error", result: "已止" });
         const reason = bridgeErrorText(String(error.message || error));
         // 领命途中断的（读账本连不上之类）：同样挂着等人续
-        if (step.sub) return holdHelper(step, reason);
+        if (step.sub) return holdHelper(step, reason, conversation);
         step.status = "error";
         step.result = reason;
         mailReport(conversation, {
@@ -280,14 +280,16 @@ function helperWaits(sub) {
 // ---------- 断着与续上 ----------
 // 不是谁叫停的就断了（连不上接口、额度用完、页面刷新）：挂着等人，签上状态位换成续写那一笔（设计稿/97 甲）。
 // 不按报错分类——连不上、额度、鉴权，主模型都救不了，只有人换 Key、调上限、等网回来；人点「续」从断处接着做，做完照常回报
-/** @param {Step} step @param {string} reason */
-function holdHelper(step, reason) {
+// 做着做着断的（传了 conversation）弹一条桌面通知；页面刷新时收束断着的那些不弹
+/** @param {Step} step @param {string} reason @param {Conversation} [conversation] */
+function holdHelper(step, reason, conversation) {
   step.status = "interrupted";
   step.result = reason;
   if (step.sub) {
     settleStepList(step.sub.steps, "已中断");
     step.sub.status = "interrupted";
   }
+  if (conversation) notifyDesktop(conversation, t`帮手「${step.title || ""}」断了，待你续：${reason}`);
 }
 /** 同一名帮手另起了新的一趟（续派）：先前断着的那几趟作罢 @param {Conversation} conversation @param {Step} step */
 function retireHeldRuns(conversation, step) {
@@ -348,20 +350,12 @@ function resumeHelperStep(id) {
     step = conversation && helperRuns(conversation).find(run => run.id === id);
   if (step) void resumeHelpers(conversation, [step]);
 }
-// 用量两份相加；都没有记作 null
-function usageSum(a, b) {
-  if (!a || !b) return a || b || null;
-  const sum = { ...a };
-  for (const [key, value] of Object.entries(b)) sum[key] = Number(sum[key] || 0) + Number(value || 0);
-  return sum;
-}
 // 派它的那一答收尾时它还没做完，墨没算进这一答：做完了记回那一答（余墨各轮已当场扣过，见 runRounds 的 spend）
 /** @param {Message} assistant */
 function chargeHelper(assistant, usage) {
   const spent = Number(usage?.total_tokens || 0);
   if (!spent) return;
-  assistant.usage ||= { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-  for (const key of Object.keys(usage)) assistant.usage[key] = Number(assistant.usage[key] || 0) + Number(usage[key] || 0);
+  assistant.usage = usageSum(assistant.usage, usage);
   assistant.tokenCount = Number(assistant.tokenCount || 0) + spent;
 }
 // 续派时帮手先前的经过：每一趟一问一答（所领之命 → 回报），上一趟的行迹冠在下一趟的命前，与主对话的历史同一个写法
@@ -499,6 +493,8 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
     box.controller.signal.throwIfAborted();
     // 领命这一刻现读主对话的账本（只读）：「先定下约束、再派活」时，开页读的那份往往还没有。
     const ledger = await loadLedger(conversation, box.controller.signal, "sub");
+    // 先前几趟的行迹若已另存出去，接回来再写进它的历史
+    await warmConversation(conversation);
     box.controller.signal.throwIfAborted();
     const lead = past ? settledDigest(past.sub) : "";
     history.push(...(past ? helperHistory(conversation, past) : []), {
@@ -716,12 +712,11 @@ function helperStepHtml(step) {
 function relayStepHtml(step) {
   const relay = step.relay || { step: "", title: "", ok: true },
     status = step.status || "done",
-    bg = relay.kind === "bg",
-    what = bg
-      ? t`后台 ${relay.title} 已结束${relay.ok ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`}`
-      : t`帮手「${relay.title}」${relay.ok ? t("回报") : t("未完成")}`,
-    target = bg ? `data-relay-reveal="${escapeHtml(relay.step)}"` : `data-relay-step="${escapeHtml(relay.step)}"`;
-  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${bg ? t("回到挂它的那一步") : t("看这一趟的经过")}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${bg ? t("候") : t("遣")}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;
+    { seal, name, gist } = relayLabel(relay),
+    what = gist ? `${name} · ${gist}` : name,
+    target = !relay.kind ? `data-relay-step="${escapeHtml(relay.step)}"` : `data-relay-reveal="${escapeHtml(relay.step)}"`,
+    hint = !relay.kind ? t("看这一趟的经过") : t("回到挂它的那一步");
+  return `<div class="tool-step tool-step-note tool-step-relay" data-tool="relay_note" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head" role="button" tabindex="0" ${target} title="${hint}"><span class="tool-label"><span class="seal note-seal" aria-hidden="true">${seal}</span>${t(`回报`)}</span><span class="tool-title">${escapeHtml(what)}</span><span class="tool-meta">${status === "running" ? t("待递") : escapeHtml(stepText(step.result))}</span>${stepStateHtml(status)}</div></div>`;
 }
 // 签的种类变了（参数拟完才知道是续派还是传话）就整张换；续派的签与差遣一样就地更新
 /** @param {Step} step */

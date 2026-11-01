@@ -76,8 +76,46 @@ test("请示表单上的作答是用户亲口说的：问句连答案按先后�
     };
   assert.match(
     f.reviewCase(now, {}, gated, "缘由"),
-    /2\. ［守请示］准许了 run_command：git push origin fix\n3\. ［守请示］准许了下面将要做的这一步/
+    /2\. ［守请示］准许了 run_command：git push origin fix\n3\. ［守请示］用户在关口上看过下面将要做的这一步，准许了/
   );
+});
+
+test("作答途中寄来的补言也是用户的原话：交审查、也算用户给过的参数", () => {
+  const chat = {
+    id: "c",
+    messages: [
+      { role: "user", content: "LGTM，可以发送" },
+      {
+        role: "assistant",
+        steps: [
+          { name: "relay_note", note: "帮手回报" },
+          { name: "user_note", note: `允许创建PR，口令 ${TOKEN}` }
+        ]
+      }
+    ]
+  };
+  assert.match(f.reviewCase({ name: "mcp_call" }, {}, chat, "缘由"), /1\. LGTM，可以发送\n2\. 允许创建PR/);
+  assert.equal(f.stageReviewWhy("browser_navigate", { url: `https://a.example/c?d=${TOKEN}` }, chat), "");
+});
+
+test("意另起一节；这一步过了关口的那条守标明已照过", () => {
+  const f2 = load(["reviewCase", "intents", "PROMPTS"]);
+  Object.assign(f2.PROMPTS, { review: { case: "{{user}}{{intent}}|{{action}}", intent: "［意］{{text}}" } });
+  const nodes = {
+    发布: { claim: "开 PR", needs: [], state: "doing" },
+    发布审批: { claim: "发布前给用户看过、批了再发", needs: [], keep: true, ask: true },
+    别删: { claim: "不删远端分支", needs: [], keep: true }
+  };
+  f2.intents.set("c", { intent: { nodes } });
+  const now = { name: "mcp_call", granted: ["发布审批"] },
+    text = f2.reviewCase(now, {}, { id: "c", messages: [{ role: "assistant", steps: [now] }] }, "缘由");
+  assert.match(text, /准许了\n\n［意］/);
+  assert.match(text, /发布前给用户看过、批了再发（这一步已过此守的关口：用户看过、准许了）；不删远端分支\|/);
+});
+
+test("将要做的整段交审查，不截", () => {
+  const body = `${"x".repeat(5000)}末尾`;
+  assert.match(f.reviewCase({ name: "mcp_call" }, { body }, { id: "c", messages: [] }, "缘由"), /x{5000}末尾/);
 });
 
 test("往技能目录写：带 . 与 .. 的相对、绝对路径都认得出", () => {

@@ -25,6 +25,7 @@ async function askApproval(step, { conversation, assistant, signal }) {
     };
     signal.addEventListener("abort", onAbort, { once: true });
     pendingApprovals.set(step.id, { conversationId: conversation.id, resolve: done, step });
+    notifyDesktop(conversation, t`待你定夺：${step.gist || step.title || toolLabel(step.name)}`);
     // 先入册再画行迹：行迹据它认出哪一步已在请示条上（见 inApprovalBar）
     renderApprovalBar();
     refreshSteps(assistant);

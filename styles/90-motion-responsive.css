@@ -392,7 +392,7 @@ button:focus:not(:focus-visible) {
   transform: translateY(-50%);
 }
 /* 翻到卷宗、分组页时对话那一栏收起，属于它的导航条与滚动把手一并不露（与书眉同一条规矩），不靠切页时记得去藏 */
-.main:has(#chat.hidden) :is(.outline, .chat-scroll-grabber) {
+.main:has(> #chat.hidden) :is(.outline, .chat-scroll-grabber) {
   display: none;
 }
 .outline-item {
@@ -650,8 +650,10 @@ button:focus:not(:focus-visible) {
     padding: 0 14px;
   }
   .running-head {
-    left: 54px;
-    right: 230px;
+    margin-left: 8px;
+  }
+  .topbar:has(.trail-fold-head.shown) .running-head {
+    max-width: calc(50% - 104px); /* 前面多了侧栏钮一格，同样让到中线以左 64px */
   }
   .welcome {
     padding: 40px 20px 100px;

@@ -374,6 +374,46 @@ button.source-local {
   max-height: none;
   margin: auto;
 }
+/* 一组图（卷宗此刻列着的图）：底下一条小样，当前那幅描墨、余者淡，点哪幅换哪幅（设计稿/126 乙）。
+   小样一律方格，懒加载时不跳；排不下就横着滚，当前那幅滚到正中 */
+.image-viewer.has-strip .image-viewer-image {
+  max-height: calc(100dvh - 106px - 79px);
+}
+.image-viewer-strip {
+  flex: none;
+  display: flex;
+  justify-content: safe center;
+  gap: 8px;
+  padding: 10px 18px 14px;
+  overflow-x: auto;
+  border-top: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  scrollbar-width: thin;
+}
+.image-viewer-strip button {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  background: var(--paper-3);
+  opacity: 0.5;
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+.image-viewer-strip button:hover {
+  opacity: 0.8;
+}
+.image-viewer-strip button.on {
+  opacity: 1;
+  outline: 1.5px solid var(--ink-2);
+  outline-offset: 2px;
+}
+.image-viewer-strip img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 
 /* 卷宗文件的悬浮预览：与图片查看器同一张纸，中间按文件类型换内容。纸是实的，文本直接写在页上、不另垫卡片（设计稿/83 乙） */
 .file-viewer {

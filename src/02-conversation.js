@@ -23,7 +23,7 @@ function forkTail(c, index) {
   }
   if (orphans.length) toast(t("旧答派出的帮手已停下"));
   // 旧答开的后台指令也一样：结束时无处可报，进程一并收掉
-  releaseBackground(c, tail, { kill: true });
+  releaseBackground(c, tail);
   c.messages = c.messages.slice(0, index);
   // 只剩一条报错或空白的消息就不值得留作版本
   if (tail.length === 1 && !tail[0].content && !tail[0].steps?.length) {

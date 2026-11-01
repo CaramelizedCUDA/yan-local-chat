@@ -3,13 +3,21 @@
 // ---------- 卷宗文件的悬浮预览：图看画、文看字、表看格、网页进沙箱、PDF 交给浏览器、音视频就地放；都不必先下载 ----------
 // 预览器看两种来源：磁盘卷宗（走桥接取回）与对话里的附件（就在这个浏览器里）。同一种文件，不论从哪儿来，看法一样——
 // 自己上传的 CSV、PDF、Markdown 点开就该是看，而不是把刚发出去的东西再下载一遍。
-// viewerSource 记着当前看的是哪一件：{ path } 是卷宗，{ attachmentId } 是附件，{ skillDir, skillPath } 是技能带的一件（设置 → 技能里点开）；
+// viewerSource 记着当前看的是哪一件：{ path } 是卷宗（带 root 的是那个目录里的），{ attachmentId } 是附件，{ skillDir, skillPath } 是技能带的一件（设置 → 技能里点开）；
 // viewerPath 仍留给卷宗那一路的下载
 let viewerPath = "",
   viewerRevision = 0,
   viewerSource = null,
   viewerReturnFocus = null,
   viewerObjectUrls = [];
+// 关了浮层，焦点交还给点开它的那一件；键盘移到那儿打开的才照旧露焦点框。鼠标点开的、哪怕按 Esc 关，也不露——
+// 浏览器见了按键就当键盘在那儿，正文里那一叠会以为有人移到上头，一直斜开着
+/** @param {Element|null} el */
+const focusReturn = el => (el ? { el, visible: el.matches(":focus-visible") } : null);
+/** @param {{ el: Element, visible: boolean } | null} target */
+function returnFocus(target) {
+  if (target?.el.isConnected) target.el.focus({ focusVisible: target.visible });
+}
 function viewerBlobUrl(blob) {
   const url = URL.createObjectURL(blob);
   viewerObjectUrls.push(url);
@@ -40,14 +48,14 @@ function skillFileUrl(source, download = false) {
   return `${apiBase}/api/skills/raw?dir=${encodeURIComponent(source.skillDir)}&path=${encodeURIComponent(source.skillPath)}${download ? "&download=1" : ""}`;
 }
 async function viewerReader(source) {
-  if (source.path) return urlReader(archiveFileUrl(source.path));
+  if (source.path) return urlReader(archiveFileUrl(source.path, false, source.root || archiveDir()));
   if (source.skillDir) return urlReader(skillFileUrl(source));
   const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
     head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
   if (head?.ok) return urlReader(url);
   const file = await getAttachment(source.attachmentId);
   if (!file) throw Error(t("附件原件已找不到"));
-  const blob = file.kind === "text" ? new Blob([file.data], { type: file.mime || "text/plain" }) : await (await fetch(file.data)).blob();
+  const blob = attachmentBlob(file);
   return {
     url: () => viewerBlobUrl(blob),
     text: async () => (file.kind === "text" ? String(file.data) : blob.text()),
@@ -56,7 +64,7 @@ async function viewerReader(source) {
     extracted: String(file.extractedText || "")
   };
 }
-/** @param {string|{path?:string, attachmentId?:string, skillDir?:string, skillPath?:string}} target 卷宗路径，或 { attachmentId }，或技能里的一件 */
+/** @param {string|{path?:string, root?:string, attachmentId?:string, skillDir?:string, skillPath?:string}} target 卷宗路径，或别处目录里的 { path, root }（行的工作目录里的成品），或 { attachmentId }，或技能里的一件 */
 async function openFileViewer(target, name = "", trigger = null) {
   const revision = ++viewerRevision;
   const source = typeof target === "string" ? { path: target } : target;
@@ -71,7 +79,7 @@ async function openFileViewer(target, name = "", trigger = null) {
     kind = fileKind(title).view || "none";
   viewerPath = source.path || "";
   viewerSource = source;
-  viewerReturnFocus = trigger || document.activeElement;
+  viewerReturnFocus = focusReturn(trigger || document.activeElement);
   revokeViewerUrls();
   showNow(viewer);
   setViewerSeal();
@@ -97,12 +105,13 @@ const VIEWER_OPEN_BUTTON = `<button type="button" class="outline-btn" data-viewe
 async function openViewerWithSystem() {
   const source = viewerSource;
   try {
-    if (source?.path) await bridge("/api/archive/open", { root: archiveDir(), path: source.path }, AbortSignal.timeout(8000));
+    if (source?.path)
+      await bridge("/api/archive/open", { root: source.root || archiveDir(), path: source.path }, AbortSignal.timeout(8000));
     else if (source?.attachmentId) await bridge("/api/files/open", { id: source.attachmentId }, AbortSignal.timeout(8000));
     else if (source?.skillDir)
       await bridge("/api/skills/open-item", { dir: source.skillDir, path: source.skillPath }, AbortSignal.timeout(8000));
     else return;
-    toast(t("已交给本机程序打开"));
+    toast(t("已在本机程序中打开"));
   } catch (error) {
     toast(t`打开失败：${String(error.message || error).slice(0, 80)}`);
   }
@@ -115,7 +124,7 @@ function downloadViewerFile() {
     anchor.href = skillFileUrl(viewerSource, true);
     anchor.download = String(viewerSource.skillPath).split("/").pop() || "";
     anchor.click();
-  } else if (viewerPath) downloadArchiveFile(viewerPath);
+  } else if (viewerPath) downloadArchiveFile(viewerPath, viewerSource?.root || archiveDir());
 }
 async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
   if (kind === "image") return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;
@@ -305,7 +314,7 @@ function closeFileViewer(stop = false) {
     // 预览里全屏着的作品随预览一起没了：页上的 work-mode 也得撤，不然对话区滚不动
     if (!document.querySelector(".work-expanded")) closeExpandedWork();
   }, 180);
-  if (target?.isConnected) target.focus();
+  returnFocus(target);
 }
 // 不是一件文件、而是现成的一段内容（如一件文件在这一答里的改动）也摊在这层浮层里看：没有可下载的，下载键收起
 /** 顶栏那一枚印：预览一律「览」，意的卡片换它自己的石青「意」（全页仍只一枚印） @param {string} [glyph] */
@@ -318,7 +327,7 @@ function showInFileViewer(title, html, trigger = null, seal = t("览")) {
   viewerRevision++;
   viewerPath = "";
   viewerSource = null;
-  viewerReturnFocus = trigger || document.activeElement;
+  viewerReturnFocus = focusReturn(trigger || document.activeElement);
   revokeViewerUrls();
   showNow($("#fileViewer"));
   setViewerSeal(seal);
@@ -327,25 +336,91 @@ function showInFileViewer(title, html, trigger = null, seal = t("览")) {
   $("#fileViewerStage").innerHTML = html;
   $("#fileViewerClose").focus();
 }
+/** @type {{ src: string, name: string, url: string } | null} 正看的是取来的外链图 */
+let imageViewerRemote = null;
 let imageViewerArchivePath = null,
+  imageViewerArchiveRoot = "",
   imageViewerRevision = 0;
-function openArchiveImage(path, trigger = null) {
-  imageViewerRevision++;
-  const entry = (archiveEntries || []).find(file => file.path === path);
-  imageViewerAttachmentId = null;
-  imageViewerArchivePath = path;
-  showImageViewer(archiveFileUrl(path), entry?.name || "", `${entry?.name || path} · ${formatFileSize(entry?.size || 0)}`, trigger);
+// 卷宗里的图；root 给了是别处目录里的（正文引的工作目录里的图），那里没有件数大小可报。
+// paths 是同看的一组（卷宗此刻列着的图），看图框底下排成一条小样、左右翻
+function openArchiveImage(path, trigger = null, root = archiveDir(), paths = [path]) {
+  openImageSet(
+    paths.map(item => ({ path: item, root })),
+    Math.max(0, paths.indexOf(path)),
+    trigger
+  );
 }
-// 看图框摊开一张图（附件、卷宗共用），先按窗口大小看
-function showImageViewer(src, name, label, trigger) {
-  imageViewerReturnFocus = trigger || document.activeElement;
+// 看图框一回看的一组：每件是附件 { id }、目录里的图 { path, root }，或点了取来的外链图 { src, name, url }；只一件时不出小样
+let imageViewerSet = [],
+  imageViewerIndex = 0;
+/** @param {{ id?: string, path?: string, root?: string, src?: string, name?: string, url?: string }[]} items @param {number} index @param {Element|null} trigger */
+function openImageSet(items, index, trigger = null) {
+  imageViewerSet = items;
+  imageViewerReturnFocus = focusReturn(trigger || document.activeElement);
+  const strip = $("#imageViewerStrip"),
+    many = items.length > 1;
+  $("#imageViewer").classList.toggle("has-strip", many);
+  strip.classList.toggle("hidden", !many);
+  strip.innerHTML = many
+    ? items
+        .map(
+          (item, i) =>
+            `<button type="button" data-strip-index="${i}"${item.path ? ` title="${escapeHtml(item.path.split("/").pop())}"` : ""}>${
+              item.id
+                ? `<img data-thumb="${escapeHtml(item.id)}" alt="">`
+                : item.src
+                  ? `<img src="${escapeHtml(item.src)}" alt="">`
+                  : `<img src="${escapeHtml(archiveFileUrl(item.path, false, item.root))}" loading="lazy" decoding="async" alt="">`
+            }</button>`
+        )
+        .join("")
+    : "";
+  if (many) void loadThumbnails(strip);
+  return showImageAt(index, true);
+}
+// 摊开组里的第几件，先按窗口大小看；附件要先从库里取，取到时已换了别件就作罢
+async function showImageAt(index, opening = false) {
+  const item = imageViewerSet[index];
+  if (!item) return;
+  const revision = ++imageViewerRevision;
+  let src, name, label;
+  if (item.id) {
+    let file;
+    try {
+      file = await getAttachment(item.id);
+    } catch {
+      if (revision === imageViewerRevision) toast(t("图片读取失败"));
+      return;
+    }
+    if (revision !== imageViewerRevision) return;
+    if (!file) return toast(t("图片原件已找不到"));
+    if (file.kind !== "image") return openFileViewer({ attachmentId: item.id }, file.name, imageViewerReturnFocus?.el);
+    [src, name, label] = [file.data, file.name, `${file.name || t("图片")} · ${formatFileSize(file.size)}`];
+  } else if (item.src) {
+    [src, name, label] = [item.src, item.name || "", `${item.name || t("图片")} · ${stageHost(item.url || "")}`];
+  } else {
+    const entry = item.root === archiveDir() ? (archiveEntries || []).find(file => file.path === item.path) : null;
+    src = archiveFileUrl(item.path, false, item.root);
+    name = entry?.name || "";
+    label = entry ? `${entry.name} · ${formatFileSize(entry.size || 0)}` : item.path.split("/").pop();
+  }
+  imageViewerIndex = index;
+  imageViewerAttachmentId = item.id || null;
+  imageViewerArchivePath = item.path || null;
+  imageViewerRemote = item.src ? { src: item.src, name: item.name || "", url: item.url || "" } : null;
+  imageViewerArchiveRoot = item.root || "";
   $("#imageViewerName").textContent = label;
   const image = $("#imageViewerImage");
   image.src = src;
   image.alt = name || t("图片预览");
   setImageViewerZoom(false);
-  showNow($("#imageViewer"));
-  $("#imageViewerClose").focus();
+  const marks = $("#imageViewerStrip").children;
+  for (const mark of marks) mark.classList.toggle("on", mark === marks[index]);
+  if (opening) {
+    showNow($("#imageViewer"));
+    $("#imageViewerClose").focus();
+  }
+  marks[index]?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 function downloadArchiveFile(path, root = archiveDir()) {
   const anchor = document.createElement("a");
@@ -387,12 +462,31 @@ function bindViewerEvents() {
   $("#imageViewerClose").onclick = closeImageViewer;
   $("#imageViewerDownload").onclick = () => {
     if (imageViewerAttachmentId) void downloadAttachment(imageViewerAttachmentId);
-    else if (imageViewerArchivePath) downloadArchiveFile(imageViewerArchivePath);
+    else if (imageViewerArchivePath) downloadArchiveFile(imageViewerArchivePath, imageViewerArchiveRoot);
+    else if (imageViewerRemote) {
+      let name = imageViewerRemote.url.split(/[?#]/)[0].split("/").pop() || "";
+      try {
+        name = decodeURIComponent(name);
+      } catch {}
+      downloadHref(imageViewerRemote.src, name || imageViewerRemote.name || t("图片"));
+    }
   };
   $("#imageViewerZoom").onclick = toggleImageViewerZoom;
   $("#imageViewerStage").addEventListener("click", e => {
     if (e.target === $("#imageViewerImage")) toggleImageViewerZoom();
     else if (e.target === $("#imageViewerStage")) closeImageViewer();
+  });
+  // 一组里：点小样换那幅，← → 翻上一幅、下一幅，到头不绕回
+  $("#imageViewerStrip").addEventListener("click", e => {
+    const mark = /** @type {HTMLElement|null} */ (e.target.closest("[data-strip-index]"));
+    if (mark) void showImageAt(Number(mark.dataset.stripIndex));
+  });
+  document.addEventListener("keydown", e => {
+    const step = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+    if (!step || e.altKey || e.ctrlKey || e.metaKey || imageViewerSet.length < 2 || !isShown("#imageViewer")) return;
+    e.preventDefault();
+    const next = imageViewerIndex + step;
+    if (next >= 0 && next < imageViewerSet.length) void showImageAt(next);
   });
 }
 function toggleImageViewerZoom() {
@@ -415,26 +509,14 @@ function closeImageViewer() {
   setTimeout(() => {
     if (revision !== imageViewerRevision) return;
     $("#imageViewerImage").removeAttribute("src");
+    $("#imageViewerStrip").innerHTML = "";
     setImageViewerZoom(false);
   }, 180);
+  imageViewerSet = [];
   imageViewerAttachmentId = null;
   const target = imageViewerReturnFocus;
   imageViewerReturnFocus = null;
-  if (target?.isConnected) target.focus();
-}
-async function openImageViewer(id, trigger = null) {
-  const revision = ++imageViewerRevision;
-  try {
-    const file = await getAttachment(id);
-    if (revision !== imageViewerRevision) return;
-    if (!file) return toast(t("图片原件已找不到"));
-    if (file.kind !== "image") return openFileViewer({ attachmentId: id }, file.name, trigger);
-    imageViewerAttachmentId = id;
-    imageViewerArchivePath = null;
-    showImageViewer(file.data, file.name, `${file.name || t("图片")} · ${formatFileSize(file.size)}`, trigger);
-  } catch {
-    if (revision === imageViewerRevision) toast(t("图片读取失败"));
-  }
+  returnFocus(target);
 }
 // 图片查看器盖在卷宗预览之上，先收它（连同底下的预览）；CSV、Markdown、PDF 这些预览单独开着时，Esc 也得关得掉
 defineLayer({

@@ -48,13 +48,36 @@ function uncacheAttachment(id) {
   attachmentCache.delete(id);
   attachmentCacheSize -= String(record.data || "").length + String(record.extractedText || "").length;
 }
-async function putAttachment(record) {
+// body：原件（置入的 File）；没给的照 record.data 现做——文本附件的 data 是正文，别的是 data: URL。桥接不在时暂存进浏览器，那时才读成 data
+/** @param {Record<string, any>} record @param {Blob|null} [body] */
+async function putAttachment(record, body = null) {
   uncacheAttachment(record?.id);
   try {
-    await bridge("/api/files/put", { record }, AbortSignal.timeout(120000));
+    await uploadAttachment(record, body);
     return;
   } catch {}
-  return fileStoreRequest("readwrite", db => db.put(record));
+  const data = record.data ?? (body ? await readFile(body, record.kind === "text" ? "text" : "data") : undefined);
+  return fileStoreRequest("readwrite", db => db.put({ ...record, data }));
+}
+/** @param {Record<string, any>} record @param {Blob|null} [body] */
+function uploadAttachment(record, body = null) {
+  const { data: _data, ...meta } = record;
+  return bridgeUpload("/api/files/put", { record: meta }, body || attachmentBlob(record), AbortSignal.timeout(120000));
+}
+// 记录里的原件换成 Blob：文本附件的 data 是正文，别的是 data: URL
+/** @param {Record<string, any>} record */
+function attachmentBlob(record) {
+  return record.kind === "text" ? new Blob([String(record.data ?? "")], { type: record.mime || "text/plain" }) : dataUrlBlob(record.data);
+}
+// 要整份原件交出去时（收入卷宗）：在存储目录里的照同源地址取，浏览器自己托着字节，不读成 data: URL；只暂存在浏览器里的从表里取
+/** @param {string} id @returns {Promise<Blob|null>} */
+async function attachmentBody(id) {
+  const response = await fetch(`${apiBase}/api/files/raw?id=${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(120000) }).catch(
+    () => null
+  );
+  if (response?.ok) return response.blob();
+  const record = await getAttachment(id);
+  return record ? attachmentBlob(record) : null;
 }
 async function getAttachment(id) {
   if (!id) return null;
@@ -66,6 +89,16 @@ async function getAttachment(id) {
   if (!record) record = (await fileStoreRequest("readonly", db => db.get(id)).catch(() => null)) || null;
   cacheAttachment(record);
   return record;
+}
+// 只取元数据与抽出的正文（文本附件连同正文）：发问时翻历史、read_document 只用得着这些，不必把整份原件编成 base64 取回
+async function getAttachmentMeta(id) {
+  if (!id) return null;
+  if (attachmentCache.has(id)) return attachmentCache.get(id);
+  try {
+    const record = (await bridge("/api/files/get", { id, meta: true }, AbortSignal.timeout(60000))).record;
+    if (record) return record;
+  } catch {}
+  return (await fileStoreRequest("readonly", db => db.get(id)).catch(() => null)) || null;
 }
 function deleteAttachment(id) {
   thumbCache.delete(id);
@@ -79,7 +112,11 @@ function deleteAttachment(id) {
 // 消息上的，连同行迹步骤上的（补言带的附件、工具交回的画面）
 function attachmentIds(messages = []) {
   return messages
-    .flatMap(message => [...(message.attachments || []), ...allSteps(message).flatMap(step => step.attachments || [])])
+    .flatMap(message => [
+      ...(message.attachments || []),
+      ...allSteps(message).flatMap(step => step.attachments || []),
+      ...coldFiles(message)
+    ])
     .map(file => file.id)
     .filter(Boolean);
 }
@@ -101,7 +138,7 @@ function holdAttachments(files) {
     void deleteAttachments(ids);
   };
 }
-// 仍在用的附件：各段对话（含换下的版本、旁注，连同行迹里补言带的、工具交回的画面）、草稿、案上待发的与发送快照
+// 仍在用的附件：各段对话（含换下的版本、旁注，连同行迹里补言带的、工具交回的画面，另存出去的那几答记在 cold.files）、草稿、案上待发的与发送快照
 function attachmentKeepIds() {
   const ids = new Set(attachmentHolds.keys());
   const add = files => {
@@ -111,6 +148,7 @@ function attachmentKeepIds() {
     for (const m of everyMessage(c)) {
       add(m.attachments);
       for (const step of allSteps(m)) add(step.attachments);
+      add(coldFiles(m));
     }
   for (const value of Object.values(store.drafts || {})) add(value?.attachments);
   add(pendingAttachments);
@@ -127,6 +165,7 @@ function usedAttachmentBytes() {
     for (const m of everyMessage(c)) {
       count(m.attachments);
       for (const step of allSteps(m)) count(step.attachments);
+      count(coldFiles(m));
     }
   return [...seen.values()].reduce((a, b) => a + b, 0);
 }
@@ -156,7 +195,7 @@ async function settleAttachmentStore() {
           const record = await fileStoreRequest("readonly", db => db.get(id)).catch(() => null);
           if (!record) continue;
           // 推不上去就留在表里，下回再推；推上去了才删表里的
-          const pushed = await bridge("/api/files/put", { record }, AbortSignal.timeout(120000)).then(
+          const pushed = await uploadAttachment(record).then(
             () => true,
             () => false
           );

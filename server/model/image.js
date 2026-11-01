@@ -1,11 +1,10 @@
 "use strict";
 // 言 · 生图（设置 → 专司）：只接 OpenAI 兼容的 /images/generations。硅基流动的参数名不同（image_size、batch_size），交回 images[].url；
 // OpenAI 系交回 data[].url 或 data[].b64_json。不论网址（硅基流动的一小时就失效）还是 base64，一律在这里取成 data: 地址交给页面，页面收进卷宗
-const { sendJson, readJson } = require("../http.js");
+const { sendJson, readJson, requestSignal, stamp } = require("../http.js");
 
 const SILICONFLOW = config => config.api === "siliconflow" || /siliconflow/i.test(config.baseUrl);
 const IMAGE_LIMIT = 40 * 1024 * 1024;
-const stamp = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
 
 function imagesUrl(baseUrl) {
   const url = new URL(String(baseUrl || "").trim());
@@ -37,10 +36,7 @@ async function fetchImage(raw, signal) {
 /** @param {{ resolveProfile: Function, upstreamError: (response: Response) => Promise<string> }} options */
 module.exports = function createImage({ resolveProfile, upstreamError }) {
   async function handleImage(req, res) {
-    const abort = new AbortController();
-    res.on("close", () => {
-      if (!res.writableEnded) abort.abort();
-    });
+    const gone = requestSignal(res);
     try {
       const body = await readJson(req),
         { config } = resolveProfile(body.profile, true),
@@ -58,7 +54,7 @@ module.exports = function createImage({ resolveProfile, upstreamError }) {
           ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {})
         },
         body: JSON.stringify(request),
-        signal: AbortSignal.any([abort.signal, AbortSignal.timeout(300000)])
+        signal: AbortSignal.any([gone, AbortSignal.timeout(300000)])
       }).catch(error => {
         throw Object.assign(Error(`连不上生图接口：${error.cause?.code || error.cause?.message || error.message}`), { status: 502 });
       });
@@ -71,7 +67,7 @@ module.exports = function createImage({ resolveProfile, upstreamError }) {
             ? (bytes => `data:${sniff(bytes) || "image/png"};base64,${item.b64_json}`)(
                 Buffer.from(String(item.b64_json).slice(0, 64), "base64")
               )
-            : await fetchImage(String(item?.url || ""), abort.signal),
+            : await fetchImage(String(item?.url || ""), gone),
           ...(item?.revised_prompt ? { revised: String(item.revised_prompt) } : {})
         }))
       );

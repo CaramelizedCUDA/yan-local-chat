@@ -19,7 +19,7 @@ const stage = {
   seq: 0,
   /** @type {Map<number, { resolve: (v: any) => void, reject: (e: Error) => void }>} */
   pending: new Map(),
-  /** @type {Map<string, { title: string, url: string }>} 浏览器里开着的页，按开的先后 */
+  /** @type {Map<string, { title: string, url: string, ctx?: string }>} 浏览器里开着的页，按开的先后；ctx 是所在的浏览器上下文 */
   tabs: new Map(),
   // setDiscoverTargets 会把已开着的页逐个报来：那些不算「新开」，别跟过去
   listing: false,
@@ -59,6 +59,8 @@ const stage = {
   released: { url: "", at: 0 },
   // 缩放：调那扇窗的宽，窗窄一档网页里的字就大一档（浏览器自己的缩放调不动，见 docs/stage.md）
   zoom: 1,
+  // 游目上回调那扇窗的时刻：此后一阵推来的换尺寸的帧是它调出来的，不当截图那一下压着（见 10-view.js 的 stageFrame）
+  fittedAt: 0,
   /** @type {{ guid: string, name: string, url: string, total: number, got: number, state: string, at: number, path?: string, by?: string }[]} 下载过的，新的在前 */
   downloads: [],
   // 下载签打开后才算看过：纸签上「下载」后的数目是没看过的
@@ -68,9 +70,6 @@ const stage = {
   // 执事最近一步的时刻：地址行那两字「执事」在它歇手后再留一会儿
   lastAct: 0,
   actTimer: 0,
-  // 指针形状跟着网页：上一回问的时刻、是否还在问
-  cursorAt: 0,
-  cursorAsking: false,
   // 输入法：正在组字（组字当中不挪隐藏输入框）、量光标的计时
   composing: false,
   caretTimer: 0,
@@ -84,31 +83,62 @@ const stage = {
   fitTimer: 0,
   empty: "",
   click: { at: 0, x: 0, y: 0, count: 0 },
+  // 人要在后台开新页的那一下（中键、Ctrl 点链接，右键「新标签打开」）：随后冒出的新页不跟过去
+  behindAt: 0,
   // 圈点开着：画面上的点按是下笔，不递进网页（见 src/26-stage/50-ink.js）
   pen: false,
   // 人最近一回在画面上按下的时刻：网页报来的按下若紧跟着它，是人按的，不当执事落笔
   userAt: 0,
+  // 人最近一回在游目里按键的时刻（下拉框要开时认是不是人）
+  keyAt: 0,
+  // 人最近一回经游目开网址的时刻（地址栏、收藏、开本机文件）：随后浏览器要「下载」的本机文件是人要开的
+  goAt: 0,
   /** @type {PointerEvent | null} */
-  moved: null
+  moved: null,
+  // 正在把某一页激活到前台的在途承诺：stageLocate 等它落定才查前台，免得撞上切签中途
+  /** @type {Promise<unknown> | null} */
+  activating: null,
+  // 人切签或主动激活的代数：切签即递增，stageLocate 拿回旧前台时不覆写已发生的新切签
+  frontRevision: 0
 };
 
 // ---------- 连上浏览器 ----------
 // 已连着时也问一回：模型若把别的页请到了前台（选签、新开），看台跟过去
 function stageLocate() {
   if (stage.locating) return stage.locating;
-  stage.locating = bridge("/api/stage", stageService())
+  let revision = 0;
+  stage.locating = Promise.resolve(stage.activating)
+    .then(() => {
+      revision = stage.frontRevision;
+      return bridge("/api/stage", stageService());
+    })
     .then(({ ws, front, marks, port, output }) => {
       stage.marks = !!marks;
       stage.port = port;
       stage.output = output || "";
       if (!stage.ws) return ws ? stageConnect(ws, front) : stageSync();
-      if (front && front !== stage.front && stage.tabs.has(front)) stageShow(front);
-      stage.front = front || stage.front;
+      if (revision === stage.frontRevision) {
+        if (front && front !== stage.front && stage.tabs.has(front)) stageShow(front);
+        stage.front = front || stage.front;
+      }
       stageSync();
     })
     .catch(() => {})
     .finally(() => (stage.locating = null));
   return stage.locating;
+}
+// 换到后台的那一页：先请到前台，不然它不重绘、没有画面
+/** @param {string} id */
+function stageActivate(id) {
+  const activating = stageSend("Target.activateTarget", { targetId: id })
+    .catch(() => {})
+    .finally(() => {
+      if (stage.activating === activating) stage.activating = null;
+    });
+  stage.activating = activating;
+  stage.front = id;
+  stage.frontRevision++;
+  stageShow(id);
 }
 /** @param {string} url @param {string} front */
 function stageConnect(url, front) {
@@ -169,9 +199,9 @@ function stageMessage(message) {
     if (!stageTabType(info) || (stage.helperCtx && info.browserContextId === stage.helperCtx)) return;
     if (stageNotTab(info)) return void stageDropTab(info.targetId);
     const fresh = !stage.tabs.has(info.targetId);
-    stage.tabs.set(info.targetId, { title: info.title, url: info.url });
-    // 模型新开了一页：跟过去
-    if (fresh && !stage.listing) stageShow(info.targetId);
+    stage.tabs.set(info.targetId, { title: info.title, url: info.url, ctx: info.browserContextId });
+    // 模型新开了一页：跟过去。人用中键、Ctrl 点链接开的是后台的一页，与浏览器一样留在原处
+    if (fresh && !stage.listing && !stageOpenedBehind()) stageShow(info.targetId);
     else stageRender();
   } else if (message.method === "Target.targetDestroyed") {
     stage.tabs.delete(params.targetId);
@@ -188,6 +218,10 @@ const stageTabType = info => info.type === "page" || (info.type === "browser_ui"
 // 它起初网址是空的、后来才补上，报来时与轮询时都要认
 /** @param {{ url: string }} info */
 const stageNotTab = info => /^edge:\/\/[\w-]*-(hub|dialog)\b/.test(info.url);
+// 人刚用中键或 Ctrl 点了链接、或在右键里点了「新标签打开」：这时冒出来的新页是在后台开的
+function stageOpenedBehind() {
+  return Date.now() - stage.behindAt < 2000;
+}
 /** @param {string} id */
 function stageDropTab(id) {
   if (!stage.tabs.delete(id)) return;
@@ -214,8 +248,13 @@ function stagePageEvent(method, params) {
     // frameNavigated 由网页那头报来，常赶在浏览器记下这一步历史之前：载完再问一回
     if (!stage.loading) void stageReadHistory();
   } else if ((method === "Page.frameNavigated" && !params.frame.parentId) || method === "Page.navigatedWithinDocument") {
-    if (method === "Page.frameNavigated") stageInkClear();
+    if (method === "Page.frameNavigated") {
+      stageInkClear();
+      stagePickClose();
+    }
     void stageReadHistory();
+  } else if (method.startsWith("Runtime.executionContext")) {
+    stagePickWorld(method, params);
   } else if (method === "Runtime.bindingCalled" && params.name === STAGE_BINDING) {
     stageActSeen(params.payload);
   } else if (method === "Page.javascriptDialogOpening") {
@@ -225,9 +264,25 @@ function stagePageEvent(method, params) {
     stage.dialog = null;
     stageRenderDialog();
   } else if (method === "Page.fileChooserOpened" && params.backendNodeId) {
-    stage.dialog = { type: "file", message: "", multiple: params.mode === "selectMultiple", node: params.backendNodeId };
-    stageRenderDialog();
-    void stageWatchChooser(stage.dialog);
+    const dialog = { type: "file", message: "", multiple: params.mode === "selectMultiple", node: params.backendNodeId };
+    // 人在游目里点的：径直弹系统的选文件窗；执事点的浮纸签，不往人眼前弹窗
+    if (stagePopupByUser()) void stagePickFiles(dialog);
+    else {
+      stage.dialog = dialog;
+      stageRenderDialog();
+      void stageWatchChooser(dialog);
+    }
+  } else if (
+    method === "Page.downloadWillBegin" &&
+    /^file:/i.test(params.url || "") &&
+    Date.now() - Math.max(stage.userAt, stage.keyAt, stage.goAt) < 3000
+  ) {
+    // 人开的本机文件浏览器显示不了（Office 文档、压缩包、csv 等）就会当下载：当场取消，不拷进下载目录，交给本机程序打开原件
+    void stageSend("Browser.cancelDownload", { guid: params.guid, browserContextId: stage.tabs.get(stage.current)?.ctx }).catch(() => {});
+    void bridge("/api/stage/open", { url: params.url }).then(
+      () => toast(t("游目阅不了此件，已在本机程序中打开")),
+      error => toast(t`打开失败：${String(error.message || error).slice(0, 80)}`)
+    );
   } else if (method === "Page.downloadWillBegin") {
     // 下载：浏览器在屏幕外存，游目只记一笔（名、来处、多大、到哪一步）；存到哪由 MCP 的结果补上（见 stageNoteDownload）
     stage.downloads = [
@@ -255,6 +310,9 @@ function stageResetPage() {
   stagePin(null);
   stage.dialog = null;
   stageInkClear();
+  stagePickClose();
+  stagePickWorlds.clear();
+  $("#stageFrame").style.cursor = "";
   stageRenderNav();
   stageRenderDialog();
 }
@@ -305,7 +363,7 @@ function stageAnswer(accept) {
   if (dialog?.type === "file") {
     stage.dialog = null;
     stageRenderDialog();
-    if (accept) stagePickFiles(dialog);
+    if (accept) void stagePickFiles(dialog);
     return;
   }
   const input = /** @type {HTMLInputElement | null} */ ($("#stageDialog .stage-dialog-input"));
@@ -341,26 +399,21 @@ async function stageWatchChooser(dialog) {
     stageRenderDialog();
   }
 }
-// 选文件用言这边的窗（点「选文件」那一下即是人手的动作，浏览器才许开窗）；选好的落到桥接的临时目录，路径交给网页里那个 <input type=file>
+// 选文件经桥接弹系统的窗：拿到的是真路径，径直交给网页里那个 <input type=file>，不经言的页面读、不拷
 /** @param {{ multiple?: boolean, node?: number }} dialog */
-function stagePickFiles(dialog) {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.multiple = !!dialog.multiple;
-  input.addEventListener("change", () => void stageSendFiles([...(input.files || [])], dialog.node));
-  input.click();
-}
-/** @param {File[]} files @param {number} [node] */
-async function stageSendFiles(files, node) {
+async function stagePickFiles(dialog) {
   const session = stage.session;
-  if (!files.length || !session) return;
   try {
-    const paths = [];
-    for (const file of files) paths.push((await bridge("/api/stage/upload", { name: file.name, data: await readFile(file, "data") })).path);
-    await stageSend("DOM.setFileInputFiles", { files: paths, backendNodeId: node }, session);
+    const { paths } = await bridge("/api/work/pick", { files: true, multiple: !!dialog.multiple });
+    await stageSendFiles(paths, dialog.node, session);
   } catch (error) {
     toast(t`文件未能传入网页：${String(error.message || error).slice(0, 80)}`);
   }
+}
+/** @param {string[]} paths @param {number} [node] @param {string} [session] 选窗开着时换了页，仍交给当初要文件的那一页 */
+async function stageSendFiles(paths, node, session = stage.session) {
+  if (!paths.length || !session) return;
+  await stageSend("DOM.setFileInputFiles", { files: paths, backendNodeId: node }, session);
 }
 /** @param {string} url */
 function stageHost(url) {

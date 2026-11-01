@@ -14,17 +14,6 @@ let archiveEntries = null,
   libraryDir = "",
   // 正在就地改名的那一项（文件或夹的路径）；空即没有
   libraryRenaming = "";
-// 页面这头（人）收入、改名、挪动的件与夹：路径 → 何时。答末认成品照的是开工前后卷宗的差，作答途中人收进来的也在差里，得凭这份剔掉
-/** @type {Map<string, number>} */
-const archiveOwnWrites = new Map();
-function noteOwnArchiveWrite(path) {
-  if (path) archiveOwnWrites.set(path, Date.now());
-}
-/** 这件（或它所在的夹）是不是 since 之后人在页面上放进来、挪过来的 */
-function ownArchiveWriteSince(path, since) {
-  for (const [own, at] of archiveOwnWrites) if (at >= since && (path === own || path.startsWith(`${own}/`))) return true;
-  return false;
-}
 const ARCHIVE_DRAG = "application/x-yan-archive";
 function parentDir(path) {
   const at = String(path).lastIndexOf("/");
@@ -35,7 +24,8 @@ function archiveFileUrl(path, download = false, root = archiveDir()) {
 }
 // 正文链接里的本地路落在哪：相对路相对这段对话的落脚处（绑了目录是它，没绑是卷宗）；绝对路在落脚处之内的折成相对，
 // 之外的以它所在那层为根。sandbox:/、/mnt/… 这类不是本机的路，返回 null
-function localLinkTarget(raw) {
+/** @param {string} raw @returns {{ root: string, path: string } | null} */
+function localLinkTarget(raw, conversation = currentConversation()) {
   let text = String(raw || "")
     .trim()
     .replace(/[?#].*$/, "");
@@ -43,7 +33,7 @@ function localLinkTarget(raw) {
     text = decodeURIComponent(text);
   } catch {}
   text = text.replace(/^file:\/*/i, "").replace(/\\/g, "/");
-  const root = workRoot(currentConversation());
+  const root = workRoot(conversation);
   if (/^[a-z]:\//i.test(text)) {
     const base = root.replace(/\\/g, "/").replace(/\/+$/, "");
     if (base && text.toLowerCase().startsWith(`${base.toLowerCase()}/`)) return { root, path: text.slice(base.length + 1) };
@@ -268,7 +258,6 @@ async function commitLibraryRename(value) {
   if (!path || !name || name === path.split("/").pop()) return renderLibrary();
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, name }, AbortSignal.timeout(20000));
-    noteOwnArchiveWrite(moved.path);
     rebaseDeliverables(path, moved.path);
   } catch (error) {
     toast(t`改名失败：${String(error.message || error).slice(0, 80)}`);
@@ -292,26 +281,17 @@ async function newArchiveFolder() {
     toast(t`新建失败：${String(error.message || error).slice(0, 80)}`);
   }
 }
-// 文本以 UTF-8 编成 data: URL；二进制附件本就是 data: URL
-function dataUrlFromText(text, mime = "text/plain") {
-  const bytes = new TextEncoder().encode(String(text || ""));
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return `data:${mime};base64,${btoa(binary)}`;
+/** dir：落进卷宗的哪一层，缺省为根（导出、附件上的「藏」都落在根上；卷宗页上拖入的落在此刻所在的那一层） @param {string} name @param {Blob} body 原件 */
+async function putArchiveFile(name, body, dir = "", root = archiveDir()) {
+  return bridgeUpload("/api/archive/put", { root, name, dir }, body, AbortSignal.timeout(120000));
 }
-/** dir：落进卷宗的哪一层，缺省为根（导出、附件上的「藏」都落在根上；卷宗页上拖入的落在此刻所在的那一层） */
-async function putArchiveFile(name, data, dir = "", root = archiveDir()) {
-  const saved = await bridge("/api/archive/put", { root, name, data, dir }, AbortSignal.timeout(120000));
-  noteOwnArchiveWrite(saved.path);
-  return saved;
-}
-// 答末成品条记的是路径：件挪了、改了名，或它所在的夹挪了、改了名，条子跟着改，不然就成了「已移出卷宗」
+// 答末成品条记的是路径：卷宗里的件挪了、改了名，或它所在的夹挪了、改了名，条子跟着改，不然就成了「已移出卷宗」
 function rebaseDeliverables(from, to) {
   if (from === to) return;
   for (const c of store.conversations)
     for (const message of allMessages(c))
       for (const file of message.deliverables || [])
-        if (file.path === from || file.path.startsWith(`${from}/`)) {
+        if (!file.root && (file.path === from || file.path.startsWith(`${from}/`))) {
           file.path = to + file.path.slice(from.length);
           file.name = file.path.split("/").pop();
           markDirty(c.id);
@@ -325,7 +305,6 @@ async function moveArchiveItem(path, dir) {
   try {
     const moved = await bridge("/api/archive/move", { root: archiveDir(), path, dir }, AbortSignal.timeout(20000)),
       renamed = moved.name !== path.split("/").pop();
-    noteOwnArchiveWrite(moved.path);
     rebaseDeliverables(path, moved.path);
     toast(t`已移入「${dir ? dir.split("/").pop() : t("卷宗")}」${renamed ? t`，同名已有，改作 ${moved.name}` : ""}`);
   } catch (error) {
@@ -363,12 +342,12 @@ async function addLibraryFiles(fileList, dir = libraryDir) {
 async function storeLibraryFiles(items, folders = 0, root = archiveDir()) {
   let added = 0;
   for (const { file, dir } of items) {
-    if (file.size > MAX_ARCHIVE_FILE_BYTES) {
-      toast(t`${file.name} 超过 ${limitLabel(MAX_ARCHIVE_FILE_BYTES)}，未收入`);
+    if (file.size > MAX_FILE_BYTES) {
+      toast(t`${file.name} 超过 ${limitLabel(MAX_FILE_BYTES)}，未收入`);
       continue;
     }
     try {
-      await putArchiveFile(file.name, await readFile(file, "data"), dir, root);
+      await putArchiveFile(file.name, file, dir, root);
       added += 1;
     } catch (error) {
       toast(t`${file.name} 收入失败：${String(error.message || error).slice(0, 60)}`);
@@ -429,10 +408,10 @@ async function saveToLibrary(id) {
       .flatMap(allMessages)
       .flatMap(m => m.attachments || [])
       .find(file => file.id === id);
-  const file = metadata && (await getAttachment(id));
-  if (!file) return toast(t("附件原件已找不到"));
+  const body = metadata && (await attachmentBody(id));
+  if (!body) return toast(t("附件原件已找不到"));
   try {
-    const saved = await putArchiveFile(metadata.name, file.kind === "text" ? dataUrlFromText(file.data, file.mime) : file.data);
+    const saved = await putArchiveFile(metadata.name, body);
     void refreshArchive();
     toast(t`${saved.name} 已收入卷宗`);
   } catch (error) {
@@ -467,8 +446,6 @@ async function removeArchiveItem(path) {
 function canPlaceAttachment(size, attachments = pendingAttachments) {
   if (attachments.length >= 10) return toast(t("一次最多置入 10 件附件")), false;
   if (size > MAX_FILE_BYTES) return toast(t`单个附件不超过 ${limitLabel(MAX_FILE_BYTES)}`), false;
-  const total = attachments.reduce((sum, file) => sum + Number(file.size || 0), 0);
-  if (total + Number(size || 0) > MAX_PENDING_BYTES) return toast(t`本次附件合计不超过 ${limitLabel(MAX_PENDING_BYTES)}`), false;
   return true;
 }
 // 磁盘上的卷宗置于案上：取回原件，按普通附件收进浏览器（图片、可提取的文档照常处理）
@@ -521,11 +498,14 @@ function bindLibraryEvents() {
     const crumb = e.target.closest("[data-library-dir]");
     if (crumb) enterLibraryDir(crumb.dataset.libraryDir);
   });
-  // 一件：点条子即预览（图进看图，余者进预览器）；一夹：点条子即入。条尾悬停露出的几样动作另算
+  // 一件：点条子即预览（图进看图，同此刻列着的图一起左右翻；余者进预览器）；一夹：点条子即入。条尾悬停露出的几样动作另算
   const openItem = (row, trigger = row) => {
     if (row.dataset.libraryDisk === undefined) return enterLibraryDir(row.dataset.libraryDir);
-    const path = row.dataset.libraryDisk;
-    fileKind(path).group === "image" ? openArchiveImage(path, trigger) : void openFileViewer(path, "", trigger);
+    const path = row.dataset.libraryDisk,
+      images = [...$("#libraryGrid").querySelectorAll("[data-library-disk]")]
+        .map(item => /** @type {HTMLElement} */ (item).dataset.libraryDisk)
+        .filter(item => fileKind(item).group === "image");
+    fileKind(path).group === "image" ? openArchiveImage(path, trigger, archiveDir(), images) : void openFileViewer(path, "", trigger);
   };
   $("#libraryGrid").addEventListener("click", e => {
     if (e.target.closest(".strip-rename")) return;
@@ -626,7 +606,7 @@ function bindLibraryEvents() {
       ? libraryDir
         ? t`任何文件 · 落进「${libraryDir.split("/").pop()}」这一层`
         : t("任何文件 · 落到本机的卷宗目录")
-      : t`图片、文档与代码文件 · 单次共 ${limitLabel(MAX_PENDING_BYTES)}`;
+      : t`图片、文档与代码文件 · 单件 ${limitLabel(MAX_FILE_BYTES)}`;
     $("#dropVeil").classList.remove("hidden");
   };
   const hideDropVeil = () => {
@@ -660,29 +640,32 @@ function bindLibraryEvents() {
     const files = Array.from(event.dataTransfer.files).filter(file => !folders.some(entry => entry.name === file.name));
     if (files.length) void addFiles(files);
   });
-  // 正文里指向本地文件的链接（模型写的「下载《x.docx》」）：页面上没有那样的路。先按原路在这段对话的落脚处取，
-  // 取不到（sandbox:/ 之类、或路写错了层）再到卷宗里找同名的那件。答复后又动了手，那段话退进行迹成了 .trail-note，帮手的回报是 .sub-report，同样认
+  // 正文里指向本地文件的链接（模型写的「[报告](报告.md)」）：页面上没有那样的路，点了打开预览（预览里可下载），与答末成品条同一个入口。
+  // 先按原路在这段对话的落脚处取，取不到（sandbox:/ 之类、或路写错了层）再到卷宗里找同名的那件。
+  // 答复后又动了手，那段话退进行迹成了 .trail-note，帮手的回报是 .sub-report，同样认
   document.addEventListener("click", async event => {
     const link = event.target.closest(":is(.markdown, .trail-note, .sub-report) a[data-file]");
     if (!link) return;
     event.preventDefault();
     const name = link.dataset.file,
       target = localLinkTarget(link.dataset.path);
-    if (target && (await archiveFileExists(target))) return downloadArchiveFile(target.path, target.root);
+    if (target && (await archiveFileExists(target))) return void openFileViewer(target, name, link);
     if (archiveEntries === null) await refreshArchive();
     const entry = (archiveEntries || []).find(file => file.name === name || file.path === name);
     if (!entry) return toast(t`找不到「${name}」`);
-    downloadArchiveFile(entry.path);
+    void openFileViewer(entry.path, "", link);
   });
   $("#messages").addEventListener("click", event => {
     const more = event.target.closest(".deliver-more");
     if (more) return toggleDeliverables(more);
     const button = event.target.closest("[data-deliver-action]");
     if (!button) return;
-    const path = button.closest("[data-deliver]")?.dataset.deliver;
+    const row = /** @type {HTMLElement|null} */ (button.closest("[data-deliver]")),
+      path = row?.dataset.deliver,
+      root = row?.dataset.root;
     if (!path) return;
-    if (deliverableMissing(path)) return toast(t("这件已从卷宗移除"));
-    if (button.dataset.deliverAction === "download") downloadArchiveFile(path);
-    else void openFileViewer(path, "", button);
+    if (deliverableMissing({ path, root, name: "", size: 0 })) return toast(t("这件已从卷宗移除"));
+    if (button.dataset.deliverAction === "download") downloadArchiveFile(path, root || archiveDir());
+    else void openFileViewer(root ? { path, root } : path, "", button);
   });
 }

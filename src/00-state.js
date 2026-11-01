@@ -22,6 +22,7 @@
  */
 /** @typedef {{ text: string, messageId?: string, model?: string, url?: string, image?: string }} Quote 引用追问：划选的一段与它所在的消息（旁注锚文本作引文时没有 messageId）；游目圈点的另带给模型的一份与网址，image 是那幅画面的附件 id（附件照常随消息走，只是画在引文里） */
 /** @typedef {{ id: string, name: string, arguments: string }} ToolCall 流式拼出的一次工具调用 */
+/** @typedef {{ path: string, name: string, size: number, root?: string }} Deliverable 成品：path 是卷宗里的路；root 有值时是那个目录里的路（行的工作目录，或答复里写的绝对路所在的那层） */
 /** @typedef {{ prompt_tokens: number, completion_tokens: number, total_tokens: number, cached_tokens?: number }} Usage cached_tokens：提示里读自缓存的部分 */
 /** @typedef {"ask"|"review"|"auto"} CommandPolicy 问而后行 / 审而后行 / 径行 */
 /** @typedef {"running"|"pending"|"done"|"error"|"skipped"|"interrupted"} StepStatus interrupted 只给差遣：帮手断着，等人续（见 holdHelper） */
@@ -52,7 +53,7 @@
 /**
  * @typedef {Object} Step 行迹里的一步：一次工具调用及其结果、呈现与开合状态
  * @property {string} id
- * @property {string} name 工具名；user_note 是作答途中用户寄来的补言，relay_note 是递回来的回报，fold 是一答之内的撮要，都不是工具
+ * @property {string} name 工具名；user_note 是作答途中用户寄来的补言，relay_note 是递回来的回报，fold 是一答之内的撮要（模型也可自己调），前两样不是工具
  * @property {string} arguments 模型给的参数原文（JSON）
  * @property {StepStatus} status
  * @property {string} [title] 标题行：指令、路径、关键词……
@@ -70,10 +71,11 @@
  * @property {boolean} [readOnly] 只读指令，免确认
  * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
  * @property {{ id: string, claim: string, target: string }} [gate] 正等用户批的守的关口（见 keepHook），批完即去
- * @property {boolean} [granted] 守的关口批过了：这件工具自己不再另问
+ * @property {string[] | boolean} [granted] 批过了哪几条守的关口（旧存盘是 true）：这件工具自己不再另问，审查也知道那几条守这一步已照过
  * @property {{ ok: boolean, why: string }} [reviewed] 审而后行里交专司的审查模型判过：准了照做（指令带 reviewed 交桥接），驳了即不做
  * @property {boolean} [background] 后台指令
- * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", quiet?: boolean, started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；quiet：那一答已停，结束时不叫醒；started：起跑的时刻，书眉的漏据它算已跑多久）
+ * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；started：起跑的时刻，书眉的漏据它算已跑多久）
+ * @property {{ id: string, due: number, every?: number, state: "waiting"|"done"|"stopped", created?: number }} [timer] 等时刻的候（set_timer）：桥接那头的编号、几时叫（every：此后隔多久再叫）；waiting 时书眉的漏列着它
  * @property {{ old: string, new: string }} [diff]
  * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
  * @property {string} [previous] write_file 覆盖掉的原文（过长只留开头），与 written 比出红绿
@@ -85,6 +87,7 @@
  * @property {string} [drifted] 改时发现读后已被谁改过：这一处照原文改了，别处没看过，整份覆盖前须重读
  * @property {string} [root] 读、写、改文件时落在哪个目录（换了目录，先前读过的不算数）
  * @property {Attachment[]} [attachments] 补言（user_note）随带的附件
+ * @property {Quote} [quote] 补言带着的引文（行迹里画短的那句，递给模型时拼进给模型的那份）
  * @property {boolean} [cached] 结果是复用的
  * @property {boolean} [skipped]
  * @property {boolean} [expanded] 输出摊开 / 折起；未记则按状态定（报错折起）
@@ -94,7 +97,7 @@
  * @property {"tell"|"resume"|"stop"|"read"} [mode] 传话一步做的是哪样：递话、续派、叫停、翻看
  * @property {string} [ref] 传话、叫停说到的那一趟（步骤 id）
  * @property {string} [noteId] 传话递去的那句话在帮手时间线里的步骤 id
- * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }} [relay] 作答途中回来的回报（relay_note）是谁
+ * @property {Relay} [relay] 作答途中回来的回报（relay_note）是谁
  * @property {string} [report] 回报、传话递上时给模型的原话：往后重装这一答时插回原处（见 replay）
  * @property {boolean} [steer] 补言是把正在写的一轮停在句尾递上的（前缀与接在工具结果之后的不同）
  * @property {{ questions: AskQuestion[] }} [form]
@@ -104,10 +107,22 @@
  * @property {{ steps?: number, from?: number, to?: number, head?: boolean }} [fold] 撮要：并了几步、撮前撮后各几字；head 是压的这一问之前的前文（笔记在 note）
  */
 /**
+ * 回来的是谁（细线、行迹里的「回报」一步、导出都照它画，见 relayLabel）：帮手（不带 kind）、后台指令结束（bg）、时刻到（timer）
+ * @typedef {Object} Relay
+ * @property {string} step 点它回到哪一步（帮手那一趟、挂候的那一步）
+ * @property {string} title 帮手名、后台编号、候的那句话
+ * @property {boolean} ok
+ * @property {"bg"|"timer"} [kind]
+ * @property {number} [exitCode]
+ * @property {string} [gist] 后台指令起时那句白话
+ * @property {boolean} [lost] 后台指令随桥接重启而止（旧记录：现已不为它叫醒）
+ * @property {number} [late] 时刻到时迟了多久（桥接那时没开）
+ */
+/**
  * @typedef {Object} Message
  * @property {string} id
  * @property {"user"|"assistant"|"context"} role context 是上下文分隔：带 summary 的是压缩，不带的是旧版硬切
- * @property {{ step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number }[]} [relay] 帮手的回报（或后台指令结束）另起的一问：谁回来了（内容是回报原文，只送给模型）
+ * @property {Relay[]} [relay] 帮手的回报（或候到了：后台指令结束、时刻到）另起的一问：谁回来了（内容是回报原文，只送给模型）
  * @property {string} content
  * @property {string} timestamp
  * @property {"streaming"|"complete"|"stopped"|"error"|"interrupted"} [status]
@@ -127,7 +142,7 @@
  * @property {{ steps: number, broken?: number, text: string }} [trailDigest] 行迹摘要头一回送出时定格的样子（见 settledDigest；broken 是那时已停、已断的步数）
  * @property {number} [durationMs]
  * @property {number} [startedAt] 正在作答时的起始时刻（毫秒），行迹题头据此走用时；收尾即删
- * @property {{ path: string, name: string, size: number }[]} [deliverables] 言里这一答做出的成品
+ * @property {Deliverable[]} [deliverables] 这一答交给人看的成品（答复里链到的本机文件，见 replyDeliverables）
  * @property {boolean} [toolsOpen]
  * @property {boolean} [toolsTouched]
  * @property {boolean} [reasoningOpen]
@@ -135,6 +150,9 @@
  * @property {string} [summary] 压缩分隔上的摘要
  * @property {number} [compacted] 压进摘要的条数
  * @property {boolean} [compacting]
+ * @property {{ key: string, files?: { id: string, size: number }[] }} [cold] 收了尾，思绪与帮手的经过另存在对话目录的 行迹/ 里（见 01-store/35-cold.js）；files 是挪走的步骤里带的附件
+ * @property {{ root: string, at: string, files: number }} [checkpoint] 这一答头一回动手改文件前记下的目录（见 14-chat-engine/80-checkpoint.js）
+ * @property {{ at: string, restored: number, removed: number }[]} [rewound] 人把目录退回到这一答开工前的几回
  */
 /** @typedef {{ at: string, why: string, auto?: boolean }} Break 途中断过的一回：何时、为何；auto 是自动接着写上了的。续写不清，查「为何总断」时翻它 */
 /** @typedef {{ id: string, parentId: string|null, messages: Message[], createdAt: string }} Fork 被换下来的一段尾巴 */
@@ -160,7 +178,7 @@
  * @property {boolean} [titled]
  * @property {number} [titleTries]
  * @property {boolean} [showCompacted]
- * @property {{ report: string, relay: { step: string, title: string, ok: boolean, kind?: "bg", exitCode?: number } }[]} [heldReports] 上一答断着时回来的回报，下一答开工时递上
+ * @property {{ report: string, relay: Relay }[]} [heldReports] 上一答断着时回来的回报，下一答开工时递上
  */
 /**
  * @typedef {Object} Profile 一份模型配置
@@ -192,7 +210,7 @@
  * @property {CommandPolicy|""} policy 选它时的指令权限；空则照设置里的默认
  */
 /** @typedef {Pick<Profile, "baseUrl"|"apiKey"|"model"|"api">} Endpoint 发一次请求要的那几样：模型配置与专司里另配的一份都够 */
-/** @typedef {{ on: boolean, api: "openai"|"anthropic"|"siliconflow", baseUrl: string, apiKey: string, model: string, modelList: string[] }} Duty 专司里另配的一份（审查、生图各一）：与模型配置同形，只认接口、地址、Key、模型；on 是开没开 */
+/** @typedef {{ on: boolean, api: "openai"|"anthropic"|"siliconflow"|"chatgpt", baseUrl: string, apiKey: string, model: string, modelList: string[] }} Duty 专司里另配的一份（审查、生图各一）：与模型配置同形，只认接口、地址、Key、模型；on 是开没开 */
 /** @typedef {{ id: string, text: string, category?: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
 /** @typedef {{ text: string, attachments: Attachment[], quote?: Quote|null, updatedAt?: string }} Draft */
 /**
@@ -208,6 +226,7 @@
  * @property {string} presetId 新对话用的预设（上回选的）；空即本色
  * @property {{ id: string, name: string, createdAt: string, presetId: string, workdir: string }[]} groups 分组：自立的几组，对话各记 groupId；组里新起的对话用组的预设、绑组的默认目录
  * @property {string} [pendingGroupId] 从组首「＋」另起的新对话归进这一组（用过即清）
+ * @property {boolean} [notify] 桌面通知（设置 → 通用）：页面不在眼前时答毕、待你定夺、帮手断了弹系统通知；准许各浏览器自记
  * @property {boolean} autoTitle 自动拟题（设置 → 专司）：随对话的模型，只有开关
  * @property {Duty} dutyReview 审查（设置 → 专司）：审而后行里规则标疑的那一步交它再判；关着即照规则回绝
  * @property {Duty} dutyImage 生图（设置 → 专司）：配了才把生图交给模型
@@ -250,7 +269,7 @@ function prompt(path, vars = {}) {
 function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
-const APP_VERSION = "1.1.3"; // 与 package.json 同步；以桥接返回的为准
+const APP_VERSION = "1.1.13"; // 与 package.json 同步；以桥接返回的为准
 const FOLLOW_THRESHOLD = 80;
 // 一次回答里最多几轮工具调用（帮手另计），超过后收回工具、请模型直接收尾；按轮计，同一轮并发的几次调用只算一轮。
 // 默认值在这里，实际值在「设置 → 工具」里可改，留空（记作 0）即不限

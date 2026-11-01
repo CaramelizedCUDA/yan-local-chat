@@ -98,6 +98,8 @@ function renderConversation(shouldScroll = false) {
   scrollHost.classList.remove("converge");
   refreshNoteCounts(c);
   const { added } = syncMessages(c, converged);
+  // 另存出去的几答（见 01-store/35-cold.js）取回来，接上了再重画
+  warmInView(c);
   if (converged) {
     const articles = scrollHost.querySelectorAll("#messages .message");
     scrollHost.classList.add("converge");
@@ -243,19 +245,27 @@ function noteMarkHtml(message) {
 }
 // 用户消息与上下文分隔的整条 HTML；回复另有画法（见 07-paint.js）
 /** @param {Message} message */
-// 帮手的回报（或后台指令结束）另起的一问：不是用户的话，画成一道细线——谁回来了，点名字开它的那一趟（后台指令则回到挂它的那一步）
+// 帮手的回报（或候到了：后台指令结束、时刻到）另起的一问：不是用户的话，画成一道细线——谁回来了，点名字开它的那一趟
+// （候回到挂它的那一步；迟到的名后淡墨写迟了多久）。几条一起回来（桥接重启，几条后台同时止）每条一道，叠着排（设计稿/133 乙）
 /** @param {Message} message */
 function relayHtml(message, branch = null) {
-  const items = message.relay || [],
-    names = items
-      .map(item =>
-        item.kind === "bg"
-          ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="${t(`回到所在一步`)}">${t`后台 ${escapeHtml(item.title)} 已结束`}${item.ok ? "" : t` · 退出码 ${escapeHtml(String(item.exitCode ?? "?"))}`}</button>`
-          : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="${t(`查看经过`)}">${t`帮手「${escapeHtml(item.title)}」`}${item.ok ? t("回报") : t("未完成")}</button>`
-      )
-      .join(`<span class="relay-sep" aria-hidden="true">·</span>`),
-    seal = items.every(item => item.kind === "bg") ? t("候") : t("遣");
-  return `<article class="message relay" data-message="${escapeHtml(message.id)}"><div class="relay-line"><span class="seal sub-seal" aria-hidden="true">${seal}</span>${names}</div>${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
+  const line = (seal, inner = "") => `<div class="relay-line"><span class="seal sub-seal" aria-hidden="true">${seal}</span>${inner}</div>`,
+    items = message.relay || [],
+    lines = items.length
+      ? items
+          .map(item => {
+            const { seal, name, gist } = relayLabel(item),
+              tail = gist ? `<span class="relay-gist" title="${escapeHtml(gist)}">${escapeHtml(gist)}</span>` : "";
+            return line(
+              seal,
+              item.kind
+                ? `<button type="button" class="relay-name" data-relay-reveal="${escapeHtml(item.step)}" title="${escapeHtml(name)} · ${t(`回到所在一步`)}">${escapeHtml(name)}</button>${tail}`
+                : `<button type="button" class="relay-name" data-relay-step="${escapeHtml(item.step)}" title="${escapeHtml(name)} · ${t(`查看经过`)}">${escapeHtml(name)}</button>`
+            );
+          })
+          .join("")
+      : line(t("遣"));
+  return `<article class="message relay" data-message="${escapeHtml(message.id)}">${lines}${branch ? `<div class="message-actions has-branch">${branchNavHtml(branch)}</div>` : ""}</article>`;
 }
 function renderMessage(message, branch = null, side = false) {
   if (message.role === "context")
@@ -309,24 +319,26 @@ function assistantNoteHtml(message) {
 }
 /** @param {Message} message */
 function assistantActionsHtml(message) {
+  // 动过文件的一答（记了检查点）：无论答完、停了、断了、出错，都可把目录退回到它开工前
+  const rewind = message.checkpoint ? actionIcon("rewind", t("退回到这一答开工前")) : "";
   return message.status === "streaming"
     ? ""
     : message.status === "error"
-      ? actionIcon("retry", t("重试"))
+      ? `${actionIcon("retry", t("重试"))}${rewind}`
       : message.status === "interrupted"
-        ? `${message.content ? actionIcon("copy", t("复制已写的部分")) : ""}${actionIcon("resume", t("续写"))}${actionIcon("retry", t("从头重写"))}`
-        : `${actionIcon("copy", t("复制答复"))}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", t("续写")) : ""}${actionIcon("regenerate", t("重新生成"))}${actionIcon("note", t("旁注"))}${messageCostHtml(message)}`;
+        ? `${message.content ? actionIcon("copy", t("复制已写的部分")) : ""}${actionIcon("resume", t("续写"))}${actionIcon("retry", t("从头重写"))}${rewind}`
+        : `${actionIcon("copy", t("复制答复"))}${message.status === "stopped" && (message.content || message.steps?.length) ? actionIcon("resume", t("续写")) : ""}${actionIcon("regenerate", t("重新生成"))}${rewind}${actionIcon("note", t("旁注"))}${messageCostHtml(message)}`;
 }
-// 这一答耗了多少墨：各轮请求的用量之和（含帮手），接口报了用量就用实数，没报则按字数估；当前上下文有多大另看右下角
+// 这一答耗了多少墨：各轮请求的用量之和（含帮手），接口报了用量就用实数，没报则按字数估。
+// 只记数、不着朱：多轮的和与上下文大小无关，带工具的一答几乎都过万；上下文重不重只由右下角的计数按模型窗口判
 /** @param {Message} message */
 function messageCostHtml(message) {
   const n = Number(message.tokenCount) || 0;
   if (!n) return "";
-  const heavy = n >= CONTEXT_HEAVY,
-    prompt = Number(message.usage?.prompt_tokens) || 0,
+  const prompt = Number(message.usage?.prompt_tokens) || 0,
     cached = Number(message.usage?.cached_tokens) || 0,
     hit = prompt && cached ? t`；提示里 ${Math.round((cached / prompt) * 100)}% 读自缓存` : "";
-  return `<span class="message-cost${heavy ? " heavy" : ""}" title="${t`这一答共耗约 ${formatTokens(n)} token`}${message.tokenEstimated ? t("（估算）") : ""}${hit}${heavy ? t("；上下文已重，可撮要前文") : ""}">${t`耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}`}</span>`;
+  return `<span class="message-cost" title="${t`这一答共耗约 ${formatTokens(n)} token`}${message.tokenEstimated ? t("（估算）") : ""}${hit}">${t`耗墨 ${message.tokenEstimated ? "≈ " : ""}${formatTokens(n)}`}</span>`;
 }
 // 一答收尾：就地画成定稿的样子（图表、沙箱、展开状态和滚动位置都原样保留，收笔时不再闪一下）；这条不在页上就整段重画
 /**

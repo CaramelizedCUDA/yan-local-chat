@@ -534,13 +534,13 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   z-index: 5;
 }
 /* 书眉：标题滚走后，顶栏左边靠侧栏留一行题名与问数（立了意的再带一枚意，点它开卡片）；没滚过标题时不显示，不与标题重复。点一下回到开头。
-   落选的：居中疏排只留题名（像书页页眉，但与右侧的状态挤在一条线上，题名一长就难看） */
+   落选的：居中疏排只留题名（像书页页眉，但与右侧的状态挤在一条线上，题名一长就难看）。
+   它是顶栏里占满中段的一格，右边让到右上角那几件实际的宽度为止；原先绝对定位、右边写死让 300px，
+   右上角平时只两件，窄窗里题名截成四五个字、旁边却空着一大块 */
 .running-head {
-  position: absolute;
-  top: 0;
-  left: 22px;
-  right: 300px;
+  flex: 1;
   height: 55px;
+  margin-right: 24px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -563,7 +563,9 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   transform: none;
   pointer-events: auto;
 }
-.main:has(#chat.hidden) .running-head {
+/* .main:has() 一律带 >（几件都是 .main 的直接子节点）：不带时 Chromium 每改一处正文都要在 .main 整棵子树里重找一遍，
+   长对话两万多个节点，作答中每帧样式重算约 2 ms；带上后与短对话一样 */
+.main:has(> #chat.hidden) .running-head {
   display: none;
 }
 .running-head-title {
@@ -588,7 +590,8 @@ html[data-sidebar="collapsed"] .sidebar .wide {
    对着对话那一列的中线；它浮出时，左边的书眉让到中线以左，长题名不压到它底下。
    落选的：贴对话列的右缘（离正在读的地方远，眼睛要横跨过去找）；书眉换成行迹题头（左边的题名跟着变，读者会以为换了对话）；圆角胶囊 */
 .topbar:has(.trail-fold-head.shown) .running-head {
-  right: calc(50% + 64px);
+  max-width: calc(50% - 64px); /* 百分比按顶栏内容宽算，左边距 22px 正好消掉：右缘落在中线以左 64px */
+  margin-right: auto; /* 让出的空归右边；不然顶栏的 space-between 把它匀到两侧，书眉被推向中间 */
 }
 .trail-fold-head {
   position: absolute;
@@ -619,7 +622,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   background: var(--paper-2);
   color: var(--ink);
 }
-.main:has(#chat.hidden) .trail-fold-head {
+.main:has(> #chat.hidden) .trail-fold-head {
   display: none;
 }
 .model-wrap {
@@ -768,11 +771,11 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   gap: 4px;
 }
 /* 右缘内侧自页顶垂下的游目一笔、听音一缕：顶栏右的两件给它们让出位置 */
-.main:has(#stagePin:not(.hidden)) .top-actions,
-.main:has(#listenPendant:not(.hidden)) .top-actions {
+.main:has(> #stagePin:not(.hidden)) .top-actions,
+.main:has(> #listenPendant:not(.hidden)) .top-actions {
   margin-right: 30px;
 }
-.main:has(#stagePin:not(.hidden)):has(#listenPendant:not(.hidden)) .top-actions {
+.main:has(> #stagePin:not(.hidden)):has(> #listenPendant:not(.hidden)) .top-actions {
   margin-right: 60px;
 }
 .top-sep {
@@ -941,7 +944,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   z-index: 30;
   top: calc(100% + 6px);
   right: 0;
-  width: 240px;
+  width: 300px;
   padding: 8px 14px 6px;
   border: 1px solid var(--line);
   border-top: 2px solid var(--gold);
@@ -953,22 +956,14 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   letter-spacing: 0.04em;
   animation: rise var(--dur-rise) var(--ease-ink);
 }
-.clepsydra-head {
-  padding: 0 0 5px;
+/* 两节的头：在跑 / 约定；第二节起与上一节隔开一点 */
+.clepsydra-sec {
+  padding: 8px 0 5px;
   color: var(--ink-2);
   font-size: var(--fs-small);
 }
-.clepsydra-grp {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 8px 0 3px;
-  color: var(--ink-2);
-  font-size: var(--fs-note);
-}
-.clepsydra-grp small {
-  color: var(--ink-3);
-  font-size: var(--fs-mark);
+.clepsydra-sec:first-child {
+  padding-top: 0;
 }
 .clepsydra-row {
   width: calc(100% + 8px);
@@ -976,6 +971,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   grid-template-columns: 1fr auto 14px;
   align-items: center;
   column-gap: 10px;
+  row-gap: 1px;
   margin: 0 -4px;
   padding: 6px 4px;
   border-top: 1px solid color-mix(in srgb, var(--accent) 13%, var(--line));
@@ -988,9 +984,19 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   background: color-mix(in srgb, var(--paper-3) 45%, transparent);
 }
 .clepsydra-id {
+  min-width: 0;
+  overflow: hidden;
   color: var(--gold);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 模型写了那句白话就写它：是字不是编号，随簿录的墨色与字体 */
+.clepsydra-id.gist {
+  color: var(--ink-2);
+  font-family: inherit;
+  letter-spacing: inherit;
 }
 .clepsydra-age {
   white-space: nowrap;
@@ -1000,6 +1006,19 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 }
 .clepsydra-row:hover .clepsydra-go {
   color: var(--ink);
+}
+/* 几段对话的候同在一张单子上：对话名退到每行下面的小字，当前这段朱字 */
+.clepsydra-from {
+  grid-column: 1 / span 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: var(--fs-mark);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clepsydra-from.here {
+  color: var(--accent);
 }
 .history-repo .group-rename {
   flex: 1;

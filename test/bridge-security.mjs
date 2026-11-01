@@ -14,6 +14,20 @@ writeFileSync(`${OUTSIDE}/secret.txt`, "OUTSIDE-SECRET line\n");
 writeFileSync(`${WORK}/inside.txt`, "inside line\n");
 symlinkSync(OUTSIDE, `${WORK}/escape`, "junction"); // 目录 junction 不需要管理员权限
 const check = (label, ok, detail = "") => console.log(`${ok ? "PASS" : "FAIL"} ${label}${detail ? " — " + detail : ""}`);
+// 原件直传（同页面的 bridgeUpload）：说明之后紧跟原件的字节
+const upload = async (path, head, dataUrl) => {
+  const json = Buffer.from(JSON.stringify(head)),
+    r = await fetch(`${BASE}${path}?head=${json.length}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: Buffer.concat([json, Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64")])
+    });
+  let data = null;
+  try {
+    data = await r.json();
+  } catch {}
+  return { status: r.status, data };
+};
 const post = async (path, body, headers = {}) => {
   const r = await fetch(BASE + path, {
     method: "POST",
@@ -219,25 +233,22 @@ check(
 );
 // ---- 卷宗接口
 const ARCHIVE = `${TMP}/security/.yan/卷宗`;
-r = await post("/api/archive/put", { name: "../escaped.txt", data: "data:text/plain;base64,aGk=" });
+r = await upload("/api/archive/put", { name: "../escaped.txt" }, "data:text/plain;base64,aGk=");
 check(
   "archive put keeps only the basename",
   r.status === 200 && r.data.path === "escaped.txt" && existsSync(`${ARCHIVE}/escaped.txt`) && !existsSync(`${TMP}/escaped.txt`),
   `${r.status} ${JSON.stringify(r.data)}`
 );
-r = await post("/api/archive/put", { name: "escaped.txt", data: "data:text/plain;base64,aGk=" });
+r = await upload("/api/archive/put", { name: "escaped.txt" }, "data:text/plain;base64,aGk=");
 check("archive put never overwrites: same name gets (2)", r.status === 200 && r.data.name === "escaped (2).txt", JSON.stringify(r.data));
-r = await post("/api/archive/put", { name: "page.html", data: "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==" });
+r = await upload("/api/archive/put", { name: "page.html" }, "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==");
 let f = await fetch(`${BASE}/api/archive/file?path=page.html`);
 check(
   "archive html is served as plain text in a sandbox",
   f.status === 200 && /^text\/plain/.test(f.headers.get("content-type") || "") && f.headers.get("content-security-policy") === "sandbox",
   `${f.status} ${f.headers.get("content-type")}`
 );
-await post("/api/archive/put", {
-  name: "图.svg",
-  data: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4="
-});
+await upload("/api/archive/put", { name: "图.svg" }, "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=");
 f = await fetch(`${BASE}/api/archive/file?path=${encodeURIComponent("图.svg")}`);
 check(
   "archive svg is served as an image, still in a sandbox",
@@ -269,7 +280,7 @@ check("archive move refuses a folder into itself", r.status === 400, `${r.status
 r = await post("/api/archive/move", { path: "跑出去", name: "外层" });
 check("archive rename renames a folder", r.status === 200 && existsSync(`${ARCHIVE}/外层/里层`), `${r.status} ${r.data?.error}`);
 // 以本机程序打开：可执行的一类不开（对它们「打开」就是运行）；不存在的也不开
-await post("/api/archive/put", { name: "run.bat", data: "data:text/plain;base64,ZWNobyBoaQ==" });
+await upload("/api/archive/put", { name: "run.bat" }, "data:text/plain;base64,ZWNobyBoaQ==");
 r = await post("/api/archive/open", { path: "run.bat" });
 check(
   "opening with the local program refuses executables",
@@ -288,7 +299,7 @@ r = await post("/api/archive/list", { root: win ? "C:\\" : "/" });
 check("archive root refuses a whole disk", r.status === 400, `${r.status} ${r.data?.error}`);
 r = await post("/api/archive/list", { root: "relative/dir" });
 check("archive root must be absolute", r.status === 400, `${r.status} ${r.data?.error}`);
-r = await post("/api/archive/put", { root: workdir, name: "in-work.txt", data: "data:text/plain;base64,aGk=" });
+r = await upload("/api/archive/put", { root: workdir, name: "in-work.txt" }, "data:text/plain;base64,aGk=");
 check(
   "archive root can be redirected to another absolute directory",
   r.status === 200 && existsSync(`${WORK}/in-work.txt`),
@@ -428,7 +439,7 @@ check("sandbox: .. is refused for mutations", r.status === 400 && /沙箱拒绝/
 // 查看则不锁目录——给电脑做检查要翻系统目录、注册表与进程，这条路必须通
 r = await post("/api/work/run", { workdir, sandbox: true, command: win ? "Get-ChildItem C:\\Windows" : "ls /etc" });
 check("sandbox: reading outside the workdir is allowed", r.status === 200, `${r.status} ${r.data?.error || ""}`);
-r = await post("/api/work/run", { workdir, sandbox: true, command: "Get-ChildItem .." });
+r = await post("/api/work/run", { workdir, sandbox: true, command: win ? "Get-ChildItem .." : "ls .." });
 check("sandbox: .. is allowed for reads", r.status === 200, `${r.status} ${r.data?.error || ""}`);
 r = await post("/api/work/run", { workdir, sandbox: true, command: "curl https://example.com" });
 check("sandbox: direct outbound fetch is refused", r.status === 400 && /外联/.test(r.data?.error || ""), `${r.status} ${r.data?.error}`);
@@ -448,7 +459,7 @@ check(
   r.status === 400 && /\.git 内部/.test(r.data?.error || ""),
   `${r.status} ${r.data?.error}`
 );
-r = await post("/api/work/run", { workdir, sandbox: false, command: "Get-ChildItem .." });
+r = await post("/api/work/run", { workdir, sandbox: false, command: win ? "Get-ChildItem .." : "ls .." });
 check("without sandbox the same command runs", r.status === 200, `${r.status} ${r.data?.error}`);
 r = await post("/api/work/run", {
   workdir,
@@ -570,7 +581,7 @@ rmSync(`${WORK}/../loose-probe.txt`, { force: true });
 // ---- 预筛：问而后行发指令前问一声严的沙箱会不会拦，拦的写明原因
 r = await post("/api/work/screen", { workdir, command: "curl https://example.com" });
 check("screen: the strict sandbox reason is reported", r.status === 200 && /外联/.test(r.data?.why || ""), JSON.stringify(r.data));
-r = await post("/api/work/screen", { workdir, command: "Get-ChildItem" });
+r = await post("/api/work/screen", { workdir, command: win ? "Get-ChildItem" : "ls" });
 check("screen: a harmless command passes", r.status === 200 && r.data.why === null, JSON.stringify(r.data));
 // ---- 后台指令：先回头几秒的输出与编号，之后取新输出、结束它；跑着的时候别的指令不排队
 {

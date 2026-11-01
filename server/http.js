@@ -1,8 +1,9 @@
-// 言 · 桥接各接口共用的几件：回 JSON、读 JSON、原子写盘，以及把「读请求体 → 办事 → 出错回 400」收成一处的 jsonRoute
+// 言 · 桥接各接口共用的几件：回 JSON、读 JSON、收直传的原件、原子写盘、读盘上的 JSON 与算文件指纹，以及把「读请求体 → 办事 → 出错回 400」收成一处的 jsonRoute
 // 纯工具，不持状态；server.js 与 server/ 下各模块直接 require
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { openPath } = require("./platform.js");
 
 function sendJson(res, status, data) {
@@ -44,7 +45,7 @@ function errorText(error, limit = 500) {
   return String(error?.message || error).slice(0, limit);
 }
 // 接口的常见形状：读请求体，办完回 200 与结果；中途抛错就回 400，那句话由 describe 定（各模块的前缀、截断长度不同）。
-// handle(body, req, res) 返回的值即响应；自己写了响应（别的状态码、流）就返回 undefined
+// handle(body, req, res) 返回的值即响应；自己写了响应（别的状态码、流）就返回 undefined；limit 是请求体上限，缺省同 readJson
 // 对方在响应写出之前走了（页面点停止、断线；走总线时是 BusResponse 被 destroy）：接口据此放弃还没开始的事，如排队等锁
 function requestSignal(res) {
   const abort = new AbortController();
@@ -55,10 +56,12 @@ function requestSignal(res) {
     });
   return abort.signal;
 }
-function jsonRoute(handle, describe = errorText) {
+// 桥接日志每行打头的时刻
+const stamp = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
+function jsonRoute(handle, describe = errorText, limit = undefined) {
   return async (req, res) => {
     try {
-      const data = await handle(await readJson(req), req, res);
+      const data = await handle(await readJson(req, limit), req, res);
       if (data !== undefined && !res.writableEnded && !res.destroyed) sendJson(res, 200, data);
     } catch (error) {
       if (!res.headersSent) sendJson(res, 400, { error: describe(error) });
@@ -66,22 +69,68 @@ function jsonRoute(handle, describe = errorText) {
     }
   };
 }
+// 原件直传：请求体头一段是 JSON 的说明（多长写在网址的 head= 里），紧跟原件的字节（页面的 bridgeUpload 这样送）。
+// 说明读完交给 place，由它核过、定下写进哪个临时文件；其余的字节边收边写，不在内存里攒整份——几百 MB 的原件，
+// 先前编成 data: URL 拼进 JSON，页面与桥接两头各要托住几整份。原件超过 limit 即作罢；出错都删掉写了一半的
+/** @param {import("node:http").IncomingMessage} req @param {number} limit @param {(head: any) => string | Promise<string>} place */
+async function receiveUpload(req, limit, place) {
+  const headLength = Number(new URL(req.url || "", "http://127.0.0.1").searchParams.get("head"));
+  if (!Number.isInteger(headLength) || headLength <= 0 || headLength > 16 * 1024 * 1024) throw Error("上传缺少说明");
+  let head = Buffer.alloc(0),
+    size = 0,
+    temp = "",
+    /** @type {import("node:fs/promises").FileHandle | null} */
+    out = null,
+    meta;
+  try {
+    for await (const chunk of req) {
+      let rest = chunk;
+      if (!temp) {
+        const need = headLength - head.length;
+        head = Buffer.concat([head, rest.subarray(0, need)]);
+        rest = rest.subarray(need);
+        if (head.length < headLength) continue;
+        try {
+          meta = JSON.parse(head.toString("utf8"));
+        } catch {
+          throw Error("上传的说明不是 JSON");
+        }
+        temp = await place(meta);
+        out = await fs.promises.open(temp, "wx");
+      }
+      size += rest.length;
+      if (size > limit) throw Object.assign(Error("请求内容过大"), { tooLarge: true });
+      if (rest.length) await out?.write(rest);
+    }
+    if (!out) throw Error("上传的内容不完整");
+    await out.close();
+    return { head: meta, file: temp, bytes: size };
+  } catch (error) {
+    await out?.close().catch(() => {});
+    if (temp) fs.rmSync(temp, { force: true });
+    if (error.tooLarge) req.destroy();
+    throw error;
+  }
+}
+// 临时文件换成正本。Windows 上目标文件被索引器或杀毒程序短暂打开时，替换可能报 EPERM / EBUSY：
+// 等几个很短的间隔再试同一份临时文件；永久错误仍原样交给调用方
+function replaceFile(temp, file) {
+  const wait = new Int32Array(new SharedArrayBuffer(4));
+  for (let attempt = 0; ; attempt++)
+    try {
+      fs.renameSync(temp, file);
+      return;
+    } catch (error) {
+      if (attempt >= 3 || !["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
+      Atomics.wait(wait, 0, 0, 15 * 2 ** attempt);
+    }
+}
 // 先写临时文件再改名：写到一半断电、进程被杀，正本也不会只剩半截
 function writeAtomic(file, data) {
   const temp = `${file}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`;
   try {
     fs.writeFileSync(temp, data, typeof data === "string" ? "utf8" : undefined);
-    // Windows 上目标文件被索引器或杀毒程序短暂打开时，替换可能报 EPERM / EBUSY。
-    // 等几个很短的间隔再试同一份临时文件；永久错误仍原样交给调用方。
-    const wait = new Int32Array(new SharedArrayBuffer(4));
-    for (let attempt = 0; ; attempt++)
-      try {
-        fs.renameSync(temp, file);
-        break;
-      } catch (error) {
-        if (attempt >= 3 || !["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
-        Atomics.wait(wait, 0, 0, 15 * 2 ** attempt);
-      }
+    replaceFile(temp, file);
   } catch (error) {
     try {
       fs.rmSync(temp, { force: true });
@@ -207,15 +256,34 @@ function openWithSystem(file) {
 function parseJsonText(text) {
   return JSON.parse(String(text).replace(/^\uFEFF/, ""));
 }
+// \u8BFB\u6865\u63A5\u81EA\u5DF1\u8BB0\u7684\u4E00\u4EFD JSON\uFF08\u767B\u5F55\u3001\u7C3F\u8BB0\u3001\u7D22\u5F15\u2026\u2026\uFF09\uFF1A\u6CA1\u6709\u3001\u8BFB\u4E0D\u4E86\u3001\u574F\u4E86\u90FD\u5F53\u6CA1\u6709\uFF0C\u56DE fallback
+function readJsonFile(file, fallback = null) {
+  try {
+    return parseJsonText(fs.readFileSync(file, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+// \u4E00\u4EF6\u6587\u4EF6\u5185\u5BB9\u7684 SHA-1\uFF1A\u8FB9\u8BFB\u8FB9\u7B97\uFF0C\u4E0D\u628A\u6574\u4EFD\u8BFB\u8FDB\u5185\u5B58
+async function fileHash(file) {
+  const hash = crypto.createHash("sha1");
+  for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+  return hash.digest("hex");
+}
 module.exports = {
   sendJson,
   readJson,
   jsonRoute,
   requestSignal,
+  stamp,
   errorText,
   writeAtomic,
+  replaceFile,
+  receiveUpload,
   fileMime,
   sendFile,
   openWithSystem,
-  parseJsonText
+  parseJsonText,
+  readJsonFile,
+  fileHash
 };

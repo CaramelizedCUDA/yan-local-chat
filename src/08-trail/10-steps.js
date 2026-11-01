@@ -47,7 +47,7 @@ function plainStepHtml(step, title) {
   const status = step.status || "done",
     foldable = !!body,
     folded = foldable && (step.expanded === undefined ? true : !step.expanded);
-  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? t("展开") : t("收起")}"` : ""}><span class="tool-label">${escapeHtml(step.label ? t(step.label) : toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result) || t("工具执行失败")) : ""}">${status === "running" ? t("查阅中") : status === "error" ? escapeHtml(stepText(step.result) || t("失败")) : escapeHtml(stepText(step.result) || "")}</span>${stepStateHtml(status)}</div>${stepShotsHtml(step)}${body}</div>`;
+  return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? t("展开") : t("收起")}"` : ""}><span class="tool-label">${escapeHtml(step.label ? t(step.label) : toolLabel(step.name))}</span><span class="tool-title">${escapeHtml(title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(stepText(step.result) || t("工具执行失败")) : ""}">${status === "running" ? escapeHtml(TOOLS.get(step.name)?.busy || t("查阅中")) : status === "error" ? escapeHtml(stepText(step.result) || t("失败")) : escapeHtml(stepText(step.result) || "")}</span>${stepStateHtml(status)}</div>${stepShotsHtml(step)}${body}</div>`;
 }
 // 工具交回的画面（游目截图之类）：折起时也露着——画面就是这一步的结果；点开进图片查看器
 /** @param {Step} step */
@@ -129,10 +129,7 @@ function delegateDoing(step) {
   if (current && (current.status === "running" || current.status === "pending"))
     return `${current.status === "pending" ? t(AWAITING) : t("正在")} ${toolLabel(current.name)} ${String(current.gist || current.title || "").slice(0, 60)}`.trim();
   // 睡着等自己挂的后台指令
-  if (sub?.waiting)
-    return t`等后台 ${helperWaits(sub)
-      .map(s => s.bg?.id)
-      .join("、")}`;
+  if (sub?.waiting) return t`等后台 ${helperWaits(sub).map(bgName).join("、").slice(0, 60)}`;
   const base = Math.max(0, ...steps.map(s => Number(s.at) || 0)),
     said = String(sub?.content || "")
       .slice(base)
@@ -308,7 +305,10 @@ function bindTrailEvents() {
       step = stepInView(el.dataset.stepId);
     // 指令输出默认折起，开合记在步骤上，重画不丢
     const wasFolded = el.classList.contains("folded");
-    if (step) step.expanded = wasFolded;
+    if (step) {
+      step.expanded = wasFolded;
+      thawStep(step);
+    }
     morphHeight(el, () => el.classList.toggle("folded", !wasFolded));
     head.title = wasFolded ? t("收起输出") : t("展开输出");
     saveStoreSoon();
@@ -318,6 +318,7 @@ function bindTrailEvents() {
     if (!step) return;
     step.full = !step.full;
     step.expanded = true;
+    thawStep(step);
     saveStoreSoon();
     // 节点留在原处只换内容，高度才好从旧高动到新高
     const fresh = document.createElement("div");

@@ -110,6 +110,15 @@ function generalSettingsHtml() {
       ["en", "English"]
     ],
     LANG
+  )}${segmentRow(
+    t("桌面通知"),
+    notifyHint(),
+    "notify",
+    [
+      ["true", t("开")],
+      ["false", t("关")]
+    ],
+    store.settings.notify === true
   )}${storageSettingsHtml()}<div class="setting-row"><div class="setting-copy"><strong>${t(`本机数据`)}</strong><small>${t`${store.conversations.length} 段对话 · ${libraryTotal()} 件卷宗 · 配置 ${storageSize()} · 附件原件 ${formatFileSize(usedAttachmentBytes())}`}</small></div><div class="setting-actions"><label class="check"><input id="exportFiles" type="checkbox">${t(`含附件原件`)}</label><button id="exportData" class="outline-btn">${t(`导出备份`)}</button><button id="importData" class="outline-btn">${t(`导入备份`)}</button></div></div><div class="setting-row"><div class="setting-copy"><strong>${t(`清空所有对话`)}</strong><small>${t(`模型配置、个性化与卷宗将保留`)}</small></div><button id="clearAll" class="danger-btn">${t(`清空对话`)}</button></div>`;
 }
 // 工具：沙箱、三档指令权限、可及范围、卷宗可读、轮次上限——模型能动手的边界都在这一栏
@@ -204,14 +213,10 @@ function bindGeneralSettings() {
     const button = $("#settingStorePick");
     button.disabled = true;
     try {
-      const data = await bridge(
-        "/api/work/pick",
-        { current: storeInput.value.trim() || bootstrap.store?.parent || "" },
-        AbortSignal.timeout(300000)
-      );
-      if (data.path) {
-        storeInput.value = data.path;
-        commitStore(data.path);
+      const data = await bridge("/api/work/pick", { current: storeInput.value.trim() || bootstrap.store?.parent || "" });
+      if (data.paths[0]) {
+        storeInput.value = data.paths[0];
+        commitStore(data.paths[0]);
       }
     } catch (error) {
       toast(String(error.message || error).slice(0, 80));
@@ -302,6 +307,7 @@ function bindSettingRows() {
           if (value !== LANG) location.reload();
           return;
         }
+        if (key === "notify") return void setNotify(value === "true");
         if (key === "memoryEnabled") {
           store.memory.enabled = value === "true";
           saveStore();

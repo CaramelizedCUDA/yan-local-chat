@@ -55,7 +55,7 @@ defineTool({
         return { ok: false, content: t`技能文件读取失败：${String(error.message || error).slice(0, 120)}`, display: "读取失败" };
       }
     } else {
-      const record = await getAttachment(doc.id);
+      const record = await getAttachmentMeta(doc.id);
       text = record ? (record.kind === "text" ? record.data : record.extractedText) || "" : "";
     }
     if (!text) return { ok: false, content: t("该文档无可读取的文本"), display: "无文本" };
@@ -139,7 +139,7 @@ async function archiveDocumentText(doc) {
   const blob = await response.blob();
   const text = isTextFile({ name: doc.name, type: "" })
     ? decodeTextBytes(await blob.arrayBuffer())
-    : await extractDocumentText(doc.name, await readFile(blob, "data"));
+    : await extractDocumentText(doc.name, blob);
   archiveDocCache.set(key, text);
   if (archiveDocCache.size > 12) archiveDocCache.delete(archiveDocCache.keys().next().value);
   return text;
