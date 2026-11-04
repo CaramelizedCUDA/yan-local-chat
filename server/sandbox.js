@@ -18,12 +18,23 @@ const SECRET_ENV = /KEY|TOKEN|SECRET|PASSW|CREDENTIAL|AUTH|COOKIE|PRIVATE/i;
 // 「npm run format」「echo shutdown」里的 format / shutdown 不是。
 // 套一层壳的也算：cmd /c、powershell -Command、pwsh -c 后面跟的整段都在执行——指令本就由 PowerShell 跑，
 // 「powershell -Command "Set-Content C:\x y"」与直接写没有分别；这类壳之后同一行里的任何词都按指令位看，宁可多拦
-const CMD = String.raw`(?:^|[;&|({\n]|\bcmd(?:\.exe)?\b[^\n]*?/[ck]|\b(?:powershell|pwsh)(?:\.exe)?\b[^\n]*?(?=[\s"'&]))\s*["']?(?:&\s*["']?)?`;
+const PREFIX = String.raw`(?:(?:then|do|else|exec|nohup|command(?=\s+[^-\s])|xargs(?:\s+-\S+)*|env(?:\s+-\S+)*|[A-Za-z_]\w*=\S*)\s+)*`;
+const SHELL = String.raw`(?:(?:\S*/)?(?:ba|z|da|k)?sh\s+(?:-[^c\s]*\s+)*-[a-z]*c\s+["']?)?`;
+const CMD =
+  String.raw`(?:^|[;&|({\n]|\bcmd(?:\.exe)?\b[^\n]*?/[ck]|\b(?:powershell|pwsh)(?:\.exe)?\b[^\n]*?(?=[\s"'&]))\s*["']?(?:&\s*["']?)?` +
+  PREFIX +
+  SHELL +
+  PREFIX +
+  String.raw`(?:/\S*/)?`;
 const cmd = (names, tail = String.raw`(?:\.exe|\.com)?(?:\s|$)`) => new RegExp(`${CMD}(?:${names})${tail}`, "im");
 // 改「项」的 cmdlet 与它们在 Windows PowerShell 里的别名（ni = New-Item、sp = Set-ItemProperty……）：注册表那条与写动词表都用
 const ITEM_WRITERS = String.raw`(?:New|Set|Remove|Clear|Rename|Copy|Move)-Item(?:Property)?|ni|si|ri|cli|rni|rn|cpi|mi|sp|rp|clp|rnp|mp`;
 // 定义别名等于给写动词换个名字，静态筛查就认不出来了；与 Invoke-Expression 同属「藏字」
-const ALIASING = /\b(?:Set|New)-Alias\b|(^|[\s;&|({])(?:sal|nal)\s/i;
+const ALIASING = new RegExp(String.raw`(?:${CMD}|=\s*)(?:(?:Set|New)-Alias|sal|nal)(?=\s|$)|${CMD}alias\s+[^\s=]+\s*=`, "im");
+const ELEVATION = new RegExp(
+  String.raw`-Verb\s+RunAs\b|${CMD}sudo(?:\s|$)|${CMD}osascript\b[^\n]*(?:with\s+administrator\s+privileges\b|administratorPrivileges\s*:\s*true\b)`,
+  "im"
+);
 // 藏字：编码过的指令、拿 Invoke-Expression 跑拼出来的字串——筛查与审查都只看得到一串编码，判不了它要做什么。
 // iex 按指令位认，后面可贴括号、引号或就此收尾（irm x | iex、iex(irm x)）；赋值的右边也算在执行。rg iex a.txt 是搜字，不算
 // PowerShell 认参数名的任意前缀，也认 / 开头：-en、-encodedc、/enc 都是 -EncodedCommand，串再短也能跑。所以站在指令位的 powershell / pwsh（可带路径、可经 Start-Process）
@@ -31,7 +42,11 @@ const ALIASING = /\b(?:Set|New)-Alias\b|(^|[\s;&|({])(?:sal|nal)\s/i;
 const prefixesOf = (/** @type {string} */ word) => Array.from(word, (_, i) => word.slice(0, i + 1)).join("|");
 const POWERSHELL_ENCODED = String.raw`${CMD}(?:Start-Process\s+(?:-FilePath\s+)?)?["']?(?:[^"'\n;|&(){}]*[\\/])?(?:powershell|pwsh)(?:\.exe)?["']?(?:(?![\s"'][-/](?:${prefixesOf("command")}|${prefixesOf("file")})(?:[\s:]|$))[^\n;|&])*?[\s"'][-/](?:ec|${prefixesOf("encodedcommand")})(?=[\s:"']|$)`;
 const HIDDEN = new RegExp(
-    String.raw`\bInvoke-Expression\b|(?:${CMD}|=\s*)iex(?![\w.-])|-EncodedCommand\b|(^|\s)-(enc|ec|e)\s+[A-Za-z0-9+=]{32,}|${POWERSHELL_ENCODED}`,
+    String.raw`\bInvoke-Expression\b|(?:${CMD}|=\s*)iex(?![\w.-])|-EncodedCommand\b|(^|\s)-(enc|ec|e)\s+[A-Za-z0-9+=]{32,}|${POWERSHELL_ENCODED}` +
+      String.raw`|${CMD}eval(?=[\s("']|$)|${CMD}(?:source|\.)\s+<\(` +
+      String.raw`|${CMD}(?:ba|z|da|k)?sh\s+(?:-[^\s]+\s+)*<\(` +
+      String.raw`|${CMD}(?:ba|z|da|k)?sh\s+(?:-[^c\s]*\s+)*-[a-z]*c\s+["']?\$\(` +
+      String.raw`|${CMD}(?:[^"'|\n]|"[^"\n]*"|'[^'\n]*')*\|\s*(?:/\S*/)?(?:(?:ba|z|da|k)?sh|powershell|pwsh)(?:\.exe)?(?=[\s"']|$)`,
     "im"
   ),
   HIDDEN_WHY = "不用编码或拼接的指令，直接写出来";
@@ -41,8 +56,49 @@ const HIDDEN = new RegExp(
 // 它们不向用户请示；拿不准而确实需要做时，模型可以换用结构化工具，或用户切到「问而后行 / 径行」。沙箱开着时沙箱先筛，审查规则再筛
 const EVERY = "严宽审",
   WIDE = "宽审";
+const SECURITY_COMMAND = String.raw`\s+(?:-[lqv]+\s+)*`;
 /** @type {[RegExp, string, string][]} */
 const RULES = [
+  [
+    cmd(
+      "launchctl",
+      String.raw`\s+(?:load|unload|bootstrap|bootout|enable|disable|kickstart|submit|remove|start|stop|kill|attach|setenv|unsetenv|config|debug|reboot)\b`
+    ),
+    "不动系统服务",
+    EVERY
+  ],
+  [cmd("defaults", String.raw`\s+(?:(?:-currentHost|-host\s+\S+)\s+)?(?:write|delete|import|rename)\b`), "不动系统设置", EVERY],
+  [cmd("crontab", String.raw`\s+(?:-u\s+\S+\s+)?(?:-[er]\b|-(?=\s|$)|["']?[^\s\-"';|&][^\s;|&]*)`), "不动计划任务", EVERY],
+  [
+    cmd(
+      "networksetup",
+      String.raw`\s+-(?:set\w+|create\w+|delete\w+|remove\w+|add\w+|rename\w+|duplicate\w+|ordernetworkservices|switchtolocation|detectnewhardware|connectpppoeservice|disconnectpppoeservice)\b`
+    ),
+    "不动网络与防火墙配置",
+    EVERY
+  ],
+  [
+    cmd(
+      "diskutil",
+      String.raw`\s+(?:quiet\s+)?(?:erase\w*|partitionDisk|reformat|zeroDisk|secureErase|repairVolume|repairDisk|apfs\s+(?:deleteVolume|deleteContainer|addVolume|resizeContainer))\b`
+    ),
+    "不动磁盘",
+    EVERY
+  ],
+  [
+    cmd(
+      "security",
+      SECURITY_COMMAND +
+        String.raw`(?:(?:add|delete|set|create|remove)-[\w-]+|import|lock-keychain|unlock-keychain|install-mds|trust-settings-import|execute-with-privileges|(?:list-keychains|default-keychain|login-keychain)\b[^;|&\n]*\s-s\b|user-trust-settings-enable\s+-[ed]\b|authorizationdb\s+(?:write|remove)\b)(?=\s|$)`
+    ),
+    "不动钥匙串与安全设置",
+    EVERY
+  ],
+  [
+    cmd("security", SECURITY_COMMAND + String.raw`(?:export\b|find-(?:generic|internet)-password\b[^;|&\n]*\s-[wg](?=[\s"']|$))`),
+    "不直接读取或导出钥匙串密码与密钥",
+    "严"
+  ],
   [cmd("reg", String.raw`(?:\.exe)?\s+(?:add|delete|import|restore|load|unload|copy|save)\b`), "不动注册表", EVERY],
   // 注册表：查看放行（启动项、已装软件、驱动版本都在里头，是电脑检查的常规去处），改则拒绝
   [
@@ -61,7 +117,8 @@ const RULES = [
   // 映射网络盘只在严档拦：宽档本就放行写到目录之外
   [cmd("net", String.raw`(?:\.exe)?\s+use\b`), "不动用户、账户与共享", "严"],
   [/\b(New|Remove|Set|Enable|Disable)-LocalUser\b|\bAdd-LocalGroupMember\b/i, "不动用户与账户", EVERY],
-  [/-Verb\s+RunAs\b|(^|\s)sudo\s/i, "不提权", EVERY],
+  [ELEVATION, "不提权", EVERY],
+  [cmd("osascript"), "不直接执行 AppleScript 或 JXA，请先请示", "严"],
   [cmd("runas|shutdown|bcdedit|diskpart|reagentc|sfc|dism|takeown|icacls|cacls|logoff"), "不动系统、磁盘与权限", EVERY],
   [/\bwmic(?:\.exe)?\b[^\n]*\b(?:call|delete)\b/i, "不通过 WMI 改系统", EVERY],
   [cmd("format", String.raw`(?:\.com)?\s+[a-z]:`), "不动磁盘", EVERY],
@@ -123,7 +180,7 @@ const GIT_INTERNAL_PATH = /(^|[\s"'=;|&(])[^\s"'`;|&<>()]*\.git[\\/][^\s"'`;|&<>
 // 漏一个动词，就等于放行一次目录外的写入。重叠的前缀按长在前排（rmdir 在 rm 前、rename 在 ren 前）。
 // 指令由 Windows PowerShell 跑，它的别名是真会执行的：sc = Set-Content、ni = New-Item、ri = Remove-Item、mi / cpi / rni 同理，
 // 一并列上；解包、克隆这类把东西放到某处的也算
-const WRITE_VERBS = String.raw`Set-Content|Add-Content|Out-File|Remove-Item|Move-Item|Copy-Item|Rename-Item|New-Item|Set-Item|Clear-Item|Clear-Content|Set-Acl|Compress-Archive|Expand-Archive|Export-Csv|Export-Clixml|Tee-Object|Start-Transcript|(?:New|Set|Remove|Copy|Move|Clear|Rename)-ItemProperty|robocopy|xcopy|copy|rmdir|rd|rm|del|erase|move|mv|cp|rename|ren|mkdir|md|touch|tee|attrib|mklink|fsutil|dd|sc|ac|ni|ri|mi|cpi|rni|rn|si|cli|clc|sp|rp|clp|mp|rnp|epcsv|tar|7za?|unzip|zip|git\s+(?:clone|worktree\s+add)`;
+const WRITE_VERBS = String.raw`Set-Content|Add-Content|Out-File|Remove-Item|Move-Item|Copy-Item|Rename-Item|New-Item|Set-Item|Clear-Item|Clear-Content|Set-Acl|Compress-Archive|Expand-Archive|Export-Csv|Export-Clixml|Tee-Object|Start-Transcript|(?:New|Set|Remove|Copy|Move|Clear|Rename)-ItemProperty|robocopy|xcopy|copy|rmdir|rd|rm|del|erase|move|mv|cp|rename|ren|mkdir|md|touch|tee|attrib|mklink|fsutil|dd|sc|ac|ni|ri|mi|cpi|rni|rn|si|cli|clc|sp|rp|clp|mp|rnp|epcsv|tar|7za?|unzip|zip|chmod|chown|chflags|ln|rsync|ditto|sed\s+(?:-[^\s]+\s+)*-i|git\s+(?:clone|worktree\s+add)`;
 // 带输出目标的参数：curl -o、wget -O、iwr -OutFile、Start-Process 的重定向——动词本身像读，却在往某处写
 const OUTPUT_PARAMS = String.raw`(?:^|\s)(?:-o|-O|-OutFile|-OutputPath|-Destination(?:Path)?|-RedirectStandard(?:Output|Error)|--output(?:-document|-dir)?|--outdir|--out-dir)(?=[\s=:]|$)|(?:^|\s)-o(?=[\\/"'A-Za-z])`;
 // .NET 直写文件：[IO.File]::WriteAllText、[IO.Directory]::Delete、New-Object IO.StreamWriter 之类
@@ -162,14 +219,18 @@ function absolutePathsIn(command, win) {
   return found;
 }
 // 只读的来源不受目录约束——从外面拿东西进工作目录是正常的活（查看不限，改动才限）。只认两种最常见的写法，不做 shell 语义解析：
-//   Copy-Item / cp / copy / xcopy / robocopy 紧跟动词的第一个路径是源（Move-Item 的源会被删掉，不算；robocopy 带 /MOV 也不算）；
+//   Copy-Item / cp / copy / xcopy / robocopy、rsync / ditto / ln 紧跟选项的第一个路径是源
+//   （Move-Item 的源会被删掉，不算；robocopy 带 /MOV、rsync 带 --remove-source-files 也不算）；
 //   Get-Content / gc / cat / type 读出来往管道或重定向里送的那个路径是源。
 // 路径里带空格的写法本就认不出来（absolutePathsIn 到空格为止），这里也一样
+// 只跨过常见的无值选项；-Destination、--log-file、rsync -T 这类后面跟写入路径的，不能把参数当只读来源。
 const PATH_TOKEN = "[^\\s\"'`;|&<>()]+";
 const READ_SOURCES = new RegExp(
-  String.raw`(?:^|[;&|({\n]\s*)(?:Copy-Item|cpi|cp|copy|xcopy|robocopy)(?:\.exe)?\s+(?:-(?:Recurse|Force|Container)\s+)*(?:-(?:Path|LiteralPath)\s+)?["']?(${PATH_TOKEN})(?![^\n]*/mov)` +
+  String.raw`${CMD}(?:Copy-Item|cpi|cp|copy|xcopy|robocopy)(?:\.exe)?\s+(?:-(?:Recurse|Force|Container|[aHLPRfinprsvX]+)\s+)*(?:-(?:Path|LiteralPath)\s+)?["']?(${PATH_TOKEN})(?![^;|&\n]*/mov)` +
     "|" +
-    String.raw`(?:^|[;&|({\n]\s*)(?:Get-Content|gc|cat|type)(?:\.exe)?\s+(?:-(?:Raw|Encoding\s+\S+)\s+)*(?:-(?:Path|LiteralPath)\s+)?["']?(${PATH_TOKEN})(?=[^|>\n]*[|>])`,
+    String.raw`${CMD}(?:Get-Content|gc|cat|type)(?:\.exe)?\s+(?:-(?:Raw|Encoding\s+\S+)\s+)*(?:-(?:Path|LiteralPath)\s+)?["']?(${PATH_TOKEN})(?=[^|>\n]*[|>])` +
+    "|" +
+    String.raw`${CMD}(?:rsync(?![^;|&\n]*--remove-source-files\b)\s+(?:-[arvlpgoDqcnuzhxswi]+\s+)*|ditto\s+|ln\s+(?:-[sfnivh]+\s+)*)["']?(${PATH_TOKEN})`,
   "gim"
 );
 /**
@@ -180,7 +241,7 @@ function stripReadSources(text) {
   // 正则索引按 UTF-16 code unit 计；split("") 保持同一套索引（指令前有 emoji 时也不会错位）
   const chars = text.split("");
   for (const match of text.matchAll(READ_SOURCES)) {
-    const source = match[1] || match[2],
+    const source = match[1] || match[2] || match[3],
       offset = match[0].lastIndexOf(source),
       start = Number(match.index) + offset;
     if (!source || offset < 0) continue;
