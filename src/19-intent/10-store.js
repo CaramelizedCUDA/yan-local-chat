@@ -1,9 +1,11 @@
-// 言 · 意 · 读写与附着。每一答开工时读一回，连同已成立、已假定各项凭据此刻的指纹（取法见 05-anchors.js），附在这一问之后——与账本同一个位置、同一个道理
+// 言 · 意 · 读写与附着。每一答开工时读一回，连同已成立、已假定各项凭据此刻的指纹（取法见 05-anchors.js），附在这一问之后——与目录记忆同一个位置、同一个道理
 // （见 15-tools/21-files.js 的 ledgerNote）：附在问上而不进系统提示，意改了也不冲掉前面的缓存；这一答里再改，改完的那份由工具结果交回。
 // 写只经桥接（/api/work/intent），带上读到的版本：别处刚写过就照新的那份重算再写
 const INTENT_FILE = ".yan/意.json";
-/** @type {Map<string, { intent: Intent, now: IntentPrints }>} 按对话：这一答开工时读到的意与指纹 */
+/** @type {Map<string, { intent: Intent, now: IntentPrints, closed?: Set<string> }>} 按对话：这一答开工时读到的意与指纹、那时已了结的 */
 const intents = new Map();
+/** 这一答眼里了结的：开工时已了结、此刻也还了结的。这一答才立住的留到它收尾：标完成立还要拿原问对照、进度也不至于一下归零 @param {Conversation} conversation @param {Intent} intent */
+const answerClosed = (conversation, intent) => intentClosed(intent, intents.get(conversation.id)?.closed);
 /** @param {Conversation} conversation @param {AbortSignal} [signal] */
 async function readIntent(conversation, signal) {
   const data = await bridge("/api/work/intent", workScope(conversation), signal);
@@ -24,8 +26,9 @@ async function loadIntent(conversation, signal) {
   if (!isWork(conversation)) return void intents.delete(conversation.id);
   try {
     const { intent } = await readIntent(conversation, signal),
-      now = await intentPrints(conversation, intentSealedAnchors(intent), signal);
-    intents.set(conversation.id, { intent, now });
+      closed = intentClosed(intent),
+      now = await intentPrints(conversation, intentSealedAnchors(intent, closed), signal);
+    intents.set(conversation.id, { intent, now, closed });
     noteIntentGlance(conversation, intent, now);
   } catch (error) {
     if (error.name === "AbortError") throw error;
@@ -35,7 +38,12 @@ async function loadIntent(conversation, signal) {
 /** 一答之内的回归簿记：上一回看到的待复核几项、各项被打回几回 @param {Conversation} conversation */
 function intentWatch(conversation) {
   const held = intents.get(conversation.id);
-  return { stale: new Set(held ? intentStaleIds(held.intent, held.now) : []), bounces: new Map(), gated: false, kept: false };
+  return {
+    stale: new Set(held ? intentStaleIds(held.intent, held.now, answerClosed(conversation, held.intent)) : []),
+    bounces: new Map(),
+    gated: false,
+    kept: false
+  };
 }
 /**
  * 一轮工具做完：重取便宜的那几种凭据（文件、目录；探针只在每答开工与标成立时跑）的指纹，新转待复核的写成一段接在这一轮的工具结果后
@@ -44,10 +52,11 @@ function intentWatch(conversation) {
  */
 async function intentRound(conversation, watch, signal) {
   const held = intents.get(conversation.id),
-    keys = held ? intentSealedAnchors(held.intent) : [];
+    closed = held ? answerClosed(conversation, held.intent) : undefined,
+    keys = held ? intentSealedAnchors(held.intent, closed) : [];
   if (!held || !keys.length) return "";
   held.now = { ...held.now, ...(await intentPrints(conversation, keys, signal, "round")) };
-  const stale = new Set(intentStaleIds(held.intent, held.now)),
+  const stale = new Set(intentStaleIds(held.intent, held.now, closed)),
     fresh = [...stale].filter(id => !watch.stale.has(id));
   watch.stale = stale;
   for (const id of fresh) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
@@ -85,25 +94,26 @@ async function intentGate(conversation, assistant, watch, signal) {
     if (error.name === "AbortError") throw error;
   }
   if (!Object.keys(intent.nodes).length) return null;
-  // 刚重跑过的（测试可能跑上几分钟）不再跑一遍
-  const now = {
-    ...(await intentPrints(
-      conversation,
-      intentSealedAnchors(intent).filter(key => !rechecked || !(key in rechecked.prints)),
-      signal
-    )),
-    ...rechecked?.prints
-  };
+  const closed = answerClosed(conversation, intent),
+    // 刚重跑过的（测试可能跑上几分钟）不再跑一遍
+    now = {
+      ...(await intentPrints(
+        conversation,
+        intentSealedAnchors(intent, closed).filter(key => !rechecked || !(key in rechecked.prints)),
+        signal
+      )),
+      ...rechecked?.prints
+    };
   keepIntent(conversation, intent, now);
   // 已动过意时走上面的整体验证，也要据最终指纹记下守的失败；先重查过的那几条不重复算一回。
-  const broken = intentKeeps(intent).filter(id => intentState(intent, id, now) === "stale");
+  const broken = intentKeeps(intent, closed).filter(id => intentState(intent, id, now) === "stale");
   for (const id of broken)
     if (!watch.stale.has(id) && !rechecked?.fresh.includes(id)) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
   watch.kept = broken.length > 0;
-  watch.stale = new Set(intentStaleIds(intent, now));
-  const unowned = intentUnowned(intent, changedPaths(assistant)),
+  watch.stale = new Set(intentStaleIds(intent, now, closed));
+  const unowned = intentUnowned(intent, changedPaths(assistant), closed),
     report = [
-      prompt("work.intentGate", { intent: intentText(intent, now, { path: INTENT_FILE, asks: true }) }),
+      prompt("work.intentGate", { intent: intentText(intent, now, { path: INTENT_FILE, asks: true, closed }) }),
       watch.bounces.size && prompt("work.intentGateBounced", { list: [...watch.bounces].map(([id, n]) => t`${id} ${n} 回`).join("、") }),
       unowned.length &&
         prompt("work.intentGateUnowned", {
@@ -113,7 +123,7 @@ async function intentGate(conversation, assistant, watch, signal) {
     ]
       .filter(Boolean)
       .join("\n\n"),
-    { live, standing } = intentTally(intent, now);
+    { live, standing } = intentTally(intent, now, closed);
   /** @type {Step} */
   const step = {
     id: `gate_${uid().slice(0, 8)}`,
@@ -141,10 +151,11 @@ async function intentGate(conversation, assistant, watch, signal) {
  */
 async function intentRecheck(conversation, assistant, watch, signal) {
   const held = intents.get(conversation.id),
-    keeps = intentKeeps(held.intent),
-    keys = keepAnchors(held.intent),
+    closed = answerClosed(conversation, held.intent),
+    keeps = intentKeeps(held.intent, closed),
+    keys = keepAnchors(held.intent, closed),
     acted = allSteps(assistant).some(
-      step => step.status === "done" && TOOLS.get(step.name)?.group === "work" && TOOLS.get(step.name)?.sideEffect
+      step => step.status === "done" && TOOLS.get(step.name)?.group === "work" && (step.effect ?? TOOLS.get(step.name)?.sideEffect === true)
     );
   if (!keys.length || !acted) return null;
   const prints = await intentPrints(conversation, keys, signal);
@@ -153,11 +164,11 @@ async function intentRecheck(conversation, assistant, watch, signal) {
   for (const id of fresh) watch.bounces.set(id, (watch.bounces.get(id) || 0) + 1);
   return fresh.length ? { prints, fresh } : null;
 }
-/** 守挂的、要跑指令的凭据（探针、测试）；钩子挂的测试不在其中 @param {Intent} intent */
-function keepAnchors(intent) {
+/** 守挂的、要跑指令的凭据（探针、测试）；钩子挂的测试不在其中 @param {Intent} intent @param {Set<string>} [closed] */
+function keepAnchors(intent, closed) {
   return [
     ...new Set(
-      intentKeeps(intent).flatMap(id => {
+      intentKeeps(intent, closed).flatMap(id => {
         const node = intent.nodes[id];
         return Object.keys(node.seal?.prints || {}).filter(key => !keepHookAnchor(node, key));
       })
@@ -167,20 +178,25 @@ function keepAnchors(intent) {
 // 守的钩子：写了 on 的守，有副作用的一步（指令、写文件、调接口……帮手做的也算）对得上它，动手前（请示之前）先跑它挂的测试，
 // 将要做的经环境变量交给测试：YAN_TOOL 是工具名，YAN_TARGET 是指令原文、路径或网址（别的工具即整份参数）。不过即不做这一步，测试的输出作这一步的结果回给模型。
 // 跟探针一样随档位：问而后行里只自动跑明确只读的，别的不跑——那一步本就要人批。跑不成的这回不拦。改意不过钩子：写宽了的 on 不能连撤它的那一步也拦下。
-// 没挂测试的即禁令，对上就不做；标了 ask 的是关口：测试过了（或没挂）还要请用户批，不论档位——径行也问，批了这一步不再另问
+// 没挂测试的即禁令，对上就不做；标了 ask 的是关口：测试过了（或没挂）还要请用户批，不论档位——径行也问，批了这一步不再另问。
+// 对上的几条先过禁令、再跑测试，都过了才请人批：批完又被另一条的测试拦下，那回准许就白费了，改好重来还得再批一回
 /** @param {Step} step @param {Record<string, any>} args @param {ToolContext} ctx @returns {Promise<ToolOutcome|null>} 拦下即交回这一步的结果 */
 async function keepHook(step, args, ctx) {
   const held = intents.get(ctx.conversation.id);
-  if (!held || step.name === "update_intent" || !TOOLS.get(step.name)?.sideEffect) return null;
+  if (!held || step.name === "update_intent" || !sideEffectOf(TOOLS.get(step.name), args)) return null;
   const target = String(args.command ?? args.path ?? args.url ?? JSON.stringify(args)),
-    policy = commandPolicyOf(ctx.conversation);
-  for (const id of intentKeeps(held.intent)) {
-    const node = held.intent.nodes[id],
-      on = keepTrigger(node);
-    if (!on || !(on.test(target) || on.test(step.name))) continue;
-    const tests = node.anchors.filter(key => keepHookAnchor(node, key));
+    policy = commandPolicyOf(ctx.conversation),
+    hit = intentKeeps(held.intent, answerClosed(ctx.conversation, held.intent))
+      .map(id => ({ id, node: held.intent.nodes[id] }))
+      .filter(({ node }) => {
+        const on = keepTrigger(node);
+        return on && (on.test(target) || on.test(step.name));
+      })
+      .map(keep => ({ ...keep, tests: keep.node.anchors.filter(key => keepHookAnchor(keep.node, key)) }));
+  for (const { id, node, tests } of hit)
     if (!tests.length && !node.ask)
       return { ok: false, content: prompt("work.keepBan", { id, claim: node.claim }).trim(), display: `守拦下 · ${id}` };
+  for (const { id, tests } of hit)
     for (const key of tests) {
       const command = anchorParts(key)[1];
       if (policy === "ask" && !isReadOnlyCommand(command)) continue;
@@ -208,6 +224,7 @@ async function keepHook(step, args, ctx) {
         display: `守拦下 · ${id}`
       };
     }
+  for (const { id, node } of hit) {
     if (!node.ask) continue;
     step.gate = { id, claim: node.claim, target };
     const granted = await askApproval(step, ctx).finally(() => delete step.gate);
@@ -246,13 +263,13 @@ function keepWhy(intent, now, ids) {
 }
 /** 这一答里改过意：记下改完的那份，往后几轮据它比（作答途中压了前文要重装时，附的也是它）；题下与书眉跟着换 @param {Conversation} conversation @param {Intent} intent @param {IntentPrints} now */
 function keepIntent(conversation, intent, now) {
-  intents.set(conversation.id, { intent, now });
+  intents.set(conversation.id, { intent, now, closed: intents.get(conversation.id)?.closed });
   noteIntentGlance(conversation, intent, now);
 }
 /** 附在这一问之后的一段；意里一项都没有就不附 @param {Conversation} conversation */
 function intentNote(conversation) {
   const held = intents.get(conversation.id),
-    text = held ? intentText(held.intent, held.now, { path: INTENT_FILE }) : "";
+    text = held ? intentText(held.intent, held.now, { path: INTENT_FILE, closed: answerClosed(conversation, held.intent) }) : "";
   return text ? `${text}\n\n` : "";
 }
 /**

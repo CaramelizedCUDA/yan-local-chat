@@ -222,7 +222,14 @@ function delegateInBackground(step, args, ctx) {
  * @param {boolean} [resume]
  * @param {Profile|null} [profile] 续写时在认领前拿住，等待期间换了对话也不改用别处的模型
  */
-function launchHelper(step, args, ctx, past = null, resume = false, profile = requestJob(ctx.conversation.id)?.profile || activeProfile()) {
+function launchHelper(
+  step,
+  args,
+  ctx,
+  past = null,
+  resume = false,
+  profile = requestJob(ctx.conversation.id)?.profile || activeProfile(ctx.conversation)
+) {
   const { conversation, assistant } = ctx;
   // 进展：帮手只剩等后台、睡下之前交的那一份。这一步仍在做，回报照常寄
   const progress = outcome =>
@@ -246,7 +253,7 @@ function launchHelper(step, args, ctx, past = null, resume = false, profile = re
         // 用户停的（停止、刷新）：不回报，也就不再叫醒谁
         if (error.name === "AbortError") return void Object.assign(step, { status: "error", result: "已止" });
         const reason = bridgeErrorText(String(error.message || error));
-        // 领命途中断的（读账本连不上之类）：同样挂着等人续
+        // 领命途中断的（读目录记忆连不上之类）：同样挂着等人续
         if (step.sub) return holdHelper(step, reason, conversation);
         step.status = "error";
         step.result = reason;
@@ -312,12 +319,11 @@ function heldHelpers(conversation) {
 async function resumeHelpers(conversation, steps = heldHelpers(conversation)) {
   steps = steps.filter(step => step.status === "interrupted" && step.sub);
   if (!steps.length) return;
-  if (runningElsewhere(conversation.id)) return toast(t("此对话正在另一页面作答，稍后再续"));
-  const profile = requestJob(conversation.id)?.profile || activeProfile();
+  const profile = requestJob(conversation.id)?.profile || activeProfile(conversation);
   if (!profile) return openSettings("models");
   if (quotaBlocked(profile)) return toast(t("余墨已尽，请调高上限或更换模型"));
   // 认领一回：几处页面同开时，只有一处续得上
-  if (!(await claimConversation(conversation.id))) return toast(t("此对话正在另一页面作答，稍后再续"));
+  if (!(await claimTurn(conversation))) return;
   if (!store.conversations.includes(conversation)) return;
   for (const asked of steps) {
     if (asked.status !== "interrupted") continue;
@@ -465,7 +471,7 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
     host: assistant,
     title: step.title
   };
-  // 读账本、装历史之前就入册：准备中的帮手也能被停止、收信、报到。主答的中止只跟到准备结束，之后仍独自在后台做。
+  // 读目录记忆、装历史之前就入册：准备中的帮手也能被停止、收信、报到。主答的中止只跟到准备结束，之后仍独自在后台做。
   const stopStarting = () => {
     box.halted = true;
     box.controller.abort();
@@ -491,7 +497,7 @@ async function runDelegate(step, args, ctx, profile, past, progress, resume = fa
     quiet = false;
   try {
     box.controller.signal.throwIfAborted();
-    // 领命这一刻现读主对话的账本（只读）：「先定下约束、再派活」时，开页读的那份往往还没有。
+    // 领命这一刻现读主对话的目录记忆（只读）：「先定下约束、再派活」时，开页读的那份往往还没有。
     const ledger = await loadLedger(conversation, box.controller.signal, "sub");
     // 先前几趟的行迹若已另存出去，接回来再写进它的历史
     await warmConversation(conversation);

@@ -2,7 +2,7 @@
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 设置的各栏：画法、接事件、题下一句导语成组登记，左侧栏目钮（index.html 的 .tab-btn）照 data-tab 认。换一栏只画、只接这一栏；
 // 各栏自己的面板写在各自领域里（记忆在 11-memory，游目在 26-stage/40-settings），这里只登记。加一栏只需加一行与一枚栏目钮。
-// 导语是题记，只管气韵，不讲这一栏怎么用（用法进 设置 → 文档）
+// 导语是题记，只管气韵，不讲这一栏怎么用（用法进 设置 → 文档）；这一栏是什么，靠近栏目钮浮出一句白话（data-tip）
 /** @type {Record<string, [() => string, (() => void) | null, string]>} */
 const SETTINGS_TABS = {
   general: [generalSettingsHtml, bindGeneralSettings, t("凡事豫则立，不豫则废。")],
@@ -166,7 +166,9 @@ function segmentRow(title, desc, key, items, active) {
 }
 
 function storageSize() {
-  const bytes = new Blob([JSON.stringify(store)]).size;
+  // 只算「配置」那一份（设置、模型、记忆、草稿……，即 配置.json 的内容）；
+  // 整份 store 还带着所有对话，长对话能把这一格算成几十 MB，数字误导人也拖慢这一页
+  const bytes = new Blob([JSON.stringify(metaOf())]).size;
   return bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
 }
 // 存储位置的更换排着队来（见 bindGeneralSettings 里的 commitStore）
@@ -189,7 +191,8 @@ function bindGeneralSettings() {
       if (!next || next === (bootstrap.store?.parent || "")) return;
       let data;
       try {
-        data = await bridge("/api/store/move", { parent: next }, AbortSignal.timeout(600000));
+        await settleConfig();
+        data = await storeBridge("/api/store/move", { parent: next }, AbortSignal.timeout(600000));
       } catch (error) {
         return toast(String(error.message || error).slice(0, 80));
       }
@@ -308,12 +311,6 @@ function bindSettingRows() {
           return;
         }
         if (key === "notify") return void setNotify(value === "true");
-        if (key === "memoryEnabled") {
-          store.memory.enabled = value === "true";
-          saveStore();
-          renderSettings();
-          return;
-        }
         store.settings[key] = ["autoTitle", "archiveRead", "sandbox", "stageFit"].includes(key) ? value === "true" : value;
         saveStore();
         applyAppearance();

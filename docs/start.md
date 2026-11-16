@@ -14,12 +14,14 @@ npm start
 
 浏览器会打开 `http://127.0.0.1:18787`。首次使用时，在「设置 → 模型」中填写显示名称、模型 ID、Base URL 与 API Key 即可开始；项目不会读取或内置开发者电脑上的任何配置。可以添加多个接口并切换默认模型；每个模型可选「接口」是 OpenAI 兼容（chat/completions）还是 Anthropic（Messages API），Base URL 带 anthropic.com 的不选也认。
 
-界面语言在「设置 → 通用 → 语言」里切换（中文 / English），切换后页面重新载入；没选过的随浏览器语言，中文系用中文，其余用英文。英文界面只换界面上的字，给模型的提示词照旧；「设置 → 文档」暂只有中文。
+界面语言在「设置 → 通用 → 语言」里切换（中文 / English），切换后页面重新载入；没选过的随浏览器语言，中文系用中文，其余用英文。英文界面只换界面上的字，给模型的提示词照旧。
 
 「设置 → 通用 → 桌面通知」默认关。开了之后，页面不在眼前时（切到别的窗口、别的程序），一答收尾、有事待你定夺（请示条、表单）、帮手断了待续，各弹一条系统通知；同一段对话的新通知顶掉旧的，点它回到那段对话。补言另起了一问、帮手还在做的，这段对话还没歇，不报；人按停的也不报。准许是各浏览器自己记的，头一回点「开」时浏览器会问；设置随存储目录同步，换了浏览器没准许就不弹，回来再点一次「开」即可。
 
 
 `start.cmd` 打开的 CMD 窗口即本机桥接进程，必须保持开启；关闭后已加载的页面暂时仍在，但刷新、模型转发、联网与执事都会停止。浏览器开了、页面却报「本机桥接已停止」时，先看这个窗口：桥接退出会停在那里并打出原因（端口被占、缺 node 等），不会一闪而过。
+
+macOS 上双击 `start.command`（头一回若被拦，在访达里右键选「打开」）。「环境」工具包只备了 Windows 版（设置里标注「仅 Windows」，「准备环境」仍可点、由桥接报错；请用系统里的 Python 与 Node，可经 Homebrew 安装）；问而后行的严档沙箱在 macOS 上另由系统的 sandbox-exec 把写盘收进工作目录与临时、缓存目录，审而后行与径行仍只过规则筛查。
 
 ## Windows 便携包
 
@@ -27,7 +29,7 @@ npm start
 
 `言.exe` 没有代码签名，头一回双击 Windows 可能提示「已保护你的电脑」，点「更多信息 → 仍要运行」即可。
 
-打包：在仓库里运行 `npm run pack`，得 `dist/yan-<版本>-win-x64.zip`。要用到系统自带的 `curl.exe`、`tar.exe` 与 .NET Framework 4 的 `csc.exe`（Windows 10 / 11 都有）；Node 的版本写在 `pack/pack.mjs` 开头，压缩包按 nodejs.org 的校验和验过才用，换版本后整套测试用包里的 Node 跑一遍（`dist\言\node\node.exe test/run.mjs`）。启动器的源码是 `pack/launcher.cs`，图标 `pack/icon.ico` 由 `icon.svg` 画成。
+打包：在仓库里运行 `npm run pack`，得 `dist/yan-<版本>-win-x64.zip`（旧版本的包随之删去，发过的在 GitHub Release 上）。要用到系统自带的 `curl.exe`、`tar.exe` 与 .NET Framework 4 的 `csc.exe`（Windows 10 / 11 都有）；Node 的版本写在 `pack/pack.mjs` 开头，压缩包按 nodejs.org 的校验和验过才用，换版本后整套测试用包里的 Node 跑一遍（`dist\言\node\node.exe test/run.mjs`）。启动器的源码是 `pack/launcher.cs`，图标 `pack/icon.ico` 由 `web/icon.svg` 画成。
 
 ## 在 VS Code 内使用
 
@@ -35,14 +37,14 @@ npm start
 2. 用系统浏览器打开 `http://127.0.0.1:18787`。Simple Browser 以 iframe 嵌入页面，会被言的 `frame-ancestors 'none'` 策略阻止；桥接也不向扩展 Webview 来源开放执事接口。
 3. 在「设置 → 模型」中填写配置；可先点「获取列表」，再点「测试连接」；联网检索在「设置 → 工具」里测。
 
-## 直接打开 index.html
+## 直接打开 web/index.html
 
-言须经本机桥接打开：运行 start.cmd（或 `npm start`），用系统浏览器访问 `http://127.0.0.1:18787`。直接双击 `index.html`（`file://`）接不上桥接——桥接不认来源为 `null` 的页面（`file://` 页面是它，别处网页嵌进来的沙箱 iframe 也是它，分不出来）。改过 `src/` 或 `styles/` 后刷新即生效（桥接按请求即时拼接，不落成文件）。
+言须经本机桥接打开：运行 start.cmd（或 `npm start`），用系统浏览器访问 `http://127.0.0.1:18787`。直接双击 `web/index.html`（`file://`）接不上桥接——桥接不认来源为 `null` 的页面（`file://` 页面是它，别处网页嵌进来的沙箱 iframe 也是它，分不出来）。改过 `src/` 或 `styles/` 后刷新即生效（桥接按请求即时拼接，不落成文件）。
 
 ## 环境变量
 
 - `YAN_PORT`：更换桥接端口，默认 `18787`
-- `YAN_HOME`：直接指定存储目录（对话、卷宗、配置都在里面），默认 `~/.yan/`；指定了它就不读也不写记着存储位置的 `%APPDATA%\言\位置.json`（测试用）
+- `YAN_HOME`：直接指定存储目录（对话、卷宗、配置都在里面），默认 `~/.yan/`；指定了它就不读也不写记着存储位置的系统数据目录文件（测试用）
 - `YAN_DEBUG=1`：把每个请求与异常断开的连接打到控制台，页面报「Failed to fetch」「本机桥接已停止」时用它看请求到底有没有到桥接
 
 ## 本机桥接

@@ -37,21 +37,25 @@ html[data-sidebar="collapsed"] .sidebar .wide {
     opacity var(--dur-quick) ease,
     transform 0.3s var(--ease-lay);
 }
+/* 侧栏顶上一行：标识即当前的态——对谈一笔言、执事一笔行（设计稿/156 丙），与下面翻页、卷宗、分组同一路笔意，停在它们那一列的中线上，
+   展开收起都不挪。收起时不另留一枚 ›：指上标识，它换成 ›，点即展开。
+   落选：甲收起时 › 占顶行、标识落到下一行（展开收起之间下面各入口要上下挪一行）；原先大字「言」下一行「对谈 /［行］执事」（言既是名又是一态，两态不对账） */
 .brand-row {
   position: relative;
   height: 34px;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding-left: 9px;
+  margin-bottom: 18px;
 }
 .brand-mark {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  color: var(--accent);
-  font: 500 22px/1 var(--title);
+  width: 26px;
+  height: 26px;
+  margin-left: 7px; /* 中线对着下面各入口图标那一列（40px 宽的中线） */
+  transition: opacity var(--dur-quick);
+}
+.brand-mark .brush {
+  width: 100%;
+  height: 100%;
 }
 .icon-btn {
   width: 30px;
@@ -77,10 +81,21 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   left: 216px;
   transition:
     left 0.38s var(--ease-lay),
-    background var(--dur-quick);
+    background var(--dur-quick),
+    opacity var(--dur-quick);
 }
+/* 收起时 › 叠在标识上、平时不露；指上这一行，标识淡去、› 浮出，点它即展开。left 5px 时它 30px 宽的中线正对标识 */
 .sidebar.collapsed .collapse-btn {
   left: 5px;
+  opacity: 0;
+}
+.sidebar.collapsed .brand-row:hover .collapse-btn,
+.sidebar.collapsed .collapse-btn:focus-visible {
+  opacity: 1;
+}
+.sidebar.collapsed .brand-row:hover .brand-mark,
+.sidebar.collapsed .brand-row:has(.collapse-btn:focus-visible) .brand-mark {
+  opacity: 0;
 }
 .rail-btn {
   display: flex;
@@ -488,22 +503,8 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   border-radius: var(--radius-l) 0 0 var(--radius-l);
   overflow: hidden;
 }
-.main:before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  right: -70px;
-  bottom: -110px;
-  width: 430px;
-  height: 430px;
-  pointer-events: none;
-  opacity: 0.045;
-  background: radial-gradient(ellipse at 50% 65%, transparent 43%, var(--ink) 44% 45%, transparent 46%),
-    radial-gradient(ellipse at 32% 55%, transparent 39%, var(--ink) 40% 41%, transparent 42%);
-  transform: rotate(-12deg);
-}
-/* 时令那一件（设计稿/84 丙，画见 src/12-season.js）：贴右下角，墨色作底、画作遮罩，浓淡同上面那两道圈；
-   亮色里替掉两道圈，暗色里右上那轮月照旧（月下一枝） */
+/* 时令那一件（设计稿/84 丙，画见 src/12-season.js）：贴右下角，墨色作底、画作遮罩；暗色里右上那轮月照旧（月下一枝，见 00-base.css）。
+   亮色原先右下角是两道淡圈，已由这一件替掉、删去——留着只会在开页画上遮罩前闪一下 */
 .main:after {
   content: "";
   position: absolute;
@@ -518,9 +519,6 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   mask: var(--season-mark) right bottom / contain no-repeat;
 }
 :root:not([data-season-mark]) .main:after {
-  display: none;
-}
-:root[data-theme="light"][data-season-mark] .main:before {
   display: none;
 }
 .topbar {
@@ -691,31 +689,12 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   font-size: 9px;
   color: var(--ink-3);
 }
-.menu-section {
-  margin: 4px 0 2px;
-  padding: 8px 10px 6px;
-  border-top: 1px solid var(--line);
-}
-.menu-section-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-  color: var(--ink-3);
-  font: var(--fs-mark) var(--title);
-  letter-spacing: 0.12em;
-}
-/* 探到模型不认思考档位：这一节只留一句话 */
+/* 探到模型不认思考档位：这一栏只留一句话 */
 .menu-section-note {
-  padding: 4px 2px 3px;
+  padding: 7px 10px;
   color: var(--ink-3);
   font: var(--fs-note) var(--title);
   letter-spacing: 0.06em;
-}
-/* 菜单里思考深度各档均分一行 */
-.menu-section .segmented button {
-  flex: 1;
-  padding: 4px;
 }
 .welcome-chips:not(:has(.chip:not(.hidden))) {
   display: none;
@@ -764,24 +743,24 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   color: var(--ink-3);
   font-size: var(--fs-note);
 }
-/* 顶栏右侧两件（明暗、余墨）同一套笔墨，件与件之间一道细竖 */
+/* 顶栏右侧几件（漏、明暗、余墨）同一套笔墨，件与件之间一道细竖。连同垂下的听音、游目，五件件心一律相距 50（设计稿/145）：
+   每件宽 30，竖线连两边共 20；垂下的两件占右缘的第一、第二格，件心离右缘 35、85。 */
 .top-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
 }
-/* 右缘内侧自页顶垂下的游目一笔、听音一缕：顶栏右的两件给它们让出位置 */
+/* 右缘内侧自页顶垂下的游目立轴、听音一缕：顶栏右的几件给它们让出位置（顶栏内边距 22，余墨半宽 15） */
 .main:has(> #stagePin:not(.hidden)) .top-actions,
 .main:has(> #listenPendant:not(.hidden)) .top-actions {
-  margin-right: 30px;
+  margin-right: 48px;
 }
 .main:has(> #stagePin:not(.hidden)):has(> #listenPendant:not(.hidden)) .top-actions {
-  margin-right: 60px;
+  margin-right: 98px;
 }
 .top-sep {
   width: 1px;
   height: 14px;
-  margin: 0 6px;
+  margin: 0 9.5px;
   background: color-mix(in srgb, var(--line) 85%, transparent);
 }
 /* 明暗：一笔圆相，半边染墨（昼夜各半）；换明暗时这一染转过半圈，悬停先转一点示意。
@@ -821,7 +800,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   position: relative;
   display: grid;
   place-items: center;
-  width: 36px;
+  width: 30px;
   height: 30px;
   border-radius: var(--radius-m);
   transition: background var(--dur-quick);
@@ -863,7 +842,9 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   pointer-events: none;
 }
 .quota:hover .quota-tip,
-.quota:focus-visible .quota-tip {
+.quota:focus-visible .quota-tip,
+.stage-pin:hover .quota-tip,
+.stage-pin:focus-visible .quota-tip {
   opacity: 1;
   visibility: visible;
   transform: none;
@@ -956,7 +937,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   letter-spacing: 0.04em;
   animation: rise var(--dur-rise) var(--ease-ink);
 }
-/* 两节的头：在跑 / 约定；第二节起与上一节隔开一点 */
+/* 两节的头：进行中 / 约定；第二节起与上一节隔开一点 */
 .clepsydra-sec {
   padding: 8px 0 5px;
   color: var(--ink-2);

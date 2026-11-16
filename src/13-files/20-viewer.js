@@ -3,10 +3,8 @@
 // ---------- 卷宗文件的悬浮预览：图看画、文看字、表看格、网页进沙箱、PDF 交给浏览器、音视频就地放；都不必先下载 ----------
 // 预览器看两种来源：磁盘卷宗（走桥接取回）与对话里的附件（就在这个浏览器里）。同一种文件，不论从哪儿来，看法一样——
 // 自己上传的 CSV、PDF、Markdown 点开就该是看，而不是把刚发出去的东西再下载一遍。
-// viewerSource 记着当前看的是哪一件：{ path } 是卷宗（带 root 的是那个目录里的），{ attachmentId } 是附件，{ skillDir, skillPath } 是技能带的一件（设置 → 技能里点开）；
-// viewerPath 仍留给卷宗那一路的下载
-let viewerPath = "",
-  viewerRevision = 0,
+// viewerSource 记着当前看的是哪一件：{ file } 是本机的一件（卷宗或别处目录里的），{ attachmentId } 是附件，{ skillDir, skillPath } 是技能带的一件（设置 → 技能里点开）
+let viewerRevision = 0,
   viewerSource = null,
   viewerReturnFocus = null,
   viewerObjectUrls = [];
@@ -48,7 +46,7 @@ function skillFileUrl(source, download = false) {
   return `${apiBase}/api/skills/raw?dir=${encodeURIComponent(source.skillDir)}&path=${encodeURIComponent(source.skillPath)}${download ? "&download=1" : ""}`;
 }
 async function viewerReader(source) {
-  if (source.path) return urlReader(archiveFileUrl(source.path, false, source.root || archiveDir()));
+  if (source.file) return urlReader(localFileUrl(source.file));
   if (source.skillDir) return urlReader(skillFileUrl(source));
   const url = `${apiBase}/api/files/raw?id=${encodeURIComponent(source.attachmentId)}`,
     head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
@@ -64,20 +62,18 @@ async function viewerReader(source) {
     extracted: String(file.extractedText || "")
   };
 }
-/** @param {string|{path?:string, root?:string, attachmentId?:string, skillDir?:string, skillPath?:string}} target 卷宗路径，或别处目录里的 { path, root }（行的工作目录里的成品），或 { attachmentId }，或技能里的一件 */
-async function openFileViewer(target, name = "", trigger = null) {
+/** @param {{file?:string, attachmentId?:string, skillDir?:string, skillPath?:string}} source 本机的一件 { file }，或 { attachmentId }，或技能里的一件 */
+async function openFileViewer(source, name = "", trigger = null) {
   const revision = ++viewerRevision;
-  const source = typeof target === "string" ? { path: target } : target;
   const viewer = $("#fileViewer");
   if (!viewer) return;
   const title =
       name ||
-      String(source.path || "")
+      String(source.file || "")
         .split("/")
         .pop() ||
       t("附件"),
     kind = fileKind(title).view || "none";
-  viewerPath = source.path || "";
   viewerSource = source;
   viewerReturnFocus = focusReturn(trigger || document.activeElement);
   revokeViewerUrls();
@@ -105,8 +101,7 @@ const VIEWER_OPEN_BUTTON = `<button type="button" class="outline-btn" data-viewe
 async function openViewerWithSystem() {
   const source = viewerSource;
   try {
-    if (source?.path)
-      await bridge("/api/archive/open", { root: source.root || archiveDir(), path: source.path }, AbortSignal.timeout(8000));
+    if (source?.file) await bridge("/api/archive/open", { file: source.file }, AbortSignal.timeout(8000));
     else if (source?.attachmentId) await bridge("/api/files/open", { id: source.attachmentId }, AbortSignal.timeout(8000));
     else if (source?.skillDir)
       await bridge("/api/skills/open-item", { dir: source.skillDir, path: source.skillPath }, AbortSignal.timeout(8000));
@@ -124,7 +119,7 @@ function downloadViewerFile() {
     anchor.href = skillFileUrl(viewerSource, true);
     anchor.download = String(viewerSource.skillPath).split("/").pop() || "";
     anchor.click();
-  } else if (viewerPath) downloadArchiveFile(viewerPath, viewerSource?.root || archiveDir());
+  } else if (viewerSource?.file) downloadFile(viewerSource.file);
 }
 async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
   if (kind === "image") return `<img class="file-viewer-image" src="${escapeHtml(reader.url())}" alt="${escapeHtml(name)}">`;
@@ -219,43 +214,13 @@ async function fileViewerBody(reader, name, kind, revision = viewerRevision) {
       );
     return withZipImages(`<div class="file-viewer-text markdown">${note}${renderMarkdown(text)}</div>`, data);
   }
-  const text = await reader.text();
-  if (kind === "markdown")
-    return `<div class="file-viewer-text markdown">${rebaseMarkdownImages(renderMarkdown(text.slice(0, 200000)), viewerSource?.path || "")}</div>`;
-  return `<div class="file-viewer-text"><pre class="file-viewer-code">${escapeHtml(text.slice(0, 200000))}</pre>${text.length > 200000 ? `<p class="file-viewer-note">${t(`仅显示前 20 万字`)}</p>` : ""}</div>`;
+  const text = await reader.text(),
+    // 截了要说一声：不然读的人当预览的末尾就是文件的末尾（原文件不动，下载、以本机程序打开都在）
+    cut = text.length > 200000 ? `<p class="file-viewer-note">${t("仅显示前 20 万字")}</p>` : "";
+  if (kind === "markdown") return `<div class="file-viewer-text markdown">${renderMarkdown(text.slice(0, 200000))}${cut}</div>`;
+  return `<div class="file-viewer-text"><pre class="file-viewer-code">${escapeHtml(text.slice(0, 200000))}</pre>${cut}</div>`;
 }
 // CSV / TSV：引号里的换行仍属于同一个字段，显示上限按记录计。
-// Markdown 里的相对图片（![](images/a.png)）：照这份文件所在的那一层去卷宗里取，与 VS Code 一样——不然渲染进言的页面，
-// 相对地址落到言自己的根上。消毒时本地的图已摘了 src、原路记在 data-path（见 04-markdown 的钩子），从那里取回；
-// 本机盘符不动，/ 开头的从卷宗根算。附件里的 Markdown 没有「所在的那一层」，不改
-/** @param {string} html @param {string} path 这份 Markdown 在卷宗里的路径 */
-function rebaseMarkdownImages(html, path) {
-  if (!path || !html.includes("data-path")) return html;
-  const box = document.createElement("template");
-  box.innerHTML = html;
-  for (const img of box.content.querySelectorAll("img[data-path]")) {
-    const ref = img.getAttribute("data-path") || "";
-    if (/^([a-z][a-z0-9+.-]*:|\/\/)/i.test(ref)) continue;
-    img.setAttribute("src", archiveFileUrl(archiveRelative(ref.startsWith("/") ? "" : parentDir(path), ref)));
-    img.removeAttribute("data-path");
-    img.removeAttribute("data-file");
-  }
-  return box.innerHTML;
-}
-/** @param {string} base 卷宗里的一层（"" 即根） @param {string} ref 相对的路，可带 ./ ../ 与 %20 一类转义 */
-function archiveRelative(base, ref) {
-  let clean = ref.replace(/[?#].*$/, "").replace(/\\/g, "/");
-  try {
-    clean = decodeURIComponent(clean).replace(/\\/g, "/");
-  } catch {}
-  const parts = base ? base.split("/") : [];
-  for (const part of clean.split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") parts.pop();
-    else parts.push(part);
-  }
-  return parts.join("/");
-}
 function parseDelimited(text, split, limit = Infinity) {
   const rows = [];
   let row = [];
@@ -302,7 +267,6 @@ function closeFileViewer(stop = false) {
   viewerRevision++;
   listenViewerClosed(stop);
   const target = viewerReturnFocus;
-  viewerPath = "";
   viewerSource = null;
   viewerReturnFocus = null;
   revokeViewerUrls();
@@ -325,7 +289,6 @@ function setViewerSeal(glyph = t("览")) {
 /** @param {string} title @param {string} html @param {Element|null} [trigger] @param {string} [seal] 顶栏的印 */
 function showInFileViewer(title, html, trigger = null, seal = t("览")) {
   viewerRevision++;
-  viewerPath = "";
   viewerSource = null;
   viewerReturnFocus = focusReturn(trigger || document.activeElement);
   revokeViewerUrls();
@@ -338,22 +301,20 @@ function showInFileViewer(title, html, trigger = null, seal = t("览")) {
 }
 /** @type {{ src: string, name: string, url: string } | null} 正看的是取来的外链图 */
 let imageViewerRemote = null;
-let imageViewerArchivePath = null,
-  imageViewerArchiveRoot = "",
+let imageViewerFile = null,
   imageViewerRevision = 0;
-// 卷宗里的图；root 给了是别处目录里的（正文引的工作目录里的图），那里没有件数大小可报。
-// paths 是同看的一组（卷宗此刻列着的图），看图框底下排成一条小样、左右翻
-function openArchiveImage(path, trigger = null, root = archiveDir(), paths = [path]) {
+// 卷宗里的图；paths 是同看的一组（卷宗此刻列着的图），看图框底下排成一条小样、左右翻
+function openArchiveImage(path, trigger = null, paths = [path]) {
   openImageSet(
-    paths.map(item => ({ path: item, root })),
+    paths.map(item => ({ file: archiveFile(item) })),
     Math.max(0, paths.indexOf(path)),
     trigger
   );
 }
-// 看图框一回看的一组：每件是附件 { id }、目录里的图 { path, root }，或点了取来的外链图 { src, name, url }；只一件时不出小样
+// 看图框一回看的一组：每件是附件 { id }、本机的图 { file }，或点了取来的外链图 { src, name, url }；只一件时不出小样
 let imageViewerSet = [],
   imageViewerIndex = 0;
-/** @param {{ id?: string, path?: string, root?: string, src?: string, name?: string, url?: string }[]} items @param {number} index @param {Element|null} trigger */
+/** @param {{ id?: string, file?: string, src?: string, name?: string, url?: string }[]} items @param {number} index @param {Element|null} trigger */
 function openImageSet(items, index, trigger = null) {
   imageViewerSet = items;
   imageViewerReturnFocus = focusReturn(trigger || document.activeElement);
@@ -365,17 +326,19 @@ function openImageSet(items, index, trigger = null) {
     ? items
         .map(
           (item, i) =>
-            `<button type="button" data-strip-index="${i}"${item.path ? ` title="${escapeHtml(item.path.split("/").pop())}"` : ""}>${
+            `<button type="button" data-strip-index="${i}"${item.file ? ` title="${escapeHtml(item.file.split("/").pop())}"` : ""}>${
               item.id
                 ? `<img data-thumb="${escapeHtml(item.id)}" alt="">`
                 : item.src
                   ? `<img src="${escapeHtml(item.src)}" alt="">`
-                  : `<img src="${escapeHtml(archiveFileUrl(item.path, false, item.root))}" loading="lazy" decoding="async" alt="">`
+                  : `<img src="${escapeHtml(localFileUrl(item.file))}" loading="lazy" decoding="async" alt="">`
             }</button>`
         )
         .join("")
     : "";
   if (many) void loadThumbnails(strip);
+  // 底下那排小样取不回来时收掉，不挂破图；大图那一枚是复用的（closeImageViewer 还要 removeAttribute），不在这里换
+  mendImages(strip);
   return showImageAt(index, true);
 }
 // 摊开组里的第几件，先按窗口大小看；附件要先从库里取，取到时已换了别件就作罢
@@ -393,24 +356,33 @@ async function showImageAt(index, opening = false) {
       return;
     }
     if (revision !== imageViewerRevision) return;
-    if (!file) return toast(t("图片原件已找不到"));
+    if (!file) {
+      // 原件没了：大图那一枚是复用的，不能把上一幅留在画面里（名字也照实写）
+      $("#imageViewerImage")?.removeAttribute("src");
+      const empty = $("#imageViewerName");
+      if (empty) empty.textContent = t("图片原件已找不到");
+      return toast(t("图片原件已找不到"));
+    }
     if (file.kind !== "image") return openFileViewer({ attachmentId: item.id }, file.name, imageViewerReturnFocus?.el);
     [src, name, label] = [file.data, file.name, `${file.name || t("图片")} · ${formatFileSize(file.size)}`];
   } else if (item.src) {
     [src, name, label] = [item.src, item.name || "", `${item.name || t("图片")} · ${stageHost(item.url || "")}`];
   } else {
-    const entry = item.root === archiveDir() ? (archiveEntries || []).find(file => file.path === item.path) : null;
-    src = archiveFileUrl(item.path, false, item.root);
+    // 卷宗之外的没有件数大小可报
+    const rel = archiveRel(item.file),
+      entry = rel === null ? null : (archiveEntries || []).find(file => file.path === rel);
+    src = localFileUrl(item.file);
     name = entry?.name || "";
-    label = entry ? `${entry.name} · ${formatFileSize(entry.size || 0)}` : item.path.split("/").pop();
+    label = entry ? `${entry.name} · ${formatFileSize(entry.size || 0)}` : item.file.split("/").pop();
   }
   imageViewerIndex = index;
   imageViewerAttachmentId = item.id || null;
-  imageViewerArchivePath = item.path || null;
+  imageViewerFile = item.file || null;
   imageViewerRemote = item.src ? { src: item.src, name: item.name || "", url: item.url || "" } : null;
-  imageViewerArchiveRoot = item.root || "";
   $("#imageViewerName").textContent = label;
   const image = $("#imageViewerImage");
+  // 取不回来就摘掉 src：这一枚是复用的，不能换成别的节点（否则后再看别的图就指不到它了）
+  image.onerror = () => image.removeAttribute("src");
   image.src = src;
   image.alt = name || t("图片预览");
   setImageViewerZoom(false);
@@ -421,12 +393,6 @@ async function showImageAt(index, opening = false) {
     $("#imageViewerClose").focus();
   }
   marks[index]?.scrollIntoView({ block: "nearest", inline: "center" });
-}
-function downloadArchiveFile(path, root = archiveDir()) {
-  const anchor = document.createElement("a");
-  anchor.href = archiveFileUrl(path, true, root);
-  anchor.download = path.split("/").pop() || t("卷宗");
-  anchor.click();
 }
 
 // 文件查看器与图片查看器
@@ -462,7 +428,7 @@ function bindViewerEvents() {
   $("#imageViewerClose").onclick = closeImageViewer;
   $("#imageViewerDownload").onclick = () => {
     if (imageViewerAttachmentId) void downloadAttachment(imageViewerAttachmentId);
-    else if (imageViewerArchivePath) downloadArchiveFile(imageViewerArchivePath, imageViewerArchiveRoot);
+    else if (imageViewerFile) downloadFile(imageViewerFile);
     else if (imageViewerRemote) {
       let name = imageViewerRemote.url.split(/[?#]/)[0].split("/").pop() || "";
       try {

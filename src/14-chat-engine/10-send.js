@@ -16,14 +16,23 @@ async function preparing(task) {
 }
 // 开工前：工作目录立起来，再向桥接认领这段对话——两页同时开工，桥接按先来后到只放一页（见 claimConversation）
 /** @param {Conversation} c */
-async function prepareTurn(c) {
+async function prepareTurn(c, { fresh = false } = {}) {
   if (!(await ensureWorkReady(c))) return false;
-  if (!(await claimConversation(c.id))) {
-    toast(t("此对话正在另一页面作答，稍后再发"));
+  if (!(await claimTurn(c))) return false;
+  return !conversationRunning(c.id) && (fresh || store.conversations.includes(c));
+}
+// 任何开工入口都认这一道：正文、新对话、旁注、续帮手与回报。目录准备由各入口按需做；
+// 认领要等桥接，回来后按当前那份对话重看目录，期间开始的退回不能被漏过。quiet 供回报稍候重试，不反复弹提示。
+/** @param {Conversation} c @param {{ quiet?: boolean }} [options] */
+async function claimTurn(c, { quiet = false } = {}) {
+  const denied = text => {
+    if (!quiet) toast(t(text));
     return false;
-  }
-  // 等的这一会儿，后台回报可能已在这段里另起了一答，这段也可能已被删掉
-  return !conversationRunning(c.id) && store.conversations.includes(c);
+  };
+  if (runningElsewhere(c.id) || !(await claimConversation(c.id))) return denied("此对话正在另一页面作答，稍后再发");
+  // 等的这一会儿，后台回报可能已在这段里另起了一答，这段也可能已被删掉。正退回目录的不开工：动手写下的会被退回盖掉
+  const live = store.conversations.find(item => item.id === c.id) || c;
+  return rewindingOver(live) ? denied("正在退回目录，稍后再发") : true;
 }
 async function sendOrStop() {
   if (sendPreparing) return;
@@ -79,9 +88,7 @@ async function sendOrStop() {
         reasoning: normalizeReasoning(profile.reasoning)
       };
     }
-    if (fresh) {
-      if (!(await ensureWorkReady(c))) return;
-    } else if (!(await prepareTurn(c))) return;
+    if (!(await prepareTurn(c, { fresh }))) return;
     // 还在点发送的那个输入框前：照常收走案上的东西；已换走了：发的是当时那份，那份草稿里减去发出的、等待时接着写的留着，
     // 眼前这段的输入框不动，也不把人拉回来
     const stayed = draftKey() === sendingDraftKey;
@@ -238,8 +245,7 @@ function watchSteer(job, assistant) {
     if (assistant.toolCalls?.length) return; // 正在拟调用：等它拟完，结果交回时递
     const said = assistant.content.slice(job.roundStart || 0);
     if (!said.trim()) return; // 还在想（或还没开口）：等
-    const fenced = (said.match(/^\s*```/gm) || []).length % 2 === 1;
-    if (fenced || !/[\n。！？!?]\s*$/.test(said)) return;
+    if (inOpenFence(said) || !/[\n。！？!?]\s*$/.test(said)) return;
     stop();
     job.round.abort();
   }, 120);
@@ -258,7 +264,11 @@ async function deliverSupplements(job, history, budget, host, options = {}) {
     target = options.target || host;
   const queue = job.queue || [];
   job.queue = [];
-  for (const { user, step, report, note } of queue) {
+  // 递送途中按了「止」：已递上的算数，没递上的原样还回收件口——收尾时放回案上或另起一答，不能在这里打勾
+  const stopped = () => !!job.controller?.signal.aborted;
+  let sent = 0;
+  for (; sent < queue.length && !stopped(); sent += 1) {
+    const { user, step, report, note } = queue[sent];
     const mark = report !== undefined ? note : step;
     // 没落进行迹的回报（找不到挂它的那一答）：照原话递上，往后无处重装
     if (!mark) {
@@ -270,6 +280,8 @@ async function deliverSupplements(job, history, budget, host, options = {}) {
     if (report) mark.report = report;
     if (steer && user) mark.steer = true;
     const entry = await TOOLS.get(mark.name)?.replay?.(mark, { latest: true, budget });
+    // replay 可能等上几十秒（附件、翻页）：回来时已按了「止」，这一条不算递上
+    if (stopped()) break;
     if (entry) history.push(entry);
     // 那一步挪到递上的地方：到达之后、递上之前写下的话（想着想着起笔的一句、拟调用前的一段）是模型读到它之前写的，
     // 往后重装按 at 拆开这一答，留在到达处，模型下一问看到的先后就与当时不同
@@ -278,9 +290,12 @@ async function deliverSupplements(job, history, budget, host, options = {}) {
     mark.status = "done";
     mark.result = steer ? "引路" : "";
   }
+  // 没递上的留在收件口最前面，按到达的先后等下一次
+  const rest = queue.slice(sent);
+  if (rest.length) job.queue = [...rest, ...(job.queue || [])];
   // 递出去就立刻打勾。不补这一下，纯文字作答里没有下一个工具轮来顺带重画，
   // 那枚「待寄」会一直转到整答写完——模型早读到了，页面上还像没送出去
-  if (queue.length) {
+  if (sent) {
     saveStoreSoon();
     refreshSteps(host);
   }
@@ -312,7 +327,26 @@ function settleSupplements(conversation, assistant, job, profile) {
   if (!assistant.steps.length) delete assistant.steps;
   const users = queue.map(item => item.user),
     quote = users.find(u => u.quote)?.quote || null;
+  // 没另起成的那条路：补言放回案上（这一答没写完，或目录正退回、此刻写下的会被盖掉）
+  const putBack = () => {
+    const key = draftKey(conversation.id),
+      draft = draftRecord(conversation.id);
+    store.drafts ||= {};
+    store.drafts[key] = {
+      text: [draft.text, ...users.map(u => u.content)].filter(Boolean).join("\n\n"),
+      attachments: [...draft.attachments, ...users.flatMap(u => u.attachments || [])],
+      quote: draft.quote || quote,
+      updatedAt: now()
+    };
+    if (currentId === conversation.id && view === "chat") restoreDraft();
+    toast(t("这一答未写完，补言已放回案上"));
+  };
   if (assistant.status === "complete") {
+    // 正退回目录的，这一答另起写下的会被退回盖掉：与另外两处开一答的入口一样先看一句（见 80-checkpoint.js 的 rewindingOver）
+    if (rewindingOver(conversation)) {
+      putBack();
+      return mail();
+    }
     /** @type {Message} */
     const user = {
       id: uid(),
@@ -329,17 +363,7 @@ function settleSupplements(conversation, assistant, job, profile) {
     mail();
     return true;
   }
-  const key = draftKey(conversation.id),
-    draft = draftRecord(conversation.id);
-  store.drafts ||= {};
-  store.drafts[key] = {
-    text: [draft.text, ...users.map(u => u.content)].filter(Boolean).join("\n\n"),
-    attachments: [...draft.attachments, ...users.flatMap(u => u.attachments || [])],
-    quote: draft.quote || quote,
-    updatedAt: now()
-  };
-  if (currentId === conversation.id && view === "chat") restoreDraft();
-  toast(t("这一答未写完，补言已放回案上"));
+  putBack();
   return mail();
 }
 function titleFrom(text, attachments) {

@@ -4,6 +4,26 @@
   // 正文里的 ```html 就地渲染成可交互的一块：与正文同一张纸——色板与字体取自言，底色透明，高度随内容；
   // 数据图表用 yan:echarts、流程与结构图用 <pre class="mermaid">，库随项目本地分发，按需才载
   let scriptUrls = [];
+  // 沙箱的 origin 为 null，网页一碰 localStorage / sessionStorage 就抛错：记明暗、记折叠的寻常网页因此报「运行错误」，
+  // 那段脚本后面的也不跑了。换成只活在这一页里的一份：本页里存得进、读得回，不落盘，也碰不到言自己的存储
+  for (const name of ["localStorage", "sessionStorage"]) {
+    try {
+      void window[name];
+    } catch {
+      const data = new Map();
+      const memory = {
+        get length() {
+          return data.size;
+        },
+        key: index => [...data.keys()][index] ?? null,
+        getItem: key => (data.has(String(key)) ? data.get(String(key)) : null),
+        setItem: (key, value) => void data.set(String(key), String(value)),
+        removeItem: key => void data.delete(String(key)),
+        clear: () => data.clear()
+      };
+      Object.defineProperty(window, name, { value: memory, configurable: true, enumerable: true });
+    }
+  }
   // 独立导出的 HTML 带着源码、主题与库；普通页内预览仍由父页送入。
   const exported = document.getElementById("yan-preview-export"),
     standalone = exported ? JSON.parse(exported.textContent) : null;
@@ -43,7 +63,8 @@ code{font:12.5px ui-monospace,Consolas,monospace;background:color-mix(in srgb,va
 .grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
 .tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
 svg{max-width:100%}
-pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:pre}`;
+pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:pre}
+.yan-tip-layer{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:2147483646}.yan-tip-layer>*{pointer-events:auto}`;
   document.head.prepend(tokenSheet, kitSheet);
   const cssVar = name => theme.vars[name] || getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
   function applyTheme(next) {
@@ -105,6 +126,19 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
     chartObserver = new ResizeObserver(entries => {
       for (const entry of entries) for (const chart of charts) if (chart.getDom() === entry.target) chart.resize();
     });
+  // 提示框挂在一层钉满视口的层上：ECharts 收起提示框只是隐着、不挪位置，全屏时指过图再收起，
+  // 它还停在宽时的坐标上，把这一页撑宽、出横向滚动条（块里的图被滚到一边）。钉住的层里的东西不算进页面的宽。
+  // 层得有实在的大小：ECharts 换算坐标要在层的四角放标记，零大小的层算不出来，提示框就落在左上角。
+  // 提示框关在图里（confine）：块的高就是图的高，指在图的下半部，提示框往上翻、翻出块的上沿就被切掉半截
+  let tipLayer = null;
+  function tooltipLayer() {
+    if (!tipLayer?.isConnected) {
+      tipLayer = document.createElement("div");
+      tipLayer.className = "yan-tip-layer";
+      document.body.append(tipLayer);
+    }
+    return tipLayer;
+  }
   // 设计稿/82 甲「淡染」：类目轴只留一道淡墨底线、不要刻度；数值轴不画线，网线退成虚点；刻度字用题字、淡一档。
   // 折线稍圆、不画点（悬停才显），线下由浓到淡染一层同色（画前补上，见 repairEchartsOption）。落选：乙「墨线」（去网线、线边洇开）
   function echartsTheme() {
@@ -137,7 +171,7 @@ pre.mermaid{margin:0;background:none;text-align:center;font:inherit;white-space:
       textStyle: { color: muted, fontFamily: cssVar("body") },
       title: { textStyle: { color: ink, fontFamily: cssVar("title") }, subtextStyle: { color: muted } },
       legend: { textStyle: { color: muted, fontFamily: cssVar("title") }, icon: "roundRect", itemWidth: 12, itemHeight: 3 },
-      tooltip: { backgroundColor: cssVar("paper-2"), borderColor: line, textStyle: { color: ink } },
+      tooltip: { backgroundColor: cssVar("paper-2"), borderColor: line, textStyle: { color: ink }, appendTo: tooltipLayer, confine: true },
       categoryAxis: category,
       valueAxis: value,
       timeAxis: category,

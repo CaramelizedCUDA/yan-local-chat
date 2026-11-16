@@ -50,33 +50,99 @@ function setupMarkdown() {
       return `<div class="math-block">${renderMath(token.text, true)}</div>\n`;
     }
   };
+  // Windows 绝对路径里的反斜杠是分隔符，不是 Markdown 的转义：\. \_ \- 被吃掉，E:\聊天记录\.yan 就成了 E:\聊天记录.yan，链接打不开、复制下来也是错的。
+  // 正文里的整段路径认作一件，原样显示（路径里的 _ 也不当强调）；相对路径、网址里的反斜杠仍按转义算（模型常写 a\_b.md）
+  const windowsPath = {
+    name: "windowsPath",
+    level: "inline",
+    start(src) {
+      const m = src.match(/(?<![A-Za-z0-9_])[a-z]:\\|\\\\[\w.-]+\\/i);
+      return m ? m.index : -1;
+    },
+    tokenizer(src) {
+      const m = src.match(/^(?:[a-z]:\\|\\\\[\w.-]+\\)[^\s"'`<>|*?()[\]（）「」《》，。；：！？、]*/i);
+      return m ? { type: "windowsPath", raw: m[0] } : undefined;
+    },
+    renderer(token) {
+      return escapeHtml(token.raw);
+    }
+  };
   marked.use({
     gfm: true,
     breaks: true,
+    tokenizer: {
+      // 删除线只认 ~~两道~~：marked 的 GFM 连单个 ~ 也认，中文正文常拿 ~ 写区间（0.13~0.24x、0.1~2 秒），一行有两处便被划掉。
+      // 交回 false 由 marked 原样处理双道的；单道的交回空，不算删除线，落回正文
+      del(src) {
+        return src.startsWith("~~") ? false : undefined;
+      },
+      // 链接与图片的目标从原文取回：放在分词这一层，渲染和记成品（只分词，见 22-changes.js）拿到的是同一条路。\( \) 仍算转义，那是配平括号的写法
+      link(src) {
+        const token = marked.Tokenizer.prototype.link.call(this, src),
+          target = token && /^[\s\S]*\]\(\s*(?:<([^>\n]+)>|(\S+?))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)$/.exec(token.raw);
+        const path = target && (target[1] || target[2]);
+        if (path && /^(?:[a-z]:\\|\\\\[\w.-]+\\)/i.test(path)) token.href = path.replace(/\\([()])/g, "$1");
+        return token;
+      }
+    },
     renderer: {
       code({ text, lang }) {
         return codeBlockHtml(text, lang);
       }
     },
-    extensions: [blockMath, inlineMath]
+    extensions: [blockMath, inlineMath, windowsPath]
   });
   if (window.DOMPurify) {
     // 模型写「下载《x.docx》」时常把链接指向 sandbox:/、file:/// 或一个裸文件名——页面上没有这样的路。
-    // 把文件名记在 data-file、原路记在 data-path 上，去掉 href；点击时按原路在这段对话的落脚处取那件来下载，取不到再到卷宗里找同名的（见 10-archive.js）。
-    // 图片同理：![截图](page-1.png) 的 src 也记成 data-file，是这一答工具交回的画面就画成那幅（见 renderReplyShots）
+    // 把文件名记在 data-file、原路记在 data-path 上，去掉 href；点击时按原路在这段对话的落脚处取那件来下载，取不到再到卷宗里找同名的（见 10-archive.js）
     DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
-      if (!((node.tagName === "A" && data.attrName === "href") || (node.tagName === "IMG" && data.attrName === "src"))) return;
-      // 外链图不让页面自己去取，记下图址，画成一张待取的素纸（见 renderRemoteShots）
-      if (node.tagName === "IMG" && /^https?:\/\//i.test(String(data.attrValue).trim())) {
-        node.setAttribute("data-remote", String(data.attrValue).trim());
-        data.keepAttr = false;
-        return;
-      }
+      if (!(node.tagName === "A" && data.attrName === "href")) return;
+      // 链接不要求扩展名也说不出个所以然的留着原样（页内锚点、邮件、网址）
       const name = localFileName(data.attrValue);
       if (!name) return;
       node.setAttribute("data-file", name);
       node.setAttribute("data-path", data.attrValue);
       data.keepAttr = false;
+    });
+    // 正文里的一幅图，从不交给浏览器自己去取：模型写的路（相对、Windows 绝对、sandbox:/、认不出名字的）都记下来，由页面按这段对话的落脚处认，
+    // 取不到就留说明文字（见 drawRefImage）。只有三样例外：data: 本身就是数据；http(s) 外链另记 data-remote，人点了才经桥接取（见 renderRemoteShots）。
+    // 这一步落在 beforeSanitizeAttributes，比逐属性那道钩子早：marked 会把带反斜杠的路编成 C:%5C…，DOMPurify 见协议不合法就把 src 整个丢掉，
+    // 逐属性那道钩子根本收不到，Windows 绝对路径的图便只剩一个没有 src 的 img。srcset 也一样——浏览器会从它去取，一并收下
+    DOMPurify.addHook("beforeSanitizeAttributes", node => {
+      if (node.tagName === "SOURCE") {
+        node.removeAttribute("srcset");
+        return;
+      }
+      // 会画出破图的还有 input[type=image]：同样不交给浏览器去取（正文里极少见，但一处守住）。
+      // 属性值大小写照原样读回来，TYPE=IMAGE 也认（HTML 里它不分大小写）
+      if (node.tagName === "INPUT" && /^image$/i.test(node.getAttribute("type") || "")) {
+        node.removeAttribute("src");
+        return;
+      }
+      if (node.tagName !== "IMG") return;
+      const set = firstSrcsetCandidate(node.getAttribute("srcset")),
+        src = node.getAttribute("src"),
+        // src 空着（src=""）而给了 srcset 的，srcset 说了算：?? 只在 src 完全缺失时才看它，空串会被当成图源，
+        // 被 srcset 指着的那幅图就根本没被认过；两样都没有才是 null
+        raw = src && src.trim() ? src : set || src;
+      node.removeAttribute("src");
+      node.removeAttribute("srcset");
+      if (raw === null) return;
+      const value = String(raw).trim();
+      if (/^data:/i.test(value)) {
+        node.setAttribute("src", value);
+        return;
+      }
+      if (/^https?:\/\//i.test(value)) {
+        node.setAttribute("data-remote", value);
+        return;
+      }
+      // 图不要求扩展名：模型把要画的图写成「![图](chart)」时，照原样留着页面就去取本页的 /chart，落成破图。
+      // 名字认不出的（空、./、#、以 / 收尾）也记下原路，走同一套兜底，不留 src。
+      // 名字从原值取（localFileName 自己会解转义）：先解一遍再给它，plot%231.png 会被当成带片段的 plot
+      const name = localFileName(value, true);
+      if (name) node.setAttribute("data-file", name);
+      node.setAttribute("data-path", value);
     });
     DOMPurify.addHook("afterSanitizeAttributes", node => {
       if (node.tagName === "A" && node.hasAttribute("href")) {
@@ -87,18 +153,35 @@ function setupMarkdown() {
     });
   }
 }
-// 不是网址、末段像个文件名的链接：取出文件名。网址、邮件、页内锚点都不算
-function localFileName(href) {
+// srcset 里第一个候选：data: 本体带逗号（data:image/png;base64,AAAA），不能按逗号切；
+// 它的地址里没有空白，取到第一段空白为止即可
+/** @param {string|null} set */
+function firstSrcsetCandidate(set) {
+  const text = String(set || "").trim();
+  if (!text) return "";
+  return (/^data:/i.test(text) ? text.split(/\s+/)[0] : text.split(",")[0].trim().split(/\s+/)[0]) || "";
+}
+// 不是网址、末段像个文件名的链接：取出文件名。网址、邮件、页内锚点都不算；bare 时末段不必带扩展名
+// 先去掉 ?# 再解转义、最后切段：反过来（先解再切）会把 plot%231.png 当成带片段的 plot 截掉；
+// 而解转义后那段 Windows 的路（marked 写成 %5C…）才是带斜杠的整条路，先切则取不出末段、名成了空
+/** @param {string} href @param {boolean} [bare] */
+function localFileName(href, bare = false) {
   const raw = String(href || "").trim();
   if (!raw || /^(?:https?|mailto|tel|data|blob):/i.test(raw) || raw.startsWith("#")) return "";
-  let name = raw
-    .replace(/[?#].*$/, "")
-    .split(/[\\/]/)
-    .pop();
+  let path = raw.replace(/[?#].*$/, "");
   try {
-    name = decodeURIComponent(name);
-  } catch {}
-  return /^[^<>:"|?*\u0000-\u001f]+\.[a-z0-9]{1,8}$/i.test(name) ? name : "";
+    path = decodeURIComponent(path);
+  } catch {
+    // 整条解不开（如目录名里带一个裸 %）：只解末段，别让前面那个 % 把文件名的 %20 也留住——
+    // 留住就成了盘上不存在的名字，按同名找回也找不着
+    const at = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")),
+      name = path.slice(at + 1);
+    try {
+      path = path.slice(0, at + 1) + decodeURIComponent(name);
+    } catch {}
+  }
+  const name = path.split(/[\\/]/).pop();
+  return (bare ? /^[^<>:"|?*\u0000-\u001f]+$/ : /^[^<>:"|?*\u0000-\u001f]+\.[a-z0-9]{1,8}$/i).test(name) ? name : "";
 }
 function renderMath(tex, display) {
   // KaTeX 未加载时先放一个占位，库到位后由 renderPendingMath 就地替换；流式尾段每帧重绘，加载完成后自然变成正式渲染
@@ -178,15 +261,43 @@ async function renderPendingMath(root) {
 // 画进页面之后：各种嵌件起来（见上 EMBEDS 的 mount）
 function renderEnhancements(root) {
   for (const embed of EMBEDS) embed.mount?.(root);
+  mendImages(root);
+}
+// 一幅图取不到，哪儿也不留破图：正文里留下它想说的那句话（alt），带框的小样干脆收掉。
+// 这一道兜的是所有画图的路（缩略图、外链图、坏掉的数据图、往后新加的），而各条路自己的兜底仍先跑——
+// 由 drawRefImage 接手的图打了 data-refImage，不去抢它「按同名找回」的那一步
+/** @param {Element} root */
+function mendImages(root) {
+  for (const node of root.querySelectorAll?.("img:not([data-mended])") || []) {
+    const img = /** @type {HTMLImageElement} */ (node);
+    if (img.dataset.refImage) continue;
+    img.dataset.mended = "1";
+    const mended = () => {
+      if (!img.isConnected || !img.getAttribute("src")) return;
+      const words = img.getAttribute("alt") || "",
+        shot = img.closest(".reply-shot, .fi-thumb, .quote-shot");
+      if (shot && !words) shot.remove();
+      else if (shot) shot.replaceWith(words);
+      else img.replaceWith(words);
+    };
+    img.addEventListener("error", mended, { once: true });
+    // 监听挂上之前就失败了的（页面里早有一阵、src 早取过；正在取的 complete 是 false，不碰）
+    if (img.complete && img.naturalWidth === 0) mended();
+  }
 }
 defineEmbed({ name: "math", mount: root => void renderPendingMath(root) });
 // 正文里引了工具交回的画面（模型写「![截图](page-1.png)」或「[查看截图](page-1.png)」）：就地画出那幅，点开进图片查看器。
 // 原件本就作附件挂在那一步上（见 mcpResultImages、generate_image），不另存；先认这一答的，再认前几答的（「把刚才那幅再放出来」）。
-// 都不是的：链接照旧当目录里的文件，图到落脚处按路取（模型自己存的图表、前几回收进卷宗的图），取不到留下说明文字，不画破图
+// 都不是的：图与链接都是目录里的一件（模型自己存的图表、前几回收进卷宗的图），算路与认件见 15-refs.js
 /** @param {Element} root */
 function renderReplyShots(root) {
+  // 模型自己写的 data: 图，坏了（编的、截断的）留下说明文字，与认不出的本机图一样不画破图
+  // （decode 在画好之前、之后问都答得上；不看 naturalWidth：不带尺寸的 SVG 也是 0）
+  /** @type {NodeListOf<HTMLImageElement> | []} */
+  const inline = root.querySelectorAll?.(":is(.markdown, .trail-note, .sub-report) img[src^='data:']") || [];
+  for (const img of inline) img.decode().catch(() => img.isConnected && img.replaceWith(img.getAttribute("alt") || ""));
   const remote = renderRemoteShots(root),
-    refs = root.querySelectorAll?.(":is(.markdown, .trail-note, .sub-report) [data-file]") || [];
+    refs = root.querySelectorAll?.(":is(.markdown, .trail-note, .sub-report) :is([data-file], [data-path])") || [];
   if (!refs.length && !remote) return;
   const c = currentConversation(),
     messages = c ? everyMessage(c) : [];
@@ -201,27 +312,14 @@ function renderReplyShots(root) {
             .findLast(item => item.kind === "image" && item.name === name)
         )
         .find(Boolean),
-      target = !file && ref.tagName === "IMG" ? localLinkTarget(ref.getAttribute("data-path")) : null,
       words = ref.getAttribute("alt") || name || "";
-    if (!file && !target) {
-      if (ref.tagName === "IMG") ref.replaceWith(words);
+    if (!file) {
+      if (ref.tagName === "IMG") drawRefImage(ref, refAnchor(ref), words);
       continue;
     }
-    const shot = document.createElement("span"),
-      alt = escapeHtml(words);
-    shot.className = "fi fi-thumb reply-shot";
-    shot.setAttribute("role", "button");
-    shot.tabIndex = 0;
-    shot.title = t`查看 ${file?.name || name}`;
-    if (file) {
-      shot.dataset.openImage = file.id;
-      shot.innerHTML = `<img data-thumb="${escapeHtml(file.id)}" alt="${alt}">`;
-    } else {
-      shot.dataset.openArchive = target.path;
-      shot.dataset.root = target.root;
-      shot.innerHTML = `<img src="${escapeHtml(archiveFileUrl(target.path, false, target.root))}" alt="${alt}">`;
-      shot.querySelector("img").onerror = () => shot.replaceWith(words);
-    }
+    const shot = replyShotNode(file.name);
+    shot.dataset.openImage = file.id;
+    shot.innerHTML = `<img data-thumb="${escapeHtml(file.id)}" alt="${escapeHtml(words)}">`;
     shotShape(shot);
     // 图换成那幅；链接留着字（点了也是看图），画面接在后面
     if (ref.tagName === "IMG") ref.replaceWith(shot);
@@ -233,6 +331,16 @@ function renderReplyShots(root) {
   }
   groupReplyShots(root);
   void loadThumbnails(root);
+}
+// 一幅小样的外框：点开看那一幅
+/** @param {string} name */
+function replyShotNode(name) {
+  const shot = document.createElement("span");
+  shot.className = "fi fi-thumb reply-shot";
+  shot.setAttribute("role", "button");
+  shot.tabIndex = 0;
+  shot.title = t`查看 ${name}`;
+  return shot;
 }
 // 整页长截图（高过宽的两倍）从顶上取景，点开看全幅；别的整幅见。横幅在一叠里斜开得少（见 40-markdown.css）
 /** @param {HTMLElement} shot */
@@ -325,6 +433,8 @@ function refreshRemoteShots(url) {
     if (root) roots.add(root);
   }
   if (remoteShots.has(url)) for (const root of roots) groupReplyShots(root);
+  // 取回来的那幅若也打不开，同样不留破图
+  for (const root of roots) mendImages(root);
 }
 // 接连几幅（一轮画的几稿）收成一叠，不一路往下堆：同段里只隔着换行的，或这段以图收尾、下一段只有图的。
 // 流式时已收尾的段落一段段补进来，这里每回把新到的接进前面那一叠；只在同一个容器里挪，尾段重画时不会多出一份
@@ -379,7 +489,7 @@ function renderMarkdown(source = "") {
   const plain = () => `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
   if (!window.marked || !window.DOMPurify) return plain();
   try {
-    return DOMPurify.sanitize(marked.parse(liftBareMermaid(text), { async: false }), PURIFY_OPTIONS);
+    return DOMPurify.sanitize(marked.parse(liftBareHtml(text), { async: false }), PURIFY_OPTIONS);
   } catch {
     return plain();
   }
@@ -388,15 +498,18 @@ function renderMarkdown(source = "") {
 // 只数围栏行的奇偶不行：````markdown 里嵌着 ```bash 时，内层那两行会把里外颠倒
 function inOpenFence(text) {
   let open = null;
-  for (const line of text.split("\n")) {
-    const fence = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
-    if (!fence) continue;
-    if (!open) open = { mark: fence[1][0], length: fence[1].length };
-    else if (fence[1][0] === open.mark && fence[1].length >= open.length && !fence[2].trim()) open = null;
-  }
+  for (const line of text.split("\n")) open = fenceAfter(open, line);
   return !!open;
 }
-// 流式渲染的分段点：最后一个空行，且它前面没有未闭合的代码围栏、后面不是列表 / 缩进 / 表格的延续
+/** 过了这一行，围栏开着的是哪一道（null 即不在围栏里） @param {{ mark: string, length: number }|null} open @param {string} line */
+function fenceAfter(open, line) {
+  const fence = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+  if (!fence) return open;
+  if (!open) return { mark: fence[1][0], length: fence[1].length };
+  return fence[1][0] === open.mark && fence[1].length >= open.length && !fence[2].trim() ? null : open;
+}
+// 流式渲染的分段点：最后一个空行，且它前面没有未闭合的代码围栏（裸写的交互内容提进围栏后算，见 liftBareHtml）、后面不是列表 / 缩进 / 表格的延续；
+// 以标签收尾的一段要等下一段起头不是标签才分（一段裸 HTML 被分开，提进围栏的就只剩半截）
 function stableCut(content) {
   const listy = line => /^\s*(?:[-*+]|\d+[.)])\s/.test(line) || /^\s+\S/.test(line);
   let cut = content.lastIndexOf("\n\n");
@@ -404,9 +517,12 @@ function stableCut(content) {
     const before = content.slice(0, cut),
       prevLine = before.slice(before.lastIndexOf("\n") + 1),
       nextLine = content.slice(cut + 2).split("\n")[0];
-    const inFence = inOpenFence(before);
+    const inFence = inOpenFence(liftBareHtml(before));
     const continues =
-      /^\s+\S/.test(nextLine) || (listy(nextLine) && listy(prevLine)) || (/^\s*\|/.test(nextLine) && prevLine.includes("|"));
+      /^\s+\S/.test(nextLine) ||
+      (listy(nextLine) && listy(prevLine)) ||
+      (/^\s*\|/.test(nextLine) && prevLine.includes("|")) ||
+      (/>\s*$/.test(prevLine) && (!nextLine || HTML_LINE.test(nextLine)));
     if (!inFence && !continues) break;
     cut = content.lastIndexOf("\n\n", cut - 1);
   }
@@ -418,7 +534,7 @@ function bindContentEvents() {
   document.addEventListener("click", e => {
     const copy = e.target.closest("[data-copy-code]");
     if (copy) {
-      void copyText(copy.closest(".code-block, .html-app")?.querySelector("code")?.textContent || "");
+      void copyText(copy.closest(".code-block")?.querySelector("code")?.textContent || "");
       // 小画钮不换字（换了画就没了），说一声；代码块上的字钮照旧换成「已复制」
       if (copy.classList.contains("code-icon")) return toast(t("已复制"));
       copy.textContent = t("已复制");

@@ -78,19 +78,25 @@ defineTool({
         watchBackground(conversation, ctx.assistant, step);
       }
       return {
-        ok: data.running || data.exitCode === 0,
+        ok: data.running || commandRan(data),
         content: `${data.running ? prompt("work.bgStarted", { id: data.id, seconds }) : t`后台指令 ${data.id} 已结束，退出码：${data.exitCode}`}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
         display: `后台 ${data.id} · ${data.running ? "进行中" : `已结束 · 退出码 ${data.exitCode}`}${marks}`
       };
     }
     step.exitCode = data.exitCode;
     return {
-      ok: data.exitCode === 0,
+      ok: commandRan(data),
       content: t`退出码：${data.exitCode}，用时 ${took}\n--- stdout ---\n${data.stdout || t("(空)")}\n--- stderr ---\n${data.stderr || t("(空)")}`,
       display: `${data.exitCode === 0 ? took : `退出码 ${data.exitCode} · ${took}`}${marks}`
     };
   }
 });
+
+// 指令跑完了没有，不论答的是什么：打叉只留给没跑成的（shell 起不来、等满作罢、被止）。
+// 退出码是指令自己的回答——gh pr checks 还有没跑完的回 8、grep 没匹配回 1、测试不过回 1——照实写在签上、交给模型，不算这一步失败；
+// 算了的话轮询一回就记一回「失败」，行迹题头跟着误报。check_command、后台结束的签一向如此
+/** @param {{ exitCode: number, timedOut?: boolean, aborted?: boolean }} data */
+const commandRan = data => data.exitCode !== -1 && !data.timedOut && !data.aborted;
 
 // 看一条候：后台指令取上次之后的新输出，可顺带等一会儿，或结束它；等时刻的（t 开头）看几时到，或取消它（见 23-timer.js）。
 // 跟着 run_command 走——言里也能开后台指令，开了就得看得了
@@ -100,15 +106,22 @@ defineTool({
   label: t("后台"),
   offer: ctx => ctx.files,
   html: workStepHtml,
+  // 看它在跑、看几时到都只是读；结束后台、取消定时是动了手（守要能把它拦下，见 19-intent/10-store.js 的 keepHook）
+  sideEffect: args => args.stop === true,
+  // 查看不必留痕；结束、取消得让下一问的行迹摘要知道（「有副作用必须留痕」，函数式 sideEffect 不自动带 digest）
+  digest: step => (step.effect ? `${step.title || t("后台")} → ${step.result || ""}` : ""),
   async run(step, args, { conversation, assistant, signal }) {
     const id = args.id.trim(),
       stop = args.stop === true;
     if (/^t\d+$/.test(id)) return checkTimer(step, id, stop, conversation, signal);
     const started = bgStepOf(conversation, id);
     step.title = `${id}${stop ? t(" · 结束") : ""}`;
-    // 模型亲手结束它：不必再叫醒一回
-    if (stop && started) bgWatches.get(started.id)?.abort();
-    const data = await bridge("/api/work/check", { id, stop, wait: Number(args.wait) || 0 }, signal);
+    // 带上开它时记下的 key：编号在桥接重启后会重数，只凭编号会读到、停掉同号的另一条（见 server/work/shell.js 的 checkBackground）
+    const data = await bridge("/api/work/check", { id, stop, wait: Number(args.wait) || 0, key: started?.bg?.key || "" }, signal);
+    // 停止确认了才撤监听：请求失败、桥接没收到的话，后台照旧跑着，撤了就再没人叫醒（abort 之后不会重挂）。
+    // 还跑着的（杀了还没落下）也别撤：签要等它真结束才收口，现在就撤的话它永远停在「进行中」，
+    // 漏壶一直列着，等着它的帮手也一直睡着（见 watchBackground 的 finally）
+    if (stop && started && !data.running) bgWatches.get(started.id)?.abort();
     step.output = commandOutput(data);
     if (!data.running) {
       step.exitCode = data.exitCode;
@@ -141,7 +154,7 @@ function watchBackground(conversation, assistant, step) {
   if (bgWatches.has(step.id) || !step.bg) return;
   // 叫醒时用这段对话自己的模型（续答与记账都归它），不是页面此刻开着的那段的
   const controller = new AbortController(),
-    profile = requestJob(conversation.id)?.profile || profiles().find(p => p.id === conversation.profileId) || activeProfile();
+    profile = requestJob(conversation.id)?.profile || activeProfile(conversation);
   bgWatches.set(step.id, controller);
   holdAwake();
   renderClepsydra();
@@ -149,12 +162,22 @@ function watchBackground(conversation, assistant, step) {
     .then(
       data => {
         if (data.superseded) return;
+        // 等的这阵子别处可能写过这段，store 里已换了对象：签要改在当前那份上，改在旧的上人看不到、也存不下
+        const message = store.conversations.find(c => c.id === conversation.id)?.messages.find(m => m.id === assistant.id),
+          current = message && allSteps(message).find(s => s.id === step.id);
+        if (current?.bg) {
+          assistant = message;
+          step = current;
+        }
         // 随桥接重启而止：只把签改了，不叫醒。重启是人自己动的手，挂着的多是预览、服务，叫醒了模型多半挨个重开；
-        // 真等着结果的（训练），模型下一问从行迹摘要里看得到它止了
-        if (data.lost) return settleBackground(step, "lost", undefined, assistant);
+        // 真等着结果的（训练），模型下一问从行迹摘要里看得到它止了。结束得久、被后起的指令挤出记录的（evicted）另说一句：
+        // 不是重启，是结果没留住，同样不叫醒
+        if (data.lost) return settleBackground(step, data.evicted ? "evicted" : "lost", undefined, assistant);
         // 模型自己看过它结束了（check_command），只把签改成已结束，不再叫醒
         const fresh = !data.reported;
         if (fresh) step.output = trimOutput([step.output, commandOutput(data)].filter(Boolean).join("\n"));
+        // 模型亲手按了结束、三秒里进程还没退出的：它此刻才退出，不必再叫醒一回（不然刚起的服务被自己再报一次）
+        if (data.stopped) return settleBackground(step, "stopped", data.exitCode, assistant);
         settleBackground(step, "done", data.exitCode, assistant);
         if (!fresh) return;
         mailReport(conversation, {
@@ -182,7 +205,8 @@ function watchBackground(conversation, assistant, step) {
         if (error.name === "AbortError") return;
         // 桥接断了一下（重启、睡眠醒来）：稍候再等；重启过的，那时会回 lost
         setTimeout(() => {
-          if (store.conversations.includes(conversation) && step.bg?.state === "running") watchBackground(conversation, assistant, step);
+          if (store.conversations.some(c => c.id === conversation.id) && step.bg?.state === "running")
+            watchBackground(conversation, assistant, step);
         }, 10000);
       }
     )
@@ -191,8 +215,8 @@ function watchBackground(conversation, assistant, step) {
       holdAwake();
     });
 }
-// 签上写它此刻的样子：结束了（退出码）、亲手结束、随桥接重启而没了
-/** @param {Step} step @param {"done"|"stopped"|"lost"} state @param {Message} assistant */
+// 签上写它此刻的样子：结束了（退出码）、亲手结束、随桥接重启而没了、结束得久没能留住
+/** @param {Step} step @param {"done"|"stopped"|"lost"|"evicted"} state @param {Message} assistant */
 function settleBackground(step, state, exitCode, assistant) {
   if (!step.bg || step.bg.state !== "running") return;
   bgWatches.get(step.id)?.abort();
@@ -201,7 +225,9 @@ function settleBackground(step, state, exitCode, assistant) {
   step.result =
     state === "lost"
       ? `后台 ${step.bg.id} · 随桥接重启而止`
-      : `后台 ${step.bg.id} · 已结束${exitCode !== undefined && exitCode !== null ? ` · 退出码 ${exitCode}` : ""}`;
+      : state === "evicted"
+        ? `后台 ${step.bg.id} · 结束得久，结果没能留住`
+        : `后台 ${step.bg.id} · 已结束${exitCode !== undefined && exitCode !== null ? ` · 退出码 ${exitCode}` : ""}`;
   const conversation = store.conversations.find(c => c.messages.includes(assistant));
   if (conversation) markDirty(conversation.id);
   saveStoreSoon();
@@ -226,7 +252,7 @@ function bgEndedText(relay) {
 function bgStepOf(conversation, id) {
   return (
     conversation.messages
-      .flatMap(message => message.steps || [])
+      .flatMap(message => allSteps(message))
       .filter(step => step.bg?.id === id)
       .at(-1) || null
   );
@@ -243,19 +269,24 @@ function rewatchBackground() {
 // 候随它所属的那几答收口——重答改问、删对话都经这里，不各写一份：挂它的那一步没了，到时也无处可报，
 // 后台指令连进程收掉（不然成了占着端口的孤儿，新的一版再起同一个服务就撞上），约好的时刻取消。按「止」不经这里（见 haltConversation）
 /** @param {Conversation} conversation @param {Message[]} messages */
+/** @param {Conversation} conversation @param {Message[]} messages @returns {number} 收掉了几条（后台与定时合计） */
 function releaseBackground(conversation, messages) {
+  let released = 0;
   for (const message of messages)
     for (const step of allSteps(message)) {
       if (step.timer?.state === "waiting") {
         settleTimer(step, "stopped", message);
-        void bridge("/api/timer/cancel", { id: step.timer.id, to: conversation.id }).catch(() => {});
+        void storeBridge("/api/timer/cancel", { id: step.timer.id, to: conversation.id }).catch(() => {});
+        released += 1;
       }
       if (step.bg?.state !== "running") continue;
       const { id, key } = step.bg;
       settleBackground(step, "stopped", undefined, message);
       void bridge("/api/work/check", { id, key, stop: true }).catch(() => {});
+      released += 1;
     }
   markDirty(conversation.id);
+  return released;
 }
 function commandOutput(data) {
   return trimOutput([data.stdout, data.stderr].filter(Boolean).join(data.stdout && data.stderr ? "\n--- stderr ---\n" : ""));

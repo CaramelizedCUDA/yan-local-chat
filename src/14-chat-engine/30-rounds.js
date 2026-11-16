@@ -30,7 +30,7 @@ function usageSum(a, b) {
  * @param {Message|SubAgent} target 写进哪里：主答、旁注的消息，或帮手
  * @param {Array<Record<string, any>>} history 送给接口的消息，就地追加
  * @param {{ profile: Profile, conversation: Conversation, host: Message, signal: AbortSignal, overrides: Record<string, any>,
- *   tally: ReturnType<typeof newTally>, roundLimit: number, scope?: string, kind?: UsageKind, inbox?: any, budget?: number,
+ *   tally: ReturnType<typeof newTally>, roundLimit: number, scope?: string, kind?: UsageKind, inbox?: any, budget?: number, memory?: Map<string, string>,
  *   onFrame?: (() => void)|null, onStatus?: (label?: string) => void, afterRound?: () => Promise<string>,
  *   beforeEnd?: () => Promise<Record<string, any>|null> }} run
  *   host：步骤画在哪条消息上（帮手的步骤画在主答的差遣卡里）；scope：步骤记上属于哪名帮手；kind：墨记进用量簿的哪一类（帮手按 scope 认）；
@@ -203,7 +203,9 @@ async function runRounds(target, history, run) {
       ...thoughtEcho(target, thoughtStart, profile)
     });
     const offered = new Set(overrides.tools.map(tool => tool.function?.name)),
-      { outcomes, images } = await runSteps(steps, conversation, host, signal, toolCache, offered, run.kind === "side");
+      { outcomes, images } = await runSteps(steps, conversation, host, signal, toolCache, offered, run.kind === "side", run.memory);
+    // 这一批跑着时按了「止」：工具结果不再装进历史、排着的补言也不在这里递（留给 settleSupplements 放回案上），就此停住
+    signal.throwIfAborted();
     for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
     // 它这一轮自己撮了要：此前的往来换成它写的笔记（见 60-context.js 的 foldByModel）
     foldByModel(history, overrides, steps);
@@ -318,7 +320,7 @@ function trimReply(target) {
   if (lead) for (const step of target.steps || []) if (typeof step.at === "number") step.at = Math.max(0, step.at - lead);
   return lead;
 }
-// 向模型要一轮回复，写进 target（正文、思绪、工具调用、用量）：流式按 SSE 逐字进，否则整段一次到
+// 向模型要一轮回复，写进 target（正文、思绪、工具调用、用量）。桥接交回的都是事件流（整份回来的它也摆成一块，见 server/model/index.js 的 eventBody）
 // onOpen：接口接下请求、开始回话时叫一声——从这一刻起这一轮就在花墨了，中途停止也得记账；onFrame 逐帧交给 readSse（旁注面板用来跟随滚动）
 /**
  * @param {Profile} profile
@@ -359,7 +361,6 @@ async function readReply(profile, history, signal, overrides, target, retried = 
     throw Error(message);
   }
   onOpen?.();
-  const type = response.headers.get("content-type") || "";
   // 帮手与消息的流式字段一致（content / reasoning / toolCalls / usage），readSse 按消息处理
   const sink = /** @type {Message} */ (target);
   // 记下这次请求实际的提示用量，下一轮据此估算会不会撑破窗口
@@ -368,47 +369,23 @@ async function readReply(profile, history, signal, overrides, target, retried = 
     note = () => {
       if (Number(target.usage?.prompt_tokens) > 0) overrides.seen = { at: sentAt, tokens: Number(target.usage.prompt_tokens) };
     };
-  if (type.includes("text/event-stream"))
-    return readSse(response, sink, { onFrame }).then(note, async error => {
-      if (error.name === "AbortError") throw error;
-      if (cutAtToolCall(error, target)) return note();
-      // 流里才说放不下（开口前没拦住）：与请求被拒时一样，压了再发一回
-      if (
-        !error.finish &&
-        !retried &&
-        target.content.length === wrote &&
-        !target.toolCalls?.length &&
-        contextOverflow(error.message) &&
-        (await keepInWindow(profile, history, signal, overrides, { overflow: true, target }))
-      )
-        return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
-      // 开了口才断的（掉线、上游掐线、静默超时、写到输出上限）：记一笔，runRounds 据此接着写而不是整答作废；被拦下的不接
-      if (!REFUSED_FINISH.test(error.finish || "")) error.midStream = true;
-      throw error;
-    });
-  const finish = takeWholeReply(await response.json(), sink);
-  note();
-  const fault = finishFault(finish);
-  if (fault && !cutAtToolCall(fault, target)) throw Object.assign(fault, { midStream: !REFUSED_FINISH.test(fault.finish) });
-}
-// 整份回来的答复（没走流式）读进 target，与 readSse 落下的一样：正文、思考、用量、工具调用；回的是结束原因
-/** @param {Message} target */
-function takeWholeReply(data, target) {
-  const message = data?.choices?.[0]?.message;
-  // 回 200 却是一份报错（有的中转站这样回）：把它说的原因交出去，不报成「模型未返回正文」
-  if (data?.error && !data.choices) throw Error((typeof data.error === "string" ? data.error : data.error.message) || "接口返回了错误");
-  target.content += extractContent(data);
-  // 与流式一致：有的接口把思考放在 reasoning 而不是 reasoning_content
-  target.reasoning = normalizeContent(message?.reasoning_content ?? message?.reasoning) || target.reasoning;
-  splitInlineThink(target);
-  target.usage = data.usage ? withCached(data.usage) : null;
-  if (Array.isArray(message?.tool_calls))
-    target.toolCalls = message.tool_calls.map(call => ({
-      id: call.id,
-      name: call.function?.name || "",
-      arguments: call.function?.arguments || ""
-    }));
-  return data?.choices?.[0]?.finish_reason;
+  return readSse(response, sink, { onFrame }).then(note, async error => {
+    if (error.name === "AbortError") throw error;
+    if (cutAtToolCall(error, target)) return note();
+    // 流里才说放不下（开口前没拦住）：与请求被拒时一样，压了再发一回
+    if (
+      !error.finish &&
+      !retried &&
+      target.content.length === wrote &&
+      !target.toolCalls?.length &&
+      contextOverflow(error.message) &&
+      (await keepInWindow(profile, history, signal, overrides, { overflow: true, target }))
+    )
+      return readReply(profile, history, signal, overrides, target, true, onOpen, onFrame);
+    // 开了口才断的（掉线、上游掐线、静默超时、写到输出上限）：记一笔，runRounds 据此接着写而不是整答作废；被拦下的不接
+    if (!REFUSED_FINISH.test(error.finish || "")) error.midStream = true;
+    throw error;
+  });
 }
 // 一问一答的小请求（拟题、撮要）：答复读进一条不进对话的消息，流式、整份都认；花的墨记在模型上，接口没报用量的按字估
 /** @param {Profile} profile @param {string} ask 发出去的那一问 @returns {Promise<Message>} */
@@ -422,8 +399,8 @@ async function readAside(response, profile, ask) {
 async function readWhole(response, ask) {
   /** @type {Message} */
   const reply = { id: `aside-${uid()}`, role: "assistant", content: "", timestamp: now() };
-  if ((response.headers.get("content-type") || "").includes("text/event-stream")) await readSse(response, reply);
-  else takeWholeReply(await response.json(), reply);
+  // live: false —— 这一路（拟题、撮要、审查）的答复不进页面，不按帧匀速写出、也不为它存盘
+  await readSse(response, reply, { live: false });
   return { reply, tokens: Number(reply.usage?.total_tokens || 0) || estimateTokens([{ content: ask }, { content: reply.content }]) };
 }
 // 写到输出上限、截在工具调用中间：拟好的调用照常交下去——参数残缺的由登记表回一句「太长了，分几次写」（见 15-tools/00-registry.js），

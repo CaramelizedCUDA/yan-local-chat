@@ -67,6 +67,10 @@ function switchBranch(c, index, step) {
     parentId = c.messages[index - 1]?.id ?? null;
   // 眼前这一版的帮手还在做：切走了它的回报会落进别的版本里
   if (crewOf(c, tail).length) return toast(t("这一版派出的帮手还在做，做完再切"));
+  // 挂在这一版上的后台与定时一并收口（与重答换下旧答同一套，见 releaseBackground）：留着它们跑完，
+  // 结果会按对话寄给换上的这一版（见 14-chat-engine/70-mail.js 的 mailReport）。收掉几条要说一声：
+  // 否则候悄悄没了，用户与模型都不知道
+  const released = releaseBackground(c, tail);
   const anchor = document.querySelector(`#messages [data-message="${CSS.escape(c.messages[index].id)}"]`),
     host = $("#chatScroll"),
     keepTop = anchor ? anchor.getBoundingClientRect().top - host.getBoundingClientRect().top : null;
@@ -77,6 +81,7 @@ function switchBranch(c, index, step) {
   editingMessageId = null;
   saveStore();
   renderConversation(false);
+  if (released) toast(t("这一版挂着的后台与定时已随切换收掉了"));
   // 面板里开着的旁注若注在被换下去的那几条上，退回目录（那里只列眼前这条路上的）
   if (sidePanelOpen()) renderSidePanel();
   // 切换后让这一条留在原来的位置，视线不用重新找
@@ -96,9 +101,9 @@ function profiles() {
 }
 // 此刻在用的模型：打开的对话用它自己记的；还没发出的新对话用欢迎页上挑的，没挑就照预设带的，再照默认。
 // 默认模型（settings.activeProfileId）只是新对话的起手，不随打开哪段、换了什么而变
-function activeProfile() {
-  const c = currentConversation(),
-    byId = id => (id && profiles().find(p => p.id === id)) || null;
+/** 这段对话用的模型：不给即眼前这段，欢迎页上是待发的那一档。后台叫醒的、正作答的那段未必是眼前这段，要把它传进来 @param {Conversation|null} [c] */
+function activeProfile(c = currentConversation()) {
+  const byId = id => (id && profiles().find(p => p.id === id)) || null;
   return (
     (c ? byId(c.profileId) : byId(pendingProfileId) || byId(presetOf(null)?.profileId)) ||
     byId(store.settings.activeProfileId) ||

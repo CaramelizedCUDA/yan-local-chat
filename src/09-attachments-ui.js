@@ -139,21 +139,37 @@ function setupQuoteTip() {
     current = null;
     if (!tip.classList.contains("hidden")) tip.classList.add("hidden");
   };
+  const place = rect => {
+    // 先现出来再量：藏着时没有宽高
+    tip.classList.remove("hidden");
+    placeFloating(tip, rect, { side: "above", align: "center", gap: 8, edge: 8 });
+  };
   const check = () => {
     const picked = selectionAnchor();
     if (!picked) return hide();
     const { rect, ...anchor } = picked;
     current = anchor;
     tip.querySelectorAll('[data-tip="note"], .quote-tip-sep').forEach(el => el.classList.toggle("hidden", !!anchor.quoteOnly));
-    tip.style.left = `${Math.min(innerWidth - 40, Math.max(40, rect.left + rect.width / 2))}px`;
-    tip.style.top = `${Math.max(8, rect.top - 34)}px`;
-    tip.classList.remove("hidden");
+    place(rect);
   };
   document.addEventListener("selectionchange", () => {
     clearTimeout(timer);
     timer = setTimeout(check, 120);
   });
-  $("#chatScroll").addEventListener("scroll", hide, { passive: true });
+  // 滚动不算放弃这处划选：选区没变就不会再有 selectionchange，这里收了便再也回不来（生成中跟随到底时浮条一闪即逝）。只跟着挪，翻出视口才藏，翻回来还在
+  const scroller = $("#chatScroll");
+  scroller.addEventListener(
+    "scroll",
+    () => {
+      const selection = getSelection();
+      if (!current || !selection?.rangeCount) return;
+      const rect = selection.getRangeAt(0).getBoundingClientRect(),
+        box = scroller.getBoundingClientRect();
+      if (rect.bottom <= box.top || rect.top >= box.bottom) tip.classList.add("hidden");
+      else place(rect);
+    },
+    { passive: true }
+  );
   tip.addEventListener("pointerdown", event => event.preventDefault()); // 别让点击把划选清掉
   tip.addEventListener("click", event => {
     const button = event.target.closest("[data-tip]");
@@ -171,7 +187,7 @@ function setupQuoteTip() {
   });
 }
 
-const FILE_TARGETS = "[data-open-image], [data-open-archive], [data-open-remote], [data-open-attachment], [data-download-attachment]";
+const FILE_TARGETS = "[data-open-image], [data-open-file], [data-open-remote], [data-open-attachment], [data-download-attachment]";
 // 附件：案上的移除、收入卷宗，各处附件的预览、打开、下载（键盘同样可用）
 function bindAttachmentEvents() {
   document.addEventListener("click", e => {
@@ -200,7 +216,7 @@ function bindAttachmentEvents() {
 // 点得开的件：附件里的图或正文引的目录里的图（见 renderReplyShots）进看图框，看得了的附件进预览器，看不了的下载。点与键盘同一条路
 /** @param {HTMLElement} el */
 function openFileTarget(el) {
-  if (el.matches("[data-open-image], [data-open-archive], [data-open-remote]")) openImageFrom(el);
+  if (el.matches("[data-open-image], [data-open-file], [data-open-remote]")) openImageFrom(el);
   else if (el.dataset.openAttachment) void openFileViewer({ attachmentId: el.dataset.openAttachment }, el.dataset.name || "", el);
   else void downloadAttachment(el.dataset.downloadAttachment);
 }
@@ -214,7 +230,7 @@ function openImageFrom(el) {
         ? { id: node.dataset.openImage }
         : node.dataset.openRemote
           ? { src: remoteShots.get(node.dataset.openRemote)?.data || "", name: node.dataset.name || "", url: node.dataset.openRemote }
-          : { path: node.dataset.openArchive, root: node.dataset.root || archiveDir() }
+          : { file: node.dataset.openFile }
     ),
     Math.max(0, members.indexOf(/** @type {HTMLElement} */ (el))),
     el
@@ -228,7 +244,8 @@ async function loadThumbnails(root) {
       let url = thumbCache.get(id);
       if (!url) {
         const file = await getAttachment(id);
-        if (!file || file.kind !== "image") continue;
+        // 原件没取到、或记录里没有数据：留空，不拿一个空地址去设 src（那会落成破图）
+        if (!file || file.kind !== "image" || typeof file.data !== "string" || !file.data) continue;
         url = file.data;
         thumbCache.set(id, url);
         if (thumbCache.size > 40) thumbCache.delete(thumbCache.keys().next().value);

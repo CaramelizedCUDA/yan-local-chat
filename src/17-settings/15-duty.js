@@ -1,16 +1,18 @@
 // 言 · 设置 · 专司：主答之外各司一事的几位——拟题随对话的模型、只有开关；审查与生图各自另配一份，
 // 不借模型栏里的那几份：同一份发，会挤掉主答的提示缓存，本机的模型还得多扛一路并发。
 // 审查可走 ChatGPT 订阅：借的是登录的账号、不是哪一份模型，另挑的小模型缓存各归各，免得只为审查另养一个 Key。
-// 一职一张卡，样子同模型栏：收起一行只写职名与模型名（拟题、没配的不写），最右一粒记号——朱点是开或已配，空圈是关或未配；
+// 一职一张卡，样子同模型栏：收起一行只写职名与模型名（拟题、没配的不写），最右一粒记号——墨点是开或已配，空圈是关或未配；
 // 点开先是开关，开了才铺开接口、地址、Key、模型（设计稿/110–112）
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
-/** @type {Record<"review"|"image", { key: "dutyReview"|"dutyImage", name: () => string, apis: Duty["api"][], off: () => string }>} */
+/** @typedef {"review"|"image"} DutyId */
+/** @type {Record<DutyId, { key: "dutyReview"|"dutyImage", name: () => string, apis: Duty["api"][], off: () => string, fallback?: () => string }>} */
 const DUTIES = {
   review: {
     key: "dutyReview",
     name: () => t("审查"),
     apis: ["siliconflow", "openai", "anthropic", "chatgpt"],
-    off: () => t("关，照规则")
+    off: () => t("关，照规则"),
+    fallback: () => t("这一步照规则办")
   },
   image: { key: "dutyImage", name: () => t("生图"), apis: ["siliconflow", "openai"], off: () => t("未配") }
 };
@@ -26,14 +28,43 @@ const dutyOpen = new Set();
 function dutyReady(d) {
   return !!(d?.on && d.model.trim() && (d.api === "chatgpt" || d.baseUrl.trim()));
 }
-/** @param {"review"|"image"} id */
+/** @param {DutyId} id */
 function dutyOf(id) {
   return store.settings[DUTIES[id].key];
+}
+/**
+ * 问一回专司里另配的那一位（审查）：拼成一份临时的模型配置——不扣余墨、不认思考档位，花的墨只记进用量簿的这一类
+ * @param {"review"} id @param {string} text @param {{ systemPrompt: string, maxTokens: number, signal: AbortSignal }} options
+ */
+async function askDuty(id, text, { systemPrompt, maxTokens, signal }) {
+  /** @type {Profile} */
+  const duty = { id: `duty-${id}`, name: "", quota: "", usedTokens: 0, ...dutyOf(id) },
+    response = await requestChat(duty, [{ role: "user", content: text }], signal, { systemPrompt, maxTokens });
+  if (!response.ok) throw Error(await describeResponseError(response));
+  const { reply, tokens } = await readWhole(response, text);
+  noteUsage(id, tokens);
+  return String(reply.content || "");
+}
+// 专司没成（审查出错退回照规则）：同删对话、桥接更新一样弹一句，说清没成之后怎么办。
+// 不退避、不计次——没成就下回再来（各处的取舍）；只是同一职连着出同样的错只提一回，成过一次再出错才再提：
+// 审查一答里可能连问十几步，每步都弹就成了噪声
+/** @type {Map<DutyId, string>} 各职上一回没成的原因，成了即清；只在本页内存里 */
+const dutyFaults = new Map();
+/** @param {DutyId} id @param {any} error */
+function dutyFailed(id, error) {
+  const why = error?.name === "TimeoutError" ? t("超时") : tr(bridgeErrorText(String(error?.message || error)));
+  if (dutyFaults.get(id) === why) return;
+  dutyFaults.set(id, why);
+  toast(t`${DUTIES[id].name()}没成，${DUTIES[id].fallback?.() || ""}：${why}`, 6000);
+}
+/** @param {DutyId} id */
+function dutyOk(id) {
+  dutyFaults.delete(id);
 }
 function dutyMarkHtml(on, tip) {
   return `<span class="duty-mark${on ? " on" : ""}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}"></span>`;
 }
-/** 收起时那一行：职名、配好了的模型名、记号 @param {"review"|"image"} id */
+/** 收起时那一行：职名、配好了的模型名、记号 @param {DutyId} id */
 function dutyHeadHtml(id) {
   const d = dutyOf(id),
     ready = dutyReady(d);
@@ -42,7 +73,7 @@ function dutyHeadHtml(id) {
 function dutyCardHtml(id, head, body) {
   return `<details class="profile-card" data-duty="${id}"${dutyOpen.has(id) ? " open" : ""}><summary class="profile-head">${head}</summary><div class="profile-body">${body}</div></details>`;
 }
-/** @param {"review"|"image"} id */
+/** @param {DutyId} id */
 function dutyFormHtml(id) {
   const d = dutyOf(id),
     onOff = `<div class="segmented"><button data-duty-on="${id}" data-value="true" class="${d.on ? "active" : ""}">${t(`开`)}</button><button data-duty-on="${id}" data-value="false" class="${d.on ? "" : "active"}">${t(`关`)}</button></div>`;
@@ -55,7 +86,7 @@ function dutyFormHtml(id) {
       select: "data-duty-select",
       action: "data-duty-action"
     });
-  return `<div class="profile-grid"><label class="profile-full">${t(`启用`)}${onOff}</label><label class="profile-full">${t(`接口`)}<div class="segmented">${apis}</div><small>${id === "image" ? "images/generations" : d.api === "chatgpt" ? t("额度记在 ChatGPT 订阅上") : d.api === "anthropic" ? "Messages API" : "chat/completions"}</small></label>${d.api === "chatgpt" ? chatgptAccountHtml() : `<label class="profile-full">Base URL<input class="field wide" data-duty-field="baseUrl" value="${escapeHtml(d.baseUrl)}" placeholder="${baseUrlPlaceholder(d)}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-duty-field="apiKey" value="${escapeHtml(d.apiKey)}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">${t(`模型`)}${model}</label></div><div class="profile-actions">${id === "review" ? `<button class="outline-btn" data-duty-action="test">${t(`测试连接`)}</button>` : ""}<span class="profile-status"></span></div>`;
+  return `<div class="profile-grid"><label class="profile-full">${t(`启用`)}${onOff}</label><label class="profile-full">${t(`接口`)}<div class="segmented">${apis}</div><small>${id === "image" ? "images/generations" : d.api === "chatgpt" ? t("额度记在 ChatGPT 订阅上") : d.api === "anthropic" ? "Messages API" : "chat/completions"}</small></label>${d.api === "chatgpt" ? chatgptAccountHtml() : `<label class="profile-full">Base URL<input class="field wide" data-duty-field="baseUrl" value="${escapeHtml(d.baseUrl)}" placeholder="${baseUrlPlaceholder(d)}"></label><label class="profile-full">API Key<input type="password" class="field wide" data-duty-field="apiKey" value="${escapeHtml(d.apiKey)}" placeholder="sk-…" autocomplete="off"></label>`}<label class="profile-full">${t(`模型`)}${model}</label></div><div class="profile-actions">${id !== "image" ? `<button class="outline-btn" data-duty-action="test">${t(`测试连接`)}</button>` : ""}<span class="profile-status"></span></div>`;
 }
 function dutySettingsHtml() {
   const title = store.settings.autoTitle,
@@ -64,7 +95,7 @@ function dutySettingsHtml() {
       `<strong class="profile-name">${t(`拟题`)}</strong><span class="profile-gist"></span>${dutyMarkHtml(title, title ? t("开") : t("关"))}`,
       `<div class="profile-grid"><label class="profile-full">${t(`自动拟题`)}<div class="segmented"><button data-setting="autoTitle" data-value="true" class="${title ? "active" : ""}">${t(`开`)}</button><button data-setting="autoTitle" data-value="false" class="${title ? "" : "active"}">${t(`关`)}</button></div></label></div>`
     );
-  return `<h2>${t(`专司`)}</h2>${titleCard}${dutyCardHtml("review", dutyHeadHtml("review"), dutyFormHtml("review"))}${dutyCardHtml("image", dutyHeadHtml("image"), dutyFormHtml("image"))}`;
+  return `<h2>${t(`专司`)}</h2>${titleCard}${/** @type {DutyId[]} */ (Object.keys(DUTIES)).map(id => dutyCardHtml(id, dutyHeadHtml(id), dutyFormHtml(id))).join("")}`;
 }
 function bindDutySettings() {
   document.querySelectorAll("[data-duty]").forEach(card => {
@@ -74,7 +105,7 @@ function bindDutySettings() {
       else dutyOpen.delete(card.dataset.duty);
     });
     if (card.dataset.duty === "title") return;
-    const id = /** @type {"review"|"image"} */ (card.dataset.duty),
+    const id = /** @type {DutyId} */ (card.dataset.duty),
       d = dutyOf(id),
       status = () => card.querySelector(".profile-status");
     // 收起时那一行跟着改：模型名、记号

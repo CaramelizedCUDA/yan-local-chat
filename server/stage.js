@@ -4,10 +4,11 @@
 // 标签页、画面、输入都在页面里（src/26-stage/），不过桥接，这里也不记任何东西。
 // 另读一份收藏：看台只转网页，浏览器自己的收藏栏看不到；收藏存在浏览器配置目录的 Default/Bookmarks 里。
 // 纸签的「用系统浏览器打开」：交给系统默认的浏览器（经 url.dll，不经 cmd——网址里的 & 会被当成命令分隔）；游目显示不了的本机文件交给本机程序
-// 下载签的「打开所在文件夹」：在资源管理器里显出那个文件；没记着路径的，开那个服务存下载的目录（Playwright 默认是工作目录下的 .playwright-mcp）
+// 下载签的「打开所在文件夹」：在资源管理器里显出那个文件；没记着路径的按名字找，再找不着开那个服务存下载的目录（Playwright 默认是工作目录下的 .playwright-mcp）
 "use strict";
 const fs = require("node:fs");
 const crypto = require("node:crypto");
+const os = require("node:os");
 const { spawn, execFile } = require("node:child_process");
 const { fasterSide, pickSource } = require("./mirror.js");
 const path = require("node:path");
@@ -29,7 +30,10 @@ function browserOf(raw, cwd = "") {
   };
   let file = /** @type {any} */ ({});
   try {
-    file = JSON.parse(fs.readFileSync(arg("--config"), "utf8")).browser || {};
+    // --config 是相对路径时按服务的工作目录解析——起服务时（prepareBrowser）就是这么找的，
+    // 两边基准得一致，不然页面问调试口时读不到那份配置，端口、配置目录、下载目录全回落
+    const config = arg("--config");
+    if (config) file = JSON.parse(fs.readFileSync(path.resolve(cwd || ".", config), "utf8")).browser || {};
   } catch {}
   const launch = (file.launchOptions?.args || []).map(String),
     endpoint = arg("--cdp-endpoint") || String(file.cdpEndpoint || ""),
@@ -78,12 +82,22 @@ function prepareBrowser(config, where) {
     origins.add(`http://127.0.0.1:${port}`);
     const line = `--remote-allow-origins=${[...origins].join(",")}`;
     allow < 0 ? extra.push(line) : (extra[allow] = line);
+    // 服务退出可能连浏览器一并结束；原生恢复气泡不在游目的网页画面里，不能让它挡着下次打开。
+    if (!extra.includes("--hide-crash-restore-bubble")) extra.push("--hide-crash-restore-bubble");
     // 无头的不必挪；人自己定了窗口位置的照人的
     if (!args.includes("--headless") && launch.headless !== true && !extra.some(item => item.startsWith("--window-position="))) {
       extra.push("--window-position=-32000,-32000");
       where.offscreen?.(port);
     }
   }
+  // 模型的浏览器开不了言自己：页面能改设置，开了就能关审查、改权限，等于自己给自己松绑。与指令不调桥接同理（sandbox.js）。
+  // 只列这两个名字：桥接只听 127.0.0.1，也只认这两个 Host（server.js 的 trustedHost）。挡的是开页与跳转，不挡 run_code 里直发的请求，那条与 node -e 一样不往下堵
+  // 结果里的文件（下载、快照、截图）写全路径：相对的是相对服务的工作目录，模型拿自己的工具找不着，下载签也显不出那个文件。人写了的照人的
+  file.filePaths ??= "absolute";
+  const network = (file.network ||= {});
+  network.blockedOrigins = [
+    ...new Set([...(network.blockedOrigins || []), `http://127.0.0.1:${bridgePort}`, `http://localhost:${bridgePort}`])
+  ];
   // 按内容取名：同时起几个 Playwright 服务（游目自带的、人另接的），各读各的；同一份接法才共用一个文件
   const text = JSON.stringify(file, null, 2),
     dir = path.join(root, "游目"),
@@ -91,8 +105,12 @@ function prepareBrowser(config, where) {
   try {
     fs.mkdirSync(dir, { recursive: true });
     if (!fs.existsSync(out) || fs.readFileSync(out, "utf8") !== text) fs.writeFileSync(out, text);
-  } catch {
-    return config;
+  } catch (error) {
+    // 接法写不成时不能退回人写的那一份：它没有 blockedOrigins，模型的浏览器就能打开言、改权限、关审查（11-03 那次），
+    // 而页面看不出任何差别。宁可这个服务起不来，让 /api/mcp 把原因报出来（盘满、根在只读位置、游目被同名文件占着）
+    throw Error(
+      `游目的浏览器接法写不进 ${dir}（${error.message}）：缺了它，模型能在浏览器里打开言改设置，故不降级启动；腾出位置或改存储根后重试`
+    );
   }
   const rest = at < 0 ? args : args.filter((_, i) => i !== at && !(args[at] === "--config" && i === at + 1));
   return { ...config, args: [...rest, "--config", out] };
@@ -105,7 +123,8 @@ const bookmarksFile = dir => path.join(dir, "Default", "Bookmarks");
 // 浏览器不再要人去 MCP 里接：设置 → 游目里开着，言自己起一个 Playwright 的 MCP 服务（名叫「游目」）。家当都在存储根的「游目」目录：
 //   依赖/  @playwright/mcp 装在这里（npm install，一键）
 //   浏览器/  登录状态、收藏（--user-data-dir）
-//   下载/  下载落在这里（--output-dir）
+//   下载/  下载落在这里（--output-dir）。Playwright 自己起名的过程文件（页面快照、控制台记录、没给名的截图）也只能落这里，放过一天就清（见 sweepOutputs）
+//   工作/  服务的工作目录：模型给了名字的截图、存下的页面落在这里，不与言自己的家当混着
 //   内核/  本机没有 Edge / Chrome 时，Playwright 自带的那个浏览器装在这里（PLAYWRIGHT_BROWSERS_PATH）
 //   playwright-*.json  接法（prepareBrowser 写的，按内容取名）
 const BROWSERS = ["msedge", "chrome", "chromium"];
@@ -117,9 +136,33 @@ function stageHome(root) {
     deps: path.join(home, "依赖"),
     profile: path.join(home, "浏览器"),
     output: path.join(home, "下载"),
+    work: path.join(home, "工作"),
     engine: path.join(home, "内核"),
     cli: path.join(home, "依赖", "node_modules", "@playwright", "mcp", "cli.js")
   };
+}
+// Playwright 自己起名的过程文件：「前缀-ISO 时刻.扩展名」（时刻里的 : 与 . 换成 -）。只给模型这一答翻看，放过一天就没用了。
+// download- 打头的不算：那是没带文件名的下载
+const AUTO_OUTPUT = /^(?!download-)[a-z]+(?:-[a-z]+)*-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.[a-z0-9]+$/,
+  OUTPUT_GRACE_MS = 24 * 60 * 60 * 1000;
+/** @param {string} dir 存下载的目录 */
+function sweepOutputs(dir) {
+  const cutoff = Date.now() - OUTPUT_GRACE_MS;
+  try {
+    for (const name of fs.readdirSync(dir))
+      if (AUTO_OUTPUT.test(name))
+        try {
+          const file = path.join(dir, name);
+          if (fs.statSync(file).mtimeMs < cutoff) fs.rmSync(file, { force: true });
+        } catch {}
+  } catch {}
+}
+// 下载存成的名字：Playwright 按浏览器给的名存，名里的 ASCII 符号与空格换成 -（照它的 sanitizeForFilePath）
+/** @param {string} name */
+function savedName(name) {
+  const clean = (/** @type {string} */ text) => text.replace(/[\x00-\x2C\x2E-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F]+/g, "-"),
+    dot = name.lastIndexOf(".");
+  return dot < 0 ? clean(name) : `${clean(name.slice(0, dot))}.${clean(name.slice(dot + 1))}`;
 }
 /**
  * 页面递来的是几项选择（{ browser }），这里拼成起服务的那一整条；家当一律落在「游目」目录，本机文件一律许开（执事做的网页要自己开来看）
@@ -132,7 +175,7 @@ function builtinConfig(stage, root) {
   return {
     command: process.execPath,
     args: [at.cli, "--browser", browser, "--user-data-dir", at.profile, "--output-dir", at.output, "--allow-unrestricted-file-access"],
-    cwd: at.home,
+    cwd: at.work,
     env: browser === "chromium" ? { PLAYWRIGHT_BROWSERS_PATH: at.engine } : {}
   };
 }
@@ -141,10 +184,11 @@ function prepareMcp(config, where) {
   if (!config?.stage) return prepareBrowser(config, where);
   const { stage, ...rest } = config,
     built = { ...rest, ...builtinConfig(stage, where.root) };
+  const at = stageHome(where.root);
   try {
-    const at = stageHome(where.root);
-    for (const dir of [at.profile, at.output]) fs.mkdirSync(dir, { recursive: true });
+    for (const dir of [at.profile, at.output, at.work]) fs.mkdirSync(dir, { recursive: true });
   } catch {}
+  sweepOutputs(at.output);
   return prepareBrowser(built, where);
 }
 // 页面问调试口、收藏、下载目录时递来的那个服务：游目自己的递选择，别的递参数
@@ -156,13 +200,18 @@ function serviceOf(body, root) {
   }
   return { args: body?.args || [], cwd: String(body?.cwd || "") };
 }
-// 本机有哪几个浏览器：Edge、Chrome 看常见的安装处，自带内核看「内核」目录
+// 本机有哪几个浏览器：Edge、Chrome 看常见的安装处，自带内核看「内核」目录。
+// 内核认版本：驱动要的是 playwright-core 的 browsers.json 里那一版（chromium-<revision>）。更新驱动后要的版本常变，
+// 旧版留在目录里也起不来——只看有没有 chromium-* 会报「已安装」，点开却是 Playwright 的「未安装」
 function localBrowsers(root) {
   const has = (/** @type {string[]} */ list) => list.some(file => !!file && fs.existsSync(file)),
-    files = platform.browserFiles();
+    files = platform.browserFiles(),
+    at = stageHome(root);
   let chromium = false;
   try {
-    chromium = fs.readdirSync(stageHome(root).engine).some(name => name.startsWith("chromium-"));
+    const { browsers } = JSON.parse(fs.readFileSync(path.join(at.deps, "node_modules", "playwright-core", "browsers.json"), "utf8"));
+    const revision = browsers.find((/** @type {any} */ item) => item.name === "chromium")?.revision;
+    chromium = !!revision && fs.existsSync(path.join(at.engine, `chromium-${revision}`));
   } catch {}
   return {
     msedge: has(files.msedge),
@@ -192,16 +241,27 @@ async function engineHost(cli) {
   // 官方源不设变量：Playwright 自带几个备用地址，一个不通换下一个
   return side === "official" ? {} : { PLAYWRIGHT_DOWNLOAD_HOST: MIRROR_HOST };
 }
-// 装内核时多久没有一点进展算卡住：Playwright 每下完一成吐一行进度，正常的网一成十来秒；
-// 测速那几秒两边都没测准（刚连上时常卡一下）就会挑错源，挑错了靠这个换另一个源重来
+// 装内核时多久没有一点进展算卡住：测速那几秒两边都没测准（刚连上时常卡一下）就会挑错源，挑错了靠这个换另一个源重来。
+// 进展看下载的那个文件长没长，不只看输出：Playwright 每下完一成才吐一行，慢的线（一百来 KB/s）一成要两三分钟，
+// 只看输出会把下着的当卡住，两个源都掐掉（11-08 实测）
 const STALL_MS = 90000;
+/** @param {string} dir @returns {number} 目录里（连子目录）文件的总字节 */
+function bytesIn(dir) {
+  let total = 0;
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true, recursive: true }))
+      if (entry.isFile()) total += fs.statSync(path.join(entry.parentPath, entry.name)).size;
+  } catch {}
+  return total;
+}
 /**
  * 跑一趟安装，跑完才回；吐出的「n% of」报给 onProgress
  * @param {string} file @param {string[]} args @param {Record<string, string>} env @param {string} cwd
- * @param {{ stall?: number, onProgress?: (percent: number) => void }} [options] stall：多久没有输出即结束它、以 stalled 退回
+ * @param {{ stall?: number, grows?: string, onProgress?: (percent: number) => void }} [options]
+ *   stall：多久没有进展即结束它、以 stalled 退回；grows：下载落在这个目录里，里头的文件在长也算进展
  * @returns {Promise<string>}
  */
-function runInstall(file, args, env, cwd, { stall = 0, onProgress = () => {} } = {}) {
+function runInstall(file, args, env, cwd, { stall = 0, grows = "", onProgress = () => {} } = {}) {
   return new Promise((resolve, reject) => {
     // npm 在 Windows 上是 .cmd，得经 shell 起；参数都是言自己写的，没有外来的字
     // 路径里有空格（D:\Program Files\npm.cmd）：经 shell 起时整条加引号
@@ -219,6 +279,7 @@ function runInstall(file, args, env, cwd, { stall = 0, onProgress = () => {} } =
       if (!stall) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
+        clearInterval(meter);
         // 下载在它另起的子进程里，连根结束
         platform.killTree(child);
         reject(Object.assign(Error("下载卡住了"), { stalled: true }));
@@ -231,14 +292,27 @@ function runInstall(file, args, env, cwd, { stall = 0, onProgress = () => {} } =
       watch();
     };
     watch();
+    let size = 0;
+    const meter =
+      stall && grows
+        ? setInterval(() => {
+            const now = bytesIn(grows);
+            if (now !== size) watch();
+            size = now;
+          }, 3000)
+        : undefined;
+    const done = () => {
+      clearTimeout(timer);
+      clearInterval(meter);
+    };
     child.stdout.on("data", keep);
     child.stderr.on("data", keep);
     child.on("error", error => {
-      clearTimeout(timer);
+      done();
       reject(error);
     });
     child.on("close", code => {
-      clearTimeout(timer);
+      done();
       code === 0 ? resolve(tail) : reject(Error(tail.trim().split("\n").slice(-3).join(" ") || `退出码 ${code}`));
     });
   });
@@ -276,14 +350,26 @@ async function installStage(what, root, onProgress) {
   if (!fs.existsSync(args[0])) throw Error("先装依赖，再装内核");
   const first = await engineHost(args[0]),
     other = first.PLAYWRIGHT_DOWNLOAD_HOST ? {} : { PLAYWRIGHT_DOWNLOAD_HOST: MIRROR_HOST };
+  // Playwright 把压缩包下到系统临时目录下另起的一格里：给它一个言自己的临时目录，好看下着的文件长没长；装完连同半截的包一起清掉
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "yan-engine-")),
+    run = (/** @type {Record<string, string>} */ host) =>
+      runInstall(file, args, { ...env, ...host, TEMP: tmp, TMP: tmp, TMPDIR: tmp }, at.deps, {
+        stall: STALL_MS,
+        grows: tmp,
+        onProgress
+      }).catch(error => {
+        // 被结束的那一趟留着 Playwright 的目录锁，不清掉下一趟（换源重来、或人再点一次）要干等它过期
+        if (error.stalled) fs.rmSync(path.join(at.engine, "__dirlock"), { recursive: true, force: true });
+        throw error;
+      });
   try {
-    return await runInstall(file, args, { ...env, ...first }, at.deps, { stall: STALL_MS, onProgress });
+    return await run(first);
   } catch (error) {
     if (!(/** @type {any} */ (error).stalled)) throw error;
-    // 被结束的那一趟留着 Playwright 的目录锁，不清掉下一趟要干等它过期
-    fs.rmSync(path.join(at.engine, "__dirlock"), { recursive: true, force: true });
     onProgress?.(0);
-    return runInstall(file, args, { ...env, ...other }, at.deps, { stall: STALL_MS, onProgress });
+    return await run(other);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
 /** @param {string} root */
@@ -390,18 +476,22 @@ module.exports = function createStage({ root = () => "" } = {}) {
     if (!process.env.YAN_NO_EXTERNAL) platform.openUrl(url);
     sendJson(res, 200, { ok: true });
   }
-  // 只显出、不打开：下载来的可能是程序，开它要人自己在资源管理器里点
+  // 只显出、不打开：下载来的可能是程序，开它要人自己在资源管理器里点。
+  // 没记着路径的（人点的下载，之后执事没再动手，结果里没报存到哪）按名字在存下载的目录里找；找不着才开整个目录
   async function reveal(req, res) {
     const body = await readJson(req),
-      { path: file } = body,
-      target = String(file || "");
-    if (target && fs.existsSync(target)) {
+      service = serviceOf(body, root()),
+      { output } = browserOf(service.args, service.cwd),
+      name = path.basename(String(body.name || "")),
+      target = [String(body.path || ""), ...(output && name ? [path.join(output, name), path.join(output, savedName(name))] : [])].find(
+        file => file && fs.existsSync(file)
+      );
+    if (target) {
       platform.reveal(target);
       return sendJson(res, 200, { ok: true });
     }
-    const service = serviceOf(body, root()),
-      { output } = browserOf(service.args, service.cwd);
     if (!output || !fs.existsSync(output)) return sendJson(res, 404, { error: "还没有下载过，或找不到存下载的目录" });
+    if (body.stage) sweepOutputs(output);
     platform.openPath(output);
     sendJson(res, 200, { ok: true });
   }
@@ -423,3 +513,5 @@ module.exports.builtinConfig = builtinConfig;
 module.exports.installStage = installStage;
 module.exports.stageState = stageState;
 module.exports.isPlaywright = isPlaywright;
+module.exports.sweepOutputs = sweepOutputs;
+module.exports.savedName = savedName;

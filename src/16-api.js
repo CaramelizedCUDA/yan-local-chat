@@ -45,7 +45,7 @@ function parseTokenLimit(value) {
 // 余墨只属于模型，不属于对话：对话在所选模型耗尽时暂停，换模型或调高上限即刻可续，不再把整段对话锁死
 /** @param {Conversation} c */
 function conversationDry(c) {
-  return !!c && quotaExhausted(activeProfile());
+  return !!c && quotaExhausted(activeProfile(c));
 }
 // 进行中的请求先把预计用量记在预留里：几段对话同时开工时，后开的看得见先开的已经占了多少，不会都以为「还剩 20k」而合计超卖；
 // 请求收尾时预留撤销、换成实际用量。只在内存里记，刷新页面即清
@@ -198,6 +198,18 @@ function parseReasoningLevels(message, sent) {
   );
   return found.length < 2 ? [] : found.sort((a, b) => REASONING_ORDER.indexOf(a) - REASONING_ORDER.indexOf(b));
 }
+// 档位记到模型上：手里这份（这一答的重发读的是它）与此刻表里那份（请求途中配置同步可能已把 store.profiles 整份换掉，
+// 只写旧的就不落盘，与 spendTokens 同一个道理）。表里那份若已换了模型或被亲手填过，这份结果管不到它
+/** @param {Profile} profile @param {string} key @param {string} levels */
+function recordReasoningLevels(profile, key, levels) {
+  const live = profiles().find(item => item.id === profile.id),
+    targets = live && reasoningProbeKey(live) === key && !reasoningManual(live) ? [profile, live] : [profile];
+  for (const item of targets) {
+    item.reasoningLevels = levels;
+    item.reasoningProbed = key;
+  }
+  saveStoreSoon();
+}
 // 接口拒绝了思考档位：认出它支持的几档记到模型上；认不出来就不动
 /**
  * @param {Profile} profile
@@ -208,10 +220,7 @@ function learnReasoningLevels(profile, message, sent) {
   if (!found.length) return false;
   const current = profileReasoningLevels(profile);
   if (found.length === current.length && found.every(level => current.includes(level))) return false;
-  profile.reasoningLevels = found.join(", ");
-  // 从报错里学到的就是这个身份的定论，不必再探
-  profile.reasoningProbed = reasoningProbeKey(profile);
-  saveStoreSoon();
+  recordReasoningLevels(profile, reasoningProbeKey(profile), found.join(", "));
   return true;
 }
 // 选定模型时探一下它认哪几档：故意送一个不存在的档位（probe），接口若按 OpenAI 的样子报错，就把报错里列的几档记下；
@@ -257,8 +266,10 @@ async function probeReasoningLevels(profile, force = false) {
       maxTokens: 16,
       reasoning: "probe"
     });
-    // 探着探着模型被换了：这份结果是旧模型的，作废；探着的时候用户亲手填了档位：手填的是定论，也作废
-    if (reasoningProbeKey(profile) !== key || reasoningManual(profile)) return null;
+    // 探着探着模型被换了：这份结果是旧模型的，作废；探着的时候用户亲手填了档位：手填的是定论，也作废。
+    // 此刻表里那份也要看：配置同步可能刚把别处的改动带进来
+    const live = profiles().find(item => item.id === profile.id);
+    if ([profile, live].some(item => item && (reasoningProbeKey(item) !== key || reasoningManual(item)))) return null;
     let learned;
     if (response.ok) learned = REASONING_DEFAULT_LEVELS;
     else {
@@ -271,9 +282,7 @@ async function probeReasoningLevels(profile, force = false) {
       else if (/unknown|unrecognized|unsupported|not support|不支持|不认识/i.test(message)) learned = [];
       else learned = REASONING_DEFAULT_LEVELS;
     }
-    profile.reasoningLevels = learned.length ? learned.join(", ") : "none";
-    profile.reasoningProbed = key;
-    saveStoreSoon();
+    recordReasoningLevels(profile, key, learned.length ? learned.join(", ") : "none");
     return learned;
   } catch {
     return null;
@@ -366,7 +375,7 @@ function parseInlineThink(text) {
     end = thinkCloser(body);
   return end < 0 ? null : { reasoning: body.slice(0, end).trim(), content: body.slice(end + 8).replace(/^\s+/, "") };
 }
-async function readSse(response, assistant, { onFrame = null } = {}) {
+async function readSse(response, assistant, { onFrame = null, live = true } = {}) {
   const reader = response.body.getReader(),
     decoder = new TextDecoder();
   let buffer = "",
@@ -374,7 +383,8 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     ended = false,
     finishReason = "";
   // 落墨节奏：正文不按网络分块一坨坨出现，而是每帧按积压量的一定比例匀速写出（积压越多写得越快，最多滞后零点几秒）；新写出的字带短暂渐显，末尾跟一支笔尖光标
-  const paced = !inkMotionOff();
+  // live: false 的是不进页面的答复（拟题、撮要、审查）：一次落下，不按帧写、不为它存盘
+  const paced = live && !inkMotionOff();
   let shown = paced ? assistant.content.length : Infinity,
     freshGroups = [];
   let closed = false;
@@ -412,6 +422,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     requestAnimationFrame(frame);
   };
   const refresh = () => {
+    if (!live) return;
     saveStoreSoon();
     schedule();
   };
@@ -489,7 +500,7 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
       const end = from + at,
         said = assistant.content.slice(roundStart, end);
       // 写着的是一段带标签的代码（围栏还开着）：跳过这一个接着找
-      if ((said.match(/^\s*```/gm) || []).length % 2) {
+      if (inOpenFence(said)) {
         think.scan = end + 8;
         continue;
       }
@@ -528,7 +539,15 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
     });
   // 流被掐断（停止、补言改道）时这一段的帧循环到此为止：接下来的一轮另起一个，两个循环不能同时画一条消息
   try {
-    await pump();
+    // 已收到结束标志之后再断线：桥接那头没接住收了尾的流、上游在 stop 之后多送一个错误事件、静默超时，答复其实已经写完，
+    // 不该当成断头再续写一遍。豁免只加在 pump 上——下面的 flushThink、结束标志与 finishFault 的判断照走，
+    // 「长度截断即使带 DONE 也报错」「被拦下的不接」照旧；用户按停（AbortError）也照旧抛出。
+    // 吞掉错误时把 reader 一并收掉：不取消就没人再读，桥接那头会替一个没人读的流一直转发、连接一直挂着，
+    // 走总线时也靠取消才从 busJobs 里撤下并发出 /api/bus/cancel。连接已经断了再取消也无妨
+    await pump().catch(error => {
+      if (!ended || error.name === "AbortError") throw error;
+      reader.cancel().catch(() => {});
+    });
     flushThink();
     if (!ended) throw Error("接口未发送结束标志，连接已中断");
     const fault = finishFault(finishReason);
@@ -558,7 +577,10 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
         if (!data) continue;
         if (data === "[DONE]") {
           ended = true;
-          continue;
+          // 收到结束标志就不必再等读：上游不关连接（keep-alive、代理保持）时，原先会一直挂到静默超时，
+          // 正文写完这边还显示生成中，拟题、压缩、补言都压着。finish_reason 处不能退——带 include_usage 时用量块在它之后才到
+          reader.cancel().catch(() => {});
+          return;
         }
         let failure = "";
         try {
@@ -585,11 +607,16 @@ async function readSse(response, assistant, { onFrame = null } = {}) {
           if (delta?.thinking_block?.signature || delta?.thinking_block?.redacted)
             (assistant.thinkingBlocks ||= []).push(delta.thinking_block);
           if (Array.isArray(delta?.tool_calls)) {
-            for (const call of delta.tool_calls) {
-              // 不带 index 的：换了 id 就是新的一件，否则续在末一件上
+            for (const [at, call] of delta.tool_calls.entries()) {
+              // 不带 index 的：id 说过是同一件的，就在已拟的几件里找它——多件并行、参数的续块交错送到时，末一件不一定是它；
+              // 找不到、又是同一个数组里第二件起（或换了 id 的），另起一件（一件调用不会在同一个数组里续写自己）；
+              // 余下没有 id 的续在末一件上——名字、参数都可能被切成几块到
               const slots = (assistant.toolCalls ||= []),
                 last = slots.at(-1),
-                index = call.index ?? (last && call.id && last.id && call.id !== last.id ? slots.length : Math.max(0, slots.length - 1)),
+                // 数组可能有洞：index 乱序送到时（0、2、1），先建的那几件之间留着空位——回调拿到的 slot 可能是 undefined
+                byId = call.id ? slots.findIndex(slot => slot?.id === call.id) : -1,
+                index =
+                  call.index ?? (byId >= 0 ? byId : at > 0 || (last && call.id && last.id) ? slots.length : Math.max(0, slots.length - 1)),
                 slot = (slots[index] ||= { id: "", name: "", arguments: "" }),
                 name = call.function?.name;
               if (call.id) slot.id = call.id;
@@ -619,9 +646,6 @@ function normalizeContent(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return content.map(part => part?.text || part?.content || "").join("");
   return "";
-}
-function extractContent(data) {
-  return normalizeContent(data?.choices?.[0]?.message?.content);
 }
 // 报错的原话（中文）：存进消息、步骤的用它，显示时再 tr；直接显示的用 friendlyError
 function bridgeErrorText(message) {

@@ -19,42 +19,6 @@ function parentDir(path) {
   const at = String(path).lastIndexOf("/");
   return at < 0 ? "" : path.slice(0, at);
 }
-function archiveFileUrl(path, download = false, root = archiveDir()) {
-  return `${apiBase}/api/archive/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
-}
-// 正文链接里的本地路落在哪：相对路相对这段对话的落脚处（绑了目录是它，没绑是卷宗）；绝对路在落脚处之内的折成相对，
-// 之外的以它所在那层为根。sandbox:/、/mnt/… 这类不是本机的路，返回 null
-/** @param {string} raw @returns {{ root: string, path: string } | null} */
-function localLinkTarget(raw, conversation = currentConversation()) {
-  let text = String(raw || "")
-    .trim()
-    .replace(/[?#].*$/, "");
-  try {
-    text = decodeURIComponent(text);
-  } catch {}
-  text = text.replace(/^file:\/*/i, "").replace(/\\/g, "/");
-  const root = workRoot(conversation);
-  if (/^[a-z]:\//i.test(text)) {
-    const base = root.replace(/\\/g, "/").replace(/\/+$/, "");
-    if (base && text.toLowerCase().startsWith(`${base.toLowerCase()}/`)) return { root, path: text.slice(base.length + 1) };
-    const cut = text.lastIndexOf("/");
-    return { root: text.slice(0, cut), path: text.slice(cut + 1) };
-  }
-  if (/^[a-z][\w+.-]*:|^\//i.test(text)) return null;
-  return { root, path: text.replace(/^(?:\.\/)+/, "") };
-}
-// 先问一声在不在：直接下一个不存在的件，浏览器只会报一行「下载失败」
-async function archiveFileExists({ root, path }) {
-  const control = new AbortController();
-  try {
-    const response = await fetch(archiveFileUrl(path, false, root), { signal: control.signal });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    control.abort();
-  }
-}
 async function refreshArchive() {
   // 正取着的那一趟可能早于刚才的改动（新建夹、改名、收入）：复用它就拿回改动前的列表，重画时冲掉新夹与改名框。
   // 排一趟在它后面再取，几处同时要的并成这一趟
@@ -99,11 +63,11 @@ const FIGURE_MARKS = {
   video: `<path class="f" d="M6.4 9.4L10.4 12.2L6.4 15ZM3 8h1.2v1.2H3zM3 10.9h1.2v1.2H3zM3 13.8h1.2v1.2H3zM12.1 8h1.2v1.2h-1.2zM12.1 10.9h1.2v1.2h-1.2zM12.1 13.8h1.2v1.2h-1.2z"/>`,
   zip: `<path class="m" d="M8.2 1.2V3M8.2 4.4V6.2M8.2 7.6V9.4M7 10.6H9.4V14.4H7Z"/>`
 };
-/** 一件的小图：图片就是它自己的缩略，别的按类画记号 */
-function fileFigure(name, path = "") {
+/** 一件的小图：图片就是它自己的缩略（file 是那件文件），别的按类画记号 */
+function fileFigure(name, file = "") {
   const figure = fileKind(name).figure;
-  if (figure === "image" && path)
-    return `<span class="fi fi-thumb" aria-hidden="true"><img src="${escapeHtml(archiveFileUrl(path))}" alt="" loading="lazy"></span>`;
+  if (figure === "image" && file)
+    return `<span class="fi fi-thumb" aria-hidden="true"><img src="${escapeHtml(localFileUrl(file))}" alt="" loading="lazy"></span>`;
   return `<svg class="fi" data-figure="${figure}" viewBox="0 0 16 20" aria-hidden="true"><path class="body" d="M1 .5H11L15.5 5V19.5H1Z"/><path class="fold" d="M11 .5V5H15.5Z"/>${FIGURE_MARKS[figure] || ""}</svg>`;
 }
 function caseFigure() {
@@ -140,7 +104,7 @@ function libraryNameCell(item, where = "") {
 function libraryRowHtml(file, showDir = true) {
   const path = escapeHtml(file.path),
     renaming = libraryRenaming === file.path;
-  return `<div class="strip file" data-library-disk="${path}" data-library-item="${path}" draggable="${!renaming}" tabindex="0"><span>${fileFigure(file.name, file.path)}</span>${libraryNameCell(
+  return `<div class="strip file" data-library-disk="${path}" data-library-item="${path}" draggable="${!renaming}" tabindex="0"><span>${fileFigure(file.name, archiveFile(file.path))}</span>${libraryNameCell(
     file,
     showDir ? parentDir(file.path) : ""
   )}<span>${formatFileSize(file.size)}</span><span class="strip-date"><span class="strip-when">${escapeHtml(formatDay(file.modifiedAt))}</span><span class="strip-acts"><button type="button" data-library-action="view">${t(`预览`)}</button><button type="button" data-library-action="download">${t(`下载`)}</button><button type="button" data-library-action="rename">${t(`改名`)}</button><button type="button" class="danger" data-library-action="remove">${t(`删除`)}</button></span></span></div>`;
@@ -459,7 +423,7 @@ async function placeFromArchive(path) {
   if (!canPlaceAttachment(entry.size)) return;
   const key = draftKey();
   try {
-    const response = await fetch(archiveFileUrl(path), { signal: AbortSignal.timeout(60000) });
+    const response = await fetch(localFileUrl(archiveFile(path)), { signal: AbortSignal.timeout(60000) });
     if (!response.ok) throw Error(t("取回失败"));
     const blob = await response.blob(),
       file = new File([blob], entry.name, { type: blob.type || "", lastModified: Date.parse(entry.modifiedAt) || Date.now() });
@@ -505,7 +469,9 @@ function bindLibraryEvents() {
       images = [...$("#libraryGrid").querySelectorAll("[data-library-disk]")]
         .map(item => /** @type {HTMLElement} */ (item).dataset.libraryDisk)
         .filter(item => fileKind(item).group === "image");
-    fileKind(path).group === "image" ? openArchiveImage(path, trigger, archiveDir(), images) : void openFileViewer(path, "", trigger);
+    fileKind(path).group === "image"
+      ? openArchiveImage(path, trigger, images)
+      : void openFileViewer({ file: archiveFile(path) }, "", trigger);
   };
   $("#libraryGrid").addEventListener("click", e => {
     if (e.target.closest(".strip-rename")) return;
@@ -514,8 +480,8 @@ function bindLibraryEvents() {
     if (button && row) {
       const path = row.dataset.libraryItem,
         action = button.dataset.libraryAction;
-      if (action === "view") void openFileViewer(path, "", button);
-      else if (action === "download") downloadArchiveFile(path);
+      if (action === "view") void openFileViewer({ file: archiveFile(path) }, "", button);
+      else if (action === "download") downloadFile(archiveFile(path));
       else if (action === "rename") startLibraryRename(path);
       else if (action === "remove") void removeArchiveItem(path);
       return;
@@ -641,19 +607,15 @@ function bindLibraryEvents() {
     if (files.length) void addFiles(files);
   });
   // 正文里指向本地文件的链接（模型写的「[报告](报告.md)」）：页面上没有那样的路，点了打开预览（预览里可下载），与答末成品条同一个入口。
-  // 先按原路在这段对话的落脚处取，取不到（sandbox:/ 之类、或路写错了层）再到卷宗里找同名的那件。
   // 答复后又动了手，那段话退进行迹成了 .trail-note，帮手的回报是 .sub-report，同样认
   document.addEventListener("click", async event => {
     const link = event.target.closest(":is(.markdown, .trail-note, .sub-report) a[data-file]");
     if (!link) return;
     event.preventDefault();
     const name = link.dataset.file,
-      target = localLinkTarget(link.dataset.path);
-    if (target && (await archiveFileExists(target))) return void openFileViewer(target, name, link);
-    if (archiveEntries === null) await refreshArchive();
-    const entry = (archiveEntries || []).find(file => file.name === name || file.path === name);
-    if (!entry) return toast(t`找不到「${name}」`);
-    void openFileViewer(entry.path, "", link);
+      target = await locateRef(link.dataset.path, name, refAnchor(link));
+    if (!target) return toast(t`找不到「${name}」`);
+    void openFileViewer(target, name, link);
   });
   $("#messages").addEventListener("click", event => {
     const more = event.target.closest(".deliver-more");
@@ -661,11 +623,10 @@ function bindLibraryEvents() {
     const button = event.target.closest("[data-deliver-action]");
     if (!button) return;
     const row = /** @type {HTMLElement|null} */ (button.closest("[data-deliver]")),
-      path = row?.dataset.deliver,
-      root = row?.dataset.root;
-    if (!path) return;
-    if (deliverableMissing({ path, root, name: "", size: 0 })) return toast(t("这件已从卷宗移除"));
-    if (button.dataset.deliverAction === "download") downloadArchiveFile(path, root || archiveDir());
-    else void openFileViewer(root ? { path, root } : path, "", button);
+      file = row?.dataset.deliver;
+    if (!file) return;
+    if (row.classList.contains("missing")) return toast(t("这件已从卷宗移除"));
+    if (button.dataset.deliverAction === "download") downloadFile(file);
+    else void openFileViewer({ file }, "", button);
   });
 }

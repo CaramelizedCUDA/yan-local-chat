@@ -4,11 +4,12 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const createLocks = require("./locks.js");
-const { sendJson, readJson, jsonRoute, errorText, sendFile, openWithSystem, receiveUpload } = require("../http.js");
+const { sendJson, jsonRoute, errorText, uniqueStamp, sendFile, openWithSystem, receiveUpload } = require("../http.js");
 const {
   SCRATCH_DIR,
   WORK_SKIP,
   resolveWorkdir,
+  resolveFile,
   describeFsError,
   resolveInside,
   pathIsInside,
@@ -21,12 +22,13 @@ module.exports = function createArchive({ archiveHome, playable, lockFile = crea
   // ---- 卷宗目录：页面上的卷宗即这一目录的视图。列出全部文件与子目录（页面逐层看、查找时平铺），收入 / 取出 / 挪动 / 移出都限定在目录内 ----
   const ARCHIVE_LIST_LIMIT = 3000,
     ARCHIVE_FILE_LIMIT = 256 * 1024 * 1024;
-  // 卷宗根：请求里带 root 就用它（须是完整限定的绝对路径，与工作目录同一套规矩），否则默认位置
-  async function archiveRoot(raw) {
+  // 卷宗根：请求里带 root 就用它（须是完整限定的绝对路径，与工作目录同一套规矩），否则默认位置。
+  // 不存在时只有真要往里放东西的（新建夹、收入）才建：读的请求建目录，随便问一个路径就在磁盘上留下空夹
+  async function archiveRoot(raw, { create = false } = {}) {
     const root = String(raw || "").trim() ? resolveWorkdir(raw) : archiveHome();
     const existing = await fs.promises.stat(root).catch(() => null);
     if (existing && !existing.isDirectory()) throw Error(`卷宗路径已被文件占用：${root}`);
-    if (!existing)
+    if (!existing && create)
       await fs.promises.mkdir(root, { recursive: true }).catch(error => {
         throw Error(describeFsError(error, root));
       });
@@ -146,11 +148,11 @@ module.exports = function createArchive({ archiveHome, playable, lockFile = crea
     try {
       let root, dir, name;
       const received = await receiveUpload(req, ARCHIVE_FILE_LIMIT, async head => {
-        root = await archiveRoot(head?.root);
+        root = await archiveRoot(head?.root, { create: true });
         // 点开头的（.gitignore、标题是「.NET 8」的导出）列卷宗时当隐藏项跳过，收进来就再也看不见、删不掉：去掉首尾的点与空格，与改名同一个规矩
         name = path.basename(String(head?.name || "").trim()).replace(/^[. ]+|[. ]+$/g, "") || "未命名文件";
         dir = await archiveDirOf(root, head?.dir);
-        return path.join(dir, `.yan-upload-${process.pid}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`);
+        return path.join(dir, `.yan-upload-${uniqueStamp()}.tmp`);
       }).catch(error => {
         throw error.tooLarge ? Error(`单个文件不超过 ${ARCHIVE_FILE_LIMIT / 1048576} MB`) : error;
       });
@@ -168,14 +170,13 @@ module.exports = function createArchive({ archiveHome, playable, lockFile = crea
       if (!res.headersSent) sendJson(res, 400, { error: failed(error) });
     }
   }
-  // 取出：GET /api/archive/file?path=…（&root=… 指定卷宗根），页面用它做缩略图、置于案上与下载；?download=1 时让浏览器另存
+  // 取出：GET /api/archive/file?file=<绝对路径>，页面用它做缩略图、预览、置于案上与下载；?download=1 时让浏览器另存。
+  // 一件文件只认一条绝对路：页面曾传根与根下的路两样，漏了根就悄悄到卷宗里找（见 src/13-files/15-refs.js）
   async function handleArchiveFile(req, res) {
     try {
       const query = new URL(req.url, "http://127.0.0.1").searchParams;
-      const root = await archiveRoot(query.get("root")),
-        file = archivePath(root, query.get("path"));
-      await assertNoEscapingLink(root, file);
-      const name = path.basename(file),
+      const file = resolveFile(query.get("file")),
+        name = path.basename(file),
         download = !!query.get("download");
       await sendFile(req, res, download ? file : await playable(req, file, name), { name, download });
     } catch (error) {
@@ -238,7 +239,7 @@ module.exports = function createArchive({ archiveHome, playable, lockFile = crea
   }, failed);
   // 新建夹：落在 dir 那一层；同名已有就另取「新建夹 (2)」
   const handleArchiveMkdir = jsonRoute(async body => {
-    const root = await archiveRoot(body.root),
+    const root = await archiveRoot(body.root, { create: true }),
       target = await placeFree(await archiveDirOf(root, body.dir), cleanName(body.name || "新建夹"), to => fs.promises.mkdir(to)).catch(
         error => {
           throw Error(describeFsError(error, String(body.name || "")));
@@ -248,10 +249,10 @@ module.exports = function createArchive({ archiveHome, playable, lockFile = crea
   }, failed);
   // 以本机程序打开：预览认不得的、或只看得到结构的，交给系统的默认程序看原样
   const handleArchiveOpen = jsonRoute(async body => {
-    const root = await archiveRoot(body.root),
-      { target } = await archiveItem(root, body.path);
-    openWithSystem(target);
-    return { opened: relPath(root, target) };
+    const file = resolveFile(body.file);
+    if (!(await fs.promises.stat(file).catch(() => null))) throw Error(`没有这一件：${file}`);
+    openWithSystem(file);
+    return { opened: file };
   }, failed);
   return {
     "POST /api/archive/list": handleArchiveList,

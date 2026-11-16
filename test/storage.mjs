@@ -3,6 +3,7 @@
 // 另一个浏览器头一回碰上这个根，两边的模型配置并起来；存储位置换到别处整份拷过去、再换回来用回原来的；导入旧版备份先按启动时同一套迁移规整
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { connect, check, sleep, PAGE, TMP, HOME, CHATS } from "./lib.mjs";
+import { shellCommand } from "./helpers/shell-command.mjs";
 const ELSEWHERE = `${TMP}/elsewhere`;
 const native = p => p.split("/").join(process.platform === "win32" ? "\\" : "/");
 const { send, evalJs, waitFor, close } = await connect();
@@ -172,6 +173,32 @@ check(
   busyMove.status === 400 && busyText.includes("正在作答") && !existsSync(busyTarget),
   `${busyMove.status} ${busyText.slice(0, 160)}`
 );
+// 后台指令还在跑（工作目录就在存储根里）：也不换——拷完它照旧往旧处写，新处永远缺这一截
+// 指令要跨平台：Mac 上没有 PowerShell，写 Start-Sleep 会立刻以 127 退出，这条就白测了（macOS 那组逮到过）
+const bgCommand = shellCommand("Start-Sleep -Seconds 30; 'done'", "sleep 30; echo done");
+const bgRun = await fetch(PAGE + "api/work/run", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ command: bgCommand, background: true, workdir: native(HOME) })
+});
+const bg = await bgRun.json();
+const bgTarget = `${TMP}/bg-move`;
+const bgMove = await fetch(PAGE + "api/store/move", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ parent: native(bgTarget) })
+});
+const bgText = await bgMove.text();
+await fetch(PAGE + "api/work/check", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ id: bg.id, key: bg.key, stop: true, wait: 3000 })
+});
+check(
+  "storage move waits while a background command is running",
+  bg.running === true && bgMove.status === 400 && bgText.includes("后台指令") && !existsSync(bgTarget),
+  `${bgRun.status} ${JSON.stringify(bg).slice(0, 80)} / ${bgMove.status} ${bgText.slice(0, 160)}`
+);
 await evalJs(`document.querySelector("#openSettings").click(); true`);
 await sleep(200);
 await evalJs(`document.querySelector('[data-tab="env"]').click(); true`);
@@ -321,12 +348,13 @@ await sleep(1500);
 t = Date.now();
 while (Date.now() - t < 6000 && (readConfig()?.profiles || []).length < 2) await sleep(150);
 const joined = await evalJs(
-  `(s => ({ profiles: s.profiles.map(p => p.id).sort().join(), memory: s.memory.items.map(m => m.id).sort().join() }))(__yanState())`
+  `(s => ({ profiles: s.profiles.map(p => p.id).sort().join(), memory: s.memory.items.map(m => m.category + ":" + m.text).join("|") }))(__yanState())`
 );
 check(
   "a second browser meeting this storage merges its own models and memory with the shared config",
   joined.profiles === "p1,p2" &&
-    joined.memory === "m1,m2" &&
+    // 记忆一类一项：两处都是「未分类」，并成一项、两句依次接起
+    joined.memory === "未分类:用户爱喝茶\n另一处记下的" &&
     (readConfig()?.profiles || [])
       .map(p => p.id)
       .sort()

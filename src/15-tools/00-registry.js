@@ -10,6 +10,8 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {AbortSignal} signal
  * @property {Set<string>} [offered] 这一轮交给模型的工具名：不在其中的一律不执行
  * @property {boolean} [lookup] 旁注：只查不改（按需给的 MCP 只放只读的几件）
+ * @property {Map<string, string>} [memory] 主答已读到的各类记忆版本，随成功写入或冲突回话更新
+ * @property {Map<string, string>} [memoryUpdates] 本批工具交回的版本，整批完成后才算模型读过
  *
  * @typedef {Object} OfferContext 此处给不给某件工具，看这几样
  * @property {Conversation} conversation
@@ -22,7 +24,7 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {boolean} [lookup] 旁注的一套：只查不改
  *
  * @typedef {{ ok: boolean, content: string, display: string, background?: boolean, images?: string[] }} ToolOutcome content 回给模型，display 写在标题行右侧；background：活在后台接着做，步骤由它自己收尾；images：交回的图（data: 地址），随工具结果给模型看
- * @typedef {{ url?: string, title?: string, read?: boolean, talk?: string, date?: string, memory?: string }} Source 答末「出处」的一条：网页、旧谈或记忆
+ * @typedef {{ url?: string, title?: string, read?: boolean, talk?: string, date?: string }} Source 答末「出处」的一条：网页或旧谈
  *
  * @typedef {Object} Tool
  * @property {string} name
@@ -36,7 +38,8 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {(parameters: Record<string, any>, ctx: OfferContext) => Record<string, any>} [params] 参数随处境改写（如枚举只列此模型认的几档）
  * @property {{ description: string, brief?: string, parameters: Record<string, any> }} [schema] 自带的说明与参数；不写则取 prompts/tools.js
  * @property {boolean} [parallel] 可与相邻的同类一起跑
- * @property {boolean} [sideEffect] 有副作用：参数 JSON 残缺就不执行；做过之后这一答里复用的结果作废；不写 digest 也照通用写法留痕
+ * @property {boolean | ((args: Record<string, any>) => boolean)} [sideEffect] 有副作用：参数 JSON 残缺就不执行；做过之后这一答里复用的结果作废；不写 digest 也照通用写法留痕。
+ *   按参数现算的写成函数（check_command 只有 stop 才算动了手），只对算作真的那几次生效；函数式的不自动带 digest
  * @property {boolean} [writes] 会在目录里出新文件：言里据此收成品
  * @property {true | ((args: Record<string, any>) => Record<string, any> | null)} [cache] 同一答里同样的参数直接复用结果（其间做过有副作用的一步就作废）；函数给出规范化后的参数，给 null 即这次不复用。
  *   只给「外头不会自己变」的：本机开发服务、带时间与随机数的代码，参数一样结果也会变，不该登记
@@ -69,8 +72,14 @@ const TOOLS = new Map();
 // 有副作用的必须留痕：下一问、续写时模型得知道自己已 POST 过、记过、传过话，不然再做一遍
 /** @param {Tool} tool */
 function defineTool(tool) {
-  if (tool.sideEffect && tool.digest === undefined) tool.digest = true;
+  if (tool.sideEffect === true && tool.digest === undefined) tool.digest = true;
   TOOLS.set(tool.name, tool);
+}
+// 这一步有没有副作用：登记的是 true，或按参数现算。看后台、翻旧谈这类读的一概不算，结束它、取消它才算
+/** @param {Tool | undefined} tool @param {Record<string, any>} [args] */
+function sideEffectOf(tool, args) {
+  if (!tool?.sideEffect) return false;
+  return typeof tool.sideEffect === "function" ? !!tool.sideEffect(args || {}) : true;
 }
 function toolLabel(name) {
   return TOOLS.get(name)?.label || name;
@@ -144,13 +153,15 @@ async function runTool(step, ctx) {
       display: "参数解析失败"
     };
   // 截断的参数救回来也不能拿去写：内容已经不全，写下去就是把文件写坏
-  if (parsed.truncated && tool.sideEffect)
+  if (parsed.truncated && sideEffectOf(tool, parsed.args))
     return {
       ok: false,
       content: t`调用 ${step.name} 的参数 JSON 不完整（多半是输出被最大长度截断），为安全起见没有执行。请把内容精简或分成几次写入（大文件先 write_file 写开头，再用 edit_file 追加），确保 arguments 是完整的 JSON。这件工具收的参数：${toolSchemaHint(step.name)}\n\n收到的原文（末尾 200 字）：…${step.arguments.slice(-200)}`,
       display: "参数不完整"
     };
   const { args, problems } = normalizeToolArguments(step.name, parsed.args);
+  // 这一步算不算动了手，按理顺后的参数定一次，记在步骤上：守、缓存作废、收尾重查都认这一个口径
+  step.effect = sideEffectOf(tool, args);
   if (problems.length)
     return {
       ok: false,
@@ -169,6 +180,8 @@ async function runTool(step, ctx) {
     if (stopped) return stopped;
     // 动文件的：这一答头一回动手前，先把目录此刻的样子记下，日后可退回（见 14-chat-engine/80-checkpoint.js）
     if (tool.writes && !ctx.lookup) await checkpointBefore(ctx);
+    // 上面几处都要等（接回行迹、跑守的测试、审查、记检查点），等的工夫里点了「止」就到此为止，不再动手
+    ctx.signal.throwIfAborted();
     const outcome = await tool.run(step, args, ctx);
     return step.reviewed?.ok ? { ...outcome, display: [outcome.display, "审准"].filter(Boolean).join(" · ") } : outcome;
   } catch (error) {
@@ -183,7 +196,11 @@ function toolCacheKey(step) {
   const cache = TOOLS.get(step.name)?.cache,
     parsed = cache ? parseToolArguments(step.arguments) : null;
   if (!parsed?.ok) return null;
-  const args = cache === true ? parsed.args : cache(parsed.args);
+  // 与 runTool 同一个口径：别名归位、定型之后才交给 cache 算键——拿原始参数算，query 写成别名、
+  // 给了数字或干脆没给，都会在 .trim() 上抛，把整答打断（search_web / fetch_page 就如此）
+  const { args: normalized, problems } = normalizeToolArguments(step.name, parsed.args);
+  if (problems.length) return null;
+  const args = cache === true ? normalized : cache(normalized);
   return args ? `${step.name}:${JSON.stringify(stableToolJson(args))}` : null;
 }
 function stableToolJson(value) {
@@ -204,7 +221,9 @@ function toolPresentation(step) {
     title: step.title || "",
     url: step.url || "",
     note: step.note || "",
-    results: step.results ? structuredClone(step.results) : null
+    results: step.results ? structuredClone(step.results) : null,
+    // 请示的答案跟着复用走：不搬的话，命中缓存的那一步在摘要里写成「用户未作答」、行迹里也看不到答案
+    ...(step.answers ? { answers: structuredClone(step.answers) } : {})
   };
 }
 // 把一批工具调用跑完，返回各步回给模型的结果，连同各步交回的图。相邻的可并发的一起跑（读、搜、翻网页、翻记忆彼此无关）；会改状态或要请示的按原顺序逐个来。
@@ -214,11 +233,13 @@ function toolPresentation(step) {
  * @param {Conversation} conversation
  * @param {Message} assistant
  * @param {boolean} [lookup] 旁注：只查不改
+ * @param {Map<string, string>} [memory]
  */
-async function runSteps(steps, conversation, assistant, signal, toolCache, offered, lookup = false) {
+async function runSteps(steps, conversation, assistant, signal, toolCache, offered, lookup = false, memory = undefined) {
   const outcomes = new Map(),
     images = [],
-    ctx = { conversation, assistant, signal, offered, lookup };
+    memoryUpdates = new Map(),
+    ctx = { conversation, assistant, signal, offered, lookup, memory, memoryUpdates };
   const runOne = async step => {
     // 一批里前一件跑着时按了停：后面排着的不再动手（写记忆、起请示都算动手）
     signal.throwIfAborted();
@@ -235,12 +256,18 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
     } else {
       outcome = await runTool(step, ctx);
       // 动过外头的（写了文件、跑了指令、调了接口）：先前查到的可能已经不是那样，一概作废
-      if (TOOLS.get(step.name)?.sideEffect) toolCache.clear();
+      if (step.effect ?? TOOLS.get(step.name)?.sideEffect === true) toolCache.clear();
       // 只缓存成功的：临时的 502、超时若也缓存，模型想重试只会一直拿到同一个旧失败
       else if (key && outcome.ok) toolCache.set(key, { outcome: structuredClone(outcome), presentation: toolPresentation(step) });
     }
+    // 不可中止的工具（http_request、长指令）在按了「止」之后才回来：结果不再记、状态不再改回——
+    // 停那一头的收束（10-send.js 的 haltJob、90-delegate.js 收工那段）会把没跑完的收成「已止」；
+    // 这一批由 runRounds 在 runSteps 返回后一并停住
+    if (signal.aborted) return;
     const remaining = MIN_TOOL_STATUS_MS - (performance.now() - started);
     if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+    // 凑显示时长的这一会儿里按了「止」：同样不再改回完成（haltJob 已把这一步收成「已止」）
+    if (signal.aborted) return;
     // 在后台接着做的（差遣）：这一步仍是进行中，做完由它自己收尾；先记一句「后台进行中」，下一问的行迹摘要里模型才知道它还没回来
     // 帮手快，上面凑够显示时长的那一会儿里就已交差：它收尾时记的结果不能被这句盖掉
     if (!outcome.background) step.status = step.skipped ? "skipped" : outcome.ok ? "done" : "error";
@@ -257,6 +284,8 @@ async function runSteps(steps, conversation, assistant, signal, toolCache, offer
     await Promise.all(steps.slice(i, j).map(runOne));
     i = j;
   }
+  // 同一轮预先拟好的两次写入，后一次还没看见前一次的结果，不能借它更新后的版本越过核对。
+  for (const [category, stamp] of memoryUpdates) memory?.set(category, stamp);
   return { outcomes, images };
 }
 // 生成结束（停止、出错或中断）时，还在转圈或等待确认的步骤一并收束，不留下永远转圈的卡片。

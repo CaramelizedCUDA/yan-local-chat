@@ -69,6 +69,8 @@ const stage = {
   trail: [],
   // 执事最近一步的时刻：地址行那两字「执事」在它歇手后再留一会儿
   lastAct: 0,
+  /** @type {Set<string>} 调过浏览器、这一答还没收尾的对话 */
+  usedBy: new Set(),
   actTimer: 0,
   // 输入法：正在组字（组字当中不挪隐藏输入框）、量光标的计时
   composing: false,
@@ -196,8 +198,9 @@ function stageMessage(message) {
   const params = message.params || {};
   if (message.method === "Target.targetCreated" || message.method === "Target.targetInfoChanged") {
     const info = params.targetInfo;
-    if (!stageTabType(info) || (stage.helperCtx && info.browserContextId === stage.helperCtx)) return;
-    if (stageNotTab(info)) return void stageDropTab(info.targetId);
+    // 空页后来才补出类型与地址：不再是标签时，要撤掉此前收进来的那一项。
+    if (!stageTabType(info) || (stage.helperCtx && info.browserContextId === stage.helperCtx) || stageNotTab(info))
+      return void stageDropTab(info.targetId);
     const fresh = !stage.tabs.has(info.targetId);
     stage.tabs.set(info.targetId, { title: info.title, url: info.url, ctx: info.browserContextId });
     // 模型新开了一页：跟过去。人用中键、Ctrl 点链接开的是后台的一页，与浏览器一样留在原处

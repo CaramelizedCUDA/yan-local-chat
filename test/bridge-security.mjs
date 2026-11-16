@@ -51,7 +51,7 @@ for (let i = 0; i < 40; i++) {
 // 总线：外站开不了事件流；本机别的端口的页面能开，但借总线转进去的请求照旧按它自己的来源过门禁，碰不到执事接口
 {
   const root = `${TMP}/cross-site-must-not-create`;
-  const url = `${BASE}/api/archive/file?root=${encodeURIComponent(root)}&path=missing.txt`;
+  const url = `${BASE}/api/archive/file?file=${encodeURIComponent(`${root}/missing.txt`)}`;
   for (const site of ["cross-site", "same-site"]) {
     const response = await fetch(url, { headers: { "Sec-Fetch-Site": site } });
     check(
@@ -129,6 +129,26 @@ for (const privatePath of [
   check(`private repository path ${privatePath} is hidden`, response.status === 404, String(response.status));
   await response.body?.cancel();
 }
+// 预览页的安全头按「这次交付的是哪一件」给：路径解码后、不分大小写地认（Windows 的文件系统本就分不出来）
+for (const previewPath of ["/preview.html", "/%70review.html", ...(win ? ["/PREVIEW.HTML"] : [])]) {
+  const response = await fetch(BASE + previewPath, { headers: { Origin: "http://127.0.0.1:9999" } });
+  const policy = response.headers.get("content-security-policy") || "";
+  check(
+    `preview policy for ${previewPath}`,
+    response.status === 200 && policy.includes("connect-src 'none'") && policy.includes("frame-ancestors 'self'"),
+    `${response.status} ${policy.slice(0, 40)}`
+  );
+  await response.body?.cancel();
+}
+// 写坏的百分号转义是请求本身的问题：静态路径 404、接口 400，都不该报成桥接的 500
+{
+  const badStatic = await fetch(BASE + "/%E0%A4%A");
+  check("malformed escape on a static path is a 404", badStatic.status === 404, String(badStatic.status));
+  await badStatic.body?.cancel();
+  const badApi = await fetch(BASE + "/api/%E0%A4%A");
+  check("malformed escape under /api/ is a 400", badApi.status === 400, String(badApi.status));
+  await badApi.body?.cancel();
+}
 // Origin 门禁
 let r = await post("/api/work/run", { workdir, command: "echo hi" }, { Origin: "null" });
 check("Origin: null cannot reach the work API", r.status === 403, `${r.status} ${JSON.stringify(r.data)}`);
@@ -147,6 +167,13 @@ r = await post(
 check("Origin: null cannot relay through the model endpoint either", r.status === 403, String(r.status));
 r = await post("/api/search", { query: "x" }, { Origin: "null" });
 check("Origin: null cannot use search either", r.status === 403, String(r.status));
+// 模型接口的地址由调用方给：别的本机端口不能借它往内网发请求。「本站」按此刻的端口认（这份测试跑在 YAN_PORT 换过的桥接上）
+for (const path of ["/api/chat", "/api/models", "/api/test", "/api/image"]) {
+  r = await post(path, { profile: { baseUrl: "http://192.168.1.1/v1", model: "x" } }, { Origin: "http://127.0.0.1:9999" });
+  check(`other local port cannot use ${path}`, r.status === 403, String(r.status));
+  r = await post(path, {}, { Origin: `http://127.0.0.1:${PORT}` });
+  check(`own origin reaches ${path} at the configured port`, r.status === 400, String(r.status));
+}
 r = await post("/api/work/prepare", { workdir }, { Origin: `http://127.0.0.1:${PORT}` });
 check(
   "own origin passes",
@@ -242,22 +269,24 @@ check(
 r = await upload("/api/archive/put", { name: "escaped.txt" }, "data:text/plain;base64,aGk=");
 check("archive put never overwrites: same name gets (2)", r.status === 200 && r.data.name === "escaped (2).txt", JSON.stringify(r.data));
 r = await upload("/api/archive/put", { name: "page.html" }, "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==");
-let f = await fetch(`${BASE}/api/archive/file?path=page.html`);
+let f = await fetch(`${BASE}/api/archive/file?file=${encodeURIComponent(`${ARCHIVE}/page.html`)}`);
 check(
   "archive html is served as plain text in a sandbox",
   f.status === 200 && /^text\/plain/.test(f.headers.get("content-type") || "") && f.headers.get("content-security-policy") === "sandbox",
   `${f.status} ${f.headers.get("content-type")}`
 );
 await upload("/api/archive/put", { name: "图.svg" }, "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=");
-f = await fetch(`${BASE}/api/archive/file?path=${encodeURIComponent("图.svg")}`);
+f = await fetch(`${BASE}/api/archive/file?file=${encodeURIComponent(`${ARCHIVE}/图.svg`)}`);
 check(
   "archive svg is served as an image, still in a sandbox",
   f.status === 200 && f.headers.get("content-type") === "image/svg+xml" && f.headers.get("content-security-policy") === "sandbox",
   `${f.status} ${f.headers.get("content-type")}`
 );
-f = await fetch(`${BASE}/api/archive/file?path=../link-outside/secret.txt`);
-check("archive file refuses ..", f.status === 404);
-f = await fetch(`${BASE}/api/archive/file?path=escaped.txt`, { headers: { Origin: "https://evil.example" } });
+f = await fetch(`${BASE}/api/archive/file?file=../link-outside/secret.txt`);
+check("archive file refuses a path that is not absolute", f.status === 404);
+f = await fetch(`${BASE}/api/archive/file?file=${encodeURIComponent(`${ARCHIVE}/escaped.txt`)}`, {
+  headers: { Origin: "https://evil.example" }
+});
 check("archive file refuses foreign origin", f.status === 403);
 r = await post("/api/archive/list", {});
 check(
@@ -281,13 +310,13 @@ r = await post("/api/archive/move", { path: "跑出去", name: "外层" });
 check("archive rename renames a folder", r.status === 200 && existsSync(`${ARCHIVE}/外层/里层`), `${r.status} ${r.data?.error}`);
 // 以本机程序打开：可执行的一类不开（对它们「打开」就是运行）；不存在的也不开
 await upload("/api/archive/put", { name: "run.bat" }, "data:text/plain;base64,ZWNobyBoaQ==");
-r = await post("/api/archive/open", { path: "run.bat" });
+r = await post("/api/archive/open", { file: `${ARCHIVE}/run.bat` });
 check(
   "opening with the local program refuses executables",
   r.status === 400 && /可执行/.test(r.data?.error),
   `${r.status} ${r.data?.error}`
 );
-r = await post("/api/archive/open", { path: "没有这件.docx" });
+r = await post("/api/archive/open", { file: `${ARCHIVE}/没有这件.docx` });
 check("opening with the local program needs the file to exist", r.status === 400, `${r.status} ${r.data?.error}`);
 r = await post("/api/archive/remove", { path: "外层" });
 check(
@@ -376,13 +405,21 @@ if (win) {
   for (let i = 0; i < 60 && count() < 2; i++) await new Promise(r => setTimeout(r, 150));
   abort.abort();
   await running;
-  await new Promise(r => setTimeout(r, 1200));
-  const after = count();
-  await new Promise(r => setTimeout(r, 1500));
+  // 中止到整棵树真被收掉要一会儿：桥接那头要起 taskkill，忙机器上这一下就慢（platform.js 另有 750 毫秒兜底）。
+  // 别在固定时刻取一次样——那会把中间的几拍当成「中止没生效」。等拍数自己停下来再判：连着一秒没新拍才算停住；
+  // 一直不停的话它自己会跑到 40 拍（整条指令走完，约十秒），那时判不过。
+  let after = count(),
+    quiet = 0;
+  for (let i = 0; i < 40 && quiet < 5 && after < 40; i++) {
+    await new Promise(r => setTimeout(r, 200));
+    const now = count();
+    quiet = now === after ? quiet + 1 : 0;
+    after = now;
+  }
   check(
     "aborting the request kills the running command (no more ticks after the abort)",
-    after > 0 && count() === after && after < 40,
-    `${after} → ${count()}`
+    after > 0 && after < 40 && quiet >= 5,
+    `${after} 拍后静了 ${quiet * 200}ms`
   );
 }
 // ---- 同一文件的并行修改按先后排队：两处 edit 同时到，两处改动都落地，不互相覆盖
@@ -775,6 +812,33 @@ check("screen: a harmless command passes", r.status === 200 && r.data.why === nu
     JSON.stringify(r.data).slice(0, 200)
   );
   other.close();
+}
+// 生图也经过同一条模型出站边界：上游可正常在本机，重定向却不能借道清掉言自己的草稿。
+{
+  const dir = `${ARCHIVE}/.草稿/生图重定向探针`,
+    marker = `${dir}/keep.txt`;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(marker, "只供隔离测试");
+  const relay = http
+    .createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(307, { Location: `${BASE}/api/archive/clean` });
+        res.end();
+      });
+    })
+    .listen(0, "127.0.0.1");
+  await new Promise(resolve => relay.once("listening", resolve));
+  try {
+    r = await post("/api/image", {
+      profile: { baseUrl: `http://127.0.0.1:${relay.address().port}/v1`, model: "image-probe" },
+      prompt: "山水"
+    });
+    check("生图上游重定向不能触发桥接受信操作", r.status === 403 && existsSync(marker), JSON.stringify(r.data));
+  } finally {
+    relay.closeAllConnections();
+    await new Promise(resolve => relay.close(resolve));
+  }
 }
 rmSync(ARCHIVE, { recursive: true, force: true });
 rmSync(WORK, { recursive: true, force: true });

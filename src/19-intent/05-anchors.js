@@ -42,12 +42,12 @@ function parseAnchor(raw, workdir = "") {
   return value ? { key: `${kind}:${value}` } : { problem: t`凭据「${text.slice(0, 80)}」写不对：${ANCHOR_KINDS.get(kind).problem}` };
 }
 /**
- * 无主改动：改过的文件里，没有哪一项（没弃的）的凭据罩着的——回归罩不到的盲区，也是副作用常藏的地方。.yan/ 下是言自己的簿记，不算
- * @param {Intent} intent @param {string[]} paths 改过的文件（目录内相对，或目录外的完整路径）
+ * 无主改动：改过的文件里，没有哪一项（没弃、没了结的）的凭据罩着的——回归罩不到的盲区，也是副作用常藏的地方。.yan/ 下是言自己的簿记，不算
+ * @param {Intent} intent @param {string[]} paths 改过的文件（目录内相对，或目录外的完整路径）@param {Set<string>} [closed]
  */
-function intentUnowned(intent, paths) {
+function intentUnowned(intent, paths, closed = intentClosed(intent)) {
   const anchors = Object.keys(intent.nodes)
-    .filter(id => !intentGone(intent, id))
+    .filter(id => !intentGone(intent, id) && !closed.has(id))
     .flatMap(id => intent.nodes[id].anchors)
     .map(anchorParts);
   return [...new Set(paths.map(path => intentPath(path)))].filter(
@@ -82,24 +82,36 @@ defineAnchor("file", {
   cadence: "round",
   read: async (conversation, values, signal) =>
     (await bridge("/api/work/prints", { ...workScope(conversation), paths: values }, signal)).prints || {},
-  covers: (value, path) => value === path
+  // 路不分大小写（intentPath 剥目录前缀时就是这么比的）：Windows 上模型写 README.md、盘上是 readme.md，不能算白报
+  covers: (value, path) => value.toLowerCase() === path.toLowerCase()
 });
 defineAnchor("dir", {
   hint: t("dir:目录（底下整片，新增删除也算）"),
-  normalize: (value, workdir) => intentPath(value, workdir).replace(/\/+$/, "") || ".",
+  // 空值别收成「.」：那等于罩住整个工作目录，收尾前对照的「改了而无凭据罩着」就从此静默失效；显式的「.」「./」照旧
+  normalize: (value, workdir) => {
+    const raw = String(value ?? "").trim();
+    return raw ? intentPath(raw, workdir).replace(/\/+$/, "") || "." : "";
+  },
   problem: t("要一个目录"),
   label: value => `${value}/`,
   cadence: "round",
   read: async (conversation, values, signal) =>
     (await bridge("/api/work/prints", { ...workScope(conversation), dirs: values }, signal)).dirs || {},
-  covers: (value, path) => value === "." || path.startsWith(`${value}/`)
+  covers: (value, path) => value === "." || path.toLowerCase().startsWith(`${value.toLowerCase()}/`)
 });
+// 探针与测试都是跑一条指令取个指纹：只收一行、三百字以内。超长的退回，不截断——
+// 截出来的前三百字是另一条指令，跑它多半不过，那一项就被钉在「测试不过」上（封印时就没过的不许平反，见 00-core.js）
+const ANCHOR_COMMAND_MAX = 300,
+  anchorCommand = value => {
+    const text = String(value ?? "").trim();
+    return /\n/.test(text) || text.length > ANCHOR_COMMAND_MAX ? "" : text;
+  };
 // 探针：比的是一条指令的输出（连同退出码）。跟着这段对话的档位走：问而后行里只自动跑明确只读的，别的这回不跑、不据它判；
 // 审而后行、径行照跑。超时给得短——每答开工都要跑，一条卡住的探针不该拖住整答
 defineAnchor("cmd", {
   hint: t("cmd:指令（比它的输出，宜选只读、输出稳定的）"),
-  normalize: value => (/\n/.test(value) ? "" : value.trim().slice(0, 300)),
-  problem: t("指令只能一行"),
+  normalize: anchorCommand,
+  problem: t("指令只能一行、三百字以内（更长的写成脚本文件再跑）"),
   label: value => `探针「${value}」`,
   cadence: "answer",
   read: (conversation, values, signal) =>
@@ -111,8 +123,8 @@ defineAnchor("cmd", {
 // 跟探针一样随档位：问而后行里只自动跑明确只读的。超时给得宽；改过文件的那一答收尾前会重跑（见 10-store.js 的 intentGate）
 defineAnchor("test", {
   hint: t("test:指令（只比过没过：退出码为 0 即过）"),
-  normalize: value => (/\n/.test(value) ? "" : value.trim().slice(0, 300)),
-  problem: t("指令只能一行"),
+  normalize: anchorCommand,
+  problem: t("指令只能一行、三百字以内（更长的写成脚本文件再跑）"),
   label: value => `测试「${value}」`,
   cadence: "answer",
   read: (conversation, values, signal) =>

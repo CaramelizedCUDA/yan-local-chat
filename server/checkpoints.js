@@ -5,6 +5,9 @@
 //   检查点/<目录短码>/索引.json         上回见过的 路径 → [大小, 修改时刻, 哈希]：大小、时刻都没变的不重读，第二回起只读变了的
 // 不进的：列目录、检索也不钻的那几类（node_modules、.git、dist……，见 work/paths.js 的 WORK_SKIP），.gitignore 里写了的，链接，
 // 存储根本身（工作目录把它包在里面时）；.git/info/exclude 与 .gitignore 同样认。读不了的文件（被占着）记一笔「不明」，退回时不动它——不能因为没读到就当它不该在。
+// 忽略的也记一笔「不明」：这一答可能改了忽略规则，那一刻忽略的（.env、数据集）此刻露了出来，它们没进快照也恢复不了，不能当这一答新加的删掉。
+// 只一件例外：.yan/ 里的意（见 work/paths.js 的 INTENT_PATH）。仓库的 .gitignore 多写着 .yan/，可意是任务状态，
+// 退回代码时它得跟着退（10-31 定）；.yan/ 下别的照旧忽略，日志、探针、目录记忆不往快照里搬
 // 只管目录里的文件：指令写到目录之外的、MCP 改的远端，都退不了
 "use strict";
 const fs = require("node:fs");
@@ -13,7 +16,7 @@ const crypto = require("node:crypto");
 const { pipeline } = require("node:stream/promises");
 const { Transform } = require("node:stream");
 const { jsonRoute, errorText, writeAtomic, readJsonFile, fileHash } = require("./http.js");
-const { WORK_SKIP } = require("./work/paths.js");
+const { WORK_SKIP, INTENT_PATH } = require("./work/paths.js");
 
 const KEY = /^[\w-]{1,80}~[\w-]{1,80}$/;
 
@@ -83,8 +86,8 @@ function ignored(rules, rel, dir) {
   return out;
 }
 
-/** @param {{ home: () => string, skip?: () => string[] }} options */
-module.exports = function createCheckpoints({ home, skip = () => [] }) {
+/** @param {{ home: () => string, skip?: () => string[], deleted?: (id: string) => boolean }} options */
+module.exports = function createCheckpoints({ home, skip = () => [], deleted = () => false }) {
   const same = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
   /** @param {string} dir */
   const storeAt = dir => ({ dir, objects: path.join(dir, "对象"), book: path.join(dir, "册"), index: path.join(dir, "索引.json") });
@@ -102,6 +105,9 @@ module.exports = function createCheckpoints({ home, skip = () => [] }) {
   // 同一个目录一回只办一件（两段对话同绑一个目录、同时动手）：索引、对象都不至于互相踩
   /** @type {Map<string, Promise<any>>} */
   const queues = new Map();
+  // 删除只作废当时在途的拍摄；恢复同一 id 后的新拍摄不受牵连。
+  /** @type {Set<{ prefix: string, discarded: boolean }>} */
+  const taking = new Set();
   function serial(store, task) {
     const before = queues.get(store.dir) || Promise.resolve(),
       run = before.catch(() => {}).then(task);
@@ -149,10 +155,17 @@ module.exports = function createCheckpoints({ home, skip = () => [] }) {
       throw error;
     }
   }
-  // 走一遍目录：每件文件交给 visit（拿到相对路径与 stat），返回这一层的条目；跳过的与读不了的照上面的规矩
+  // 走一遍目录：每件文件交给 visit（拿到相对路径与 stat），返回这一层的条目；跳过的与读不了的照上面的规矩。
+  // .yan/ 常被仓库的 .gitignore 整棵忽略（目录记忆与运行数据不随仓库提交），可意是任务状态：退回代码时它得跟着退。
+  // 所以意这一件不进「忽略」那一类——.yan 单为它进得去，其下别的照旧记「不明」、不下钻，日志、探针、记忆不会被拷进快照
+  const INTENT_DIR = INTENT_PATH.slice(0, INTENT_PATH.lastIndexOf("/"));
   async function walk(root, visit) {
     const skipped = skip().map(dir => path.resolve(dir));
-    const down = async (abs, rel, rules) => {
+    /** @param {boolean} sealed 这一层整棵被忽略、只为收意进来：除它以外一律记「不明」 */
+    const down = async (abs, rel, rules, sealed) => {
+      // 浏览的起点自己就是跳过的一处（工作目录选成了存储根本身）：整棵都不记——不这么判，
+      // 「检查点/」「对话/」会被自己照进快照，退回时把它们当作新增删掉
+      if (skipped.some(dir => same(dir, path.resolve(abs)))) return [];
       const own = rulesFor(abs, rel, rules),
         entries = (await fs.promises.readdir(abs, { withFileTypes: true })).sort((a, b) =>
           a.name < b.name ? -1 : a.name > b.name ? 1 : 0
@@ -161,29 +174,50 @@ module.exports = function createCheckpoints({ home, skip = () => [] }) {
       for (const entry of entries) {
         const full = path.join(abs, entry.name),
           sub = rel ? `${rel}/${entry.name}` : entry.name;
-        if (entry.isSymbolicLink() || skipped.some(dir => same(dir, full))) continue;
+        if (entry.isSymbolicLink() || skipped.some(dir => same(dir, full))) {
+          if (sub === INTENT_PATH) items.push(["x", entry.name]);
+          continue;
+        }
+        // 只为收意而进来的这一层：别的（记忆、探针、日志、浏览器配置）一律「不明」，不下钻
+        if (sealed && !(entry.isFile() && sub === INTENT_PATH)) {
+          items.push(["x", entry.name]);
+          continue;
+        }
         if (entry.isDirectory()) {
-          if (WORK_SKIP.has(entry.name) || ignored(own, sub, true)) continue;
+          if (WORK_SKIP.has(entry.name)) continue;
+          const shut = ignored(own, sub, true),
+            // 意还没创建也进去看一眼：确认它那一刻不存在，退回才能删掉这一答新建的。
+            reenter = shut && sub === INTENT_DIR;
+          if (shut && !reenter) {
+            items.push(["x", entry.name]);
+            continue;
+          }
           let inner;
           try {
-            inner = await down(full, sub, own);
+            inner = await down(full, sub, own, reenter);
           } catch {
             items.push(["x", entry.name]);
             continue;
           }
           items.push(["d", entry.name, inner]);
+          // 整棵被忽略、只为意进来的这一层，自己也要记一笔「不明」：只记了底下现有的几个兄弟，
+          // 日后 .gitignore 那条规则去掉、新露出来的兄弟（日志、探针）就会被当成这一答新加的删掉
+          if (reenter) items.push(["x", entry.name]);
         } else if (entry.isFile()) {
-          if (ignored(own, sub, false)) continue;
-          items.push(await visit(full, sub, entry.name));
+          items.push(ignored(own, sub, false) && sub !== INTENT_PATH ? ["x", entry.name] : await visit(full, sub, entry.name));
         }
       }
       return items;
     };
-    return down(root, "", []);
+    return down(root, "", [], false);
   }
   // ---------- 记下此刻 ----------
   async function take(rootDir, key) {
-    const store = storeOf(rootDir);
+    const store = storeOf(rootDir),
+      // 拍这张册的工夫里这段对话被删了（见 dropConversation）：写书之前再看一眼
+      prefix = key.slice(0, key.indexOf("~") + 1),
+      capture = { prefix, discarded: deleted(prefix.slice(0, -1)) };
+    taking.add(capture);
     return serial(store, async () => {
       const started = Date.now(),
         index = readJsonFile(store.index, {}),
@@ -210,6 +244,12 @@ module.exports = function createCheckpoints({ home, skip = () => [] }) {
       // 目录树自下而上存成对象：没变的子目录哈希不变
       const save = items => putObject(store, JSON.stringify(items.map(item => (item[0] === "d" ? ["d", item[1], save(item[2])] : item))));
       const rootHash = save(tree);
+      // 在途删除记在本次拍摄上，恢复对话也不会让旧拍摄重新落册。
+      // 晚到的请求认对话目录现有的删除记录，不靠任意时长猜它是不是已经恢复。
+      if (capture.discarded || deleted(prefix.slice(0, -1))) {
+        collect(store);
+        return { key, files, read, ms: Date.now() - started, discarded: true };
+      }
       fs.mkdirSync(store.book, { recursive: true });
       writeAtomic(
         path.join(store.book, `${key}.json`),
@@ -217,7 +257,7 @@ module.exports = function createCheckpoints({ home, skip = () => [] }) {
       );
       writeAtomic(store.index, JSON.stringify(next));
       return { key, files, read, ms: Date.now() - started };
-    });
+    }).finally(() => taking.delete(capture));
   }
   // ---------- 对照、退回 ----------
   // 册上那一刻：路径 → 哈希；不明的另记（退回时不碰）
@@ -241,11 +281,12 @@ module.exports = function createCheckpoints({ home, skip = () => [] }) {
     read(page.tree, "");
     return { files, unknown, dirs };
   }
-  // 此刻的目录：路径 → 哈希（大小、时刻与索引对得上的不重读）
+  // 此刻的目录：路径 → 哈希（大小、时刻与索引对得上的不重读），连同此刻有哪些夹
   async function presentOf(store) {
     const index = readJsonFile(store.index, {}),
-      files = new Map();
-    await walk(store.full, async (abs, rel, name) => {
+      files = new Map(),
+      dirs = new Set();
+    const tree = await walk(store.full, async (abs, rel, name) => {
       try {
         const stat = await fs.promises.stat(abs),
           seen = index[rel];
@@ -255,21 +296,62 @@ module.exports = function createCheckpoints({ home, skip = () => [] }) {
       }
       return ["f", name];
     });
-    return files;
+    const collectDirs = (items, rel) => {
+      for (const item of items)
+        if (item[0] === "d") {
+          const sub = rel ? `${rel}/${item[1]}` : item[1];
+          dirs.add(sub);
+          collectDirs(item[2], sub);
+        }
+    };
+    collectDirs(tree, "");
+    return { files, dirs };
   }
-  // 要动哪几件：changed 改回、removed（此刻没有）补回、added（那一刻没有）删去
+  // 要动哪几件：changed 改回、removed（此刻没有）补回、added（那一刻没有）删去。
+  // 夹只在底下一件文件也不牵涉时才单列（路径带 /）：空夹建了或删了，文件那几行管不到它
   async function changesOf(store, key) {
     const then = snapshotOf(store, key),
       now = await presentOf(store),
       changes = [];
     for (const [rel, hash] of then.files)
-      if (!now.has(rel)) changes.push({ path: rel, kind: "removed", hash });
-      else if (now.get(rel) !== hash) changes.push({ path: rel, kind: "changed", hash });
-    // 那一刻读不了的（被占着的文件、进不去的夹）连同其下的，此刻有也不删
-    const unclear = rel => [...then.unknown].some(item => rel === item || rel.startsWith(`${item}/`));
-    for (const rel of now.keys()) if (!then.files.has(rel) && !unclear(rel)) changes.push({ path: rel, kind: "added" });
+      if (!now.files.has(rel)) changes.push({ path: rel, kind: "removed", hash });
+      else if (now.files.get(rel) !== hash) changes.push({ path: rel, kind: "changed", hash });
+    // 那一刻读不了的（被占着的文件、进不去的夹）与忽略的，连同其下的，此刻有也不删
+    const unclear = rel => {
+      // 确实读过 .yan 这一层、意也没有单独记作不明：它的缺席是已知的，不能被父层的不明盖住。
+      if (rel === INTENT_PATH && then.dirs.has(INTENT_DIR) && !then.unknown.has(rel)) return false;
+      return [...then.unknown].some(item => rel === item || rel.startsWith(`${item}/`));
+    };
+    for (const rel of now.files.keys()) if (!then.files.has(rel) && !unclear(rel)) changes.push({ path: rel, kind: "added" });
+    const holds = (paths, dir) => [...paths].some(rel => rel.startsWith(`${dir}/`));
+    for (const dir of then.dirs)
+      if (!now.dirs.has(dir) && !holds(then.files.keys(), dir) && !holds(then.dirs, dir))
+        changes.push({ path: `${dir}/`, kind: "removed" });
+    for (const dir of now.dirs)
+      if (
+        !then.dirs.has(dir) &&
+        !unclear(dir) &&
+        !holds(now.files.keys(), dir) &&
+        !holds(now.dirs, dir) &&
+        // 底下只有忽略的（node_modules、.gitignore 写了的）不算空夹，删不得
+        !fs.readdirSync(path.join(store.full, ...dir.split("/"))).length
+      )
+        changes.push({ path: `${dir}/`, kind: "added" });
     changes.sort((a, b) => (a.path < b.path ? -1 : 1));
     return { changes, dirs: then.dirs };
+  }
+  // 补回、改回之前，从根往下逐层看那条路：那一刻的夹此刻成了链接（目录联接、符号链接）的拆掉链接、建回真夹——
+  // 不然 mkdir 与写入会顺着链接落到目录之外；成了文件的、或别的说不清的，宁可这一件不动
+  function realParent(root, rel) {
+    let dir = root;
+    for (const name of rel.split("/").slice(0, -1)) {
+      dir = path.join(dir, name);
+      const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
+      if (stat?.isSymbolicLink()) fs.unlinkSync(dir);
+      else if (stat && !stat.isDirectory()) throw Error("那一刻的夹此刻是一件文件");
+      if (!stat?.isDirectory()) fs.mkdirSync(dir);
+    }
+    return dir;
   }
   async function restore(rootDir, key) {
     const store = storeOf(rootDir);
@@ -278,26 +360,39 @@ module.exports = function createCheckpoints({ home, skip = () => [] }) {
         failed = [];
       let restored = 0,
         removed = 0;
-      for (const change of changes) {
-        const target = path.join(store.full, ...change.path.split("/"));
+      // 先删后补：文件被换成同名的夹（或反过来）时，占着那条路的先让开
+      for (const change of [...changes.filter(c => c.kind === "added"), ...changes.filter(c => c.kind !== "added")]) {
+        const rel = change.path.replace(/\/$/, ""),
+          target = path.join(store.full, ...rel.split("/"));
+        let temp = "";
         try {
           if (change.kind === "added") {
-            fs.rmSync(target, { force: true });
+            if (change.path.endsWith("/")) fs.rmdirSync(target);
+            else fs.rmSync(target, { force: true });
             removed += 1;
             // 删空了的夹，那一刻没有的一并删去（一层层往上，到根为止）
-            for (let rel = path.posix.dirname(change.path); rel !== "." && !dirs.has(rel); rel = path.posix.dirname(rel)) {
-              const dir = path.join(store.full, ...rel.split("/"));
+            for (let up = path.posix.dirname(rel); up !== "." && !dirs.has(up); up = path.posix.dirname(up)) {
+              const dir = path.join(store.full, ...up.split("/"));
               if (fs.readdirSync(dir).length) break;
               fs.rmdirSync(dir);
             }
+          } else if (change.path.endsWith("/")) {
+            realParent(store.full, change.path);
+            restored += 1;
           } else {
-            fs.mkdirSync(path.dirname(target), { recursive: true });
-            const temp = `${target}.yan-${process.pid}.tmp`;
+            const parent = realParent(store.full, rel),
+              stat = fs.lstatSync(target, { throwIfNoEntry: false });
+            if (stat?.isSymbolicLink()) fs.unlinkSync(target);
+            // 此刻成了夹：底下新出的已在上面删去，空了才让位；还剩东西（忽略的、读不了的）就不动它
+            else if (stat?.isDirectory()) fs.rmdirSync(target);
+            temp = path.join(parent, `.${path.basename(target)}.yan-${process.pid}.tmp`);
             fs.copyFileSync(objectPath(store, change.hash), temp);
             fs.renameSync(temp, target);
+            temp = "";
             restored += 1;
           }
         } catch (error) {
+          if (temp) fs.rmSync(temp, { force: true });
           failed.push(`${change.path}：${errorText(error, 80)}`);
         }
       }
@@ -328,12 +423,16 @@ module.exports = function createCheckpoints({ home, skip = () => [] }) {
   /** @param {string} conversation */
   async function dropConversation(conversation) {
     const prefix = `${String(conversation).replace(/[^\w-]/g, "")}~`;
-    if (prefix === "~" || !fs.existsSync(home())) return;
+    if (prefix === "~") return;
+    for (const capture of taking) if (capture.prefix === prefix) capture.discarded = true;
+    if (!fs.existsSync(home())) return;
     for (const code of fs.readdirSync(home())) {
-      const store = storeAt(path.join(home(), code)),
-        pages = fs.existsSync(store.book) ? fs.readdirSync(store.book).filter(name => name.startsWith(prefix)) : [];
-      if (!pages.length) continue;
+      const store = storeAt(path.join(home(), code));
+      // 册的名单要在同一个目录队列里取：首拍还没写册时账上先没有它，in-flight 的那张稍后写完，
+      // 这一回就得等它先落定再看一眼——不然删完才写出册来，那幅快照从此没人引用、也不会被回收
       await serial(store, async () => {
+        const pages = fs.existsSync(store.book) ? fs.readdirSync(store.book).filter(name => name.startsWith(prefix)) : [];
+        if (!pages.length) return;
         for (const name of pages) fs.rmSync(path.join(store.book, name), { force: true });
         collect(store);
       });

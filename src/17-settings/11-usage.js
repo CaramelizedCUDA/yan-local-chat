@@ -24,12 +24,13 @@ const USAGE_SHADES = [0.16, 0.32, 0.52, 0.74, 0.95],
   USAGE_CELL = 12,
   // 洇墨：粗噪声把边推毛，再晕一圈淡墨叠在下面
   USAGE_BLEED = `<defs><filter id="usageBleed" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".5" numOctaves="3" seed="3"/><feDisplacementMap in="SourceGraphic" scale="3.4" result="rough"/><feGaussianBlur in="rough" stdDeviation="1.35" result="blur"/><feComponentTransfer in="blur" result="halo"><feFuncA type="linear" slope=".6"/></feComponentTransfer><feMerge><feMergeNode in="halo"/><feMergeNode in="rough"/></feMerge></filter></defs>`;
-// 墨（token）是四类之和；生图另计张数，不并进总量
+// 墨（token）是当前四类之和；生图另计张数。旧记忆整理的原始账留在文件里，不再显示或计入合计。
 const usageInk = row => (row ? ["main", "helper", "side", "review"].reduce((sum, k) => sum + (Number(row[k]) || 0), 0) : 0);
 const usageValue = row => (usageKind ? Number(row?.[usageKind]) || 0 : usageInk(row));
 const usageAmount = (kind, n) => (kind === "image" ? t`${n} 张` : quotaAmount(n));
 const usageLocale = () => (LANG === "en" ? "en" : "zh-CN");
-// 浮签放在卡外：details 的内容层为了滑开设了 overflow: clip（见 90-motion-responsive.css），放里头指下面几行就被截掉
+// 浮签放在卡外、按视口定位（fixed，见 placeFloating）：details 的内容层为了滑开设了 overflow: clip（见 90-motion-responsive.css），
+// 放里头指下面几行就被截掉；设置页的遮罩带 backdrop-filter，是 fixed 的定位框，它铺满视口，坐标与视口一致
 function usageCardHtml() {
   return `<details class="profile-card usage-card" id="usageCard"${usageOpen ? " open" : ""}><summary class="profile-head"><strong class="profile-name">${t(`用量`)}</strong></summary><div class="usage-body" id="usageBody">${usageBodyHtml()}</div></details><div class="usage-tip hidden" id="usageTip"></div>`;
 }
@@ -129,21 +130,18 @@ function bindUsageCard() {
   });
   card.addEventListener("pointerover", e => {
     const cell = /** @type {HTMLElement} */ (e.target).closest("[data-usage-day]"),
-      chart = card.querySelector(".usage-chart"),
       tip = /** @type {HTMLElement} */ ($("#usageTip"));
-    if (!cell || !chart || !tip) return;
+    if (!cell || !tip) return;
     tip.innerHTML = usageTipHtml(cell.dataset.usageDay);
-    // 先现出来再量：藏着时没有定位父层、也没有宽
+    // 先现出来再量：藏着时没有宽高
     tip.classList.remove("hidden");
-    const host = tip.offsetParent;
-    if (!host) return;
-    // 落在那一点旁边：靠右的放左侧，免得出了卡；坐标按浮签的定位父层算（它随设置栏一起滚）
-    const base = host.getBoundingClientRect(),
-      box = chart.getBoundingClientRect(),
-      at = cell.getBoundingClientRect(),
-      right = at.left - box.left > box.width * 0.6;
-    tip.style.left = `${(right ? at.left - tip.offsetWidth - 8 : at.right + 8) - base.left + host.scrollLeft}px`;
-    tip.style.top = `${at.top - 12 - base.top + host.scrollTop}px`;
+    // 落在那一点旁边，在设置面板里右边放不下就放左边；上沿略高过那一点，首行与它齐
+    const at = cell.getBoundingClientRect();
+    placeFloating(tip, new DOMRect(at.x, at.y - 12, at.width, at.height), {
+      side: "beside",
+      gap: 8,
+      within: card.closest(".modal-panel")?.getBoundingClientRect()
+    });
   });
   card.addEventListener("pointerout", e => {
     if (!(/** @type {HTMLElement} */ (e.relatedTarget)?.closest?.("[data-usage-day]"))) $("#usageTip")?.classList.add("hidden");

@@ -1,5 +1,5 @@
-// 录（记忆）：提示只在启用时进；remember / replaces / recall / search_conversations / read_conversation；设置页可改可删；关闭后不再提供
-import { connect, check, sleep, PAGE, WORK, TMP } from "./lib.mjs";
+// 主模型自主维护记忆，无需另配模型；每问带最新版，设置开关与旧谈工具各自独立。
+import { connect, check, sleep, PAGE } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
 const mainDone = n =>
   `document.querySelectorAll('#messages .message.assistant').length === ${n} && [...document.querySelectorAll('#messages .message.assistant')].at(-1)?.dataset.status === "complete"`;
@@ -10,7 +10,7 @@ const lastText = () =>
 const memory = () => evalJs(`__yanState().memory`);
 await send("Page.navigate", { url: PAGE + "preview.html" });
 await sleep(600);
-// 预置一段旧对话，供 search_conversations / read_conversation 查
+// 预置一段旧对话，供查旧谈、翻旧谈
 const old = {
   id: "0123456789abcdef-0123-4567-89ab-0123456789ab",
   title: "旧谈一则",
@@ -20,24 +20,45 @@ const old = {
   forks: [],
   threads: [],
   messages: [
-    { id: "u1", role: "user", content: "请解释术语 X", createdAt: "2026-09-01T08:00:00.000Z", status: "complete" },
+    { id: "u1", role: "user", content: "请解释术语 X", timestamp: "2026-09-01T08:00:00.000Z", status: "complete" },
     {
       id: "a1",
       role: "assistant",
       content: "术语 X 的意思是旧谈里的秘密 OLDSECRET。",
-      createdAt: "2026-09-01T08:01:00.000Z",
+      timestamp: "2026-09-01T08:01:00.000Z",
       status: "complete"
     }
   ]
 };
+// 旧版一条一事：同类两条读入时并成一类。没有记忆专司配置，也能直接使用。
+const seed = [
+  {
+    id: "m0001",
+    text: "用户偏好中文交流",
+    category: "偏好",
+    createdAt: "2026-10-02T00:00:00.000Z",
+    updatedAt: "2026-10-02T00:00:00.000Z",
+    source: null
+  },
+  {
+    id: "m0002",
+    text: "用户偏好中文交流",
+    category: "偏好",
+    createdAt: "2026-10-03T00:00:00.000Z",
+    updatedAt: "2026-10-03T00:00:00.000Z",
+    source: { conversationId: "gone", title: "早没了的对话" }
+  }
+];
 await evalJs(
-  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 4, settings: { name: "测", theme: "light", inkMotion: "off", mode: "chat", activeProfileId: "p1", autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", temperature: .7, maxTokens: 8192, quota: "100k", usedTokens: 0, systemPrompt: "" }], conversations: [${JSON.stringify(old)}], library: [], drafts: {} })); true`
+  `localStorage.setItem("yan-chat-v1", JSON.stringify({ version: 6, settings: { name: "测", theme: "light", inkMotion: "off", mode: "chat", activeProfileId: "p1", autoTitle: false }, profiles: [{ id: "p1", source: "custom", name: "假模型", model: "fake", baseUrl: "http://127.0.0.1:8798/v1", apiKey: "k", maxTokens: 8192, quota: "100k", usedTokens: 0, systemPrompt: "" }], conversations: [${JSON.stringify(old)}], memory: { items: ${JSON.stringify(seed)} }, library: [], drafts: {} })); true`
 );
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
 check(
-  "memory defaults to enabled with no items",
-  await evalJs(`(m => !m || (m.enabled === true && m.items.length === 0))(__yanState().memory)`)
+  "old one-fact items of a category merge into one, without their source",
+  await evalJs(
+    `(m => m.items.length === 1 && m.items[0].category === "偏好" && m.items[0].text === "用户偏好中文交流" && !("source" in m.items[0]))(__yanState().memory)`
+  )
 );
 const sendMain = async (text, n, input = "#chatInput", button = "#chatSend") => {
   await evalJs(
@@ -45,166 +66,127 @@ const sendMain = async (text, n, input = "#chatInput", button = "#chatSend") => 
   );
   await waitFor(mainDone(n), 40000);
 };
+const openTalk = title =>
+  evalJs(
+    `[...document.querySelectorAll("#history [data-conversation]")].find(n => n.textContent.includes(${JSON.stringify(title)})).querySelector(".history-open").click(); true`
+  );
+const newChat = async () => {
+  await evalJs(`document.querySelector("#newChat").click(); true`);
+  await waitFor(`!document.querySelector("#welcome").classList.contains("hidden")`);
+};
+
 await sendMain("MEMORY go", 1, "#welcomeInput", "#welcome .send-trigger");
-const text = await lastText();
-check("memory hint in system prompt", text.includes("MEM|hint:yes"), text);
-check("remember → replaces merged into one entry", text.includes("已记入 [m") && text.includes("已更新 [m"), text);
-const mem = await memory();
 check(
-  "store holds exactly one merged item with source",
-  mem.items.length === 1 && mem.items[0].text === "用户偏好 PowerShell 而非 bash，且要求中文交流" && !!mem.items[0].source?.conversationId,
-  JSON.stringify(mem.items)
-);
-check("recall returns the merged item with its category", /▸ \[m[a-z0-9]+\] \d{4}-\d{2}-\d{2}｜偏好｜用户偏好 PowerShell/.test(text), text);
-check("an overlong item is sent back, not cut", text.includes("超过 2000 字") && (await memory()).items.length === 1, text);
-check("recall with no arguments lists the categories", text.includes("▸ 偏好（1 条，最近"), text);
-check("the item is filed under its category", (await memory()).items[0].category === "偏好");
-check(
-  "search_conversations finds the old talk, not the current one",
-  text.includes("「旧谈一则」共 2 条") && !text.includes("MEMORY go"),
-  text
-);
-check(
-  "read_conversation returns the old transcript",
-  text.includes("「旧谈一则」2026-09-01") &&
-    (await evalJs(
-      `[...document.querySelectorAll('#messages .tool-step')].some(s => s.dataset.status === "done" && s.textContent.includes("翻旧谈") && s.textContent.includes("旧谈一则"))`
-    )),
-  text
+  "memory rides in the system prompt by category; remember rewrites, adds and drops a category; search, read and recent work",
+  (await lastText()) === "MEM|body:yes|forget:no|rewrote:yes|added:yes|dropped:yes|search:yes|read:yes|recent:yes|self:no",
+  await lastText()
 );
 const labels = await evalJs(`[...document.querySelectorAll('#messages .tool-step .tool-label')].map(n => n.textContent).join("|")`);
-check("step cards labeled in the house style", labels === "记入|记入|翻记忆|查旧谈|翻旧谈|记入|翻记忆", labels);
-check("no approval was asked", await evalJs(`!document.querySelector('#messages .tool-step[data-status="pending"]')`));
-// 出处：翻过的记忆与旧谈列在回复底部，点开各归其处
+check("step cards labeled in the house style", labels === "记入|记入|记入|记入|查旧谈|翻旧谈|查旧谈", labels);
 const sources = await evalJs(
-  `(d => d ? { count: d.querySelector("summary small").textContent, cards: [...d.querySelectorAll(".source-card")].map(c => c.querySelector("strong").textContent + "|" + c.querySelector("small").textContent + "|" + (c.querySelector(".source-read") ? "read" : "")) } : null)([...document.querySelectorAll('#messages .message.assistant')].at(-1).querySelector(".source-stack"))`
+  `(d => d ? [...d.querySelectorAll(".source-card")].map(c => c.querySelector("strong").textContent + "|" + (c.querySelector(".source-read") ? "read" : "")) : null)([...document.querySelectorAll('#messages .message.assistant')].at(-1).querySelector(".source-stack"))`
 );
+check("sources list the old talk, read", JSON.stringify(sources) === JSON.stringify(["旧谈一则|read"]), JSON.stringify(sources));
+
 check(
-  "sources card lists the old talk (read) and the memory",
-  !!sources &&
-    sources.count === "2 条" &&
-    sources.cards[0] === "旧谈一则|旧谈 · 九月一日|read" &&
-    sources.cards[1] === "用户偏好 PowerShell 而非 bash，且要求中文交流|记忆|",
-  JSON.stringify(sources)
+  "the main model's writes are saved without a separate memory model",
+  (await memory()).items.length === 2 &&
+    (await memory()).items.some(i => i.category === "偏好" && i.text === "用户偏好中文交流\n用户偏好 PowerShell")
 );
-await evalJs(
-  `[...document.querySelectorAll('#messages .message.assistant')].at(-1).querySelector(".source-stack").open = true; document.querySelector('#messages [data-open-memory]').click(); true`
-);
-await sleep(300);
+await sendMain("MEMORY-SNAP", 2);
 check(
-  "memory card opens the memory settings tab",
-  await evalJs(
-    `!document.querySelector("#settingsModal").classList.contains("hidden") && document.querySelector(".tab-btn.active").dataset.tab === "memory"`
-  )
+  "the next question in the same chat carries the latest memory",
+  (await lastText()) === "SNAP|ps:yes|work:yes|zh:yes",
+  await lastText()
 );
-await evalJs(`document.querySelector("#closeSettings").click(); true`);
-await sleep(300);
-await evalJs(
-  `[...document.querySelectorAll('#messages .message.assistant')].at(-1).querySelector(".source-stack").open = true; document.querySelector('#messages [data-open-talk]').click(); true`
-);
-await sleep(400);
-check(
-  "talk card opens that conversation",
-  await evalJs(
-    `document.querySelector("#history .active, #history [aria-current]")?.textContent.includes("旧谈一则") || document.querySelector("#messages .message.assistant .markdown")?.textContent.includes("OLDSECRET")`
-  )
-);
-await evalJs(
-  `[...document.querySelectorAll("#history [data-id], #history .history-item")].find(n => n.textContent.includes("MEMORY go"))?.click(); true`
-);
-await sleep(400);
-// 设置页：记忆栏、改、删
+await newChat();
+await sendMain("MEMORY-SNAP", 1, "#welcomeInput", "#welcome .send-trigger");
+check("another chat also carries the latest memory", (await lastText()) === "SNAP|ps:yes|work:yes|zh:yes", await lastText());
+
+// 设置页：一类一份全文，可改、改空即删、改名并类
 await evalJs(`document.querySelector("#openSettings")?.click() || document.querySelector('[data-open-settings]')?.click(); true`);
 await sleep(200);
 await evalJs(`document.querySelector('.tab-btn[data-tab="memory"]').click(); true`);
 await sleep(200);
 check(
-  "memory tab renders with seal and count",
+  "memory tab renders with seal, counts and its own switch",
   await evalJs(
-    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && h.querySelector(".settings-meta")?.textContent === "1 / 324 条 · 1 类" && h.querySelectorAll(".memory-cat[data-memory-cat]").length === 1 && h.querySelector(".memory-cat.active") && h.querySelectorAll(".memory-item").length === 1 && !h.querySelector(".memory-item textarea"))(document.querySelector("#settingsContent"))`
+    `(h => h.querySelector(".settings-mark path") && h.querySelector("h2")?.textContent === "记忆" && /^2 类 · \\d+ 字$/.test(h.querySelector(".settings-meta")?.textContent) && h.querySelector(".setting-copy strong")?.textContent === "带进对话" && h.querySelectorAll(".memory-cat[data-memory-cat]").length === 2 && !h.querySelector(".memory-text"))(document.querySelector("#settingsContent"))`
   )
 );
 await evalJs(`document.querySelector('#settingsContent [data-memory-cat="偏好"]').click(); true`);
 await sleep(150);
-check("opening a category lists its items", await evalJs(`document.querySelectorAll("#settingsContent .memory-item").length === 1`));
-// 条目平时一行摘要，点开才摊开全文、露出来源与小画；点「改」才换成输入框
-await evalJs(`document.querySelector("#settingsContent .memory-row").click(); true`);
-await sleep(100);
 check(
-  "an item opens in place and shows its source conversation",
-  await evalJs(
-    `!!document.querySelector('#settingsContent .memory-item.open .memory-body') && !!document.querySelector('#settingsContent [data-memory-open]')`
-  )
+  "a category shows its whole text, read-only",
+  await evalJs(`document.querySelector("#settingsContent .memory-body")?.textContent === "用户偏好中文交流\\n用户偏好 PowerShell"`)
 );
 await shot("memory-settings.png");
-await evalJs(`document.querySelector("#settingsContent [data-memory-edit]").click(); true`);
-await sleep(100);
-await evalJs(
-  `(a => { a.value = "改过的记忆"; a.dispatchEvent(new Event("input")); })(document.querySelector("#settingsContent .memory-text")); true`
-);
-await sleep(400);
-check("editing the text saves", (await memory()).items[0].text === "改过的记忆");
-await evalJs(
-  `(a => { a.value = "长".repeat(2005); a.dispatchEvent(new Event("input")); })(document.querySelector("#settingsContent .memory-text")); true`
-);
 check(
-  "an overlong manual edit stays in the field and does not overwrite the saved memory",
-  (await memory()).items[0].text === "改过的记忆" &&
-    (await evalJs(
-      `(a => a.value.length === 2005 && !a.validity.valid && a.validationMessage.includes("2000"))(document.querySelector("#settingsContent .memory-text"))`
-    ))
-);
-await evalJs(`document.querySelector("#settingsContent [data-memory-edit]").click(); true`);
-check(
-  "an invalid edit cannot be completed",
-  await evalJs(`document.querySelector("#settingsContent .memory-text")?.value.length === 2005`)
-);
-await evalJs(
-  `(a => { a.value = "改过的记忆"; a.dispatchEvent(new Event("input")); })(document.querySelector("#settingsContent .memory-text")); true`
-);
-check("shortening the edit clears the error", await evalJs(`document.querySelector("#settingsContent .memory-text").validity.valid`));
-await evalJs(`document.querySelector("#addMemory").click(); true`);
-await sleep(100);
-await evalJs(
-  `(a => { a.value = "手写的一条"; a.dispatchEvent(new Event("input")); })(document.querySelector('#settingsContent .memory-item:last-child .memory-text') || [...document.querySelectorAll("#settingsContent .memory-text")].find(a => !a.value)); true`
-);
-await sleep(400);
-check("hand-written item added", (await memory()).items.length === 2 && (await memory()).items.some(i => i.text === "手写的一条"));
-await evalJs(`document.querySelector('#settingsContent .memory-item [data-memory-delete]').click(); true`);
-await sleep(200);
-check("delete removes one", (await memory()).items.length === 1);
-// 归入别类：摊开一条，点那枚小画弹出各类，另起一类即就地写名、回车落定
-await evalJs(`document.querySelector("#settingsContent .memory-row").click(); true`);
-await sleep(100);
-await evalJs(`document.querySelector("#settingsContent [data-memory-move]").click(); true`);
-await sleep(150);
-check(
-  "the category menu is the app's own pop, above the settings window",
+  "read-only memory uses an arrow cursor, including the category name",
   await evalJs(
-    `(p => !!p && getComputedStyle(p).zIndex === "60" && !!p.querySelector('[data-menu="new"]'))(document.querySelector(".chip-pop.floating"))`
+    `[...document.querySelectorAll("#settingsContent .memory-body, #settingsContent .memory-cat-name")].every(n => getComputedStyle(n).cursor === "default") && !document.querySelector("#memoryCatName")`
   )
 );
-await evalJs(`document.querySelector('.chip-pop.floating [data-menu="new"]').click(); true`);
+// 只有「修改」进入编辑；点正文仍只读，字可划选
+await evalJs(`document.querySelector("#settingsContent .memory-body").click(); true`);
 await sleep(100);
-await evalJs(
-  `(i => { i.value = "工作"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })(document.querySelector("#settingsContent input.memory-move")); true`
+check(
+  "clicking memory text keeps it read-only",
+  await evalJs(`!!document.querySelector("#settingsContent .memory-body") && !document.querySelector("#settingsContent .memory-text")`)
 );
+check(
+  "read-only memory text can still be selected for copying",
+  await evalJs(`(() => {
+    const body = document.querySelector("#settingsContent .memory-body");
+    if (!body) return false;
+    const selection = getSelection(), range = document.createRange();
+    range.selectNodeContents(body);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const selected = String(selection) === body.textContent;
+    selection.removeAllRanges();
+    return selected;
+  })()`)
+);
+await evalJs(`document.activeElement.blur(); document.querySelector("#editMemory").click(); true`);
+check(
+  "the modify button enables editing and focuses the text",
+  await evalJs(
+    `document.activeElement?.matches(".memory-text") && !!document.querySelector("#memoryCatName") && getComputedStyle(document.activeElement).cursor === "text"`
+  )
+);
+await evalJs(
+  `(a => { a.value = "用户偏好中文交流\\n改过的一行"; a.dispatchEvent(new Event("input")); })(document.querySelector("#settingsContent .memory-text")); true`
+);
+await sleep(400);
+check(
+  "editing the text saves",
+  (await memory()).items.some(i => i.category === "偏好" && i.text === "用户偏好中文交流\n改过的一行")
+);
+await evalJs(`document.activeElement.blur(); true`);
+await sleep(150);
+check(
+  "leaving the field goes back to read-only",
+  await evalJs(`!document.querySelector("#settingsContent .memory-text") && !!document.querySelector("#settingsContent .memory-body")`)
+);
+// 改名成已有的一类：并进去
+await evalJs(`document.querySelector("#editMemory").click(); true`);
+await evalJs(`(i => { i.value = "工作"; i.dispatchEvent(new Event("change")); })(document.querySelector("#memoryCatName")); true`);
 await sleep(200);
 check(
-  "an item can be filed under another category; the emptied one goes away",
-  (await memory()).items[0].category === "工作" &&
-    (await evalJs(
-      `[...document.querySelectorAll("#settingsContent .memory-cat span")].map(n => n.textContent).join() === "工作" && document.querySelectorAll("#settingsContent .memory-item").length === 1`
-    ))
+  "renaming to an existing category merges into it",
+  await evalJs(
+    `(m => m.items.length === 1 && m.items[0].category === "工作" && m.items[0].text === "用户在做言的记忆模块\\n用户偏好中文交流\\n改过的一行")(__yanState().memory)`
+  )
 );
-// 另起一类：写名回车即在新类里手记第一条；第一条没写就离开，这一类随之消失
+// 另起一类：写名回车即就地写全文；没写就离开，这一类随之消失
 await evalJs(`document.querySelector("#newMemoryCat").click(); true`);
 await evalJs(
   `(i => { i.value = "新类"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })(document.querySelector("#settingsContent input.memory-cat-new")); true`
 );
 await sleep(150);
 check(
-  "a new category opens with its first item being written",
+  "a new category opens with its text being written",
   await evalJs(
     `document.querySelector("#settingsContent .memory-cat.active span")?.textContent === "新类" && !!document.activeElement?.matches(".memory-text")`
   )
@@ -212,38 +194,47 @@ check(
 await evalJs(`document.activeElement.blur(); true`);
 await sleep(150);
 check(
-  "leaving its first item empty drops the new category",
+  "leaving it empty drops the new category",
   (await memory()).items.length === 1 &&
     (await evalJs(`![...document.querySelectorAll("#settingsContent .memory-cat span")].some(n => n.textContent === "新类")`))
 );
-await evalJs(`document.querySelector("#closeSettings").click(); true`);
-await sleep(300);
-// 同一轮里重复 recall 不复用缓存
-await sendMain("MEMORY-TWICE", 2);
-const twice = await lastText();
-check(
-  "second recall in the same turn sees the new entry",
-  twice.includes("没有相关条目 ▸ 已记入") && /▸ \[m[a-z0-9]+\] \d{4}-\d{2}-\d{2}｜杂记｜twice 关键词的记忆/.test(twice),
-  twice
+// 改空即删去这一类
+await evalJs(`document.querySelector("#editMemory").click(); true`);
+await sleep(100);
+await evalJs(
+  `(a => { a.value = ""; a.dispatchEvent(new Event("input")); })(document.querySelector("#settingsContent .memory-text")); true`
 );
-check("the system prompt names the categories", twice.includes("TWICE|cats:yes"), twice);
-check(
-  "no memory step was served from cache",
-  await evalJs(
-    `[...[...document.querySelectorAll('#messages .message.assistant')].at(-1).querySelectorAll('.tool-step .tool-meta')].every(n => !n.textContent.includes("复用"))`
-  )
+// 真正点「完成」：失焦到头部按钮时不重画，最终提交由按钮接手，不能把旧正文画回来。
+const doneAt = await evalJs(
+  `(r => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 }))(document.querySelector("#editMemory").getBoundingClientRect())`
 );
-await evalJs(`document.querySelector("#openSettings").click(); true`);
+for (const type of ["mouseMoved", "mousePressed", "mouseReleased"])
+  await send("Input.dispatchMouseEvent", { type, ...doneAt, ...(type === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) });
 await sleep(200);
+check(
+  "emptying a category deletes it",
+  (await memory()).items.length === 0 && (await evalJs(`!!document.querySelector("#settingsContent .memory-empty")`))
+);
+// 清空后同一对话下一问不再携带旧正文；先前打开过的另一对话也读取最新版。
+await evalJs(`document.querySelector("#closeSettings").click(); true`);
+await sendMain("MEMORY-SNAP", 2);
+check("deleting memory is visible on the next question", (await lastText()) === "SNAP|ps:no|work:no|zh:no", await lastText());
+await openTalk("MEMORY go");
+await sendMain("MEMORY-SNAP", 3);
+check("a previously opened chat also drops the old memory", (await lastText()) === "SNAP|ps:no|work:no|zh:no", await lastText());
+await evalJs(`document.querySelector("#openSettings")?.click() || document.querySelector('[data-open-settings]')?.click(); true`);
 await evalJs(`document.querySelector('.tab-btn[data-tab="memory"]').click(); true`);
-await sleep(200);
-// 关闭记忆：提示与工具都不再给
-await evalJs(`document.querySelector('[data-setting="memoryEnabled"][data-value="false"]').click(); true`);
-await sleep(200);
-check("toggle persists", (await memory()).enabled === false && (await memory()).items.length === 2);
+// 全局记忆独立开关：专司中没有记忆模型卡。
+await evalJs(`document.querySelector('[data-memory-enabled="false"]').click(); true`);
+check("turning memory off persists", await evalJs(`__yanState().settings.memoryEnabled === false`));
+await evalJs(`document.querySelector('.tab-btn[data-tab="duty"]').click(); true`);
+check("no memory duty remains", await evalJs(`!document.querySelector('[data-duty="memory"]')`));
 await evalJs(`document.querySelector("#closeSettings").click(); true`);
-await sleep(300);
-await sendMain("MEMORY-OFF", 3);
-const off = await lastText();
-check("disabled: no hint, no memory tools", off === "OFF|hint:no|tools:0", off);
-close();
+await sendMain("MEMORY-OFF", 4);
+check(
+  "off: no memory or memory writes; past chat tools stay available",
+  (await lastText()) === "OFF|body:no|memtools:0|talks:2",
+  await lastText()
+);
+
+await close();

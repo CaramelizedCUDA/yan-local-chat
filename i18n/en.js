@@ -36,6 +36,7 @@ var YAN_EN = {
   "本机对话存储失败，请先导出备份": "Failed to save chats locally. Export a backup first",
   "这段对话在另一处也写过，两边的内容已并在一起": "This chat was also edited elsewhere; both versions were merged",
   "有一段对话已在别处删除，此处随之移去": "A chat was deleted elsewhere and removed here too",
+  "这段在别处又有新的，没删": "This chat was updated elsewhere since you deleted it, so it was kept",
   "有 {0} 段对话已在别处删除，此处随之移去": "{0} {0|chat|chats} were deleted elsewhere and removed here too",
   "对话目录不可用，先存在浏览器里：{0}": "Chat folder unavailable, saving in the browser for now: {0}",
   附件存储不可用: "Attachment storage unavailable",
@@ -43,12 +44,14 @@ var YAN_EN = {
   附件存储已中止: "Attachment storage aborted",
   旧答派出的帮手已停下: "Subagents started by the old reply were stopped",
   "这一版派出的帮手还在做，做完再切": "Subagents from this version are still running. Switch when they finish",
+  这一版挂着的后台与定时已随切换收掉了: "Background jobs and timers on this version were stopped by the switch",
   上一个版本: "Previous version",
   下一个版本: "Next version",
 
   // ---- 通用小件 ----
   未填写地址: "No address",
   "{0} 秒": "{0}s",
+  "{0}在别处也改过，这里留着你正在改的那一份": "{0} was also changed elsewhere; the copy you were editing here is kept",
   分: "min",
   秒: "s",
   小时: "h",
@@ -68,7 +71,6 @@ var YAN_EN = {
   重来: "Reload",
   下载: "Download",
   全屏: "Fullscreen",
-  复制源码: "Copy source",
   正在载入交互内容: "Loading interactive content",
   "导出资源未能载入：{0}": "Could not load export resource: {0}",
   "言 · 交互作品": "Yan · Interactive",
@@ -177,8 +179,8 @@ var YAN_EN = {
   "思考 {0}": "Thinking {0}",
   接入模型: "Add model",
   思考深度: "Thinking depth",
-  当前模型: "Current model",
   此模型不认思考档位: "This model has no thinking levels",
+  再点一下退回默认: "Click again for default",
   模型设置: "Model settings",
 
   // ---- 侧栏对话列表 ----
@@ -226,6 +228,7 @@ var YAN_EN = {
   "{0}月{1}日 {2}": "{0}/{1} {2}",
   定时: "Timer",
   已叫过: "Fired",
+  "定时 {0} · {1} → {2}": "Timer {0} · {1} → {2}",
   不在等: "Not pending",
   时刻无效: "Invalid time",
   "缺 note": "Missing note",
@@ -292,7 +295,7 @@ var YAN_EN = {
   "{0} 步": "{0} {0|step|steps}",
   领命中: "Starting",
   等后台: "Waiting on background",
-  正在: "Running",
+  "正在 {0}": "{0}",
   "等后台 {0}": "Waiting on background {0}",
   已跳过: "Skipped",
   完成: "Done",
@@ -303,7 +306,6 @@ var YAN_EN = {
   展开输出: "Show output",
   收起输出: "Hide output",
   执行失败: "Failed",
-  查看这条记忆: "View this memory",
   记忆: "Memory",
   打开这段对话: "Open this chat",
   "旧谈{0}": "Past chat{0}",
@@ -328,7 +330,7 @@ var YAN_EN = {
   复制回报: "Copy report",
   主模型交的命: "Task from the lead agent",
   "不到 1 分钟": "Under 1 min",
-  "在跑 · {0}": "Running · {0}",
+  "进行中 · {0}": "Running · {0}",
   "约定 · {0}": "Scheduled · {0}",
   新对话: "New chat",
   当前: "Current",
@@ -373,6 +375,7 @@ var YAN_EN = {
   // 检查点：退回到一答开工前
   退回到这一答开工前: "Rewind files to before this reply",
   "作答中，稍后再退": "Still replying, rewind later",
+  "正在退回目录，稍后再发": "Rewinding the folder. Send later",
   "检查点读不出：{0}": "Couldn't read the checkpoint: {0}",
   "目录与这一答开工前一样，无须退回": "The folder already matches how it was before this reply",
   改回: "Revert",
@@ -395,36 +398,55 @@ var YAN_EN = {
   已止: "Stopped",
 
   // ---- 记忆 ----
-  打开来源对话: "Open source chat",
-  来源对话: "Source chat",
+  "每一问带上最新的整份记忆，模型自行决定记入、更新与忘记。记忆一类一份，要记便把那一类整份改过，行迹里写作「记入」。":
+    "Every question includes the latest full memory. The main model decides what to remember, update, or forget. Memory is kept as one text per category; the model rewrites that category, shown as “Remember” under Steps.",
+  "设置 → 记忆左列各类，右边是选中那一类的全文，点「修改」编辑，改空即删去这一类；分类名亦可改，改作已有之名即并为一类。关掉「带进对话」，便不带也不记，记忆仍在。":
+    "Settings → Memory lists categories on the left and the selected text on the right. Choose Modify to edit; empty text deletes the category. Renaming a category to an existing name merges them. Turning off Include in chats stops including and recording memory while keeping it saved.",
+  "查旧对话、读旧对话两件常给，与记忆开不开无关。": "Searching and reading past chats are always available, whether memory is on or off.",
+  "每一问带上最新记忆，由主模型决定记入、更新与忘记":
+    "Each question includes the latest memory; the main model decides what to remember, update, or forget",
+  记忆已变化: "Memory changed",
+  未写入: "Not saved",
+
   手记: "Manual",
+  尚无记忆: "No memory yet",
+  "这一类的记忆将被移除，无法撤销；对话不受影响。": "This category will be removed. This can't be undone; chats are not affected.",
+  "{0}没成，{1}：{2}": "{0} failed; {1}: {2}",
+  这一步照规则办: "this step follows the rules",
+  超时: "timed out",
+  审查模型没给出准或驳: "the review model gave neither approve nor deny",
+  "{0} 类 · {1} 字": "{0} {0|category|categories} · {1} characters",
+  "{0} 类记忆将被移除，无法撤销；对话不受影响。":
+    "{0} {0|category|categories} of memory will be removed. This can't be undone; chats are not affected.",
+  "只在某个目录成立的，执事记在那个目录的 `.yan/记忆.md`，在那里每一问都附着；不经专司，也不受这里的开关管。":
+    "What holds only in one folder is recorded by the agent in that folder's `.yan/记忆.md` and attached to every message there; it doesn't go through Duties and isn't affected by this switch.",
+  "、{0} 类记忆": ", {0} memory {0|category|categories}",
+  "已删去「{0}」": "Deleted “{0}”",
+  "「{0}」没有变": "“{0}” unchanged",
+  "已写入「{0}」": "Wrote “{0}”",
+  未变: "Unchanged",
+  新起: "New",
+  待落盘: "Not yet saved",
   记忆内容: "Memory content",
   修改: "Edit",
-  归入别类: "Move to category",
   另起一类: "New category",
   分类名: "Category name",
   "分类名；与已有分类同名即并为一类": "Category name; using an existing name merges them",
   手记一条: "Add a memory",
   删去此类: "Delete category",
-  "{0} / {1} 条": "{0} / {1}",
   " · {0} 类": " · {0} {0|category|categories}",
-  启用记忆: "Enable memory",
-  关闭后条目仍保留: "Entries are kept when turned off",
+  带进对话: "Brought into chats",
+  未带进对话: "Not brought into chats",
+  "记下 {0} 条": "{0} added",
+  "改 {0} 条": "{0} updated",
+  "记忆：{0}": "Memory: {0}",
   清空记忆: "Clear memory",
   开: "On",
   关: "Off",
-  尚无一条: "Nothing yet",
-  "已归入「{0}」": 'Moved to "{0}"',
-  "记忆最多 {0} 字，当前内容尚未保存，请缩短后再完成": "Memory is limited to {0} characters. Not saved yet; shorten it and try again",
-  "另起一类…": "New category…",
   新类名: "New category name",
-  "记忆已满 {0} 条，请先删去一些": "Memory is full ({0} {0|entry|entries}). Delete some first",
   "删去「{0}」这一类？": 'Delete the "{0}" category?',
-  "其中 {0} 条记忆将被移除，无法撤销；对话不受影响。":
-    "{0} {0|memory in it|memories in it} will be removed. This can't be undone; chats are not affected.",
   删去: "Delete",
   "清空记忆？": "Clear memory?",
-  "{0} 条记忆将被移除，无法撤销；对话不受影响。": "{0} {0|memory|memories} will be removed. This can't be undone; chats are not affected.",
   清空: "Clear",
   记忆已清空: "Memory cleared",
 
@@ -562,6 +584,7 @@ var YAN_EN = {
   未配: "Not set up",
   未填完: "Incomplete",
   "关，照规则": "Off: rules only",
+  最近的对话: "Recent chats",
   "游目骋怀，足以极视听之娱。": "The browser the model can use.",
   "温故而知新。": "What the model remembers across chats.",
   "清简为骨，纸墨为意。": "How to use Yan.",
@@ -604,17 +627,17 @@ var YAN_EN = {
   目录内: "Folder only",
   卷宗对模型可读: "Model can read Files",
   模型可翻阅卷宗里的文档: "The model can read documents in Files",
-  技能: "Skills",
+  Skill: "Skills",
   "{0} 份": "{0} {0|skill|skills}",
   "只凭点名 · 点此交模型自取": "Only when you pick it · Click to let the model use it",
   "模型自取 · 点此改为只凭点名": "The model may use it · Click to allow only when you pick it",
   "附带 {0} 件": "Bundled: {0} {0|file|files}",
   "余下 {0} 件 · 打开": "{0} more · Open folder",
-  "技能 · {0}": "Skill · {0}",
+  "Skill · {0}": "Skill · {0}",
   按名字查找: "Search by name",
-  查找技能: "Search skills",
-  没有匹配的技能: "No matching skills",
-  "尚无技能，可在设置 → 技能里写一份": "No skills yet. Write one in Settings → Skills",
+  "查找 Skill": "Search skills",
+  "没有匹配的 Skill": "No matching skills",
+  "尚无 Skill，可在设置 → Skill 里写一份": "No skills yet. Write one in Settings → Skills",
   新建一份: "New skill",
   尚无一份: "None yet",
   名字: "Name",
@@ -624,10 +647,10 @@ var YAN_EN = {
   正文: "Instructions",
   "正文：怎么做": "Instructions: how to do it",
   新的一份: "New skill",
-  技能要有名字: "A skill needs a name",
-  "删去技能「{0}」？": "Delete skill “{0}”?",
+  "Skill 要有名字": "A skill needs a name",
+  "删去 Skill「{0}」？": "Delete skill “{0}”?",
   "连同目录里的脚本与参考一并删去：{0}": "Its scripts and references go with it: {0}",
-  "技能「{0}」的说明没取到：{1}": "Couldn't load skill “{0}”: {1}",
+  "Skill「{0}」的说明没取到：{1}": "Couldn't load skill “{0}”: {1}",
   "已有一份叫「{0}」": "There's already a skill named “{0}”",
   '名字里不能有 < > : " / \\ | ? *，不以点开头，不以点或空格结尾，至多 64 字':
     "Names can't contain < > : \" / \\ | ? *, start with a dot, or end with a dot or space; 64 characters at most",
@@ -725,14 +748,18 @@ var YAN_EN = {
   "已取回 {0} 个模型": "Fetched {0} {0|model|models}",
   "接通中…": "Connecting…",
   "可用 · {0} ms": "Working · {0} ms",
+  "已接通，但接口的模型列表里没有 {0}": "Connected, but {0} isn't in the API's model list",
   "请先填写 Base URL": "Enter a Base URL first",
   新模型: "New model",
 
   // ---- 设置 · 备份 ----
   "正在收拢附件原件…": "Collecting attachments…",
   "言-备份-{0}.json": "yan-backup-{0}.json",
-  "（含 {0} 件附件原件）": " (with {0} {0|attachment|attachments})",
-  "备份已导出{0}；不含 API Key": "Backup exported{0}; API keys are not included",
+  "备份已导出（含 {0} 件附件原件{1}）；不含 API Key": "Backup exported (with {0} {0|attachment|attachments}{1}); API keys are not included",
+  "，{0} 件未能取到：{1}{2}": ", {0} could not be read: {1}{2}",
+  "备份已导出；不含 API Key": "Backup exported; API keys are not included",
+  "备份文件不完整，尾部在复制或下载时断掉了": "The backup is incomplete: it was cut short while being copied or downloaded",
+  "备份文件不完整，只恢复了能读到的部分：{0}": "The backup is incomplete; only the readable part was restored: {0}",
   "有 {0} 答另存的行迹没能取回，备份里缺它们的思绪与帮手经过":
     "{0} {0|reply's|replies'} stored trail could not be loaded; the backup lacks their reasoning and helper runs",
   "不是言的备份文件，或版本不兼容": "Not a Yan backup file, or an incompatible version",
@@ -740,11 +767,13 @@ var YAN_EN = {
   "、{0} 个预设": ", {0} {0|preset|presets}",
   "、{0} 个 MCP 服务（密钥需重填）": ", {0} {0|MCP server|MCP servers} (secrets need re-entering)",
   "、{0} 份草稿": ", {0} {0|draft|drafts}",
-  "、{0} 条记忆": ", {0} {0|memory|memories}",
   "，恢复 {0} 件附件原件": ", restored {0} {0|attachment|attachments}",
   "；备份不含附件原件，旧附件将显示为不可用": "; the backup has no attachments, so old ones will show as unavailable",
   "已导入 {0} 段对话、{1} 个模型{2}{3}{4}{5}{6}{7}{8}": "Imported {0} {0|chat|chats}, {1} {1|model|models}{2}{3}{4}{5}{6}{7}{8}",
   "导入失败：{0}": "Import failed: {0}",
+  "导入未能做完：{0}；已并入的部分留着了": "Import didn't finish: {0}. What was already merged is kept",
+  "导入未能做完：{0}；已并入的部分留在本页了，还没能写进存储目录（会自动重试）":
+    "Import didn't finish: {0}. What was already merged is kept in this page but not yet written to the storage folder (it will retry)",
 
   // ---- 设置 · 预设 ----
   预设: "Presets",
@@ -786,6 +815,7 @@ var YAN_EN = {
   准备中: "Setting up",
   已备好: "Ready",
   尚未准备: "Not set up",
+  "仅 Windows": "Windows only",
   "准备中…": "Setting up…",
   更新环境: "Update environment",
   准备环境: "Set up environment",
@@ -800,9 +830,10 @@ var YAN_EN = {
   "清空环境？": "Clear the environment?",
   "整个环境目录将被删除，已装的包需重新安装；对话、卷宗与配置不受影响。":
     "The whole environment folder will be deleted and packages must be reinstalled. Chats, Files and settings are not affected.",
-  "另装 {0}": "Extra: {0}",
 
   // ---- 设置 · MCP ----
+  "删除服务「{0}」？": 'Delete server "{0}"?',
+  "该服务将断开连接，配置将被移除。": "This server will be disconnected and its configuration removed.",
   "＋ 新增服务": "+ Add server",
   "收起 JSON": "Hide JSON",
   "以 JSON 编辑": "Edit as JSON",
@@ -900,6 +931,15 @@ var YAN_EN = {
   "解散分组「{0}」？": 'Ungroup "{0}"?',
   "组里的 {0} 段对话退回散列，不会删除。": "Its {0} {0|chat|chats} go back to the main list; nothing is deleted.",
   "此组尚无对话。": "This group has no chats.",
+  "删除「{0}」这一组？": 'Delete the "{0}" group?',
+  "组里的 {0} 段对话将连同附件一并移除，目录里的文件不动，无法撤销。":
+    "Its {0} {0|chat|chats} will be removed along with their attachments. Files in the folder stay untouched. This can't be undone.",
+  "另有 {0} 段正在另一页面作答，这回不动。": "{0} more are replying in another page and will be left alone this time.",
+  "另有 {0} 段置顶或已归入分组的对话，不在此组，也不动。":
+    "{0} {0|chat is|chats are} pinned or in a collection, outside this group, and will be left alone.",
+  "已删除 {0} 段对话": "Deleted {0} {0|chat|chats}",
+  "此组正在另一页面作答，暂不能删除": "This group is replying in another page and can't be deleted now",
+  这一组已没有对话: "This group has no chats left",
   解散: "Ungroup",
   设置: "Settings",
   "新建分组…": "New group…",
@@ -1008,6 +1048,18 @@ var YAN_EN = {
   关闭此页: "Close this page",
   "正在打开浏览器…": "Opening browser…",
   浏览器未开: "Browser not open",
+  "显示名称、数据存放位置与备份": "Display name, data location and backups",
+  配色与外观: "Colors and appearance",
+  "接入模型：接口、API Key、用量上限": "Connect models: endpoint, API key, usage limit",
+  "把提示词、模型和权限存成一套，开新对话时选用": "Save a prompt, model and permissions as a set to pick for new chats",
+  "模型能动手的边界：沙箱、指令权限、文件范围": "What the model may act on: sandbox, command permissions, file reach",
+  "给拟标题、审查、生图这几件事单独指定模型": "Assign separate models for titles, review and image generation",
+  "给模型备好 Python、Node 等运行工具": "Set up Python, Node and other tools for the model",
+  "接入外部服务，让模型多些工具可用": "Connect external services to give the model more tools",
+  "写好的专项做法，模型需要时取来照着做": "Written procedures the model fetches and follows when needed",
+  "模型用的浏览器，收在右侧一栏": "The model's browser, kept in a panel on the right",
+  "模型跨对话记住的事，可以查看和修改": "What the model remembers across chats; view and edit it",
+  言的使用说明: "How to use Yan",
   打开浏览器: "Open browser",
   没有开着的页: "No open pages",
   新建标签页: "New tab",
@@ -1109,7 +1161,8 @@ var YAN_EN = {
   言之有物: "Local chat and agent",
   字字留痕: "Every word kept",
   "图片、文档与代码文件 · 单件 {0}": "Images, documents and code · up to {0} each",
-  "当前为言 · 对谈": "Current mode: Chat",
+  "言 · 对谈": "Chat",
+  "行 · 执事": "Agent",
   另起一段对话: "New chat",
   查找对话: "Search chats",
   按标题或正文查找: "Search titles and messages",
@@ -1121,7 +1174,6 @@ var YAN_EN = {
   切换明暗: "Toggle light/dark",
   移除引文: "Remove quote",
   落墨于此: "Ask anything",
-  "新对话归入此组 · 撤去": "New chats go into this group · remove",
   发送: "Send",
   修改标题: "Edit title",
   卷宗里的位置: "Location in Files",
@@ -1130,7 +1182,6 @@ var YAN_EN = {
   对所选文字: "For the selected text",
   引为下一问的引文: "Quote in the next message",
   "就此处另开旁注，不入正文": "Open a side thread here, kept out of the main chat",
-  所在分组: "Group",
   当前上下文大小: "Current context size",
   回到旁注目录: "Back to side threads",
   移除这条旁注: "Remove this side thread",
@@ -1180,7 +1231,6 @@ var YAN_EN = {
   "写到输出上限 · 接着写": "Hit the output limit · continuing",
   "网络不稳 · 稍候接着写": "Network unstable · continuing shortly",
   "此模型的思考档位为 {0}，已改用「{1}」": 'This model\'s thinking levels are {0}; switched to "{1}"',
-  接口返回了错误: "The API returned an error",
   已停止: "Stopped",
   "此答写毕，余墨已尽；换个模型可续": "Reply finished and the token limit is reached; switch models to continue",
   "对话还短，不必压缩": "The chat is short; no need to compact",
@@ -1232,6 +1282,11 @@ var YAN_EN = {
   问接口: "HTTP request",
   "调接口 {0} → {1}": "Request {0} → {1}",
   "{0} 字": "{0} {0|char|chars}",
+  "…（跳过 {0} 行未改）": "… ({0} unchanged {0|line|lines} skipped)",
+  "…（前 {0} 字略）": "… (first {0} {0|char|chars} omitted)",
+  "…（后 {0} 字略）": "… (last {0} {0|char|chars} omitted)",
+  "…（中间 {0} 字略）": "… (middle {0} {0|char|chars} omitted)",
+  "…（{0} 字略）": "… ({0} {0|char|chars} omitted)",
   代码为空: "Empty code",
   出错: "Error",
   "后台 {0} · {1}{2}": "Background {0} · {1}{2}",
@@ -1320,14 +1375,11 @@ var YAN_EN = {
   内容为空: "Empty",
   过长: "Too long",
   已更新: "Updated",
-  记忆已满: "Memory full",
   已记入: "Saved",
   忘却: "Forget",
   未找到: "Not found",
   翻记忆: "Recall",
-  "{0} 类": "{0} {0|category|categories}",
   查旧谈: "Search past chats",
-  缺少关键词: "Missing query",
   "{0} 段": "{0} {0|chat|chats}",
   翻旧谈: "Read past chat",
   当前对话: "Current chat",
@@ -1437,6 +1489,8 @@ var YAN_EN = {
   "cmd:指令（比它的输出，宜选只读、输出稳定的）": "cmd:command (compares its output; pick a read-only command with stable output)",
   "test:指令（只比过没过：退出码为 0 即过）": "test:command (only pass or fail: exit code 0 passes)",
   指令只能一行: "Command must be one line",
+  "指令只能一行、三百字以内（更长的写成脚本文件再跑）":
+    "The command must be one line and at most 300 characters (write a longer one into a script file and run that)",
   "探针「{0}」": 'Probe "{0}"',
   "{0} {1} 回": "{0} {1}×",
   " 等 {0} 个": " and {0} more",
@@ -1489,6 +1543,8 @@ var YAN_EN = {
   "墨痕 {0}": "History {0}",
   "意 · {0}": "Intent · {0}",
   "意：进度 {0} / {1}，点开看图": "Intent: {0} / {1} settled, click to view",
+  "往事 {0}": "Past {0}",
+  "意：往事 {0} 件，点开看": "Intent: {0} past, click to view",
 
   // ---- 桥接回的话（页面在提示条、报错与状态行上照这几句换；桥接那头照旧写中文） ----
   缺少页面标识: "Missing page ID",
@@ -1600,15 +1656,26 @@ var YAN_EN = {
   "还没登录 ChatGPT：到「设置 → 模型」里点「登录」": "Not signed in to ChatGPT. Click Sign in under Settings → Models",
   "ChatGPT 的登录凭证没能换新：{0}": "Could not refresh the ChatGPT credentials: {0}",
   "ChatGPT 的登录已失效，请到「设置 → 模型」里重新登录": "The ChatGPT sign-in expired. Sign in again under Settings → Models",
+  "ChatGPT 的登录或存储位置已变化，请重试": "The ChatGPT sign-in or storage location changed. Please try again",
+  "存储位置已变化，请刷新页面后重试": "The storage location changed. Refresh the page and try again",
+  "配置尚未写入存储目录，稍后再换位置": "Settings have not been saved to storage yet. Try moving the storage later",
   授权未完成: "Authorization not completed",
   "列模型失败（{0}）": "Failed to list models ({0})",
   "上游接口返回 {0}": "The API returned {0}",
+  "上游正文开头的空白超过 {0} MB，无法判定响应格式，不再往下读":
+    "The API response starts with over {0} MB of whitespace; its format could not be determined, so reading stopped",
   "请填写 Base URL 和模型 ID": "Enter a Base URL and model ID",
   "请填写 Base URL": "Enter a Base URL",
   消息不能为空: "Message can't be empty",
   "工具定义过多：{0} 件，一次最多 {1} 件": "Too many tool definitions: {0}, at most {1} at a time",
   "连不上上游接口：{0}": "Can't reach the API: {0}",
   "上游连接中断：{0}": "API connection interrupted: {0}",
+  "上游回了整份 JSON，不是事件流（{0}）：这条中转多半不支持流式，可换一条支持流式的接口。前 200 字：{1}":
+    "The API returned a single JSON document, not an event stream ({0}). This relay probably doesn't support streaming; switch to one that does. First 200 characters: {1}",
+  "上游回的不是事件流，也读不出 JSON（{0}）。前 200 字：{1}":
+    "The API returned neither an event stream nor readable JSON ({0}). First 200 characters: {1}",
+  "上游回的不是事件流（{0}），正文超过 {1} MB，不再往下读。前 200 字：{2}":
+    "The API didn't return an event stream ({0}) and the body is over {1} MB, so reading stopped. First 200 characters: {2}",
   "必应（浏览器）": "Bing (browser)",
   搜索关键词不能为空: "Search query can't be empty",
   "搜索引擎暂时不可用：{0}": "Search engine unavailable: {0}",
@@ -1646,8 +1713,315 @@ var YAN_EN = {
     "This page isn't allowed to call the local agent API. Open Yan from the bridge address",
   不支持此请求: "Unsupported request",
 
+  // ---- 散落的界面字 ----
+  引用: "Quote",
+  已登录: "Signed in",
+  "{0} 回": "{0}×",
+  " 等 {0} 件": " · {0} in all",
+  " 等 {0} 回": " · {0}× in all",
+  键入: "Type",
+  点: "Dot",
+  圈: "Circle",
+  划: "Line",
+  一处: "a spot",
+  网页: "page",
+  "游目 · {0}.jpg": "Browser · {0}.jpg",
+  "游目 · {0}　{1}": "Browser · {0}　{1}",
+  "游目 · {0}　「{1}{2}」": "Browser · {0}　“{1}{2}”",
+  // ---- 设置 · 文档（src/17-settings/60-guide.js） ----
+  "‹ 目录": "‹ Contents",
+  "◆ 言 · 文档": "◆ Yan · Docs",
+  "卷{0}": "Part {0}",
+  "卷{0} · {1}": "Part {0} · {1}",
+  "‹ 卷{0} · {1}": "‹ Part {0} · {1}",
+  "卷{0} · {1} ›": "Part {0} · {1} ›",
+  眉批: "Note",
+  留意: "Note",
+  起步: "Getting started",
+  "接入模型，落笔初问": "Add a model, ask the first question",
+  "接入一个模型，便可落笔。": "Add one model and you can start writing.",
+  "设置 → 模型 → 接入模型：填显示名称、Base URL 与 API Key，点「获取列表」择定模型，亦可手填模型 ID；填毕以「测试连接」验一遍。各种接口的分别见「模型」一篇。":
+    "Settings → Model → Add model: fill in a display name, Base URL and API Key, then click “Fetch list” to pick a model, or type the model ID yourself; finish with “Test connection”. The API types are explained under “Models”.",
+  "API Key 只存于本机的 配置.json，导出的备份不含它。":
+    "The API Key is stored only in 配置.json on this machine; exported backups leave it out.",
+  落笔: "Writing",
+  "输入框里写下所问，Enter 寄出，Shift + Enter 换行；图片可径直粘贴。作答途中亦可补上一句，待模型说到落点时递上，不打断其思路；急时点那一步上的 ↵，当场递上。":
+    "Type in the input box; Enter sends, Shift + Enter adds a line, and images can be pasted straight in. While the model is answering you can add a line: it's handed over at the model's next stopping point without breaking its train of thought. If it's urgent, click ↵ on that step to hand it over right away.",
+  识顶栏: "The top bar",
+  "右上一笔墨是用量：未设上限记所耗，设了便是余墨，随用随减，近前方浮出数目。其左一笔半染的圆相，点之明暗互换。接了游目，自页顶垂下一幅立轴；正放着曲子，垂下一缕墨线坠一小圆相，是听音。作答途中网络不稳而重试、上下文将满而整理时，输入框上方的工作条会说一声。":
+    "The ink stroke at the top right is usage: with no limit it counts what's been spent; with a limit it shows tokens left, shrinking as you go, and hovering shows the number. The half-shaded circle to its left switches light and dark. With the browser on, a hanging scroll drops from the top of the page; while music plays, an ink thread with a small circle hangs down: that's Listen. When the network is shaky and a request is retried, or the context is nearly full and gets tidied, the status bar above the input box says so.",
+  "页面提示桥接未接通，多是桥接已退出（start.cmd 的窗口关了，或言.exe 起的桥接出错退了）。重新打开，下一回寄出时页面自会接上。":
+    "If the page says the bridge isn't connected, the bridge has most likely exited (the start.cmd window was closed, or the bridge started by 言.exe hit an error). Start it again and the page reconnects on the next send.",
+  "右下角「上下文」是下一问约送出多少 token，点之可撮要前文：此前的问答由模型撮要成一份（目标、事实、决定、改过的文件、待办），此后每一问只带这份撮要与其后的消息，页面上的记录仍在，只是折起。模型设置里填了上下文窗口，过七成半便自动撮要；没填则等接口回说放不下时再撮，想早些撮、省些墨，填小一点即可。":
+    "“Context” at the bottom right estimates how many tokens the next message will send; click it to summarize what came before. The model condenses the earlier exchange into one summary (goals, facts, decisions, changed files, to-dos), and from then on each message carries only that summary and what follows. The record on the page stays, just folded. If the model's context window is set, this happens automatically past 75%; if not, it waits until the API says the context won't fit. To summarize earlier and spend fewer tokens, set a smaller window.",
+  "首问之后模型自动拟题，略耗额度；手改过的标题不再覆盖。设置 → 通用可关。":
+    "After the first question the model writes a title, which costs a little quota; a title you've edited by hand is never overwritten. Turn this off in Settings → General.",
+  "接口、余墨与思考": "APIs, token limits and thinking",
+  "一个模型一张卡，接口、用量上限、思考档位与高级配置各自记着；输入框旁的模型菜单随时可换。":
+    "Each model gets its own card that remembers its API, usage limit, thinking level and advanced settings; switch models any time from the menu beside the input box.",
+  三种接口: "Three API types",
+  "**OpenAI 兼容**：多数服务与中转站，走 chat/completions。**Anthropic**：走 Messages API。**ChatGPT 订阅**：点「登录」，在浏览器里以 ChatGPT 账号授权，不填 Key，用量记在订阅上，可在 ChatGPT 的设置中查看、设限。":
+    "**OpenAI-compatible**: most services and relays, via chat/completions. **Anthropic**: via the Messages API. **ChatGPT subscription**: click “Sign in” and authorize with your ChatGPT account in the browser. No key needed; usage counts against the subscription and can be viewed and capped in ChatGPT's settings.",
+  "「用量上限」留空即不限，顶栏只记所耗；设了便是余墨，随用随减，耗尽即止。调高上限或换一个模型，便可在原处续写。":
+    "Leave “Usage limit” empty for no limit, and the top bar only counts what's spent. Set it and it becomes tokens left, shrinking as you go and stopping when it runs out. Raise the limit or switch models to continue where you left off.",
+  "点顶栏那一笔墨，模型一栏顶上是一年的用量：一日一点，墨越浓、点越大，那天用得越多；今天圈一道朱，指上一点见当日主答、帮手、旁注、审查、生图各多少。拟题与整理前文算在主答里，生图记张数。点下面一类只看那一类，再点回到总量。":
+    "Click the ink stroke in the top bar: the top of the Model tab shows a year of usage, one dot per day; the darker and larger the dot, the more was used. Today is circled in red. Hover a dot to see that day's replies, subagents, side threads, review and images. Titles and context summaries count as replies; images are counted per picture. Click a category below to see only it, and click again to return to the total.",
+  "模型菜单里「思考深度」一栏，指上即浮出各档。每个模型分别记住所选档位，换回来时照旧；栏上写「默认」时不带字段，由接口决定；再点一下选中的那档退回默认。所认的档位在选定模型时自动探测，探得不准可在高级配置中手填。":
+    "Hover “Thinking depth” in the model menu to see the levels. Each model remembers its own choice and keeps it when you switch back. When it says “Default”, no field is sent and the API decides; click the selected level again to go back to Default. Supported levels are detected when you pick the model; if detection is off, enter them by hand under Advanced.",
+  "**本机联网与文档工具**：检索、读网页、翻文档等，需接口支持 function calling，不支持的关掉即可。**temperature** 留空由接口定。**max_tokens** 只 Anthropic 接口有。**上下文窗口** 填了，过七成半便自动压缩前文。":
+    "**Local web and document tools**: search, reading web pages, reading documents and so on. They need an API with function calling; turn them off if it has none. Leave **temperature** empty to let the API decide. **max_tokens** exists only for Anthropic APIs. With a **context window** set, earlier context is summarized automatically past 75%.",
+  言与行: "Chat and Agent",
+  "对谈与执事，以目录为界": "A folder is the line between chat and agent",
+  "同一段对话，不绑目录是「言」，照常对谈；绑定目录是「行」，在其中读写文件、执行指令。":
+    "The same conversation is a chat (言) when no folder is bound, and an agent (行) once a folder is bound: then it reads and writes files and runs commands there.",
+  "未绑目录即为对谈。需要表格、文档、PDF 一类成品时，模型将其落入卷宗，答末列出「成品 n 件」，可预览，可下载。":
+    "With no folder bound it's a chat. When you need an output such as a spreadsheet, document or PDF, the model saves it to Files and lists “n outputs” at the end of its reply, ready to preview or download.",
+  "欢迎页点「目录」签，择一工作目录，此段对话便是执事：检索、读懂、修改、运行、验证，每一步皆记于行迹。":
+    "On the welcome page click the folder tag and pick a working folder, and the conversation becomes an agent: it searches, reads, edits, runs and verifies, and every step is recorded under Steps.",
+  "执事只在此目录内动手。若需触及目录之外，先于设置 → 工具看清沙箱与可及范围。":
+    "The agent works only inside this folder. If it needs to reach outside, first check the sandbox and file tool reach in Settings → Tools.",
+  请示与计划: "Questions and plans",
+  "下一步须你定夺时，模型自输入框上方浮出一张小表单请示，一页一题，可选可填，亦可跳过。执事做较长的事，先在行迹里列一份计划，随做随勾。":
+    "When the next step is your call, the model asks with a small form above the input box: one question per page; pick an option, type your own, or skip. For longer jobs the agent first lists a plan under Steps and ticks items off as it goes.",
+  依目录归组: "Grouped by folder",
+  "侧栏里绑定同一目录的对话归为一组，组首一方「工」印，左侧一道朱线标出范围；组首的「＋」在此目录另起一段。":
+    "In the sidebar, conversations bound to the same folder form a group, headed by a “工” seal with a red line down the left marking its extent; the “＋” at the head of the group starts a new conversation in that folder.",
+  权限沙箱: "Permissions and sandbox",
+  三档权限与沙箱之界: "Three permission levels, and where the sandbox draws the line",
+  "指令在你的机器上、以你的权限执行，逐条可见。何时须经你首肯，由三档权限而定；沙箱在桥接一侧守护系统。":
+    "Commands run on your machine with your permissions, and each one is visible. Which ones need your approval depends on the permission level; the sandbox guards the system from the bridge side.",
+  三档权限: "Three permission levels",
+  "**问而后行**：凡会改动的指令逐条请示，只读者径行。**审而后行**：由桥接代审，寻常改动放行，只拦伤及系统、难以恢复者。**径行**：不再审查。输入框旁随时可换。":
+    "**Ask first**: every command that changes something asks you first; read-only ones just run. **Auto-review**: the bridge reviews them, letting routine changes through and stopping only what would harm the system or be hard to undo. **Full auto**: no review. Switch any time beside the input box.",
+  "问而后行下从严：改动不出工作目录，机密文件不碰，动系统或直接外联的指令拦下，转请你定夺；机密的环境变量也不交给指令。审而后行与径行只守系统本身。总开关在设置 → 工具。":
+    "Ask first is strict: changes stay inside the working folder, secret files are off limits, and commands that touch the system or connect out directly are stopped and passed to you; secret environment variables aren't given to commands either. Auto-review and Full auto only protect the system itself. The master switch is in Settings → Tools.",
+  "沙箱是静态筛查，并非进程隔离：脚本里的代码仍以你的权限运行；MCP 服务亦不受其约束。":
+    "The sandbox is a static check, not process isolation: code inside scripts still runs with your permissions, and MCP servers aren't bound by it.",
+  可及范围与轮次: "Reach and tool rounds",
+  "未开沙箱时，文件工具能否越出目录由设置 → 工具的「可及范围」定：**全盘**可指向任何绝对路径，**目录内**一律不出；指令不受此限。「工具轮次上限」限一答（帮手另计）最多调几轮工具，同一轮并发的几次只算一轮，到顶即收回工具请模型收尾。":
+    "With the sandbox off, whether file tools may leave the folder is set by “File tool reach” in Settings → Tools: **Anywhere** allows any absolute path, **Folder only** never leaves it; commands aren't limited by this. “Tool round limit” caps how many rounds of tool calls one reply may make (subagents count separately); parallel calls in the same round count once. At the cap the tools are withdrawn and the model is asked to wrap up.",
+  "作答时寄出键化为「止」，按下即停；正在执行的指令连同其子进程一并收束。":
+    "While the model answers, the send button becomes Stop; pressing it stops at once, and running commands are ended along with their child processes.",
+  卷宗附件: "Files and attachments",
+  "附件的来路，成品的归处": "Where attachments come from, where outputs go",
+  "附件随一问送出；卷宗是跨对话的书架，常用文件收存于此。":
+    "Attachments go out with a message; Files is a shelf shared by all conversations, for the files you use often.",
+  "点「＋」、拖入或粘贴皆可：图片、文本、代码、PDF 与 Office 文档。文档先在本机抽出正文；单件不过 256 MB，一次至多 10 件。":
+    "Click “＋”, drag in or paste: images, text, code, PDF and Office documents. Documents have their text extracted on this machine first; up to 256 MB each, at most 10 at a time.",
+  "侧栏的「卷宗」即存储位置里的 `卷宗/` 目录。拖入，或在附件上按「藏」收存；需随消息送出时，从「＋」中选「卷宗」。页上可新建夹、就地改名（亦可按 F2），条子拖到夹上即移入；删夹则连同其中一并删去。":
+    "Files in the sidebar is the `卷宗/` folder in your storage location. Drag files in, or press the save mark on an attachment to keep it; to send one with a message, choose Files under “＋”. On the page you can make folders and rename in place (or press F2); drag an item onto a folder to move it in. Deleting a folder deletes what's inside too.",
+  "卷宗里的文档对每段对话皆可读，模型用到时方才取回；设置 → 工具中可关闭。":
+    "Documents in Files can be read from any conversation; the model fetches them only when needed. Turn this off in Settings → Tools.",
+  成品: "Outputs",
+  "模型所作的文件列于答末的「成品」条：就地预览，Word、Excel、PPT 亦可抽出正文查看；日后在卷宗中删去的，此处标为「已移出卷宗」。":
+    "Files the model makes are listed in the outputs bar at the end of its reply: preview them in place; Word, Excel and PowerPoint files show their extracted text. If you later delete one from Files, it's marked “removed from Files” here.",
+  "卷宗或附件里的音频，点开即是听音：一曲一笔圆相，笔之粗细随声强弱，笔尖即此刻。点空白或按 Esc 收起，曲子照放，右上垂下一缕墨线坠一小圆相，点之复开；按 × 方才停下。":
+    "Open audio in Files or an attachment and it plays in Listen: each track is a single brushed circle whose stroke swells and thins with the loudness, the brush tip marking the current moment. Click outside or press Esc to tuck it away while the music keeps playing; an ink thread with a small circle hangs at the top right, click it to reopen. Press × to stop.",
+  旁注引用: "Side threads and quotes",
+  "就地追问，不入正文": "Follow up in place, outside the main chat",
+  "读至一处有疑，不必打断主线：或引而问之，或于旁另起一段小对话。":
+    "When something you're reading raises a question, you needn't break the main thread: quote it in your next message, or start a small conversation beside it.",
+  "在答复中划选一段，浮出「引用」，所选即作为引文置入输入框，随下一问送出。":
+    "Select a passage in a reply and “Quote” appears; the selection goes into the input box as a quote and is sent with your next message.",
+  "划选后择「旁注」，右侧展开一段附于此处的小对话。它读得到正文，正文读不到它；只查不改，不动文件。":
+    "Choose “Side thread” after selecting, and a small conversation attached to that spot opens on the right. It can read the main chat, but the main chat can't see it; it only looks things up and never changes files.",
+  "同一条答复上可起数条旁注；「旁注 n」打开目录，‹ › 于各条间切换，「阔」铺满整页。目录里「另起一条」：先划选，便注在所选那一段上；未划选，则就整条回复而谈。":
+    "One reply can carry several side threads: “Side threads n” opens the list, ‹ › moves between them, and the wide button fills the page. “New” in the list attaches to your current selection if there is one, or to the whole reply if not.",
+  随分支而行: "Follows branches",
+  "旁注随所注的一问一答而行：切换至另一版本，注于旧版的旁注暂隐，切回即现。":
+    "A side thread stays with the exchange it's attached to: switch to another version and threads on the old one hide, then reappear when you switch back.",
+  遣帮手分担一事: "Hand work to subagents",
+  "量大而独立的事，模型会差遣帮手另起一段去做，事毕回报。":
+    "For large, self-contained jobs the model sends subagents to work separately; they report back when done.",
+  何时差遣: "When it delegates",
+  "通读一批资料并归纳、多路检索比对、在陌生模块中排查——此类事由模型自行分出，互不相干者可数件并行。":
+    "Reading through a pile of material and summarizing it, comparing several lines of search, digging through an unfamiliar module: the model splits such work off by itself, and unrelated jobs can run in parallel.",
+  帮手在后台: "Subagents run in the background",
+  "帮手不随这一答收尾：主模型派完、别无可做，这一答便写完，无人醒着干等。帮手回报时，这段对话若正作答，回报于回合之间递上，行迹里落一小步「回报」；未在作答，则另起一答，以一道细线点名「帮手「…」回报」。行迹里的签随做随记步数与用时。":
+    "Subagents don't end with the reply: once the main model has sent them off and has nothing else to do, the reply finishes and nobody sits waiting. When a subagent reports and the conversation is mid-answer, the report is handed over between rounds and shows as a small “reported” step under Steps; if it isn't answering, a new reply starts, introduced by a thin line naming the subagent that reported. The tag under Steps keeps a running count of steps and time.",
+  递话与续派: "Messages and follow-ups",
+  "主模型可向正做着的帮手递话，帮手说到句尾、跑完一步方才收下，不被掐断；已收工的可续派，带着上一趟的经过接着做；亦可单叫停一名。案上空着时寄出键是「止」，按下即叫停后台所有帮手。":
+    "The main model can send a message to a working subagent; it's received once the subagent finishes its sentence or step, without being cut off. A finished subagent can be sent out again and carries on with what it learned last time; a single one can also be stopped. When the input is empty the send button is Stop, which stops every subagent in the background.",
+  观其所为: "Watching them work",
+  "点行迹里的差遣签，开一扇全屏的窗：一名帮手一页，差遣与续派按先后摞下，每趟主模型交的命、每一轮的思绪与各步、最后的回报，皆在其中；数名帮手以 ‹ › 翻看。输入框上方的帮手条亦可直达。":
+    "Click a subagent tag under Steps to open a full-screen window: one page per subagent, its runs stacked in order, each with the task the main model gave, every round's thinking and steps, and the final report. Page through several subagents with ‹ ›. The subagent bar above the input box leads there too.",
+  "帮手看不到这段对话，只凭任务说明行事；它不向你请示，也不带记忆。页面刷新或关掉，后台的帮手随之中断。":
+    "A subagent can't see this conversation and works only from its task description; it never asks you anything and doesn't carry memory. Reloading or closing the page interrupts subagents in the background.",
+  "长活的骨架，属于目录": "The skeleton of a long job, kept in the folder",
+  "跨几答的长活，模型可在目录里立一份「意」：这件事要成立哪几条结论，各以什么为前提、凭什么。换一段对话接着做，看到的仍是同一份。":
+    "For a job that spans several replies, the model can set up an intent in the folder: which conclusions the job must establish, what each one rests on, and what backs it. Continue in another conversation and it sees the same intent.",
+  结论与前提: "Conclusions and prerequisites",
+  "意是一张图：每一项是一句要成立的结论，写明怎么算成立、以哪几项为前提。无所支撑者为根，即这件事最终要立的。成立与否由模型自判；前提未立，其上的便不算已立。":
+    "An intent is a graph: each item is a conclusion to establish, with how it's checked and which items it depends on. An item nothing else depends on is a root, what the job ultimately sets out to establish. The model judges whether each item holds; anything resting on an unsettled prerequisite doesn't count as settled.",
+  模块: "Modules",
+  "一项拆开还有许多步，便是模块，细项归在它里面，至多两层。里面都立住了，模块才算立住。卡片上的图只画一层，模块带「里面已立几项 ›」，点开钻入。手上的一步不挂在任何一项之下、孤悬于全局的，模型写不进去，须归入它所服务的模块。":
+    "An item that breaks down into many steps is a module, with its details inside, at most two levels deep. A module is settled only when everything inside it is. The card's graph shows one level at a time; a module shows how many items inside are settled, with a › to drill in. The model can't add a loose step that hangs under nothing at the top level; it has to go into the module it serves.",
+  凭据与待复核: "Evidence and rechecks",
+  "一项标成立时，记下它所凭的：文件、目录（`dir:`），或一条指令的输出（`cmd:`，如部署状态、依赖版本）。此后凭据变了——无论这一答改的、别的对话改的，还是你亲手改的——它便转为待复核，往上牵连的几项一并显出。同一项一答之内来回被打回三次，模型会收到一句「相持」。":
+    "When an item is marked settled, what backs it is recorded: files, folders (`dir:`), or a command's output (`cmd:`, such as a deployment status or dependency version). If that evidence later changes, whether by this reply, another conversation or your own hand, the item turns to needs recheck, and the items above it that depend on it show it too. If the same item is knocked back three times within one reply, the model is told it's at a stalemate.",
+  "问而后行里，指令凭据只自动跑明确只读的；其余不跑，也不据它判。":
+    "Under Ask first, only clearly read-only command evidence runs automatically; the rest isn't run and isn't used to judge.",
+  "假定、弃与根": "Assumptions, drops and roots",
+  "做不到、或借外部结论的一项可标「假定」，写明出处，算作已立，卡片上记着借了几条。走过不通的路标「弃」，留作记号，免得再走一遍；方案改了、写错了的，模型整项撤去，只留一笔痕。根立起时记下你那一问的原话，即「原问」；要改根的说法，直接告诉模型；改了留痕，你那句话也随原问一起附着。":
+    "An item that can't be done, or that borrows an outside conclusion, can be marked assumed, with its source written down; it counts as settled, and the card notes how many are borrowed. A path that proved a dead end is marked dropped and kept as a marker so it isn't tried again; an item from a changed plan or written by mistake is removed outright, leaving only a trace in the history. When a root is set, your question is recorded word for word as the original question. To reword a root, just tell the model; the change is logged and your words are kept alongside the original question.",
+  收尾前对照: "Checking before finishing",
+  "这一答动过意，模型说完要收尾时会被拦一次：摆出此刻的意、这一答里转待复核过的几项、改了而无凭据罩着的文件，请它对照原问自判能否收尾。只拦一次，拦完即放。":
+    "If a reply touched the intent, the model is held once when it tries to finish: it's shown the current intent, the items that turned to needs recheck during this reply, and changed files no evidence covers, and asked to judge against the original question whether it can finish. It's held only once, then let go.",
+  看意: "Viewing the intent",
+  "工作目录立了意，题下一行与书眉常显一枚石青「意」：进度、一排记号，点开即卡片；行迹里「意」那一步亦可点开。卡片页头写着进度与更新于何时，右端「墨痕」记着改意、弃、撤的来历；其下是一张图，图下一份簿录，一项一行。图上的记号：青绿勾已立，泥金勾假定，泥金问号存疑（自称成立而前提未立），泥金虚圈进行中，朱圈待复核；弃了的不上图，记在墨痕里。点图上一项或簿录一行，就地展开它的验收、凭据与缘由——这些因果由程序从图与凭据推出，不经模型。卡片只给看，要改什么直接告诉模型。":
+    "Once the working folder has an intent, a blue “意” mark shows in the line under the title and in the header, with progress and a row of marks; click it for the card. The intent step under Steps opens it too. The card's header shows progress and when it was last updated, with History at the right recording revisions, drops and removals; below is the graph, and below that a list, one item per line. Marks on the graph: a green tick is settled, a gold tick is assumed, a gold question mark is doubtful (claimed settled while a prerequisite isn't), a gold dashed circle is in progress, a red circle needs recheck; dropped items are left off the graph and recorded in History. Click an item on the graph or a line in the list to expand its check, evidence and reasons in place; these links are derived by the program from the graph and evidence, not by the model. The card is for viewing only; to change something, tell the model.",
+  "意记结论，你定的界限记作意里的「守」；记忆记做法：这个目录往后还用得上的路径与配置、定下的做法与习惯、踩过的坑，模型立在目录的 `.yan/记忆.md`，自己增删合并，不记流水账；关于你本人、处处成立的仍记进跨对话的记忆。每一问之后附上一份，帮手领命时附一份只读的。可以记很多，每一问附多少随模型的窗口；附不下便附开头一段，其后的模型按需翻看。":
+    "The intent records conclusions, and limits you set are recorded in it as keeps. Memory here records how things are done in this folder: paths and settings worked out, practices and habits agreed on, pitfalls hit. The model keeps it in the folder at `.yan/记忆.md`, adding, removing and merging entries itself rather than logging every step; things about you that hold everywhere still go into cross-chat memory. A copy goes with each message, and subagents get a read-only copy with their task. It can grow large; how much is attached each time depends on the model's window, and if it doesn't fit, the opening part is attached and the model reads the rest as needed.",
+  "意与记忆都在目录的 `.yan/` 下，换一段对话绑同一目录，接着用的仍是这两份。":
+    "Both the intent and memory live in the folder's `.yan/`; another conversation bound to the same folder carries on with the same two.",
+  "挂上就走，到时叫醒": "Leave it running, get woken when it's time",
+  "要等的事——一条指令跑完、一个时刻到来——执事挂上即可收尾，不必醒着守候；到时自会叫醒它，接着做。":
+    "For anything that means waiting, a command finishing or a time arriving, the agent can leave it running and finish the reply instead of staying awake to watch; it's woken when the time comes and carries on.",
+  挂到后台: "Running in the background",
+  "开发服务器、长时间的构建与训练，执事挂到后台（编号 bg1、bg2…），先看几秒输出便可收尾；目录不因此锁住，别的指令照常执行。":
+    "Dev servers, long builds and training runs: the agent puts them in the background (numbered bg1, bg2…), watches a few seconds of output, then can finish. The folder isn't locked, and other commands run as usual.",
+  约个时刻: "Setting a time",
+  "「明早九点看 PR 有没有回复」「每天清早理一遍 issue」：执事用 set_timer 约下时刻（编号 t1、t2…），到点叫醒自己；时刻记在桥接，不占进程，重启 start.cmd 后照旧，错过的补叫并注明迟了多久。":
+    "“Check for PR replies at 9 tomorrow morning”, “Go through the issues every morning”: the agent sets a time with set_timer (numbered t1, t2…) and is woken when it arrives. Times are kept by the bridge without a process of their own, survive restarting start.cmd, and missed ones fire late with a note of how late.",
+  事毕叫醒: "Woken when done",
+  "指令结束、时刻到了，即报给这段对话：只剩等它，便另起一答，细线上写「后台「起服务」已结束」「候「看 PR 回复」到点」——引号里是执事起它时那句白话；执事尚在忙别的，则于回合之间递上，行迹里落一小步「回报」。书眉的漏列着所有在等的：后台写已跑多久，定时写几时到。":
+    "When a command ends or a time arrives, the conversation is told. If it was only waiting for that, a new reply starts with a thin line such as “Background “start server” finished” or “Timer “check PR replies” is due”, quoting the plain words the agent used when it started it. If the agent is busy with something else, it's handed over between rounds as a small “reported” step under Steps. The hourglass in the header lists everything waiting: background jobs show how long they've run, timers when they're due.",
+  "页面关着时到的，待页面再开便报到。桥接退出（关掉 start.cmd、关机）后台指令随之结束，执事会被叫醒、自行定夺要不要重开；按「止」只停生成，后台照跑、约好的时刻照旧；要撤，跟执事说一声。":
+    "Anything that arrives while the page is closed is reported when it opens again. When the bridge exits (start.cmd closed, the machine shut down), background commands end with it; the agent is woken and decides whether to restart them. Stop only halts generation: background jobs keep running and timers stay set. To cancel them, tell the agent.",
+  为专事定一套做法: "A setup for a particular job",
+  "将提示词、工具、MCP 服务、模型与权限合为一套，选用即全部换上。":
+    "Bundle a prompt, tools, MCP servers, a model and a permission level into one preset; picking it switches all of them at once.",
+  新添: "New",
+  "设置 → 预设 → 新添：命名，再写一段提示词——所任何职、所司何事、答以何种风格。提示词列于系统提示之首。":
+    "Settings → Presets → New: give it a name, then write a prompt: the role it plays, what it handles, the style it answers in. The prompt goes at the top of the system prompt.",
+  择工具: "Choosing tools",
+  "工具按组勾选：联网、计算、指令与文件、翻文档、请示、记忆与旧谈、差遣；已接入 MCP 的，再择定所用服务。全数勾选即为「全给」，日后新添者亦随之给出。":
+    "Tools are ticked by group: web, compute, commands and files, documents, asking you, memory and past chats, subagents; with MCP connected, also pick which servers to use. Ticking everything means all tools, including ones added later.",
+  "工具愈少，每一问所负的定义愈轻；只作对谈的预设，工具可一概不选。":
+    "The fewer the tools, the lighter the definitions each message carries; a preset just for chatting can have no tools at all.",
+  "输入框旁的模型菜单中多出「预设」一栏，指上即浮出，点选即换上，模型按钮上标其名。预设若带模型或权限，一并换上。不选即为本色。":
+    "The model menu beside the input box gains a Presets column; hover to see them and click to switch, and the model button shows the preset's name. If the preset carries a model or permission level, those switch too. Pick none for plain defaults.",
+  聚相关之谈为一组: "Gather related chats into a group",
+  "相关的对话聚为一组，不至散落；组可带一个预设与一个默认目录。":
+    "Keep related conversations together in a group; a group can carry a preset and a default folder.",
+  立组: "Making a group",
+  "侧栏「分组」进入分组页，点「＋ 新建分组」；或在对话「⋯」里择「移入分组」→「新建分组…」，就地立一组并移入。已有的组，把对话拖到组上即移入，拖出组外即移出。":
+    "Open the groups page from Groups in the sidebar and click “＋ New group”; or in a conversation's “⋯” choose “Move to group” → “New group…” to make one and move it in on the spot. For an existing group, drag a conversation onto it to move it in, and drag it out to remove it.",
+  定其所依: "Group settings",
+  "侧栏组首的「⋯」→「设置」，或分组页中点开一组：可改组名，择一个预设，定一个默认目录。组里新起的对话皆依此——预设的提示词、工具与模型一并换上，绑定目录即为行。":
+    "Use “⋯” → “Settings” at the head of a group in the sidebar, or open a group on the groups page: rename it, pick a preset, set a default folder. New conversations in the group follow these, taking on the preset's prompt, tools and model, and becoming agents bound to that folder.",
+  "这两样只管新起的对话；已在组中的对话照旧。":
+    "These two settings apply only to new conversations; ones already in the group stay as they are.",
+  在组中行文: "Working in a group",
+  "侧栏组首的「＋」或分组页的「在此组新建」另起一段，新对话即归此组（欢迎页眉题的印章随之改作「集」、一旁写出组名）；点「翻页」另起则不归。侧栏里的组与「工」组一样按时间排，组里一有新言，整组便靠前。组里的对话置顶，只在组内居前，右上角折一小角为记。解散只拆组，对话退回散列。":
+    "Start a new conversation from “＋” at the head of a group in the sidebar, or “New chat in this group” on the groups page; the new chat joins that group (the welcome page's eyebrow seal turns into 集 with the group's name beside it). To keep it out, start it with “New chat” instead. Groups in the sidebar are ordered by time like folder groups: as soon as something new is said in one, the whole group moves up. A pinned conversation in a group goes to the top of that group only, marked by a small folded corner at the top right. Ungrouping only breaks up the group; its conversations go back to the loose list.",
+  接入外部服务: "Connecting outside services",
+  "借 MCP，言可调用别处的能力，如 GitHub 的仓库与议题，或其他项目自带的工具。接入只需配置，无需改动代码。":
+    "Through MCP, Yan can use capabilities from elsewhere, such as GitHub repositories and issues, or tools that ship with other projects. Connecting takes only configuration, no code changes.",
+  觅其接法: "Finding the setup",
+  "服务的说明中通常附一段 JSON：本机程序写明 `command` 与 `args`，远端服务写明 `url`。":
+    "A server's docs usually include a JSON snippet: local programs give `command` and `args`, remote servers give a `url`.",
+  "项目中已有的 `.mcp.json` 可整段粘入「以 JSON 编辑」，写法与 Claude、Cursor 通用。":
+    "An existing `.mcp.json` from a project can be pasted whole into “Edit as JSON”; the format is the same as Claude's and Cursor's.",
+  于设置中添入: "Adding it in Settings",
+  "设置 → MCP → 新增服务，填入命令或地址；令牌置于环境变量或请求头中，页面上遮蔽显示，导出备份时不带。「给模型的话」随系统提示交给模型，如「我说打开浏览器即指这个」。":
+    "Settings → MCP → add a server and enter its command or address. Tokens go in environment variables or request headers; they're masked on the page and left out of exported backups. “Note to the model” goes to the model with the system prompt, e.g. “when I say open the browser, I mean this one”.",
+  "浏览器不必在此接入：设置 → 游目开着，言自起一个。":
+    "There's no need to connect a browser here: with Settings → Browser turned on, Yan starts one itself.",
+  交予模型: "Handing it to the model",
+  "接通后卡上显出工具件数。对话中说明所求，模型自会择用相宜的工具，行迹里记下所调何件；工具繁多的服务只给模型一张目录，按需取用。":
+    "Once connected, the card shows how many tools the server has. Say what you need in the conversation and the model picks suitable tools, with each call recorded under Steps; servers with many tools give the model only a list, and it fetches what it needs.",
+  "标为只读的工具径直调用，其余在问而后行下逐次请示。":
+    "Tools marked read-only are called directly; under Ask first the rest ask you each time.",
+  按需翻阅的做法: "Know-how read only when needed",
+  "一份 Skill 是一段用到才看的做法：名字、何时用、正文，存作一个目录里的 SKILL.md，旁可附参考与脚本。写法与 Claude Code 通用，现成的 Skill 拷进来即可。":
+    "A Skill is know-how read only when it's needed: a name, when to use it, and the body, stored as SKILL.md in a folder, optionally alongside references and scripts. The format is the same as Claude Code's, so existing Skills can simply be copied in.",
+  写一份: "Writing one",
+  "设置 → Skill，点「＋」就地写名字、何时用与正文，焦点离开即存；点一行摊开看，底下「改」才成输入框，行末可删。摊开后另列它附带的件（参考、脚本、模板），点一件即看；行尾那枚小纸写着附带几件。言只认存储根的 `技能/` 一处：现成的 Skill（如 `~/.claude/skills` 里的、网上的）把整个文件夹拷进来即可，也可叫模型去找、拷进来。":
+    "In Settings → Skills, click “＋” to write the name, when to use it and the body in place; it saves when focus leaves. Click a row to expand it; “Edit” below turns it into an input, and it can be deleted at the end of the row. Expanded, it also lists its bundled files (references, scripts, templates); click one to view it. The small slip at the end of the row shows how many there are. Yan reads Skills only from `技能/` in the storage root: copy the whole folder of an existing Skill there (from `~/.claude/skills`, the web and so on), or ask the model to find one and copy it in.",
+  "模型只见各 Skill 的名字与何时用，做到相关的事才翻其说明，行迹里记作「Skill」；说明里提到的参考随翻随取，脚本在行里照它所在的目录运行。也可点名：输入框「＋」→「Skill」挑一份，那份说明即作附件置于案上、随这一问附上。":
+    "The model sees only each Skill's name and when to use it, and reads the instructions only when it's doing something related, shown as “Skill” under Steps. References mentioned in the instructions are fetched as it reads, and scripts run from the Skill's folder in agent mode. You can also pick one by name: “＋” → “Skill” in the input box, and its instructions are attached to your next message.",
+  只凭点名: "Only when picked",
+  "有的 Skill 不宜由模型自取——要接外部服务、有副作用，或难得一用。设置 → Skill 里点它行首的锦囊：锦囊淡下去，即只凭点名，模型不再见到它，唯你从「＋」挑它时才用；再点一下，交还模型。":
+    "Some Skills shouldn't be picked up by the model on its own: ones that connect to outside services, have side effects, or are rarely needed. In Settings → Skills, click the pouch at the start of its row: when the pouch fades, the Skill is used only when you pick it from “＋” and the model no longer sees it. Click again to hand it back to the model.",
+  "此即 SKILL.md 头上的 `disable-model-invocation: true`，与 Claude Code 通用。":
+    "This is `disable-model-invocation: true` at the top of SKILL.md, the same as in Claude Code.",
+  "执事的浏览器，收于右侧": "The agent's browser, docked on the right",
+  "执事上网、测它做的网页时所用的浏览器，不另开一扇窗，画面收在言的右侧，看得见，也接得过手。":
+    "The browser the agent uses to go online and test the pages it builds doesn't open a window of its own: it's shown on the right side of Yan, where you can watch it and take over.",
+  开启: "Turning it on",
+  "设置 → 游目：打开游目，择一浏览器——Edge、Chrome 借本机所装另起一份，不扰日常浏览；本机皆无则选「自带内核」。首回在「驱动」一行点「安装」。登录、收藏与下载都存于存储位置的 `游目/` 目录，执事要看网页时自会把浏览器请起来。":
+    "Settings → Browser: turn it on and pick a browser. Edge and Chrome start a separate instance of the one installed on this machine, leaving your everyday browsing alone; if neither is installed, choose “Bundled Chromium”. The first time, click “Install” on the Driver row. Logins, bookmarks and downloads are kept in `游目/` in your storage location, and the browser starts by itself when the agent needs a web page.",
+  观与操: "Watching and taking over",
+  "正文右上自页顶垂下一幅立轴，点之即开游目：画面可点、可滚、可打字，标签与浏览器同步，执事换到哪一页便跟到哪一页；网页弹的提示框、要选文件的窗也画在画面上，可直接作答。执事在网页上点哪儿、键入何处，那里落一笔朱；地址行右端「执事」两字，指之浮出它近几步。":
+    "A hanging scroll drops from the top of the page at the top right of the chat; click it to open the browser. You can click, scroll and type in it; tabs stay in sync with the browser and follow whatever page the agent switches to. Dialogs a page pops up and file pickers are drawn in the view too, and you can answer them directly. Wherever the agent clicks or types, a red mark appears; hover “Agent” at the right end of the address row to see its last few steps.",
+  "游目收着时，立轴卷着是浏览器未开，展开是开着，轻摆是执事正在用。旁注开着时游目暂让，收起旁注即回。":
+    "With the browser tucked away, a rolled-up scroll means the browser isn't running, an unrolled one means it is, and a gently swaying one means the agent is using it. The browser steps aside while a side thread is open and comes back when it closes.",
+  "栏顶那支笔（或按住 Alt）下笔：拖一圈是圈，划一道是线（划在字下、画个箭头都行），点一下是点，可画数处。每画一处，引文与带朱笔的画面即落进输入框，随下一问交给执事；移除引文，圈点随之清去。再点那支笔或按 Esc 收笔。":
+    "Use the brush at the top of the panel (or hold Alt) to mark the page: drag around something to circle it, draw a stroke for a line (underline text, draw an arrow), click for a dot; you can mark several spots. Each mark puts a quote and a screenshot with your red marks into the input box, to go to the agent with your next message; removing the quote clears the marks. Click the brush again or press Esc to put it down.",
+  地址与纸签: "Address bar and menu",
+  "地址栏可输网址、`localhost:端口`、本机路径，或径写要搜的话；「＋」新开一页，右端书签带收藏此页、翻看收藏。栏顶「调律」开一张纸签：查找、缩放、历史、下载、整理收藏、复制网址、用系统浏览器打开、开发者工具；搜索用哪家、适应页面也在其中。拖左缘调宽窄，往两角撑开的那枚小画铺满整页。":
+    "The address bar takes a URL, `localhost:port`, a local path, or just words to search; “＋” opens a new tab, and the bookmark at the right end bookmarks the page or browses bookmarks. The tuning button at the top opens a menu: find, zoom, history, downloads, organize bookmarks, copy URL, open in the system browser, developer tools; the search engine and Fit page are there too. Drag the left edge to resize, and the small icon pointing to the corners fills the page.",
+  "执事测页面时常把视口定死，画面上下留白；开着「适应页面」，待执事歇手便放开，关着则由你点「放开」。":
+    "When testing pages the agent often fixes the viewport size, leaving blank space around the view. With Fit page on, it's released once the agent pauses; with it off, click “Release” yourself.",
+  为模型备一套开发环境: "A development environment for the model",
+  "独立的 Python 与常用工具链，装于存储位置的 `环境/`，不改动系统。":
+    "A standalone Python and common toolchains, installed in `环境/` in your storage location without touching the system.",
+  勾选: "Choosing",
+  "设置 → 环境：一组工具一张卡，名称居左、状态居右——空框未选，框中一粒朱待装，一笔勾已装。可选数据处理、办公文档、图像、音视频，以及 C / C++、Go、Rust、Java 数套工具链；卡外的包写在「另装」一行。":
+    "Settings → Environment: one card per set of tools, name on the left and status on the right: an empty box is unselected, a red dot in the box is waiting to install, a tick is installed. Choose data processing, office documents, images, audio and video, and toolchains for C / C++, Go, Rust and Java; packages not on any card go on the “Extra packages” line.",
+  准备: "Setting up",
+  "点「准备环境」，环境即与勾选对齐：勾上者装，取消者卸。首回需下载数十至数百 MB。下载源不必选：准备时国内镜像（清华、中科大、npmmirror 等）与官方各取一截比快慢，挑快的走，模型往后自装的包也走这一路；工具链体量较大，卡上注明约数。":
+    "Click “Set up environment” and it's brought in line with your ticks: ticked items are installed, unticked ones removed. The first run downloads tens to hundreds of MB. There's no mirror to pick: during setup, Chinese mirrors (Tsinghua, USTC, npmmirror and others) and the official sources each download a sample, the fastest wins, and packages the model installs later go the same way. Toolchains are large; cards show the rough size.",
+  "模型的指令与 MCP 服务皆接此环境；所缺之库，模型自行装入即可。":
+    "The model's commands and MCP servers both use this environment; the model can install any missing libraries itself.",
+  "何者当记，何时可忘": "What to remember, and when to forget",
+  "录是一份跨对话的记忆：你的偏好、身份与约定，此后不必重述。只存于本机。":
+    "Memory carries across conversations: your preferences, who you are and what's been agreed, so you needn't repeat them. It's stored only on this machine.",
+  带与记: "Bringing and remembering",
+  改与忘: "Editing and forgetting",
+  存储边界: "Storage and boundaries",
+  "数据所在，及其边界": "Where your data lives, and its boundaries",
+  所在: "Location",
+  "默认为 `~/.yan/`：`对话/` 一段一个文件，`卷宗/` 收成品与存入的文件，`附件/` 存附件原件，`配置.json` 记设置、模型（含 API Key）、记忆与草稿。数个浏览器共用这一份。":
+    "By default `~/.yan/`: `对话/` holds one file per conversation, `卷宗/` holds outputs and files you saved, `附件/` holds original attachments, and `配置.json` holds settings, models (including API Keys), memory and drafts. Several browsers share this one copy.",
+  桥接: "Bridge",
+  "start.cmd 起的是本机桥接，只监听 127.0.0.1：转发模型请求，代行指令与文件，守着后台指令。联网检索与读取网页时，拒绝访问本机与内网地址。":
+    "start.cmd starts the local bridge, which listens only on 127.0.0.1: it forwards model requests, runs commands and file operations, and looks after background commands. Web search and page reading refuse local and private network addresses.",
+  迁移: "Moving",
+  "设置 → 通用 → 存储位置，填一目录，整份拷至其下，旧处原样保留；那里已有言的数据则直接用它。":
+    "Settings → General → Storage location: enter a folder and everything is copied there, leaving the old location as it was; if the folder already has Yan data, that data is used.",
+  "环境不随之迁移，至新处重新准备一遍即可。": "The environment doesn't move with it; just set it up again in the new location.",
+  备份与导出: "Backup and export",
+  "设置 → 通用中导出备份（可含附件原件）；导入时按 id 合并，已有者略过。单段对话可在「⋯」里导出，存成 Markdown 落入卷宗。":
+    "Export a backup in Settings → General (optionally with original attachments); importing merges by id and skips what's already there. A single conversation can be exported from “⋯” as Markdown saved to Files.",
+  "备份不含 API Key；MCP 的密钥导入后需重填。": "Backups don't include API Keys; MCP secrets need re-entering after import.",
+  键与手势: "Keys and gestures",
+  寻常操作的捷径: "Shortcuts for everyday actions",
+  "常用的键与手势，汇于一处。": "Common keys and gestures, in one place.",
+  键: "Keys",
+  "**Enter** 寄出，**Shift + Enter** 换行。**Esc** 关闭弹层、取消编辑、去掉引文、退出全屏。卷宗里 **F2** 改名。":
+    "**Enter** sends, **Shift + Enter** adds a line. **Esc** closes popups, cancels editing, removes a quote, leaves full screen. **F2** renames in Files.",
+  划选: "Selecting",
+  "划选正文，浮出「引用 · 旁注」：引用随下一问送出；旁注于右侧另开一线，读得到正文，却不入正文。":
+    "Select text and “Quote · Side thread” appears: a quote goes with your next message; a side thread opens a separate line on the right that can read the main chat but stays out of it.",
+  拖入与粘贴: "Dragging and pasting",
+  "文件拖入页面或粘贴图片，即置于案上；在卷宗页拖入则收入卷宗。":
+    "Drag files onto the page or paste images to attach them; dragging onto the Files page saves to Files.",
+  改名与版本: "Renaming and versions",
+  "双击侧栏标题即重命名，亦可直接改页面上方的标题。消息旁的 ‹ ›，在同一位置的不同版本之间切换。":
+    "Double-click a title in the sidebar to rename it, or edit the title at the top of the page. ‹ › beside a message switches between versions at that spot.",
+  "点画面即把键盘交给网页，点言的别处收回。**Ctrl + L** 到地址栏，**F5** 重载，**Alt + ← / →** 前后，**Ctrl + F** 查找，**Ctrl + + / −** 缩放；按住 **Alt** 圈点。":
+    "Click the view to give the keyboard to the page, and click elsewhere in Yan to take it back. **Ctrl + L** goes to the address bar, **F5** reloads, **Alt + ← / →** goes back and forward, **Ctrl + F** finds, **Ctrl + + / −** zooms; hold **Alt** to mark the page.",
+  致谢: "Credits",
+  "所倚之器，一一记之": "What Yan is built on",
+  "以下开源库随项目本地分发，不加载任何在线资源；许可全文见 vendor 目录。":
+    "These open-source libraries ship with the project and nothing is loaded online; full licenses are in the vendor folder.",
+  开源库: "Open-source libraries",
+  "只需 Node.js 22 或更高版本，无需安装依赖。": "Needs only Node.js 22 or later; no dependencies to install.",
   // ---- 欢迎页（问候另写在 src/06-mode-welcome/10-welcome.js；推荐语里留给人填的写在方括号里） ----
   "以目录为案，言起而事行": "Work in a folder: plan, edit, run",
+  "这一问将归入「{0}」": 'This message goes into "{0}"',
   "长问慢答，尽付纸墨": "Ask at length, read at leisure",
   "对话、卷宗、附件与配置同在本机的一个存储目录，言没有自己的服务器；复制即是备份。":
     "Chats, files, attachments and settings live in one folder on this machine; Yan has no server of its own. Copy the folder to back it up.",
@@ -1655,28 +2029,28 @@ var YAN_EN = {
     "No model yet. Any OpenAI-compatible or Anthropic API works; settings stay on this machine.",
   "前往设置 →": "Open settings →",
   概念讲解: "Explain a concept",
-  "用通俗易懂的方式帮我讲讲（一个概念，比如复利、傅里叶变换、TCP 三次握手）。最好用可视化、可交互的方式辅助解释。":
-    "Explain [a concept, e.g. compound interest, the Fourier transform, the TCP handshake] in plain terms. Use an interactive visualization if it helps.",
+  "帮我讲明白（一个概念，比如复利、傅里叶变换、TCP 三次握手）。从它要解决什么问题讲起，举个具体的例子；画图能讲得更清楚的地方可以画。":
+    "Help me really understand [a concept, e.g. compound interest, the Fourier transform, the TCP handshake]. Start from the problem it solves and give a concrete example; draw a diagram wherever it makes things clearer.",
   定时监测: "Watch for changes",
   "帮我盯着（一件会变的事，比如某个商品的价格、某个开源项目的新版本、某个网页上的公告），每隔（一小时）看一眼。有动静戳我。":
     "Keep an eye on [something that changes, e.g. a product's price, a new release of an open-source project, an announcement page] and check every [hour]. Ping me when something changes.",
   材料分析: "Analyze files",
-  "（附上表格、PDF 或一批文档）帮我看看这些材料：先用几句话说说讲了什么，再把关键数字整理成一张表、画成图，有前后对不上或可疑的地方指给我。":
-    "[Attach spreadsheets, PDFs or documents] Go through these: summarize them in a few sentences, put the key numbers in a table and a chart, and point out anything inconsistent or suspicious.",
+  "（附上表格、PDF 或一批文档）帮我看看这些材料：讲了什么，关键数字是多少，有没有前后对不上或可疑的地方。数字要比较的话可以列表或画图。":
+    "[Attach spreadsheets, PDFs or documents] Go through these: what they say, the key numbers, and anything inconsistent or suspicious. Use a table or chart where numbers need comparing.",
   文件生成: "Make a file",
-  "帮我做一份（要做的东西，比如季度汇报 PPT、带图表的 Excel 预算表、一页 PDF 简历）。先问我几个问题把内容和风格定下来，做好了我直接预览、下载。":
-    "Make me [something, e.g. a quarterly report deck, an Excel budget with charts, a one-page PDF resume]. Ask me a few questions about content and style first, then I'll preview and download it.",
+  "帮我做一份（要做的东西，比如季度汇报 PPT、Excel 预算表、一页 PDF 简历），给（谁看、用在什么场合）。缺关键内容可以问我，小事你定就好。":
+    "Make me [something, e.g. a quarterly report deck, an Excel budget, a one-page PDF resume] for [who will read it, and where]. Ask me if key content is missing; settle the small stuff yourself.",
   项目梳理: "Plan a project",
-  "我想把这个项目（往哪里推进，比如加上登录、换一套存储、把某个功能做完整）。先通读一遍，用几句话讲讲它现在的样子；再问我几个问题把目标定准，立一份意，把要做成的拆成几项能验证的结论。先别改代码，等我看过再动手。":
-    "I want to take this project [somewhere, e.g. add login, switch storage, finish a feature]. Read through it first and describe where it stands in a few sentences. Then ask me a few questions to pin down the goal, set up an intent map, and break it into checkable outcomes. Don't change code until I've reviewed it.",
+  "我想把这个项目（往哪里推进，比如加上登录、换一套存储、把某个功能做完整）。先摸清现状，告诉我打算怎么做、会动哪些地方、有什么风险；目标不清楚可以问我。等我看过再动手。":
+    "I want to take this project [somewhere, e.g. add login, switch storage, finish a feature]. Get to know where it stands, then tell me how you'd do it, what it would touch and what the risks are; ask if the goal is unclear. Wait for my review before making changes.",
   深度调研: "Deep research",
-  "帮我把（一个问题，比如某个领域的主流做法、几种技术方案该选哪个）研究透：派几个帮手分头去查，各自的结论收回来交叉比对，说法打架的地方标出来。最后在这个目录里写一份报告，先给结论，再列依据和出处。":
-    "Research [a question, e.g. common practice in a field, which of several technical options to pick] thoroughly: send a few subagents to look into it in parallel, cross-check their findings and flag where they disagree. Then write a report in this folder: conclusion first, then evidence and sources.",
+  "帮我把（一个问题，比如某个领域的主流做法、几种技术方案该选哪个）研究透，我要据此拿主意。先给结论和理由，再列依据和出处，说法打架或证据不足的地方标出来。范围大可以分头查，内容多可以写成文件放在这个目录。":
+    "Research [a question, e.g. common practice in a field, which of several technical options to pick] thoroughly; I'll base a decision on it. Conclusion and reasoning first, then evidence and sources; flag where sources disagree or evidence is thin. Split the work up if the scope is large, and write it to a file in this folder if it runs long.",
   网页操作: "Use the browser",
   "用浏览器帮我（要在网页上办的事，比如在几家网站比价后整理成表、把这份清单逐条填进某个后台）。碰到要我判断的地方向我确认。":
     "Use the browser to [a task on the web, e.g. compare prices across a few sites and put them in a table, enter this list into an admin panel]. Check with me whenever a judgment call comes up.",
   原型演示: "Build a prototype",
-  "在这个目录里从零做一个（一个小作品，比如番茄钟、记账本、贪吃蛇），一个网页就行，做好映射到浏览器里，检查无误后向我汇报。":
-    "Build [a small project, e.g. a pomodoro timer, an expense tracker, snake] from scratch in this folder as a single web page. Open it in the browser, check it works, then report back."
+  "在这个目录里做一个（一个小作品，比如番茄钟、记账本、贪吃蛇），一个网页就行，打开就能用。做好自己在浏览器里点一遍，确认能用再告诉我怎么打开。":
+    "Build [a small project, e.g. a pomodoro timer, an expense tracker, snake] in this folder as a single web page that opens and runs as is. Click through it in the browser yourself, then tell me it works and how to open it."
 };
 if (typeof module === "object") module.exports = YAN_EN;

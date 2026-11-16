@@ -14,7 +14,7 @@ defineEmbed({
   },
   html(text, language) {
     const source = legacyViz(language, text) ? legacyVizHtml(language, text) : text;
-    return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">${t(`html · 正在载入`)}</span><span>${vizTool("data-app-restart", t("重来"), "reload")}${vizTool("data-app-download", t("下载"), "download")}${vizTool("data-work-expand", t("全屏"), "wide")}${vizTool("data-copy-code", t("复制源码"), "copy")}</span></div><div class="html-app-stage"><span>${t(`正在载入交互内容`)}</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
+    return `<div class="html-app" data-html-app><div class="code-head"><span class="code-lang">${t(`html · 正在载入`)}</span><span>${vizTool("data-app-restart", t("重来"), "reload")}${vizTool("data-app-download", t("下载"), "download")}${vizTool("data-work-expand", t("全屏"), "wide")}</span></div><div class="html-app-stage"><span>${t(`正在载入交互内容`)}</span></div><pre class="html-app-source hidden"><code>${escapeHtml(source)}</code></pre></div>\n`;
   },
   mount: renderHtmlApps,
   bind: bindHtmlAppEvents
@@ -80,32 +80,61 @@ function looksLikeMermaid(text) {
     .find(line => line && !line.startsWith("%%"));
   return MERMAID_HEAD.test(head || "");
 }
-// 正文里裸写的 <pre class="mermaid">…</pre>（没包进 ```html）：换成 ```mermaid 围栏，走同一条路成图；代码围栏里的不动
-function liftBareMermaid(text) {
-  const OPEN = '<pre class="mermaid">';
-  if (!text.includes(OPEN)) return text;
-  let fenced = false,
-    lifting = false;
-  return text
-    .split("\n")
-    .map(line => {
-      if (!lifting && /^ {0,3}(?:`{3,}|~{3,})/.test(line)) {
-        fenced = !fenced;
-        return line;
+// 正文里裸写的交互内容（没包进 ```html）：一段以标签起头的 HTML 里有 <script> 或 <pre class="mermaid">，原意只能是要它跑起来——
+// 整段提进 ```html 围栏，走同一条路成图；代码围栏里的不动。
+// 一段从标签起头的行开始：块里的行照收；<script> <style> <pre> <textarea> 里的空行不断段；空行后下一行又以标签起头的接着收（<div> 与 <script> 之间空一行仍是一段）；
+// 原样标签刚合上、下一行不以标签起头，这段就到头（如 </pre> 之后的正文）。还没合上的原样标签留着开口的围栏，流式时先画占位框
+const HTML_LINE = /^ {0,3}<[a-z!/]/i;
+function liftBareHtml(text) {
+  if (!/<script\b|<pre class="mermaid">/i.test(text)) return text;
+  const lines = text.split("\n"),
+    out = [];
+  let fence = null;
+  for (let i = 0; i < lines.length; ) {
+    const line = lines[i],
+      was = fence;
+    fence = fenceAfter(fence, line);
+    if (was || fence || !HTML_LINE.test(line)) {
+      out.push(line);
+      i++;
+      continue;
+    }
+    let end = i,
+      raw = null,
+      closed = false;
+    while (end < lines.length) {
+      const current = lines[end];
+      if (!raw) {
+        if (!current.trim()) {
+          let next = end;
+          while (next < lines.length && !lines[next].trim()) next++;
+          if (next < lines.length && HTML_LINE.test(lines[next])) {
+            end = next;
+            continue;
+          }
+          break;
+        }
+        if (closed && !HTML_LINE.test(current)) break;
       }
-      if (fenced) return line;
-      if (!lifting) {
-        const at = line.indexOf(OPEN);
-        if (at < 0) return line;
-        lifting = true;
-        line = `${line.slice(0, at)}\n\`\`\`mermaid\n${line.slice(at + OPEN.length)}`;
+      closed = false;
+      for (const [, slash, name] of current.matchAll(/<(\/?)(script|style|pre|textarea)\b/gi)) {
+        if (!raw && !slash) raw = name.toLowerCase();
+        else if (raw && slash && name.toLowerCase() === raw) {
+          raw = null;
+          closed = true;
+        }
       }
-      const end = line.indexOf("</pre>");
-      if (end < 0) return line;
-      lifting = false;
-      return `${line.slice(0, end)}\n\`\`\`\n${line.slice(end + "</pre>".length)}`;
-    })
-    .join("\n");
+      end++;
+    }
+    const run = lines.slice(i, end);
+    if (/<script\b|<pre class="mermaid">/i.test(run.join("\n"))) {
+      const longest = Math.max(2, ...run.map(item => item.match(/^ {0,3}(`+)/)?.[1].length || 0)),
+        ticks = "`".repeat(longest + 1);
+      out.push(`${ticks}html`, ...run, ...(raw ? [] : [ticks]));
+    } else out.push(...run);
+    i = end;
+  }
+  return out.join("\n");
 }
 /** 旧对话里的 mermaid / echarts 围栏 → 等价的一页 HTML。
  * echarts 的 option 原样当一段 JS 写进去：模型给的「JSON」常带注释、尾逗号、单引号、裸键名，这些 JS 本就认，不必另修；
@@ -226,6 +255,16 @@ function syncAppScroll(el) {
       "*"
     );
 }
+// 载入兜底只管「iframe 根本没应声」：沙箱页没起来、预览运行时没跑起来，才判「未能载入」。
+// 它一开口（ready 是第一条）这条计时就撤掉——mermaid 有 3.5 MB，冷态下首次解析常超过六秒，
+// 那是画得慢，不是载入失败；后到的 ready 虽会把状态改回来，但错字已闪了一下（见 test/viz-inline.mjs）
+const appLoadTimers = new WeakMap();
+function settleHtmlAppLoad(el) {
+  const timer = appLoadTimers.get(el);
+  if (!timer) return;
+  clearTimeout(timer);
+  appLoadTimers.delete(el);
+}
 function mountHtmlApp(el) {
   const id = `app${uid().replace(/[^a-z0-9]/gi, "")}`;
   el.dataset.appId = id;
@@ -236,18 +275,24 @@ function mountHtmlApp(el) {
   if (label) label.textContent = t("html · 正在载入");
   const stage = el.querySelector(".html-app-stage");
   stage.innerHTML = `<iframe sandbox="allow-scripts" title="${t(`隔离的 HTML 交互预览`)}" src="./preview.html#${id}"></iframe>`;
-  setTimeout(() => {
-    if (!el.isConnected || el.dataset.appId !== id || el.dataset.appState !== "loading") return;
-    el.dataset.appState = "error";
-    el.classList.add("html-app-error");
-    if (label) label.textContent = t("html · 未能载入");
-  }, 6000);
+  settleHtmlAppLoad(el);
+  appLoadTimers.set(
+    el,
+    setTimeout(() => {
+      appLoadTimers.delete(el);
+      if (!el.isConnected || el.dataset.appId !== id || el.dataset.appState !== "loading") return;
+      el.dataset.appState = "error";
+      el.classList.add("html-app-error");
+      if (label) label.textContent = t("html · 未能载入");
+    }, 6000)
+  );
 }
 function renderHtmlApps(root) {
   for (const el of root.querySelectorAll(".html-app[data-html-app]:not([data-rendered])")) mountHtmlApp(el);
 }
 // 交互内容工具条上的一枚：笔意小画，字收进 title 与 aria-label（与回复下的复制、重答同一套画法）。
-// 源码不另设一钮：复制、下载拿到的就是它，出错的说明在标签的 title 上
+// 平时只露「全屏」，重来、下载收进全屏（与出错）时常显的题头（见 85-components.css）。不设复制源码：回复下的复制已带着这段围栏；
+// 出错的说明在标签的 title 上
 function vizTool(attr, label, icon) {
   return `<button type="button" class="code-copy code-icon" ${attr} title="${label}" aria-label="${label}">${brushIcon(icon)}</button>`;
 }
@@ -299,6 +344,7 @@ function bindHtmlAppEvents() {
       el => el.dataset.appId === data.id && el.querySelector("iframe")?.contentWindow === event.source
     );
     if (!app) return;
+    settleHtmlAppLoad(app);
     if (data.type === "yan-preview-ready") return sendHtmlApp(app);
     if (data.type === "yan-preview-size") return sizeHtmlApp(app, Number(data.height) || 0);
     if (data.type === "yan-preview-escape") return void (app.classList.contains("work-expanded") && closeExpandedWork());

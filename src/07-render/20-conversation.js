@@ -220,6 +220,8 @@ function syncNodes(host, items, converged) {
     }
     if (next === cursor) cursor = cursor.nextElementSibling;
     else host.insertBefore(next, cursor);
+    // 问句气泡挂上了才量得出截没截（见 25-bubble.js）
+    if (!reply && next !== node) watchBubbles(next);
     // 先挂上再画：交互内容、开合动效都要在页上才量得准
     if (reply && (next !== node || item.message.status === "streaming" || nodeSig.get(next) !== sig))
       paintAssistant(next, item.message, { side: !!item.side, branch: item.branch });
@@ -290,24 +292,16 @@ function renderMessage(message, branch = null, side = false) {
     const quote = message.quote?.text
       ? `<div class="user-quote${shot ? " has-shot" : ""}" data-quote-source="${escapeHtml(message.quote.messageId || "")}"${message.quote.url ? ` data-quote-url="${escapeHtml(message.quote.url)}"` : ""} title="${t(`回到出处`)}">${shot ? `<span class="user-quote-text">${escapeHtml(message.quote.text)}</span>${quoteShotHtml(message.quote.image, message.quote.text)}` : escapeHtml(message.quote.text)}</div>`
       : "";
-    return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? `<div class="user-bubble">${escapeHtml(message.content)}</div>` : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", t("复制消息"))}${actionIcon("edit", t("编辑消息"))}</div></article>`;
+    return `<article class="message user" data-message="${escapeHtml(message.id)}">${side ? "" : noteMarkHtml(message)}${files}${quote}${message.content ? bubbleHtml(message.content) : ""}<div class="message-actions${branch ? " has-branch" : ""}">${branchNavHtml(branch)}${actionIcon("copy", t("复制消息"))}${actionIcon("edit", t("编辑消息"))}</div></article>`;
   }
   return assistantShellHtml(message);
 }
 // 正文开头带 <think>…</think> 的旧消息（导入或此前的版本）：渲染时按思考 + 正文拆开看，不改动存下的原文
-// （拆法见 16-api.js 的 parseInlineThink：思考里提到标签本身的不算收尾）
+// （拆法见 16-api.js 的 parseInlineThink：思考里提到标签本身的不算收尾）。新写的答复由 readSse 当场拆开（见 ingest），落到消息上就是分开的
 function inlineThinkView(message) {
   const split =
     message.status !== "streaming" && !message.reasoning && typeof message.content === "string" ? parseInlineThink(message.content) : null;
   return split ? { ...message, ...split } : message;
-}
-/** @param {Message} message */
-function splitInlineThink(message) {
-  const view = inlineThinkView(message);
-  if (view !== message) {
-    message.reasoning = view.reasoning;
-    message.content = view.content;
-  }
 }
 /** @param {Message} message */
 function assistantNoteHtml(message) {
@@ -320,7 +314,8 @@ function assistantNoteHtml(message) {
 /** @param {Message} message */
 function assistantActionsHtml(message) {
   // 动过文件的一答（记了检查点）：无论答完、停了、断了、出错，都可把目录退回到它开工前
-  const rewind = message.checkpoint ? actionIcon("rewind", t("退回到这一答开工前")) : "";
+  // 先前言里记下的（根是卷宗）不给退，见 80-checkpoint.js
+  const rewind = message.checkpoint && message.checkpoint.root !== archiveDir() ? actionIcon("rewind", t("退回到这一答开工前")) : "";
   return message.status === "streaming"
     ? ""
     : message.status === "error"

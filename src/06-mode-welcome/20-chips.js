@@ -21,7 +21,6 @@ function renderChips(work) {
   approve.querySelector(".chip-text").textContent = meta[0];
   approve.classList.toggle("on", policy !== "ask");
   approve.title = t`${meta[0]}：${meta[1]}（新对话默认）`;
-  renderGroupTags();
 }
 // 附件签「＋」：展开后二选一——外件（本机文件）或卷宗（已收入的文件，点选即置于案上，在这张菜单里接着选）
 function openAttachMenu(anchor) {
@@ -40,10 +39,10 @@ function openAttachMenu(anchor) {
       },
       {
         id: "skill",
-        label: t("技能"),
+        label: t("Skill"),
         note: skills ? t`${skills} 份` : t("尚空"),
         keep: true,
-        run: (button, pop) => (skills ? renderSkillPicker(pop, anchor) : toast(t("尚无技能，可在设置 → 技能里写一份")))
+        run: (button, pop) => (skills ? renderSkillPicker(pop, anchor) : toast(t("尚无 Skill，可在设置 → Skill 里写一份")))
       }
     ],
     { align: "left", kind: "attach" }
@@ -51,15 +50,13 @@ function openAttachMenu(anchor) {
   // 刚放进技能目录的：下回点开就列得出
   void refreshSkills();
 }
-// 选件的清单换了内容、高随之变：重新贴一次锚点（向上翻的，底边贴住锚点）
+// 选件的清单换了内容、宽高随之变：重新贴一次锚点（已向上翻的仍在上边，底边贴住锚点；菜单换成更宽的清单，也收回视口里）
 /** @param {HTMLElement} pop @param {Element} anchor */
 function settlePickerPop(pop, anchor) {
-  const rect = anchor.getBoundingClientRect(),
-    height = pop.offsetHeight;
-  if (pop.classList.contains("drop-up") || innerHeight - rect.bottom - 6 < height + 10) {
-    pop.classList.add("drop-up");
-    pop.style.top = `${Math.max(10, rect.top - 6 - height)}px`;
-  }
+  placeFloating(pop, anchor.getBoundingClientRect(), {
+    side: pop.classList.contains("drop-up") ? "above" : "below",
+    align: /** @type {"left"|"right"} */ (pop.dataset.align || "left")
+  });
 }
 // 卷宗选件：与卷宗页一样逐层看——先列这一层的夹、再列件，点夹即进、顶上一行「‹」回上一层，点一件即置于案上；
 // 一旦查找，就跨各层平铺，件旁注上它所在的夹，查找也认夹名
@@ -165,10 +162,12 @@ function openWorkdirPop({ anchor, host, value, live, bound, onCommit, floating =
   setTimeout(() => input.focus(), 0);
 }
 // 这段正作答（连同开工前的准备、后台的帮手、别的页面在答）：目录不许换——写了一半的文件、读过的记录、帮手手上的活都落在旧目录，
-// 中途一换，余下的照新目录写，前后对不上
+// 中途一换，余下的照新目录写，前后对不上。正退回目录的也算
 /** @param {Conversation} c */
 function workdirLocked(c) {
-  return conversationRunning(c.id) || crewRunning(c.id) || runningElsewhere(c.id) || (sendPreparing && c.id === currentId);
+  return (
+    conversationRunning(c.id) || crewRunning(c.id) || runningElsewhere(c.id) || rewinding.has(c.id) || (sendPreparing && c.id === currentId)
+  );
 }
 // 对话中途绑上 / 解开目录：只是给对话记一个目录，下一问起工具与提示词随之而变，历史一字不丢
 /** @param {Conversation} c */
@@ -179,6 +178,7 @@ async function bindWorkdir(c, dir) {
   if (!dir) {
     if (!isWork(c)) return;
     c.workdir = "";
+    markDirty(c.id);
     saveStore();
     render();
     toast(t("已解开目录，回到言"));
@@ -191,6 +191,7 @@ async function bindWorkdir(c, dir) {
     if (workdirLocked(c)) return toast(t("作答中，稍后再改"));
     c.workdir = prepared.workdir;
     c.commandPolicy = commandPolicyOf(c);
+    markDirty(c.id);
     saveStore();
     render();
     toast(t`已绑定 ${pathTail(prepared.workdir)}${prepared.created ? t("（新建）") : ""}，此后为行`);
@@ -217,13 +218,6 @@ function setupChips() {
         renderHistory();
       }
     });
-  $("#welcomeGroup").onclick = () => {
-    delete store.settings.pendingGroupId;
-    saveStore();
-    renderChips(workMode());
-    renderHeader();
-  };
-  $("#chatGroup").onclick = () => openGroupsPage(groupOf(currentConversation())?.id || null);
   $("#approveChip").onclick = () => {
     store.settings.commandPolicyDefault = nextCommandPolicy(store.settings.commandPolicyDefault);
     saveStore();

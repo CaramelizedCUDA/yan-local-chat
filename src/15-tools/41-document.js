@@ -37,8 +37,8 @@ defineTool({
       const listed = documentList(step, docs);
       return { ok: false, content: t`未找到文档「${args.name}」。${listed.content}`, display: "未找到" };
     }
-    // 翻技能的一步标作「技能」，题写技能名（附属文件写全名）
-    if (doc.skill) step.label = "技能";
+    // 翻技能的一步标作「Skill」，题写技能名（附属文件写全名）
+    if (doc.skill) step.label = "Skill";
     step.title = doc.main ? doc.skill : doc.name;
     let text = "";
     if (doc.archive) {
@@ -134,7 +134,7 @@ const archiveDocCache = new Map();
 async function archiveDocumentText(doc) {
   const key = `${doc.archive}|${doc.modifiedAt}`;
   if (archiveDocCache.has(key)) return archiveDocCache.get(key);
-  const response = await fetch(archiveFileUrl(doc.archive), { signal: AbortSignal.timeout(60000) });
+  const response = await fetch(localFileUrl(archiveFile(doc.archive)), { signal: AbortSignal.timeout(60000) });
   if (!response.ok) throw Error(t("取回失败"));
   const blob = await response.blob();
   const text = isTextFile({ name: doc.name, type: "" })

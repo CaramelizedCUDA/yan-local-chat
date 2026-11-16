@@ -12,7 +12,9 @@ function sandboxed() {
 }
 function workMode() {
   const c = currentConversation();
-  return c ? isWork(c) : !!(store.settings.pendingWorkdir || "").trim();
+  // 与发送时同一口径（见 14-chat-engine/10-send.js）：待绑的目录优先，其次是待归组自带默认目录——
+  // 后者发出去也是执事，欢迎页的印章、副标题与推荐语都得照这个说，不能一边称对谈、一边落进绑了目录的对话
+  return c ? isWork(c) : !!(store.settings.pendingWorkdir || "").trim() || !!pendingGroup()?.workdir;
 }
 // 卷宗目录：存储根里的 卷宗/（桥接报来的位置）；没绑目录的对话，工具都落在这里
 function archiveDir() {
@@ -30,15 +32,15 @@ function scratchRel(c) {
 function workRoot(c) {
   return c?.workdir || archiveDir();
 }
-// 侧栏的一枚印：只显示当前的态（言 / 行），改态的入口是目录签
+// 侧栏顶上的标识即当前的态：对谈是一笔言、执事是一笔行（设计稿/156 丙），不再另写「对谈 / 执事」；改态的入口是目录签
 function renderModeSwitch() {
-  const work = workMode(),
-    seal = $("#modeSeal");
-  if (!seal) return;
-  seal.dataset.mode = work ? "work" : "chat";
-  seal.querySelector(".rail-icon").textContent = work ? "行" : "言";
-  seal.querySelector(".wide").textContent = work ? t("执事") : t("对谈");
-  seal.title = work ? t("行 · 执事：指令与改动落在工作目录") : t("言 · 对谈：产出收入卷宗");
+  const mode = workMode() ? "work" : "chat",
+    mark = $("#brandMark");
+  if (!mark || (mark.dataset.mode === mode && mark.childElementCount)) return;
+  mark.dataset.mode = mode;
+  mark.innerHTML = brushMark(mode === "work" ? "行" : "言");
+  mark.title = mode === "work" ? t("行 · 执事：指令与改动落在工作目录") : t("言 · 对谈：产出收入卷宗");
+  mark.setAttribute("aria-label", mode === "work" ? t("行 · 执事") : t("言 · 对谈"));
 }
 const COMMAND_POLICY_META = {
   ask: [t("问而后行"), t("只读指令径行，其余逐条请示")],

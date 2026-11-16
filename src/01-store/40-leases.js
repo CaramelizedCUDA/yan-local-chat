@@ -17,7 +17,7 @@ function syncLeases() {
   if (leaseClaims.size) return Promise.all([...leaseClaims.values()]);
   if (leasing) return leasing;
   // 正作答的都算上（旁注的作业按它所在的对话记），后台还有帮手在做的也算；作答完了、最后一次存盘也落了地的松手
-  const running = new Set([...[...requestJobs].map(([key, job]) => job.conversationId || key), ...crews.keys()]);
+  const running = new Set([...[...requestJobs].map(([key, job]) => job.conversationId || key), ...crews.keys()].filter(Boolean));
   for (const id of running) leaseHold.add(id);
   for (const id of [...leaseHold]) if (!running.has(id) && !chatWritePromises.has(id) && !pendingChatWrites.has(id)) leaseHold.delete(id);
   const posting = bridge("/api/chats/lease", { owner: PAGE_ID, ids: [...leaseHold] }, AbortSignal.timeout(5000));
@@ -94,7 +94,11 @@ async function followConversations(ids, released) {
     }
   }
   renderHistory();
+  renderClepsydra();
   if (current && view === "chat") renderConversation(false);
+  // 别处松了手（写完、关页、崩了）：刚接手过来的这些对话里还记着「在等」的后台指令由这边重新等上，
+  // 结束时会叫醒、寄回报。只在开页时挂一次的话，多页接手后长任务做完就没人叫醒了（见 rewatchBackground）
+  rewatchBackground();
 }
 /** 这边跟着看、别处正作答：只看不动 */
 function runningElsewhere(id = currentId) {

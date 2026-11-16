@@ -5,21 +5,29 @@
 //   技能/      言自己认的技能，一份一个目录、内有 SKILL.md（见 server/skills.js）
 //   配置.json  设置、模型配置（含 API Key）、记忆与草稿——几个浏览器共用这一份，不再各存一套
 //   用量.json  按日记的各类用量（见 server/usage.js）
-// 在设置里换了位置，整份拷到新处，%APPDATA%\言\位置.json 写明搬去了哪（旧数据原样留着，确认无误后可自行删去）。
+// 在设置里换了位置，整份拷到新处；macOS 写 ~/Library/Application Support/言/位置.json，其余平台沿用 %APPDATA%\言\位置.json（未设 APPDATA 时 ~/AppData/Roaming），写明搬去了哪（旧数据原样留着，确认无误后可自行删去）。
 // 条子不放在 ~/.yan 里：旧处是叫人自行删去的，条子若在里头，删了旧数据也就删了条子，下次开又回到默认处。
 // 测试用 YAN_HOME 直接指定根目录，不读也不写位置条子
-// 由 server.js 装配：require("./server/store.js")({ working })——working 报各页正作答的有几段（见 server/chats.js）
+// 由 server.js 装配：working 报各页正作答的有几段（见 server/chats.js），background 报有没有后台指令在跑（见 server/work/shell.js）
+// 两样都占着根：作答中的对话正往旧处写，后台指令的工作目录也多半在根里，换位置要等它们松手
 "use strict";
-const { sendJson, readJson, jsonRoute, errorText, writeAtomic, parseJsonText, readJsonFile } = require("./http.js");
+const { sendJson, jsonRoute, errorText, writeAtomic, parseJsonText, readJsonFile } = require("./http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const { expandHome } = require("./work/paths.js");
+const { expandHome, pathIsInside } = require("./work/paths.js");
 
-/** @param {{ working?: () => number }} [options] */
-module.exports = function createStore({ working = () => 0 } = {}) {
+const MAC = process.platform === "darwin";
+
+/** @param {{ working?: () => number, background?: () => boolean, onMove?: () => void }} [options] */
+module.exports = function createStore({ working = () => 0, background = () => false, onMove = () => {} } = {}) {
   const HOME_ROOT = path.join(os.homedir(), ".yan"),
-    POINTER = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "言", "位置.json"),
+    POINTER_DIR = MAC
+      ? path.join(os.homedir(), "Library", "Application Support")
+      : process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
+    POINTER = path.join(POINTER_DIR, "言", "位置.json"),
+    // 早前 macOS 版沿用了 Windows 的 %APPDATA% 写法：搬家后旧条子只读一次，写新条子时尽力清掉
+    LEGACY_POINTER = MAC ? path.join(os.homedir(), "AppData", "Roaming", "言", "位置.json") : "",
     CONFIG_FILE = "配置.json";
   // 把现存祖先的链接也算进去，避免选到旧根内部的 junction 后递归拷贝自身。
   function physicalPath(value) {
@@ -34,23 +42,55 @@ module.exports = function createStore({ working = () => 0 } = {}) {
     return path.resolve(fs.realpathSync(existing), ...tail);
   }
   function inside(from, to) {
-    const relative = path.relative(physicalPath(from).toLowerCase(), physicalPath(to).toLowerCase());
-    return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+    return pathIsInside(physicalPath(from).toLowerCase(), physicalPath(to).toLowerCase());
   }
   function readPointer(file) {
     const pointed = readJsonFile(file)?.root;
     return typeof pointed === "string" && path.isAbsolute(pointed) ? path.resolve(pointed) : "";
   }
+  // 新条子写入是搬家的提交点：写成了才算搬完，写失败 handleMove 把根退回去，两边仍一致。
+  // 早前 macOS 版 %APPDATA% 落位的旧条子只是兼容性残留，读取时 POINTER 优先于它；清理尽力而为——
+  // 删不掉（比如父目录只读）不翻搬家的结果，残留条子也会被新条子盖住
+  function dropLegacyPointer() {
+    if (!LEGACY_POINTER) return;
+    try {
+      fs.rmSync(LEGACY_POINTER, { force: true });
+    } catch {}
+  }
   function writePointer(target) {
-    if (target.toLowerCase() === HOME_ROOT.toLowerCase()) return fs.rmSync(POINTER, { force: true });
+    if (target.toLowerCase() === HOME_ROOT.toLowerCase()) {
+      // 回默认处在 macOS 上也显式写条子：旧条子删不掉时它重启后仍在，而 POINTER 优先于它，默认处照旧生效
+      if (MAC) {
+        fs.mkdirSync(path.dirname(POINTER), { recursive: true });
+        writeAtomic(POINTER, JSON.stringify({ 言: "位置", root: HOME_ROOT }, null, 1));
+      } else {
+        fs.rmSync(POINTER, { force: true });
+      }
+      dropLegacyPointer();
+      return;
+    }
     fs.mkdirSync(path.dirname(POINTER), { recursive: true });
     writeAtomic(POINTER, JSON.stringify({ 言: "位置", root: target }, null, 1));
+    dropLegacyPointer();
   }
   function initialRoot() {
     if (process.env.YAN_HOME) return path.resolve(expandHome(process.env.YAN_HOME));
-    return readPointer(POINTER) || HOME_ROOT;
+    return readPointer(POINTER) || (LEGACY_POINTER && readPointer(LEGACY_POINTER)) || HOME_ROOT;
   }
-  let root = initialRoot();
+  let root = initialRoot(),
+    revision = 0;
+  // 归当前存储根的请求：收请求体也要等，不能等完才问「现在在哪」；往返切回同一路也已是新一回。
+  // root 由页面在发起时带来，旧页尚未得知换根的也不能把内容写进新处。不带 root 的本机脚本仍可用。
+  function scopedRoute(handle, describe = errorText) {
+    return (req, res) => {
+      const at = revision;
+      return jsonRoute((body, request, response) => {
+        const expected = typeof body.root === "string" && body.root ? path.resolve(body.root) : "";
+        if (at !== revision || (expected && expected.toLowerCase() !== root.toLowerCase())) throw Error("存储位置已变化，请刷新页面后重试");
+        return handle(body, request, response);
+      }, describe)(req, res);
+    };
+  }
   const paths = () => ({
     root,
     chats: path.join(root, "对话"),
@@ -85,19 +125,17 @@ module.exports = function createStore({ working = () => 0 } = {}) {
     const p = paths();
     return { ...p, parent: path.dirname(root), fresh: !fs.existsSync(p.config) };
   }
-  async function handleConfigLoad(req, res) {
-    try {
-      await readJson(req);
+  const handleConfigLoad = scopedRoute(
+    () => {
       const file = paths().config;
-      if (!fs.existsSync(file)) return sendJson(res, 200, { config: null, savedAt: 0 });
+      if (!fs.existsSync(file)) return { config: null, savedAt: 0 };
       const data = parseJsonText(fs.readFileSync(file, "utf8"));
       const { 言: _mark, savedAt, ...config } = data || {};
-      sendJson(res, 200, { config, savedAt: Number(savedAt) || 0 });
-    } catch (error) {
-      sendJson(res, 500, { error: `配置读不出来：${errorText(error, 200)}` });
-    }
-  }
-  const handleConfigSave = jsonRoute(
+      return { config, savedAt: Number(savedAt) || 0 };
+    },
+    error => `配置读不出来：${errorText(error, 200)}`
+  );
+  const handleConfigSave = scopedRoute(
     async (body, req, res) => {
       if (!body.config || typeof body.config !== "object") throw Error("缺少配置内容");
       ensureRoot();
@@ -151,8 +189,8 @@ module.exports = function createStore({ working = () => 0 } = {}) {
     return { count, busy };
   }
   // 换位置：parent 下的 .yan 就是新根。那里已有言的数据（另一台机器拷来的、先前搬过去的）就直接用它；
-  // 否则把整份拷过去。旧处原样留着（可自行删去），%APPDATA%\言\位置.json 记下新根，桥接重启后也认得
-  const handleMove = jsonRoute(
+  // 否则把整份拷过去。旧处原样留着（可自行删去），位置条子记下新根，桥接重启后也认得
+  const handleMove = scopedRoute(
     async body => {
       const parent = path.resolve(expandHome(body.parent));
       if (!body.parent || !path.isAbsolute(expandHome(body.parent))) throw Error("存储位置需填写完整的绝对路径");
@@ -162,6 +200,9 @@ module.exports = function createStore({ working = () => 0 } = {}) {
       // 有对话正作答（哪一页都算）：拷到一半它还往旧处写，搬过去的就缺了这一截；等答完再换
       const busy = working();
       if (busy) throw Error(`${busy} 段对话正在作答，等答完再换`);
+      // 后台指令还在跑也一样：它的工作目录多半就在存储根里（没绑目录时是 工作/），拷完照旧往旧处写；
+      // 而旧处是叫人自行删去的，删了它就没处落笔了。等它结束再换（见 server/work/shell.js 的 backgroundRunning）
+      if (background()) throw Error("有后台指令还在跑，等它结束再换");
       const existing = fs.existsSync(path.join(next, CONFIG_FILE));
       let locked = [];
       if (!existing) {
@@ -170,9 +211,18 @@ module.exports = function createStore({ working = () => 0 } = {}) {
         ({ busy: locked } = copyInto(root, next, new Set(["位置.json", "环境"])));
       }
       const previous = root;
-      root = next;
-      ensureRoot();
-      if (!process.env.YAN_HOME) writePointer(root);
+      try {
+        root = next;
+        ensureRoot();
+        if (!process.env.YAN_HOME) writePointer(root);
+      } catch (error) {
+        // 建目录或写位置条子失败：把根退回去，这一段会话里配置、对话、卷宗才不会一个在新处一个在旧处。
+        // 新处已拷进去的那份留着（重试时判成「那里已有言的数据，直接沿用」正是想要的）
+        root = previous;
+        throw error;
+      }
+      revision += 1;
+      onMove();
       return { ...describe(), moved: true, adopted: existing, previous, busy: locked.slice(0, 20), busyCount: locked.length };
     },
     error => `存储位置未能更换：${errorText(error, 200)}`
@@ -181,6 +231,7 @@ module.exports = function createStore({ working = () => 0 } = {}) {
     paths,
     describe,
     ensureRoot,
+    scopedRoute,
     routes: {
       "POST /api/store/config/load": handleConfigLoad,
       "POST /api/store/config/save": handleConfigSave,

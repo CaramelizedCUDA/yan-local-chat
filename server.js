@@ -4,8 +4,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createHash } = require("node:crypto");
-// 拼接规则（build.js）改了就重新载入：页面脚本本是即时拼的，不该因为拼法变了就得重启桥接
-const BUILD_FILE = require.resolve("./build.js");
+// 拼接规则（server/build.js）改了就重新载入：页面脚本本是即时拼的，不该因为拼法变了就得重启桥接
+const BUILD_FILE = require.resolve("./server/build.js");
 let bundler = require(BUILD_FILE),
   bundlerStamp = fs.statSync(BUILD_FILE).mtimeMs;
 function currentBundler() {
@@ -60,8 +60,18 @@ const MIME = {
   ".bcmap": "application/octet-stream"
 };
 
+// 这次请求的路径（解码后）。写坏的百分号转义不在这里报错：安全头照旧按主页面给，后面的 404/400 会接住
+function requestPath(req) {
+  try {
+    return decodeURIComponent(new URL(req.url, `http://${HOST}`).pathname);
+  } catch {
+    return null;
+  }
+}
+
 function securityHeaders(req, res) {
-  const isPreview = new URL(req.url, `http://${HOST}`).pathname === "/preview.html";
+  // 比的是解码后、不分大小写的路径：文件系统本就不分大小写，/PREVIEW.HTML 与 /%70review.html 交付的也是那一件
+  const isPreview = (requestPath(req) || "").toLowerCase() === "/preview.html";
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   // 主页面另许连本机的 ws：看台直连模型所用浏览器的调试口（见 server/stage.js）。
@@ -95,7 +105,7 @@ function corsHeaders(req, res) {
   if (req.headers["access-control-request-private-network"] === "true") res.setHeader("Access-Control-Allow-Private-Network", "true");
 }
 // 执事接口能执行本机指令，不能只依赖 CORS：不可信页面即使读不到响应，也可能用简单请求触发副作用。
-// 无 Origin 的本机脚本仍可调用；浏览器只接受本站页面（别的本机端口可对谈，但不开放执事）。
+// 无 Origin 的本机脚本仍可调用；浏览器只接受本站页面，「本站」按桥接此刻的端口（YAN_PORT）认，换了端口自然跟着换。
 function trustedWorkRequest(req) {
   const origin = req.headers.origin;
   // img / video 等浏览器 GET 通常不带 Origin，仍须按 Fetch Metadata 拒绝跨站与别的本机来源。
@@ -113,14 +123,17 @@ try {
   APP_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version || "";
 } catch {}
 // 桥接自己的代码（server.js、server/）在启动之后又改过：页面据此提醒重启，
-// 否则新页面对着旧桥接，接口对不上时的毛病无从查起
+// 否则新页面对着旧桥接，接口对不上时的毛病无从查起。
+// 拼接规则（server/build.js）不在其列：currentBundler 按 mtime 自己重载它，改它不必重启（见文件开头）
 const STARTED_AT = Date.now();
 function bridgeStale() {
   const under = dir =>
     fs
       .readdirSync(dir, { withFileTypes: true })
       .flatMap(entry => (entry.isDirectory() ? under(path.join(dir, entry.name)) : [path.join(dir, entry.name)]));
-  return [__filename, ...under(path.join(ROOT, "server"))].some(file => fs.statSync(file).mtimeMs > STARTED_AT);
+  return [__filename, ...under(path.join(ROOT, "server"))]
+    .filter(file => file !== BUILD_FILE)
+    .some(file => fs.statSync(file).mtimeMs > STARTED_AT);
 }
 function handleBootstrap(req, res) {
   sendJson(res, 200, {
@@ -139,8 +152,13 @@ function handleBootstrap(req, res) {
     }
   });
 }
-// 存储根（默认 ~/.yan）：对话、卷宗、配置都在里面，换位置后下面两处跟着走；有对话正作答时不换（问 CHATS 的租约，换时才问）
-const STORE = require("./server/store.js")({ working: () => CHATS.working() });
+// 存储根（默认 ~/.yan）：对话、卷宗、配置都在里面，换位置后下面两处跟着走；有对话正作答、有后台指令在跑时不换
+// （background 是惰性的：WORK 要用 STORE 的路径才能建，只能等换位置那一下再问它）
+const STORE = require("./server/store.js")({
+  working: () => CHATS.working(),
+  background: () => WORK.backgroundRunning(),
+  onMove: () => TIMERS.sync()
+});
 // 沙箱环境：存储根里的 环境/，桥接起的进程（指令、MCP 服务）都接上它
 const ENV = require("./server/env/index.js")({ envHome: () => STORE.paths().env });
 // 视频换壳：浏览器认不得的封装（如扩展名写作 mp4 的 MPEG-TS），预览时借环境里的 ffmpeg 原样换进 MP4（见 server/video.js）
@@ -169,10 +187,15 @@ const CHATS = require("./server/chats.js")({
 // 检查点：一答头一回动手改文件前记下目录的样子，可退回到那一刻（见 server/checkpoints.js）。存储根在工作目录里头时不把它记进去
 const CHECKPOINTS = require("./server/checkpoints.js")({
   home: () => path.join(STORE.paths().root, "检查点"),
+  deleted: id => CHATS.deleted(id),
   skip: () => [STORE.paths().root]
 });
 // 候 · 等时刻：模型约好的时刻由桥接记着，到点落进 存储根/候/ 再交给页面（见 server/timers.js）
-const TIMERS = require("./server/timers.js")({ home: () => path.join(STORE.paths().root, "候"), known: CHATS.exists });
+const TIMERS = require("./server/timers.js")({
+  home: () => path.join(STORE.paths().root, "候"),
+  known: CHATS.exists,
+  route: STORE.scopedRoute
+});
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable });
 const STAGE_LIB = require("./server/stage.js");
 // 检索与翻网页用的无头浏览器（直接请求被拦、网页要跑脚本时才起，见 server/headless.js）：配置目录只是 Cookie 与缓存，不算用户的东西，
@@ -209,11 +232,10 @@ const MODEL = require("./server/model/index.js")({ home: () => STORE.paths().roo
 // 用量簿：按日记各类花了多少，给设置里的用量卡看（见 server/usage.js）
 const USAGE = require("./server/usage.js")({ file: () => path.join(STORE.paths().root, "用量.json") });
 
-// 接口表：「方法 路径」→ 处理函数。受信的那一半能碰本机磁盘与本机服务（执事、卷宗、对话目录、存储、附件，以及能打本机的 http_request），
-// 只受理本站页面与本机脚本；另一半（引导、转发、检索、翻网页）凡是本机桥接认得的来源都可调
+// 接口表：「方法 路径」→ 处理函数。受信的那一半能碰本机磁盘与本机服务（执事、卷宗、对话目录、存储、附件、模型转发，以及能打本机的 http_request），
+// 只受理本站页面与本机脚本；另一半（引导、检索、翻网页，都只上公网）凡是本机桥接认得的来源都可调
 const OPEN_ROUTES = {
     "GET /api/bootstrap": handleBootstrap,
-    ...MODEL.openRoutes,
     ...WEB.openRoutes,
     ...SEARCH.openRoutes,
     ...BUS.routes
@@ -242,21 +264,23 @@ const BUNDLES = {
   "/support.js": { build: () => currentBundler().bundleScript(), type: "application/javascript; charset=utf-8" },
   "/app.css": { build: () => currentBundler().bundleStyles(), type: "text/css; charset=utf-8" }
 };
-// 静态服务只开放页面运行真正需要的文件。仓库根目录里还有桥接源码、测试、.git 与用户可能临时放入的配置，
-// 不能因为它们恰好位于 ROOT 下就一并交给浏览器；vendor/ 是随页面分发的纯前端资源，i18n/ 是界面的译文表；提示词随页面脚本拼进 /support.js。
-const PUBLIC_STATIC_FILES = new Set(["index.html", "theme-boot.js", "icon.svg", "preview.html", "preview-runtime.js"]);
-const REAL_ROOT = fs.realpathSync(ROOT);
+// web/ 整片按站点根开放：子目录里的字体、图片与根上那几件一样是公开资源，加一件只需放进去；
+// vendor/ 是随页面分发的纯前端资源，i18n/ 是界面的译文表，都在仓库根下的原位置；提示词随页面脚本拼进 /support.js。
+const PAGE_DIR = path.join(ROOT, "web");
+const REAL_ROOT = fs.realpathSync(ROOT),
+  REAL_PAGE_DIR = fs.realpathSync(PAGE_DIR);
 function publicStaticTarget(requested) {
   // URL 路径里的反斜杠在 Windows 上也是目录分隔符；先统一再规范化，vendor/../server.js 不能借前缀混进来。
   const webPath = requested.replace(/\\/g, "/"),
     normalized = path.posix.normalize(webPath);
   if (normalized !== webPath || normalized.startsWith("../") || path.posix.isAbsolute(normalized)) return null;
-  if (!PUBLIC_STATIC_FILES.has(normalized) && !normalized.startsWith("vendor/") && !normalized.startsWith("i18n/")) return null;
-  const candidate = path.resolve(ROOT, ...normalized.split("/"));
+  const shared = normalized.startsWith("vendor/") || normalized.startsWith("i18n/");
+  // 围栏按各自的白名单目录算，不按仓库根：web/ 里出现指向别处的链接，也带不出 web/ 之外。
+  const base = shared ? REAL_ROOT : REAL_PAGE_DIR;
+  const candidate = path.resolve(base, ...normalized.split("/"));
   if (!fs.existsSync(candidate)) return null;
-  // 白名单目录中若出现指向仓库外的符号链接，也不能跟出去。
   const file = fs.realpathSync(candidate),
-    relative = path.relative(REAL_ROOT, file);
+    relative = path.relative(base, file);
   if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
   const stat = fs.statSync(file);
   return stat.isFile() ? { file, stat } : null;
@@ -279,21 +303,29 @@ function serveBundle(req, res, urlPath) {
   res.end(req.method === "HEAD" ? undefined : body);
   return true;
 }
+function sendNotFound(res) {
+  res.writeHead(404, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" });
+  res.end(NOT_FOUND_PAGE);
+}
 function serveStatic(req, res) {
-  const urlPath = decodeURIComponent(new URL(req.url, `http://${HOST}`).pathname);
+  const urlPath = requestPath(req);
+  if (urlPath === null) {
+    // 写坏的百分号转义是请求本身的问题，不是桥接出错：静态路径当作没有这件，接口当作参数不对
+    if (req.url.startsWith("/api/")) return sendJson(res, 400, { error: "路径编码有误" });
+    return sendNotFound(res);
+  }
   if (serveBundle(req, res, urlPath)) return;
   const requested = urlPath === "/" ? "index.html" : urlPath.slice(1);
   const target = publicStaticTarget(requested);
   if (!target) {
     if (urlPath.startsWith("/api/")) return sendJson(res, 404, { error: "未找到接口" });
-    res.writeHead(404, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" });
-    return res.end(NOT_FOUND_PAGE);
+    return sendNotFound(res);
   }
   const { file, stat } = target;
   // 带上 ETag / Last-Modified：no-cache 只要求重新验证，有了校验值浏览器才会真正拿到改动后的文件，而不是沿用旧缓存
   const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
   const headers = {
-    "Content-Type": MIME[path.extname(file)] || "application/octet-stream",
+    "Content-Type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
     "Cache-Control": "no-cache",
     ETag: etag,
     "Last-Modified": stat.mtime.toUTCString()

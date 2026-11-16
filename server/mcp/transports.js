@@ -95,8 +95,24 @@ function resolveCommand(command, args, env) {
   if (process.platform !== "win32") return { file: command, args, shell: false };
   const found = findOnPath(command, env);
   if (!/\.(cmd|bat)$/i.test(found)) return { file: found, args, shell: false };
-  const quote = value => (/[\s"&|<>^()]/.test(value) ? `"${String(value).replace(/"/g, '""')}"` : String(value));
-  return { file: [found, ...args].map(quote).join(" "), args: [], shell: true };
+  // 经 shell 起的这条命令，cmd 会先把参数里的 %NAME% 展开一遍；展开出来的值若带空格，cmd 还会按空格把它劈开，
+  // 连同后面的参数一并错位（%PATH% 一带就散）。与其让它劈，不如照 cmd 的规矩在这里先展开好，引号与空格仍由 quote 管。
+  // 未定义的、落单的 % 原样留着——cmd 也这样
+  const expand = value =>
+      String(value).replace(/%([^%\s]+)%/g, (whole, name) => {
+        const key = Object.keys(env).find(item => item.toUpperCase() === name.toUpperCase());
+        return key ? String(env[key]) : whole;
+      }),
+    quote = value => (!value || /[\s"&|<>^()]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+  // 展开结果里也可能含 %NAME%（环境变量的值、令牌或路径里的字面量）。经一层环境变量转交，
+  // 让 cmd 只替换占位符，不再展开结果本身；直接拼进命令行会多展开一次，又把参数拆散。
+  const encoded = args.map(expand).map((value, index) => {
+    let key = `YAN_MCP_ARG_${index}`;
+    while (Object.keys(env).some(name => name.toUpperCase() === key)) key += "_";
+    env[key] = quote(value);
+    return `%${key}%`;
+  });
+  return { file: [quote(found), ...encoded].join(" "), args: [], shell: true };
 }
 function findOnPath(command, env) {
   if (path.isAbsolute(command) || /[\\/]/.test(command)) return command;
@@ -113,9 +129,9 @@ function findOnPath(command, env) {
 // 事件流逐条读出：每条事件交给 onEvent(event, data)
 async function readEvents(response, onEvent) {
   const decoder = new TextDecoder();
-  let buffer = "";
-  for await (const chunk of response.body) {
-    buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n?/g, "\n");
+  let buffer = "",
+    carry = "";
+  const drain = () => {
     let index;
     while ((index = buffer.indexOf("\n\n")) >= 0) {
       const block = buffer.slice(0, index);
@@ -128,6 +144,17 @@ async function readEvents(response, onEvent) {
       }
       if (data.length) onEvent(event, data.join("\n"));
     }
+  };
+  for await (const chunk of response.body) {
+    // 块尾的 \r 留到下一块再认：它若与下一块开头的 \n 是同一个换行，分开换就成了两个，事件被拦腰切开
+    const text = carry + decoder.decode(chunk, { stream: true });
+    carry = text.endsWith("\r") ? "\r" : "";
+    buffer += (carry ? text.slice(0, -1) : text).replace(/\r\n?/g, "\n");
+    drain();
+  }
+  if (carry) {
+    buffer += "\n";
+    drain();
   }
 }
 async function httpError(response) {
@@ -259,4 +286,4 @@ function createTransport(config, toolEnv) {
   throw Error("配置里既没有 command 也没有 url");
 }
 
-module.exports = { createTransport, SseTransport };
+module.exports = { createTransport, SseTransport, readEvents };

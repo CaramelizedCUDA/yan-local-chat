@@ -47,9 +47,10 @@
  * @property {number} [startedAt] 正在做时的起始时刻（毫秒），题头据此走用时；收工即删
  * @property {boolean} [waiting] 交过进展、睡着等自己挂的后台指令（醒来即删）
  * @property {Break[]} [breaks]
- * @property {{ steps: number, broken?: number, text: string }} [trailDigest] 行迹摘要头一回送出时定格的样子（见 settledDigest；broken 是那时已停、已断的步数）
+ * @property {{ steps: number, broken?: number, gone?: number, text: string }} [trailDigest] 行迹摘要头一回送出时定格的样子（见 settledDigest；broken 是那时已停、已断的步数，gone 是那时随桥接重启而止的后台）
  * @property {ToolCall[]|null} [toolCalls]
  */
+/** @typedef {{ oldStart: number, newStart: number, oldCount: number, newCount: number }} DiffHunk 覆盖写摘出的一块：两侧各从第几行起、各有几行（新侧按号从这一步的参数里切出） */
 /**
  * @typedef {Object} Step 行迹里的一步：一次工具调用及其结果、呈现与开合状态
  * @property {string} id
@@ -69,16 +70,17 @@
  * @property {Array<{ text: string, status: string }>} [plan] update_plan 的清单
  * @property {number} [exitCode]
  * @property {boolean} [readOnly] 只读指令，免确认
+ * @property {boolean} [effect] 这一步算不算动了手（见 15-tools/00-registry.js 的 sideEffectOf）：守、缓存作废、收尾重查都按它判，check_command 看后台为假、结束它为真
  * @property {string} [sandboxWhy] 问而后行里严的沙箱会拦下它的原因；请示时写明，批了就出沙箱跑
  * @property {{ id: string, claim: string, target: string }} [gate] 正等用户批的守的关口（见 keepHook），批完即去
  * @property {string[] | boolean} [granted] 批过了哪几条守的关口（旧存盘是 true）：这件工具自己不再另问，审查也知道那几条守这一步已照过
  * @property {{ ok: boolean, why: string }} [reviewed] 审而后行里交专司的审查模型判过：准了照做（指令带 reviewed 交桥接），驳了即不做
  * @property {boolean} [background] 后台指令
- * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost", started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；started：起跑的时刻，书眉的漏据它算已跑多久）
+ * @property {{ id: string, key?: string, state: "running"|"done"|"stopped"|"lost"|"evicted", started?: number }} [bg] 后台指令的编号与此刻的样子：结束时叫醒模型（running 时页面在等它；started：起跑的时刻，书眉的漏据它算已跑多久；lost / evicted 是「不会再有回报送到」的两种终态——前者随桥接重启而止，后者结束得久、被后起的指令挤出记录，结果没能留住，见 15-tools/20-command.js 的 settleBackground）
  * @property {{ id: string, due: number, every?: number, state: "waiting"|"done"|"stopped", created?: number }} [timer] 等时刻的候（set_timer）：桥接那头的编号、几时叫（every：此后隔多久再叫）；waiting 时书眉的漏列着它
- * @property {{ old: string, new: string }} [diff]
- * @property {string} [written] write_file 写下的内容（过长只留开头），改动清单点开时看
- * @property {string} [previous] write_file 覆盖掉的原文（过长只留开头），与 written 比出红绿
+ * @property {{ old: string, new: string } | { hunks: DiffHunk[], old: string }} [diff] 覆盖写：旧格式是前后两段；新格式只存旧侧的行与各块两侧的行号，新侧按号从这一步的参数里取（见 22-changes.js 的 hunksText）
+ * @property {string} [written] write_file 写下的内容：早先的步骤记整份（过长只留开头），现在不另存——整份就在这一步的参数里
+ * @property {string} [previous] write_file 覆盖掉的原文：早先的步骤才记（过长只留开头），现在换成 diff 的旧侧摘录
  * @property {{ path: string, added: number, removed: number, created?: boolean, lines?: number }} [change] lines：这一步之后这件的行数
  * @property {number} [at] 调用发起时正文的长度（时间线分组、思绪按轮切分都靠它）
  * @property {number} [rat] 调用发起时思绪的长度
@@ -92,7 +94,7 @@
  * @property {boolean} [skipped]
  * @property {boolean} [expanded] 输出摊开 / 折起；未记则按状态定（报错折起）
  * @property {boolean} [full] 输出看全 / 只看前 10 行
- * @property {boolean} [folded] 差遣卡片整张折起
+ * @property {boolean} [folded] 差遣：面板里这一趟的行迹人亲手收起 / 摊开过；未记则按状态定（见 helperRunFolded）
  * @property {SubAgent} [sub]
  * @property {"tell"|"resume"|"stop"|"read"} [mode] 传话一步做的是哪样：递话、续派、叫停、翻看
  * @property {string} [ref] 传话、叫停说到的那一趟（步骤 id）
@@ -139,7 +141,7 @@
  * @property {string} [error]
  * @property {string} [interruptedAt]
  * @property {Break[]} [breaks]
- * @property {{ steps: number, broken?: number, text: string }} [trailDigest] 行迹摘要头一回送出时定格的样子（见 settledDigest；broken 是那时已停、已断的步数）
+ * @property {{ steps: number, broken?: number, gone?: number, text: string }} [trailDigest] 行迹摘要头一回送出时定格的样子（见 settledDigest；broken 是那时已停、已断的步数，gone 是那时随桥接重启而止的后台）
  * @property {number} [durationMs]
  * @property {number} [startedAt] 正在作答时的起始时刻（毫秒），行迹题头据此走用时；收尾即删
  * @property {Deliverable[]} [deliverables] 这一答交给人看的成品（答复里链到的本机文件，见 replyDeliverables）
@@ -211,7 +213,7 @@
  */
 /** @typedef {Pick<Profile, "baseUrl"|"apiKey"|"model"|"api">} Endpoint 发一次请求要的那几样：模型配置与专司里另配的一份都够 */
 /** @typedef {{ on: boolean, api: "openai"|"anthropic"|"siliconflow"|"chatgpt", baseUrl: string, apiKey: string, model: string, modelList: string[] }} Duty 专司里另配的一份（审查、生图各一）：与模型配置同形，只认接口、地址、Key、模型；on 是开没开 */
-/** @typedef {{ id: string, text: string, category?: string, createdAt: string, updatedAt: string, source: { conversationId: string, title: string }|null }} MemoryItem */
+/** @typedef {{ id: string, category: string, text: string, updatedAt: string }} MemoryItem 记忆的一类：类名与全文 */
 /** @typedef {{ text: string, attachments: Attachment[], quote?: Quote|null, updatedAt?: string }} Draft */
 /**
  * @typedef {Object} Settings
@@ -229,9 +231,12 @@
  * @property {boolean} [notify] 桌面通知（设置 → 通用）：页面不在眼前时答毕、待你定夺、帮手断了弹系统通知；准许各浏览器自记
  * @property {boolean} autoTitle 自动拟题（设置 → 专司）：随对话的模型，只有开关
  * @property {Duty} dutyReview 审查（设置 → 专司）：审而后行里规则标疑的那一步交它再判；关着即照规则回绝
+ * @property {boolean} memoryEnabled 全局记忆（设置 → 记忆）：每问带上最新版，由主模型维护；关着即不带不记
  * @property {Duty} dutyImage 生图（设置 → 专司）：配了才把生图交给模型
  * @property {string} [pendingWorkdir] 欢迎页目录签里待绑的目录
  * @property {string[]} collapsedRepos
+ * @property {Record<string, string>} [workdirNames] 目录组自起的名字（键：目录）：只改侧栏显示，不动真实目录；空即用目录末段
+ * @property {Record<string, string>} [groupAt] 侧栏各组删过的对话里最近动过的时刻（键同 collapsedRepos：目录，或 group:组 id）：删了组里最新的一段，组不往下掉（见 historyKey）
  * @property {CommandPolicy} commandPolicyDefault 新对话默认的指令权限模式
  * @property {boolean} [sandbox] 沙箱总开关（默认开）：桥接那头筛指令、锁目录、去机密环境变量
  * @property {"anywhere"|"inside"} toolReach
@@ -252,7 +257,7 @@
  * @property {Settings} settings
  * @property {Profile[]} profiles
  * @property {Conversation[]} conversations
- * @property {{ enabled: boolean, items: MemoryItem[] }} memory
+ * @property {{ items: MemoryItem[] }} memory 一类一份全文，由主模型维护
  * @property {Record<string, Draft>} drafts
  */
 // 内置提示词都在 prompts/ 目录里，这里只做取值与填空；{{名字}} 由 vars 填入，缺文件时报错并给空串，不让请求整个失败
@@ -269,7 +274,7 @@ function prompt(path, vars = {}) {
 function fillTemplate(text, vars = {}) {
   return (Array.isArray(text) ? text.join("\n") : String(text)).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? "")).trim();
 }
-const APP_VERSION = "1.1.13"; // 与 package.json 同步；以桥接返回的为准
+const APP_VERSION = "1.3.10"; // 与 package.json 同步；以桥接返回的为准
 const FOLLOW_THRESHOLD = 80;
 // 一次回答里最多几轮工具调用（帮手另计），超过后收回工具、请模型直接收尾；按轮计，同一轮并发的几次调用只算一轮。
 // 默认值在这里，实际值在「设置 → 工具」里可改，留空（记作 0）即不限

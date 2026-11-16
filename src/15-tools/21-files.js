@@ -1,6 +1,5 @@
 // 言 · 文件：读、写、改、列、搜、下载。绑了目录落在工作目录（执事的六件），没绑落在卷宗（言只带产出所需的读、写、列与指令）。
 // 路径与沙箱在桥接那头管（server/work/）；这里只管呈现与「改之前先读过」这条规矩
-const WRITTEN_KEEP_CHARS = 4000;
 defineTool({
   name: "write_file",
   group: "work",
@@ -37,13 +36,9 @@ defineTool({
       created: !data.existed,
       lines: data.lines
     };
-    // 写下的内容与覆盖掉的原文各留一份给改动清单点开看（见 changeDiffHtml）；太长只留开头，免得对话记录跟着胖
-    const keep = text =>
-      text.length > WRITTEN_KEEP_CHARS
-        ? t`${text.slice(0, WRITTEN_KEEP_CHARS)}\n…（其后 ${text.length - WRITTEN_KEEP_CHARS} 字未留存）`
-        : text;
-    step.written = keep(String(args.content));
-    if (data.previous) step.previous = String(data.previous);
+    // 覆盖写时桥接按改动捎回旧侧的行与两侧行号（见 server/work/text.js 的 changeHunks）：新的一侧整份就在这一步的参数里，
+    // 画的时候从那儿取（见 22-changes.js 的 hunksText），不再另存一份。早先的步骤另有 previous，画的时候照旧认
+    if (data.diff) step.diff = data.diff;
     return {
       ok: true,
       content: t`已写入 ${data.path}（${data.bytes} 字节，${data.lines} 行${data.existed ? t`，覆盖了原${data.binary ? t("有的二进制") : ""}文件` : ""}${data.converted ? t("；原文件是 GBK，已存成 UTF-8") : ""}）`,
@@ -80,7 +75,7 @@ defineTool({
       );
     step.title = data.path;
     step.root = workRoot(conversation);
-    step.diff = { old: args.old.slice(0, 1500), new: args.new.slice(0, 1500) };
+    // old/new 本就整份记在这一步的参数里：画的时候从那儿取（见 22-changes.js 的 stepDiffParts），不再存第二份
     step.sig = data.sig;
     // 读后被别人改过：这一处照改了，可文件别处的现状它没看过——这一步不算「看清了」，整份覆盖前还得重读
     if (data.drift) step.drifted = changedBy(conversation, step, data.drift);
@@ -119,7 +114,9 @@ defineTool({
         : t`；文件是 ${data.encoding === "gbk" ? "GBK" : data.encoding.toUpperCase()} 编码${data.encoding === "gbk" ? t("，edit_file 改不了它") : ""}`;
     return {
       ok: true,
-      content: t`${data.path}（共 ${data.totalLines} 行，此处第 ${data.offset}–${data.offset + data.shown - 1} 行${encoding}）\n${data.text}`,
+      content: data.totalLines
+        ? t`${data.path}（共 ${data.totalLines} 行，此处第 ${data.offset}–${data.offset + data.shown - 1} 行${encoding}）\n${data.text}`
+        : t`${data.path}（共 0 行，空文件${encoding}）\n${data.text}`,
       display: `${data.shown}/${data.totalLines} 行`
     };
   }
@@ -237,7 +234,7 @@ const SEEING_TOOLS = new Set(["read_file", "write_file", "edit_file"]);
  * @param {Step} step 正要改的这一步
  */
 function seenBefore(conversation, step, file) {
-  // 账本每一问都附着（见 ledgerNote）：附的是全文，主模型不必再读一遍才能改；截过的不算，没看到的后半截不能被一笔覆盖掉
+  // 目录记忆每一问都附着（见 ledgerNote）：附的是全文，主模型不必再读一遍才能改；截过的不算，没看到的后半截不能被一笔覆盖掉
   if (
     !step.scope &&
     ledgers.get(conversation.id) &&
@@ -266,8 +263,8 @@ function lastSeen(conversation, step, file) {
       ) || null
   );
 }
-// 主模型写、改账本时带的指纹：这一答里亲手读写过的以那一步为准，没有的以开工时附上的那份为准——
-// 附上的就算它读过（见 seenBefore），读后别的对话又改了账本，整份写回前得认得出来。不是账本的回 null
+// 主模型写、改目录记忆时带的指纹：这一答里亲手读写过的以那一步为准，没有的以开工时附上的那份为准——
+// 附上的就算它读过（见 seenBefore），读后别的对话又改了目录记忆，整份写回前得认得出来。不是目录记忆的回 null
 /** @param {Conversation} conversation @param {Step} step @returns {string | null} */
 function ledgerSig(conversation, step, file) {
   const ledger = ledgers.get(conversation.id);
@@ -306,14 +303,15 @@ function seenPath(conversation, file) {
     root = normalizeWorkPath(workRoot(conversation));
   return fold(root && fold(value).startsWith(`${fold(root)}/`) ? value.slice(root.length + 1) : value);
 }
+/** 比路径用：斜杠归一，消掉 . 与重复、末尾的斜杠，.. 退一节（退到根——开头的 / 或盘符——即止） @param {string} file */
 function normalizeWorkPath(file) {
   const parts = [];
   for (const part of String(file || "")
     .replace(/\\/g, "/")
     .split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") parts.pop();
-    else parts.push(part);
+    if (part === "..") {
+      if (parts.length && !(parts.length === 1 && /^([a-z]:)?$/i.test(parts[0]))) parts.pop();
+    } else if (part !== "." && (part || !parts.length)) parts.push(part);
   }
   return parts.join("/");
 }
@@ -324,7 +322,7 @@ async function ensureWorkReady(conversation) {
   if (!isWork(conversation)) {
     const archive = workRoot(conversation);
     // 备的是草稿目录，卷宗根随之建好
-    if (archive && activeProfile()?.tools !== false)
+    if (archive && activeProfile(conversation)?.tools !== false)
       await bridge(
         "/api/work/prepare",
         { workdir: `${archive}${archive.includes("/") && !archive.includes("\\") ? "/" : "\\"}${scratchRel(conversation)}` },
@@ -332,7 +330,7 @@ async function ensureWorkReady(conversation) {
       ).catch(error => toast(t`卷宗目录不可用：${String(error.message || error)}`));
     return true;
   }
-  if (activeProfile()?.tools === false) {
+  if (activeProfile(conversation)?.tools === false) {
     toast(t("当前模型已关闭本机工具，请在模型高级配置中开启"));
     return false;
   }
@@ -346,19 +344,21 @@ async function ensureWorkReady(conversation) {
   }
   return true;
 }
-// 账本：跨多答的长活，任务活在目录里、不活在哪一段对话里——目录下 .yan/账本.md 由主模型自己立、自己维护，
-// 只记对这件工程持续有约束、又不是一条结论的（约束与取舍、做法与环境上的要点），旧的随手淘汰；结论、进展与走不通的路归意（见 src/19-intent/）。
-// 每一答开工时读一回，附在这一问之后（见 ledgerNote 与 streamReply）：压缩了、被回报叫醒另起一答、换一段对话接着做，看到的都是同一份。
-// 附在问上而不进系统提示：账本改了也不冲掉前面的缓存。没有这个文件就什么都不附。
-// 账本记多少不设上限——有的活真要记很多；限的只是每一问附多少：随模型窗口走，取附件那把尺子的一半（它每一问都附）。
-// 超出就附开头一段并写明其余用 read_file 看——所以账本是索引：常看的写在前面，细的记录（实验数据、长清单）另立 .yan/ 下的文件、账本里留一行指向它
-const LEDGER_PATH = ".yan/账本.md";
-/** @type {Map<string, { text: string, lines: number, partial: boolean, sig: string }>} 主答附上的账本，按对话：每一答开工时读（帮手领命时现读的那份不进这里）。
- * text 是读到的那截，lines 是整份的行数；partial：读接口一回给得有限，长账本只拿到了前面；sig 是读时的指纹 */
+// 目录记忆：记忆分两层——关于用户本人、处处成立的在跨对话记忆里（见 11-memory.js，进系统提示、定格）；只在这个目录成立的
+// 活在目录里、不活在哪一段对话里——目录下 .yan/记忆.md 由主模型自己立、自己维护（原名账本，旧目录里的 账本.md 由桥接备目录时改名，
+// 见 server/work/index.js；代码里仍叫 ledger）。记这个目录往后还用得上的做法与环境要点，不论活长活短，旧的随手淘汰；
+// 结论、进展与走不通的路归意（见 src/19-intent/）。两层位置不同是因为变的快慢不同：跨对话那份很少变，定格进系统提示吃缓存；
+// 这份在活里常改、别的对话也写，每一答开工时现读，附在这一问之后（见 ledgerNote 与 streamReply），改了也不冲掉前面的缓存：
+// 压缩了、被回报叫醒另起一答、换一段对话接着做，看到的都是同一份。没有这个文件就什么都不附。
+// 目录记忆记多少不设上限——有的活真要记很多；限的只是每一问附多少：随模型窗口走，取附件那把尺子的一半（它每一问都附）。
+// 超出就附开头一段并写明其余用 read_file 看——所以目录记忆是索引：常看的写在前面，细的记录（实验数据、长清单）另立 .yan/ 下的文件、目录记忆里留一行指向它
+const LEDGER_PATH = ".yan/记忆.md";
+/** @type {Map<string, { text: string, lines: number, partial: boolean, sig: string }>} 主答附上的目录记忆，按对话：每一答开工时读（帮手领命时现读的那份不进这里）。
+ * text 是读到的那截，lines 是整份的行数；partial：读接口一回给得有限，长目录记忆只拿到了前面；sig 是读时的指纹 */
 const ledgers = new Map();
-/** @type {Set<string>} 上回附上去的账本被截过的对话：截过就不算读过全文，改它得先读 */
+/** @type {Set<string>} 上回附上去的目录记忆被截过的对话：截过就不算读过全文，改它得先读 */
 const ledgersCut = new Set();
-/** 每一问附多少账本（token） @param {Profile|null} profile */
+/** 每一问附多少目录记忆（token） @param {Profile|null} profile */
 function ledgerBudget(profile) {
   return Math.floor(inlineTextBudget(profile || activeProfile()) / 2);
 }
@@ -387,7 +387,7 @@ async function loadLedger(conversation, signal, role = "main") {
   if (role === "main") ledger ? ledgers.set(conversation.id, ledger) : ledgers.delete(conversation.id);
   return ledger;
 }
-// 附在这一问之后的一段；帮手的是只读的一份（账本只由主对话写，星形）
+// 附在这一问之后的一段；帮手的是只读的一份（目录记忆只由主对话写，星形）
 /**
  * @param {Conversation} conversation @param {"main"|"sub"} role @param {Profile|null} [profile]
  * @param {{ text: string, lines: number, partial: boolean, sig: string } | null} [ledger] 帮手的那份由领命时现读传进来

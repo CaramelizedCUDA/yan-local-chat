@@ -11,10 +11,12 @@
 const { Readable } = require("node:stream");
 const { finished } = require("node:stream/promises");
 const { sendJson, readJson, requestSignal, stamp } = require("../http.js");
+const fetchUpstream = require("./upstream.js");
 const openai = require("./openai.js");
 const anthropic = require("./anthropic.js");
 const { hinted } = require("./chatgpt.js");
 const createImage = require("./image.js");
+const { wholeReplyEvents } = require("./sse.js");
 
 // 工具定义一次最多带多少件：超过不再静默截掉后面的，明确报错，接入更多工具时一眼能看出来
 const TOOLS_LIMIT = 128;
@@ -22,8 +24,8 @@ const TOOLS_LIMIT = 128;
 // 上游没接下请求时回的那句话。OpenAI 系 { error: { message } }、有的中转站 { error: "…" }、旧版 vLLM { message }、
 // FastAPI 写的自建服务 { detail }（参数校验错是一串对象，整串交出去，思考档位的报错才读得出它认哪几档）；
 // ChatGPT 订阅额度那边的几种拒绝换成看得懂的话。页面只读桥接回的 { error }，各家的样子到此为止
-async function upstreamError(response) {
-  const raw = await response.text().catch(() => "");
+async function upstreamError(response, raw) {
+  raw = raw ?? (await response.text().catch(() => ""));
   try {
     const json = JSON.parse(raw),
       detail = json.detail;
@@ -36,6 +38,134 @@ async function upstreamError(response) {
   } catch {
     return raw.trim().slice(0, 300) || `上游接口返回 ${response.status}`;
   }
+}
+
+// 上游回的正文是事件流还是整份，只能按正文开头判，不能按 content-type：标成 text/plain 的事件流也要能译（#22），标成事件流的也可能是一句报错。
+// 只多读判定要用的那几块（前面可能全是空白），读过的不丢，由 replayBody 先吐出来再接回原来的流——事件流仍是逐块往下交，
+// 不整份攒进内存。空白含 BOM（0xef 0xbb 0xbf）；事件流的行首只有 data、event、id、retry 与注释的冒号
+const BLANK = new Set([0x20, 0x09, 0x0a, 0x0d, 0x0b, 0x0c, 0xef, 0xbb, 0xbf]),
+  EVENT_MARKS = new Set([..."deir:"].map(mark => mark.charCodeAt(0)));
+// 非事件流最多读到这么多就停：判定只看开头，整份 JSON 的答复才要整份；8 MiB 足够放进不带图的整份答复
+const SNIFF_LIMIT = 8 * 1024 * 1024;
+/**
+ * @param {ReadableStream<Uint8Array>} body
+ * @returns {Promise<{ chunks: Uint8Array[], reader: ReadableStreamDefaultReader<Uint8Array>, first: number }>}
+ */
+async function peekLead(body) {
+  const reader = body.getReader();
+  /** @type {Uint8Array[]} */
+  const chunks = [];
+  let blanks = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value && value.byteLength) {
+      const first = value.findIndex(byte => !BLANK.has(byte));
+      blanks += first < 0 ? value.byteLength : first;
+      // 判定前的空白也占缓冲：沿用同一上限，超了明确报错，不能等流结束才处理。
+      if (blanks > SNIFF_LIMIT) {
+        await reader.cancel().catch(() => {});
+        throw Object.assign(Error(`上游正文开头的空白超过 ${SNIFF_LIMIT / 1024 / 1024} MB，无法判定响应格式，不再往下读`), { status: 415 });
+      }
+      chunks.push(value);
+      if (first >= 0) return { chunks, reader, first: value[first] };
+    }
+    if (done) return { chunks, reader, first: 0 };
+  }
+}
+/**
+ * @param {Uint8Array[]} chunks
+ * @param {ReadableStreamDefaultReader<Uint8Array>} reader
+ * @returns {ReadableStream<Uint8Array>}
+ */
+function replayBody(chunks, reader) {
+  let at = 0;
+  return new ReadableStream({
+    /** @param {ReadableStreamDefaultController<Uint8Array>} controller */
+    pull(controller) {
+      if (at < chunks.length) return void controller.enqueue(chunks[at++]);
+      return reader.read().then(
+        ({ value, done }) => void (done ? controller.close() : controller.enqueue(value)),
+        error => controller.error(error)
+      );
+    },
+    /** @param {any} reason */
+    cancel(reason) {
+      return reader.cancel(reason);
+    }
+  });
+}
+/**
+ * @param {Uint8Array[]} chunks
+ * @param {ReadableStreamDefaultReader<Uint8Array>} reader
+ * @param {number} [limit] 读到这么多字节就停：非事件流要整份读进来才判得出是不是 JSON，给个上限，
+ * 配错的地址、失控的中转不至于让常驻桥接一直吃到内存天花板
+ * @returns {Promise<{ text: string, truncated: boolean }>}
+ */
+async function collectText(chunks, reader, limit = Infinity) {
+  const decoder = new TextDecoder();
+  let text = "",
+    read = 0;
+  const stop = async () => {
+    await reader.cancel().catch(() => {});
+    return { text, truncated: true };
+  };
+  for (const chunk of chunks) {
+    text += decoder.decode(chunk, { stream: true });
+    read += chunk.byteLength;
+  }
+  if (read > limit) return stop();
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) {
+      text += decoder.decode(value, { stream: true });
+      read += value.byteLength;
+      if (read > limit) return stop();
+    }
+    if (done) return { text: text + decoder.decode(), truncated: false };
+  }
+}
+
+// 上游回了 200，交给页面的只有事件流：页面只有一种读法，各家、各中转的样子到此为止。
+// 判定途中就断了：页面这头还没写头，补不了「连接中断」那条事件，按连不上算、可重试（502）。
+// 整份回来的：OpenAI 兼容那路摆成一块事件流；要重译的两路译不了，说清不是事件流，带上原文前 200 字（415，等一等也不会好，不重试）。
+// 整份的报错：要重译的两路多是过载一类（Anthropic 的 Overloaded），回 503 由页面等一等再试；
+// OpenAI 兼容那路多是中转说余额不足之类，当场交回，不让页面把 RETRY_DELAYS 排满干等五分钟
+/** @param {Response} response @param {{ stream?: Function }} provider @returns {Promise<ReadableStream<Uint8Array>>} */
+async function eventBody(response, provider) {
+  /** @param {any} error */
+  const cut = error => {
+    if (error.status) throw error;
+    throw Object.assign(Error(`上游连接中断：${error.cause?.code || error.cause?.message || error.message}`), {
+      status: 502,
+      name: error.name
+    });
+  };
+  const lead = await peekLead(response.body).catch(cut);
+  if (!lead.first || EVENT_MARKS.has(lead.first)) return replayBody(lead.chunks, lead.reader);
+  const { text: raw, truncated } = await collectText(lead.chunks, lead.reader, SNIFF_LIMIT).catch(cut);
+  const type = String(response.headers.get("content-type") || "").toLowerCase(),
+    snippet = raw.trim().slice(0, 200);
+  // 判定只看开头，整份 JSON 的答复才要整份；超过上限仍不是事件流的，不再往下读，也不当整份
+  if (truncated)
+    throw Object.assign(
+      Error(`上游回的不是事件流（${type}），正文超过 ${SNIFF_LIMIT / 1024 / 1024} MB，不再往下读。前 200 字：${snippet}`),
+      { status: 415 }
+    );
+  let json = null;
+  try {
+    json = JSON.parse(raw);
+  } catch {}
+  if (json?.choices && !provider.stream) return new Response(wholeReplyEvents(json)).body;
+  if (json && ((json.error && !json.choices) || json.type === "error"))
+    throw Object.assign(Error(await upstreamError(response, raw)), { status: provider.stream ? 503 : 400 });
+  throw Object.assign(
+    Error(
+      json
+        ? `上游回了整份 JSON，不是事件流（${type}）：这条中转多半不支持流式，可换一条支持流式的接口。前 200 字：${snippet}`
+        : `上游回的不是事件流，也读不出 JSON（${type}）。前 200 字：${snippet}`
+    ),
+    { status: 415 }
+  );
 }
 
 /** @param {{ home: () => string }} options 存储根（ChatGPT 订阅的登录凭证放在那里） */
@@ -63,7 +193,7 @@ module.exports = function createModel({ home }) {
   // 列模型；接口没给出列表（不是 { data } 或 { models } 的样子）回 null。kind 为 image 时列画图的（专司里的生图）
   async function listModels(provider, config, kind = "") {
     if (provider.models) return provider.models(config);
-    const response = await fetch(provider.modelsUrl(config, kind), {
+    const response = await fetchUpstream(provider.modelsUrl(config, kind), {
       headers: await provider.headers(config),
       signal: AbortSignal.timeout(20000)
     });
@@ -130,7 +260,7 @@ module.exports = function createModel({ home }) {
       console.log(`${stamp()} → ${config.model}：${messages.length} 条消息${payload.tools ? `，工具 ${payload.tools.length} 个` : ""}`);
       // 上游的状态码原样带回页面（连不上记作 502）：429、5xx、过载这些页面会等一等再试，参数错之类的 4xx 不试
       const upstream = provider.request(payload, config);
-      const response = await fetch(provider.url(config), {
+      const response = await fetchUpstream(provider.url(config), {
         method: "POST",
         headers: await provider.headers(config, upstream),
         body: JSON.stringify(upstream),
@@ -146,10 +276,11 @@ module.exports = function createModel({ home }) {
           status: response.status,
           retryAfter: response.headers.get("retry-after") || ""
         });
+      const upstreamBody = await eventBody(response, provider);
       // 记着流了多少、最后一次来字是何时：途中断了，桥接窗口里一行看得出是对面掐线还是静默太久（见下 catch）
       meter.opened = Date.now();
       meter.last = meter.opened;
-      const metered = response.body.pipeThrough(
+      const metered = upstreamBody.pipeThrough(
         new TransformStream({
           transform(chunk, controller) {
             meter.bytes += chunk.byteLength;
@@ -159,7 +290,7 @@ module.exports = function createModel({ home }) {
         })
       );
       res.writeHead(200, {
-        "Content-Type": (!provider.stream && response.headers.get("content-type")) || "text/event-stream; charset=utf-8",
+        "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
         "X-Accel-Buffering": "no"
@@ -210,15 +341,15 @@ module.exports = function createModel({ home }) {
       }
     }
   }
+  // 全归受信的一半：地址由调用方给，开放给别的本机页面就等于替它往内网发请求、把回话读回去；ChatGPT 的登录与退出还碰本机凭证
   return {
-    // 引导、转发、列模型凡是本机桥接认得的来源都可调；ChatGPT 的登录与退出碰本机凭证，归受信的一半
-    openRoutes: {
+    routes: {
       "POST /api/test": handleTest,
       "POST /api/models": handleModels,
       "POST /api/chat": handleChat,
-      ...createImage({ resolveProfile, upstreamError })
-    },
-    routes: chatgpt.routes
+      ...createImage({ resolveProfile, upstreamError }),
+      ...chatgpt.routes
+    }
   };
 };
 module.exports.upstreamError = upstreamError;

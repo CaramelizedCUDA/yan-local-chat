@@ -6,18 +6,37 @@ async function listenTimers() {
   /** @type {string[]} */
   let skip = [];
   for (;;) {
+    const scope = bootstrap.store;
     try {
-      const { fired } = await bridge("/api/timer/wait", { skip });
+      const { fired } = await storeBridge("/api/timer/wait", { skip });
+      if (bootstrap.store !== scope) continue;
       const mine = fired.filter(item => !remoteBusy.has(item.to));
       skip = fired.length ? fired.filter(item => remoteBusy.has(item.to)).map(item => item.id) : [];
       if (!mine.length) continue;
-      const { fired: taken } = await bridge("/api/timer/take", { ids: mine.map(item => item.id) });
+      // 这页还认不出挂它的那一步（别处刚约的、这页的副本旧了，或整段对话是别处新开的）：先从目录读回再认领，
+      // 不然认领了却递不出去，这一回就丢了。读回来仍没有的（那一答已换下）才照旧认领了作罢
+      const unseen = mine.filter(item => !timerVisible(item));
+      if (unseen.length) {
+        const ids = [...new Set(unseen.map(item => item.to))];
+        if (ids.every(id => store.conversations.some(c => c.id === id))) await followConversations(ids, []);
+        else await syncChatsWithDisk();
+      }
+      if (bootstrap.store !== scope) continue;
+      const { fired: taken } = await storeBridge("/api/timer/take", { ids: mine.map(item => item.id) });
+      if (bootstrap.store !== scope) continue;
       for (const item of taken) deliverTimer(item);
     } catch {
       // 桥接断了一下（重启、睡眠醒来）：稍候再等
       await new Promise(resolve => setTimeout(resolve, 5000));
+    } finally {
+      if (bootstrap.store !== scope) skip = [];
     }
   }
+}
+/** @param {{ to: string, timer: { id: string } }} fired */
+function timerVisible({ to, timer }) {
+  const conversation = store.conversations.find(c => c.id === to);
+  return !!conversation && !!timerStepOf(conversation, timer.id);
 }
 /** @param {{ to: string, timer: { id: string, step: string, note: string, due: number, late: number, every?: number, next?: number } }} fired */
 function deliverTimer({ to, timer }) {
@@ -41,7 +60,7 @@ function deliverTimer({ to, timer }) {
       next: timer.next ? prompt("work.timerNext", { next: clockText(timer.next) }) : ""
     }),
     step,
-    profile: requestJob(conversation.id)?.profile || profiles().find(p => p.id === conversation.profileId) || activeProfile(),
+    profile: requestJob(conversation.id)?.profile || activeProfile(conversation),
     relay: { step: step.id, title: timer.note, ok: true, kind: "timer", ...(late ? { late } : {}) }
   });
 }

@@ -32,9 +32,11 @@ const defaultStore = {
     autoTitle: true,
     notify: false,
     dutyReview: normalizeDuty(null, "openai"),
+    memoryEnabled: true,
     dutyImage: normalizeDuty(null, "siliconflow"),
     pendingWorkdir: "",
     collapsedRepos: [],
+    workdirNames: {},
     commandPolicyDefault: "ask",
     sandbox: true,
     toolReach: "anywhere",
@@ -46,7 +48,7 @@ const defaultStore = {
   },
   profiles: [],
   conversations: [],
-  memory: { enabled: true, items: [] },
+  memory: { items: [] },
   drafts: {}
 };
 // 结构迁移：缺的字段由下面的规整补上，这里只管「同一个字段换了意思」的那几回。
@@ -71,6 +73,14 @@ function normalizeStoreData(value) {
     delete data.library;
     const settings = { ...defaultStore.settings, ...(data.settings || {}) };
     settings.dutyReview = normalizeDuty(settings.dutyReview, "openai");
+    // 旧专司开关迁到记忆页，保留开关选择；不再保留那份接口、密钥与模型。
+    settings.memoryEnabled =
+      typeof data.settings?.memoryEnabled === "boolean"
+        ? data.settings.memoryEnabled
+        : typeof data.settings?.dutyMemory?.on === "boolean"
+          ? data.settings.dutyMemory.on
+          : data.memory?.enabled !== false;
+    delete settings.dutyMemory;
     settings.dutyImage = normalizeDuty(settings.dutyImage, "siliconflow");
     delete settings.chatsDir;
     delete settings.archiveDir;
@@ -104,6 +114,17 @@ function normalizeStoreData(value) {
         presetId: String(group.presetId || ""),
         workdir: String(group.workdir || "")
       }));
+    // 目录组自起的名字（键：目录），只改侧栏显示、不动真实目录；空名与空键不存
+    settings.workdirNames = Object.fromEntries(
+      Object.entries(settings.workdirNames && typeof settings.workdirNames === "object" ? settings.workdirNames : {})
+        .map(([dir, name]) => [
+          String(dir),
+          String(name || "")
+            .replace(/\s+/g, " ")
+            .trim()
+        ])
+        .filter(([dir, name]) => dir && name)
+    );
     return {
       ...structuredClone(defaultStore),
       ...data,
@@ -158,7 +179,10 @@ function readLocalStoreRecord() {
       revision: Number(meta?.revision) || 0,
       dbOnly: meta?.dbOnly === true,
       split: meta?.split === true,
-      pendingDeletes: Array.isArray(meta?.pendingDeletes) ? meta.pendingDeletes.map(String) : [],
+      // 旧版是纯 id 的名单，新版是 [id, 删除时刻]：两样都认（见 30-chats.js 的 hydrateStore 与 deleteConversationStorage）
+      pendingDeletes: Array.isArray(meta?.pendingDeletes)
+        ? meta.pendingDeletes.filter(Boolean).map(item => (Array.isArray(item) ? [String(item[0]), Number(item[1]) || 0] : String(item)))
+        : [],
       managed: !!meta
     };
   } catch {
@@ -198,21 +222,26 @@ function normalizeDrafts(drafts) {
     for (const [key, value] of Object.entries(drafts)) out[key] = normalizeDraft(value);
   return out;
 }
+// 记忆一类一项（见 11-memory.js）：旧版一条一事的同类几条、两处各起的同名一类，读入时并成一项——全文依次接起（旧的在前），
+// 已有的行不重接，日子取最近的
 function normalizeMemory(memory) {
-  return {
-    enabled: memory?.enabled !== false,
-    items: (Array.isArray(memory?.items) ? memory.items : [])
-      .filter(item => item?.id && typeof item.text === "string" && item.text.trim())
-      .map(item => ({
-        id: String(item.id),
-        text: item.text,
-        category: String(item.category || ""),
-        createdAt: item.createdAt || now(),
-        updatedAt: item.updatedAt || item.createdAt || now(),
-        source:
-          item.source && typeof item.source === "object"
-            ? { conversationId: item.source.conversationId || "", title: String(item.source.title || "") }
-            : null
-      }))
-  };
+  /** @type {Map<string, MemoryItem>} */
+  const byName = new Map();
+  const items = (Array.isArray(memory?.items) ? memory.items : [])
+    .filter(item => item?.id && typeof item.text === "string" && item.text.trim())
+    .sort((a, b) => String(a.updatedAt || a.createdAt || "").localeCompare(String(b.updatedAt || b.createdAt || "")));
+  for (const item of items) {
+    const category = String(item.category || "").trim() || "未分类",
+      updatedAt = String(item.updatedAt || item.createdAt || now()),
+      text = item.text.trim(),
+      same = byName.get(category);
+    if (!same) byName.set(category, { id: String(item.id), category, text, updatedAt });
+    else {
+      const had = new Set(same.text.split("\n").map(line => line.trim())),
+        more = text.split("\n").filter(line => !had.has(line.trim()));
+      if (more.length) same.text = `${same.text}\n${more.join("\n")}`;
+      if (updatedAt > same.updatedAt) same.updatedAt = updatedAt;
+    }
+  }
+  return { items: [...byName.values()] };
 }

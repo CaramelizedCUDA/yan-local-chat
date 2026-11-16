@@ -125,9 +125,13 @@ function replaceFile(temp, file) {
       Atomics.wait(wait, 0, 0, 15 * 2 ** attempt);
     }
 }
+// 临时文件名里那一小串：进程号、时刻加几位随机，同一刻几处同写也不撞；不作机密
+function uniqueStamp() {
+  return `${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
 // 先写临时文件再改名：写到一半断电、进程被杀，正本也不会只剩半截
 function writeAtomic(file, data) {
-  const temp = `${file}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`;
+  const temp = `${file}.${uniqueStamp()}.tmp`;
   try {
     fs.writeFileSync(temp, data, typeof data === "string" ? "utf8" : undefined);
     replaceFile(temp, file);
@@ -225,7 +229,9 @@ async function sendFile(req, res, file, { name, download = false }) {
 }
 
 // 交给 Windows 的默认程序打开一件文件（预览认不得、或只抽得出结构时，看原样）。
-// 可执行的一类不开：对它们「打开」就是运行，而文件常是模型写的或随手拖进来的
+// 可执行的一类不开：对它们「打开」就是运行，而文件常是模型写的或随手拖进来的。
+// 解释器脚本也算：Windows 上 .py / .pyw / .pyc / .pyo / .pyz / .pyzw 的默认打开就是 py.exe / pyw.exe，
+// 装了 Node 并登记了关联的机器上 .mjs / .cjs 同样点开即运行；.msc 走 mmc，.application 是 ClickOnce 安装清单
 const RUNNABLE = new Set([
   "exe",
   "com",
@@ -245,7 +251,17 @@ const RUNNABLE = new Set([
   "lnk",
   "cpl",
   "reg",
-  "jar"
+  "jar",
+  "py",
+  "pyw",
+  "pyc",
+  "pyo",
+  "pyz",
+  "pyzw",
+  "mjs",
+  "cjs",
+  "msc",
+  "application"
 ]);
 function openWithSystem(file) {
   if (RUNNABLE.has(path.extname(file).slice(1).toLowerCase())) throw Error("可执行的文件不在此打开，请到资源管理器里自行处理");
@@ -256,7 +272,7 @@ function openWithSystem(file) {
 function parseJsonText(text) {
   return JSON.parse(String(text).replace(/^\uFEFF/, ""));
 }
-// \u8BFB\u6865\u63A5\u81EA\u5DF1\u8BB0\u7684\u4E00\u4EFD JSON\uFF08\u767B\u5F55\u3001\u7C3F\u8BB0\u3001\u7D22\u5F15\u2026\u2026\uFF09\uFF1A\u6CA1\u6709\u3001\u8BFB\u4E0D\u4E86\u3001\u574F\u4E86\u90FD\u5F53\u6CA1\u6709\uFF0C\u56DE fallback
+// 读桥接自己记的一份 JSON（登录、簿记、索引……）：没有、读不了、坏了都当没有，回 fallback
 function readJsonFile(file, fallback = null) {
   try {
     return parseJsonText(fs.readFileSync(file, "utf8"));
@@ -264,7 +280,7 @@ function readJsonFile(file, fallback = null) {
     return fallback;
   }
 }
-// \u4E00\u4EF6\u6587\u4EF6\u5185\u5BB9\u7684 SHA-1\uFF1A\u8FB9\u8BFB\u8FB9\u7B97\uFF0C\u4E0D\u628A\u6574\u4EFD\u8BFB\u8FDB\u5185\u5B58
+// 一件文件内容的 SHA-1：边读边算，不把整份读进内存
 async function fileHash(file) {
   const hash = crypto.createHash("sha1");
   for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
@@ -277,10 +293,10 @@ module.exports = {
   requestSignal,
   stamp,
   errorText,
+  uniqueStamp,
   writeAtomic,
   replaceFile,
   receiveUpload,
-  fileMime,
   sendFile,
   openWithSystem,
   parseJsonText,

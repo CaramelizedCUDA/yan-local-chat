@@ -1,4 +1,4 @@
-// 书眉的漏：挂着候时右上角有一只漏壶，点开分「在跑 / 约定」两节列各条（那句白话或编号、已跑多久或几时到），
+// 书眉的漏：挂着候时右上角有一只漏壶，点开分「进行中 / 约定」两节列各条（那句白话或编号、已跑多久或几时到），
 // 几段对话的都在时对话名写在行下；点一行回到起它的那一步；都了结就不画
 import { mkdirSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK } from "./lib.mjs";
@@ -15,7 +15,7 @@ check("nothing hung, no clepsydra", await evalJs(`document.querySelector("#cleps
 
 // 假模型挂一条先睡六秒的后台指令就收尾
 await evalJs(
-  `document.querySelector("#newChat").click(); setTimeout(() => { document.querySelector("#welcomeInput").value = "BGRELOAD"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); }, 300); true`
+  `(w => { document.querySelector("#newChat").click(); __yanState().settings.pendingWorkdir = w; })(__yanState().settings.pendingWorkdir); setTimeout(() => { document.querySelector("#welcomeInput").value = "BGRELOAD"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); }, 300); true`
 );
 await waitFor(`!document.querySelector("#clepsydra").classList.contains("hidden")`, 10000).catch(() => {});
 check("a hung command shows the clepsydra", await evalJs(`!document.querySelector("#clepsydra").classList.contains("hidden")`));
@@ -25,8 +25,8 @@ const open = await evalJs(
   `({ secs: [...document.querySelectorAll("#clepsydra .clepsydra-sec")].map(s => s.textContent), rows: [...document.querySelectorAll("#clepsydra .clepsydra-row")].map(r => r.textContent), from: document.querySelectorAll("#clepsydra .clepsydra-from").length, title: document.querySelector("#clepsydra .clepsydra-row")?.title })`
 );
 check(
-  "opened: one row with the id and how long under 在跑, no chat names for a single chat, the command on hover",
-  open.secs.join("|") === "在跑 · 1" &&
+  "opened: one row with the id and how long under 进行中, no chat names for a single chat, the command on hover",
+  open.secs.join("|") === "进行中 · 1" &&
     open.rows.length === 1 &&
     /^bg\d+不到 1 分钟›$/.test(open.rows[0]) &&
     open.from === 0 &&
@@ -71,7 +71,7 @@ const groups = await evalJs(
 );
 check(
   "across chats: two sections, this chat's rows first and marked, the chat named under each row, timers say when they're due",
-  groups.secs.join("|") === "在跑 · 3|约定 · 1" &&
+  groups.secs.join("|") === "进行中 · 3|约定 · 1" &&
     groups.rows.some(r => r.startsWith("在 Modal 上构建 j200 镜像26 分›")) &&
     groups.rows.includes("bg11 小时 12 分›正大杯") &&
     groups.rows.at(-1) === "看 PR 回复明 9:00 · 每 1 天›正大杯" &&

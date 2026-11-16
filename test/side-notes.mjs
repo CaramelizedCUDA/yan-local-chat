@@ -27,6 +27,10 @@ check(
   "tip offers 引用 and 旁注",
   (await evalJs(`[...document.querySelectorAll("#quoteTip [data-tip]")].map(b => b.textContent).join("|")`)) === "引用|旁注"
 );
+const tipAt = await evalJs(
+  `(() => { const r = document.querySelector("#quoteTip").getBoundingClientRect(), s = getSelection().getRangeAt(0).getBoundingClientRect(); return { above: r.bottom <= s.top, offset: Math.round(r.left + r.width / 2 - (s.left + s.width / 2)) }; })()`
+);
+check("tip floats centered above the selection", tipAt.above && Math.abs(tipAt.offset) <= 1, JSON.stringify(tipAt));
 await evalJs(`document.querySelector('#quoteTip [data-tip="note"]').click(); true`);
 await sleep(300);
 check(
@@ -48,7 +52,7 @@ const sideText = await evalJs(`[...document.querySelectorAll('#sideMessages .mes
 check(
   "side context: system note, quoted anchor, no later main content, lookup-only tools",
   sideText ===
-    "SIDE|sys:yes|quote:yes|secret:no|tools:search_web+fetch_page+http_request+run_js+run_command+read_file+list_files+recall+search_conversations+read_conversation|n:4",
+    "SIDE|sys:yes|quote:yes|secret:no|tools:search_web+fetch_page+http_request+run_js+run_command+read_file+list_files+search_conversations+read_conversation|n:4",
   sideText
 );
 check("main line untouched", await evalJs(`document.querySelectorAll('#messages .message').length === 4`));
@@ -211,6 +215,22 @@ check(
 await evalJs(`document.querySelector('#sideMessages .message.user [data-action="edit"]').click(); true`);
 await sleep(150);
 check("side question opens an editor", await evalJs(`!!document.querySelector('#sideMessages .message-edit-input')`));
+// 检查没有通过时，编辑保留在框里，不能先改原问、却留下原答。
+await evalJs(`(() => {
+  const state=__yanState(), p=state.profiles.find(p=>p.id===state.settings.activeProfileId)||state.profiles[0];
+  window.__sideQuota={p,quota:p.quota,usedTokens:p.usedTokens}; p.quota='1k';p.usedTokens=1000;
+  document.querySelector('#sideMessages .message-edit-input').value='SIDE 未能重答';
+  document.querySelector('#sideMessages [data-action="save-edit"]').click();
+})()`);
+await sleep(150);
+check(
+  "旁注未能重答时原问原答不动，编辑文字仍在",
+  await evalJs(`
+  __yanState().conversations.flatMap(c=>c.threads||[]).some(t=>t.messages.some(m=>m.role==='user'&&m.content==='SIDE whole')) &&
+  document.querySelector('#sideMessages .message-edit-input')?.value==='SIDE 未能重答'
+`)
+);
+await evalJs(`Object.assign(__sideQuota.p,{quota:__sideQuota.quota,usedTokens:__sideQuota.usedTokens}); delete window.__sideQuota; true`);
 await evalJs(
   `document.querySelector('#sideMessages .message-edit-input').value = "SIDE edited"; document.querySelector('#sideMessages [data-action="save-edit"]').click(); true`
 );
@@ -375,6 +395,28 @@ await evalJs(
   `(() => { const p = [...document.querySelectorAll('#messages .message.assistant .markdown p')].at(-1); const t = p.firstChild; const r = document.createRange(); const i = t.data.indexOf("StructRAG", t.data.indexOf("StructRAG") + 1); r.setStart(t, i); r.setEnd(t, i + 9); const s = getSelection(); s.removeAllRanges(); s.addRange(r); return true; })()`
 );
 await waitFor(`!document.querySelector("#quoteTip").classList.contains("hidden")`);
+// 划选之后内容长高、跟随滚到底（图、字体晚到）：浮条跟着选区走，不丢；翻出视口才藏，翻回来还在，点下去照样落得上
+const tipHidden = `document.querySelector("#quoteTip").classList.contains("hidden")`;
+await evalJs(
+  `(d => { d.id = "tipSpacer"; d.style.height = "1500px"; document.querySelector("#messages").prepend(d); return true; })(document.createElement("div"))`
+);
+await sleep(300);
+const grown = await evalJs(
+  `(() => { const r = document.querySelector("#quoteTip").getBoundingClientRect(), s = getSelection().getRangeAt(0).getBoundingClientRect(); return { hidden: ${tipHidden}, above: r.bottom <= s.top, offset: Math.round(r.left + r.width / 2 - (s.left + s.width / 2)), top: document.querySelector("#chatScroll").scrollTop }; })()`
+);
+check(
+  "tip follows the selection when the column grows and scrolls",
+  !grown.hidden && grown.above && Math.abs(grown.offset) <= 1 && grown.top > 1000,
+  JSON.stringify(grown)
+);
+await evalJs(`document.querySelector("#chatScroll").scrollTop = 0; true`);
+await sleep(200);
+check("tip hides while the selection is scrolled out of view", await evalJs(tipHidden));
+await evalJs(`(h => { h.scrollTop = h.scrollHeight; return true; })(document.querySelector("#chatScroll"))`);
+await sleep(200);
+check("tip comes back when the selection scrolls back", !(await evalJs(tipHidden)));
+await evalJs(`document.querySelector("#tipSpacer").remove(); true`);
+await sleep(200);
 await evalJs(`document.querySelector('#quoteTip [data-tip="note"]').click(); true`);
 await sleep(300);
 const twice = await evalJs(

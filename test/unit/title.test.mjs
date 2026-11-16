@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { load } from "./harness.mjs";
 
+const { wholeReplyEvents } = createRequire(import.meta.url)("../../server/model/sse.js");
 const prompts = {};
 new Function("window", readFileSync(new URL("../../prompts/assistant.js", import.meta.url), "utf8"))({ YAN_PROMPTS: prompts });
 const conversation = (id, content = "你来继续推荐这个项目以及训练") => ({
@@ -10,11 +12,10 @@ const conversation = (id, content = "你来继续推荐这个项目以及训练"
   title: "原题",
   messages: [{ id: `user-${id}`, role: "user", content }]
 });
-const response = title => ({
-  ok: true,
-  headers: { get: () => "application/json" },
-  json: async () => ({ choices: [{ message: { content: title } }], usage: { total_tokens: 10 } })
-});
+const response = title =>
+  new Response(wholeReplyEvents({ choices: [{ message: { content: title } }], usage: { total_tokens: 10 } }), {
+    headers: { "content-type": "text/event-stream" }
+  });
 
 function titler(current, others, request) {
   const f = load([
@@ -29,6 +30,39 @@ function titler(current, others, request) {
   f.setup(current, others, prompts, request);
   return f;
 }
+
+for (const withReply of [false, true])
+  test(`拟题要求独立于问答素材（${withReply ? "收尾补拟" : "首问并行"}），不再把侧栏命名场景送给模型`, async () => {
+    const current = conversation("winter", "冬意初临，炉火将红");
+    if (withReply) current.messages.push({ id: "reply", role: "assistant", content: "窗上未霜，杯中先暖。", status: "complete" });
+    let sent;
+    const f = titler(current, [], async (_profile, messages, _signal, overrides) => {
+      sent = { messages, overrides };
+      return response("冬日炉火");
+    });
+    await f.maybeAutoTitle(current, { id: "model", systemPrompt: "主对话的角色设定" });
+    assert.deepEqual(sent.messages, [
+      { role: "user", content: "用户：冬意初临，炉火将红" + (withReply ? "\n\n助手：窗上未霜，杯中先暖。" : "") }
+    ]);
+    assert.equal(sent.overrides.systemPrompt, prompts.assistant.title);
+    assert.match(sent.overrides.systemPrompt, /只输出题名/);
+    assert.doesNotMatch(sent.overrides.systemPrompt, /侧栏|冬意|窗上|主对话的角色设定/);
+    assert.equal(current.title, "冬日炉火");
+    assert.equal(current.titled, true);
+  });
+
+test("确实讨论侧栏命名的对话仍可用这个题名，不靠黑名单过滤", async () => {
+  const current = conversation("sidebar", "修改侧栏对话命名的逻辑");
+  let ask;
+  const f = titler(current, [], async (_profile, messages) => {
+    ask = messages[0].content;
+    return response("侧栏对话命名");
+  });
+  await f.maybeAutoTitle(current, { id: "model" });
+  assert.equal(ask, "用户：修改侧栏对话命名的逻辑");
+  assert.equal(current.title, "侧栏对话命名");
+  assert.equal(current.titled, true);
+});
 
 test("拟题只据当前发送的内容，同项目及其他项目的手改题都不进入请求", async () => {
   const current = { ...conversation("training"), workdir: "E:\\项目\\Training", groupId: "train" };

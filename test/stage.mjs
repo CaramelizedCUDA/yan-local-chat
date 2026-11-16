@@ -271,6 +271,17 @@ check(
   await evalJs(`document.querySelector("#stageFrame").style.cursor === ""`),
   await evalJs(`document.querySelector("#stageFrame").style.cursor`)
 );
+// 文件名带 % 的本地页，网址里的 % 没转义（手输的、页面链过去的）：地址行照样写得出，整栏的重画不断在这儿
+const percentFile = path.resolve(TMP, "100%.html").replace(/\\/g, "/");
+writeFileSync(percentFile, "<title>百分</title>");
+await evalJs(`__yanStage.go(${JSON.stringify(`file://${percentFile.startsWith("/") ? "" : "/"}${percentFile}`)}); true`);
+await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "百分"`, 8000).catch(() => {});
+await waitFor(`document.querySelector("#stageAddr").textContent.includes("100%.html")`, 3000).catch(() => {});
+check(
+  "a local file with a bare % in its url keeps the address line rendering",
+  await evalJs(`document.querySelector("#stageAddr").textContent.includes("100%.html")`),
+  await evalJs(`document.querySelector("#stageAddr").textContent`)
+);
 await evalJs(`__yanStage.go(${JSON.stringify(upload)}); true`);
 await waitFor(`__yanStage.state.tabs.get(${JSON.stringify(targetId)})?.title === "传"`, 8000).catch(() => {});
 await sleep(400);
@@ -643,7 +654,10 @@ check("zoom resets", (await evalJs(`__yanStage.state.zoom === 1`)) && (await win
 await evalJs(`document.querySelector("#stageMenuBtn").click(); true`);
 
 // 下载：网页里一开始下载，纸签上「下载」后记着数，下载签里列出来
-await browserSend("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: TMP.replace(/\//g, "\\") });
+await browserSend("Browser.setDownloadBehavior", {
+  behavior: "allow",
+  downloadPath: process.platform === "win32" ? TMP.replace(/\//g, "\\") : TMP
+});
 const dlPage =
   "data:text/html;charset=utf-8," +
   encodeURIComponent(`<title>下</title><a id="d" download="下载测.txt" href="data:text/plain,hi">下载</a>`);
@@ -778,7 +792,7 @@ await waitFor(
   8000
 ).catch(() => {});
 check(
-  "the 游目 tab sits between 技能 and 记忆, with the line it is named after",
+  "the 游目 tab sits between Skill and 记忆, with the line it is named after",
   await evalJs(
     `(t => t.nextElementSibling?.dataset.tab === "memory" && t.previousElementSibling?.dataset.tab === "skills")(document.querySelector('[data-tab="stage"]')) && document.querySelector("#settingsContent .settings-lead")?.textContent === "游目骋怀，足以极视听之娱。" && !!document.querySelector("#settingsContent .settings-mark")`
   )
@@ -898,18 +912,69 @@ check(
 await evalJs(`document.querySelector("#stageClose").click(); true`);
 await waitFor(`!document.querySelector("#stagePin").classList.contains("hidden")`);
 check("closing the stage brings the pin back", true);
-// 入口平时只是一笔朱竖，指针靠近才浮出「游目」两字
+// 入口的三态：浏览器开着便展开；调过浏览器的那一答没收尾前一直算在用，步与步之间不灭；卷起是未开
+const pinState = () => evalJs(`document.querySelector("#stagePin").dataset.state`);
+await evalJs(`__yanStage.state.lastAct = 0; __yanStage.sync(); true`);
+check("the scroll is unrolled while the browser is open", (await pinState()) === "open");
+await evalJs(
+  `Map.prototype.set.call(__yanStage.jobs, "pin-test", {}); window.__pinDone = __yanStage.watch("browser_click", { element: "登录" }, "pin-test"); true`
+);
+check("the scroll sways while a browser call is in flight", (await pinState()) === "act");
+await evalJs(`window.__pinDone(); __yanStage.state.lastAct = 0; __yanStage.sync(); true`);
+check("it stays in use between steps of the same answer", (await pinState()) === "act");
+await evalJs(`Map.prototype.delete.call(__yanStage.jobs, "pin-test"); true`);
+await waitFor(`document.querySelector("#stagePin").dataset.state === "open"`, 4000).catch(() => {});
+check("it settles once that answer ends", (await pinState()) === "open");
+await evalJs(`window.__pinWs = __yanStage.state.ws; __yanStage.state.ws = null; __yanStage.sync(); true`);
+check("the scroll rolls up when the browser is closed", (await pinState()) === "off");
+await evalJs(`__yanStage.state.ws = window.__pinWs; __yanStage.sync(); true`);
+// 平时只有立轴，指针靠近才浮出纸签
 const nameShown = () => evalJs(`Number(getComputedStyle(document.querySelector(".stage-pin-text")).opacity)`);
 check("only the stroke shows at rest", (await nameShown()) === 0);
 // 面板刚收起时那一笔还在往右缘归位：等它站定再量，不然指针移到的是它半路上的位置
 await waitFor(`document.querySelector("#stagePin").getBoundingClientRect().right > innerWidth - 60`, 3000).catch(() => {});
+// 右上角几件件心等距：有垂下的一件、两件都一样，漏壶现身时也一样
+const cornerGaps = await evalJs(`(() => {
+  const center = s => (r => r.left + r.width / 2)(document.querySelector(s).getBoundingClientRect()),
+    gaps = list => list.slice(1).map((s, i) => Math.round(center(s) - center(list[i]))),
+    listen = document.querySelector("#listenPendant"),
+    clock = document.querySelector("#clepsydra"),
+    wasListen = listen.classList.contains("hidden"),
+    wasClock = clock.classList.contains("hidden");
+  listen.classList.add("hidden");
+  const one = gaps(["#themeToggle", "#quotaStatus", "#stagePin"]);
+  listen.classList.remove("hidden");
+  clock.classList.remove("hidden");
+  const all = gaps([".clepsydra-btn", "#themeToggle", "#quotaStatus", "#listenPendant", "#stagePin"]);
+  listen.classList.toggle("hidden", wasListen);
+  clock.classList.toggle("hidden", wasClock);
+  return { one, all };
+})()`);
+check(
+  "the corner pieces sit an even 50 apart",
+  [...cornerGaps.one, ...cornerGaps.all].every(gap => gap === 50),
+  JSON.stringify(cornerGaps)
+);
 const pin = await evalJs(
   `(r => ({ x: r.right - 6, y: r.top + r.height / 2 }))(document.querySelector("#stagePin").getBoundingClientRect())`
 );
 await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pin.x, y: pin.y });
 await waitFor(`Number(getComputedStyle(document.querySelector(".stage-pin-text")).opacity) === 1`, 3000).catch(() => {});
 check("the name shows when the pointer comes near", (await nameShown()) === 1);
+check(
+  "the slip is wide enough for its name on one line",
+  await evalJs(`(n => n.getBoundingClientRect().width > n.getBoundingClientRect().height)(document.querySelector(".stage-pin-text"))`)
+);
 await shot("stage-pin.png");
+// 卷着时纸签贴着卷轴，不悬在半空
+await evalJs(`window.__pinWs = __yanStage.state.ws; __yanStage.state.ws = null; __yanStage.sync(); true`);
+check(
+  "the slip stays close to the rolled scroll",
+  await evalJs(
+    `document.querySelector(".stage-pin-text").getBoundingClientRect().top - document.querySelector("#stagePin").getBoundingClientRect().top < 46`
+  )
+);
+await evalJs(`__yanStage.state.ws = window.__pinWs; __yanStage.sync(); true`);
 // 长对话里右缘铺着滚动条的命中层：入口的最右一列仍点得到，而不是被它吃掉
 check(
   "the entry's right edge is not swallowed by the scrollbar's hit strip",

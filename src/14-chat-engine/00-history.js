@@ -26,30 +26,36 @@ function quotedText(message) {
 // 帮手、后台指令后来被停、中断了也重写：不会再有回报送到，不改的话此后每问都告诉模型「后台进行中」
 function settledDigest(message) {
   const steps = (message.steps || []).length,
-    broken = (message.steps || []).filter(step => step.status === "error" || step.status === "skipped").length;
-  if (message.trailDigest?.steps !== steps || (message.trailDigest.broken || 0) !== broken)
-    message.trailDigest = { steps, broken, text: stepsDigest(message, t("上一答的行迹")) };
+    // 「断」也算：holdHelper 收成 interrupted 的那一步，此后不会再有回报送到，
+    // 不重写就永远写着「后台进行中」（见上面那两句注释）
+    broken = (message.steps || []).filter(
+      step => step.status === "error" || step.status === "skipped" || step.status === "interrupted"
+    ).length,
+    // 不会再有回报送到的终态也算：随桥接重启而止（lost）、结束得久没能留住（evicted，见 20-command.js 的 settleBackground）。
+    // 摘要留着「进行中」的话，模型会照着旧编号再开一条同号的
+    gone = (message.steps || []).filter(step => step.bg?.state === "lost" || step.bg?.state === "evicted").length;
+  if (message.trailDigest?.steps !== steps || (message.trailDigest.broken || 0) !== broken || (message.trailDigest.gone || 0) !== gone)
+    message.trailDigest = { steps, broken, gone, text: stepsDigest(message, t("上一答的行迹")) };
   return message.trailDigest.text;
 }
 /** @param {{ steps?: Step[] }} message 一答；帮手的一趟也一样：续派时它上一趟的行迹冠在新的活前面 */
 function stepsDigest(message, label = t("行迹")) {
-  const steps = (message.steps || []).filter(step => TOOLS.get(step.name)?.digest);
+  // 函数式 digest 按这一答的实际情形给行（如 check_command 只有真的结束、取消才算动过手）；
+  // 给空串即这一回不值得留痕，不能写成空的一行混进摘要
+  const steps = (message.steps || [])
+    .map(step => {
+      const digest = TOOLS.get(step.name)?.digest;
+      if (!digest) return "";
+      return digest === true
+        ? `${step.name} ${String(step.title || "").slice(0, 80)} → ${step.status === "skipped" ? t("用户跳过") : step.result || step.status}`
+        : digest(step);
+    })
+    .filter(Boolean);
   if (!steps.length) return "";
-  const line = step => {
-    const digest = TOOLS.get(step.name).digest;
-    return digest === true
-      ? `${step.name} ${String(step.title || "").slice(0, 80)} → ${step.status === "skipped" ? t("用户跳过") : step.result || step.status}`
-      : digest(step);
-  };
-  // 步数多了留头留尾：开头几步是怎么起的，末尾是做到了哪——续写、下一问最要紧的是后者，只留开头的话长活做到哪全丢了
   const items =
     steps.length > DIGEST_HEAD + DIGEST_TAIL
-      ? [
-          ...steps.slice(0, DIGEST_HEAD).map(line),
-          t`…中间 ${steps.length - DIGEST_HEAD - DIGEST_TAIL} 步从略…`,
-          ...steps.slice(-DIGEST_TAIL).map(line)
-        ]
-      : steps.map(line);
+      ? [...steps.slice(0, DIGEST_HEAD), t`…中间 ${steps.length - DIGEST_HEAD - DIGEST_TAIL} 步从略…`, ...steps.slice(-DIGEST_TAIL)]
+      : steps;
   return `［${label}］${items.join("；")}`;
 }
 const DIGEST_HEAD = 4,

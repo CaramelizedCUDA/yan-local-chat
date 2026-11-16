@@ -126,8 +126,11 @@ function delegateDoing(step) {
   const sub = step.sub,
     steps = sub?.steps || [],
     current = [...steps].reverse().find(s => s.status === "running" || s.status === "pending") || steps.at(-1);
-  if (current && (current.status === "running" || current.status === "pending"))
-    return `${current.status === "pending" ? t(AWAITING) : t("正在")} ${toolLabel(current.name)} ${String(current.gist || current.title || "").slice(0, 60)}`.trim();
+  if (current && (current.status === "running" || current.status === "pending")) {
+    // 英文的工具名本就是动词（Run、Read），前面再加 Running 成了「Running Run」：「正在 X」整句进表，英文只留工具名
+    const label = toolLabel(current.name);
+    return `${current.status === "pending" ? `${t(AWAITING)} ${label}` : t`正在 ${label}`} ${String(current.gist || current.title || "").slice(0, 60)}`.trim();
+  }
   // 睡着等自己挂的后台指令
   if (sub?.waiting) return t`等后台 ${helperWaits(sub).map(bgName).join("、").slice(0, 60)}`;
   const base = Math.max(0, ...steps.map(s => Number(s.at) || 0)),
@@ -170,6 +173,9 @@ function workStepHtml(step, title) {
     // 模型说了要做什么的：题头写那一句，指令原文退到展开后的头一段（悬停也看得到）
     gist = command && step.gist;
   const meta = status === "running" ? "" : status === "pending" ? t(AWAITING) : escapeHtml(stepText(step.result || step.note));
+  // 这一步该画的红绿（覆盖写的 hunks、改文件的 old/new、旧格式）。等确认的、跑着的、报错的先不算：
+  // edit_file 的 old/new 在参数里一直都有，若照参数画，失败的那一步也会摊出一份没发生的红绿
+  const parts = status === "done" ? stepDiffParts(step) : null;
   let body = "",
     more = "";
   // 等待确认时把整条指令完整摊开，不能只靠单行省略号让用户猜着点头；已摆在请示条上的不再摊第二份
@@ -177,11 +183,13 @@ function workStepHtml(step, title) {
   else if (status === "pending" && step.gate) body = keepGateHtml(step, !gist);
   else if (status === "pending")
     body = `<pre class="tool-output tool-cmd-preview">${escapeHtml(title)}</pre>${sandboxWhyHtml(step)}<div class="tool-approve"><button type="button" data-approve="run">${t(`运行`)}</button><button type="button" data-approve="skip">${t(`跳过`)}</button><button type="button" data-approve="auto" title="${t(`径行：此对话中后续指令不再询问`)}">${t(`径行`)}</button></div>`;
-  else if (step.diff) {
-    const diff = splitDiffHtml(step.diff.old, step.diff.new, { limit: step.full ? Infinity : DIFF_SHOW_ROWS, wrap: !!step.full });
-    body = `<div class="tool-diff">${diff.html}</div>`;
-    if (diff.clipped) more = t`展开全部 · −${diff.removed} +${diff.added} 行`;
-    else if (step.full && diff.rows > DIFF_SHOW_ROWS) more = t`只看前 ${DIFF_SHOW_ROWS} 行`;
+  else if (parts) {
+    const diff = stepDiffRender(step, { limit: step.full ? Infinity : DIFF_SHOW_ROWS, wrap: !!step.full });
+    if (diff) {
+      body = `<div class="tool-diff">${diff.html}</div>`;
+      if (diff.clipped) more = t`展开全部 · −${diff.removed} +${diff.added} 行`;
+      else if (step.full && diff.rows > DIFF_SHOW_ROWS) more = t`只看前 ${DIFF_SHOW_ROWS} 行`;
+    }
   } else if (step.output) {
     const out = clampLines(step.output, step.full);
     body = `<pre class="tool-output">${escapeHtml(out.text)}</pre>`;
@@ -191,7 +199,8 @@ function workStepHtml(step, title) {
   if (gist && title && status !== "pending") body = `<pre class="tool-output tool-code">${escapeHtml(title)}</pre>${body}`;
   if (more) body += `<button type="button" class="tool-more" data-step-more>${more}</button>`;
   const foldable = !!body && status !== "pending",
-    openByDefault = status !== "error" && (!!step.diff || step.name === "list_files"),
+    // 有红绿可看的（写入、修改）默认摊开，与文件大小无关；目录清单也摊开。其余折起
+    openByDefault = status !== "error" && (!!parts || step.name === "list_files"),
     folded = foldable && (step.expanded === undefined ? !openByDefault : !step.expanded);
   return `<div class="tool-step${folded ? " folded" : ""}${foldable ? " foldable" : ""}${step.readOnly ? " is-read-only" : ""}" data-tool="${escapeHtml(step.name)}" data-step-id="${escapeHtml(step.id)}" data-status="${escapeHtml(status)}"><div class="tool-step-head"${foldable ? ` title="${folded ? t("展开输出") : t("收起输出")}"` : ""}><span class="tool-label">${escapeHtml(toolLabel(step.name))}</span><span class="tool-title${command && !gist ? " tool-cmd" : ""}" title="${escapeHtml(title)}">${escapeHtml(gist || title)}</span><span class="tool-meta" title="${status === "error" ? escapeHtml(step.result || t("执行失败")) : ""}">${meta}</span>${stepStateHtml(status)}</div>${body}</div>`;
 }
@@ -236,23 +245,18 @@ function sourceCardsHtml(message) {
   const found = (message.steps || []).filter(step => step.status === "done").flatMap(step => TOOLS.get(step.name)?.sources?.(step) || []);
   for (const entry of found) if (entry.url && entry.read) add(entry.url, entry.title, true);
   for (const entry of found) if (entry.url && !entry.read) add(entry.url, entry.title, false);
-  // 记忆与旧谈：翻过的条目、查到并读过的对话，与网页并列列出，点开各归其处
-  const talks = new Map(),
-    memories = new Map();
-  for (const entry of found) {
+  // 旧谈：查到并读过的对话，与网页并列列出，点开即回那一段
+  const talks = new Map();
+  for (const entry of found)
     if (entry.talk && (entry.read || !talks.has(entry.talk)))
       talks.set(entry.talk, { id: entry.talk, title: entry.title, date: entry.date, read: !!entry.read });
-    if (entry.memory) memories.set(entry.memory, entry.title);
-  }
   const list = [...sources.values()],
-    local = [...talks.values(), ...[...memories].map(([id, text]) => ({ memoryId: id, text }))];
+    local = [...talks.values()];
   if (!list.length && !local.length) return "";
   const card = (source, index) =>
-    source.memoryId
-      ? `<button type="button" class="source-card source-local" data-open-memory="${escapeHtml(source.memoryId)}" title="${t(`查看这条记忆`)}"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.text)}</strong><small>${t(`记忆`)}</small></span></button>`
-      : source.id
-        ? `<button type="button" class="source-card source-local" data-open-talk="${escapeHtml(source.id)}" title="${t(`打开这段对话`)}"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.title)}</strong><small>${t`旧谈${source.date ? ` · ${escapeHtml(formatDay(source.date))}` : ""}`}</small></span>${source.read ? `<span class="source-read">${t(`已读`)}</span>` : ""}</button>`
-        : `<a class="source-card" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.title)}</strong><small>${escapeHtml(safeHost(source.url))}</small></span>${source.read ? `<span class="source-read">${t(`已读`)}</span>` : ""}</a>`;
+    source.id
+      ? `<button type="button" class="source-card source-local" data-open-talk="${escapeHtml(source.id)}" title="${t(`打开这段对话`)}"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.title)}</strong><small>${t`旧谈${source.date ? ` · ${escapeHtml(formatDay(source.date))}` : ""}`}</small></span>${source.read ? `<span class="source-read">${t(`已读`)}</span>` : ""}</button>`
+      : `<a class="source-card" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer"><span class="source-index">${index + 1}</span><span class="source-copy"><strong>${escapeHtml(source.title)}</strong><small>${escapeHtml(safeHost(source.url))}</small></span>${source.read ? `<span class="source-read">${t(`已读`)}</span>` : ""}</a>`;
   const all = [...list, ...local];
   return `<details class="source-stack"><summary><span>${t(`出处`)}</span><small>${t`${all.length} 条`}</small></summary><div class="source-grid">${all.map(card).join("")}</div></details>`;
 }

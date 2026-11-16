@@ -68,7 +68,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       const head = summaryMessages(contextIndex >= 0 ? before[contextIndex] : null);
       head.push(...(await historyForApi(source, lastUserId, budget)));
       // 这一问的首段往后各问里一字不差，标作缓存点：下一问时连它在内的整段历史都从缓存读（桥接只给 Claude 留着这个标，别家去掉）。
-      // 账本只附在这一问（之前的问不带，免得一份账本背上几十遍），所以接在后面另起一段——冠在开头，这一问每问都变，缓存只接得到上一答之前。
+      // 目录记忆只附在这一问（之前的问不带，免得一份目录记忆背上几十遍），所以接在后面另起一段——冠在开头，这一问每问都变，缓存只接得到上一答之前。
       // 意也一样（见 19-intent/10-store.js）
       const ask = head.findLast(entry => entry.role === "user"),
         ledger = ledgerNote(conversation, "main", profile),
@@ -100,8 +100,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     releaseQuota = reserveTokens(profile, estimateTokens(history) + (Number(profile.maxTokens) || 8192));
     if (profile.tools !== false) await Promise.all([mcpForTurn(), refreshSkills()]);
     const tools = profile.tools !== false ? toolDefinitions(conversation, { profile }) : null;
+    const memory = new Map();
     const overrides = {
-      systemPrompt: systemPrompt(conversation, tools),
+      systemPrompt: systemPrompt(conversation, tools, { memory }),
       tools,
       reasoning: conversation.reasoning || "",
       head: history.length,
@@ -121,6 +122,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }
     };
     await runRounds(assistant, history, {
+      memory,
       profile,
       conversation,
       host: assistant,
@@ -195,7 +197,10 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }
     }
     if (requestJobs.get(conversation.id) === job) requestJobs.delete(conversation.id);
-    const goesOn = settleSupplements(conversation, assistant, job, profile);
+    // 收尾途中这段对话被删掉了（正文写完、成品还在解析的那几百毫秒里删的；队列里还排着补言时更直接）：
+    // 这一答的账照记，但不再在它上面起新答、拟题、压缩——那些请求的 key 已不在 store 里，界面上也没处停
+    const gone = !store.conversations.some(item => item.id === conversation.id);
+    const goesOn = gone ? false : settleSupplements(conversation, assistant, job, profile);
     if (currentId !== conversation.id || view !== "chat") conversation.unread = true;
     markDirty(conversation.id);
     saveStore();
@@ -207,9 +212,9 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       updateContextGauge();
     }
     renderSendButtons();
-    if (!goesOn) notifyAnswerEnd(conversation, assistant);
+    if (!goesOn && !gone) notifyAnswerEnd(conversation, assistant);
     // 压前文排在这一答撤下作业之后：之前排的话，言里收尾还在等卷宗重翻，这段仍算在作答，压缩会悄悄作罢
-    if (assistant.status === "complete") {
+    if (!gone && assistant.status === "complete") {
       setTimeout(() => maybeAutoCompact(conversation, profile), 0);
       void maybeAutoTitle(conversation, profile);
     }

@@ -8,6 +8,7 @@ const path = require("node:path");
 const { createHash, randomBytes, randomUUID } = require("node:crypto");
 const { jsonRoute, writeAtomic, readJsonFile } = require("../http.js");
 const { translateSse } = require("./sse.js");
+const fetchUpstream = require("./upstream.js");
 const { openUrl } = require("../platform.js");
 
 // 两处地址可由环境变量换掉，只为测试：起一个假的授权与接口服务
@@ -76,8 +77,11 @@ module.exports = function createChatgpt({ home }) {
       body: new URLSearchParams({ ...form, resource: RESOURCE }),
       signal: AbortSignal.timeout(20000)
     }).catch(error => {
-      throw Error(
-        `连不上 OpenAI 授权端（${error.cause?.code || error.cause?.message || error.message}）：多半是桥接没走代理，开着代理就重启桥接再试`
+      throw Object.assign(
+        Error(
+          `连不上 OpenAI 授权端（${error.cause?.code || error.cause?.message || error.message}）：多半是桥接没走代理，开着代理就重启桥接再试`
+        ),
+        { status: 502 }
       );
     });
     const data = /** @type {any} */ (await response.json().catch(() => ({})));
@@ -86,34 +90,51 @@ module.exports = function createChatgpt({ home }) {
       const nested = data.error && typeof data.error === "object" ? data.error : null,
         code = nested ? nested.code || nested.type : data.error;
       const message = nested?.message || data.error_description || data.detail || code || `换令牌失败（${response.status}）`;
-      throw Object.assign(Error(hinted(code, String(message))), { code });
+      throw Object.assign(Error(hinted(code, String(message))), { code, status: response.status });
     }
     return data;
   }
 
   // 换新一次只走一回：几段对话同时开工时不能各拿旧刷新令牌去换（刷新令牌换一次就作废旧的，第二个会被当成重放）
-  let refreshing = null;
+  const refreshing = new Map();
   async function accessToken() {
-    const auth = load();
+    const target = file(),
+      auth = load();
     if (!auth.tokens?.access_token) throw Error("还没登录 ChatGPT：到「设置 → 模型」里点「登录」");
     if (auth.tokens.expires_at - Date.now() > 5 * 60 * 1000) return auth.tokens.access_token;
-    refreshing ||= (async () => {
+    const before = JSON.stringify(auth),
+      key = `${target}\u0000${before}`;
+    if (refreshing.has(key)) return refreshing.get(key);
+    // 换根、退出、重新登录后，旧请求的成功与失效回话都不能动新凭证；同一份凭证仍只换一回。
+    const check = () => {
+      if (file() !== target || JSON.stringify(load()) !== before)
+        throw Object.assign(Error("ChatGPT 的登录或存储位置已变化，请重试"), { status: 400 });
+    };
+    const refresh = (async () => {
       try {
         const fresh = await tokenRequest({
           grant_type: "refresh_token",
           client_id: auth.clientId,
           refresh_token: auth.tokens.refresh_token
         });
+        check();
         save({ ...auth, tokens: tokensOf(fresh, auth.tokens) });
         return fresh.access_token;
       } catch (error) {
-        if (!DEAD_GRANTS.has(error.code)) throw Error(`ChatGPT 的登录凭证没能换新：${error.message}`);
+        check();
+        if (!DEAD_GRANTS.has(error.code)) {
+          // 换新失败按「还能不能再试」给状态码：网络、5xx、限流是可重试的一类（502，页面等一等再发）；
+          // 其余 4xx 多是要改配置，当场交回，不让页面把 RETRY_DELAYS 排满
+          const retryable = !error.status || error.status === 429 || error.status >= 500;
+          throw Object.assign(Error(`ChatGPT 的登录凭证没能换新：${error.message}`), { status: retryable ? 502 : 400 });
+        }
         const { tokens, ...rest } = auth;
         save(rest);
         throw Error("ChatGPT 的登录已失效，请到「设置 → 模型」里重新登录");
       }
-    })().finally(() => (refreshing = null));
-    return refreshing;
+    })().finally(() => refreshing.delete(key));
+    refreshing.set(key, refresh);
+    return refresh;
   }
   // 缓存键另放进请求头的 session_id：后端照它把请求送到存着前文缓存的那一处，光有请求体里的 prompt_cache_key 一回也不中
   // （2026-10-09 实测：同一前缀隔半分钟再发，带它读到 99%，不带一直是 0）
@@ -128,6 +149,12 @@ module.exports = function createChatgpt({ home }) {
   // 登录：桥接在 127.0.0.1 上临时开一个回调口，用系统浏览器打开授权页；用户点了同意，浏览器带着 code 回到回调口，
   // 桥接拿 code 换令牌、存下，回调口随即关掉。十分钟没回来也关
   let pending = null;
+  // 上一次登录失败的原因。原先只挂在 pending 上：回调一失败 pending 就被收掉，status() 便再也读不到
+  // （页面 1.5 秒一轮的轮询几乎撞不上 pending 与 error 同时成立的那一瞬），于是「地区被拒」「invalid_grant」
+  // 全成了设置页上的一句「未登录」。留到下一次点登录或登录成功为止
+  let lastError = null;
+  /** @param {string} file */
+  const failure = file => (lastError?.file === file ? lastError.text : "");
   function stopPending() {
     if (!pending) return;
     clearTimeout(pending.timer);
@@ -136,7 +163,9 @@ module.exports = function createChatgpt({ home }) {
   }
   async function startLogin() {
     stopPending();
-    const auth = load();
+    lastError = null;
+    const target = file(),
+      auth = load();
     // 本机标识：每台机器一个，头一回登录前定下，此后一直用它
     // 须写成 urn:uuid:…，裸的 UUID 授权端不认（invalid ext_agent_host_id）；先前存下的裸 UUID 补上前缀，仍是同一台机器
     if (!auth.hostId?.startsWith("urn:uuid:")) {
@@ -148,15 +177,20 @@ module.exports = function createChatgpt({ home }) {
       server = http.createServer();
     await new Promise((resolve, reject) => server.once("error", reject).listen(0, "127.0.0.1", () => resolve()));
     const redirect = `http://127.0.0.1:${/** @type {any} */ (server.address()).port}/callback`;
-    const login = (pending = { server, error: "", timer: setTimeout(stopPending, 10 * 60 * 1000) });
+    const login = (pending = { server, file: target, error: "", timer: setTimeout(stopPending, 10 * 60 * 1000) });
     server.on("request", async (req, res) => {
       const url = new URL(req.url || "/", redirect);
       if (url.pathname !== "/callback") return res.writeHead(404).end();
       const page = (status, title, line) => {
         res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" }).end(landing(title, line));
+        // 成败都记在这一份存储根上：设置的账号行只读 status()，除了落地页，没有别处能看到原因。
+        // 已被新的一次登录顶掉的回调（pending 换了人）不算，否则旧回调的失败会盖到新登录头上
+        if (status < 400) lastError = null;
+        else if (login.error && pending === login) lastError = { file: login.file, text: login.error };
         if (pending === login) stopPending();
       };
       if (url.searchParams.get("state") !== state) return res.writeHead(400).end();
+      if (pending !== login || file() !== target) return page(409, "没有登录", "ChatGPT 的登录或存储位置已变化，请重试");
       const code = url.searchParams.get("code");
       if (!code) {
         login.error = url.searchParams.get("error_description") || url.searchParams.get("error") || "授权未完成";
@@ -164,6 +198,7 @@ module.exports = function createChatgpt({ home }) {
       }
       try {
         const current = load(),
+          before = JSON.stringify(current),
           clientId = url.searchParams.get("client_id") || current.clientId || "";
         const fresh = await tokenRequest({
           grant_type: "authorization_code",
@@ -172,6 +207,8 @@ module.exports = function createChatgpt({ home }) {
           code_verifier: verifier,
           redirect_uri: redirect
         });
+        if (pending !== login || file() !== target || JSON.stringify(load()) !== before)
+          return page(409, "没有登录", "ChatGPT 的登录或存储位置已变化，请重试");
         save({ ...current, clientId, email: jwtClaims(fresh.id_token).email || "", tokens: tokensOf(fresh) });
         page(200, "已登录", "回到言即可，此页可以关掉");
       } catch (error) {
@@ -198,13 +235,24 @@ module.exports = function createChatgpt({ home }) {
   }
   function status() {
     const auth = load();
-    return { signedIn: !!auth.tokens?.refresh_token, email: auth.email || "", pending: !!pending, error: pending?.error || "" };
+    const login = pending?.file === file() ? pending : null;
+    return {
+      signedIn: !!auth.tokens?.refresh_token,
+      email: auth.email || "",
+      pending: !!login,
+      // 失败原因留到下一次点登录或登录成功：页面那一行才写得出「为什么没登进去」
+      error: login?.error || (auth.tokens?.refresh_token ? "" : failure(file()))
+    };
   }
   // 退出：向授权端吊销刷新令牌（吊销不成也照样在本机清掉），登记的 client_id 与本机标识留着，下回登录同一个账号还用它们
   async function logout() {
     stopPending();
+    lastError = null;
     const auth = load();
     if (!auth.tokens) return status();
+    // 先在本机退出，立即使在途换新失效；等远端吊销期间若又登录或换根，不再回写旧状态。
+    const { tokens, ...rest } = auth;
+    save(rest);
     try {
       const config = /** @type {any} */ (
         await (await fetch(`${AUTH}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10000) })).json()
@@ -217,8 +265,6 @@ module.exports = function createChatgpt({ home }) {
           signal: AbortSignal.timeout(10000)
         });
     } catch {}
-    const { tokens, ...rest } = auth;
-    save(rest);
     return status();
   }
 
@@ -227,7 +273,10 @@ module.exports = function createChatgpt({ home }) {
   async function models() {
     // 模型表按 client_version 筛：各模型标着 Codex 客户端的最低版本（它自己的 apply_patch 之类工具要新版才有），不带就按旧版给，最新的几个看不到。
     // 言不靠 Codex 客户端的那些功能，这些模型直接调用也放行，所以带一个足够大的版本号，即「不按客户端版本筛」
-    const response = await fetch(`${API}/models?client_version=999.0.0`, { headers: await headers(), signal: AbortSignal.timeout(20000) });
+    const response = await fetchUpstream(`${API}/models?client_version=999.0.0`, {
+      headers: await headers(),
+      signal: AbortSignal.timeout(20000)
+    });
     const data = /** @type {any} */ (await response.json().catch(() => ({})));
     if (!response.ok) throw Error(hinted(data.error?.code, data.error?.message || `列模型失败（${response.status}）`));
     const list = (Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : []).filter(

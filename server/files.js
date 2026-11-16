@@ -7,6 +7,7 @@ const {
   sendJson,
   jsonRoute,
   errorText,
+  uniqueStamp,
   writeAtomic,
   replaceFile,
   receiveUpload,
@@ -61,7 +62,7 @@ module.exports = function createFiles({ filesHome, playable }) {
         // 原件本身是 .json 的，与元数据同名会被元数据盖掉：另取「<id>.raw.json」（id 里没有点，不与别件相混）
         const extension = extensionOf(record.name);
         file = `${id}${extension === ".json" ? ".raw" : ""}${extension}`;
-        return path.join(dir, `${file}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`);
+        return path.join(dir, `${file}.${uniqueStamp()}.tmp`);
       });
       // 同一 id 换了扩展名（极少见）：旧的原件不留
       const previous = rawFileOf(dir, id, readMeta(dir, id)),
@@ -102,14 +103,18 @@ module.exports = function createFiles({ filesHome, playable }) {
     },
     error => errorText(error, 200)
   );
+  /** @param {string} id */
+  function rawPathOf(id) {
+    const dir = home(),
+      raw = rawFileOf(dir, id, readMeta(dir, id));
+    if (!raw) throw Error("附件原件不在存储目录里");
+    return path.join(dir, raw);
+  }
   // 压缩包交给本机工具处理：只取位置，不把整包编成 base64 再送进模型接口。
   const handlePath = jsonRoute(
     async body => {
-      const id = checkId(body.id),
-        dir = home(),
-        raw = rawFileOf(dir, id, readMeta(dir, id));
-      if (!raw) throw Error("附件原件不在存储目录里");
-      return { id, path: path.resolve(dir, raw) };
+      const id = checkId(body.id);
+      return { id, path: path.resolve(rawPathOf(id)) };
     },
     error => errorText(error, 200)
   );
@@ -133,11 +138,8 @@ module.exports = function createFiles({ filesHome, playable }) {
   // 以本机程序打开附件原件（原件落盘时带着原扩展名，系统认得该用什么开）
   const handleOpen = jsonRoute(
     async body => {
-      const id = checkId(body.id),
-        dir = home(),
-        raw = rawFileOf(dir, id, readMeta(dir, id));
-      if (!raw) throw Error("附件原件不在存储目录里");
-      openWithSystem(path.join(dir, raw));
+      const id = checkId(body.id);
+      openWithSystem(rawPathOf(id));
       return { opened: id };
     },
     error => errorText(error, 200)

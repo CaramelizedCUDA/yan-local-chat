@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { connect, check, usageOf, sleep, PAGE, WORK } from "./lib.mjs";
-const { bundleStyles } = createRequire(import.meta.url)("../build.js");
+const { bundleStyles } = createRequire(import.meta.url)("../server/build.js");
 const { send, evalJs, waitFor, shot, close } = await connect();
 mkdirSync(WORK + "/src", { recursive: true });
 writeFileSync(WORK + "/src/a.js", "function f() {\n  return 1;\n}\n");
@@ -50,6 +50,15 @@ for (let i = 0; i < 200; i++) {
     if (cards >= 2 || (cards >= 1 && i > 20)) {
       await evalJs(`[...document.querySelectorAll(".message.assistant .tool-step-delegate > .tool-step-head")].at(-1).click(); true`);
       panelOpened = true;
+      if (cards >= 2) {
+        await evalJs(
+          `document.querySelector('#helperNav [data-helper-list]').click(); window.__helperListRows = [...document.querySelectorAll('#helperList .helper-list-item')]; window.__helperListMeta = window.__helperListRows.map(row => row.textContent); true`
+        );
+        const at = await evalJs(
+          `(r => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 }))(window.__helperListRows[0].getBoundingClientRect())`
+        );
+        await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
+      }
     }
   }
   const s = await evalJs(
@@ -80,6 +89,14 @@ for (let i = 0; i < 200; i++) {
   await sleep(60);
 }
 check("helper timeline runs live in the side panel", panelLiveSeen, [...new Set(seen)].slice(0, 6).join(" | "));
+check(
+  "hovering the helper picker keeps its rows while progress changes",
+  await evalJs(
+    `window.__helperListRows?.length === 2 && window.__helperListRows.every(row => row.isConnected) && window.__helperListRows.some((row, i) => row.textContent !== window.__helperListMeta[i])`
+  )
+);
+if (await evalJs(`!document.querySelector('#helperList').classList.contains('hidden')`))
+  await evalJs(`document.querySelector('#helperNav [data-helper-list]').click(); true`);
 check("the trail keeps only a marker, no nested helper steps", nestedInTrail === 0, String(nestedInTrail));
 check("two helpers ran in parallel", bothRunning, [...new Set(seen)].slice(0, 6).join(" | "));
 check("the work bar above the composer names both running helpers", !!barBoth, [...new Set(seen)].slice(-3).join(" | "));
@@ -207,12 +224,28 @@ const list = await evalJs(
   `JSON.stringify([...document.querySelectorAll("#helperList .helper-list-item")].map(n => n.querySelector(".helper-list-title").textContent))`
 );
 check("the count opens a list of every errand", JSON.parse(list).join("|") === "改 a.js|建 b.js", list);
+// 清单是浮在计数下的一张纸签，不推下面的纸（设计稿/154 一）；按在它之外即收
+check(
+  "the list floats under the count instead of pushing the page down",
+  await evalJs(
+    `getComputedStyle(document.querySelector("#helperList")).position === "absolute" && document.querySelector("#helperScroll").getBoundingClientRect().top - document.querySelector(".helper-viewer-head").getBoundingClientRect().bottom < 1`
+  )
+);
+await evalJs(`document.querySelector("#helperScroll").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); true`);
+await sleep(300);
+check("pressing elsewhere folds the list away", await evalJs(`document.querySelector("#helperList").classList.contains("hidden")`));
+await evalJs(`document.querySelector("#helperNav [data-helper-list]").click(); true`);
+await sleep(150);
 await evalJs(`document.querySelectorAll("#helperList .helper-list-item")[0].click(); true`);
 await sleep(200);
-check("picking from the list switches to it", (await evalJs(`document.querySelector("#helperTitle").textContent`)) === "改 a.js");
+check(
+  "picking from the list switches to it and the list goes",
+  (await evalJs(`document.querySelector("#helperTitle").textContent`)) === "改 a.js" &&
+    (await evalJs(`document.querySelector("#helperList").classList.contains("hidden")`))
+);
 const report = await evalJs(`document.querySelector("#helperModal .sub-report")?.textContent.trim() || ""`);
 check("helper had its own system prompt and no delegate / ask_user", report.includes("sys:yes|delegate:no|ask:no"), report);
-check("helper can read memory but not write it", report.includes("|memw:0|memr:2|"), report);
+check("helper can search past chats but has no memory tools", report.includes("|memw:0|memr:1|"), report);
 check("file actually changed by helper", readFileSync(WORK + "/src/a.js", "utf8").includes("return 2;"));
 const steps = await evalJs(
   `JSON.stringify([...document.querySelectorAll(".message.assistant .tool-stack > .tool-stack-body .tool-step")].map(s => ({ label: s.querySelector(".tool-label").textContent, status: s.dataset.status, meta: s.querySelector(".tool-meta").textContent })))`
@@ -239,16 +272,18 @@ check(
 // 合上那扇窗，后面几项看的是正文
 await evalJs(`document.querySelector("#helperClose").click(); true`);
 check("second helper's file exists", readFileSync(WORK + "/src/b.js", "utf8").includes("export const b = 2;"));
-// 等收尾那一答生成出来
+// 等收尾那一答生成出来。两份回报若在某一答说着「等回报。」时就都递上了，收尾那段落在这半句之后，
+// 不以此开头（见 #37），故与第 77 行一样按「含」判
 await waitFor(
-  `typeof __yanState === "function" && __yanState().conversations[0]?.messages.at(-1)?.content?.startsWith("DELEGATE done")`,
+  `typeof __yanState === "function" && __yanState().conversations[0]?.messages.at(-1)?.content?.includes("DELEGATE done｜")`,
   15000
 );
 const text = await evalJs(`__yanState().conversations[0].messages.at(-1).content`);
-// 先到的那份可能在第一答里就递上了（那一答还在说「等回报」），后到的另起一答；收尾那一答前冠着派活那一答的行迹
+// 先到的那份可能在第一答里就递上了（那一答还在说「等回报」），后到的另起一答；收尾那一答前冠着派活那一答的行迹。
+// 两份都赶进同一答时，正文前面还留着「等回报。」——两处都按「含」判，只认收尾那一段在不在
 check(
   "the last answer closes on the reports, behind the digest of the answer that sent the helpers",
-  text.startsWith("DELEGATE done｜trail:yes") && /帮手「(改 a\.js|建 b\.js)」已完成（\d 步，改了 1 个文件：src\/[ab]\.js/.test(text),
+  text.includes("DELEGATE done｜trail:yes") && /帮手「(改 a\.js|建 b\.js)」已完成（\d 步，改了 1 个文件：src\/[ab]\.js/.test(text),
   text.slice(0, 400)
 );
 check(
@@ -268,6 +303,11 @@ await waitFor(`[...document.querySelectorAll("#history .history-item")].some(n =
 await evalJs(
   `[...document.querySelectorAll("#history .history-item")].find(n => n.textContent.includes("DELEGATE"))?.querySelector(".history-open").click(); true`
 );
+// 收着的行迹开页时不画身子（见 src/07-paint.js 的 paintStack），像人一样先点开行迹
+await waitFor(
+  `!!document.querySelector("#messages details.tool-stack") && ([...document.querySelectorAll("#messages .assistant-block > details.tool-stack:not([open]) > summary")].forEach(s => s.click()), true)`,
+  5000
+).catch(() => {});
 const markerRestored = await waitFor(`!!document.querySelector(".message.assistant .tool-step-delegate")`, 5000).catch(() => false);
 check(
   "the delegate marker is restored before opening its panel",

@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { load } from "./harness.mjs";
 
 // 图表 option 的修补跑在交互预览的 iframe 里（preview-runtime.js），那一段是纯函数：单独取出来测
-const runtime = readFileSync(new URL("../../preview-runtime.js", import.meta.url), "utf8");
+const runtime = readFileSync(new URL("../../web/preview-runtime.js", import.meta.url), "utf8");
 const repairEchartsOption = new Function(
   `${runtime.match(/ {2}function repairEchartsOption[\s\S]*?\r?\n {2}\}\r?\n/)[0]}; return repairEchartsOption;`
 )();
@@ -45,7 +45,7 @@ const f = load([
   "PROMPTS",
   "mergeConfig3",
   "looksLikeMermaid",
-  "liftBareMermaid",
+  "liftBareHtml",
   "dropStaleThoughts"
 ]);
 // 各家接口的适配在桥接里（server/model/）
@@ -68,6 +68,11 @@ test("parseToolArguments：正常 JSON、空串、围栏、尾逗号、二次编
   assert.deepEqual(f.parseToolArguments(""), { ok: true, args: {} });
   assert.deepEqual(f.parseToolArguments('```json\n{"path":"a.js"}\n```').args, { path: "a.js" });
   assert.deepEqual(f.parseToolArguments('{"path":"a.js",}').args, { path: "a.js" });
+  // 去尾逗号只动字符串外头的：正文里的「,]」「,}」原样留着
+  assert.deepEqual(f.parseToolArguments('{"path":"a.js","content":"x = [1,]; y = {a,}",}').args, {
+    path: "a.js",
+    content: "x = [1,]; y = {a,}"
+  });
   assert.deepEqual(f.parseToolArguments(JSON.stringify('{"path":"a.js"}')).args, { path: "a.js" });
   assert.deepEqual(f.parseToolArguments("[1,2]").args, { questions: [1, 2] });
 });
@@ -117,6 +122,11 @@ test("stableCut：在最后一个空行切，不切进未闭合的代码围栏�
   // ````markdown 里嵌着 ```bash：内层的围栏行不算把外层合上
   assert.equal(f.stableCut("````md\n```bash\nx\n\ny\n```\n\nz"), 0);
   assert.equal(f.stableCut("````md\n```bash\nx\n```\n````\n\nz"), 25);
+  // 裸写的交互内容：脚本里的空行不切；以标签收尾的一段，下一段还是标签（或还没来）就不切，不把一段 HTML 分成两半
+  assert.equal(f.stableCut("a\n\n<script>\nx\n\ny"), 1);
+  assert.equal(f.stableCut('a\n\n<div id="c"></div>\n\n<script>x</script>'), 1);
+  assert.equal(f.stableCut('a\n\n<div id="c"></div>\n\n'), 1);
+  assert.equal(f.stableCut('a\n\n<div id="c"></div>\n\nb'), 21);
 });
 test("diffCounts：新建全算增、删除全算减、其余按最长公共子序列", () => {
   assert.deepEqual(f.diffCounts("", "a\nb"), { added: 2, removed: 0 });
@@ -441,6 +451,25 @@ test("anthropicRequest：system 单列、工具结果并进 user、思考块回�
   assert.ok(sonnet45.max_tokens <= 64000 && sonnet45.thinking.budget_tokens < sonnet45.max_tokens);
   const opus41 = f.anthropicRequest({ model: "claude-opus-4-1", messages: [{ role: "user", content: "x" }], reasoning_effort: "xhigh" });
   assert.ok(opus41.max_tokens <= 32000 && opus41.thinking.budget_tokens < opus41.max_tokens);
+  // 3.x 把代际放在中间（claude-3-7-sonnet-…）：也要认出——不认就按 0 算，最高档的 65536 原样发出去，3.7 / 3.5 都回 400
+  const sonnet37 = f.anthropicRequest({
+    model: "claude-3-7-sonnet-20250219",
+    messages: [{ role: "user", content: "x" }],
+    reasoning_effort: "max"
+  });
+  assert.ok(sonnet37.max_tokens <= 64000 && sonnet37.thinking.budget_tokens < sonnet37.max_tokens);
+  const sonnet35 = f.anthropicRequest({
+    model: "claude-3-5-sonnet-20241022",
+    messages: [{ role: "user", content: "x" }],
+    reasoning_effort: "max"
+  });
+  assert.ok(sonnet35.max_tokens <= 8192 && !sonnet35.thinking, "3.5 没有思考，也不超 8192");
+  const opus3 = f.anthropicRequest({
+    model: "claude-3-opus-20240229",
+    messages: [{ role: "user", content: "x" }],
+    reasoning_effort: "max"
+  });
+  assert.ok(opus3.max_tokens <= 4096 && !opus3.thinking, "Opus 3 是 4096，不按 Opus 4 的 32k 算");
   assert.equal(f.anthropicEndpoint("https://api.anthropic.com/v1/"), "https://api.anthropic.com/v1/messages");
   assert.equal(f.anthropicLike({ baseUrl: "https://api.anthropic.com" }), true);
   assert.equal(f.anthropicLike({ baseUrl: "https://api.anthropic.com", api: "openai" }), false);
@@ -531,7 +560,7 @@ test("mergeConfig3：自己改过的取自己的，没改的取对方的；按 i
       { id: "b", name: "B", quota: "", usedTokens: 0 },
       { id: "c", name: "C", quota: "", usedTokens: 0 }
     ],
-    memory: { enabled: true, items: [{ id: "m1", text: "旧" }] },
+    memory: { enabled: true, items: [{ id: "m1", category: "一", text: "旧" }] },
     drafts: { x: { text: "草" } }
   };
   const mine = {
@@ -545,8 +574,8 @@ test("mergeConfig3：自己改过的取自己的，没改的取对方的；按 i
     memory: {
       enabled: true,
       items: [
-        { id: "m1", text: "旧" },
-        { id: "m2", text: "我记的" }
+        { id: "m1", category: "一", text: "旧" },
+        { id: "m2", category: "二", text: "我记的" }
       ]
     },
     drafts: {}
@@ -563,8 +592,8 @@ test("mergeConfig3：自己改过的取自己的，没改的取对方的；按 i
     memory: {
       enabled: true,
       items: [
-        { id: "m1", text: "旧" },
-        { id: "m3", text: "它记的" }
+        { id: "m1", category: "一", text: "旧" },
+        { id: "m3", category: "三", text: "它记的" }
       ]
     },
     drafts: { x: { text: "草" }, y: { text: "它的草稿" } }
@@ -642,17 +671,80 @@ test("mergeConfig3：两处各添预设、分组、MCP 与环境工具时都留�
   assert.equal(merged.env.pip, "sympy");
   assert.equal(merged.env.mirror, "official");
 });
-test("looksLikeMermaid / liftBareMermaid：写岔了的流程图照样认得，普通代码与别的 pre 不误伤", () => {
+test("mergeConfig3：目录组的名字按目录合并，两页各改一个不互相盖掉", () => {
+  const meta = names => ({
+    version: 6,
+    settings: { theme: "light", workdirNames: names },
+    profiles: [],
+    memory: { enabled: true, items: [] },
+    drafts: {}
+  });
+  // 同一份底子，这边给 b 起名、那边给 a 起名：两个名字都该留下（整份换掉会只剩后写的那个）
+  const merged = f.mergeConfig3(meta({}), meta({ "E:/b": "乙" }), meta({ "E:/a": "甲" })).settings;
+  assert.deepEqual(merged.workdirNames, { "E:/a": "甲", "E:/b": "乙" });
+  // 一边改回目录名（删掉那个键）、另一边没动它：删照键传播，另一边新起的名字留着
+  const removed = f.mergeConfig3(
+    meta({ "E:/a": "甲", "E:/b": "乙" }),
+    meta({ "E:/b": "乙" }),
+    meta({ "E:/a": "甲", "E:/b": "乙", "E:/c": "丙" })
+  ).settings;
+  assert.deepEqual(removed.workdirNames, { "E:/b": "乙", "E:/c": "丙" });
+});
+test("mergeConfig3：「哪一组停在原处」的时刻也按键合并，两页各删不同组不互相盖掉", () => {
+  const meta = groupAt => ({
+    version: 6,
+    settings: { theme: "light", groupAt },
+    profiles: [],
+    memory: { enabled: true, items: [] },
+    drafts: {}
+  });
+  const merged = f.mergeConfig3(
+    meta({}),
+    meta({ "group:g1": "2026-11-14T10:00:00Z" }),
+    meta({ "group:g2": "2026-11-14T11:00:00Z" })
+  ).settings;
+  assert.deepEqual(merged.groupAt, { "group:g2": "2026-11-14T11:00:00Z", "group:g1": "2026-11-14T10:00:00Z" });
+  // 同一组两边都往后挪过时刻（各删了一段）：取较晚的那个——先写盘的那页再存一次，不会把晚的盖回早的
+  const same = key =>
+    f.mergeConfig3(
+      meta({ [key]: "2026-11-14T09:00:00Z" }),
+      meta({ [key]: "2026-11-14T10:00:00Z" }),
+      meta({ [key]: "2026-11-14T11:00:00Z" })
+    ).settings.groupAt[key];
+  assert.equal(same("group:g1"), "2026-11-14T11:00:00Z");
+  assert.equal(same("E:/proj"), "2026-11-14T11:00:00Z");
+  // 组删空（这一页把键清了）、另一边没动：键跟着删，组不再留着旧时刻
+  const cleared = f.mergeConfig3(
+    meta({ "group:g1": "2026-11-14T09:00:00Z" }),
+    meta({}),
+    meta({ "group:g1": "2026-11-14T09:00:00Z" })
+  ).settings;
+  assert.equal("group:g1" in (cleared.groupAt || {}), false);
+});
+test("looksLikeMermaid / liftBareHtml：写岔了的流程图、没包围栏的交互内容照样认得，普通代码与别的 HTML 不误伤", () => {
   assert.equal(f.looksLikeMermaid("flowchart TD\n  A --> B"), true);
   assert.equal(f.looksLikeMermaid("%% 注\ngraph LR;\n  A --> B"), true);
   assert.equal(f.looksLikeMermaid("sequenceDiagram\n  A->>B: hi"), true);
   assert.equal(f.looksLikeMermaid("graph = build()\nprint(graph)"), false);
   assert.equal(f.looksLikeMermaid("pie = 3.14"), false);
-  const lifted = f.liftBareMermaid('前文\n<pre class="mermaid">\nflowchart TD\n  A --> B\n</pre>\n后文 <pre>别的</pre>');
-  assert.match(lifted, /```mermaid\n+flowchart TD\n {2}A --> B\n+```/);
-  assert.match(lifted, /后文 <pre>别的<\/pre>/);
+  assert.equal(
+    f.liftBareHtml('前文\n<pre class="mermaid">\nflowchart TD\n  A --> B\n</pre>\n后文 <pre>别的</pre>'),
+    '前文\n```html\n<pre class="mermaid">\nflowchart TD\n  A --> B\n</pre>\n```\n后文 <pre>别的</pre>'
+  );
   const fenced = '```html\n<pre class="mermaid">graph TD\nA-->B</pre>\n```';
-  assert.equal(f.liftBareMermaid(fenced), fenced);
+  assert.equal(f.liftBareHtml(fenced), fenced);
+  // 卡片与脚本连成一段（中间空一行也算），脚本里的空行不断段；之后的正文留在外头
+  const card = '<div class="card">\n<div id="c"></div>\n</div>',
+    script = '<script src="yan:echarts"></script>\n<script>\nconst a = 1;\n\necharts.init(c);\n</script>';
+  assert.equal(
+    f.liftBareHtml(`看了。\n\n${card}\n\n${script}\n\n**1.** 正文`),
+    `看了。\n\n\`\`\`html\n${card}\n\n${script}\n\`\`\`\n\n**1.** 正文`
+  );
+  // 没有脚本的 HTML 照常交给 Markdown；脚本里出现 ``` 时围栏加长
+  assert.equal(f.liftBareHtml("<details>\n<summary>x</summary>\n</details>"), "<details>\n<summary>x</summary>\n</details>");
+  assert.equal(f.liftBareHtml("<script>\n```\n</script>"), "````html\n<script>\n```\n</script>\n````");
+  // 流式中脚本还没合上：围栏也开着，尾段画成占位框
+  assert.equal(f.liftBareHtml("<script>\nlet x"), "```html\n<script>\nlet x");
 });
 test("contextOverflow / learnContextWindow：vLLM 连带列出 0 个输出 token 的也算放不下，max_tokens 给大了不算", () => {
   const vllm =

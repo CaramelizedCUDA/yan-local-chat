@@ -1,7 +1,7 @@
 // 端到端测试运行器（零依赖）：起一个假模型接口、一个测试桥接、一个无头 Edge / Chrome（stage 用例另起一个模型浏览器），逐个跑 test/ 下的用例，按 PASS / FAIL 行统计
 // 用法：node test/run.mjs [用例名…]      例：node test/run.mjs memory side-notes
 import { spawn, spawnSync } from "node:child_process";
-import { connect, STAGE_DEBUG_PORT } from "./lib.mjs";
+import { connect, STAGE_DEBUG_PORT, PAGE } from "./lib.mjs";
 import { existsSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -34,9 +34,8 @@ if (!browser) {
 // 语法先过一遍
 const jsFiles = [
   "server.js",
-  "theme-boot.js",
-  "preview-runtime.js",
-  "build.js",
+  "web/theme-boot.js",
+  "web/preview-runtime.js",
   ...readdirSync(path.join(ROOT, "prompts"))
     .filter(f => f.endsWith(".js"))
     .map(f => `prompts/${f}`),
@@ -184,6 +183,8 @@ try {
   const wants = name => !only.length || only.some(o => name.includes(o));
   // 桥接安全检查：单独一个桥接实例，不需要浏览器
   if (wants("bridge-security")) {
+    // 这一路的存储根在 TMP/security，不在下面统一清的 TMP/.yan 里：上一回留的配置会让 savedAt 接着往上加，断言对不上
+    rmSync(path.join(TMP, "security"), { recursive: true, force: true });
     start(process.execPath, ["server.js"], {
       cwd: ROOT,
       // YAN_TEST_SECRET_TOKEN：名字像机密的环境变量，沙箱里的指令不该看见它（bridge-security 里查）
@@ -197,8 +198,14 @@ try {
     await waitPort(SECURITY_PORT);
     await runSpec("bridge-security.mjs", { YAN_PORT: String(SECURITY_PORT) });
   }
+  // 排除的不是用例：run.mjs / lib.mjs 是骨架，fake-llm、fake-mcp 是假服务，bridge-security 单起一个端口。
+  // sandbox-replay 是改沙箱规则后手工跑的回放，要有真实对话可捞，CI 上没有，不当用例。
   const specs = readdirSync(HERE)
-    .filter(f => f.endsWith(".mjs") && !["run.mjs", "lib.mjs", "fake-llm.mjs", "fake-mcp.mjs", "bridge-security.mjs"].includes(f))
+    .filter(
+      f =>
+        f.endsWith(".mjs") &&
+        !["run.mjs", "lib.mjs", "fake-llm.mjs", "fake-mcp.mjs", "bridge-security.mjs", "sandbox-replay.mjs"].includes(f)
+    )
     .filter(wants)
     .sort();
   // 看台用例的模型浏览器：单独一个实例，模型页与 fresh 才会落在同一个窗口里。
@@ -238,6 +245,9 @@ try {
         // 离页时补写的配置（防抖一秒、再加一次往返）要在清目录前落完：否则它落进下一个用例的空根，
         // 下一个用例灌的浏览器记录又不再压过磁盘，就会带着上一个用例的模型开跑
         await sleep(1500);
+        // 浏览器这一侧的记录（localStorage、IndexedDB）也清掉：不然上一个用例的对话会被下一个页面读回来、写回磁盘，
+        // 用例单跑能过、连着跑却多出一段
+        await send("Storage.clearDataForOrigin", { origin: new URL(PAGE).origin, storageTypes: "all" });
         close();
       } catch {}
       tryRm(path.join(TMP, "work"));

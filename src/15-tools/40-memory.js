@@ -1,115 +1,79 @@
-// 言 · 录（记忆）与旧谈：五件都在浏览器里完成，不经桥接，也不需确认——每一步都在行迹里显示，条目在设置页可改可删。
-// 记忆启用时才有；记与忘只给主模型，帮手与旁注只能翻
+// 言 · 录（记忆）与旧谈：都在浏览器里完成，不经桥接，也不需确认——每一步都在行迹里显示，记忆在设置页可改可删。
+// remember 只给主模型：记忆一类一份，写的是那一类改后的全文；按本答读到的版本核对（见 11-memory.js）。
+// 查旧谈、读旧谈常给：翻的是自己的对话，与记忆开不开无关
 const CONVERSATION_MESSAGE_CHARS = 1500; // read_conversation 每条消息最多给这么多字
 defineTool({
   name: "remember",
   group: "memory",
   label: t("记入"),
-  offer: () => memoryEnabled(),
+  offer: ctx => memoryOn(ctx.conversation),
   mainOnly: true,
   sideEffect: true,
-  run(step, args, { conversation }) {
-    const items = store.memory.items,
-      text = cleanMemoryText(args.text),
-      category = cleanMemoryCategory(args.category);
-    step.title = `${category}｜${text.length > 120 ? `${text.slice(0, 120)}…` : text}`;
-    if (!text) return { ok: false, content: t("text 不能为空"), display: "内容为空" };
-    // 过长不截：退回去让模型拆成几条或精简，免得记下半句
-    if (text.length > MEMORY_TEXT_CHARS)
-      return { ok: false, content: t`这条有 ${text.length} 字，超过 ${MEMORY_TEXT_CHARS} 字；请拆成几条或精简后再记`, display: "过长" };
-    const source = { conversationId: conversation.id, title: conversation.title };
-    const existing = (args.replaces && items.find(item => item.id === args.replaces)) || items.find(item => item.text === text);
-    if (existing) {
-      Object.assign(existing, { text, category, updatedAt: now(), source });
-      saveStore();
-      refreshMemorySettings();
-      return { ok: true, content: t`已更新 ${memoryLine(existing, true)}`, display: "合并" };
-    }
-    if (items.length >= MAX_MEMORY_ITEMS)
+  async run(step, args, { memory, memoryUpdates, conversation }) {
+    const category = cleanMemoryCategory(args.category);
+    step.title = category;
+    if (!memoryOn(conversation)) return { ok: false, content: "记忆已关闭，没有写入。", display: "未写入" };
+    if (!memory) return { ok: false, content: "本答未带入记忆，没有写入。", display: "未写入" };
+    const item = memoryOf(category),
+      stamp = memoryStamp(item);
+    if ((memory.get(category) || "") !== stamp) {
+      memoryUpdates?.set(category, stamp);
       return {
         ok: false,
-        content: t`记忆已有 ${MAX_MEMORY_ITEMS} 条，已满。请先用 recall 查看，用 forget 删去过时的，或用 replaces 把相近的合并成一条`,
-        display: "记忆已满"
-      };
-    const item = addMemory(text, source, category);
-    refreshMemorySettings();
-    return { ok: true, content: t`已记入 ${memoryLine(item, true)}`, display: "" };
-  }
-});
-
-defineTool({
-  name: "forget",
-  group: "memory",
-  label: t("忘却"),
-  offer: () => memoryEnabled(),
-  mainOnly: true,
-  sideEffect: true,
-  run(step, args) {
-    const items = store.memory.items,
-      index = items.findIndex(item => item.id === args.id);
-    step.title = index >= 0 ? items[index].text : args.id;
-    if (index < 0) return { ok: false, content: t("没有这条记忆，id 以 recall 的结果为准"), display: "未找到" };
-    items.splice(index, 1);
-    saveStore();
-    refreshMemorySettings();
-    return { ok: true, content: t("已删除"), display: "" };
-  }
-});
-
-// 翻记忆分两步，如翻目录再翻页：不给参数只列各类（名、几条、最近一条的开头），给 category 才全文列出那一类；给 query 跨类按关键词找
-defineTool({
-  name: "recall",
-  group: "memory",
-  label: t("翻记忆"),
-  offer: () => memoryEnabled(),
-  lookup: true,
-  parallel: true,
-  sources: step => (step.results || []).map(hit => ({ memory: hit.memoryId, title: hit.title })),
-  run(step, args) {
-    const terms = keywordTerms(args.query),
-      category = String(args.category || "").trim();
-    if (!terms.length && !category) {
-      const categories = memoryCategories();
-      step.title = t("分类一览");
-      return {
-        ok: true,
-        content: categories.length
-          ? categories
-              .map(cat => t`${cat.name}（${cat.items.length} 条，最近 ${cat.updatedAt.slice(0, 10)}）：${memoryGist(cat.items[0].text)}`)
-              .join("\n")
-          : t("记忆里还没有条目"),
-        display: `${categories.length} 类`
+        content: `「${category}」在本答读入后已变化，没有写入。请以以下最新内容为基础重新修改：\n${item ? item.text : "（此类已删去）"}`,
+        display: "记忆已变化"
       };
     }
-    let hits = category ? store.memory.items.filter(item => memoryCategoryOf(item) === cleanMemoryCategory(category)) : store.memory.items;
-    if (terms.length) hits = hits.filter(item => hitsAll(`${memoryCategoryOf(item)} ${item.text}`, terms));
-    step.title = [category, args.query?.trim()].filter(Boolean).join("｜");
-    step.results = hits.slice(0, 8).map(item => ({ title: item.text, memoryId: item.id }));
-    return {
-      ok: true,
-      content: hits.length
-        ? hits.map(item => memoryLine(item, !category)).join("\n")
-        : category && !terms.length
-          ? t`没有「${category}」这一类`
-          : t("记忆里没有相关条目"),
-      display: `${hits.length} 条`
-    };
+    const did = writeMemory(category, args.text);
+    memoryUpdates?.set(category, memoryStamp(memoryOf(category)));
+    let flushed = true;
+    if (did) {
+      notePendingMemory(category);
+      saveStore();
+      // 本页的版本核对挡不住别的浏览器：真落盘时若那边也改过这一类，磁盘上的留作正本，把最新正文交回重写
+      // （见 01-store/20-config.js 的 mergeMemoryItems）。写不成（桥接不在、超时）时判不了冲突，
+      // 但也不能报「已写入」——这一答里按新内容算，落盘留给退避重试，回话里说清
+      flushed = await flushConfig();
+      const clash = takeMemoryClash(category);
+      if (clash !== null) {
+        memoryUpdates?.set(category, memoryStamp(memoryOf(category)));
+        refreshMemorySettings();
+        return {
+          ok: false,
+          content: `「${category}」在别处改过，没有写入。请以以下最新内容为基础重新修改：\n${clash || "（此类已删去）"}`,
+          display: "记忆已变化"
+        };
+      }
+    }
+    refreshMemorySettings();
+    if (did === "delete") return { ok: true, content: t`已删去「${category}」`, display: "删去" };
+    if (!did) return { ok: true, content: t`「${category}」没有变`, display: "未变" };
+    if (!flushed)
+      return {
+        ok: true,
+        content: `「${category}」本页已改好，但还没写进存储目录（会自动重试）。这一答里按新内容算，别当它已经存住。\n${memoryOf(category).text}`,
+        display: "待落盘"
+      };
+    return { ok: true, content: `已写入「${category}」\n${memoryOf(category).text}`, display: did === "add" ? "新起" : "" };
   }
 });
+
+// 翻记忆、忘却已撤（记忆整份带在系统提示里；删一类即 remember 写空）：只留画法，旧对话的行迹里那几步照样有名字
+defineTool({ name: "recall", group: "memory", label: t("翻记忆"), offer: false });
+defineTool({ name: "forget", group: "memory", label: t("忘却"), offer: false });
 
 // 查旧谈：同一工作目录的执事对话排在前面，其余按新近
 defineTool({
   name: "search_conversations",
   group: "memory",
   label: t("查旧谈"),
-  offer: () => memoryEnabled(),
   lookup: true,
   parallel: true,
   sources: step => (step.results || []).map(hit => ({ talk: hit.conversationId, title: hit.title, date: hit.date })),
+  // 不给关键词即按时间列最近的几段（同 Claude 的 recent_chats）：「上回我们说到哪了」不必先猜一个词
   run(step, args, { conversation }) {
     const terms = keywordTerms(args.query);
-    step.title = args.query.trim();
-    if (!terms.length) return { ok: false, content: t("query 不能为空"), display: "缺少关键词" };
+    step.title = String(args.query || "").trim() || t("最近的对话");
     const limit = clampNumber(Number(args.limit), 8, 1, 20),
       sameRepo = c => isWork(conversation) && isWork(c) && c.workdir === conversation.workdir,
       hits = [];
@@ -118,10 +82,11 @@ defineTool({
     )) {
       if (c.id === conversation.id) continue;
       const lines = c.messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content);
-      if (!hitsAll(`${c.title}\n${lines.map(m => m.content).join("\n")}`, terms)) continue;
-      const hit = lines.find(m => m.content.toLowerCase().includes(terms[0])),
+      if (terms.length && !hitsAll(c.title, lines, terms)) continue;
+      // 片段：命中的那一句前后；列最近的则取头一问的开头
+      const hit = terms.length ? lines.find(m => m.content.toLowerCase().includes(terms[0])) : lines.find(m => m.role === "user"),
         text = String(hit?.content || "").replace(/\s+/g, " ");
-      const at = Math.max(0, text.toLowerCase().indexOf(terms[0]) - 40),
+      const at = terms.length ? Math.max(0, text.toLowerCase().indexOf(terms[0]) - 40) : 0,
         snippet = text ? `${at ? "…" : ""}${text.slice(at, at + 120)}${at + 120 < text.length ? "…" : ""}` : "";
       hits.push({
         id: c.id,
@@ -153,7 +118,6 @@ defineTool({
   name: "read_conversation",
   group: "memory",
   label: t("翻旧谈"),
-  offer: () => memoryEnabled(),
   lookup: true,
   parallel: true,
   sources: step => (step.conversationId ? [{ talk: step.conversationId, title: step.title, date: step.date, read: true }] : []),

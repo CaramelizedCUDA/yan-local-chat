@@ -51,17 +51,39 @@ function stageSetWidth(px) {
   stage.width = Math.round(Math.max(320, Math.min(px, innerWidth - 420)));
   $("#stagePanel").style.width = `${stage.width}px`;
 }
-// 入口那一笔：接了浏览器类的 MCP（或浏览器已开着）、游目收着（或被旁注挤开）时自页顶垂下；模型正操作浏览器时笔尖下一粒朱一明一暗
+// 入口的立轴（22 × 56 的画幅）：一线、两杆、一纸，纸上一点朱日、一笔山。天杆压在顶栏的中线上（高 55），卷着时那根轴与余墨那一笔同一条线；地杆与听音的圆相同底。
+// 日偏左上：居中的一点红落在白纸上就是日本国旗（设计稿/143）。卷与展靠 CSS 挪地杆、遮画面（styles/56-stage/30-pin.css），朱带只在卷着时现；几个部件都常在，态与态之间才走得出动效
+function stagePinInk() {
+  const rod = 27.5,
+    foot = 54,
+    sun = { x: 8.5, y: rod + 6.4 };
+  const cord = brushStroke([11, 0, 10.8, 13, 11, rod], 1.1, { tone: "zhu", head: 1, tail: 0.8 }),
+    top = brushStroke([4.4, rod + 0.1, 11, rod - 0.2, 17.6, rod + 0.1], 1.3, { head: 1, tail: 0.7 }),
+    paper =
+      `<rect class="wash" x="5.2" y="${rod}" width="11.6" height="${foot - rod}"/>` +
+      `<circle class="zhu scroll-glow" cx="${sun.x}" cy="${sun.y}" r="3.3"/>` +
+      brushDot(sun.x, sun.y, 1.7, "zhu") +
+      brushStroke([6.4, foot - 4, 8.8, foot - 10, 11, foot - 7, 12.8, foot - 8.8, 15.6, foot - 4], 0.7, { tail: 0.3 }),
+    roller = brushStroke([3.6, foot, 11, foot - 0.3, 18.4, foot], 2.4, { head: 1, tail: 0.85 });
+  return `<g class="scroll">${cord}${top}<g class="scroll-paper">${paper}</g><g class="scroll-foot">${roller}</g><rect class="zhu scroll-tie" x="10.2" y="${rod - 1.4}" width="1.6" height="3.8" rx=".3"/></g>`;
+}
+// 执事在不在用浏览器：调用在途；这一答碰过浏览器而还没答完（步与步之间不灭，帮手还在做也算）；歇手不到八秒
+function stageActing() {
+  for (const id of stage.usedBy) if (!requestJobs.has(id) && !crews.has(id)) stage.usedBy.delete(id);
+  return stage.busy > 0 || stage.usedBy.size > 0 || Date.now() - stage.lastAct < 8000;
+}
+// 入口：接了浏览器类的 MCP（或浏览器已开着）、游目收着（或被旁注挤开）时自页顶垂下；未开卷着，开着展开，在用轻摆
 function stageSync() {
-  const pin = $("#stagePin");
+  const pin = $("#stagePin"),
+    acting = stageActing();
   pin.classList.toggle("hidden", (!stage.ws && !stageServer()) || stageVisible());
-  pin.classList.toggle("busy", stage.busy > 0);
-  // 地址行的「执事」：执事在动、或歇手不到八秒时挂着，指着浮出近几步
-  const acting = stage.busy > 0 || Date.now() - stage.lastAct < 8000;
+  pin.dataset.state = acting ? "act" : stage.ws ? "open" : "off";
+  // 地址行的「执事」：在用时挂着，指着浮出近几步
   $("#stageBusy").classList.toggle("hidden", !acting);
   $("#stageBusy").classList.toggle("busy", stage.busy > 0);
   clearTimeout(stage.actTimer);
-  if (acting && !stage.busy) stage.actTimer = window.setTimeout(stageSync, 8000 - (Date.now() - stage.lastAct) + 50);
+  // 这一答何时收尾这里不知道：在用而没有在途调用时隔一会儿再看一回
+  if (acting && !stage.busy) stage.actTimer = window.setTimeout(stageSync, 1500);
   // 收藏：连上了就挂（收藏此页要它）；没连上时浏览器配置目录里有收藏也挂，点一条可开
   $("#stageMarks").classList.toggle("hidden", !stage.ws && !stage.marks);
   stageRender();
@@ -97,17 +119,24 @@ async function stageLaunch() {
   stage.launching = true;
   stageRender();
   try {
-    await bridge("/api/mcp/call", {
+    const { result } = await bridge("/api/mcp/call", {
       server,
       config: mcpConfigs()[server],
       tool: "browser_navigate",
       arguments: { url: "about:blank" },
       timeout: 60
     });
+    // 服务起浏览器失败（内核缺、配置目录被占）是作为结果报回的，不是抛错：照它的原话说，别报成「已开却连不上」
+    const failed =
+      result?.isError &&
+      mcpResultText(result)
+        .replace(/^#+ .*\n/gm, "")
+        .trim();
+    if (failed) throw Error(failed);
     await stageLocate();
     if (!stage.ws) toast(t`浏览器已开，但连不上调试口${stage.port ? ` ${stage.port}` : ""}`);
   } catch (error) {
-    toast(t`浏览器打开失败：${String(error.message || error).slice(0, 80)}`);
+    toast(t`浏览器打开失败：${String(error.message || error).slice(0, 160)}`, 6000);
   } finally {
     stage.launching = false;
     stageSync();
@@ -492,7 +521,7 @@ function stageOpenDownloads(anchor) {
               : "✓",
         size = item.total ? formatFileSize(item.total) : "",
         meta = [size, item.by || "", stageHost(item.url), stageAgo(item.at)].filter(Boolean).join(" · ");
-      return `<button type="button" class="stage-dl" data-stage-reveal="${escapeHtml(item.path || "")}" title="${escapeHtml(item.path || item.url)}"><i class="stage-dl-file" style="--fc:${tone(item.name)}"></i><span class="stage-dl-name">${escapeHtml(item.name)}</span><span class="stage-dl-state${item.state === "canceled" ? " off" : ""}">${state}</span><span class="stage-dl-meta">${escapeHtml(meta)}</span></button>`;
+      return `<button type="button" class="stage-dl" data-stage-reveal="${escapeHtml(item.path || "")}" data-stage-name="${escapeHtml(item.name)}" title="${escapeHtml(item.path || item.url)}"><i class="stage-dl-file" style="--fc:${tone(item.name)}"></i><span class="stage-dl-name">${escapeHtml(item.name)}</span><span class="stage-dl-state${item.state === "canceled" ? " off" : ""}">${state}</span><span class="stage-dl-meta">${escapeHtml(meta)}</span></button>`;
     })
     .join("");
   const pop = openFloatingPop(
@@ -509,9 +538,11 @@ function stageOpenDownloads(anchor) {
       return stageOpenInside("downloads");
     }
     if (!reveal) return;
-    void bridge("/api/stage/reveal", { ...stageService(), path: reveal.dataset.stageReveal || "" }).catch(error =>
-      toast(String(error.message || error).slice(0, 80))
-    );
+    void bridge("/api/stage/reveal", {
+      ...stageService(),
+      path: reveal.dataset.stageReveal || "",
+      name: reveal.dataset.stageName || ""
+    }).catch(error => toast(String(error.message || error).slice(0, 80)));
   });
 }
 /** @param {number} at */
@@ -558,7 +589,8 @@ function stageAddrHtml(tab) {
   const sep = `<i aria-hidden="true">›</i>`;
   if (url.protocol === "about:") return `<b>${escapeHtml(stageTitle(tab))}</b>`;
   if (url.protocol === "file:") {
-    const path = decodeURIComponent(url.pathname).replace(/^\/([a-z]:)/i, "$1");
+    // 手输的、页面链来的网址里可能有没转义的 %（100%.html），解不了就照原样写，整栏的重画不能断在这儿
+    const path = decodeURIComponentSafe(url.pathname).replace(/^\/([a-z]:)/i, "$1");
     return `<b>${escapeHtml(path.split("/").pop() || path)}</b>${sep}${escapeHtml(path.split("/").slice(0, -1).join("/"))}`;
   }
   // data: 之类整串没法看：写协议与页题
@@ -593,7 +625,7 @@ function stageRender() {
   if (!stageShown()) return;
   // 标签是一行字、丝栏相隔；当前那张底下一笔朱，执事所在的那张题后一粒朱
   const under = brushStroke([1, 2.6, 9, 1.8, 17, 2.4], 2.2, { tone: "zhu", tail: 0 }),
-    acting = stage.busy > 0 || Date.now() - stage.lastAct < 8000;
+    acting = stageActing();
   $("#stageTabs").innerHTML = [...stage.tabs]
     .map(
       ([id, tab]) =>
@@ -623,13 +655,15 @@ function stageRender() {
   $("#stageView").classList.toggle("empty", !!empty);
 }
 /**
- * 浏览器类的 MCP 调用（playwright 的 browser_*）进行时点一粒朱、记一笔它在做什么；调完去找一回浏览器——它多半是这一下起的
+ * 浏览器类的 MCP 调用（playwright 的 browser_*）进行时记一笔它在做什么，入口与地址行都据此报「在用」；调完去找一回浏览器——它多半是这一下起的
  * @param {string} tool
  * @param {Record<string, any>} [args]
+ * @param {string} [conversationId] 哪段对话调的：那一答没收尾之前都算在用
  */
-function stageWatch(tool, args = {}) {
+function stageWatch(tool, args = {}, conversationId = "") {
   if (!/^browser_/.test(tool)) return () => {};
   stage.busy += 1;
+  if (conversationId) stage.usedBy.add(conversationId);
   stage.trail = [...stage.trail, { text: stageActionText(tool, args), at: Date.now() }].slice(-6);
   stage.lastAct = Date.now();
   stageSync();

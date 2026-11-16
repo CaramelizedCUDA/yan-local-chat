@@ -1,7 +1,9 @@
 // 言 · 审查：审而后行里，规则标疑的那一步交「专司」里另配的审查模型照用户的原话再判（学 Claude Code 的 auto 模式）。
 // 没开审查、或档位不是审而后行，一切照旧（规则拦的回绝，没拦的照做）；审查出错也退回这样，最坏不比没开差。
 // 标疑的几类：指令被宽的沙箱或审查规则拦下的；往外发、网址里带着一长串用户没给过的参数，或带着内容 POST 出去的；
-// 写长期记忆、往技能目录里写的（会进往后每段对话的上下文）；调 MCP 服务的写操作（见 60-mcp.js）——游目的浏览器另按 stageReviewWhy 收窄。
+// 往技能目录里写的（会进往后每段对话的上下文）；调 MCP 服务的写操作（见 60-mcp.js）——游目的浏览器另按 stageReviewWhy 收窄。
+// 写记忆不审：记偏好、约定、做出来的结论本是模型自己拿主意的事，照「用户授权了没有」判几乎都驳（实测 7 回驳 3，
+// 改写成「用户说明：…」就准）；而审查看不到工具输出，分不出哪条是网页里埋来的，审了也挡不住它要挡的。条目在行迹与设置页里可改可删
 // 审查只看用户的原话、意里的目标与守、将要做的那一步；准了照做（指令带 reviewed 交桥接，规则那一道不再拦），
 // 驳了原因作工具结果回给主模型、叫它换条路，不向用户请示。一答里连驳三回、或共驳二十回，叫它停手向用户说明
 const REVIEW_STREAK = 3,
@@ -33,7 +35,6 @@ async function reviewFlag(step, args, ctx) {
     return screened?.why && !screened.hard ? String(screened.why).replace(/^(审查|沙箱)拒绝：/, "") : "";
   }
   if (["fetch_page", "http_request", "download_file"].includes(step.name)) return egressWhy(step.name, args, conversation);
-  if (step.name === "remember") return "写进长期记忆，往后每段对话都会带上";
   if (["write_file", "edit_file"].includes(step.name) && insideSkills(String(args.path || ""), conversation))
     return "往技能目录里写，往后的对话都会照着做";
   return "";
@@ -59,20 +60,43 @@ function egressWhy(name, args, conversation) {
     .find(v => /[A-Za-z0-9_\-+/=.%]{32,}/.test(v) && !said.includes(v));
   return long ? "网址里带着一长串用户没给过的参数" : "";
 }
-/** 用户亲口说的：帮手回报、后台指令结束另起的那一问（带 relay）也是 user 消息，可那是工具输出，不算 @param {Conversation} conversation */
+/** 用户亲口说的，连成一段好查某串字说没说过 @param {Conversation} conversation */
 function userSaid(conversation) {
+  return userWords(conversation).join("\n");
+}
+/**
+ * 用户亲口说的，一句一项、按先后：原话与作答途中寄来的补言（带上附件名），帮手回报、后台指令结束另起的那一问（带 relay）也是 user 消息，可那是工具输出，不算。
+ * 用户在请示上的定夺也是亲口说的，按先后插在其间：表单的作答、守的关口上的准许（step 即将要做的那一步）
+ * @param {Conversation} conversation @param {Step} [step]
+ */
+function userWords(conversation, step) {
+  const words = (text, attachments = []) =>
+    [String(text || "").trim(), ...attachments.map(a => `［附件 ${a.name}］`)].filter(Boolean).join(" ");
   return conversation.messages
     .flatMap(m =>
       m.role === "user"
         ? m.relay
           ? []
-          : [m.content]
-        : allSteps(m)
-            .filter(s => s.name === "user_note")
-            .map(s => s.note)
+          : [words(m.content, m.attachments)]
+        : allSteps(m).flatMap(s =>
+            s.name === "user_note"
+              ? [words(s.note, s.attachments)]
+              : s.name === "ask_user" && s.answers
+                ? // 问句里写着问的是哪件事，单看答案「授权上述操作」不知所指
+                  [
+                    `［请示作答］${s.form?.questions?.map((q, i) => `${q.question} → ${s.answers?.[i] || "（未答）"}`).join("；") || s.note || ""}`
+                  ]
+                : s.granted
+                  ? // 守常写着「先给用户看、批了再做」：关口上那张请示就是给人看过这一步，写明了审查才对得上
+                    [
+                      s === step
+                        ? "［守请示］用户在关口上看过下面将要做的这一步，准许了"
+                        : `［守请示］准许了 ${s.name}${s.title ? `：${s.title}` : ""}`
+                    ]
+                  : []
+          )
     )
-    .map(text => String(text || ""))
-    .join("\n");
+    .filter(Boolean);
 }
 // 游目的浏览器：点击、按键、翻页、等待都是在用户托付的事里走动，一概送审只是每步多等一回、审查也多半照准。
 // 只审可能把东西带出去的：跳到带长串参数的网址（与翻网页同一把尺）、往页面里填进一段用户没说过的字、上传本机文件、在页面里跑代码
@@ -107,18 +131,7 @@ function insideSkills(raw, conversation) {
   const skills = String(bootstrap.store?.skills || "");
   if (!skills || !raw) return false;
   const full = /^([a-z]:)?[\\/]/i.test(raw) ? raw : `${workRoot(conversation) || ""}/${raw}`;
-  return `${plainPath(full)}/`.startsWith(`${plainPath(skills)}/`);
-}
-/** 比路径用：斜杠归一、小写、消掉 . 与 ..（退到根即止）、去掉重复与末尾的斜杠 @param {string} raw */
-function plainPath(raw) {
-  /** @type {string[]} */
-  const parts = [];
-  for (const segment of raw.replace(/\\/g, "/").toLowerCase().split("/")) {
-    if (segment === "..") {
-      if (parts.length > 1) parts.pop();
-    } else if (segment !== "." && (segment || !parts.length)) parts.push(segment);
-  }
-  return parts.join("/");
+  return `${normalizeWorkPath(full).toLowerCase()}/`.startsWith(`${normalizeWorkPath(skills).toLowerCase()}/`);
 }
 
 /** 交审查模型判：准即返回 null 照做（step.reviewed 记下），驳即交回结果。出错退回没开审查时的样子 @param {Step} step @param {Record<string, any>} args @param {ToolContext} ctx @param {string} why */
@@ -133,8 +146,11 @@ async function reviewGate(step, args, ctx, why) {
     verdict = await askReviewer(step, args, ctx, why);
   } catch (error) {
     if (error.name === "AbortError" && ctx.signal.aborted) throw error;
+    // 审查实际没在把关：弹一句，人才知道这一步是照规则过的
+    dutyFailed("review", error);
     return null;
   }
+  dutyOk("review");
   if (verdict.ok) {
     tally.streak = 0;
     reviewTally.set(key, tally);
@@ -155,22 +171,15 @@ async function reviewGate(step, args, ctx, why) {
 }
 /** 两步判：先只要一个字；疑了再同一段话换个末句要理由（前头一字不差，走缓存） @returns {Promise<{ ok: boolean, why: string }>} */
 async function askReviewer(step, args, ctx, why) {
-  // 另配的那份拼成一份临时的模型配置：不扣余墨、不认思考档位；花的墨只记进用量簿的「审查」
-  /** @type {Profile} */
-  const duty = { id: "duty-review", name: "", quota: "", usedTokens: 0, ...store.settings.dutyReview },
-    base = reviewCase(step, args, ctx.conversation, why),
-    ask = async (tail, maxTokens) => {
-      const text = `${base}\n\n${tail}`,
-        signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(60000)]),
-        response = await requestChat(duty, [{ role: "user", content: text }], signal, {
+  const base = reviewCase(step, args, ctx.conversation, why),
+    ask = async (tail, maxTokens) =>
+      (
+        await askDuty("review", `${base}\n\n${tail}`, {
           systemPrompt: prompt("review.system"),
-          maxTokens
-        });
-      if (!response.ok) throw Error(await describeResponseError(response));
-      const { reply, tokens } = await readWhole(response, text);
-      noteUsage("review", tokens);
-      return String(reply.content || "").trim();
-    };
+          maxTokens,
+          signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(60000)])
+        })
+      ).trim();
   if (reviewWord(await ask(prompt("review.quick"), 1500)).startsWith("准")) return { ok: true, why: "" };
   const said = reviewWord(await ask(prompt("review.reason"), 3000));
   // 首字既不是准也不是驳（写空了、答非所问）：当审查出错，退回照规则，不拿它当驳
@@ -182,40 +191,13 @@ function reviewWord(text) {
   return text.replace(/^[\s*_`#>"'「『“‘【\[(（-]+/, "");
 }
 /**
- * 交给审查的那段话：用户历次的原话（新的在后、过长截去旧的；作答途中寄来的补言也是）、意里的目标与守、将要做的、规则的缘由。
- * 用户在请示上的定夺也是亲口说的，按先后插在其间：表单的作答、守的关口上的准许（连这一步也算）——只让审查知道人选了什么，照样由它判：
- * 人批的是要做这件事，审查还看模型这一步有没有写歪。
+ * 交给审查的那段话：用户亲口说的（见 userWords；新的在后、过长截去旧的）、意里的目标与守、将要做的、规则的缘由。
+ * 请示上的定夺只让审查知道人选了什么，照样由它判：人批的是要做这件事，审查还看模型这一步有没有写歪。
  * 将要做的整段交上、不截：截了的尾巴审查看不到却照样发出去，审查也会把截断当成内容残缺而驳（10-29 开 PR 连驳三回，正文 3.9k 字截在 3000）
  * @param {Conversation} conversation
  */
 function reviewCase(step, args, conversation, why) {
-  const words = (text, attachments = []) =>
-      [String(text || "").trim(), ...attachments.map(a => `［附件 ${a.name}］`)].filter(Boolean).join(" "),
-    said = conversation.messages
-      .flatMap(m =>
-        m.role === "user"
-          ? m.relay
-            ? []
-            : [words(m.content, m.attachments)]
-          : allSteps(m).flatMap(s =>
-              s.name === "user_note"
-                ? [words(s.note, s.attachments)]
-                : s.name === "ask_user" && s.answers
-                  ? // 问句里写着问的是哪件事，单看答案「授权上述操作」不知所指
-                    [
-                      `［请示作答］${s.form?.questions?.map((q, i) => `${q.question} → ${s.answers?.[i] || "（未答）"}`).join("；") || s.note || ""}`
-                    ]
-                  : s.granted
-                    ? // 守常写着「先给用户看、批了再做」：关口上那张请示就是给人看过这一步，写明了审查才对得上
-                      [
-                        s === step
-                          ? "［守请示］用户在关口上看过下面将要做的这一步，准许了"
-                          : `［守请示］准许了 ${s.name}${s.title ? `：${s.title}` : ""}`
-                      ]
-                    : []
-            )
-      )
-      .filter(Boolean),
+  const said = userWords(conversation, step),
     lines = [];
   let room = 6000;
   for (let i = said.length - 1; i >= 0 && room > 0; i--) {
@@ -226,9 +208,16 @@ function reviewCase(step, args, conversation, why) {
   // 这一步过了哪条守的关口，那条守在这一步上已由人照过：写明了，审查不再拿它看不见的「给人看过没有」去对
   const held = intents.get(conversation.id)?.intent,
     gated = Array.isArray(step.granted) ? step.granted : [],
-    goals = held ? intentRoots(held).map(id => held.nodes[id].claim) : [],
+    closed = held ? answerClosed(conversation, held) : undefined,
+    goals = held
+      ? intentRoots(held)
+          .filter(id => !closed.has(id))
+          .map(id => held.nodes[id].claim)
+      : [],
     keeps = held
-      ? intentKeeps(held).map(id => `${held.nodes[id].claim}${gated.includes(id) ? "（这一步已过此守的关口：用户看过、准许了）" : ""}`)
+      ? intentKeeps(held, closed).map(
+          id => `${held.nodes[id].claim}${gated.includes(id) ? "（这一步已过此守的关口：用户看过、准许了）" : ""}`
+        )
       : [],
     intentText = [goals.length ? `目标：${goals.join("；")}` : "", keeps.length ? `守：${keeps.join("；")}` : ""]
       .filter(Boolean)

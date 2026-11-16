@@ -2,32 +2,35 @@
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 // 系统提示：预设的提示词在最前，其后照 prompts/assistant.js 的 order 表逐段拼——每段何时带上（给了哪件工具、言还是行、主答 / 旁注 / 帮手）写在表里；
 // 要填值、或视情形不带的，在这里给出：给 null 即这回不带。工具各自做什么、何时用，在工具说明里说，这里不重复
-/** @type {Record<string, (ctx: { conversation: Conversation, tools: Set<string>, preset: Preset|null, anchor: boolean }) => Record<string, any>|null>} */
+/** @type {Record<string, (ctx: { conversation: Conversation, tools: Set<string>, preset: Preset|null, anchor: boolean, memory: Map<string, string>|null }) => Record<string, any>|null>} */
 const PROMPT_VARS = {
-  "assistant.today": () => ({ day: formatDay(now()), iso: new Date().toISOString().slice(0, 10) }),
+  // 都取本地日期：取 UTC 的话，东八区零点到八点之间差一天
+  "assistant.today": () => ({ iso: localDay(), week: "日一二三四五六"[new Date().getDay()] }),
   "work.hint": ctx => workVars(ctx.conversation),
   "work.archive": ctx => workVars(ctx.conversation),
   "work.env": () => envVars(),
-  // 不报条数：记一条就变，系统提示一变，整段对话的缓存都作废
-  "memory.hint": () => {
-    const names = memoryCategories().map(cat => cat.name);
-    return { categories: names.length ? t`，分作${names.map(name => `「${name}」`).join("")}` : "" };
+  // 每问现取；主答保存读到的各类版本，供 remember 核对。同一答的系统提示只装一次。
+  "memory.body": ctx => {
+    const items = memoryOn(ctx.conversation) ? memoryText(ctx.memory) : "";
+    return items ? { items } : null;
   },
   "mcp.hint": ctx => mcpHintVars(ctx.tools, ctx.preset),
   "skills.hint": () => skillCatalog(),
   "skills.home": () => (skillSet?.home ? { dir: skillSet.home } : null),
   "side.passage": ctx => (ctx.anchor ? {} : null),
   "side.whole": ctx => (ctx.anchor ? null : {}),
-  "side.noTools": ctx => (ctx.tools.size ? null : {})
+  "side.noTools": ctx => (ctx.tools.size ? null : {}),
+  // 两层记忆的分工，跟着目录记忆走：写不了文件就没有目录记忆
+  "work.ledgerMemory": ctx => (ctx.tools.has("write_file") ? {} : null)
 };
 /**
  * @param {Conversation} conversation
  * @param {any[]|null} tools 这回交给模型的工具定义
- * @param {{ role?: "main"|"side"|"sub", anchor?: boolean }} [options] anchor：旁注注的是划选的一段（否则是整条回复）
+ * @param {{ role?: "main"|"side"|"sub", anchor?: boolean, memory?: Map<string, string>|null }} [options] anchor：旁注注的是划选的一段（否则是整条回复）
  */
-function systemPrompt(conversation, tools, { role = "main", anchor = false } = {}) {
+function systemPrompt(conversation, tools, { role = "main", anchor = false, memory = null } = {}) {
   const preset = presetOf(conversation),
-    ctx = { conversation, tools: new Set((tools || []).map(tool => tool?.function?.name)), preset, anchor },
+    ctx = { conversation, tools: new Set((tools || []).map(tool => tool?.function?.name)), preset, anchor, memory },
     mode = isWork(conversation) ? "work" : "chat",
     lines = [];
   for (const section of PROMPTS.order || []) {
@@ -61,7 +64,7 @@ function workVars(conversation) {
           ? "work.reachAnywhere"
           : "work.reachInside"
     ),
-    platform: win ? "Windows" : bootstrap.work?.platform === "darwin" ? "macOS" : t("类 Unix"),
+    platform: win ? "Windows" : bootstrap.work?.platform === "darwin" ? "macOS" : "类 Unix",
     shell,
     shellNote: win ? prompt(/5\.1/.test(shell) ? "work.windowsShellLegacy" : "work.windowsShell") : ""
   };

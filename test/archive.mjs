@@ -11,7 +11,7 @@ await evalJs(
 await send("Page.navigate", { url: PAGE });
 await sleep(1200);
 const welcome = await evalJs(
-  `JSON.stringify({ mode: document.querySelector("#welcomeMode").textContent, seal: document.querySelector("#welcome .seal").textContent, chip: document.querySelector("#workdirChip").className, chipText: document.querySelector("#workdirChip .chip-text").textContent, approve: document.querySelector("#approveChip").className, btn: document.querySelector("#modeSeal").dataset.mode + document.querySelector("#modeSeal .rail-icon").textContent })`
+  `JSON.stringify({ mode: document.querySelector("#welcomeMode").textContent, seal: document.querySelector("#welcome .seal").textContent, chip: document.querySelector("#workdirChip").className, chipText: document.querySelector("#workdirChip .chip-text").textContent, approve: document.querySelector("#approveChip").className, btn: document.querySelector("#brandMark").dataset.mode + document.querySelector("#brandMark").getAttribute("aria-label") })`
 );
 await shot("archive-welcome.png");
 const w = JSON.parse(welcome);
@@ -22,7 +22,7 @@ check(
     !w.chip.includes("hidden") &&
     w.chipText === "卷宗" &&
     !w.approve.includes("hidden") &&
-    w.btn === "chat言",
+    w.btn === "chat言 · 对谈",
   welcome
 );
 
@@ -104,6 +104,18 @@ check("an opened fold stays open after leaving and coming back", (await deliverR
 await evalJs(`document.querySelector(".message.assistant .deliver-more").click(); true`);
 check("收起 folds back to four", (await deliverRows()) === "4|余 3 件▾");
 await evalJs(`(m => { m.deliverables = m._kept; delete m._kept; })(__yanState().conversations[0].messages[1]); true`);
+// 链到草稿里的一件：卷宗不列隐藏的，对不上目录也不算移出，题头也不说「已入卷宗」
+await evalJs(
+  `(m => { m._kept = m.deliverables; m.deliverables = [{ path: ".草稿/x/笔记.md", name: "笔记.md", size: 3 }]; })(__yanState().conversations[0].messages[1]); true`
+);
+await reopenDeliver();
+check(
+  "a deliverable in the hidden drafts folder is not marked as moved out, nor claimed to be in Files",
+  (await evalJs(
+    `(b => b.querySelectorAll(".deliver-gone").length + "|" + b.querySelectorAll(".deliver-btn").length + "|" + b.querySelector(".deliver-head").textContent)(document.querySelector(".message.assistant .deliver-bar"))`
+  )) === "0|2|成成品 1 件"
+);
+await evalJs(`(m => { m.deliverables = m._kept; delete m._kept; })(__yanState().conversations[0].messages[1]); true`);
 await reopenDeliver();
 // 纸先沉下去、底淡掉，淡完才藏起、清台面
 await sleep(260);
@@ -149,9 +161,9 @@ check(
   skillText
 );
 check(
-  "the step reads 技能 · 写信 in the trail, not 翻阅文档 · 写信/SKILL.md",
+  "the step reads Skill · 写信 in the trail, not 翻阅文档 · 写信/SKILL.md",
   await evalJs(
-    `[...document.querySelectorAll(".tool-step")].some(s => s.querySelector(".tool-label")?.textContent === "技能" && s.querySelector(".tool-title")?.textContent === "写信")`
+    `[...document.querySelectorAll(".tool-step")].some(s => s.querySelector(".tool-label")?.textContent === "Skill" && s.querySelector(".tool-title")?.textContent === "写信")`
   )
 );
 // 人点名：「＋」→「技能」挑「写信」，那份说明作一件附件置于案上、随问附上
@@ -200,7 +212,7 @@ check(
   (await evalJs(`document.querySelector('.chip-pop [data-menu="bind"]')?.textContent`)) === "绑定目录" &&
     (await evalJs(`!document.querySelector("#chatMeta [data-workdir-bind], #chatMeta [data-export-md]")`))
 );
-check("seal still says 言", (await evalJs(`document.querySelector("#modeSeal").dataset.mode`)) === "chat");
+check("seal still says 言", (await evalJs(`document.querySelector("#brandMark").dataset.mode`)) === "chat");
 check(
   "the three-mode command-policy toggle is also available in 言",
   await evalJs(
@@ -219,7 +231,8 @@ await waitFor(`(__yanState().conversations[0].workdir || "").toLowerCase().endsW
 check("pop closed after binding", await evalJs(`!document.querySelector(".chip-pop")`));
 check(
   "seal flips to 行",
-  (await evalJs(`document.querySelector("#modeSeal").dataset.mode + document.querySelector("#modeSeal .wide").textContent`)) === "work执事"
+  (await evalJs(`document.querySelector("#brandMark").dataset.mode + document.querySelector("#brandMark").getAttribute("aria-label")`)) ===
+    "work行 · 执事"
 );
 check(
   "command-policy toggle remains available once bound",
@@ -269,7 +282,7 @@ await evalJs(
 await waitFor(`!!document.querySelector(".chip-pop [data-unbind]")`);
 await evalJs(`document.querySelector(".chip-pop [data-unbind]").click(); true`);
 await waitFor(`!__yanState().conversations[0].workdir`);
-check("unbound: seal back to 言", (await evalJs(`document.querySelector("#modeSeal").dataset.mode`)) === "chat");
+check("unbound: seal back to 言", (await evalJs(`document.querySelector("#brandMark").dataset.mode`)) === "chat");
 
 // ---- 欢迎页的目录签：填了目录即为行，清空即回言；侧栏的印跟着变
 await evalJs(`document.querySelector("#newChat").click(); true`);
@@ -284,7 +297,7 @@ await sleep(150);
 check(
   "typing a directory makes the welcome page 行 with the approval chip",
   (await evalJs(
-    `document.querySelector("#welcomeMode").textContent + "|" + document.querySelector("#modeSeal").dataset.mode + "|" + document.querySelector("#approveChip").classList.contains("hidden")`
+    `document.querySelector("#welcomeMode").textContent + "|" + document.querySelector("#brandMark").dataset.mode + "|" + document.querySelector("#approveChip").classList.contains("hidden")`
   )) === "执事|work|false"
 );
 check(
@@ -296,7 +309,7 @@ await sleep(150);
 check(
   "clearing it goes back to 言",
   (await evalJs(
-    `document.querySelector("#welcomeMode").textContent + "|" + document.querySelector("#workdirChip .chip-text").textContent + "|" + document.querySelector("#modeSeal").dataset.mode + "|" + (__yanState().settings.pendingWorkdir || "")`
+    `document.querySelector("#welcomeMode").textContent + "|" + document.querySelector("#workdirChip .chip-text").textContent + "|" + document.querySelector("#brandMark").dataset.mode + "|" + (__yanState().settings.pendingWorkdir || "")`
   )) === "对谈|卷宗|chat|"
 );
 check("pop closed after going back", await evalJs(`!document.querySelector(".chip-pop")`));
@@ -463,6 +476,11 @@ writeFileSync(
 writeFileSync(`${ARCHIVE}/课程/场景示例/读我.md`, "# 读我\n\n![](images/点%201.png)\n\n![](./images/../images/点%201.png)\n");
 writeFileSync(`${ARCHIVE}/课程/场景示例/images/点#2.png`, readFileSync(`${ARCHIVE}/课程/场景示例/images/点 1.png`));
 writeFileSync(`${ARCHIVE}/课程/场景示例/读我.md`, "\n![](images/点%232.png)\n", { flag: "a" });
+// 挪过的文档：文里还写着旧夹，图其实在 images 里
+writeFileSync(
+  `${ARCHIVE}/课程/场景示例/挪过.md`,
+  "![](旧夹/点%201.png)\n\n![没有这幅](旧夹/无此图.png)\n\n![不带扩展名](chart)\n\n![坏的内联图](data:image/png;base64,AAAA)\n\n[读我](旧夹/读我.md)\n"
+);
 await evalJs(dropFolder);
 await waitFor(`!!document.querySelector('#libraryGrid [data-library-dir="课程/场景示例 (2)"]')`, 8000).catch(() => {});
 check("dropping it again makes a second folder instead of merging", existsSync(`${ARCHIVE}/课程/场景示例 (2)/图/a.txt`));
@@ -479,6 +497,35 @@ check(
     `(imgs => imgs.length === 3 && imgs.every(img => img.naturalWidth === 1 && img.src.includes("/api/archive/file")))([...document.querySelectorAll("#fileViewerStage .markdown img")])`
   ),
   await evalJs(`[...document.querySelectorAll("#fileViewerStage .markdown img")].map(img => img.src + " " + img.naturalWidth).join(" | ")`)
+);
+await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
+await evalJs(
+  `document.querySelector('#libraryGrid [data-library-disk="课程/场景示例/挪过.md"] [data-library-action="view"]').click(); true`
+);
+await waitFor(`document.querySelector("#fileViewerStage .markdown img")?.naturalWidth === 1`, 8000).catch(() => {});
+check(
+  "an image whose relative path went stale after a move is found by name near the document",
+  await evalJs(`document.querySelector("#fileViewerStage .markdown img")?.naturalWidth === 1`),
+  await evalJs(`document.querySelector("#fileViewerStage .markdown img")?.src || "no image"`)
+);
+await waitFor(`document.querySelectorAll("#fileViewerStage .markdown img").length === 1`, 8000).catch(() => {});
+check(
+  "an image nothing can be found for leaves its caption, not a broken picture",
+  await evalJs(
+    `document.querySelectorAll("#fileViewerStage .markdown img").length === 1 && document.querySelector("#fileViewerStage .markdown").textContent.includes("没有这幅") && document.querySelector("#fileViewerStage .markdown").textContent.includes("不带扩展名") && document.querySelector("#fileViewerStage .markdown").textContent.includes("坏的内联图")`
+  )
+);
+await evalJs(`document.querySelector('#fileViewerStage a[data-file="读我.md"]').click(); true`);
+await waitFor(
+  `document.querySelector("#fileViewerStage .markdown img")?.naturalWidth === 1 && document.querySelectorAll("#fileViewerStage .markdown img").length === 3`,
+  8000
+).catch(() => {});
+check(
+  "a link whose relative path went stale opens the file found by name",
+  await evalJs(
+    `document.querySelector("#fileViewerName").textContent === "读我.md" && document.querySelectorAll("#fileViewerStage .markdown img").length === 3`
+  ),
+  await evalJs(`document.querySelector("#fileViewerName").textContent`)
 );
 await evalJs(`document.querySelector("#fileViewerClose").click(); true`);
 await evalJs(`document.querySelector("#libraryGrid .strip-back").click(); true`);
