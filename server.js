@@ -207,6 +207,8 @@ const TIMERS = require("./server/timers.js")({
 const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable, route: STORE.scopedRoute });
 // Bot 名册：存储根里的 bots.json 与每只 Bot 的独立记忆（见 server/bots.js）
 const BOTS = require("./server/bots.js")({ home: () => STORE.paths().root, route: STORE.scopedRoute });
+// 磁盘信箱：跨 Bot 指令的持久队列，落在 存储根/mail-queue/（见 server/mail.js）
+const MAIL = require("./server/mail.js")({ home: () => path.join(STORE.paths().root, "mail-queue"), route: STORE.scopedRoute });
 const STAGE_LIB = require("./server/stage.js");
 // 检索与翻网页用的无头浏览器（直接请求被拦、网页要跑脚本时才起，见 server/headless.js）：配置目录只是 Cookie 与缓存，不算用户的东西，
 // 放系统临时目录、不进存储根（也不进 环境/：清空环境时它若开着，删到一半就卡住）；按端口各一份，测试的桥接不与常开的那个共用
@@ -260,6 +262,7 @@ const OPEN_ROUTES = {
     ...CHECKPOINTS.routes,
     ...STORE.routes,
     ...BOTS.routes,
+    ...MAIL.routes,
     ...FILES.routes,
     ...MCP.routes,
     ...ENV.routes,
