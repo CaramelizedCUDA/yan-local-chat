@@ -1,8 +1,9 @@
 // 言 · 接口：用量估算、请求、SSE 读取、错误说明
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 function estimateText(text) {
-  const chinese = (text.match(/[㐀-鿿]/g) || []).length;
-  return chinese + Math.ceil((text.length - chinese) / 4);
+  // 按整段汉字剥离，不为每个汉字在匹配数组里留一项；字区间和 UTF-16 计数不变。
+  const other = text.replace(/[㐀-鿿]+/g, "").length;
+  return text.length - other + Math.ceil(other / 4);
 }
 // 上下文过重的门槛：每一答的用量标注超过它就转为印色提醒
 const CONTEXT_HEAVY = 24000;
@@ -81,6 +82,8 @@ function spendTokens(profile, amount, kind = "main") {
 // 攒几秒一并报给桥接，由它往 用量.json 上加（见 server/usage.js）；报不上的留着下回再报，离页时随 keepalive 送出
 /** @typedef {"main"|"helper"|"side"|"review"|"image"} UsageKind */
 let usagePending = new Map(),
+  usageBatches = [],
+  usageFlushing = null,
   usageTimer = 0;
 function localDay(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -95,25 +98,38 @@ function noteUsage(kind, amount) {
 async function flushUsage(leaving = false) {
   clearTimeout(usageTimer);
   usageTimer = 0;
-  if (!usagePending.size) return;
-  const sent = usagePending,
-    items = [...sent].map(([key, amount]) => ({ day: key.split("|")[0], kind: key.split("|")[1], amount }));
-  usagePending = new Map();
+  // 一个批次一旦形成就固定内容和编号。响应丢失时重发原批次，而不是把数值
+  // 混回 usagePending 生成新编号（那会把已落盘的用量重复记账）。
+  if (usagePending.size) {
+    const items = [...usagePending].map(([key, amount]) => ({ day: key.split("|")[0], kind: key.split("|")[1], amount }));
+    usageBatches.push({ batchId: uid(), items });
+    usagePending = new Map();
+  }
+  if (!usageBatches.length) return;
   if (leaving) {
-    fetch(`${apiBase}/api/usage/add`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items }),
-      keepalive: true
-    }).catch(() => {});
+    for (const batch of usageBatches)
+      fetch("/api/usage/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(batch),
+        keepalive: true
+      }).catch(() => {});
     return;
   }
-  try {
-    await bridge("/api/usage/add", { items });
-  } catch {
-    for (const [key, amount] of sent) usagePending.set(key, (usagePending.get(key) || 0) + amount);
-    usageTimer ||= setTimeout(flushUsage, 30000);
-  }
+  // 刷新用量卡与三秒定时器可能同时触发；只让一条发送循环操作队首。
+  if (usageFlushing) return usageFlushing;
+  usageFlushing = (async () => {
+    while (usageBatches.length) {
+      try {
+        await bridge("/api/usage/add", usageBatches[0]);
+        usageBatches.shift();
+      } catch {
+        usageTimer ||= setTimeout(flushUsage, 30000);
+        break;
+      }
+    }
+  })().finally(() => (usageFlushing = null));
+  return usageFlushing;
 }
 /** @param {Profile} profile */
 function quotaExhausted(profile) {
@@ -320,7 +336,7 @@ function profileForRequest(profile) {
 }
 // 接口类型：设置里选的为准；旧配置没写的按地址认（anthropic.com）。桥接照它挑这一家的登记，不再自己认。
 // 硅基流动说的是 OpenAI 兼容的话，单列一档只为在设置里标出名字、填好地址
-/** @param {Endpoint} profile @returns {"openai"|"anthropic"|"chatgpt"|"siliconflow"} */
+/** @param {Endpoint} profile @returns {ApiKind} */
 function profileApi(profile) {
   const api = String(profile?.api || "").toLowerCase();
   if (api === "anthropic" || api === "chatgpt" || api === "siliconflow") return api;
@@ -379,6 +395,7 @@ async function readSse(response, assistant, { onFrame = null, live = true } = {}
   const reader = response.body.getReader(),
     decoder = new TextDecoder();
   let buffer = "",
+    dataLines = [],
     scheduled = false,
     ended = false,
     finishReason = "";
@@ -433,7 +450,7 @@ async function readSse(response, assistant, { onFrame = null, live = true } = {}
   // 与 vLLM 拆 DeepSeek 的规矩一样：这一轮正文里先出现一个裸的 </think>、前面没有 <think>，它之前的都是思考（bare）。
   // 挪走的思考不进历史，免得下一轮模型照着正文里的思考接着往正文里想
   const roundStart = assistant.content.length;
-  const think = { mode: "probe", held: "", last: "", bare: true, scan: roundStart };
+  const think = { mode: "probe", held: "", last: "", bare: true, tail: "", beforeTail: assistant.content[roundStart - 1] || "" };
   const ingest = text => {
     // 刚收住思考：结束标签后的空行可能分几块到，正文从头一个字起
     if (think.mode === "gap") {
@@ -443,7 +460,7 @@ async function readSse(response, assistant, { onFrame = null, live = true } = {}
     }
     if (think.mode === "body") {
       assistant.content += text;
-      takeBareThink(false);
+      takeBareThink(text);
       return;
     }
     if (think.mode === "probe") {
@@ -488,20 +505,25 @@ async function readSse(response, assistant, { onFrame = null, live = true } = {}
     return true;
   };
   // 这一轮正文里找裸的 </think>：找到就把这一轮它之前的正文挪进思绪（接在思考字段之后，空一行），余下的照常是正文。一轮只认一次
-  const takeBareThink = final => {
-    while (think.bare) {
-      const from = think.scan,
-        at = thinkCloser(assistant.content.slice(from), assistant.content[from - 1] || "", final);
+  const takeBareThink = (text, final = false) => {
+    if (!think.bare) return;
+    // 只扫上一块留下的尾巴和新字。每块从 assistant.content 切尾巴会让 V8 反复摊平整答，连前几轮也重复制
+    const tail = think.tail + text,
+      start = assistant.content.length - tail.length;
+    for (let from = 0; ; ) {
+      const at = thinkCloser(tail.slice(from), from ? tail[from - 1] : think.beforeTail, final);
       if (at < 0) {
-        // 末尾留一截再看：可能是切开的标签，或整个标签还等下一个字
-        think.scan = Math.max(think.scan, assistant.content.length - 8);
+        // 末尾最多留 8 字（整个标签可能还等着看下一个字），另记前一字供引号判断
+        const keepFrom = Math.max(from, tail.length - 8);
+        if (keepFrom) think.beforeTail = tail[keepFrom - 1];
+        think.tail = tail.slice(keepFrom);
         return;
       }
-      const end = from + at,
+      const end = start + from + at,
         said = assistant.content.slice(roundStart, end);
       // 写着的是一段带标签的代码（围栏还开着）：跳过这一个接着找
       if (inOpenFence(said)) {
-        think.scan = end + 8;
+        from += at + 8;
         continue;
       }
       think.bare = false;
@@ -519,10 +541,14 @@ async function readSse(response, assistant, { onFrame = null, live = true } = {}
   };
   const flushThink = () => {
     if (think.mode === "think" && closeThink(true)) return;
-    if (think.held && think.mode === "think") assistant.reasoning = (assistant.reasoning || "") + think.held;
-    else if (think.held) assistant.content += think.held;
+    const held = think.held;
     think.held = "";
-    if (think.mode !== "think") takeBareThink(true);
+    if (think.mode === "think") {
+      if (held) assistant.reasoning = (assistant.reasoning || "") + held;
+    } else {
+      if (held) assistant.content += held;
+      takeBareThink(held, true);
+    }
     think.mode = "body";
   };
   // 流静默太久（桥接那头 Node 自带五分钟的读超时）：五分钟一个字节都没有就当断了，按中断处理、可续写
@@ -572,8 +598,13 @@ async function readSse(response, assistant, { onFrame = null, live = true } = {}
         buffer = "";
       }
       for (const line of lines) {
+        if (!line) {
+          dataLines = [];
+          continue;
+        }
         if (!line.startsWith("data:")) continue;
-        const data = line.slice(5).trim();
+        dataLines.push(line.slice(5).replace(/^ /, ""));
+        const data = dataLines.join("\n").trim();
         if (!data) continue;
         if (data === "[DONE]") {
           ended = true;
@@ -582,9 +613,16 @@ async function readSse(response, assistant, { onFrame = null, live = true } = {}
           reader.cancel().catch(() => {});
           return;
         }
-        let failure = "";
+        let json;
         try {
-          const json = JSON.parse(data);
+          json = JSON.parse(data);
+        } catch {
+          // 一个事件的 JSON 可以分在几行 data:，等下一行。
+          continue;
+        }
+        dataLines = [];
+        let failure = "";
+        {
           // 流里夹着的报错（限流、上游掐线、桥接补的「连接中断」）：不能当没看见让半截话冒充写完了——按中断处理，已写的留着、可续写
           if (json.error && !json.choices)
             failure = (typeof json.error === "string" ? json.error : json.error?.message) || "接口在作答途中返回了错误";
@@ -627,7 +665,7 @@ async function readSse(response, assistant, { onFrame = null, live = true } = {}
             refresh();
           }
           if (json.usage) assistant.usage = withCached(json.usage);
-        } catch {}
+        }
         if (failure) throw Error(failure);
       }
       if (done) break;

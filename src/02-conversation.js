@@ -1,5 +1,9 @@
 // 言 · 对话数据：分叉、模型、草稿
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
+/** @param {Profile} profile @returns {Message} */
+function newAssistant(profile) {
+  return { id: uid(), role: "assistant", content: "", timestamp: now(), status: "streaming", modelName: profile.name };
+}
 // 分叉：c.messages 始终是当前走的那条路；编辑或重答时被换下来的尾巴整段收进 c.forks（记下它接在哪条消息之后），随时可以切回来。
 // 同一位置的几个版本 = 当前这条 + 接在同一位置的 forks，按首条消息的时间排序
 /** @param {Conversation} c */
@@ -67,9 +71,8 @@ function switchBranch(c, index, step) {
     parentId = c.messages[index - 1]?.id ?? null;
   // 眼前这一版的帮手还在做：切走了它的回报会落进别的版本里
   if (crewOf(c, tail).length) return toast(t("这一版派出的帮手还在做，做完再切"));
-  // 挂在这一版上的后台与定时一并收口（与重答换下旧答同一套，见 releaseBackground）：留着它们跑完，
-  // 结果会按对话寄给换上的这一版（见 14-chat-engine/70-mail.js 的 mailReport）。收掉几条要说一声：
-  // 否则候悄悄没了，用户与模型都不知道
+  // 只收换下的这几答上的后台与定时（与重答同走 releaseBackground）；共用前文的候继续等。
+  // 已排队的回报在递上前还会核对来源是否在当前版本（见 wakeWithReports）；收过候则提示用户。
   const released = releaseBackground(c, tail);
   const anchor = document.querySelector(`#messages [data-message="${CSS.escape(c.messages[index].id)}"]`),
     host = $("#chatScroll"),
@@ -138,6 +141,9 @@ function restoreDraft() {
   // 欢迎页也有引文框（游目圈点可引进新对话），草稿里有就照样放回
   pendingQuote = draft.quote;
   renderQuote();
+  // 案上那几件也一并画：renderQuote 只在「引文撤了」时才顺手重画附件条，收尾把补言放回案上这条路不走整页 render，
+  // 少这一下就是「话回来了、附件条里没有它」，而下一问照样会把它送出去（见 10-send.js 的 putBack）
+  renderAttachments();
   const input = currentConversation() ? $("#chatInput") : $("#welcomeInput");
   if (!input) return;
   input.value = draft.text;

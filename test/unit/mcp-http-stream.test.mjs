@@ -5,6 +5,8 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { createTransport, readEvents } = require("../../server/mcp/transports.js");
+const { McpClient } = require("../../server/mcp/client.js");
+const { OUTBOUND_MARK } = require("../../server/web.js");
 
 // 一个回事件流的假服务：流先不结束，由测试决定何时出错
 function fakeStream() {
@@ -77,4 +79,74 @@ test("自己 close() 掐的流不当作出错", async t => {
   await tick();
   await tick();
   assert.deepEqual(got, []);
+});
+
+test("等回复的那一问超时了：传输把还在读的正文一并收掉，不挂着连接", async t => {
+  const signals = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    signals.push(init.signal);
+    return fakeStream().response;
+  });
+  const transport = createTransport({ url: "http://127.0.0.1:1/mcp" });
+  // 只测客户端与传输的交接：连接照常待着，这一条请求 20 毫秒就超时
+  const client = new McpClient({ name: "test", config: {}, version: "0", toolEnv: env => env });
+  client.transport = transport;
+  await assert.rejects(() => client.request("tools/call", {}, 20), /超时/);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].aborted, true, "超时之后要掐掉还在读的正文");
+});
+
+test("出站请求都带标记：MCP 服务借跳转盲打桥接受信接口的路堵上", async t => {
+  // 服务把回应 307 到 127.0.0.1 的受信接口时，Node 的 fetch 会跟着跳、保留方法与正文，
+  // 且不带 Origin——桥接自己分不出来，只认这个标记。三种出口（http 的 POST 与 DELETE、sse 的两处）
+  // 一个漏了就等于没有。
+  const seen = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    seen.push({ url: String(url), headers: init?.headers || {} });
+    if (String(url).endsWith("/sse")) {
+      return new Response([Buffer.from("event: endpoint\ndata: /messages\n\n")], {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s1" } });
+  });
+  const http = createTransport({ url: "http://127.0.0.1:1/mcp" });
+  await http.send({ jsonrpc: "2.0", id: 1, method: "initialize" });
+  http.close();
+  const sse = createTransport({ url: "http://127.0.0.1:1/sse", type: "sse" });
+  sse.onclose = () => {};
+  await sse.start();
+  await sse.send({ jsonrpc: "2.0", id: 2, method: "initialize" });
+  assert.ok(seen.length >= 4, `出口没走全：${seen.map(item => item.url).join(" ")}`);
+  for (const item of seen) assert.equal(item.headers[OUTBOUND_MARK], "1", `${item.url} 漏了标记`);
+});
+
+test("MCP 工具持续发进度也不能跨过绝对超时上限", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1_700_000_000_000 });
+  const client = new McpClient({ name: "test", config: {}, version: "0", toolEnv: env => env });
+  let id;
+  client.transport = {
+    send: async message => {
+      id = message.id;
+    },
+    abort() {}
+  };
+  const pending = client.request("tools/call", {}, 30);
+  for (let i = 0; i < 5; i++) {
+    t.mock.timers.tick(10);
+    client.receive({ method: "notifications/progress", params: { progressToken: id } });
+  }
+  t.mock.timers.tick(10);
+  await assert.rejects(pending, /超时：已达绝对时限.*距上次进度 0 秒/, "持续进度应按绝对上限终止，并注明最近进度");
+  assert.equal(client.pending.size, 0);
+});
+
+test("旧式 SSE transport 的 abort 是 AbortController，超时不得把它当函数调用", async () => {
+  const client = new McpClient({ name: "test", config: {}, version: "0", toolEnv: env => env });
+  const transport = { abort: new AbortController(), send: async () => {} };
+  client.transport = transport;
+  await assert.rejects(client.request("tools/call", {}, 10), /超时/);
+  assert.equal(client.pending.size, 0, "超时应正常结清，而不是被 TypeError 打断");
+  assert.equal(transport.abort.signal.aborted, false, "单条请求超时不能关闭整个 SSE 连接");
 });

@@ -1,5 +1,5 @@
 // 言 · 桥接的执事接口：工作目录、各接口共用的落点与沙箱筛查、指令与后台指令、目录选择对话框；
-// 文件读写见 files.js，列与搜见 find.js，意与指纹见 intent.js，卷宗目录见 archive.js
+// 文件读写见 files.js，列与搜见 find.js，图与指纹见 intent.js，卷宗目录见 archive.js
 // 由 server.js 装配：require("./server/work/index.js")({ archiveHome, workHome, toolEnv })
 "use strict";
 const { sendJson, readJson, jsonRoute, requestSignal, stamp, errorText } = require("../http.js");
@@ -18,13 +18,13 @@ const createIntent = require("./intent.js");
 
 module.exports = function createWork({ archiveHome, workHome, storeRoot = () => "", toolEnv, playable }) {
   // ---- 执事模式：给模型一个工作目录，能跑指令、读写文件 ----
-  // 只做四件事：跑一条指令、写文件、读文件、列目录。路径默认限定在工作目录之内（页面放开后绝对路径可指向目录之外）；指令在工作目录里用本机 shell 执行。
-  // 不做进程隔离——这是用户自己的机器，页面上每条指令都看得见，并按问而后行 / 审而后行 / 径行三档处理。
-  // 请求带 sandbox: true 时再加一道沙箱（server/sandbox.js）：路径不出目录、机密文件不碰、指令先筛、环境变量去掉机密——在桥接这头守，页面与模型都绕不过
+  // 指令用本机 shell 在工作目录内起跑；结构化文件工具默认只及目录内，可否访问目录外由权限档位与 roam 一同决定。
+  // 请求带 sandbox: true 时做静态筛查并过滤指令环境；macOS 严档在系统有 sandbox-exec 时还限制子进程写盘（见 shell.js）。
+  // 存储根保护另计，不随沙箱开关放宽。
   // 执事没给目录时的退路：存储根里的 工作/（workHome()，见 server/store.js），与卷宗、对话同在一处
   // 卷宗：对话没绑工作目录时，模型的工具就落在这里——写出的表格、文档都收在卷宗里；页面上的卷宗即这个目录的视图。
   // 位置在存储根里（archiveHome()，见 server/store.js），随每个请求的 root 传来的也认。
-  // 各接口出错时回给页面的那句话：截到 300 字
+  // 走 failed 的报错说明截到 4000 字
   // 报错原样交给模型（卡片上只露头一句）：放得下一段线索——路径不对时同名的在哪、old 对不上时文件里最像的那一段
   const failed = error => errorText(error, 4000);
   const resolveWorkdir = raw => paths.resolveWorkdir(raw, workHome);
@@ -43,10 +43,10 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
       toolEnv
     }),
     { lockFile } = createLocks();
-  // 沙箱分两档：问而后行（或没说档位的请求）用严的；审而后行、径行用宽的——文件工具在宽档里不设防，指令只守系统本身（见 server/sandbox.js）
+  // 沙箱分两档：问而后行（或没说档位的请求）用严的；审而后行、径行用宽的——宽档不套严档的文件路径规则，仍保护存储根；指令用宽档筛查（见 server/sandbox.js）
   const looseTier = body => body.permission === "review" || body.permission === "auto";
   const strictBox = body => body.sandbox === true && !looseTier(body);
-  // 各文件接口的落点：严的沙箱里不认「全盘」，目录内的机密文件、.git 内部（写）也拦下；宽档与没开沙箱时，可及范围只由「全盘 / 目录内」定
+  // 各文件接口的落点：严的沙箱里不认「全盘」，目录内的机密文件、.git 内部（写）也拦下；宽档与没开沙箱时，「全盘 / 目录内」仍决定可及范围，存储根保护也仍在
   async function targetOf(workdir, body, { write = false } = {}) {
     const boxed = strictBox(body),
       target = resolveTarget(workdir, body.path, body.roam === true && !boxed);
@@ -93,7 +93,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
   function shownPath(workdir, file) {
     return pathIsInside(workdir, file) ? relPath(workdir, file) : file;
   }
-  // 系统的选择框：默认选目录；files 选文件（multiple 可多选）。给真路径，取消给空串
+  // 系统的选择框：默认选目录；files 选文件（multiple 可多选）。给路径列表，取消给空列表
   const handleWorkPick = jsonRoute(async body => {
     const result = await pick({ files: !!body.files, multiple: !!body.multiple, current: String(body.current || "").trim() });
     if ("error" in result) throw Error(result.error);
@@ -200,27 +200,35 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
   async function handleWorkWatch(req, res) {
     try {
       const body = await readJson(req),
-        result = await watchBackground(body.id, body.key, requestSignal(res));
+        result = await watchBackground(body.id, body.key, requestSignal(res), res);
       if (!res.writableEnded && !res.destroyed) sendJson(res, 200, result);
     } catch (error) {
       sendJson(res, 400, { error: failed(error) });
     }
   }
   // 发指令前先问一声会不会拦。问而后行（没说档位的也算）问严的沙箱——会拦的照样请示，用户批了这一条就出沙箱跑；
-  // 审而后行问宽的沙箱与审查规则——会拦的交专司里的审查模型再判（见 src/15-tools/03-review.js），准了即带 reviewed 来跑；
-  // 审查也不放行的（调桥接、藏字）标 hard，不必去问
+  // 审而后行问宽的沙箱、往外发的几样与审查规则——会拦的交专司里的审查模型再判（见 src/15-tools/03-review.js），
+  // 准了即带 reviewed 来跑；审查也不放行的（调桥接、藏字）标 hard，不必去问。kind 只给审查算「同类外发做过没有」
   const handleWorkScreen = jsonRoute(async body => {
     const workdir = resolveWorkdir(body.workdir),
       command = String(body.command || "");
-    if (body.permission === "review")
+    if (body.permission === "review") {
+      // workdir 要传给审查规则：预检与真跑判的必须是同一条规则，否则会「预检放行、执行回绝」，也送不到审查模型
+      const system = body.sandbox === true ? sandbox.screenLoose(command) : null,
+        egress = sandbox.egressOf(command),
+        ruled = sandbox.screenAutoReview(command, { workdir }),
+        // 两条规则都命中时都写上：审查看到的是完整的一把尺
+        why = [system, egress?.why, ruled].filter(Boolean).join("；");
       return {
-        // workdir 两处都要给：预检与真跑判的必须是同一条规则，否则会「预检放行、执行回绝」，也送不到审查模型
-        why: (body.sandbox === true && sandbox.screenLoose(command)) || sandbox.screenAutoReview(command, { workdir }),
+        why,
+        kind: egress ? egress.kind : "",
+        label: egress ? egress.label : "",
         hard: !!sandbox.screenUnreviewable(command)
       };
+    }
     return { why: sandbox.screenCommand(command, workdir) };
   }, failed);
-  // 文件、列与搜、意各一段，共用上面的落点、沙箱筛查与报错写法
+  // 文件、列与搜、图各一段，共用上面的落点、沙箱筛查与报错写法
   const work = { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile, storeRoot };
 
   return {
@@ -228,7 +236,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
     SCRATCH_DIR,
     WORK_SHELL,
     backgroundRunning,
-    // 都碰本机磁盘或本机进程：只受理本站页面与 VS Code Webview（见 server.js 的接口表）
+    // 碰本机磁盘或进程：由 server.js 登记为受信路由
     routes: {
       "POST /api/work/prepare": handleWorkPrepare,
       "POST /api/work/pick": handleWorkPick,

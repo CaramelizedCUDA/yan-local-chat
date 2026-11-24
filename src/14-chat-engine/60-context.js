@@ -8,7 +8,7 @@ const compactingIds = new Set();
 /** @param {Conversation} c */
 function compactable(c, before = null) {
   if (!c || (!before && (conversationRunning(c.id) || runningElsewhere(c.id)))) return [];
-  const contextIndex = c.messages.map(m => m.role).lastIndexOf("context"),
+  const contextIndex = lastContextIndex(c.messages),
     until = before ? c.messages.indexOf(before) : c.messages.length;
   return c.messages
     .slice(contextIndex + 1, Math.max(contextIndex + 1, until))
@@ -272,6 +272,7 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
       if (mark) mark.status = "done";
       overrides.seen = null;
       overrides.folds = (overrides.folds || 0) + 1;
+      overrides.onSize?.(requestSize(history, overrides));
       return true;
     } catch (error) {
       if (!signal.aborted) dropFoldMark(target, mark);
@@ -294,6 +295,7 @@ async function keepInWindow(profile, history, signal, overrides, { overflow = fa
     if (mark) Object.assign(mark, { status: "done", note, fold: { ...mark.fold, to: note.length } });
     overrides.seen = null;
     overrides.folds = (overrides.folds || 0) + 1;
+    overrides.onSize?.(requestSize(history, overrides));
     return true;
   } catch (error) {
     // 停止了：那一步由收尾的 settleSteps 记成已停止
@@ -331,4 +333,5 @@ function foldByModel(history, overrides, steps) {
   history.splice(head, history.length - head, ...noteMessages(step.note), ...kept);
   overrides.seen = null;
   overrides.folds = (overrides.folds || 0) + 1;
+  overrides.onSize?.(requestSize(history, overrides));
 }

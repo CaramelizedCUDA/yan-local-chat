@@ -94,7 +94,7 @@ function setupMarkdown() {
   });
   if (window.DOMPurify) {
     // 模型写「下载《x.docx》」时常把链接指向 sandbox:/、file:/// 或一个裸文件名——页面上没有这样的路。
-    // 把文件名记在 data-file、原路记在 data-path 上，去掉 href；点击时按原路在这段对话的落脚处取那件来下载，取不到再到卷宗里找同名的（见 10-archive.js）
+    // 把文件名记在 data-file、原路记在 data-path 上，去掉 href；点击时先按原路取件，取不到再按这段对话的落脚处找同名件；找到即打开预览（见 13-files/15-refs.js）。
     DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
       if (!(node.tagName === "A" && data.attrName === "href")) return;
       // 链接不要求扩展名也说不出个所以然的留着原样（页内锚点、邮件、网址）
@@ -105,7 +105,7 @@ function setupMarkdown() {
       data.keepAttr = false;
     });
     // 正文里的一幅图，从不交给浏览器自己去取：模型写的路（相对、Windows 绝对、sandbox:/、认不出名字的）都记下来，由页面按这段对话的落脚处认，
-    // 取不到就留说明文字（见 drawRefImage）。只有三样例外：data: 本身就是数据；http(s) 外链另记 data-remote，人点了才经桥接取（见 renderRemoteShots）。
+    // 取不到就留说明文字（见 drawRefImage）。两类另处置：data: 本身就是数据；http(s) 外链另记 data-remote，人点了才经桥接取（见 renderRemoteShots）。
     // 这一步落在 beforeSanitizeAttributes，比逐属性那道钩子早：marked 会把带反斜杠的路编成 C:%5C…，DOMPurify 见协议不合法就把 src 整个丢掉，
     // 逐属性那道钩子根本收不到，Windows 绝对路径的图便只剩一个没有 src 的 img。srcset 也一样——浏览器会从它去取，一并收下
     DOMPurify.addHook("beforeSanitizeAttributes", node => {
@@ -473,16 +473,6 @@ function groupReplyShots(root) {
   for (const row of root.querySelectorAll(".reply-shots")) row.dataset.count = t`共 ${row.children.length} 幅`;
 }
 defineEmbed({ name: "shot", mount: renderReplyShots });
-function downloadHref(href, name, revoke = false) {
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = name;
-  link.click();
-  if (revoke) setTimeout(() => URL.revokeObjectURL(href), 1000);
-}
-function downloadText(text, type, name) {
-  downloadHref(URL.createObjectURL(new Blob([text], { type })), name, true);
-}
 function renderMarkdown(source = "") {
   const text = String(source).replace(/^\n+|\n+$/g, "");
   if (!text) return "";
@@ -513,11 +503,21 @@ function fenceAfter(open, line) {
 function stableCut(content) {
   const listy = line => /^\s*(?:[-*+]|\d+[.)])\s/.test(line) || /^\s+\S/.test(line);
   let cut = content.lastIndexOf("\n\n");
+  /** @type {Set<number>|undefined} */
+  let openCuts;
   while (cut > 0) {
-    const before = content.slice(0, cut),
-      prevLine = before.slice(before.lastIndexOf("\n") + 1),
-      nextLine = content.slice(cut + 2).split("\n")[0];
-    const inFence = inOpenFence(liftBareHtml(before));
+    const prevLine = content.slice(content.lastIndexOf("\n", cut - 1) + 1, cut),
+      nextEnd = content.indexOf("\n", cut + 2),
+      nextLine = content.slice(cut + 2, nextEnd < 0 ? content.length : nextEnd);
+    let inFence,
+      unlifted = false;
+    if (openCuts) inFence = openCuts.has(cut);
+    else {
+      const before = content.slice(0, cut),
+        lifted = liftBareHtml(before);
+      inFence = inOpenFence(lifted);
+      unlifted = lifted.length === cut;
+    }
     const continues =
       /^\s+\S/.test(nextLine) ||
       (listy(nextLine) && listy(prevLine)) ||
@@ -525,8 +525,24 @@ function stableCut(content) {
       (/>\s*$/.test(prevLine) && (!nextLine || HTML_LINE.test(nextLine)));
     if (!inFence && !continues) break;
     cut = content.lastIndexOf("\n\n", cut - 1);
+    // 候选都在换行前。HTML 提升的空行向后看，只在短前缀已经无行可看时才会受新增行影响，只可能续长末段。
+    // 提升只插入围栏；长前缀没提升，则更短的也没有。否则照旧按各自的前缀算，不拿整段或尾段的状态代替。
+    if (unlifted && cut > 0) openCuts = openFenceCuts(content, cut);
   }
   return Math.max(0, cut);
+}
+
+/** 一次记下指定断点及之前的空行中，哪些在未闭合的围栏里。@param {string} content @param {number} lastCut */
+function openFenceCuts(content, lastCut) {
+  const cuts = new Set();
+  let open = null;
+  for (let start = 0; start <= lastCut; ) {
+    const end = content.indexOf("\n", start);
+    open = fenceAfter(open, content.slice(start, end));
+    if (open && content[end + 1] === "\n") cuts.add(end);
+    start = end + 1;
+  }
+  return cuts;
 }
 
 // 正文里的代码块：复制；各种嵌件自己的事件由它们各自接上（见 EMBEDS 的 bind）

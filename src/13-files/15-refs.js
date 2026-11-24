@@ -46,14 +46,11 @@ function archiveRel(file) {
 }
 /** 取一件文件的地址 @param {string} file @param {boolean} [download] */
 function localFileUrl(file, download = false) {
-  return `${apiBase}/api/archive/file?file=${encodeURIComponent(file)}${download ? "&download=1" : ""}`;
+  return `/api/archive/file?file=${encodeURIComponent(file)}${download ? "&download=1" : ""}`;
 }
 /** @param {string} file */
 function downloadFile(file) {
-  const anchor = document.createElement("a");
-  anchor.href = localFileUrl(file, true);
-  anchor.download = file.split("/").pop() || t("卷宗");
-  anchor.click();
+  downloadHref(localFileUrl(file, true), file.split("/").pop() || t("卷宗"));
 }
 
 /** 一答的正文：落脚是这段对话的落脚处（绑了目录是它，没绑是卷宗）；搬走的件在它与卷宗里认
@@ -164,7 +161,7 @@ const refListings = new Map();
 function refListing(root) {
   let listing = refListings.get(root);
   if (!listing) {
-    listing = bridge("/api/archive/list", { root }, AbortSignal.timeout(20000)).then(
+    listing = bridge("/api/archive/list", { root, scratch: false }, AbortSignal.timeout(20000)).then(
       data => (data.entries || []).map(entry => entry.path),
       () => []
     );

@@ -26,6 +26,35 @@ function usageSum(a, b) {
   for (const [key, value] of Object.entries(b)) sum[key] = Number(sum[key] || 0) + Number(value || 0);
   return sum;
 }
+// 一轮里的几件调用拟成步骤。id 是这批结果的唯一键（见 runSteps 里按 id 收的 outcomes），也是历史里
+// tool_calls 与 tool 消息配对的凭据：上游偶尔在同一轮的两件调用里给同一个 id（流里 index 分开、id 相同），
+// 照原样收，后一件的结果会盖掉前一件——模型拿着 A 的参数读到 B 的结果，静默错；同 id 的 tool_calls 还有上游直接拒。
+// 撞了就补个序号，两处（发给模型的调用与交回的 tool 消息）用的是同一份。同一答里先前几步的 id 也避开：
+// 行迹按 data-step-id 认那一步，撞了找到的是前一件
+/**
+ * @param {{ id?: string, name: string, arguments?: string }[]} calls
+ * @param {Message|SubAgent} target
+ * @param {string} [scope]
+ * @returns {Step[]}
+ */
+function roundSteps(calls, target, scope) {
+  const used = new Set((target.steps || []).map(step => step.id));
+  return calls.map(call => {
+    const base = call.id || `call_${uid().slice(0, 8)}`;
+    let id = base;
+    for (let n = 2; used.has(id); n += 1) id = `${base}_${n}`;
+    used.add(id);
+    return {
+      id,
+      name: call.name,
+      arguments: call.arguments || "{}",
+      status: "running",
+      at: target.content.length,
+      rat: String(target.reasoning || "").length,
+      ...(scope ? { scope } : {})
+    };
+  });
+}
 /**
  * @param {Message|SubAgent} target 写进哪里：主答、旁注的消息，或帮手
  * @param {Array<Record<string, any>>} history 送给接口的消息，就地追加
@@ -35,8 +64,8 @@ function usageSum(a, b) {
  *   beforeEnd?: () => Promise<Record<string, any>|null> }} run
  *   host：步骤画在哪条消息上（帮手的步骤画在主答的差遣卡里）；scope：步骤记上属于哪名帮手；kind：墨记进用量簿的哪一类（帮手按 scope 认）；
  *   onStatus：网络重试这类状态；
- *   afterRound：一轮工具做完、要接在工具结果后让它知道的话（主答的意，见 19-intent/10-store.js 的 intentRound）；
- *   beforeEnd：模型说完要收尾时，递回一条消息即接着做，给 null 即收尾（主答的意，见 intentGate）
+ *   afterRound：一轮工具做完、要接在工具结果后让它知道的话（主答的图，见 19-intent/10-store.js 的 intentRound）；
+ *   beforeEnd：模型说完要收尾时，递回一条消息即接着做，给 null 即收尾（主答的图，见 intentGate）
  */
 async function runRounds(target, history, run) {
   const { profile, conversation, host, signal, overrides, tally, inbox = null } = run,
@@ -72,7 +101,6 @@ async function runRounds(target, history, run) {
     // 开工前等着的那几步（装历史、起 MCP、断线稍候）里已按了停：中止在先，后面挂上的监听再也等不到，当场作罢
     signal.throwIfAborted();
     target.toolCalls = null;
-    target.usage = null;
     const roundStart = (tally.roundStart = target.content.length),
       thoughtStart = String(target.reasoning || "").length;
     if (!resumed) tally.replyStart = roundStart;
@@ -152,7 +180,7 @@ async function runRounds(target, history, run) {
       // 说完了就收尾，帮手还在后台也不等：回报到了另起一答（见 mailReport），等着的时候没有谁醒着。
       // 只剩用户的补言也照旧收尾，补言由 settleSupplements 作下一问送出。这一轮说着时已到的回报（或递给帮手的话）才当场递上接着做
       if (!inbox?.queue.some(item => item.report !== undefined)) {
-        // 收尾前要它再看一眼的（主答的意，见 19-intent/10-store.js 的 intentGate）：递回一句话即接着这一答写，不另起。轮次到顶的不拦
+        // 收尾前要它再看一眼的（主答的图，见 19-intent/10-store.js 的 intentGate）：递回一句话即接着这一答写，不另起。轮次到顶的不拦
         const entry = run.beforeEnd && overrides.tools && overrides.toolChoice !== "none" ? await run.beforeEnd() : null;
         if (!entry) break;
         const said = target.content.slice(roundStart).trim();
@@ -179,15 +207,7 @@ async function runRounds(target, history, run) {
     }
     // 模型请求调用工具：记成步骤、执行、把结果作为 tool 消息回传，再让模型继续；历史里只带本轮新写的正文，前几轮的已在各自的 assistant 消息里
     /** @type {Step[]} */
-    const steps = calls.map(call => ({
-      id: call.id || `call_${uid().slice(0, 8)}`,
-      name: call.name,
-      arguments: call.arguments || "{}",
-      status: "running",
-      at: target.content.length,
-      rat: String(target.reasoning || "").length,
-      ...(run.scope ? { scope: run.scope } : {})
-    }));
+    const steps = roundSteps(calls, target, run.scope);
     (target.steps ||= []).push(...steps);
     // 拟好的调用已入册成步骤，「正在拟」那一行随之撤下
     target.toolCalls = null;
@@ -209,7 +229,7 @@ async function runRounds(target, history, run) {
     for (const step of steps) history.push({ role: "tool", tool_call_id: step.id, content: outcomes.get(step.id) ?? "" });
     // 它这一轮自己撮了要：此前的往来换成它写的笔记（见 60-context.js 的 foldByModel）
     foldByModel(history, overrides, steps);
-    // 一轮做完之后要让它知道的（意里新转待复核的几项）：接在这一轮末一条工具结果后
+    // 一轮做完之后要让它知道的（图里新转待复核的几项）：接在这一轮末一条工具结果后
     const after = run.afterRound ? await run.afterRound() : "";
     if (after) history.at(-1).content = `${history.at(-1).content}\n\n${after}`;
     if (images.length) attachToolImages(history, images, profile);
@@ -228,7 +248,7 @@ const echolessProfiles = new Set();
 function thoughtEcho(target, from, profile) {
   if (target.thinkingBlocks?.length) return { thinking_blocks: target.thinkingBlocks };
   const thought = String(target.reasoning || "").slice(from);
-  if (!thought.trim() || echolessProfiles.has(profile.id)) return {};
+  if (!thought.trim() || echolessProfiles.has(blindProfileKey(profile))) return {};
   const echo = ownCopy(thought);
   return { reasoning_content: echo, reasoning: echo };
 }
@@ -255,7 +275,7 @@ function dropThoughtEcho(history, profile, message) {
     delete item.reasoning_content;
     delete item.reasoning;
   }
-  if (carried.length) echolessProfiles.add(profile.id);
+  if (carried.length) echolessProfiles.add(blindProfileKey(profile));
   return carried.length > 0;
 }
 // 工具交回的图（游目截的画面之类）：tool 消息只收文字，图另起一条用户消息紧随工具结果（Anthropic 那头并进同一条）。
@@ -263,6 +283,9 @@ function dropThoughtEcho(history, profile, message) {
 // 看不了图的模型：带图被拒就去掉图重发一回（见 readReply），此后这一页不再给它附图
 const toolImageMessages = new WeakSet(),
   blindProfiles = new Set();
+// 同一配置 ID 改接另一模型时不能继承旧模型的「看不了图」判定。
+// API 形式、端点与模型 ID 共同标识实际的图像能力。
+const blindProfileKey = profile => JSON.stringify([profileApi(profile), profile.baseUrl || "", profile.model || ""]);
 /** @param {Profile} profile */
 function attachToolImages(history, images, profile) {
   for (const message of history)
@@ -270,7 +293,7 @@ function attachToolImages(history, images, profile) {
       toolImageMessages.delete(message);
       message.content = prompt("assistant.toolImagesStale");
     }
-  if (blindProfiles.has(profile.id)) return;
+  if (blindProfiles.has(blindProfileKey(profile))) return;
   const message = {
     role: "user",
     content: [
@@ -291,7 +314,7 @@ function dropToolImages(history, profile, message) {
   if (!/image|vision|multi-?modal|图/i.test(message)) return false;
   const blind = !IMAGE_REJECTED.test(message),
     dropped = stripImages(history, blind);
-  if (dropped && blind) blindProfiles.add(profile.id);
+  if (dropped && blind) blindProfiles.add(blindProfileKey(profile));
   return dropped > 0;
 }
 // 历史里的图一概换成一句话：工具交回的整条换掉，用户发的（这一问、最近带图的那一问，见 keptImageQuestion）逐张换。
@@ -328,10 +351,13 @@ function trimReply(target) {
  */
 async function readReply(profile, history, signal, overrides, target, retried = false, onOpen = null, onFrame = null) {
   target.thinkingBlocks = null;
+  target.usage = null;
   // 长活：这一答的工具往来快撑满窗口了，先压掉较早的几轮再发（见 14-chat-engine/60-context.js 的 keepInWindow）
   if (!retried) await keepInWindow(profile, history, signal, overrides, { target });
-  if (blindProfiles.has(profile.id)) stripImages(history);
+  if (blindProfiles.has(blindProfileKey(profile))) stripImages(history);
   dropStaleThoughts(history, profile);
+  // 每次发送前公布这份请求的估算，不沿用上一轮显示的实测。
+  overrides.onSize?.(requestSize(history, overrides));
   const response = await requestPatiently(profile, history, signal, overrides);
   if (!response.ok) {
     const message = await describeResponseError(response);
@@ -367,7 +393,10 @@ async function readReply(profile, history, signal, overrides, target, retried = 
   const sentAt = history.length,
     wrote = target.content.length,
     note = () => {
-      if (Number(target.usage?.prompt_tokens) > 0) overrides.seen = { at: sentAt, tokens: Number(target.usage.prompt_tokens) };
+      const tokens = Number(target.usage?.prompt_tokens);
+      if (!(tokens > 0) || !Number.isFinite(tokens)) return;
+      overrides.seen = { at: sentAt, tokens };
+      overrides.onSize?.(tokens);
     };
   return readSse(response, sink, { onFrame }).then(note, async error => {
     if (error.name === "AbortError") throw error;

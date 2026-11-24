@@ -13,21 +13,27 @@ function folder() {
   const root = fs.mkdtempSync(path.join(parent, "dir-prints-"));
   assert.equal(path.dirname(root), parent);
   const work = createWork({ archiveHome: () => root, workHome: () => root, toolEnv: env => env });
-  const print = async () => {
-    const req = Readable.from([Buffer.from(JSON.stringify({ workdir: root, dirs: ["."] }))]);
+  const batch = async (body = { dirs: ["."] }) => {
+    const req = Readable.from([Buffer.from(JSON.stringify({ workdir: root, ...body }))]);
     let result;
     await work.routes["POST /api/work/prints"](req, {
+      on() {},
       writeHead() {},
       end(text) {
         result = JSON.parse(text);
       }
     });
+    return result;
+  };
+  const print = async () => {
+    const result = await batch();
     assert.equal(typeof result.dirs?.["."], "string");
     return result.dirs["."];
   };
   return {
     root,
     print,
+    batch,
     clean() {
       if (path.dirname(root) !== parent) throw Error("测试清理目录越界");
       fs.rmSync(root, { recursive: true, force: true });
@@ -35,17 +41,17 @@ function folder() {
   };
 }
 
-test("目录凭据不因言自己的目录记忆、意与临时稿更新而失效", async () => {
+test("目录凭据不因言自己的目录记忆、图与临时稿更新而失效", async () => {
   const { root, print, clean } = folder();
   try {
     fs.writeFileSync(path.join(root, "app.js"), "业务代码");
     const before = await print();
     fs.mkdirSync(path.join(root, ".yan"));
-    fs.writeFileSync(path.join(root, ".yan/意.json"), '{"nodes":{}}');
+    fs.writeFileSync(path.join(root, ".yan/图.json"), '{"nodes":{}}');
     fs.mkdirSync(path.join(root, ".草稿"));
     fs.writeFileSync(path.join(root, ".草稿/probe.py"), "print('x')");
     assert.equal(await print(), before);
-    fs.writeFileSync(path.join(root, ".yan/意.json"), '{"nodes":{"甲":{}}}');
+    fs.writeFileSync(path.join(root, ".yan/图.json"), '{"nodes":{"甲":{}}}');
     assert.equal(await print(), before);
   } finally {
     clean();
@@ -80,6 +86,73 @@ test("目录超过 2000 件文件：后面的改动、新增、删除也改变�
     assert.notEqual(added, before);
     fs.unlinkSync(path.join(root, "2004.txt"));
     assert.notEqual(await print(), added);
+  } finally {
+    clean();
+  }
+});
+
+test("重叠目录与显式文件在同一批只读一次，下一批仍读新内容", async () => {
+  const { root, batch, clean } = folder();
+  const file = path.join(root, "nested", "x");
+  fs.mkdirSync(path.dirname(file));
+  fs.writeFileSync(file, "a");
+  const original = fs.createReadStream;
+  let reads = 0;
+  fs.createReadStream = function (given, ...args) {
+    if (given === file) reads++;
+    return original.call(this, given, ...args);
+  };
+  try {
+    const first = await batch({ paths: ["nested/x"], dirs: [".", "nested"] });
+    assert.equal(reads, 1);
+    assert.equal(typeof first.prints["nested/x"], "string");
+    assert.equal(typeof first.dirs["nested"], "string");
+    fs.writeFileSync(file, "b");
+    const second = await batch({ paths: ["nested/x"], dirs: [".", "nested"] });
+    assert.equal(reads, 2);
+    assert.notEqual(second.prints["nested/x"], first.prints["nested/x"]);
+    assert.notEqual(second.dirs["."], first.dirs["."]);
+  } finally {
+    fs.createReadStream = original;
+    clean();
+  }
+});
+
+test("凭据：暂时无法访问不等于消失", async () => {
+  const { root, batch, clean } = folder();
+  const file = path.join(root, "blocked");
+  fs.writeFileSync(file, "x");
+  const original = fs.createReadStream;
+  fs.createReadStream = function (given, ...args) {
+    if (given === file) throw Object.assign(Error("busy"), { code: "EACCES" });
+    return original.call(this, given, ...args);
+  };
+  try {
+    const result = await batch({ paths: ["blocked", "missing"], dirs: [".", "missing"] });
+    assert.deepEqual(result.prints, { missing: null });
+    assert.deepEqual(result.dirs, { missing: null });
+  } finally {
+    fs.createReadStream = original;
+    clean();
+  }
+});
+
+test("凭据：目录内的链接失去目标时记为消失，而不是未知", async () => {
+  const { root, batch, clean } = folder();
+  const target = path.join(root, "target"),
+    link = path.join(root, "link");
+  try {
+    fs.mkdirSync(target);
+    fs.writeFileSync(path.join(target, "x"), "a");
+    fs.symlinkSync(target, link, "junction");
+    const body = { paths: ["link/x"], dirs: ["link"] };
+    const before = await batch(body);
+    assert.equal(typeof before.prints["link/x"], "string");
+    assert.equal(typeof before.dirs.link, "string");
+    fs.rmSync(target, { recursive: true });
+    const after = await batch(body);
+    assert.equal(after.prints["link/x"], null);
+    assert.equal(after.dirs.link, null);
   } finally {
     clean();
   }

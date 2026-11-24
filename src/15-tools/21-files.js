@@ -181,9 +181,12 @@ defineTool({
     step.output = trimOutput(lines.join("\n"));
     // 桥接替模型圆过的（正则写不成，按字面搜了）：说在结果前头
     step.note = data.note || (lines.length ? "" : "无匹配");
-    // 搜得不全的照实说：扫到文件上限、没进去的大目录。零命中时模型最容易据此断言「没有」
+    // 搜得不全的照实说：扫到文件上限、没进去的大目录、跳过的大文件与二进制。零命中时模型最容易据此断言「没有」
     const partial = [
         data.limited && t`只扫了前 ${data.limited} 个文件，其余未搜；请缩小 path 或加 glob`,
+        data.large && t`另有 ${data.large} 件超过 2 MB 未搜；要搜其中一件就把 path 指到它（单件可搜到 32 MB）`,
+        data.binary && t`另有 ${data.binary} 件像是二进制，未搜`,
+        data.unread && t`另有 ${data.unread} 件读不出来，未搜`,
         data.skipped?.length && t`未进入 ${data.skipped.join("、")}；要搜其中的，把 path 指进去`
       ]
         .filter(Boolean)
@@ -208,11 +211,18 @@ defineTool({
   sideEffect: true,
   writes: true,
   digest: true,
-  async run(step, args, { conversation, signal }) {
+  async run(step, args, ctx) {
     const url = args.url.trim();
     step.url = url;
     step.title = args.path?.trim() || url.split("/").pop() || url;
-    const data = await bridge("/api/work/download", { ...workScope(conversation), url, path: args.path }, signal);
+    const { data, denied } = await bridgePrivate(
+      "/api/work/download",
+      { ...workScope(ctx.conversation), url, path: args.path },
+      step,
+      args,
+      ctx
+    );
+    if (denied) return denied;
     step.title = data.path;
     step.note = url;
     step.change = { path: data.path, added: 0, removed: 0, created: true }; // 计入这一答的改动摘要
@@ -347,7 +357,7 @@ async function ensureWorkReady(conversation) {
 // 目录记忆：记忆分两层——关于用户本人、处处成立的在跨对话记忆里（见 11-memory.js，进系统提示、定格）；只在这个目录成立的
 // 活在目录里、不活在哪一段对话里——目录下 .yan/记忆.md 由主模型自己立、自己维护（原名账本，旧目录里的 账本.md 由桥接备目录时改名，
 // 见 server/work/index.js；代码里仍叫 ledger）。记这个目录往后还用得上的做法与环境要点，不论活长活短，旧的随手淘汰；
-// 结论、进展与走不通的路归意（见 src/19-intent/）。两层位置不同是因为变的快慢不同：跨对话那份很少变，定格进系统提示吃缓存；
+// 结论、进展与走不通的路归图（见 src/19-intent/）。两层位置不同是因为变的快慢不同：跨对话那份很少变，定格进系统提示吃缓存；
 // 这份在活里常改、别的对话也写，每一答开工时现读，附在这一问之后（见 ledgerNote 与 streamReply），改了也不冲掉前面的缓存：
 // 压缩了、被回报叫醒另起一答、换一段对话接着做，看到的都是同一份。没有这个文件就什么都不附。
 // 目录记忆记多少不设上限——有的活真要记很多；限的只是每一问附多少：随模型窗口走，取附件那把尺子的一半（它每一问都附）。
@@ -393,19 +403,41 @@ async function loadLedger(conversation, signal, role = "main") {
  * @param {{ text: string, lines: number, partial: boolean, sig: string } | null} [ledger] 帮手的那份由领命时现读传进来
  */
 function ledgerNote(conversation, role = "main", profile = null, ledger = ledgers.get(conversation.id)) {
-  if (!ledger) return "";
+  const note = ledgerNoteText(conversation, role, profile, ledger);
+  if (!note) return "";
+  if (role === "main") note.cut ? ledgersCut.add(conversation.id) : ledgersCut.delete(conversation.id);
+  return note.text;
+}
+/**
+ * 这一问要附上的那段（截了就在后面写明余下的用 read_file 看）：只按预算截字，不动「截过没截过」的记录——
+ * 右下角的上下文计数也据它估（见 18-outline.js），那里每敲一个字都会算一回，不能顺带改已读状态
+ * @param {Conversation} conversation @param {"main"|"sub"} role @param {Profile|null} [profile]
+ * @param {{ text: string, lines: number, partial: boolean, sig: string } | null} [ledger]
+ * @returns {{ text: string, cut: boolean } | null}
+ */
+function ledgerNoteText(conversation, role = "main", profile = null, ledger = ledgers.get(conversation.id)) {
+  if (!ledger) return null;
   const { text, lines, partial } = ledger,
-    tokens = estimateText(text),
     budget = ledgerBudget(profile);
   let shown = text;
-  if (tokens > budget) {
-    // 按 token 比例截到预算内，落在行尾
-    const at = Math.floor((text.length * budget) / tokens),
-      end = text.lastIndexOf("\n", at);
-    shown = text.slice(0, end > 0 ? end : at);
+  if (estimateText(text) > budget) {
+    // 汉英密度可以前后不同：按这段前缀自身的用量二分找截点，再退到行尾（首行放不下才行内截）。
+    let lo = 0,
+      hi = Math.min(text.length - 1, budget * 4);
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (estimateText(text.slice(0, mid)) <= budget) lo = mid;
+      else hi = mid - 1;
+    }
+    const end = text.lastIndexOf("\n", lo);
+    // 行内截取时别把表情等由两个 UTF-16 码元组成的字符截成半个。
+    const split = /[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(text.slice(lo - 1, lo + 1));
+    shown = text.slice(0, end > 0 ? end : lo - Number(split));
   }
   const shownLines = shown.split("\n").length,
     cut = partial || shown.length < text.length;
-  if (role === "main") cut ? ledgersCut.add(conversation.id) : ledgersCut.delete(conversation.id);
-  return `${prompt(role === "main" ? "work.ledgerHead" : "work.ledgerSub", { path: LEDGER_PATH, text: shown })}${cut ? `\n${prompt("work.ledgerCut", { lines, shown: shownLines })}` : ""}\n\n`;
+  return {
+    text: `${prompt(role === "main" ? "work.ledgerHead" : "work.ledgerSub", { path: LEDGER_PATH, text: shown })}${cut ? `\n${prompt("work.ledgerCut", { lines, shown: shownLines })}` : ""}\n\n`,
+    cut
+  };
 }

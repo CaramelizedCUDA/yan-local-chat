@@ -1,25 +1,26 @@
 // 言 · 读的时候：右下角的上下文计数（点开可压缩）、右侧的问题导航条
 // 本文件是 support.js 的一段，由桥接按文件名顺序拼进同一个闭包；无需模块系统
 
-// ---------- 上下文计数：下一问会送出多少（估算），随输入、流式生成实时变 ----------
-// 与真正发送时的拼法同源（系统提示 + 工具定义 + 上次撮要以来的往来 + 行迹摘要 + 草稿 + 案上待发的附件与引文），附件按入库时记下的字数估
+// ---------- 上下文计数：下一问会送出多少（估算），随输入、流式生成实时变；作答中改显本答这一轮的请求 ----------
+// 与真正发送时的拼法同源（系统提示 + 工具定义 + 上次撮要以来的往来 + 行迹摘要 + 草稿 + 案上待发的附件与引文
+// + 这一问之后附的目录记忆与图），附件按入库时记下的字数估。
+// 作答中每轮先估这一轮送出的请求，接口有报提示用量再校正。一答之内撮要压掉往来，下一问的估算看不出来，本答的请求才看得出来。
 /** @param {Conversation} c */
-function contextEstimate(c, draft = "", pending = null) {
+function contextEstimate(c, draft = "", pending = null, profile = activeProfile(c)) {
   if (!c) return 0;
-  const profile = activeProfile(),
-    budget = inlineTextBudget(profile);
+  const budget = inlineTextBudget(profile);
   let n = 0;
   if (profile) {
     const tools = profile.tools !== false ? toolDefinitions(c, { profile }) : null;
     n += estimateText(systemPrompt(c, tools));
     if (tools) n += estimateText(JSON.stringify(tools));
   }
-  const contextIndex = c.messages.map(m => m.role).lastIndexOf("context"),
+  const contextIndex = lastContextIndex(c.messages),
     marker = contextIndex >= 0 ? c.messages[contextIndex] : null;
   if (marker?.summary) n += 12 + estimateText(marker.summary);
   const source = c.messages.slice(contextIndex + 1).filter(m => m.status !== "error" && ["user", "assistant"].includes(m.role)),
     // 案上有待发的东西时，下一问就是它；历史里最后一问不再是「最新一问」，它的附件只按摘要算
-    lastUser = pending ? null : source.filter(m => m.role === "user").at(-1),
+    lastUser = pending ? null : source.findLast(m => m.role === "user"),
     // 用户发的图只留最新的一批（见 keptImageQuestion）
     pictured = keptImageQuestion(source, lastUser?.id);
   const filesOf = (files, latest, images = latest) => {
@@ -54,29 +55,48 @@ function contextEstimate(c, draft = "", pending = null) {
       (pending.quote?.text ? estimateText(pending.quote.text) : 0) +
       filesOf(pending.attachments, true);
   else if (draft) n += 4 + estimateText(draft);
+  // 这一问之后还附上目录记忆与图（见 20-stream.js 的 buildHead）：与前文无关、每一问都带，不数它们，
+  // 右下角的读数与自动压缩的门槛都比真正送出去的少一截，压前文那次也就压晚一拍
+  const ledger = ledgerNoteText(c, "main", profile);
+  if (ledger) n += estimateText(ledger.text);
+  n += estimateText(intentNote(c));
   return Math.round(n);
 }
 let gaugeTimer = null;
+// 作答中每轮发送前先按装好的请求估算，随后有实测才校正（见 30-rounds.js）；撮要后的回落也不必等接口报数。
+// 一答之内撮要压掉较早的往来后，这个数会明显回落。空闲时仍估下一问——被撮掉的工具往来本就不随下一问重装，
+// 那个估算撮要前后不动（见 60-context.js 的 foldByModel），撮要有没有用只有看本答的请求才看得出
 function updateContextGauge() {
   const gauge = $("#contextGauge");
   if (!gauge) return;
   const c = currentConversation();
   if (!c || view !== "chat") return gauge.classList.add("hidden");
   const draft = $("#chatInput").value,
-    n = contextEstimate(
-      c,
-      draft,
-      draft || pendingAttachments.length || pendingQuote ? { text: draft, attachments: pendingAttachments, quote: pendingQuote } : null
-    ),
-    window = Number(activeProfile()?.contextWindow) || 0,
-    heavy = window ? n >= window * 0.75 : n >= CONTEXT_HEAVY;
+    job = requestJob(c.id),
+    // 作答中沿用开工时的模型窗口；空闲时才按眼前所选的模型估下一问。
+    profile = job?.profile || activeProfile(c),
+    live = Number(job?.promptTokens) || 0,
+    n =
+      live ||
+      contextEstimate(
+        c,
+        draft,
+        draft || pendingAttachments.length || pendingQuote ? { text: draft, attachments: pendingAttachments, quote: pendingQuote } : null,
+        profile
+      ),
+    window = Number(profile?.contextWindow) || 0,
+    heavy = window ? n >= window * 0.75 : n >= CONTEXT_HEAVY,
+    share = window ? t`，占此模型窗口 ${formatTokens(window)} 的 ${Math.round((n / window) * 100)}%` : "",
+    tail = heavy ? t("\n上下文已重，可撮要前文") : t("\n撮要前文");
   gauge.classList.remove("hidden");
   gauge.classList.toggle("heavy", heavy);
   gauge.classList.toggle("has-window", !!window);
   gauge.style.setProperty("--ratio", window ? `${Math.min(100, Math.round((n / window) * 100))}%` : "0%");
   rollText(gauge.querySelector(".context-gauge-value"), formatTokens(n));
   gauge.querySelector(".context-gauge-window").textContent = window ? `/ ${formatTokens(window)}` : "";
-  gauge.title = t`下一问约送出 ${formatTokens(n)} token${window ? t`，占此模型窗口 ${formatTokens(window)} 的 ${Math.round((n / window) * 100)}%` : ""}（估算，含系统提示、工具定义与上次撮要以来的往来）${window ? t("；过七成半自动撮要") : t("；放不下时自动撮要")}${heavy ? t("\n上下文已重，可撮要前文") : t("\n撮要前文")}`;
+  gauge.title = live
+    ? t`本答这一轮送出约 ${formatTokens(n)} token${share}（含系统提示、工具定义、历史与本答的往来）${window ? t("；过七成半自动撮要") : t("；放不下时自动撮要")}${tail}`
+    : t`下一问约送出 ${formatTokens(n)} token${share}（估算，含系统提示、工具定义与上次撮要以来的往来）${window ? t("；过七成半自动撮要") : t("；放不下时自动撮要")}${tail}`;
 }
 function scheduleContextGauge(delay = 160) {
   clearTimeout(gaugeTimer);
@@ -121,7 +141,7 @@ function renderOutline() {
   if (!rail) return;
   // 压缩过的前文在页上折着，导航条上也不列它们的问；「展开前文」后再列出来
   const c = currentConversation(),
-    foldAt = c && !c.showCompacted ? c.messages.map(m => (m.role === "context" && m.summary ? 1 : 0)).lastIndexOf(1) : -1,
+    foldAt = c && !c.showCompacted ? lastContextIndex(c.messages, { withSummary: true }) : -1,
     users = c && view === "chat" ? c.messages.slice(foldAt + 1).filter(m => m.role === "user" && !m.relay) : [];
   if (users.length < 2) {
     rail.classList.add("hidden");
@@ -144,16 +164,29 @@ function syncOutline() {
     const rail = $("#outline"),
       host = $("#chatScroll");
     if (!rail || rail.classList.contains("hidden") || Date.now() < outlineLockUntil) return;
-    // 「当前所在」取阅读线以上最近的一问：阅读线在视口上部，短问短答挤在一屏时也不会把下一问算成当前
-    const line = host.getBoundingClientRect().top + Math.min(120, host.clientHeight * 0.25);
-    let current = null;
-    for (const item of rail.querySelectorAll(".outline-item")) {
-      const article = host.querySelector(`#messages [data-message="${CSS.escape(item.dataset.target)}"]`);
-      if (article && article.getBoundingClientRect().top <= line) current = item;
-    }
+    const items = rail.querySelectorAll(".outline-item"),
+      height = host.clientHeight;
     // 滚到了底便是最后一问：末一轮短问短答时，它的顶未必越得过阅读线
-    if (host.scrollHeight - host.scrollTop - host.clientHeight < 8) current = [...rail.querySelectorAll(".outline-item")].at(-1);
-    if (!current) current = rail.querySelector(".outline-item");
+    let current = items[items.length - 1];
+    if (host.scrollHeight - host.scrollTop - height >= 8) {
+      // 当帧扫一次消息节点，不逐问查 DOM，也不跨帧留着可能被换掉的节点。重号仍取 DOM 里的第一项。
+      const articles = new Map();
+      for (const article of host.querySelectorAll("#messages [data-message]")) {
+        const id = article.getAttribute("data-message");
+        if (!articles.has(id)) articles.set(id, article);
+      }
+      const line = host.getBoundingClientRect().top + Math.min(120, height * 0.25);
+      current = items[0];
+      // 取导航顺序里最后一个越过阅读线的问；倒着找，命中就停。
+      for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i],
+          article = articles.get(item.dataset.target);
+        if (article && article.getBoundingClientRect().top <= line) {
+          current = item;
+          break;
+        }
+      }
+    }
     rail.querySelectorAll(".outline-item.active").forEach(item => item !== current && item.classList.remove("active"));
     current?.classList.add("active");
   });

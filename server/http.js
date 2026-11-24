@@ -56,6 +56,23 @@ function requestSignal(res) {
     });
   return abort.signal;
 }
+// finish 只表示桥接写完响应，不保证页面已处理；close 先到时则肯定不能把本次回报算作送完。
+function onResponseSettled(res, settle) {
+  let settled = false;
+  const done = finished => {
+    if (settled) return;
+    settled = true;
+    res.removeListener("finish", finish);
+    res.removeListener("close", close);
+    settle(finished);
+  };
+  const finish = () => done(true),
+    close = () => done(res.writableFinished === true);
+  res.once("finish", finish);
+  res.once("close", close);
+  if (res.writableFinished) finish();
+  else if (res.destroyed) close();
+}
 // 桥接日志每行打头的时刻
 const stamp = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
 function jsonRoute(handle, describe = errorText, limit = undefined) {
@@ -64,7 +81,10 @@ function jsonRoute(handle, describe = errorText, limit = undefined) {
       const data = await handle(await readJson(req, limit), req, res);
       if (data !== undefined && !res.writableEnded && !res.destroyed) sendJson(res, 200, data);
     } catch (error) {
-      if (!res.headersSent) sendJson(res, 400, { error: describe(error) });
+      // 出错时除了那句话，还可捎带一段结构化说明（error.detail）：如 private —— 撞的是「本机或内网地址」那道门，
+      // 页面据此决定要不要交审查、准了再带上 allowPrivate 重发（见 server/web.js 的 privateRefusal）
+      const detail = error && typeof error.detail === "object" && error.detail ? error.detail : {};
+      if (!res.headersSent) sendJson(res, 400, { error: describe(error), ...detail });
       else res.end();
     }
   };
@@ -112,7 +132,7 @@ async function receiveUpload(req, limit, place) {
     throw error;
   }
 }
-// 临时文件换成正本。Windows 上目标文件被索引器或杀毒程序短暂打开时，替换可能报 EPERM / EBUSY：
+// 临时文件换成正本。Windows 上目标文件被索引器或杀毒程序短暂打开时，替换遇 EPERM / EACCES / EBUSY 时：
 // 等几个很短的间隔再试同一份临时文件；永久错误仍原样交给调用方
 function replaceFile(temp, file) {
   const wait = new Int32Array(new SharedArrayBuffer(4));
@@ -129,7 +149,7 @@ function replaceFile(temp, file) {
 function uniqueStamp() {
   return `${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
-// 先写临时文件再改名：写到一半断电、进程被杀，正本也不会只剩半截
+// 先写临时文件再改名：写临时文件时中断，不会把正本截成半截；这里不保证断电后的持久性
 function writeAtomic(file, data) {
   const temp = `${file}.${uniqueStamp()}.tmp`;
   try {
@@ -218,6 +238,9 @@ async function sendFile(req, res, file, { name, download = false }) {
     ...(partial ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}),
     "Cache-Control": "no-cache",
     "Last-Modified": stat.mtime.toUTCString(),
+    // 秒级不够：同一秒里改成长短一样的内容，Last-Modified 与 Content-Length 都看不出（预览的抽取缓存据此判原件改没改）。
+    // 弱 ETag 正好担这件事——只判「还是不是同一份」，不逐字节校验
+    ETag: `W/"${size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`,
     "Content-Security-Policy": "sandbox",
     "Content-Disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(name)}`
   });
@@ -228,7 +251,7 @@ async function sendFile(req, res, file, { name, download = false }) {
     .pipe(res);
 }
 
-// 交给 Windows 的默认程序打开一件文件（预览认不得、或只抽得出结构时，看原样）。
+// 交给系统的默认程序打开一件文件（预览认不得、或只抽得出结构时，看原样）。
 // 可执行的一类不开：对它们「打开」就是运行，而文件常是模型写的或随手拖进来的。
 // 解释器脚本也算：Windows 上 .py / .pyw / .pyc / .pyo / .pyz / .pyzw 的默认打开就是 py.exe / pyw.exe，
 // 装了 Node 并登记了关联的机器上 .mjs / .cjs 同样点开即运行；.msc 走 mmc，.application 是 ClickOnce 安装清单
@@ -291,6 +314,7 @@ module.exports = {
   readJson,
   jsonRoute,
   requestSignal,
+  onResponseSettled,
   stamp,
   errorText,
   uniqueStamp,

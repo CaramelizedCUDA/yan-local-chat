@@ -6,6 +6,8 @@ import { connect, check, sleep, PAGE, TMP, HOME, CHATS } from "./lib.mjs";
 import { shellCommand } from "./helpers/shell-command.mjs";
 const ELSEWHERE = `${TMP}/elsewhere`;
 const native = p => p.split("/").join(process.platform === "win32" ? "\\" : "/");
+// macOS 不备环境包，环境页显示系统工具卡，没有卸载确认这一步
+const MAC = process.platform === "darwin";
 const { send, evalJs, waitFor, close } = await connect();
 const filesAt = dir =>
   existsSync(dir) ? readdirSync(dir).filter(name => name.endsWith(".json") && name !== "设置.json" && name !== "删除记录.json") : [];
@@ -202,14 +204,17 @@ check(
 await evalJs(`document.querySelector("#openSettings").click(); true`);
 await sleep(200);
 await evalJs(`document.querySelector('[data-tab="env"]').click(); true`);
-await waitFor(`document.querySelector("#envStatus")?.textContent.includes("已备好")`, 5000);
-await evalJs(`document.querySelector("#envPrepare").click(); true`);
-await waitFor(`!document.querySelector("#confirmModal").classList.contains("hidden")`, 3000);
-check(
-  "updating an environment would confirm before removing installed packs",
-  await evalJs(`document.querySelector("#confirmTitle").textContent.includes("卸载")`)
-);
-await evalJs(`document.querySelector("#confirmCancel").click(); document.querySelector('[data-tab="general"]').click(); true`);
+await waitFor(`document.querySelector("#envStatus")?.textContent.includes(${JSON.stringify(MAC ? "系统工具" : "已备好")})`, 5000);
+if (!MAC) {
+  await evalJs(`document.querySelector("#envPrepare").click(); true`);
+  await waitFor(`!document.querySelector("#confirmModal").classList.contains("hidden")`, 3000);
+  check(
+    "updating an environment would confirm before removing installed packs",
+    await evalJs(`document.querySelector("#confirmTitle").textContent.includes("卸载")`)
+  );
+  await evalJs(`document.querySelector("#confirmCancel").click(); true`);
+}
+await evalJs(`document.querySelector('[data-tab="general"]').click(); true`);
 await evalJs(
   `(i => { i.value = ${JSON.stringify(native(ELSEWHERE))}; i.dispatchEvent(new Event("change")); })(document.querySelector("#settingStore")); true`
 );
@@ -228,17 +233,37 @@ check(
   (await evalJs(`document.querySelector("#settingStore").value`)).toLowerCase().includes("elsewhere")
 );
 await evalJs(`document.querySelector('[data-tab="env"]').click(); true`);
-await waitFor(`document.querySelector("#envStatus")?.textContent.includes("尚未准备")`, 5000);
+await waitFor(`document.querySelector("#envStatus")?.textContent.includes(${JSON.stringify(MAC ? "系统工具" : "尚未准备")})`, 5000);
 check(
   "moving storage refreshes the environment status for the new root",
-  await evalJs(`document.querySelector("#envStatus")?.textContent.includes("尚未准备")`)
+  await evalJs(`document.querySelector("#envStatus")?.textContent.includes(${JSON.stringify(MAC ? "系统工具" : "尚未准备")})`)
 );
+// 在副本中改同一 ID，再新存一段；接用原根时这两项都不能串过去。
+const copyChats = await evalJs(`(() => {
+  const c = __yanState().conversations.find(c => c.id === "stored-chat");
+  c.title = "副本中改过的同 ID";
+  __yanState().conversations.push({ ...structuredClone(c), id: "copy-only", title: "只在副本有的对话" });
+  return __yanState().conversations;
+})()`);
+for (const c of copyChats) {
+  const r = await fetch(PAGE + "api/chats/save", {
+    method: "POST",
+    body: JSON.stringify({ root: native(`${moved}/对话`), conversation: c })
+  });
+  if (!r.ok) throw Error(await r.text());
+}
 await evalJs(`document.querySelector('[data-tab="general"]').click(); true`);
 await evalJs(
   `(i => { i.value = ${JSON.stringify(native(TMP))}; i.dispatchEvent(new Event("change")); })(document.querySelector("#settingStore")); true`
 );
-// 等搬回来的那一次真正收尾（输入框是测试自己改的，不能拿它当信号）
-await waitFor(`(document.querySelector("#toast")?.textContent || "").includes("原有的数据")`, 10000).catch(() => {});
+// 等桥接和页面都换完（输入框是测试自己改的，不能拿它当信号）。
+await waitFor(`localStorage.getItem("yan-store-root") === ${JSON.stringify(native(HOME))}`, 10000);
+check(
+  "adopting the original root neither merges the copy's same-ID chat nor imports its unique chat",
+  (await evalJs(`__yanState().conversations.length === 1 && __yanState().conversations[0].title === "数据库里的长对话"`)) &&
+    files().length === 1 &&
+    filesAt(`${moved}/对话`).some(name => name.startsWith("只在副本有的对话·"))
+);
 check(
   "moving back uses the original storage and leaves the copy in place",
   !(await evalJs(`document.querySelector("#settingStore").value`)).toLowerCase().includes("elsewhere") && existsSync(`${moved}/配置.json`)

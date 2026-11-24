@@ -147,7 +147,7 @@ function releaseForeground(conversationId, scope) {
 
 // ---------- 后台指令结束即叫醒 ----------
 // 桥接那头等它结束再回话（/api/work/watch，走总线不占连接），结果照帮手回报的路子寄给这段对话（mailReport）：
-// 正作答就在回合边界递上，没在作答就另起一答。模型挂上就能收尾去睡，不必轮询；要过一阵再做的，挂一条先等待的后台指令即是定时。
+// 正作答就在回合边界递上，没在作答就另起一答。模型挂上就能收尾去睡，不必轮询；只等时刻则用 set_timer（见 23-timer.js）。
 // 页面刷新后重新等上（rewatchBackground）；桥接那头只报一回，几处页面同等着也不会叫醒两次
 /** @param {Conversation} conversation @param {Message} assistant @param {Step} step */
 function watchBackground(conversation, assistant, step) {
@@ -266,7 +266,7 @@ function rewatchBackground() {
       for (const step of allSteps(message)) if (step.bg?.state === "running") watchBackground(conversation, message, step);
   }
 }
-// 候随它所属的那几答收口——重答改问、删对话都经这里，不各写一份：挂它的那一步没了，到时也无处可报，
+// 候随它所属的那几答收口——重答改问、切版本、删对话都经这里，不各写一份：挂它的那一步没了，到时也无处可报，
 // 后台指令连进程收掉（不然成了占着端口的孤儿，新的一版再起同一个服务就撞上），约好的时刻取消。按「止」不经这里（见 haltConversation）
 /** @param {Conversation} conversation @param {Message[]} messages */
 /** @param {Conversation} conversation @param {Message[]} messages @returns {number} 收掉了几条（后台与定时合计） */
@@ -310,7 +310,10 @@ const READ_ONLY_COMMAND =
     /^(?:Select-Object|Select-String|Where-Object|Sort-Object|Format-Table|Format-List|Out-String|ConvertTo-Json|Measure-Object|Group-Object|findstr|grep|head|tail|wc)\b/i;
 function isReadOnlyCommand(command) {
   const text = String(command || "").trim();
-  if (/[;&<>`\n{}]|\$\(|\|\|/.test(text) || /-(?:ComputerName|CimSession|Session|Credential)\b/i.test(text)) return false;
+  // 断句的字符都不算只读。回车与换行一样要挡：PowerShell 把单独一个 CR 也当换行
+  // （`a\rb` 是两条语句），漏了它，一条删改指令就能藏在「只读」的名头下跑——问而后行里免确认，
+  // 旁注里更是只认这个判据（旁注不请示、不转后台）。
+  if (/[;&<>`\r\n{}]|\$\(|\|\|/.test(text) || /-(?:ComputerName|CimSession|Session|Credential)\b/i.test(text)) return false;
   // git log / diff 带 --output 会写文件，--ext-diff 会跑外部程序：都不算只读
   if (/--output\b|--ext-diff\b/i.test(text)) return false;
   // 读着不放的（Get-Content -Wait、tail -f）会一直挂到超时：照样请示
@@ -322,7 +325,7 @@ function isReadOnlyCommand(command) {
 /** @param {Step} step */
 function sandboxWhyHtml(step) {
   return step.sandboxWhy
-    ? `<div class="approval-sandbox">${t`沙箱会拦下：${escapeHtml(step.sandboxWhy.replace(/^沙箱拒绝：/, ""))}。运行即在沙箱外执行这一条。`}</div>`
+    ? `<div class="approval-sandbox">${t`沙箱会拦下：${escapeHtml(t(step.sandboxWhy.replace(/^沙箱拒绝：/, "")))}。运行即在沙箱外执行这一条。`}</div>`
     : "";
 }
 /** @param {Step} step */

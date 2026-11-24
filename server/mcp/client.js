@@ -5,7 +5,9 @@ const { createTransport, SseTransport } = require("./transports.js");
 
 const PROTOCOL = "2025-06-18",
   CONNECT_MS = 60000, // 起进程、握手、拉工具：Python 服务导入重的库时要十几二十秒
-  CALL_MS = 600000; // 一件工具默认最多跑十分钟（渲染、构建这类）；服务报进度就续命
+  CALL_MS = 600000, // 一件工具默认最多跑十分钟（渲染、构建这类）；服务报进度就续命
+  TOOL_PAGES_MAX = 50,
+  TOOLS_MAX = 1000; // 一件工具默认最多跑十分钟（渲染、构建这类）；服务报进度就续命
 let nextId = 1;
 
 class McpClient {
@@ -26,7 +28,7 @@ class McpClient {
     try {
       await this.open(createTransport(this.config, this.toolEnv));
     } catch (error) {
-      // 只写了 url、没说 type 的：可流式 HTTP 握手被拒（多是 4xx），退回旧式 SSE 再试一次
+      // 只写了 url、没说 type 的：可流式 HTTP 握手收到 4xx，退回旧式 SSE 再试一次
       if (!this.config.url || this.config.type || !(error.status >= 400 && error.status < 500)) throw error;
       this.transport.close();
       await this.open(new SseTransport(this.config));
@@ -55,10 +57,19 @@ class McpClient {
   async listTools() {
     const tools = [];
     let cursor;
+    const cursors = new Set();
     do {
+      // 重复游标只是其中一种故障：服务也可能每页给一个全新游标，永远不结束。
+      if (cursors.size >= TOOL_PAGES_MAX) throw Error("MCP 工具清单分页超过上限");
       const page = await this.request("tools/list", cursor ? { cursor } : {}, CONNECT_MS);
+      if (!Array.isArray(page?.tools)) throw Error("MCP 工具清单缺少 tools 数组");
+      if (tools.length + page.tools.length > TOOLS_MAX) throw Error("MCP 工具数量超过上限");
       tools.push(...page.tools);
       cursor = page.nextCursor;
+      if (cursor && typeof cursor !== "string") throw Error("MCP 工具清单游标不是字符串");
+      // 上游若反复返回同一游标，不应无限拉取并堆积工具。
+      if (cursor && cursors.has(cursor)) throw Error("MCP 工具清单分页游标重复");
+      if (cursor) cursors.add(cursor);
     } while (cursor);
     // 这里不清 toolsChanged：清单变了要等页面真拿到新的一份才算交接完（见 index.js 的 handleList 与 handleCall）
     return tools;
@@ -86,10 +97,19 @@ class McpClient {
   request(method, params, timeout, id = nextId++) {
     if (this.closed) return Promise.reject(Error(this.error || "连接已断开"));
     return new Promise((resolve, reject) => {
-      const entry = { resolve, reject, timeout, timer: null };
+      // 进度能延长空闲等待，但不能让工具靠持续刷进度永久占住请求。
+      const deadline = Date.now() + (method === "tools/call" ? timeout * 2 : timeout);
+      const entry = { resolve, reject, timeout, timer: null, lastProgressAt: null };
       entry.arm = () => {
         clearTimeout(entry.timer);
-        entry.timer = setTimeout(() => this.settle(id, Error(`${method} 超时（${Math.round(timeout / 1000)} 秒没有回音）`)), timeout);
+        const remaining = Math.max(1, Math.min(timeout, deadline - Date.now()));
+        entry.timer = setTimeout(() => {
+          const absolute = method === "tools/call" && Date.now() >= deadline;
+          const reason = absolute
+            ? `${method} 超时：已达绝对时限（${Math.round((timeout * 2) / 1000)} 秒；距上次进度 ${entry.lastProgressAt === null ? "无记录" : `${Math.round((Date.now() - entry.lastProgressAt) / 1000)} 秒`}）`
+            : `${method} 超时（${Math.round(timeout / 1000)} 秒没有回音）`;
+          this.settle(id, Error(reason));
+        }, remaining);
       };
       entry.arm();
       this.pending.set(id, entry);
@@ -101,8 +121,11 @@ class McpClient {
     if (!entry) return;
     this.pending.delete(id);
     clearTimeout(entry.timer);
-    if (error) entry.reject(error);
-    else entry.resolve(result);
+    if (error) {
+      // 这一问不再等了（超时、用户停止、连接已判死）：传输那头别再读——事件流可能还在往外吐，读完也没人要
+      if (typeof this.transport?.abort === "function") this.transport.abort(id);
+      entry.reject(error);
+    } else entry.resolve(result);
   }
   receive(message) {
     // 回复
@@ -124,7 +147,13 @@ class McpClient {
     }
     // 通知：工具变了下次调用前重拉；报进度的给那次调用续命
     if (message.method === "notifications/tools/list_changed") this.toolsChanged = true;
-    else if (message.method === "notifications/progress") this.pending.get(message.params?.progressToken)?.arm();
+    else if (message.method === "notifications/progress") {
+      const entry = this.pending.get(message.params?.progressToken);
+      if (entry) {
+        entry.lastProgressAt = Date.now();
+        entry.arm();
+      }
+    }
   }
   lost(error) {
     if (this.closed) return;

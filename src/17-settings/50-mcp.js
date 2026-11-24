@@ -31,8 +31,16 @@ function mcpCardHtml(name) {
           ]
         : ["err", t`连接失败：${state.error}`];
   const where = config.command ? [config.command, ...(config.args || [])].join(" ") : config.url;
+  const chips = state?.ok
+    ? state.tools
+        .map(tool => {
+          const mark = mcpReadOnly(tool, name) ? `<small>${t("只读")}</small>` : "";
+          return `<span>${escapeHtml(tool.name)}${mark}</span>`;
+        })
+        .join("")
+    : "";
   const tools = state?.ok
-    ? `<details class="card-more"><summary>${t(`工具`)}</summary><div class="card-chips">${state.tools.map(tool => `<span>${escapeHtml(tool.name)}${mcpReadOnly(tool) ? "<small>" + t("只读") + "</small>" : ""}</span>`).join("")}</div></details>`
+    ? `<details class="card-more"><summary>${t(`工具`)}</summary><div class="card-chips">${chips}</div></details>`
     : "";
   return `<div class="card" data-mcp="${escapeHtml(name)}"><div class="card-head"><span class="card-name">${escapeHtml(name)}</span><span class="card-tag">${config.command ? t("本机") : t("远端")}</span><span class="card-state ${kind}" title="${escapeHtml(text)}">${escapeHtml(text)}</span><span class="card-actions"><button type="button" class="outline-btn" data-mcp-action="edit">${t(`编辑`)}</button><button type="button" class="outline-btn" data-mcp-action="toggle">${config.disabled ? t("启用") : t("停用")}</button>${config.disabled ? "" : `<button type="button" class="outline-btn" data-mcp-action="restart">${t(`重连`)}</button>`}</span></div><div class="card-sub" title="${escapeHtml(where)}">${escapeHtml(where)}</div>${tools}</div>`;
 }
@@ -49,6 +57,12 @@ function mcpFormHtml(name) {
   const area = (label, key, value, hint) =>
     `<label class="profile-full">${label}<textarea class="field wide field-area" data-f="${key}" placeholder="${escapeHtml(hint)}" spellcheck="false">${escapeHtml(value)}</textarea></label>`;
   const load = config.load || "auto";
+  const trustedReadOnly = field(
+    t("受信只读工具"),
+    "readOnlyTools",
+    (config.readOnlyTools || []).join(", "),
+    t("仅填确认无副作用的工具名；不信任服务自报的只读")
+  );
   return `<div class="card editing" data-mcp-edit="${escapeHtml(name)}"><div class="profile-grid">${field(t("名称"), "name", name, t("如 github"), false)}<label>${t(`接法`)}<div class="segmented"><button type="button" data-mcp-kind="local" class="${local ? "active" : ""}">${t(`本机程序`)}</button><button type="button" data-mcp-kind="remote" class="${local ? "" : "active"}">${t(`远端地址`)}</button></div></label>${
     local
       ? `${field(t("命令"), "command", config.command, t("npx、uvx、python，或程序的完整路径"))}${area(t("参数"), "args", (config.args || []).join("\n"), t("一行一个"))}${field(t("工作目录"), "cwd", config.cwd, t("可不填"))}${area(t("环境变量"), "env", pairs(config.env, "="), t("KEY=值，一行一个；令牌多放在这里"))}`
@@ -61,7 +75,7 @@ function mcpFormHtml(name) {
     .map(([value, label]) => `<button type="button" data-mcp-load="${value}" class="${load === value ? "active" : ""}">${label}</button>`)
     .join(
       ""
-    )}</div></label>${field(t("免请示的工具"), "autoApprove", (config.autoApprove || []).join(", "), t("工具名，逗号分隔；只读工具本不请示"))}${area(t("给模型的话"), "note", config.note || "", t("随系统提示交给模型"))}</div><div class="card-form-foot"><button type="button" class="outline-btn" data-mcp-form="save">${t(`保存`)}</button><button type="button" class="outline-btn" data-mcp-form="cancel">${t(`取消`)}</button><button type="button" class="outline-btn" data-mcp-form="reveal">${mcpRevealed ? t("遮住密钥") : t("显示密钥")}</button><span class="card-error"></span>${name ? `<button type="button" class="danger-btn" data-mcp-form="delete">${t(`删除`)}</button>` : ""}</div></div>`;
+    )}</div></label>${field(t("免请示的工具"), "autoApprove", (config.autoApprove || []).join(", "), t("工具名，逗号分隔；要额外免请示的填这里（只读与否只认上一栏）"))}${trustedReadOnly}${area(t("给模型的话"), "note", config.note || "", t("随系统提示交给模型"))}</div><div class="card-form-foot"><button type="button" class="outline-btn" data-mcp-form="save">${t(`保存`)}</button><button type="button" class="outline-btn" data-mcp-form="cancel">${t(`取消`)}</button><button type="button" class="outline-btn" data-mcp-form="reveal">${mcpRevealed ? t("遮住密钥") : t("显示密钥")}</button><span class="card-error"></span>${name ? `<button type="button" class="danger-btn" data-mcp-form="delete">${t(`删除`)}</button>` : ""}</div></div>`;
 }
 /** @type {"local"|"remote"|null} 表单里切了接法、还没存时记在这里 */
 let mcpFormKind = null;
@@ -69,9 +83,9 @@ function mcpJsonHtml() {
   const servers = Object.fromEntries(Object.entries(mcpUserConfigs()).map(([name, config]) => [name, mcpMask(config)]));
   return `<div class="json-head"><span>${t(`整份配置 · mcpServers 格式；遮蔽的密钥原样保留即沿用`)}</span><button type="button" class="outline-btn" id="mcpJsonReveal">${mcpRevealed ? t("遮住密钥") : t("显示密钥")}</button></div><textarea id="mcpConfig" class="field field-area json-editor" spellcheck="false" autocomplete="off">${escapeHtml(JSON.stringify({ mcpServers: servers }, null, 2))}</textarea><div class="card-form-foot"><button id="mcpJsonSave" class="outline-btn" type="button">${t(`保存并连接`)}</button><span id="mcpError" class="card-error"></span></div>`;
 }
-// 环境变量与请求头里像密钥的值遮住（显示密钥时不遮）
-function mcpMask(config) {
-  if (mcpRevealed) return config;
+// 环境变量与请求头里像密钥的值遮住（显示密钥、或调用方要原文时不遮）
+function mcpMask(config, reveal = mcpRevealed) {
+  if (reveal) return config;
   const hide = object =>
     object && Object.fromEntries(Object.entries(object).map(([key, value]) => [key, SECRET_KEY.test(key) && value ? SECRET_MASK : value]));
   return { ...config, ...(config.env ? { env: hide(config.env) } : {}), ...(config.headers ? { headers: hide(config.headers) } : {}) };
@@ -130,14 +144,40 @@ function renderMcpSettings() {
 // 粘进来的可能是整份 { mcpServers: {…} }，也可能只是里面那一层
 function parseMcpConfig(text) {
   const parsed = JSON.parse(text || "{}");
-  const servers = parsed.mcpServers ?? parsed;
+  return mcpValidateServers(parsed.mcpServers ?? parsed, mcpUserConfigs());
+}
+// 服务配置过一遍：每项要有 command（本机程序）或 url（远端服务）；还是遮蔽占位的密钥换回原值（原值不可寻即报错）。
+// 设置页与模型手里的 mcp_config 共用这一段（见 15-tools/60-mcp.js）
+function mcpValidateServers(servers, previous) {
   if (!servers || typeof servers !== "object" || Array.isArray(servers)) throw Error(t('应是 { "mcpServers": { 名字: 配置 } }'));
   for (const [name, config] of Object.entries(servers)) {
+    // 名字会当键写进配置对象：__proto__ 之类会改原型而不是记一项
+    if (!name.trim() || ["__proto__", "constructor", "prototype"].includes(name)) throw Error(t`服务名「${name}」不可用`);
     if (!config || typeof config !== "object" || !(typeof config.command === "string" || typeof config.url === "string"))
       throw Error(t`「${name}」要有 command（本机程序）或 url（远端服务）`);
-    mcpUnmask(name, config, mcpUserConfigs()[name]);
+    mcpUnmask(name, config, previous?.[name]);
   }
   return servers;
+}
+// 改一个服务：给到的键盖过去，没给的照旧；env / headers 按键合并，值给 null 即删去那一个。
+// 模型只报一两处改动时，不必把整份配置搬来搬去
+function mcpPatchConfig(previous = {}, patch = {}) {
+  const out = { ...previous };
+  for (const [key, value] of Object.entries(patch && typeof patch === "object" ? patch : {})) {
+    if (value === null) {
+      delete out[key];
+      continue;
+    }
+    if ((key === "env" || key === "headers") && value && typeof value === "object" && !Array.isArray(value)) {
+      const merged = { ...(previous[key] || {}) };
+      for (const [name, one] of Object.entries(value)) one === null ? delete merged[name] : (merged[name] = one);
+      if (Object.keys(merged).length) out[key] = merged;
+      else delete out[key];
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
 }
 // 从表单收一份配置：认得的几栏按表单来，其余字段照旧
 function mcpFormConfig(form, previous) {
@@ -158,7 +198,8 @@ function mcpFormConfig(form, previous) {
         })
         .filter(([k]) => k)
     );
-  const { command, args, cwd, env, url, headers, type, transport, timeout, load, autoApprove, note, ...rest } = previous || {};
+  const { command, args, cwd, env, url, headers, type, transport, timeout, load, autoApprove, readOnlyTools, note, ...rest } =
+    previous || {};
   const local = !!form.querySelector('[data-mcp-kind="local"].active');
   /** @type {Record<string, any>} */
   const config = local
@@ -178,6 +219,9 @@ function mcpFormConfig(form, previous) {
     chosen = form.querySelector("[data-mcp-load].active").dataset.mcpLoad,
     approve = value("autoApprove")
       .split(/[,，\s]+/)
+      .filter(Boolean),
+    trusted = value("readOnlyTools")
+      .split(/[,，\s]+/)
       .filter(Boolean);
   return {
     ...rest,
@@ -185,6 +229,7 @@ function mcpFormConfig(form, previous) {
     ...(seconds > 0 ? { timeout: seconds } : {}),
     ...(chosen !== "auto" ? { load: chosen } : {}),
     ...(approve.length ? { autoApprove: approve } : {}),
+    ...(trusted.length ? { readOnlyTools: trusted } : {}),
     ...(value("note") ? { note: value("note") } : {})
   };
 }

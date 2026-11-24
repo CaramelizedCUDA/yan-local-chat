@@ -7,6 +7,7 @@ const path = require("node:path");
 const sandbox = require("../sandbox.js");
 const { OWN_GROUP, killTree, killTreeSync } = require("../platform.js");
 const { tail, decodeClixml, encodePowerShell } = require("./text.js");
+const { onResponseSettled } = require("../http.js");
 
 // Windows 上有 PowerShell 7（pwsh）就用它：被 Select-Object -First 截断的原生程序不再报退出码 -1、&& 与 || 可用、
 // 原生程序的 stderr 经 2>&1 不再裹成一串 NativeCommandError；没装的退回系统自带的 Windows PowerShell 5.1
@@ -67,6 +68,40 @@ function macSeatbeltProfile(cwd) {
   const filters = [...allowed].map(dir => `(subpath ${SB_STRING(dir)})`).join(" ");
   return `(version 1)\n(allow default)\n(deny file-write* (require-not (require-any ${filters})))\n`;
 }
+// 桥接退出时把还在跑的指令（前台的与后台的）一并收掉，连根：各份 createShell 都登记到这一处，
+// 一套钩子共用（页面一份、测试里另起的几份也算，不每份都往 process 上挂监听）；
+// 只替有 child 在跑的那一份占位，跑空就摘掉（见 spawnShell 的 forget），旧实例不会一直留着。
+// 登记表与「钩子只挂一套」按 Symbol.for 放进 globalThis：同一进程里载入两份本模块时（实验分支把
+// server/work/ 各段按原样再载）也共用一套，下面 listenerCount 的判据才数得对
+const HOOKS = (globalThis[Symbol.for("yan.work.shellExitHooks")] ||= { armed: false, shells: new Set() });
+const allShells = HOOKS.shells;
+function armExitHooks() {
+  if (HOOKS.armed) return;
+  HOOKS.armed = true;
+  const reap = () => {
+    for (const shells of allShells) for (const child of shells) killTreeSync(child);
+  };
+  process.on("exit", reap);
+  // POSIX 的信号终止不走 exit 事件：Ctrl+C、被 kill、终端断开也要先收指令再照旧死，
+  // 不然 sleep、开发服务器变孤儿挂在后台改文件、占端口。用 on 而非 once：常驻宿主可能收到
+  // 多次信号，每发一次都要把此刻在跑的指令收干净（reap 幂等，已结束的由 alive() 挡住）；
+  // 只认第一发的话，宿主收完信号继续跑、重起的指令就没人管了。
+  // 信号一到先收指令（有意取舍——桥接不知道宿主会不会退，先收更安全；宿主若不退出，指令也不恢复），
+  // 宿主自己还听着这个信号就交还它定去留（重发会让常驻监听多吃一次）；
+  // 只剩自己一个监听才退场，但走 process.exit：exit 事件上挂的收口（MCP、无头浏览器）才能跟着跑完。
+  // 判据的已知盲区：分不清「没有宿主」与「宿主的 once 监听已消费」——once 型宿主先注册时，
+  // 它那一发被消费后我们就当无宿主退场，抢在它的异步收尾前。
+  if (process.platform !== "win32")
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
+      process.on(signal, () => {
+        try {
+          reap();
+        } finally {
+          // 减掉自己这一个：还有别的监听就算有人接
+          if (process.listenerCount(signal) === 1) process.exit(128 + { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 }[signal]);
+        }
+      });
+}
 module.exports = function createShell({ toolEnv }) {
   // 起一个 shell 跑指令（Windows 上外面包一层，见 POWERSHELL_WRAPPER）；指令经环境变量递进去，比塞进命令行能长两倍多
   function spawnShell(command, cwd, { boxed = false, env = {}, seatbelt = false } = {}) {
@@ -77,13 +112,17 @@ module.exports = function createShell({ toolEnv }) {
       : macBox
         ? ["-p", macSeatbeltProfile(cwd), "/bin/sh", "-c", command]
         : ["-c", command];
+    const inheritedEnv = toolEnv(boxed ? sandbox.sandboxEnv(process.env) : process.env);
+    const rawGitConfigCount = Number({ ...inheritedEnv, ...env }.GIT_CONFIG_COUNT ?? 0);
+    const gitConfigCount =
+      Number.isSafeInteger(rawGitConfigCount) && rawGitConfigCount >= 0 && rawGitConfigCount <= 1024 ? rawGitConfigCount : 0;
     const child = spawn(win ? (PWSH ? "pwsh.exe" : "powershell.exe") : macBox ? "/usr/bin/sandbox-exec" : "/bin/sh", args, {
       cwd,
       windowsHide: true,
       ...OWN_GROUP,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
-        ...toolEnv(boxed ? sandbox.sandboxEnv(process.env) : process.env),
+        ...inheritedEnv,
         TERM: "dumb",
         NO_COLOR: "1",
         PYTHONIOENCODING: "utf-8",
@@ -95,13 +134,19 @@ module.exports = function createShell({ toolEnv }) {
         GIT_EDITOR: process.env.GIT_EDITOR || "true",
         GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND || "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
         ...env,
-        ...(win ? { YAN_COMMAND: command } : {})
+        ...(win ? { YAN_COMMAND: command } : {}),
+        // 仓库级 core.fsmonitor 可是可执行命令；仅查 git status 也能执行恶意 hook。
+        // Git 的环境配置覆盖仓库本地设置，且不依赖 shell 文本的静态扫描。
+        GIT_CONFIG_COUNT: String(gitConfigCount + 1),
+        [`GIT_CONFIG_KEY_${gitConfigCount}`]: "core.fsmonitor",
+        [`GIT_CONFIG_VALUE_${gitConfigCount}`]: "false"
       }
     });
     // 按字交出输出：一块一块各自解码，汉字恰好跨在两块之间就被劈成两个 �
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     runningShells.add(child);
+    allShells.add(runningShells);
     // 外壳退了、它起的孙进程（start /b 起的服务、会常驻的工具）还攥着输出管道：close 要等它们都退才来，指令一直挂着，
     // 超时与停止也收不到（外壳已不在，killTree 无从下手）。外壳退后稍等片刻，管道还没合上就松手，按外壳的退出收尾
     child.once("exit", () => {
@@ -111,12 +156,18 @@ module.exports = function createShell({ toolEnv }) {
       }, 1500);
       child.once("close", () => clearTimeout(timer));
     });
-    child.on("close", () => runningShells.delete(child));
-    child.on("error", () => runningShells.delete(child));
+    const forget = () => {
+      runningShells.delete(child);
+      if (runningShells.size === 0) allShells.delete(runningShells);
+    };
+    child.on("close", forget);
+    child.on("error", forget);
     return child;
   }
   // 正在跑的 shell（前台与后台）：桥接退出时整棵收掉，不留在后台改文件、占端口
+  // 登记与摘除都在 spawnShell 里，跟着 child 的生灭走
   const runningShells = new Set();
+  armExitHooks();
   function runShell(command, cwd, timeoutMs, signal = null, { boxed = false, env = {}, seatbelt = false } = {}) {
     return new Promise(resolve => {
       const child = spawnShell(command, cwd, { boxed, env, seatbelt });
@@ -163,8 +214,7 @@ module.exports = function createShell({ toolEnv }) {
   // ---- 后台指令：开发服务器、监听构建这类不会自己结束的，放到后台跑，先回头几秒的输出与一个编号，之后用 check_command 取新输出或结束它。
   // 桥接退出时一并收掉。只记最近的若干个，跑完且报过的旧账先清
   const BACKGROUND_KEEP = 24,
-    // 还没报过结果的不清：页面关着时结束的，再开页要凭它把结果补报上去（rewatchBackground）；被挤出表，页面就只拿到 lost，
-    // 结果与真实原因都没了。这一档只是防长期无人回来时无限长，真超了也把话说明白（watch 回 evicted，不谎称桥接重启）
+    // 没报过的结果另留宽限，供关页后重接（rewatchBackground）；超过宽限也会淘汰，并暂留 evicted 记号。
     BACKGROUND_UNREPORTED_KEEP = 64,
     backgroundJobs = new Map(),
     evictedJobs = new Set();
@@ -220,8 +270,8 @@ module.exports = function createShell({ toolEnv }) {
     job.key = `${BOOT}-${backgroundSeq}`;
     for (const [id, old] of backgroundJobs)
       if (backgroundJobs.size >= BACKGROUND_KEEP && old.exitCode !== null && old.reported) backgroundJobs.delete(id);
-    // 没报过结果的也不能无限攒：超了丢最早结束的那几条——留下越新的越可能还用得上（Map 按插入序走，
-    // 从前往后删即从头删）。丢掉的记下编号，watch/check 问到时说得清是「结束得久、结果没留住」
+    // 登记新任务时清理旧表：没报过且已结束的若超限，按登记先后丢最早登记的几条，不按结束时刻排。
+    // 近期淘汰编号另记，watch/check 问到时能说明结果没留住。
     const ended = [...backgroundJobs].filter(([, old]) => old.exitCode !== null && !old.reported);
     for (const [id] of ended.slice(0, Math.max(0, ended.length - BACKGROUND_UNREPORTED_KEEP))) {
       backgroundJobs.delete(id);
@@ -264,14 +314,14 @@ module.exports = function createShell({ toolEnv }) {
     return { released: !!release };
   }
   // 等到指令结束、输出停了一会儿（服务器起好了往往就不再出声）或时间到；交出去的是上次取过之后的新输出
-  async function backgroundReport(job, waitMs) {
+  async function backgroundReport(job, waitMs, consume = true) {
     const start = Date.now(),
       until = start + waitMs;
     while (Date.now() < until && job.exitCode === null && Date.now() - Math.max(job.grew, start) < 1500)
       await new Promise(resolve => setTimeout(resolve, 200));
     const fresh = key => {
       const text = job.text[key].slice(Math.max(0, job.read[key] - job.base[key]));
-      job.read[key] = job.base[key] + job.text[key].length;
+      if (consume) job.read[key] = job.base[key] + job.text[key].length;
       return text;
     };
     const out = fresh("out"),
@@ -292,10 +342,7 @@ module.exports = function createShell({ toolEnv }) {
     job.reported = true;
     killTree(job.child);
   }
-  // 桥接退出时把还在跑的指令（前台的与后台的）一并收掉，连根
-  process.on("exit", () => {
-    for (const child of runningShells) killTreeSync(child);
-  });
+  // 桥接退出（正常退与信号终止）时的收口在模块那层，见上面的 armExitHooks
   // check_command：取后台指令的新输出；stop 时先收掉它（最多等三秒）
   // key：页面收口时带上（编号在桥接重启后重数，不带 key 可能收到别的指令上）
   async function checkBackground(id, stop, waitMs, key = "") {
@@ -325,18 +372,40 @@ module.exports = function createShell({ toolEnv }) {
   }
   // 等后台指令结束再回话：页面据此叫醒模型，模型挂上就能收尾去睡，不必轮询。结束只报一回——
   // 几处页面都在等、或刷新后重新等上的，后来的接手，先前的作罢（superseded）；报过的不再报（reported）；
-  // 桥接重启过，旧编号已不在（lost）
+  // 记录不存在或 key 对不上时回 lost；若仍记得该编号曾被淘汰，也带 evicted
   // 模型自己用 check_command 看到它结束了的，也算报过（reported，带上退出码，页面只把签改成已结束）
-  async function watchBackground(id, key, signal) {
+  async function watchBackground(id, key, signal, res) {
     const job = backgroundJobs.get(String(id || ""));
     if (!job || (key && job.key !== key)) return { id, lost: true, ...(evictedJobs.has(String(id)) ? { evicted: true } : {}) };
     if (job.reported) return { id, reported: true, exitCode: job.exitCode };
     const ticket = (job.watchTicket = (job.watchTicket || 0) + 1);
-    await Promise.race([job.ended, new Promise(resolve => signal?.addEventListener("abort", resolve, { once: true }))]);
-    if (ticket !== job.watchTicket || signal?.aborted) return { id, superseded: true };
-    if (job.reported) return { id, reported: true, exitCode: job.exitCode };
-    job.reported = true;
-    return { ...(await backgroundReport(job, 0)), command: job.command, ...(job.stopped ? { stopped: true } : {}) };
+    let stop;
+    const aborted = new Promise(resolve => {
+      stop = () => resolve(null);
+      if (signal?.aborted) stop();
+      else signal?.addEventListener("abort", stop, { once: true });
+    });
+    const superseded = () => ticket !== job.watchTicket || signal?.aborted || res.destroyed;
+    try {
+      await Promise.race([job.ended, aborted]);
+      // 另一页的完成回报还在写：等它写完或断开再判断，不抢同一份输出。
+      while (job.reporting && !superseded()) await Promise.race([job.reporting, aborted]);
+      if (superseded()) return { id, superseded: true };
+      if (job.reported) return { id, reported: true, exitCode: job.exitCode };
+      let release;
+      job.reporting = new Promise(resolve => (release = resolve));
+      onResponseSettled(res, finished => {
+        if (finished) {
+          job.reported = true;
+          for (const key of ["out", "err"]) job.read[key] = job.base[key] + job.text[key].length;
+        }
+        job.reporting = null;
+        release();
+      });
+      return { ...(await backgroundReport(job, 0, false)), command: job.command, ...(job.stopped ? { stopped: true } : {}) };
+    } finally {
+      signal?.removeEventListener("abort", stop);
+    }
   }
   return {
     WORK_SHELL,

@@ -1,5 +1,5 @@
 // 言 · 桥接 · 与操作系统打交道的几件事：用默认浏览器开网页、用默认程序开文件、在文件管理器里显出、收掉整棵进程树、找本机浏览器。
-// 碰系统的都走这里，别处不再各写一遍 rundll32、explorer、taskkill。以 Windows 为准；macOS 只求能用、不另配沙箱规则与工具包，不做 Linux
+// 这些操作从这里走，别处不再各写一遍 rundll32、explorer、taskkill。macOS 的严档隔离与系统工具探测分别见 work/shell.js、env/index.js
 "use strict";
 const fs = require("node:fs");
 const os = require("node:os");
@@ -82,6 +82,14 @@ function killGroup(child, signal = "SIGKILL") {
   }
 }
 
+// 下载源测速：curl 的可执行文件与丢弃输出的位置随平台走，免得 macOS 找不到 curl.exe。
+function curlProbe() {
+  return {
+    command: WIN ? "curl.exe" : MAC ? "/usr/bin/curl" : "curl",
+    output: WIN ? "NUL" : "/dev/null"
+  };
+}
+
 // 本机装的 Edge、Chrome 在哪（各列常见的几处，有一处在就算装了）
 function browserFiles() {
   if (MAC) {
@@ -128,4 +136,4 @@ function systemProxy() {
   return { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: [...new Set(["localhost", "127.0.0.1", "::1", ...bypass])].join(",") };
 }
 
-module.exports = { openUrl, openPath, reveal, OWN_GROUP, killTree, killTreeSync, browserFiles, systemProxy };
+module.exports = { openUrl, openPath, reveal, OWN_GROUP, killTree, killTreeSync, curlProbe, browserFiles, systemProxy };

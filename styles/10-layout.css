@@ -278,7 +278,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .history-repo-group.collapsed .repo-caret {
   transform: none;
 }
-/* 组首右端的「＋」（集组还有「⋯」）悬停时浮出、箭头隐去让位：按钮不占位，工组与集组的箭头才在同一处 */
+/* 组首右端的「＋」与「⋯」在指针指着组首或焦点在组首内时浮出、箭头隐去让位：按钮不占位，工组与集组的箭头才在同一处 */
 .repo-new {
   position: absolute;
   top: 50%;
@@ -531,7 +531,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
   position: relative;
   z-index: 5;
 }
-/* 书眉：标题滚走后，顶栏左边靠侧栏留一行题名与问数（立了意的再带一枚意，点它开卡片）；没滚过标题时不显示，不与标题重复。点一下回到开头。
+/* 书眉：标题滚走后，顶栏左边靠侧栏留一行题名与问数（立了图的再带一枚图，点它开卡片）；没滚过标题时不显示，不与标题重复。点一下回到开头。
    落选的：居中疏排只留题名（像书页页眉，但与右侧的状态挤在一条线上，题名一长就难看）。
    它是顶栏里占满中段的一格，右边让到右上角那几件实际的宽度为止；原先绝对定位、右边写死让 300px，
    右上角平时只两件，窄窗里题名截成四五个字、旁边却空着一大块 */
@@ -868,7 +868,7 @@ html[data-sidebar="collapsed"] .sidebar .wide {
 .quota.dry .quota-tip b {
   color: var(--danger);
 }
-/* 书眉的漏：挂着后台指令时才有（画法与取舍见 src/08-trail/30-clepsydra.js、设计稿/75）。
+/* 书眉的漏：有进行中的后台指令或待到点的定时才显示（画法与取舍见 src/08-trail/30-clepsydra.js、设计稿/75）。
    靠近不浮字，只像明暗那一笔一样动一点：那一滴往下落一截、浮箭往上浮一点 */
 .clepsydra {
   position: relative;

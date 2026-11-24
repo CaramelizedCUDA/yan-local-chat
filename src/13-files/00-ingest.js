@@ -131,9 +131,15 @@ async function ingestFile(original) {
     }
   if (kind === "text") await putAttachment({ ...metadata, data: text, extractedText, extractionError });
   else await putAttachment({ ...metadata, extractedText, extractionError }, file);
-  // 顺手记下文字量的估算：上下文计数与「是否整份塞进提示」都按它算，不再拿文件字节数粗估（压缩过的 docx 字节数与字数没什么关系）
+  // 顺手记下文字量的估算：上下文计数与「是否整份塞进提示」都按它算，不再拿文件字节数粗估（压缩过的 docx 字节数与字数没什么关系）。
+  // extractionError 也带上：发给模型时照实说「本机没抽出正文」的缘由（扫描件、解不开的图、库没载入），不然它只收到一份读不懂的原件
   const words = kind === "text" ? text : extractedText;
-  return { ...metadata, extracted: !!extractedText, ...(words ? { tokens: estimateText(words) } : {}) };
+  return {
+    ...metadata,
+    extracted: !!extractedText,
+    ...(extractionError ? { extractionError } : {}),
+    ...(words ? { tokens: estimateText(words) } : {})
+  };
 }
 
 async function downloadAttachment(id) {
@@ -143,21 +149,13 @@ async function downloadAttachment(id) {
     .then(data => data.has?.includes(id))
     .catch(() => false);
   if (onDisk) {
-    const anchor = document.createElement("a");
-    anchor.href = `${apiBase}/api/files/raw?id=${encodeURIComponent(id)}&download=1`;
-    anchor.download = "";
-    anchor.click();
+    downloadHref(`/api/files/raw?id=${encodeURIComponent(id)}&download=1`, "");
     return;
   }
   try {
     const file = await getAttachment(id);
     if (!file) return toast(t("附件原件已找不到"));
-    const anchor = document.createElement("a"),
-      objectUrl = URL.createObjectURL(attachmentBlob(file));
-    anchor.href = objectUrl;
-    anchor.download = file.name || t("附件");
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    downloadHref(URL.createObjectURL(attachmentBlob(file)), file.name || t("附件"), true);
   } catch {
     toast(t("附件读取失败"));
   }

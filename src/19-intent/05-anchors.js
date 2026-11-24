@@ -1,4 +1,4 @@
-// 言 · 意 · 凭据：一项成立凭的是什么。一种凭据一份登记：怎么规整写法、多久取一回指纹、怎么取、怎么说给人听、罩不罩得住某个改过的文件。
+// 言 · 图 · 凭据：一项成立凭的是什么。一种凭据一份登记：怎么规整写法、多久取一回指纹、怎么取、怎么说给人听、罩不罩得住某个改过的文件。
 // 程序只比指纹变没变，不判对错——变了，凭它成立（或凭它假定）的那项就转待复核，由模型再判。先例：需求追溯的「可疑链接」
 // （记下链接时上游的哈希，上游一变即可疑，复核后清除）、构建系统 Shake 的 oracle（外部状态每回问一遍，答案没变就不往上传）。
 // 现有四种，由弱到强：文件（模型本就知道哪些文件要紧）、目录（整片，新增删除也算）、探针（一条指令的输出——部署、服务、依赖版本这类
@@ -61,16 +61,30 @@ async function anchorPrints(conversation, keys, signal, cadence = "answer") {
     const [kind, value] = anchorParts(key),
       entry = ANCHOR_KINDS.get(kind);
     if (!entry || (cadence === "round" && entry.cadence !== "round")) continue;
-    groups.set(kind, [...(groups.get(kind) || []), value]);
+    if (!groups.has(kind)) groups.set(kind, new Set());
+    groups.get(kind).add(value);
   }
   /** @type {Record<string, string|null>} */
   const prints = {};
-  await Promise.all(
-    [...groups].map(async ([kind, values]) => {
-      const got = await ANCHOR_KINDS.get(kind).read(conversation, values, signal);
-      for (const [value, print] of Object.entries(got)) prints[`${kind}:${value}`] = print;
-    })
-  );
+  const add = (kind, got) => {
+    for (const [value, print] of Object.entries(got || {})) prints[`${kind}:${value}`] = print;
+  };
+  const paths = [...(groups.get("file") || [])],
+    dirs = [...(groups.get("dir") || [])];
+  groups.delete("file");
+  groups.delete("dir");
+  await Promise.all([
+    // 文件与目录一批交给桥接，重叠凭据才能共享同一批内容哈希。
+    ...(paths.length || dirs.length
+      ? [
+          bridge("/api/work/prints", { ...workScope(conversation), paths, dirs }, signal).then(data => {
+            add("file", data.prints);
+            add("dir", data.dirs);
+          })
+        ]
+      : []),
+    ...[...groups].map(async ([kind, values]) => add(kind, await ANCHOR_KINDS.get(kind).read(conversation, [...values], signal)))
+  ]);
   return prints;
 }
 
@@ -137,13 +151,19 @@ async function readAnchorCommands(conversation, values, signal, timeout, digest)
   const policy = commandPolicyOf(conversation),
     /** @type {Record<string, string|null>} */
     prints = {};
+  const pending = [...new Set(values)].filter(command => policy !== "ask" || isReadOnlyCommand(command));
+  // 同类凭据至多两条并跑；探针与测试的超时语义不同，不跨种类合并。
+  let cursor = 0;
   await Promise.all(
-    values.map(async command => {
-      if (policy === "ask" && !isReadOnlyCommand(command)) return;
-      try {
-        prints[command] = digest(await bridge("/api/work/run", { ...workScope(conversation), command, timeout }, signal));
-      } catch (error) {
-        if (error.name === "AbortError") throw error;
+    Array.from({ length: Math.min(2, pending.length) }, async () => {
+      while (cursor < pending.length) {
+        signal?.throwIfAborted();
+        const command = pending[cursor++];
+        try {
+          prints[command] = digest(await bridge("/api/work/run", { ...workScope(conversation), command, timeout }, signal));
+        } catch (error) {
+          if (error.name === "AbortError") throw error;
+        }
       }
     })
   );

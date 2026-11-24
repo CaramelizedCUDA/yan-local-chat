@@ -5,10 +5,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { decodeEntities } = require("../web.js");
 
-// 行比法与页面同一份（src/15-tools/05-line-ops.js）：页面的段是拼进闭包的普通脚本，这里整段读进去，取出要用的那一个
-/** @type {{ lcsOps: (a: string[], b: string[]) => Array<[string, string]> }} */
-const { lcsOps } = new Function(
-  `"use strict";\n${fs.readFileSync(path.join(__dirname, "../../src/15-tools/05-line-ops.js"), "utf8")}\nreturn { lcsOps };`
+// 切行与行比法都与页面共用（src/15-tools/05-line-ops.js）：页面将普通脚本拼进闭包，这里整段读进去取函数
+/** @type {{ splitLines: (text: string) => string[], lcsOps: (a: string[], b: string[]) => Array<[string, string]> }} */
+const { splitLines, lcsOps } = new Function(
+  `"use strict";\n${fs.readFileSync(path.join(__dirname, "../../src/15-tools/05-line-ops.js"), "utf8")}\nreturn { splitLines, lcsOps };`
 )();
 
 function tail(text, limit) {
@@ -73,18 +73,19 @@ function encodeText(text, encoding) {
 function countLines(text) {
   const value = String(text || "");
   if (!value) return 0;
-  return value.split(/\r?\n/).length - (/\r?\n$/.test(value) ? 1 : 0);
-}
-
-// 按行切开：末尾的换行不算多出一行空行（与 countLines 同一惯例），空的就是没有行
-function splitLines(text) {
-  const value = String(text ?? "");
-  return value ? value.replace(/\r?\n$/, "").split(/\r?\n/) : [];
+  let lines = value.endsWith("\n") ? 0 : 1;
+  for (let at = value.indexOf("\n"); at !== -1; at = value.indexOf("\n", at + 1)) lines++;
+  return lines;
 }
 
 // edit_file 的 old 对不上时：文件里最像它的那一段，照现在的样子带行号交回。
 // 拿 old 的每一行（去掉首尾空白）到文件里找同样的行，各自推出「old 若从这里开始」的起点，起点得票最多的那段即是；
 // 太短的行（}、else:、空行）满文件都是，不投票，除非 old 里只有这种行。票太少（多行的 old 只对上一行）的不算像，宁可不给
+// 满文件重复的行也不投票：生成的分隔线、同一句空函数体指不出旧文在哪一段，却让票表按「old 的行数 × 出现次数」涨——
+// 二十万行同一句的文件里对一段一千行的 old，一回就是上亿次（桥接单线程，所有对话一起停几秒）。总数另有上限，
+// 再多也按「不像」处理：宁可回「请先 read_file」，不占住桥接
+const NEAR_REPEAT = 32,
+  NEAR_VOTES = 200000;
 function nearestPassage(source, oldText, { context = 1, maxLines = 60 } = {}) {
   const lines = String(source).split(/\r?\n/),
     want = String(oldText).split(/\r?\n/),
@@ -101,7 +102,16 @@ function nearestPassage(source, oldText, { context = 1, maxLines = 60 } = {}) {
     else at.set(text, [i]);
   });
   const votes = new Map();
-  for (const { k, text } of voters) for (const i of at.get(text) || []) votes.set(i - k, (votes.get(i - k) || 0) + 1);
+  let spent = 0;
+  for (const { k, text } of voters) {
+    const hits = at.get(text) || [];
+    if (hits.length > NEAR_REPEAT) continue;
+    for (const i of hits) {
+      votes.set(i - k, (votes.get(i - k) || 0) + 1);
+      if (++spent >= NEAR_VOTES) break;
+    }
+    if (spent >= NEAR_VOTES) break;
+  }
   let best = null,
     score = 0;
   for (const [start, count] of votes) if (count > score || (count === score && start < best)) [best, score] = [start, count];
@@ -119,8 +129,8 @@ function nearestPassage(source, oldText, { context = 1, maxLines = 60 } = {}) {
 // 新的一侧整份还在这一步的参数（step.arguments）里，页面画的时候从那儿取，不另存第二份。
 // 每块记下两侧的行号：页面按号取新侧、按号写「跳过 N 行未改」。不设字数上限，改动一处不落
 function changeHunks(oldText, newText, { context = 3 } = {}) {
-  const a = splitLines(oldText),
-    b = splitLines(newText),
+  const a = splitLines(String(oldText ?? "")),
+    b = splitLines(String(newText ?? "")),
     ops = lcsOps(a, b),
     oldAt = new Int32Array(ops.length + 1),
     newAt = new Int32Array(ops.length + 1);
@@ -166,6 +176,7 @@ module.exports = {
   decodeText,
   encodeText,
   countLines,
+  splitLines,
   changeHunks,
   nearestPassage
 };

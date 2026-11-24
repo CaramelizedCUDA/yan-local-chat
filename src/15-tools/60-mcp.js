@@ -11,7 +11,7 @@ const MCP_INLINE_LIMIT = 12000;
 /** @type {{ key: string, loading: Promise<void>|null, servers: Record<string, McpServerState>, lazy: string[], retryAt: number, waitWarned: boolean }} */
 const mcp = { key: "", loading: null, servers: {}, lazy: [], retryAt: 0, waitWarned: false };
 
-/** 设置里的全部配置：{ 名字: { command, args, cwd, env } 或 { url, headers, type }，另可带 disabled / autoApprove / timeout / load / note } */
+/** 设置里的全部配置：{ 名字: { command, args, cwd, env } 或 { url, headers, type }，另可带 disabled / autoApprove / readOnlyTools / timeout / load / note } */
 // 游目自己的浏览器在 MCP 里的名字（设置 → 游目里开着才有，见 src/26-stage/40-settings.js）
 const STAGE_SERVER = "游目";
 // 人在设置 → MCP 里接的
@@ -94,12 +94,22 @@ function registerMcpTools() {
       }
   }
   if (mcp.lazy.length) MCP_LAZY_TOOLS.forEach(defineTool);
+  // 整张表重建后再同步，免得仍可用的工具闪成「跳过」。
+  if (pendingApprovals.size) renderApprovalBar();
   // 接没接浏览器类的服务，定顶栏那枚看台小屏挂不挂
   stageSync();
 }
-/** @param {McpToolSpec} spec */
-function mcpReadOnly(spec) {
-  return spec.annotations?.readOnlyHint === true;
+// 服务自述的 readOnlyHint 不具备授权效力：外部服务只信用户亲自填的工具名（readOnlyTools）。
+// 游目是言自己拉起、随包装的那份 Playwright，它的 type 标注与这份代码同源，可以照信；
+// 它的「只读」说的是不改网页——browser_snapshot / browser_take_screenshot 会往工作目录落文件，这不归这层管。
+/** @param {McpToolSpec} spec @param {string} server */
+function mcpReadOnly(spec, server) {
+  const config = mcpConfigs()[server];
+  return (
+    !!config &&
+    ((server === STAGE_SERVER && !!config.stage && spec.annotations?.readOnlyHint === true) ||
+      (Array.isArray(config.readOnlyTools) && config.readOnlyTools.includes(spec.name)))
+  );
 }
 // 逐件摊开的：名字写成 mcp__服务__工具（接口只认字母数字与 _-，最长 64），说明与参数用服务端自带的
 /**
@@ -107,7 +117,7 @@ function mcpReadOnly(spec) {
  * @returns {Tool}
  */
 function mcpInlineTool(server, spec) {
-  const readOnly = mcpReadOnly(spec);
+  const readOnly = mcpReadOnly(spec, server);
   return {
     name: mcpFunctionName(server, spec.name),
     label: server,
@@ -156,10 +166,10 @@ const MCP_LAZY_TOOLS = [
       const found = args.tools.map(name => mcpServerTools(args.server, ctx.lookup).find(tool => tool.name === name)).filter(Boolean);
       if (!found.length) return mcpUnknown(args.server, args.tools.join("、"));
       const text = found
-        .map(
-          tool =>
-            t`## ${tool.name}${mcpReadOnly(tool) ? t("（只读）") : ""}\n${tool.description || tool.title || ""}\n参数：${JSON.stringify(tool.inputSchema)}`
-        )
+        .map(tool => {
+          const mark = mcpReadOnly(tool, args.server) ? t("（只读）") : "";
+          return t`## ${tool.name}${mark}\n${tool.description || tool.title || ""}\n参数：${JSON.stringify(tool.inputSchema)}`;
+        })
         .join("\n\n");
       step.output = trimOutput(text);
       return { ok: true, content: text, display: `${found.length} 件` };
@@ -178,7 +188,7 @@ const MCP_LAZY_TOOLS = [
       const spec = mcp.servers[args.server]?.tools?.find(tool => tool.name === args.tool);
       step.title = `${args.server} · ${args.tool}`;
       if (!spec) return mcpUnknown(args.server, args.tool);
-      if (ctx.lookup && !mcpReadOnly(spec))
+      if (ctx.lookup && !mcpReadOnly(spec, args.server))
         return { ok: false, content: t`旁注只查不改：${args.server} 的 ${args.tool} 不是只读的工具，此处不调`, display: "非只读" };
       // 外层只核了 server / tool；params 对着目标工具自己的参数表再理一遍
       const { args: inner, problems } = normalizeArguments(spec.inputSchema, args.params);
@@ -205,7 +215,7 @@ function mcpLazyServers(preset) {
 /** 一个按需给的服务此处可用的几件：旁注（lookup）只要只读的 @param {string} server @param {boolean} [lookup] */
 function mcpServerTools(server, lookup = false) {
   const tools = mcp.servers[server]?.tools || [];
-  return lookup ? tools.filter(mcpReadOnly) : tools;
+  return lookup ? tools.filter(tool => mcpReadOnly(tool, server)) : tools;
 }
 // 目录：一服务一段，一件一行（名字与说明的头一句）；只读的标出来
 /** @param {Preset|null} preset @param {boolean} [lookup] */
@@ -220,7 +230,7 @@ function mcpDirectory(preset, lookup = false) {
           .split("\n")[0]
           .trim()
           .slice(0, 60);
-        return `- ${tool.name}${mcpReadOnly(tool) ? t("（只读）") : ""}${first ? `：${first}` : ""}`;
+        return `- ${tool.name}${mcpReadOnly(tool, server) ? t("（只读）") : ""}${first ? `：${first}` : ""}`;
       });
       return `【${server}】${head}\n${lines.join("\n")}`;
     })
@@ -251,25 +261,45 @@ async function runMcpTool(step, server, tool, args, ctx) {
   step.code = JSON.stringify(args, null, 2);
   // 守的关口刚批过这一步（见 keepHook）：不再另问
   const ask =
-    !step.granted && !mcpReadOnly(spec) && commandPolicyOf(ctx.conversation) === "ask" && !(config.autoApprove || []).includes(tool);
+    !step.granted &&
+    !mcpReadOnly(spec, server) &&
+    commandPolicyOf(ctx.conversation) === "ask" &&
+    !(config.autoApprove || []).includes(tool);
   if (ask && !(await askApproval(step, ctx))) {
     step.skipped = true;
     return { ok: false, content: prompt("assistant.declined"), display: "" };
   }
-  // 审而后行里的写操作：开了审查就交它判（见 03-review.js）；游目的浏览器只审可能把东西带出去的那几样
+  // 审而后行里的写操作：开了审查就交它判（见 03-review.js）；游目的浏览器只审可能把东西带出去的那几样。
+  // 写操作带 kind（mcp:服务:工具）：同类外发前面审准做过几回，审查据此从严（见 reviewCase）
   if (reviewOn(ctx.conversation)) {
-    const why =
-      server === STAGE_SERVER
-        ? stageReviewWhy(tool, args, ctx.conversation)
-        : !mcpReadOnly(spec) && !(config.autoApprove || []).includes(tool)
-          ? `调外部服务 ${server} 的写操作 ${tool}`
-          : "";
-    const denied = why && (await reviewGate(step, args, ctx, why));
+    const stage = server === STAGE_SERVER ? stageReviewWhy(tool, args, ctx.conversation) : "",
+      // 游目与别的路做同一件事时要记同一个 kind：跳长参网址与 fetch_page 同类，上传、跑代码各归各的
+      stageKind =
+        tool === "browser_navigate"
+          ? { kind: "http-get", label: "网址里带长参数往外发" }
+          : tool === "browser_file_upload"
+            ? { kind: "browser-upload", label: "往网页上传本机文件" }
+            : /^browser_(evaluate|run_code_unsafe|webmcp_call)$/.test(tool)
+              ? { kind: "browser-code", label: "在网页里跑代码" }
+              : null,
+      flag =
+        server === STAGE_SERVER
+          ? stage
+            ? { why: stage, ...(stageKind || { kind: "", label: "" }) }
+            : null
+          : !mcpReadOnly(spec, server) && !(config.autoApprove || []).includes(tool)
+            ? { why: `调外部服务 ${server} 的写操作 ${tool}`, kind: `mcp:${server}:${tool}`, label: `${server} · ${tool}` }
+            : null;
+    const denied = flag && (await reviewGate(step, args, ctx, flag));
     if (denied) return denied;
   }
-  const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal).finally(
-    stageWatch(tool, args, ctx.conversation?.id)
-  );
+  const data = await bridge("/api/mcp/call", { server, config, tool, arguments: args, timeout: config.timeout }, ctx.signal)
+    .catch(error => {
+      // 桥接按当前清单拒绝了旧工具：让下一问重新拉清单，不持续展示过期工具。
+      if (error.data?.toolsChanged) mcp.key = "";
+      throw error;
+    })
+    .finally(stageWatch(tool, args, ctx.conversation?.id));
   // 服务说工具变了：下一问前重拉
   if (data.toolsChanged) mcp.key = "";
   const { names, images } = await mcpResultImages(step, data.result),
@@ -350,26 +380,137 @@ function mcpResultText(result, names = []) {
   if (!parts.length && result.structuredContent) parts.push(JSON.stringify(result.structuredContent, null, 2));
   return parts.join("\n\n") || t("（无输出）");
 }
-// 系统提示里 mcp.hint 那一段的值：交给模型的工具里有哪几个服务的，就附上那几个服务的用法——用户在配置里写的 note 在前
-//（模型无从自知的约定，如「我说打开浏览器即指这个」），服务握手时自带的 instructions 在后；一个都没有就不带这段
+// 设置里那份 MCP 配置也在模型手里：能看、能改——与设置页改的是同一份 store.settings.mcpServers，存在 配置.json，
+// 合并规矩照旧。这一栏写的是命令与参数，本机服务由桥接直接起进程、不经指令沙箱：问而后行照 run_command 的尺子先请示，
+// 审而后行交审查（见 03-review.js 的 reviewFlag）；径行不问。密钥只遮不拦——模型本就能经游目自己登录取得，
+// 遮着只为防网页里的一句话诱它带走（与宽档不拦读密钥同一条取舍）
+const MCP_CONFIG_WAIT = 20000;
+defineTool({
+  name: "mcp_config",
+  label: "MCP",
+  mainOnly: true,
+  sideEffect: true,
+  approval: mcpApprovalHtml,
+  digest: true,
+  async run(step, args, ctx) {
+    const patch = args.servers && typeof args.servers === "object" && !Array.isArray(args.servers) ? args.servers : null,
+      names = list => [...new Set((Array.isArray(list) ? list : []).map(name => String(name).trim()).filter(Boolean))],
+      remove = names(args.remove),
+      reconnect = names(args.reconnect),
+      reveal = args.reveal === true,
+      writes = !!patch || remove.length > 0,
+      touched = [...new Set([...remove, ...Object.keys(patch || {})])];
+    step.title = writes ? t`改 ${touched.join("、")}` : reconnect.length ? t`重连 ${reconnect.join("、")}` : t`MCP 服务`;
+    // 问而后行：写这一栏要起本机进程，照 run_command 的尺子先问一声（守的关口刚批过这一步的不再问）
+    if (writes && !step.granted && commandPolicyOf(ctx.conversation) === "ask") {
+      step.code = mcpChangePreview(patch, remove);
+      if (!(await askApproval(step, ctx))) {
+        step.skipped = true;
+        return { ok: false, content: prompt("assistant.declined"), display: "" };
+      }
+    }
+    const notes = [];
+    if (writes) {
+      const current = mcpUserConfigs(),
+        next = { ...current };
+      for (const name of remove) {
+        if (name in next) delete next[name];
+        else notes.push(t`没有名为「${name}」的服务，这一条没删`);
+      }
+      for (const [name, one] of Object.entries(patch || {})) {
+        if (!name.trim() || ["__proto__", "constructor", "prototype"].includes(name))
+          return { ok: false, content: t`服务名「${name}」不可用`, display: "未改" };
+        next[name] = mcpPatchConfig(next[name], one);
+      }
+      let servers;
+      try {
+        servers = mcpValidateServers(next, current);
+      } catch (error) {
+        return { ok: false, content: String(error.message || error), display: "未改" };
+      }
+      step.code = mcpChangePreview(patch, remove);
+      store.settings.mcpServers = servers;
+      saveStore();
+      for (const name of touched) delete mcp.servers[name];
+      renderMcpStatus();
+      // 落盘与记忆同一套：写不成（桥接不在、超时）照实说，别让「本页已改」当成「已经存住」
+      if (!(await flushConfig())) notes.push(t("本页已改，还没写进存储目录（会自动重试）"));
+    }
+    const restart = [...new Set([...touched, ...reconnect])].filter(name => name in mcpActiveConfigs());
+    if (writes || restart.length) {
+      // 冷启动一个 npx 服务要好一阵：等一个短窗口，没连上就照当时的模样回报，连上后下一问自然有它的工具
+      let timer;
+      const ready = await Promise.race([
+        mcpReady(restart).then(() => true),
+        new Promise(resolve => (timer = setTimeout(() => resolve(false), MCP_CONFIG_WAIT)))
+      ]);
+      clearTimeout(timer);
+      if (!ready) notes.push(t`服务还在连接，连上后下一问才有它的工具`);
+    }
+    const text = mcpConfigReport(reveal);
+    // 行迹里留的那份总把密钥遮上：要看原文是这一步的事，不必连对话记录里也多一份
+    step.output = trimOutput(reveal ? mcpConfigReport(false) : text);
+    return {
+      ok: true,
+      content: [...notes, text].filter(Boolean).join("\n\n"),
+      display: t`${Object.keys(mcpUserConfigs()).length} 个服务`
+    };
+  }
+});
+// 交给模型的那份清单：一个服务一段，状态一行、配置一段。密钥遮着（reveal 才露）；遮着的那份原样送回来即沿用原值
+// （见 mcpUnmask），所以看完照着改，不会把密钥弄丢
+function mcpConfigReport(reveal = false) {
+  const configs = mcpUserConfigs(),
+    list = Object.keys(configs);
+  if (!list.length)
+    return t`尚未接入任何服务。写法：{ "名字": { "command": "npx", "args": ["-y", "@某/mcp-server"], "env": { "API_KEY": "…" } } }，或 { "名字": { "url": "https://…/mcp", "headers": { "Authorization": "Bearer …" } } }`;
+  const parts = list.map(name => {
+    const config = configs[name],
+      state = mcp.servers[name],
+      status = config.disabled
+        ? t("停用")
+        : !state
+          ? t("未连")
+          : state.ok
+            ? t`已连接 · ${state.tools.length} 件工具${mcp.lazy.includes(name) ? t("（按需给）") : ""}`
+            : t`连接失败：${state.error}`;
+    return `【${name}】${config.command ? t("本机") : t("远端")} · ${status}\n${JSON.stringify(mcpMask(config, reveal), null, 2)}`;
+  });
+  // 游目是随设置开合的内置服务，不在这份配置里；开着就说一句，免得模型去找它
+  if (mcp.servers[STAGE_SERVER]) parts.push(t`【游目】在设置 → 游目里开合，不在这份配置里`);
+  return parts.join("\n\n");
+}
+// 请示条与行迹里给人看的那段：要添改的、要删的；密钥遮着
+function mcpChangePreview(patch, remove) {
+  const masked = patch
+    ? Object.fromEntries(
+        Object.entries(patch).map(([name, config]) => [name, mcpMask(config && typeof config === "object" ? config : {}, false)])
+      )
+    : null;
+  return JSON.stringify({ ...(masked ? { servers: masked } : {}), ...(remove.length ? { remove } : {}) }, null, 2);
+}
+// 交审查的那份参数：同上，env / headers 里像密钥的值遮住，别把它们送去审查模型那里
+function mcpMaskedArgs(args) {
+  if (!args?.servers || typeof args.servers !== "object") return args;
+  return {
+    ...args,
+    servers: Object.fromEntries(
+      Object.entries(args.servers).map(([name, config]) => [name, mcpMask(config && typeof config === "object" ? config : {}, false)])
+    )
+  };
+}
+// 系统提示只带用户在设置里明确写的 MCP note。服务端握手返回的 instructions 是不可信外部数据，
+// 不能经 mcp.hint 晋升为系统指令；工具自己的描述仍可作为低信任的工具元数据交给模型。
 /** @param {Set<string>} names @param {Preset|null} preset */
 function mcpHintVars(names, preset) {
   const lazy = names.has("mcp_call") ? mcpLazyServers(preset) : [],
     configs = mcpConfigs(),
-    usage = (server, state) =>
-      [
-        String(configs[server]?.note || "").trim(),
-        String(state.instructions || "")
-          .trim()
-          .slice(0, 1500)
-      ]
-        .filter(Boolean)
-        .join("\n");
+    usage = server => String(configs[server]?.note || "").trim();
   const servers = Object.entries(mcp.servers).filter(
     ([server, state]) =>
       state.ok &&
-      usage(server, state) &&
+      usage(server) &&
       (mcp.lazy.includes(server) ? lazy.includes(server) : [...TOOLS.values()].some(tool => tool.server === server && names.has(tool.name)))
   );
-  return servers.length ? { servers: servers.map(([server, state]) => `【${server}】${usage(server, state)}`).join("\n") } : null;
+  return servers.length ? { servers: servers.map(([server, state]) => `【${server}】${usage(server)}`).join("\n") } : null;
 }

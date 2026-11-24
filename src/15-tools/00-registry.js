@@ -51,7 +51,7 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {true | ((step: Step) => string)} [digest] 带给下一问的一行；true 用通用写法，不写即不带
  * @property {(step: Step, opts: { latest: boolean, budget?: number }) => Promise<Record<string, any>>|Record<string, any>|null} [replay] 作答途中从外面递进来的话（补言、回报、传话）：
  *   写成给模型的一条消息。当场递上（latest，附件整份带上）与往后重装这一答（见 answerParts，只带摘要）都经它，模型往后读到的与当时一字不差；给 null 即无可重装
- * @property {boolean} [coda] 收尾前递的话（收尾前对照意）：它是这一答最后一步时（放了行、没再动手），之前那段话仍作答复，这一步画在它之后、不进行迹
+ * @property {boolean} [coda] 收尾前递的话（收尾前对照结论图）：它是这一答最后一步时（放了行、没再动手），之前那段话仍作答复，这一步画在它之后、不进行迹
  * @property {(step: Step) => Source[]} [sources] 答末「出处」里列的条目
  * @property {boolean} [mcp] 由 MCP 服务登记的（配置一变就整批换掉）
  */
@@ -174,12 +174,13 @@ async function runTool(step, ctx) {
   try {
     // 工具与审查都可能翻到先前几答的行迹（帮手的经过、看过的网址）：另存出去的先接回来
     await warmConversation(ctx.conversation);
-    // 意里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）；
+    // 图里的守写了触发条件的：对得上的这一步动手前先过它的测试（见 19-intent/10-store.js 的 keepHook）；
     // 审而后行里规则标疑的，再交专司的审查模型判（见 03-review.js）
     const stopped = (await keepHook(step, args, ctx)) || (await reviewHook(step, args, ctx));
     if (stopped) return stopped;
-    // 动文件的：这一答头一回动手前，先把目录此刻的样子记下，日后可退回（见 14-chat-engine/80-checkpoint.js）
-    if (tool.writes && !ctx.lookup) await checkpointBefore(ctx);
+    // 动文件的：这一答头一回动手前，先把目录此刻的样子记下，日后可退回（见 14-chat-engine/80-checkpoint.js）。
+    // 只读的指令不改目录，不必等这张快照；工作目录不在时也能走到桥接那句「重新发送这一问」的说明
+    if (tool.writes && !ctx.lookup && !(tool.name === "run_command" && isReadOnlyCommand(args.command))) await checkpointBefore(ctx);
     // 上面几处都要等（接回行迹、跑守的测试、审查、记检查点），等的工夫里点了「止」就到此为止，不再动手
     ctx.signal.throwIfAborted();
     const outcome = await tool.run(step, args, ctx);

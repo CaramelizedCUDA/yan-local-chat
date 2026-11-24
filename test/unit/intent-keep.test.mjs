@@ -64,7 +64,7 @@ function runtime() {
   };
 }
 
-for (const reason of ["文件凭据变化", "改过意"])
+for (const reason of ["文件凭据变化", "改过图"])
   test(`收尾前${reason}且守的测试失败：记清事由，修好后刷新，测试每阶段只跑一次`, async () => {
     const f = runtime(),
       c = f.conversation,
@@ -91,7 +91,7 @@ for (const reason of ["文件凭据变化", "改过意"])
     assert.equal(await f.intentGate(c, assistant, watch), null, "只拦一次");
   });
 
-test("守的测试仍过、意也没变：只查一次，照常收尾", async () => {
+test("守的测试仍过、图也没变：只查一次，照常收尾", async () => {
   const f = runtime(),
     c = f.conversation,
     watch = f.intentWatch(c);
@@ -100,7 +100,7 @@ test("守的测试仍过、意也没变：只查一次，照常收尾", async ()
   assert.deepEqual(f.commands, ["node check.js"]);
 });
 
-for (const change of ["同一对话换新意", "同目录另一对话换新意", "对话改绑目录"])
+for (const change of ["同一对话换新图", "同目录另一对话换新图", "对话改绑目录"])
   test(`收尾复查尚未返回时${change}：迟到结果不改回旧显示`, async () => {
     const f = runtime(),
       c = f.conversation,
@@ -111,7 +111,7 @@ for (const change of ["同一对话换新意", "同目录另一对话换新意",
     else {
       const next = structuredClone(f.intent);
       next.nodes["上线"].claim = "新的交付目标";
-      f.keepIntent(change === "同一对话换新意" ? c : { ...c, id: "c2" }, next, { [TEST_KEY]: "不过" });
+      f.keepIntent(change === "同一对话换新图" ? c : { ...c, id: "c2" }, next, { [TEST_KEY]: "不过" });
     }
     const shown = f.glance(c);
     resolve({ exitCode: 0 });
@@ -157,9 +157,10 @@ function hookRuntime({ policy = "auto", exitCode = 1, keep = {}, grant = true, b
     intent = f.applyIntentOps(f.asIntent(null), ops, { prints: {} }),
     runs = [],
     asked = [];
+  let diskIntent = intent;
   f.setup(
     async (url, body) => {
-      if (url === "/api/work/intent") return { data: intent, version: "1" };
+      if (url === "/api/work/intent") return { data: diskIntent, version: "1" };
       assert.equal(url, "/api/work/run");
       runs.push(body);
       return { exitCode, stdout: "预约已过截止", stderr: "" };
@@ -173,7 +174,7 @@ function hookRuntime({ policy = "auto", exitCode = 1, keep = {}, grant = true, b
   );
   f.keepIntent(conversation, intent, {});
   const ctx = { conversation, assistant: { steps: [] } };
-  return { ...f, conversation, intent, problems, runs, asked, ctx };
+  return { ...f, conversation, intent, problems, runs, asked, ctx, setDisk: next => (diskIntent = next) };
 }
 
 test("钩子：对得上的指令动手前跑守的测试，将要做的交给它；不过即不做", async () => {
@@ -187,7 +188,7 @@ test("钩子：对得上的指令动手前跑守的测试，将要做的交给�
   assert.equal(f.runs[0].command, "python guard.py");
 });
 
-test("钩子：对不上的、改意本身、测试过了的都放行", async () => {
+test("钩子：对不上的、改图本身、测试过了的都放行", async () => {
   const f = hookRuntime();
   assert.equal(await f.keepHook({ name: "run_command" }, { command: "npm test" }, f.ctx), null);
   assert.equal(await f.keepHook({ name: "read_file" }, { path: "ssh.txt" }, f.ctx), null, "没有副作用的不过钩子");
@@ -290,4 +291,17 @@ test("on 的写法：只给守、须是合法的正则；ask 要有 on，撤了 
     problems([goal, { id: "算力", claim: "限机器", check: "看", keep: true, on: "ssh(", anchors: ["test:x"] }]),
     /算力 的 on 不是合法的正则/
   );
+});
+
+test("另一答改了守：下一次动手按磁盘最新约束，不必等主答收尾", async () => {
+  const f = hookRuntime({ exitCode: 0 });
+  const step = { name: "run_command" };
+  assert.equal(await f.keepHook(step, { command: "git push" }, f.ctx), null);
+  const next = structuredClone(f.intent);
+  next.nodes["算力"].on = "git push";
+  next.nodes["算力"].anchors = [];
+  f.setDisk(next);
+  assert.equal((await f.keepHook(step, { command: "git push" }, f.ctx)).display, "守拦下 · 算力");
+  f.setDisk(f.intent);
+  assert.equal(await f.keepHook(step, { command: "git push" }, f.ctx), null);
 });

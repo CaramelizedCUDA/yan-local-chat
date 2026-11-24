@@ -8,7 +8,7 @@ const { jsonRoute, requestSignal } = require("../http.js");
 const { fetchPublicResponse, readLimitedBytes } = require("../web.js");
 const sandbox = require("../sandbox.js");
 const { describeFsError, clampNumber, relPath } = require("./paths.js");
-const { decodeText, encodeText, countLines, changeHunks, nearestPassage } = require("./text.js");
+const { decodeText, encodeText, countLines, splitLines, changeHunks, nearestPassage } = require("./text.js");
 const writeTextAtomic = require("./atomic.js");
 // 读一回最多交出多少字
 const WORK_FILE_LIMIT = 200000;
@@ -28,16 +28,22 @@ module.exports = function createFiles(work) {
     if (Buffer.byteLength(content) > 32 * 1024 * 1024) throw Error("单个文件不超过 32 MB");
     const release = await lockFile(file, signal);
     try {
-      const existing = await fs.promises.stat(file).catch(() => null);
+      const existing = await fs.promises.stat(file).catch(error => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
       if (existing?.isDirectory()) throw Error(`${body.path} 是目录，不能作为文件写入`);
+      // 这一答（或这名帮手）没读过它就整份覆盖：先拦下，请它读了再写——最危险的整份覆盖不该比 edit_file 更不设防。
+      // 空文件不拦。判据用 stat 的字节数：几百 MB 的旧件为这一句整份读进来太贵，而 read_file 只读到 8 MB，
+      // 这么大的文件本来就算「没读过」
+      if (body.unseen === true && existing?.size)
+        throw Error(`${body.path} 已存在（${existing.size} 字节），整份覆盖前请先 read_file 看过`);
       await fs.promises.mkdir(path.dirname(file), { recursive: true }).catch(error => {
         throw Error(describeFsError(error, path.dirname(String(body.path))));
       });
       const existed = !!existing,
-        previous = existed ? await fs.promises.readFile(file).catch(() => null) : null;
-      // 这一答（或这名帮手）没读过它就整份覆盖：先拦下，请它读了再写——最危险的整份覆盖不该比 edit_file 更不设防。空文件不拦
-      if (body.unseen === true && previous?.length)
-        throw Error(`${body.path} 已存在（${previous.length} 字节），整份覆盖前请先 read_file 看过；只改几处用 edit_file`);
+        // 文件已经存在却读不出，绝不可把「未知」当成空文件覆盖。
+        previous = existed ? await fs.promises.readFile(file) : null;
       // 读过之后被别人改过：拿旧印象整份写回，别人的改动就悄悄没了。不写，回现状的指纹，页面据此查是谁改的、请它重读
       // 读后被清空也算被改过（空的也有指纹）：不比长度
       if (typeof body.seen === "string" && previous && fingerprint(previous) !== body.seen)
@@ -46,7 +52,7 @@ module.exports = function createFiles(work) {
         previousText = prior?.text ?? "",
         previousLines = previousText ? countLines(previousText) : 0;
       // 覆盖时照原文件的样子写：带 BOM 的还带、UTF-16 的还是 UTF-16，原文多半是 CRLF 而写来的只有 LF 的换成 CRLF。
-      // GBK 编不回去，存成 UTF-8（读的那头会说）
+      // GBK 编不回去，存成 UTF-8
       const crlf = (previousText.match(/\r\n/g) || []).length,
         lf = (previousText.match(/\n/g) || []).length,
         text = crlf && crlf * 2 >= lf && !content.includes("\r\n") ? content.replace(/\n/g, "\r\n") : content,
@@ -59,15 +65,12 @@ module.exports = function createFiles(work) {
       // 并排一比成了「什么都没改」（见 text.js 的 changeHunks）
       const same = existed && previousText === content,
         diff = existed && !same ? changeHunks(previousText, content) : null,
-        counts = diff
-          ? { added: diff.added, removed: diff.removed }
-          : existed
-            ? { added: 0, removed: 0 }
-            : { added: countLines(content), removed: 0 };
+        lines = countLines(content),
+        counts = diff ? { added: diff.added, removed: diff.removed } : { added: existed ? 0 : lines, removed: 0 };
       return {
         path: shownPath(workdir, file),
         bytes: output.length,
-        lines: countLines(content),
+        lines,
         existed,
         ...(previous?.length && !prior ? { binary: true } : {}),
         ...(prior?.encoding === "gbk" ? { converted: "gbk" } : {}),
@@ -92,9 +95,7 @@ module.exports = function createFiles(work) {
     });
     const decoded = decodeText(buffer);
     if (!decoded) throw Error("二进制文件，不予读取");
-    // 末尾的一个换行不算多一行，与 write_file 那边的 countLines 同口径：空文件 0 行，"a\nb\n\n" 仍是 3 行（a、b、空行）
-    const source = decoded.text.replace(/\r?\n$/, ""),
-      lines = decoded.text ? source.split(/\r?\n/) : [],
+    const lines = splitLines(decoded.text),
       offset = Math.floor(clampNumber(body.offset, 1, 1, Math.max(1, lines.length))),
       limit = Math.floor(clampNumber(body.limit, 400, 1, 2000));
     const slice = lines.slice(offset - 1, offset - 1 + limit);
@@ -175,7 +176,8 @@ module.exports = function createFiles(work) {
       release();
     }
   }, failed);
-  // ---- download_file：把网上的文件存进工作目录。地址门禁与 http_request 同一套（本机回环放行，内网拒）；path 给目录或省略时按网址里的文件名存，
+  // ---- download_file：把网上的文件存到文件工具允许的落点，缺省是工作目录。地址门禁与 http_request 同一套（本机回环放行，
+  // 内网按页面给的档位：问而后行不碰，审而后行审准了带 allowPrivate；见 server/web.js 的 assertPublicUrl）；path 给目录或省略时按网址里的文件名存，
   // 已有同名文件就加 (2)；最多 64 MB
   const DOWNLOAD_LIMIT = 64 * 1024 * 1024;
   const handleWorkDownload = jsonRoute(async (body, req, res) => {
@@ -212,7 +214,12 @@ module.exports = function createFiles(work) {
       }
     }
     const started = Date.now(),
-      { response } = await fetchPublicResponse(url.href, { timeout: 120000, allowLoopback: true });
+      { response } = await fetchPublicResponse(url.href, {
+        timeout: 120000,
+        allowLoopback: true,
+        allowPrivate: body.allowPrivate === true,
+        allowPrivateFirstHop: body.allowPrivateFirstHop === true
+      });
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
       throw Error(`对方返回 ${response.status}`);

@@ -155,13 +155,14 @@ function openRepoMenu(dir, anchor) {
   );
 }
 // 删除一整组：组里的对话连同附件一并移除（目录里的文件一个不碰）。别的页面正写着的那几段跳过，不硬删。
-// 「组里」照侧栏的归组口径算：置顶的单列、归进「集」组的在那一组里，都绑着这个目录也不属于这一组（见 renderHistory 的分法）
+// 「组里」与侧栏共用 historyPlacement：绑着同一个目录的置顶、集组成员也不一定属于这个「工」组。
 /** @param {string} dir */
 async function removeWorkdirGroup(dir) {
-  const members = store.conversations.filter(c => historyKey(c) === dir),
+  const atDir = store.conversations.filter(c => isWork(c) && c.workdir === dir),
+    members = atDir.filter(c => historyPlacement(c) === "repo"),
     busy = members.filter(c => runningElsewhere(c.id)),
     targets = members.filter(c => !busy.includes(c)),
-    outside = store.conversations.filter(c => (c.pinned || groupOf(c)) && isWork(c) && c.workdir === dir).length,
+    outside = atDir.length - members.length,
     name = workdirTitle(dir);
   if (!targets.length) return toast(busy.length ? t("此组正在另一页面作答，暂不能删除") : t("这一组已没有对话"));
   const notes = [
@@ -172,13 +173,15 @@ async function removeWorkdirGroup(dir) {
   if (!(await askConfirm({ title: t`删除「${name}」这一组？`, body: notes.join("\n"), ok: t("删除") }))) return;
   // 确认期间别处仍可接手作答、改归组或换进新版：只删原先选中、现在仍属于这一组且未被别页占用的记录。
   const confirmed = new Set(targets.map(c => c.id)),
-    removing = store.conversations.filter(c => confirmed.has(c.id) && historyKey(c) === dir && !runningElsewhere(c.id));
+    removing = store.conversations.filter(
+      c => confirmed.has(c.id) && c.workdir === dir && historyPlacement(c) === "repo" && !runningElsewhere(c.id)
+    );
   // 一条也没剩下：别报「已删除 0 段对话」，照实说这一回没动
   if (!removing.length) {
     render();
     return toast(t("这一组已没有对话"));
   }
-  for (const c of removing) purgeConversation(c);
+  void deleteStoredConversations(removing.map(detachConversation));
   // 组散尽了，自起的名字也就没处可挂；还有对话绑着就留着
   if (!store.conversations.some(c => isWork(c) && c.workdir === dir)) delete (store.settings.workdirNames || {})[dir];
   saveStore();
@@ -236,21 +239,32 @@ function renderGroupsPage() {
   const group = groupsList().find(item => item.id === groupPageId);
   $("#groups").innerHTML = `<div class="library-inner">${group ? groupDetailHtml(group) : groupListHtml()}</div>`;
 }
-const lastTouched = members => members.reduce((latest, c) => (c.updatedAt > latest ? c.updatedAt : latest), "");
 // 列表与卷宗同一本簿：一组一条，行首一只小函；列是 组名 · 段 · 预设 · 目录 · 日期（最近一段对话动笔的日子）
 function groupListHtml() {
-  const groups = [...groupsList()].sort((a, b) =>
-      (lastTouched(groupMembers(b.id)) || b.createdAt).localeCompare(lastTouched(groupMembers(a.id)) || a.createdAt)
-    ),
-    chats = store.conversations.filter(c => groups.some(group => group.id === c.groupId)).length;
-  return `<div class="page-head">${brushIcon("groups")}<h1>${t(`分组`)}</h1><span class="page-facts">${groups.length ? t`${groups.length} 组 · ${chats} 段对话` : ""}</span><div class="page-acts"><button id="groupsAdd" type="button">${t(`新建分组`)}</button></div></div><div class="page-sub"></div>${
-    groups.length
-      ? `<div class="strips group-strips"><div class="strip-cols"><span></span><span>${t(`组名`)}</span><span>${t(`段`)}</span><span>${t(`预设`)}</span><span>${t(`目录`)}</span><span>${t(`日期`)}</span></div>${groups
-          .map(group => {
-            const members = groupMembers(group.id),
-              preset = store.settings.presets.find(item => item.id === group.presetId),
-              touched = lastTouched(members) || group.createdAt;
-            return `<button type="button" class="strip dir" data-group-page="${escapeHtml(group.id)}"><span>${caseFigure()}</span><span class="strip-name"><strong>${escapeHtml(group.name)}</strong></span><span>${members.length}</span><span><span class="ell">${escapeHtml(preset?.name || "—")}</span></span><span title="${escapeHtml(group.workdir)}"><span class="ell">${escapeHtml(group.workdir || "—")}</span></span><span>${escapeHtml(formatDay(touched))}</span></button>`;
+  const groups = groupsList(),
+    byId = new Map(groups.map(group => [group.id, { count: 0, latest: "" }]));
+  let chats = 0;
+  if (byId.size) {
+    for (const c of store.conversations) {
+      const summary = byId.get(c.groupId);
+      if (!summary) continue;
+      chats++;
+      summary.count++;
+      if (c.updatedAt > summary.latest) summary.latest = c.updatedAt;
+    }
+  }
+  const rows = groups
+    .map(group => {
+      const { count, latest } = byId.get(group.id);
+      return { group, count, touched: latest || group.createdAt };
+    })
+    .sort((a, b) => b.touched.localeCompare(a.touched));
+  return `<div class="page-head">${brushIcon("groups")}<h1>${t(`分组`)}</h1><span class="page-facts">${rows.length ? t`${rows.length} 组 · ${chats} 段对话` : ""}</span><div class="page-acts"><button id="groupsAdd" type="button">${t(`新建分组`)}</button></div></div><div class="page-sub"></div>${
+    rows.length
+      ? `<div class="strips group-strips"><div class="strip-cols"><span></span><span>${t(`组名`)}</span><span>${t(`段`)}</span><span>${t(`预设`)}</span><span>${t(`目录`)}</span><span>${t(`日期`)}</span></div>${rows
+          .map(({ group, count, touched }) => {
+            const preset = store.settings.presets.find(item => item.id === group.presetId);
+            return `<button type="button" class="strip dir" data-group-page="${escapeHtml(group.id)}"><span>${caseFigure()}</span><span class="strip-name"><strong>${escapeHtml(group.name)}</strong></span><span>${count}</span><span><span class="ell">${escapeHtml(preset?.name || "—")}</span></span><span title="${escapeHtml(group.workdir)}"><span class="ell">${escapeHtml(group.workdir || "—")}</span></span><span>${escapeHtml(formatDay(touched))}</span></button>`;
           })
           .join("")}</div>`
       : `<div class="library-empty">${t(`尚无分组`)}</div>`

@@ -2,11 +2,12 @@
 // 言 · ChatGPT 订阅：走 OpenAI 给开源与本机应用开的「Sign in with ChatGPT」——在浏览器里授权，额度记在用户的 ChatGPT 订阅上，
 // 请求直发公开的 Responses API（api.openai.com/v1/responses），带言自己的提示与工具，不经 Codex 那一层。
 // 与 Anthropic 适配一个路数：页面照旧送 OpenAI 格式，这里把请求换成 Responses 的，事件流再换回 chat.completions 的分块（登记的样子见 index.js 开头）。
-// 凭证只在桥接里：存储根下的「ChatGPT 登录.json」，不进页面、不进备份
+// 凭证由桥接保存于存储根下的「ChatGPT 登录.json」，不交给页面、不进页面导出
 const http = require("node:http");
 const path = require("node:path");
 const { createHash, randomBytes, randomUUID } = require("node:crypto");
 const { jsonRoute, writeAtomic, readJsonFile } = require("../http.js");
+const { readLimitedBytes, ERROR_BODY_LIMIT } = require("../web.js");
 const { translateSse } = require("./sse.js");
 const fetchUpstream = require("./upstream.js");
 const { openUrl } = require("../platform.js");
@@ -28,6 +29,9 @@ const DEAD_GRANTS = new Set([
   "refresh_token_invalidated",
   "refresh_token_reused"
 ]);
+// 订阅的模型表按上限读：正常只有几十个名字，超过这个数多半是接口出了毛病、或根本没打算收尾
+// （与 server/model/index.js 的 LIST_LIMIT 同一个理由与量级）
+const MODELS_LIMIT = 4 * 1024 * 1024;
 // 订阅额度那边的几种拒绝，换成用户看得懂的话
 const HINTS = {
   subscription_sharing_usage_limit_exceeded: "ChatGPT 订阅给言的额度用完了，可在 ChatGPT 设置 → 用量里查看或调整",
@@ -166,7 +170,7 @@ module.exports = function createChatgpt({ home }) {
     lastError = null;
     const target = file(),
       auth = load();
-    // 本机标识：每台机器一个，头一回登录前定下，此后一直用它
+    // 本机标识：这一份登录记录首次发起授权前生成，之后沿用保存下的值
     // 须写成 urn:uuid:…，裸的 UUID 授权端不认（invalid ext_agent_host_id）；先前存下的裸 UUID 补上前缀，仍是同一台机器
     if (!auth.hostId?.startsWith("urn:uuid:")) {
       auth.hostId = `urn:uuid:${auth.hostId || randomUUID()}`;
@@ -244,7 +248,7 @@ module.exports = function createChatgpt({ home }) {
       error: login?.error || (auth.tokens?.refresh_token ? "" : failure(file()))
     };
   }
-  // 退出：向授权端吊销刷新令牌（吊销不成也照样在本机清掉），登记的 client_id 与本机标识留着，下回登录同一个账号还用它们
+  // 退出：先清本机令牌，再尝试向授权端吊销刷新令牌；登记的 client_id 与本机标识留着
   async function logout() {
     stopPending();
     lastError = null;
@@ -277,8 +281,20 @@ module.exports = function createChatgpt({ home }) {
       headers: await headers(),
       signal: AbortSignal.timeout(20000)
     });
-    const data = /** @type {any} */ (await response.json().catch(() => ({})));
-    if (!response.ok) throw Error(hinted(data.error?.code, data.error?.message || `列模型失败（${response.status}）`));
+    // 表按上限读（与 server/model/index.js 的 LIST_LIMIT 同一个理由与量级）：超大或源源不断的 JSON 不能整份进内存；
+    // 非成功的回话只要开头那句，另用小预算，读完即掐
+    const { buffer, truncated } = await readLimitedBytes(response, response.ok ? MODELS_LIMIT : ERROR_BODY_LIMIT),
+      raw = new TextDecoder().decode(buffer);
+    let data = /** @type {any} */ ({});
+    if (!truncated)
+      try {
+        data = JSON.parse(raw);
+      } catch {}
+    if (!response.ok) {
+      const preview = truncated ? raw.trim().slice(0, 200) : "";
+      throw Error(hinted(data.error?.code, data.error?.message || `列模型失败（${response.status}）${preview ? `：${preview}` : ""}`));
+    }
+    if (truncated) throw Error(`模型列表过大（超过 ${MODELS_LIMIT / 1024 / 1024} MB），不再往下读`);
     const list = (Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : []).filter(
       m => m && (m.visibility === undefined || m.visibility === "list")
     );
@@ -371,7 +387,7 @@ function responsesRequest(payload) {
     store: false,
     stream: true
   };
-  // 缓存键：同一段对话里固定不变（取开头那条用户消息），前文走缓存
+  // 缓存键由型号与第一条送往上游的用户内容决定；任一变化时重新计算
   const opening = input.find(item => item.role === "user");
   if (opening)
     body.prompt_cache_key = createHash("sha256")

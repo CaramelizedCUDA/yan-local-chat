@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createHash } = require("node:crypto");
-// 拼接规则（server/build.js）改了就重新载入：页面脚本本是即时拼的，不该因为拼法变了就得重启桥接
+// 拼接规则（server/build.js）的修改时间变了就重新载入：页面脚本本是即时拼的，改拼法也不必重启桥接
 const BUILD_FILE = require.resolve("./server/build.js");
 let bundler = require(BUILD_FILE),
   bundlerStamp = fs.statSync(BUILD_FILE).mtimeMs;
@@ -45,6 +45,7 @@ const ROOT = __dirname;
 const HOST = "127.0.0.1";
 // 默认使用本机的 18787；其他机器仍可通过 YAN_PORT 指定端口。
 const PORT = Number(process.env.YAN_PORT || 18787);
+const OPEN_PAGE = process.argv.includes("--open") && !process.argv.includes("--no-open");
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -70,7 +71,7 @@ function requestPath(req) {
 }
 
 function securityHeaders(req, res) {
-  // 比的是解码后、不分大小写的路径：文件系统本就不分大小写，/PREVIEW.HTML 与 /%70review.html 交付的也是那一件
+  // 安全头按解码后的路径判定，且不分大小写，兼顾大小写不敏感文件系统上的预览页写法
   const isPreview = (requestPath(req) || "").toLowerCase() === "/preview.html";
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
@@ -152,16 +153,21 @@ function handleBootstrap(req, res) {
     }
   });
 }
-// 存储根（默认 ~/.yan）：对话、卷宗、配置都在里面，换位置后下面两处跟着走；有对话正作答、有后台指令在跑时不换
-// （background 是惰性的：WORK 要用 STORE 的路径才能建，只能等换位置那一下再问它）
+// 存储根（默认 ~/.yan）：对话正作答、后台指令在跑、环境正准备或清空时不换
+// （这些模块要用 STORE 的路径才能建，等换位置那一下再问它们）
 const STORE = require("./server/store.js")({
   working: () => CHATS.working(),
   background: () => WORK.backgroundRunning(),
-  onMove: () => TIMERS.sync()
+  environment: () => ENV.busy(),
+  beforeMove: () => USAGE.flush(),
+  onMove: () => {
+    ENV.resetJob();
+    TIMERS.sync();
+  }
 });
-// 沙箱环境：存储根里的 环境/，桥接起的进程（指令、MCP 服务）都接上它
-const ENV = require("./server/env/index.js")({ envHome: () => STORE.paths().env });
-// 视频换壳：浏览器认不得的封装（如扩展名写作 mp4 的 MPEG-TS），预览时借环境里的 ffmpeg 原样换进 MP4（见 server/video.js）
+// Windows 接存储根里的 环境/；macOS 接探到的系统工具目录。两路都给指令与本机 MCP 进程用
+const ENV = require("./server/env/index.js")({ envHome: () => STORE.paths().env, route: STORE.scopedRoute });
+// 视频换壳：浏览器认不得的封装（如扩展名写作 mp4 的 MPEG-TS），预览时借环境入口或 macOS 探到的 ffmpeg 换进 MP4（见 server/video.js）
 const VIDEO = require("./server/video.js")({
   cacheHome: () => path.join(STORE.paths().env, "cache", "视频"),
   ffmpeg: () => ENV.toolPath("ffmpeg")
@@ -181,6 +187,8 @@ const SKILLS = require("./server/skills.js")({
 });
 const CHATS = require("./server/chats.js")({
   chatsHome: () => STORE.paths().chats,
+  // 对话接口的 root 原指对话目录；页面另报存储根，旧脚本仍可显式指定目录。
+  route: (handle, describe) => STORE.scopedRoute(handle, describe, "storeRoot"),
   // 对话删了，它各答的检查点跟着删（见下）
   onDelete: id => CHECKPOINTS.dropConversation(id)
 });
@@ -196,7 +204,7 @@ const TIMERS = require("./server/timers.js")({
   known: CHATS.exists,
   route: STORE.scopedRoute
 });
-const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable });
+const FILES = require("./server/files.js")({ filesHome: () => STORE.paths().files, playable: VIDEO.playable, route: STORE.scopedRoute });
 const STAGE_LIB = require("./server/stage.js");
 // 检索与翻网页用的无头浏览器（直接请求被拦、网页要跑脚本时才起，见 server/headless.js）：配置目录只是 Cookie 与缓存，不算用户的东西，
 // 放系统临时目录、不进存储根（也不进 环境/：清空环境时它若开着，删到一半就卡住）；按端口各一份，测试的桥接不与常开的那个共用
@@ -232,8 +240,9 @@ const MODEL = require("./server/model/index.js")({ home: () => STORE.paths().roo
 // 用量簿：按日记各类花了多少，给设置里的用量卡看（见 server/usage.js）
 const USAGE = require("./server/usage.js")({ file: () => path.join(STORE.paths().root, "用量.json") });
 
-// 接口表：「方法 路径」→ 处理函数。受信的那一半能碰本机磁盘与本机服务（执事、卷宗、对话目录、存储、附件、模型转发，以及能打本机的 http_request），
-// 只受理本站页面与本机脚本；另一半（引导、检索、翻网页，都只上公网）凡是本机桥接认得的来源都可调
+// 接口表：「方法 路径」→ 处理函数。受信的那一半能碰本机磁盘与本机服务（执事、卷宗、对话目录、存储、附件、模型转发，
+// 以及能打本机与内网的翻网页、http_request），只受理本站页面与本机脚本；另一半只有引导、总线与只取公网内容的检索。
+// 总线转交的请求仍由分发器照原门禁处理
 const OPEN_ROUTES = {
     "GET /api/bootstrap": handleBootstrap,
     ...WEB.openRoutes,
@@ -275,7 +284,7 @@ function publicStaticTarget(requested) {
     normalized = path.posix.normalize(webPath);
   if (normalized !== webPath || normalized.startsWith("../") || path.posix.isAbsolute(normalized)) return null;
   const shared = normalized.startsWith("vendor/") || normalized.startsWith("i18n/");
-  // 围栏按各自的白名单目录算，不按仓库根：web/ 里出现指向别处的链接，也带不出 web/ 之外。
+  // web/ 的真实路径须仍在 web/ 内；vendor/ 与 i18n/ 则按仓库根解析并检查。
   const base = shared ? REAL_ROOT : REAL_PAGE_DIR;
   const candidate = path.resolve(base, ...normalized.split("/"));
   if (!fs.existsSync(candidate)) return null;
@@ -322,7 +331,7 @@ function serveStatic(req, res) {
     return sendNotFound(res);
   }
   const { file, stat } = target;
-  // 带上 ETag / Last-Modified：no-cache 只要求重新验证，有了校验值浏览器才会真正拿到改动后的文件，而不是沿用旧缓存
+  // no-cache 要求重新验证；带上 ETag 与 Last-Modified，这里按 If-None-Match 命中才回 304
   const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
   const headers = {
     "Content-Type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
@@ -381,18 +390,25 @@ async function dispatch(req, res) {
 const server = http.createServer(dispatch);
 server.on("error", async (/** @type {NodeJS.ErrnoException} */ error) => {
   if (error.code === "EADDRINUSE") {
-    // 占着端口的就是言自己（又双击了一次言.exe）：不再起一个，打开页面即可
+    const address = `http://${HOST}:${PORT}`;
+    // 只有同版才可接用。异版仍留在原端口，不替用户结束它的任务，也不开旧页面。
     const running = /** @type {any} */ (
-      await fetch(`http://${HOST}:${PORT}/api/bootstrap`)
-        .then(r => r.json())
+      await fetch(`${address}/api/bootstrap`, { redirect: "error", signal: AbortSignal.timeout(2000) })
+        .then(r => (r.ok ? r.json() : null))
         .catch(() => null)
     );
     if (running?.work) {
-      console.log(`言已在运行：http://${HOST}:${PORT}`);
-      if (process.argv.includes("--open")) openUrl(`http://${HOST}:${PORT}`);
-      process.exit(0);
-    }
-    console.error(`端口 ${PORT} 已被占用，可设置 YAN_PORT 后重试。`);
+      const version = typeof running.version === "string" ? running.version : "";
+      if (version && version === APP_VERSION) {
+        console.log(`言已在运行：${address}`);
+        if (OPEN_PAGE) openUrl(address);
+        process.exit(0);
+      }
+      console.error(
+        `端口 ${PORT} 上已有言的桥接（${version || "版本未知"}），与本次启动的版本（${APP_VERSION || "未知"}）不符。请先退出正在运行的桥接，再重试。\n` +
+          `The Yan bridge on port ${PORT} (${version || "unknown version"}) does not match this launch (${APP_VERSION || "unknown version"}). Quit the running bridge before retrying.`
+      );
+    } else console.error(`端口 ${PORT} 已被占用，可设置 YAN_PORT 后重试。`);
   } else console.error(error);
   process.exit(1);
 });
@@ -417,5 +433,5 @@ server.listen(PORT, HOST, () => {
   );
   console.log("  请保持此窗口开启；关闭后页面刷新、模型转发、联网与执事都会停止。按 Ctrl+C 退出。");
   console.log("  此窗口不会显示 API Key。\n");
-  if (process.argv.includes("--open")) openUrl(address);
+  if (OPEN_PAGE) openUrl(address);
 });

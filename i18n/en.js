@@ -301,6 +301,9 @@ var YAN_EN = {
   完成: "Done",
   运行: "Run",
   跳过: "Skip",
+  这件工具已不在了: "This tool is gone",
+  "服务可能刚被停用，这一步无从执行；跳过它，把结果交回模型。":
+    "Its service was probably just turned off, so this step cannot run. Skip it and hand the result back to the model.",
   "径行：此对话中后续指令不再询问": "Full auto: don't ask again in this chat",
   "展开全部 · −{0} +{1} 行": "Show all · −{0} +{1} {1|line|lines}",
   展开输出: "Show output",
@@ -531,12 +534,23 @@ var YAN_EN = {
   此类文件无法在此预览: "This file type can't be previewed here",
   隔离的网页预览: "Sandboxed web preview",
   空文件: "Empty file",
+  预览范围内没有完整记录: "No complete records within the preview limit",
   "仅显示前 400 行": "Showing the first 400 lines",
+  "内容过长，只解析了开头一段": "Content too long — only the beginning was parsed",
   未能抽出正文: "Could not extract text",
+  "（文档内部一份太大，未能列出：${name}）": "(A part was too large to display: ${name})",
+  "（这一页的备注未能读出）": "(Could not read this slide’s notes)",
   "本机按结构抽出，不含原排版 ·": "Extracted locally by structure, original layout not kept ·",
   "[图片 {0} 预览不了]": "[Image {0} can't be previewed]",
   "工作表 {0}": "Sheet {0}",
   "仅显示前 20 万字": "Showing the first 200,000 characters",
+  // 抽取失败时的那几句：进了附件的说明、预览的空态，英文界面也该看得懂（这几句出自 13-files/30-extract.js）
+  "PDF 抽取库未能载入，原件照发": "The PDF library couldn't load; the original file is sent as is",
+  "PDF 没有文字层（多半是扫描件），原件照发": "This PDF has no text layer (likely a scan); the original file is sent as is",
+  文档压缩结构无效: "The document's archive structure is invalid",
+  "文档 XML 无效": "The document's XML is invalid",
+  "文档内部有一份太大（{0}），本机没能抽出正文": "A part inside the document is too large ({0}); the text couldn't be extracted",
+  "（空表）": "(empty sheet)",
   图片预览: "Image preview",
   原图: "Original size",
   "此视频浏览器放不了，可交本机程序打开": "The browser can't play this video. Open it with a system app",
@@ -759,21 +773,28 @@ var YAN_EN = {
   "，{0} 件未能取到：{1}{2}": ", {0} could not be read: {1}{2}",
   "备份已导出；不含 API Key": "Backup exported; API keys are not included",
   "备份文件不完整，尾部在复制或下载时断掉了": "The backup is incomplete: it was cut short while being copied or downloaded",
-  "备份文件不完整，只恢复了能读到的部分：{0}": "The backup is incomplete; only the readable part was restored: {0}",
   "有 {0} 答另存的行迹没能取回，备份里缺它们的思绪与帮手经过":
     "{0} {0|reply's|replies'} stored trail could not be loaded; the backup lacks their reasoning and helper runs",
   "不是言的备份文件，或版本不兼容": "Not a Yan backup file, or an incompatible version",
-  "、{0} 个分组": ", {0} {0|group|groups}",
-  "、{0} 个预设": ", {0} {0|preset|presets}",
-  "、{0} 个 MCP 服务（密钥需重填）": ", {0} {0|MCP server|MCP servers} (secrets need re-entering)",
-  "、{0} 份草稿": ", {0} {0|draft|drafts}",
-  "，恢复 {0} 件附件原件": ", restored {0} {0|attachment|attachments}",
-  "；备份不含附件原件，旧附件将显示为不可用": "; the backup has no attachments, so old ones will show as unavailable",
-  "已导入 {0} 段对话、{1} 个模型{2}{3}{4}{5}{6}{7}{8}": "Imported {0} {0|chat|chats}, {1} {1|model|models}{2}{3}{4}{5}{6}{7}{8}",
   "导入失败：{0}": "Import failed: {0}",
-  "导入未能做完：{0}；已并入的部分留着了": "Import didn't finish: {0}. What was already merged is kept",
-  "导入未能做完：{0}；已并入的部分留在本页了，还没能写进存储目录（会自动重试）":
-    "Import didn't finish: {0}. What was already merged is kept in this page but not yet written to the storage folder (it will retry)",
+  "导入期间存储位置已变化，请检查已保存的内容": "Storage location changed during import. Check what was saved",
+  缺少附件内容: "Missing attachment data",
+  "配置（含模型、分组、预设、草稿等）": "configuration (models, groups, presets, drafts, etc.)",
+  "{0} 件附件原件": "{0} original {0|attachment|attachments}",
+  "已写入存储目录：{0}": "Saved to the storage folder: {0}",
+  "已在此浏览器暂存：{0}": "Stored temporarily in this browser: {0}",
+  "只留在本页：{0}。请先别关闭页面": "Only in this page: {0}. Keep this page open",
+  "{0} 段对话已不在本页，未能确认保存": "{0} {0|chat is|chats are} no longer in this page; saving could not be confirmed",
+  "{0} 段对话尚在等删除确认，未导入": "{0} {0|chat was|chats were} skipped because deletion is still pending",
+  "{0} 类记忆与存储目录里的版本冲突，未并入":
+    "{0} {0|memory category was|memory categories were} skipped because of conflicts with the saved version",
+  "{0} 件附件原件未能恢复：{1}": "Could not restore {0} {0|attachment|attachments}: {1}",
+  "未能读完备份：{0}；已读到的部分按上述结果保存": "Could not finish reading the backup: {0}. See above for what was saved",
+  "备份不含附件原件，缺失的旧附件会显示为不可用": "The backup doesn't include attachments; missing originals will appear unavailable",
+  "MCP 服务的密钥需重填": "Re-enter MCP service secrets",
+  备份中没有需要并入的新内容: "Nothing new to import from the backup",
+  "、": ", ",
+  "；": "; ",
 
   // ---- 设置 · 预设 ----
   预设: "Presets",
@@ -809,9 +830,20 @@ var YAN_EN = {
   "查看中…": "Checking…",
   "{0} · {1} 组工具 · {2}准备": "{0} · {1} {1|pack|packs} · {2}",
   "首次准备需下载数十至数百 MB": "First setup downloads tens to hundreds of MB",
+  "探到 {0}/3": "Detected {0}/3",
+  系统工具: "System tools",
+  探测中: "Detecting",
+  "探测中…": "Detecting…",
+  重新探测: "Re-detect",
+  未找到: "Not found",
+  "macOS 上不备环境包，指令直接用系统里的工具；经 Homebrew 安装的也能探到。":
+    "macOS uses tools already on the system instead of a bundled environment; Homebrew installs are detected too.",
+  探测系统工具: "Detecting system tools",
+  已探好: "Done",
   开始: "Start",
   "正在{0}…": "{0}…",
   "未能装成：{0}": "Install failed: {0}",
+  "探测出错：{0}": "Detection failed: {0}",
   准备中: "Setting up",
   已备好: "Ready",
   尚未准备: "Not set up",
@@ -872,7 +904,11 @@ var YAN_EN = {
   逐件: "All listed",
   按需: "On demand",
   免请示的工具: "Tools that skip approval",
-  "工具名，逗号分隔；只读工具本不请示": "Tool names, comma separated; read-only tools never ask",
+  "工具名，逗号分隔；要额外免请示的填这里（只读与否只认上一栏）":
+    "Tool names, comma separated; add tools that should also skip approval (read-only status comes only from the list above)",
+  受信只读工具: "Trusted read-only tools",
+  "仅填确认无副作用的工具名；不信任服务自报的只读":
+    "Only enter tool names you have verified as safe; server read-only hints are not trusted",
   给模型的话: "Note to the model",
   随系统提示交给模型: "Added to the system prompt",
   保存: "Save",
@@ -884,6 +920,7 @@ var YAN_EN = {
   "「{0}」的 {1} 仍是遮蔽占位，原值已不可寻，请重填": '{1} of "{0}" is still a masked placeholder and the original is gone. Enter it again',
   '应是 { "mcpServers": { 名字: 配置 } }': 'Expected { "mcpServers": { name: config } }',
   "「{0}」要有 command（本机程序）或 url（远端服务）": '"{0}" needs a command (local program) or url (remote server)',
+  "服务名「{0}」不可用": 'The server name "{0}" is not available',
   "{0}第 {1} 行缺「{2}」：{3}": '{0}line {1} is missing "{2}": {3}',
   请填命令: "Enter a command",
   请填地址: "Enter a URL",
@@ -917,6 +954,8 @@ var YAN_EN = {
   "\n撮要前文": "\nSummarize earlier messages",
   "下一问约送出 {0} token{1}（估算，含系统提示、工具定义与上次撮要以来的往来）{2}{3}":
     "The next message sends about {0} {0|token|tokens}{1} (estimate: system prompt, tool definitions and messages since the last summary){2}{3}",
+  "本答这一轮送出约 {0} token{1}（含系统提示、工具定义、历史与本答的往来）{2}{3}":
+    "This answer's current request sends about {0} {0|token|tokens}{1} (system prompt, tool definitions, history and this answer's transcript included){2}{3}",
   "作答中，稍后再撮": "Still replying, summarize later",
   "对话还短，不必撮要": "The chat is short; no need to summarize",
   "撮要前文？": "Summarize earlier messages?",
@@ -1023,6 +1062,7 @@ var YAN_EN = {
   "整理收藏…": "Organize bookmarks…",
   "打开本机文件…": "Open local file…",
   "游目阅不了此件，已在本机程序中打开": "The browser panel can't show this file; opened it in its app",
+  "正在摊开「{0}」…": "Opening “{0}” in the panel…",
   复制网址: "Copy URL",
   网址已复制: "URL copied",
   用系统浏览器打开: "Open in system browser",
@@ -1306,6 +1346,7 @@ var YAN_EN = {
   " · 只读免确认": " · read-only, no approval",
   "此对话没有可用的目录（本机桥接不在线）": "This chat has no folder available (local bridge offline)",
   "沙箱会拦下：{0}。运行即在沙箱外执行这一条。": "The sandbox would block this: {0}. Running it executes this command outside the sandbox.",
+  "Homebrew 安装需要写入沙箱外的安装目录和日志": "Homebrew needs to write to its installation directory and logs outside the sandbox",
   执事请示: "Agent asks",
   本机请示: "Approval needed",
   "· 运行此指令": "· run this command",
@@ -1367,10 +1408,10 @@ var YAN_EN = {
   "第{0}问 · 共 {1} 问": "Question {0} of {1}",
   "Enter 提交": "Enter to submit",
   "Enter 下一题": "Enter for next",
-  "意 → {0}": "Intent → {0}",
+  "图 → {0}": "Intent → {0}",
   未改: "Not changed",
   "已立 {0} / {1} · {2}": "Settled {0} / {1} · {2}",
-  ' data-intent-open role="button" tabindex="0" title="打开意"': ' data-intent-open role="button" tabindex="0" title="Open intent"',
+  ' data-intent-open role="button" tabindex="0" title="打开图"': ' data-intent-open role="button" tabindex="0" title="Open intent"',
   记入: "Remember",
   内容为空: "Empty",
   过长: "Too long",
@@ -1459,7 +1500,7 @@ var YAN_EN = {
   看这一趟的经过: "View this run",
   待递: "Pending",
 
-  // ---- 意 ----
+  // ---- 图 ----
   全局: "Top level",
   说法已改: "Claim changed",
   凭据已改: "Evidence changed",
@@ -1469,7 +1510,7 @@ var YAN_EN = {
   "凭据已变：{0}{1}": "Evidence changed: {0}{1}",
   弃: "Dropped",
   撤: "Removed",
-  改意: "Revised",
+  改图: "Revised",
   改根: "Root revised",
   立根: "Marked root",
   假定: "Assumed",
@@ -1494,14 +1535,14 @@ var YAN_EN = {
   "探针「{0}」": 'Probe "{0}"',
   "{0} {1} 回": "{0} {1}×",
   " 等 {0} 个": " and {0} more",
-  收尾前对照意: "Check intent before finishing",
+  收尾前对照结论图: "Check intent before finishing",
   "已立 {0} / {1}": "Settled {0} / {1}",
-  "意被别处接连改动，没写成，稍后再试": "Intent was changed elsewhere repeatedly; not saved. Try again later",
+  "图被别处接连改动，没写成，稍后再试": "Intent was changed elsewhere repeatedly; not saved. Try again later",
   已立: "Settled",
   "存疑 · 前提未立": "Doubtful · premises not settled",
   或: "or",
   打开模块: "Open module",
-  意的结构图: "Intent map",
+  图的结构: "Intent map",
   文件: "File",
   目录: "Folder",
   探针: "Probe",
@@ -1536,15 +1577,15 @@ var YAN_EN = {
   "前提{0}未立": "Premise{0} not settled",
   "出处：{0}": "Source: {0}",
   撑起: "Supports",
-  此目录尚未立意: "No intent in this folder yet",
+  此目录尚未立图: "No intent in this folder yet",
   进度: "Progress",
   "假定 {0}": "Assumed {0}",
   "更新于 {0}": "Updated {0}",
   "墨痕 {0}": "History {0}",
-  "意 · {0}": "Intent · {0}",
-  "意：进度 {0} / {1}，点开看图": "Intent: {0} / {1} settled, click to view",
+  "图 · {0}": "Intent · {0}",
+  "图：进度 {0} / {1}，点开卡片": "Intent: {0} / {1} settled, click to view",
   "往事 {0}": "Past {0}",
-  "意：往事 {0} 件，点开看": "Intent: {0} past, click to view",
+  "图：往事 {0} 件，点开看": "Intent: {0} past, click to view",
 
   // ---- 桥接回的话（页面在提示条、报错与状态行上照这几句换；桥接那头照旧写中文） ----
   缺少页面标识: "Missing page ID",
@@ -1580,6 +1621,10 @@ var YAN_EN = {
   "（没找到 {0}，跳过）": "({0} not found, skipped)",
   "环境工具包只备了 Windows 版；在 macOS 上请用系统里的 Python 与 Node（可经 Homebrew 安装）":
     "Tool packs are Windows-only. On macOS, use the system Python and Node (e.g. via Homebrew)",
+  "环境工具包只备了 Windows 版；在这套系统上请用系统里的 Python 与 Node":
+    "Tool packs are Windows-only; on this system, use the system Python and Node",
+  "有环境作业还在跑，等它结束再换": "An environment job is running. Wait for it to finish before moving storage",
+  "环境正在清空，稍候再试": "The environment is being cleared. Try again in a moment",
   "环境正在准备，稍候再清": "The environment is being set up; clear it later",
   "没能删干净（可能有进程正用着环境里的程序）：{0}": "Could not delete everything (a process may be using it): {0}",
   "{0} 下载失败（HTTP {1}）": "{0} download failed (HTTP {1})",
@@ -1752,8 +1797,8 @@ var YAN_EN = {
     "The ink stroke at the top right is usage: with no limit it counts what's been spent; with a limit it shows tokens left, shrinking as you go, and hovering shows the number. The half-shaded circle to its left switches light and dark. With the browser on, a hanging scroll drops from the top of the page; while music plays, an ink thread with a small circle hangs down: that's Listen. When the network is shaky and a request is retried, or the context is nearly full and gets tidied, the status bar above the input box says so.",
   "页面提示桥接未接通，多是桥接已退出（start.cmd 的窗口关了，或言.exe 起的桥接出错退了）。重新打开，下一回寄出时页面自会接上。":
     "If the page says the bridge isn't connected, the bridge has most likely exited (the start.cmd window was closed, or the bridge started by 言.exe hit an error). Start it again and the page reconnects on the next send.",
-  "右下角「上下文」是下一问约送出多少 token，点之可撮要前文：此前的问答由模型撮要成一份（目标、事实、决定、改过的文件、待办），此后每一问只带这份撮要与其后的消息，页面上的记录仍在，只是折起。模型设置里填了上下文窗口，过七成半便自动撮要；没填则等接口回说放不下时再撮，想早些撮、省些墨，填小一点即可。":
-    "“Context” at the bottom right estimates how many tokens the next message will send; click it to summarize what came before. The model condenses the earlier exchange into one summary (goals, facts, decisions, changed files, to-dos), and from then on each message carries only that summary and what follows. The record on the page stays, just folded. If the model's context window is set, this happens automatically past 75%; if not, it waits until the API says the context won't fit. To summarize earlier and spend fewer tokens, set a smaller window.",
+  "右下角「上下文」在作答中显示本答这一轮请求送出多少 token（接口每回一轮报的用量；一答之内撮要之后先按折叠后的估算更新，下一轮再校正），空闲时估下一问约送出多少，点之可撮要前文：此前的问答由模型撮要成一份（目标、事实、决定、改过的文件、待办），此后每一问只带这份撮要与其后的消息，页面上的记录仍在，只是折起。模型设置里填了上下文窗口，过七成半便自动撮要；没填则等接口回说放不下时再撮，想早些撮、省些墨，填小一点即可。":
+    "“Context” at the bottom right shows how many tokens this answer's current request sends while a reply is streaming (as reported by the API each round; after the model folds earlier rounds it updates at once from the folded estimate, then corrects itself on the next round), and otherwise estimates how many the next message will send. Click it to summarize what came before. The model condenses the earlier exchange into one summary (goals, facts, decisions, changed files, to-dos), and from then on each message carries only that summary and what follows. The record on the page stays, just folded. If the model's context window is set, this happens automatically past 75%; if not, it waits until the API says the context won't fit. To summarize earlier and spend fewer tokens, set a smaller window.",
   "首问之后模型自动拟题，略耗额度；手改过的标题不再覆盖。设置 → 通用可关。":
     "After the first question the model writes a title, which costs a little quota; a title you've edited by hand is never overwritten. Turn this off in Settings → General.",
   "接口、余墨与思考": "APIs, token limits and thinking",
@@ -1791,17 +1836,17 @@ var YAN_EN = {
   "指令在你的机器上、以你的权限执行，逐条可见。何时须经你首肯，由三档权限而定；沙箱在桥接一侧守护系统。":
     "Commands run on your machine with your permissions, and each one is visible. Which ones need your approval depends on the permission level; the sandbox guards the system from the bridge side.",
   三档权限: "Three permission levels",
-  "**问而后行**：凡会改动的指令逐条请示，只读者径行。**审而后行**：由桥接代审，寻常改动放行，只拦伤及系统、难以恢复者。**径行**：不再审查。输入框旁随时可换。":
-    "**Ask first**: every command that changes something asks you first; read-only ones just run. **Auto-review**: the bridge reviews them, letting routine changes through and stopping only what would harm the system or be hard to undo. **Full auto**: no review. Switch any time beside the input box.",
+  "**问而后行**：明确只读的指令径行，其余逐条请示。**审而后行**：由桥接代审，寻常改动放行，只拦伤及系统、难以恢复者。**径行**：不再审查。输入框旁随时可换。":
+    "**Ask first**: recognized read-only commands run without asking; other commands require individual approval. **Auto-review**: the bridge reviews them, letting routine changes through and stopping only what would harm the system or be hard to undo. **Full auto**: no review. Switch any time beside the input box.",
   "问而后行下从严：改动不出工作目录，机密文件不碰，动系统或直接外联的指令拦下，转请你定夺；机密的环境变量也不交给指令。审而后行与径行只守系统本身。总开关在设置 → 工具。":
     "Ask first is strict: changes stay inside the working folder, secret files are off limits, and commands that touch the system or connect out directly are stopped and passed to you; secret environment variables aren't given to commands either. Auto-review and Full auto only protect the system itself. The master switch is in Settings → Tools.",
-  "沙箱是静态筛查，并非进程隔离：脚本里的代码仍以你的权限运行；MCP 服务亦不受其约束。":
-    "The sandbox is a static check, not process isolation: code inside scripts still runs with your permissions, and MCP servers aren't bound by it.",
+  "指令规则是静态筛查。macOS 的问而后行在沙箱开启、系统支持时另限写盘；MCP 服务不受这层指令沙箱约束。":
+    "Command rules are static checks. On macOS, Ask first also restricts filesystem writes when the sandbox is enabled and the system supports it. MCP servers are not covered by this command sandbox.",
   可及范围与轮次: "Reach and tool rounds",
   "未开沙箱时，文件工具能否越出目录由设置 → 工具的「可及范围」定：**全盘**可指向任何绝对路径，**目录内**一律不出；指令不受此限。「工具轮次上限」限一答（帮手另计）最多调几轮工具，同一轮并发的几次只算一轮，到顶即收回工具请模型收尾。":
     "With the sandbox off, whether file tools may leave the folder is set by “File tool reach” in Settings → Tools: **Anywhere** allows any absolute path, **Folder only** never leaves it; commands aren't limited by this. “Tool round limit” caps how many rounds of tool calls one reply may make (subagents count separately); parallel calls in the same round count once. At the cap the tools are withdrawn and the model is asked to wrap up.",
-  "作答时寄出键化为「止」，按下即停；正在执行的指令连同其子进程一并收束。":
-    "While the model answers, the send button becomes Stop; pressing it stops at once, and running commands are ended along with their child processes.",
+  "作答时寄出键化为「止」：停下生成，桥接收束前台指令的进程树。已经挂上的后台指令与定时候照常。":
+    "While the model answers, the send button becomes Stop. It stops generation and the bridge cleans up foreground command process trees. Already queued background commands and timers continue.",
   卷宗附件: "Files and attachments",
   "附件的来路，成品的归处": "Where attachments come from, where outputs go",
   "附件随一问送出；卷宗是跨对话的书架，常用文件收存于此。":
@@ -1848,10 +1893,10 @@ var YAN_EN = {
   "帮手看不到这段对话，只凭任务说明行事；它不向你请示，也不带记忆。页面刷新或关掉，后台的帮手随之中断。":
     "A subagent can't see this conversation and works only from its task description; it never asks you anything and doesn't carry memory. Reloading or closing the page interrupts subagents in the background.",
   "长活的骨架，属于目录": "The skeleton of a long job, kept in the folder",
-  "跨几答的长活，模型可在目录里立一份「意」：这件事要成立哪几条结论，各以什么为前提、凭什么。换一段对话接着做，看到的仍是同一份。":
+  "跨几答的长活，模型可在目录里立一份「图」：这件事要成立哪几条结论，各以什么为前提、凭什么。换一段对话接着做，看到的仍是同一份。":
     "For a job that spans several replies, the model can set up an intent in the folder: which conclusions the job must establish, what each one rests on, and what backs it. Continue in another conversation and it sees the same intent.",
   结论与前提: "Conclusions and prerequisites",
-  "意是一张图：每一项是一句要成立的结论，写明怎么算成立、以哪几项为前提。无所支撑者为根，即这件事最终要立的。成立与否由模型自判；前提未立，其上的便不算已立。":
+  "它是一张图：每一项是一句要成立的结论，写明怎么算成立、以哪几项为前提。无所支撑者为根，即这件事最终要立的。成立与否由模型自判；前提未立，其上的便不算已立。":
     "An intent is a graph: each item is a conclusion to establish, with how it's checked and which items it depends on. An item nothing else depends on is a root, what the job ultimately sets out to establish. The model judges whether each item holds; anything resting on an unsettled prerequisite doesn't count as settled.",
   模块: "Modules",
   "一项拆开还有许多步，便是模块，细项归在它里面，至多两层。里面都立住了，模块才算立住。卡片上的图只画一层，模块带「里面已立几项 ›」，点开钻入。手上的一步不挂在任何一项之下、孤悬于全局的，模型写不进去，须归入它所服务的模块。":
@@ -1865,14 +1910,14 @@ var YAN_EN = {
   "做不到、或借外部结论的一项可标「假定」，写明出处，算作已立，卡片上记着借了几条。走过不通的路标「弃」，留作记号，免得再走一遍；方案改了、写错了的，模型整项撤去，只留一笔痕。根立起时记下你那一问的原话，即「原问」；要改根的说法，直接告诉模型；改了留痕，你那句话也随原问一起附着。":
     "An item that can't be done, or that borrows an outside conclusion, can be marked assumed, with its source written down; it counts as settled, and the card notes how many are borrowed. A path that proved a dead end is marked dropped and kept as a marker so it isn't tried again; an item from a changed plan or written by mistake is removed outright, leaving only a trace in the history. When a root is set, your question is recorded word for word as the original question. To reword a root, just tell the model; the change is logged and your words are kept alongside the original question.",
   收尾前对照: "Checking before finishing",
-  "这一答动过意，模型说完要收尾时会被拦一次：摆出此刻的意、这一答里转待复核过的几项、改了而无凭据罩着的文件，请它对照原问自判能否收尾。只拦一次，拦完即放。":
+  "这一答动过图，模型说完要收尾时会被拦一次：摆出此刻的图、这一答里转待复核过的几项、改了而无凭据罩着的文件，请它对照原问自判能否收尾。只拦一次，拦完即放。":
     "If a reply touched the intent, the model is held once when it tries to finish: it's shown the current intent, the items that turned to needs recheck during this reply, and changed files no evidence covers, and asked to judge against the original question whether it can finish. It's held only once, then let go.",
-  看意: "Viewing the intent",
-  "工作目录立了意，题下一行与书眉常显一枚石青「意」：进度、一排记号，点开即卡片；行迹里「意」那一步亦可点开。卡片页头写着进度与更新于何时，右端「墨痕」记着改意、弃、撤的来历；其下是一张图，图下一份簿录，一项一行。图上的记号：青绿勾已立，泥金勾假定，泥金问号存疑（自称成立而前提未立），泥金虚圈进行中，朱圈待复核；弃了的不上图，记在墨痕里。点图上一项或簿录一行，就地展开它的验收、凭据与缘由——这些因果由程序从图与凭据推出，不经模型。卡片只给看，要改什么直接告诉模型。":
-    "Once the working folder has an intent, a blue “意” mark shows in the line under the title and in the header, with progress and a row of marks; click it for the card. The intent step under Steps opens it too. The card's header shows progress and when it was last updated, with History at the right recording revisions, drops and removals; below is the graph, and below that a list, one item per line. Marks on the graph: a green tick is settled, a gold tick is assumed, a gold question mark is doubtful (claimed settled while a prerequisite isn't), a gold dashed circle is in progress, a red circle needs recheck; dropped items are left off the graph and recorded in History. Click an item on the graph or a line in the list to expand its check, evidence and reasons in place; these links are derived by the program from the graph and evidence, not by the model. The card is for viewing only; to change something, tell the model.",
-  "意记结论，你定的界限记作意里的「守」；记忆记做法：这个目录往后还用得上的路径与配置、定下的做法与习惯、踩过的坑，模型立在目录的 `.yan/记忆.md`，自己增删合并，不记流水账；关于你本人、处处成立的仍记进跨对话的记忆。每一问之后附上一份，帮手领命时附一份只读的。可以记很多，每一问附多少随模型的窗口；附不下便附开头一段，其后的模型按需翻看。":
+  看图: "Viewing the intent",
+  "工作目录立了图，题下一行与书眉常显一枚石青「图」：进度、一排记号，点开即卡片；行迹里「图」那一步亦可点开。卡片页头写着进度与更新于何时，右端「墨痕」记着改图、弃、撤的来历；其下是一张图，图下一份簿录，一项一行。图上的记号：青绿勾已立，泥金勾假定，泥金问号存疑（自称成立而前提未立），泥金虚圈进行中，朱圈待复核；弃了的不上图，记在墨痕里。点图上一项或簿录一行，就地展开它的验收、凭据与缘由——这些因果由程序从图与凭据推出，不经模型。卡片只给看，要改什么直接告诉模型。":
+    "Once the working folder has an intent, a blue “图” mark shows in the line under the title and in the header, with progress and a row of marks; click it for the card. The intent step under Steps opens it too. The card's header shows progress and when it was last updated, with History at the right recording revisions, drops and removals; below is the graph, and below that a list, one item per line. Marks on the graph: a green tick is settled, a gold tick is assumed, a gold question mark is doubtful (claimed settled while a prerequisite isn't), a gold dashed circle is in progress, a red circle needs recheck; dropped items are left off the graph and recorded in History. Click an item on the graph or a line in the list to expand its check, evidence and reasons in place; these links are derived by the program from the graph and evidence, not by the model. The card is for viewing only; to change something, tell the model.",
+  "图记结论，你定的界限记作图里的「守」；记忆记做法：这个目录往后还用得上的路径与配置、定下的做法与习惯、踩过的坑，模型立在目录的 `.yan/记忆.md`，自己增删合并，不记流水账；关于你本人、处处成立的仍记进跨对话的记忆。每一问之后附上一份，帮手领命时附一份只读的。可以记很多，每一问附多少随模型的窗口；附不下便附开头一段，其后的模型按需翻看。":
     "The intent records conclusions, and limits you set are recorded in it as keeps. Memory here records how things are done in this folder: paths and settings worked out, practices and habits agreed on, pitfalls hit. The model keeps it in the folder at `.yan/记忆.md`, adding, removing and merging entries itself rather than logging every step; things about you that hold everywhere still go into cross-chat memory. A copy goes with each message, and subagents get a read-only copy with their task. It can grow large; how much is attached each time depends on the model's window, and if it doesn't fit, the opening part is attached and the model reads the rest as needed.",
-  "意与记忆都在目录的 `.yan/` 下，换一段对话绑同一目录，接着用的仍是这两份。":
+  "图与记忆都在目录的 `.yan/` 下，换一段对话绑同一目录，接着用的仍是这两份。":
     "Both the intent and memory live in the folder's `.yan/`; another conversation bound to the same folder carries on with the same two.",
   "挂上就走，到时叫醒": "Leave it running, get woken when it's time",
   "要等的事——一条指令跑完、一个时刻到来——执事挂上即可收尾，不必醒着守候；到时自会叫醒它，接着做。":
@@ -1965,16 +2010,16 @@ var YAN_EN = {
   "执事测页面时常把视口定死，画面上下留白；开着「适应页面」，待执事歇手便放开，关着则由你点「放开」。":
     "When testing pages the agent often fixes the viewport size, leaving blank space around the view. With Fit page on, it's released once the agent pauses; with it off, click “Release” yourself.",
   为模型备一套开发环境: "A development environment for the model",
-  "独立的 Python 与常用工具链，装于存储位置的 `环境/`，不改动系统。":
-    "A standalone Python and common toolchains, installed in `环境/` in your storage location without touching the system.",
+  "Windows 把独立的 Python 与常用工具链装在存储位置的 `环境/`；macOS 使用已安装的系统工具，可在这里重新探测。":
+    "On Windows, a standalone Python and common toolchains are installed in `环境/` under your storage location. On macOS, Yan uses tools already installed on the system; you can detect them again here.",
   勾选: "Choosing",
-  "设置 → 环境：一组工具一张卡，名称居左、状态居右——空框未选，框中一粒朱待装，一笔勾已装。可选数据处理、办公文档、图像、音视频，以及 C / C++、Go、Rust、Java 数套工具链；卡外的包写在「另装」一行。":
-    "Settings → Environment: one card per set of tools, name on the left and status on the right: an empty box is unselected, a red dot in the box is waiting to install, a tick is installed. Choose data processing, office documents, images, audio and video, and toolchains for C / C++, Go, Rust and Java; packages not on any card go on the “Extra packages” line.",
+  "Windows 上，设置 → 环境：一组工具一张卡，名称居左、状态居右——空框未选，框中一粒朱待装，一笔勾已装。可选数据处理、办公文档、图像、音视频，以及 C / C++、Go、Rust、Java 数套工具链；卡外的包写在「另装」一行。":
+    "On Windows, Settings → Environment shows one card per set of tools, name on the left and status on the right: an empty box is unselected, a red dot in the box is waiting to install, a tick is installed. Choose data processing, office documents, images, audio and video, and toolchains for C / C++, Go, Rust and Java; packages not on any card go on the “Extra packages” line.",
   准备: "Setting up",
   "点「准备环境」，环境即与勾选对齐：勾上者装，取消者卸。首回需下载数十至数百 MB。下载源不必选：准备时国内镜像（清华、中科大、npmmirror 等）与官方各取一截比快慢，挑快的走，模型往后自装的包也走这一路；工具链体量较大，卡上注明约数。":
     "Click “Set up environment” and it's brought in line with your ticks: ticked items are installed, unticked ones removed. The first run downloads tens to hundreds of MB. There's no mirror to pick: during setup, Chinese mirrors (Tsinghua, USTC, npmmirror and others) and the official sources each download a sample, the fastest wins, and packages the model installs later go the same way. Toolchains are large; cards show the rough size.",
-  "模型的指令与 MCP 服务皆接此环境；所缺之库，模型自行装入即可。":
-    "The model's commands and MCP servers both use this environment; the model can install any missing libraries itself.",
+  "Windows 上，模型的指令与 MCP 服务接此环境。macOS 上可重新探测 Python、Node.js 与 ffmpeg，不会安装工具。":
+    "On Windows, model commands and MCP servers use this environment. On macOS, you can detect Python, Node.js and ffmpeg again without installing anything.",
   "何者当记，何时可忘": "What to remember, and when to forget",
   "录是一份跨对话的记忆：你的偏好、身份与约定，此后不必重述。只存于本机。":
     "Memory carries across conversations: your preferences, who you are and what's been agreed, so you needn't repeat them. It's stored only on this machine.",
@@ -1991,10 +2036,11 @@ var YAN_EN = {
   迁移: "Moving",
   "设置 → 通用 → 存储位置，填一目录，整份拷至其下，旧处原样保留；那里已有言的数据则直接用它。":
     "Settings → General → Storage location: enter a folder and everything is copied there, leaving the old location as it was; if the folder already has Yan data, that data is used.",
-  "环境不随之迁移，至新处重新准备一遍即可。": "The environment doesn't move with it; just set it up again in the new location.",
+  "作答、后台指令或环境准备、清空未结束时不能换位置。Windows 的环境不随迁移，到新处可重新准备。":
+    "Wait for replies, background commands and environment setup or clearing to finish before moving. The managed Windows environment isn't copied; you can set it up again in the new location.",
   备份与导出: "Backup and export",
-  "设置 → 通用中导出备份（可含附件原件）；导入时按 id 合并，已有者略过。单段对话可在「⋯」里导出，存成 Markdown 落入卷宗。":
-    "Export a backup in Settings → General (optionally with original attachments); importing merges by id and skips what's already there. A single conversation can be exported from “⋯” as Markdown saved to Files.",
+  "设置 → 通用可导出备份（可含附件原件）。导入会合并数据，完成后说明哪些已写入存储目录、暂存在此浏览器或只留在本页。单段对话可在「⋯」里导出，存成 Markdown 落入卷宗。":
+    "Export a backup in Settings → General (optionally with original attachments). Import merges data and reports what was saved to the storage folder, saved temporarily in this browser, or left only on this page. Use “⋯” to export a conversation as Markdown to Files.",
   "备份不含 API Key；MCP 的密钥导入后需重填。": "Backups don't include API Keys; MCP secrets need re-entering after import.",
   键与手势: "Keys and gestures",
   寻常操作的捷径: "Shortcuts for everyday actions",

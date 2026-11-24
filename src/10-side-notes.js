@@ -104,6 +104,8 @@ function decorateNoteAnchors(article) {
   if (!threads.length || (!bodies.length && !parts.length)) return; // 整条回复的旁注没有落点，靠元信息行的「注」标进入
   threads.forEach((thread, index) => {
     const part = parts[thread.anchor.part ?? -1];
+    // 思绪尚未取回：空壳占住原来的编号，不把思绪上的旁注误落到正文的同一句上。
+    if (part?.parentElement?.hasAttribute("data-cold-reasoning")) return;
     if (!(part && markAnchor(part, thread, index + 1))) bodies.some(body => markAnchor(body, thread, index + 1));
   });
 }
@@ -487,8 +489,7 @@ async function sendSide() {
     if (!text) return;
     /** @type {Message} */
     const user = { id: uid(), role: "user", content: text, timestamp: now() };
-    /** @type {Message} */
-    const assistant = { id: uid(), role: "assistant", content: "", timestamp: now(), status: "streaming", modelName: profile.name };
+    const assistant = newAssistant(profile);
     thread.messages.push(user, assistant);
     thread.updatedAt = now();
     input.value = "";
@@ -526,8 +527,7 @@ async function askSideAgain(c, thread, from, edit = null) {
       edit.message.timestamp = now();
       editingMessageId = null;
     }
-    /** @type {Message} */
-    const assistant = { id: uid(), role: "assistant", content: "", timestamp: now(), status: "streaming", modelName: profile.name };
+    const assistant = newAssistant(profile);
     thread.messages = [...thread.messages.slice(0, from), assistant];
     thread.updatedAt = now();
     saveStore();
@@ -554,7 +554,7 @@ async function streamSideReply(conversation, thread, assistant, profile) {
   try {
     const anchorIndex = conversation.messages.findIndex(m => m.id === thread.anchor.messageId);
     const main = anchorIndex >= 0 ? conversation.messages.slice(0, anchorIndex + 1) : conversation.messages;
-    const contextIndex = main.map(m => m.role).lastIndexOf("context");
+    const contextIndex = lastContextIndex(main);
     const source = main
       .slice(contextIndex + 1)
       .filter(m => m.status !== "error" && m.status !== "streaming" && ["user", "assistant"].includes(m.role));

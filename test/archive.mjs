@@ -1,6 +1,6 @@
 // 言 / 行合一：没绑目录的对话是言——工具落在卷宗目录（存储根里的 卷宗/），脚本落在隐藏的草稿目录、非只读指令先问；
 // 中途绑上目录即为行，提示词随之而变，解开又回到言；卷宗页面即目录的视图，不列草稿
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect, check, sleep, PAGE, WORK, ARCHIVE, HOME } from "./lib.mjs";
 const { send, evalJs, waitFor, shot, close } = await connect();
 await send("Page.navigate", { url: PAGE + "preview.html" });
@@ -26,6 +26,10 @@ check(
   welcome
 );
 
+// 先放一份 300 KB 的中文长文（超过只取开头的 256 KB，且正截在半个字上）。
+// 卷宗清单在「这一答有写操作」收尾时会重取一趟（下面第一答就会写文件），到 DOC 那一问它已列在里面
+writeFileSync(`${ARCHIVE}/长文.txt`, "中文".repeat(80000));
+
 // ---- 言里做文件：write_file 落到卷宗目录，系统提示是卷宗那段
 await evalJs(
   `document.querySelector("#welcomeInput").value = "ARCHIVE 做个表"; document.querySelector("#welcomeInput").dispatchEvent(new Event("input")); document.querySelector("#welcome .send-trigger").click(); true`
@@ -46,7 +50,7 @@ check(
     `!document.querySelector('[data-approve]') && [...document.querySelectorAll(".tool-step")].every(s => s.dataset.status === "done")`
   )
 );
-// 成品卡：这一答在卷宗里新出的文件挂在答末
+// 成品卡：答复里链到的那份卷宗文件挂在答末。
 await waitFor(`!!document.querySelector(".message.assistant .deliver-bar")`, 5000);
 await shot("archive-deliver.png");
 check(
@@ -125,7 +129,8 @@ check(
     `document.querySelector("#fileViewer").classList.contains("hidden") && !document.querySelector("#fileViewerStage").innerHTML`
   )
 );
-// 卷宗里的文档对模型可读：read_document 直接读磁盘上的报表
+// 卷宗里的文档对模型可读：read_document 直接读磁盘上的报表。
+// 另有一份 300 KB 的中文长文（开头处放好的，已随第一答的写操作进了卷宗清单）
 await evalJs(
   `document.querySelector("#chatInput").value = "DOC 读报表"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );
@@ -134,13 +139,20 @@ await waitFor(
 );
 const docText = await evalJs(`[...document.querySelectorAll(".message.assistant .assistant-block > .markdown")].at(-1).textContent`);
 check("read_document reads a file straight from the archive on disk", /DOC\|a,b 1,2/.test(docText), docText);
+// 长文只取了开头 256 KB，截在半个字上：开头的字仍要是中文，不能落成 GB18030 的乱码
+check(
+  "a long text cut mid-character still decodes as Chinese, and says it only took the start",
+  /中文中文中文/.test(docText) && !/涓枃/.test(docText) && /cut:1/.test(docText),
+  docText
+);
+rmSync(`${ARCHIVE}/长文.txt`, { force: true });
 check(
   "the step is labelled 翻阅文档 with the file name",
   await evalJs(
     `[...document.querySelectorAll(".tool-step")].some(s => s.querySelector(".tool-label")?.textContent === "翻阅文档" && s.querySelector(".tool-title")?.textContent === "报表.csv")`
   )
 );
-// 技能：放进存储根/技能的一份，下一问就列在 read_document 的说明里，凭技能名翻得到 SKILL.md（去了头，注明目录）
+// 技能：放进存储根/技能的一份，下一问列在系统提示里；凭技能名读 SKILL.md 时，去掉前置信息并注明目录。
 mkdirSync(`${HOME}/技能/写信`, { recursive: true });
 writeFileSync(`${HOME}/技能/写信/SKILL.md`, "---\nname: 写信\ndescription: 照格式写信\n---\n\n先写称谓，再写正文。");
 await evalJs(
@@ -254,7 +266,7 @@ const text2 = await evalJs(`document.querySelectorAll(".message.assistant")[4].q
 check("after binding the prompt is the 执事 one and history is intact", /work:yes\|archive:no\|n:10/.test(text2), text2);
 check("stored conversation carries the workdir", await evalJs(`__yanState().conversations[0].workdir.toLowerCase().endsWith("work")`));
 
-// ---- 作答中不许换目录：写了一半的落在旧目录，中途换了余下的就写进新目录
+// ---- 作答中侧栏菜单禁用换目录；这一答写完才可再换。
 await evalJs(
   `document.querySelector("#chatInput").value = "SLOWTHINK 换目录"; document.querySelector("#chatInput").dispatchEvent(new Event("input")); document.querySelector("#chatSend").click(); true`
 );

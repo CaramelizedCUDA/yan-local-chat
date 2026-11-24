@@ -14,18 +14,11 @@ function openFileDb() {
   return fileDbPromise;
 }
 async function fileStoreRequest(mode, action) {
-  const db = await openFileDb();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(FILE_STORE_NAME, mode),
-      request = action(transaction.objectStore(FILE_STORE_NAME));
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || Error(t("附件存储失败")));
-    transaction.onabort = () => reject(transaction.error || Error(t("附件存储已中止")));
-  });
+  return dbRequest(await openFileDb(), FILE_STORE_NAME, mode, action);
 }
 // ---------- 附件原件 ----------
 // 落在存储根的 附件/（与对话、卷宗、配置同在一处，几个浏览器共用，复制即备份；见 server/files.js）；
-// 落盘不成（桥接中途断了）时暂存进这台浏览器的 IndexedDB，接上后推到目录里去、表里的清掉（见 settleAttachmentStore）。
+// 落盘不成时暂存进这台浏览器的 IndexedDB；确认目录已有原件或补传成功后才清表（见 settleAttachmentStore）。
 // 读的时候先问目录，目录里没有再翻表——迁过去之前的旧件也读得到
 const attachmentCache = new Map();
 let attachmentCacheSize = 0;
@@ -48,21 +41,30 @@ function uncacheAttachment(id) {
   attachmentCache.delete(id);
   attachmentCacheSize -= String(record.data || "").length + String(record.extractedText || "").length;
 }
-// body：原件（置入的 File）；没给的照 record.data 现做——文本附件的 data 是正文，别的是 data: URL。桥接不在时暂存进浏览器，那时才读成 data
-/** @param {Record<string, any>} record @param {Blob|null} [body] */
-async function putAttachment(record, body = null) {
+// body：原件（置入的 File）；没给的照 record.data 现做——文本附件的 data 是正文，别的是 data: URL。
+// 上传不成而改存浏览器时才把 File 读成 data；导入若碰到换根则中止，不转作浏览器暂存。
+/** @param {Record<string, any>} record @param {Blob|null} [body] @param {string} [files] 预期附件目录（导入使用） */
+async function putAttachment(record, body = null, files = "") {
   uncacheAttachment(record?.id);
   try {
-    await uploadAttachment(record, body);
-    return;
-  } catch {}
+    await uploadAttachment(record, body, files);
+    return "disk";
+  } catch (error) {
+    if (files && attachmentStoreMoved(error)) throw error;
+  }
   const data = record.data ?? (body ? await readFile(body, record.kind === "text" ? "text" : "data") : undefined);
-  return fileStoreRequest("readwrite", db => db.put({ ...record, data }));
+  await fileStoreRequest("readwrite", db => db.put({ ...record, data }));
+  return "browser";
 }
-/** @param {Record<string, any>} record @param {Blob|null} [body] */
-function uploadAttachment(record, body = null) {
+/** @param {Record<string, any>} record @param {Blob|null} [body] @param {string} [files] */
+function uploadAttachment(record, body = null, files = "") {
   const { data: _data, ...meta } = record;
-  return bridgeUpload("/api/files/put", { record: meta }, body || attachmentBlob(record), AbortSignal.timeout(120000));
+  return bridgeUpload(
+    "/api/files/put",
+    { record: meta, ...(files ? { files } : {}) },
+    body || attachmentBlob(record),
+    AbortSignal.timeout(120000)
+  );
 }
 // 记录里的原件换成 Blob：文本附件的 data 是正文，别的是 data: URL
 /** @param {Record<string, any>} record */
@@ -73,20 +75,25 @@ function attachmentBlob(record) {
 // 带上 download：取的是落盘的原件，不是换了壳的预览副本（视频只留第一条视频与音轨，见 server/files.js 的 handleRaw 与 video.js）
 /** @param {string} id @returns {Promise<Blob|null>} */
 async function attachmentBody(id) {
-  const response = await fetch(`${apiBase}/api/files/raw?id=${encodeURIComponent(id)}&download=1`, {
+  const response = await fetch(`/api/files/raw?id=${encodeURIComponent(id)}&download=1`, {
     signal: AbortSignal.timeout(120000)
   }).catch(() => null);
   if (response?.ok) return response.blob();
   const record = await getAttachment(id);
   return record ? attachmentBlob(record) : null;
 }
-async function getAttachment(id) {
+function attachmentStoreMoved(error) {
+  return /存储位置已变化/.test(String(error?.message || error));
+}
+async function getAttachment(id, { scoped = false } = {}) {
   if (!id) return null;
   if (attachmentCache.has(id)) return attachmentCache.get(id);
   let record = null;
   try {
-    record = (await bridge("/api/files/get", { id }, AbortSignal.timeout(60000))).record || null;
-  } catch {}
+    record = (await (scoped ? storeBridge : bridge)("/api/files/get", { id }, AbortSignal.timeout(60000))).record || null;
+  } catch (error) {
+    if (scoped && attachmentStoreMoved(error)) throw error;
+  }
   if (!record) record = (await fileStoreRequest("readonly", db => db.get(id)).catch(() => null)) || null;
   cacheAttachment(record);
   return record;
@@ -106,20 +113,24 @@ function deleteAttachment(id) {
   uncacheAttachment(id);
   if (!id) return Promise.resolve();
   return Promise.all([
-    bridge("/api/files/delete", { ids: [id] }, AbortSignal.timeout(20000)).catch(() => {}),
+    storeBridge("/api/files/delete", { ids: [id] }, AbortSignal.timeout(20000)).catch(() => {}),
     fileStoreRequest("readwrite", db => db.delete(id)).catch(() => {})
   ]);
 }
-// 消息上的，连同行迹步骤上的（补言带的附件、工具交回的画面）
+// 消息上的、行迹步骤上的（补言带的附件、工具交回的画面），以及已另存行迹所记的原件。
+/** @param {Message[]} messages */
+function* messageAttachments(messages) {
+  for (const message of messages) {
+    yield* message.attachments || [];
+    for (const step of allSteps(message)) yield* step.attachments || [];
+    yield* coldFiles(message);
+  }
+}
+function* conversationAttachments() {
+  for (const c of store.conversations) yield* messageAttachments(everyMessage(c));
+}
 function attachmentIds(messages = []) {
-  return messages
-    .flatMap(message => [
-      ...(message.attachments || []),
-      ...allSteps(message).flatMap(step => step.attachments || []),
-      ...coldFiles(message)
-    ])
-    .map(file => file.id)
-    .filter(Boolean);
+  return Array.from(messageAttachments(messages), file => file?.id).filter(Boolean);
 }
 // 点发送时拿住的原件：开工前的等待里，用户可能已从草稿里摘掉它，消息还没接手，不能按无人引用删掉。
 const attachmentHolds = new Map();
@@ -142,32 +153,22 @@ function holdAttachments(files) {
 // 仍在用的附件：各段对话（含换下的版本、旁注，连同行迹里补言带的、工具交回的画面，另存出去的那几答记在 cold.files）、草稿、案上待发的与发送快照
 function attachmentKeepIds() {
   const ids = new Set(attachmentHolds.keys());
-  const add = files => {
-    for (const file of files || []) if (file?.id) ids.add(file.id);
+  const add = file => {
+    if (file?.id) ids.add(file.id);
   };
-  for (const c of store.conversations)
-    for (const m of everyMessage(c)) {
-      add(m.attachments);
-      for (const step of allSteps(m)) add(step.attachments);
-      add(coldFiles(m));
-    }
-  for (const value of Object.values(store.drafts || {})) add(value?.attachments);
-  add(pendingAttachments);
+  for (const file of conversationAttachments()) add(file);
+  for (const value of Object.values(store.drafts || {})) value?.attachments?.forEach(add);
+  pendingAttachments.forEach(add);
   return ids;
 }
 // 对话附件原件合计占用（按 id 去重，同一原件记住两处只算一次）
 function usedAttachmentBytes() {
   const seen = new Map();
-  const count = files => {
-    for (const file of files || []) if (file?.id && !seen.has(file.id)) seen.set(file.id, Number(file.size || 0));
+  const count = file => {
+    if (file?.id && !seen.has(file.id)) seen.set(file.id, Number(file.size || 0));
   };
-  for (const value of Object.values(store.drafts || {})) count(value?.attachments);
-  for (const c of store.conversations)
-    for (const m of everyMessage(c)) {
-      count(m.attachments);
-      for (const step of allSteps(m)) count(step.attachments);
-      count(coldFiles(m));
-    }
+  for (const value of Object.values(store.drafts || {})) value?.attachments?.forEach(count);
+  for (const file of conversationAttachments()) count(file);
   return [...seen.values()].reduce((a, b) => a + b, 0);
 }
 // 已收入卷宗的原件由卷宗管理，删除对话或移除待发附件时不会删掉它
@@ -177,38 +178,53 @@ async function deleteAttachments(ids) {
   const keep = attachmentKeepIds();
   await Promise.all([...new Set(ids)].filter(id => id && !keep.has(id)).map(deleteAttachment));
 }
-// 对话从目录读全之后（见 syncChatsWithDisk）才来这一趟：先把浏览器里暂存的原件推进目录、表里的清掉，再请桥接清掉目录里没人用的。
-// 对话没读全时绝不清——那时内存里只有没落盘的几段，照它判「没人用」会把别的对话的附件一并删掉
-let attachmentsSettling = false;
-async function settleAttachmentStore() {
-  if (!chatsLoaded || attachmentsSettling) return;
-  attachmentsSettling = true;
+// 按引用清原件要等对话目录已读全、对齐已结束且没有待裁定的补删；补传 IndexedDB 里的原件不必等这些条件。
+// 清扫前还会等补删留下的对话暂存清理或合并，并核对仍是同一存储位置（见 settleAttachmentStore）。
+function canCleanAttachments() {
+  return chatsLoaded && !chatsBroken && !chatsSkipped && !chatsSyncing && !hasPendingChatDeletes();
+}
+let attachmentsSettling = null;
+async function settleAttachmentStore(spillsReady = Promise.resolve(true)) {
+  const scope = bootstrap.store,
+    work = bootstrap.work,
+    files = work?.files || scope?.files || "";
+  if (!chatsLoaded || attachmentsSettling === work) return;
+  attachmentsSettling = work;
+  const sameRoot = () => bootstrap.store === scope && bootstrap.work === work;
   try {
     let keys = [];
     try {
       keys = await fileStoreRequest("readonly", db => db.getAllKeys());
     } catch {}
+    if (!sameRoot()) return;
     if (keys.length) {
-      const { has = [] } = await bridge("/api/files/has", { ids: keys.map(String) }, AbortSignal.timeout(20000));
+      const { has = [] } = await storeBridge("/api/files/has", { ids: keys.map(String) }, AbortSignal.timeout(20000));
       const onDisk = new Set(has);
       for (const id of keys) {
+        if (!sameRoot()) return;
         if (!onDisk.has(String(id))) {
           const record = await fileStoreRequest("readonly", db => db.get(id)).catch(() => null);
+          if (!sameRoot()) return;
           if (!record) continue;
           // 推不上去就留在表里，下回再推；推上去了才删表里的
-          const pushed = await uploadAttachment(record).then(
+          const pushed = await uploadAttachment(record, null, files).then(
             () => true,
             () => false
           );
           if (!pushed) continue;
         }
-        await fileStoreRequest("readwrite", db => db.delete(id)).catch(() => {});
+        if (!sameRoot()) return;
+        await fileStoreRequest("readwrite", db => {
+          // 打开 IndexedDB 也要等；真正发删除请求前再认一次原来的根。
+          if (!sameRoot()) throw new DOMException("存储位置已变化", "AbortError");
+          return db.delete(id);
+        }).catch(() => {});
       }
     }
-    if (chatsLoaded && !chatsSkipped)
-      await bridge("/api/files/clean", { keep: [...attachmentKeepIds()] }, AbortSignal.timeout(60000)).catch(() => {});
+    if ((await spillsReady) && sameRoot() && canCleanAttachments())
+      await storeBridge("/api/files/clean", { keep: [...attachmentKeepIds()] }, AbortSignal.timeout(60000));
   } catch {
   } finally {
-    attachmentsSettling = false;
+    if (attachmentsSettling === work) attachmentsSettling = null;
   }
 }

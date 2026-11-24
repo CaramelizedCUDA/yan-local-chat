@@ -1,31 +1,79 @@
-// 言 · 设置 → 环境：给模型备一套自带的开发环境（桥接那头在 server/env/），装在存储位置的「环境」目录里，不依赖、也不改动系统。
-// 一组工具一张卡，勾上的在「准备环境」时装好；模型的指令与 MCP 服务都接着这套环境，缺的库它自己 pip / npm 装进来
-/** @type {{ home: string, supported?: boolean, state: Record<string, any>|null, packs: Array<Record<string, any>>, job: Record<string, any>|null }|null} */
+// 言 · 设置 → 环境：Windows 在存储位置的「环境」目录里备工具包；勾选的工具与另填的包在准备时安装。
+// macOS 不备工具包，改为探测系统工具。桥接侧的准备、清空与换根仲裁见 server/env/ 与 server/store.js。
+/** @type {{ home: string, supported?: boolean, system?: Record<string, { path: string, version: string }>|null, state: Record<string, any>|null, packs: Array<Record<string, any>>, job: Record<string, any>|null }|null} */
 let envStatus = null,
   envPoll = 0;
 function envSettings() {
   return store.settings.env;
 }
-// 问桥接要一次环境的状态；正在准备就隔一会儿再问，直到装完
-async function refreshEnv() {
-  const root = bootstrap.store?.root;
-  const status = await bridge("/api/env/status", {}, AbortSignal.timeout(8000)).catch(() => null);
-  // 换存储位置期间，旧根的慢响应不能再画到新根的环境页上。
-  if (root !== bootstrap.store?.root) return;
+function resetEnvStatus() {
+  envStatus = null;
+  clearTimeout(envPoll);
+  envPoll = 0;
+  renderEnvStatus();
+}
+function updateEnvStatus(status) {
   if (status) envStatus = status;
   renderEnvStatus();
   clearTimeout(envPoll);
-  if (envStatus?.job?.running) envPoll = setTimeout(refreshEnv, 1200);
+  envPoll = envStatus?.job?.running ? setTimeout(refreshEnv, 1200) : 0;
+}
+// 问桥接要一次环境的状态；环境作业仍在运行就隔一会儿再问，直到结束；换根后不再回填旧处的状态。
+function refreshEnv() {
+  return requestEnv(bootstrap.store, "status", {}, AbortSignal.timeout(8000));
+}
+async function requestEnv(scope, action, payload, signal = undefined) {
+  // 确认框也归打开时的根：即使来回换过、路径看起来相同，也不是同一回。
+  if (bootstrap.store !== scope) return;
+  try {
+    const status = await storeBridge(`/api/env/${action}`, payload, signal);
+    if (bootstrap.store === scope) updateEnvStatus(status);
+  } catch (error) {
+    if (bootstrap.store !== scope) return;
+    const message = String(error.message || error);
+    // 别页换了根：不再轮询旧处的进度，也不把旧环境写进系统提示。
+    if (message === "存储位置已变化，请刷新页面后重试") {
+      resetEnvStatus();
+      toast(message);
+    } else if (action === "status") updateEnvStatus(null);
+    else toast(message);
+  }
 }
 function envSettingsHtml() {
   const s = envSettings();
-  return `<div id="envPage"><h2>${t(`环境`)}</h2><div id="envStatus">${envStatusHtml()}</div><h3 class="settings-sub">${t(`工具包`)}</h3><div id="envPacks" class="card-list">${envPacksHtml()}</div><div class="setting-row"><div class="setting-copy"><strong>${t(`另装`)}</strong><small>${t(`包名以空格分隔`)}</small></div><div class="setting-actions env-extra"><label class="setting-inline">Python<input id="envPip" class="field" spellcheck="false" placeholder="${t(`如 sympy jieba`)}" value="${escapeHtml(s.pip)}"></label><label class="setting-inline">Node<input id="envNpm" class="field" spellcheck="false" placeholder="${t(`如 pnpm`)}" value="${escapeHtml(s.npm)}"></label></div></div></div>`;
+  // 工具包一节只给 Windows：macOS 不备环境包。开页时 status 还没回来，先按平台定，
+  // 否则 macOS 上会先画出这一节、等 status 回来再收起（闪一下）
+  const managed = envStatus ? !envStatus.system : bootstrap.work?.platform !== "darwin";
+  return `<div id="envPage"><h2>${t(`环境`)}</h2><div id="envStatus">${envStatusHtml()}</div><div id="envManaged"${managed ? "" : ' class="hidden"'}><h3 class="settings-sub">${t(`工具包`)}</h3><div id="envPacks" class="card-list">${envPacksHtml()}</div><div class="setting-row"><div class="setting-copy"><strong>${t(`另装`)}</strong><small>${t(`包名以空格分隔`)}</small></div><div class="setting-actions env-extra"><label class="setting-inline">Python<input id="envPip" class="field" spellcheck="false" placeholder="${t(`如 sympy jieba`)}" value="${escapeHtml(s.pip)}"></label><label class="setting-inline">Node<input id="envNpm" class="field" spellcheck="false" placeholder="${t(`如 pnpm`)}" value="${escapeHtml(s.npm)}"></label></div></div></div></div>`;
+}
+// macOS 没环境包：状态卡里列系统里探到的 Python、Node 与 ffmpeg（版本与路径），「重新探测」以这时的工具为准
+function envSystemHtml(job, running) {
+  const tools = envStatus?.system || {},
+    // 点「重新探测」要看得见明细：探完（成功也是）就把逐件的日志列出来，不必等到出错
+    log =
+      job && (running || job.error || job.log.length)
+        ? `${running || job.error ? `<div class="card-note">${escapeHtml(running ? t`正在${tr(job.step) || t("开始")}…` : t`探测出错：${tr(job.error)}`)}</div>` : ""}<pre class="env-log">${escapeHtml(job.log.map(tr).join("\n"))}</pre>`
+        : "",
+    rows = [
+      ["python", "Python"],
+      ["node", "Node.js"],
+      ["ffmpeg", "ffmpeg"]
+    ]
+      .map(([id, label]) => {
+        const hit = tools[id];
+        return `<div class="setting-row"><div class="setting-copy"><strong>${label}</strong><small title="${escapeHtml(hit?.path || "")}">${escapeHtml(hit ? hit.version || hit.path : t("未找到"))}</small></div></div>`;
+      })
+      .join(""),
+    found = ["python", "node", "ffmpeg"].filter(id => tools[id]).length,
+    summary = t`探到 ${found}/3`;
+  return `<div class="card"><div class="card-head"><span class="card-name">${running ? t("探测中") : t("系统工具")}</span><span class="card-state${found ? " ok" : ""}" title="${escapeHtml(summary)}">${escapeHtml(summary)}</span><span class="card-actions"><button id="envPrepare" type="button" class="outline-btn"${running ? " disabled" : ""}>${running ? t("探测中…") : t("重新探测")}</button></span></div><div class="card-note">${escapeHtml(t("macOS 上不备环境包，指令直接用系统里的工具；经 Homebrew 安装的也能探到。"))}</div>${rows}${log}</div>`;
 }
 function envStatusHtml() {
   if (!envStatus) return `<div class="card"><div class="card-head"><span class="card-name">${t(`查看中…`)}</span></div></div>`;
   const { state, job, home, supported } = envStatus,
-    running = !!job?.running,
-    unsupported = supported === false;
+    running = !!job?.running;
+  if (envStatus.system) return envSystemHtml(job, running);
+  const unsupported = supported === false;
   const summary = unsupported
     ? t("仅 Windows")
     : state
@@ -35,7 +83,7 @@ function envStatusHtml() {
     job && (running || job.error)
       ? `<div class="card-note">${escapeHtml(running ? t`正在${tr(job.step) || t("开始")}…` : t`未能装成：${tr(job.error)}`)}</div><pre class="env-log">${escapeHtml(job.log.map(tr).join("\n"))}</pre>`
       : "";
-  return `<div class="card"><div class="card-head"><span class="card-name">${running ? t("准备中") : state ? t("已备好") : t("尚未准备")}</span><span class="card-state${state ? " ok" : ""}" title="${escapeHtml(summary)}">${escapeHtml(summary)}</span><span class="card-actions"><button id="envPrepare" type="button" class="outline-btn"${running ? " disabled" : ""}>${running ? t("准备中…") : state ? t("更新环境") : t("准备环境")}</button>${state && !running ? `<button id="envClear" type="button" class="danger-btn">${t(`清空`)}</button>` : ""}</span></div><div class="card-sub" title="${escapeHtml(home)}">${escapeHtml(home)}</div>${unsupported ? `<div class="card-note">${escapeHtml(t("环境工具包只备了 Windows 版；在 macOS 上请用系统里的 Python 与 Node（可经 Homebrew 安装）"))}</div>` : ""}${log}</div>`;
+  return `<div class="card"><div class="card-head"><span class="card-name">${running ? t("准备中") : state ? t("已备好") : t("尚未准备")}</span><span class="card-state${state ? " ok" : ""}" title="${escapeHtml(summary)}">${escapeHtml(summary)}</span><span class="card-actions"><button id="envPrepare" type="button" class="outline-btn"${running ? " disabled" : ""}>${running ? t("准备中…") : state ? t("更新环境") : t("准备环境")}</button>${state && !running ? `<button id="envClear" type="button" class="danger-btn">${t(`清空`)}</button>` : ""}</span></div><div class="card-sub" title="${escapeHtml(home)}">${escapeHtml(home)}</div>${unsupported ? `<div class="card-note">${escapeHtml(t("环境工具包只备了 Windows 版；在这套系统上请用系统里的 Python 与 Node"))}</div>` : ""}${log}</div>`;
 }
 // 一组一张卡：名称与说明在左，状态在右——没选是空框，选了待装是朱色实心，装好了是一笔勾；装了又取消的标「待卸」，下回准备时卸掉。
 // 底座（Python）取消不了，装好后标灰字「必备」，免得看着像点不动
@@ -57,6 +105,7 @@ function envPacksHtml() {
 function renderEnvStatus() {
   if (settingsTab !== "env" || $("#settingsModal").classList.contains("hidden")) return;
   $("#envStatus").innerHTML = envStatusHtml();
+  $("#envManaged").classList.toggle("hidden", envStatus ? !!envStatus.system : bootstrap.work?.platform === "darwin");
   $("#envPacks").innerHTML = envPacksHtml();
   const log = $("#envStatus .env-log");
   if (log) log.scrollTop = log.scrollHeight;
@@ -85,6 +134,7 @@ function bindEnvEvents() {
       saveStore();
       return renderEnvStatus();
     }
+    const scope = bootstrap.store;
     if (button.id === "envPrepare") {
       const s = envSettings();
       const removed = (envStatus?.state?.packs || []).filter(
@@ -101,15 +151,7 @@ function bindEnvEvents() {
         )
           return;
       }
-      envStatus = await bridge("/api/env/prepare", {
-        packs: s.packs,
-        pip: splitNames(s.pip),
-        npm: splitNames(s.npm)
-      }).catch(error => {
-        toast(String(error.message || error));
-        return envStatus;
-      });
-      return refreshEnv();
+      return requestEnv(scope, "prepare", { packs: s.packs, pip: splitNames(s.pip), npm: splitNames(s.npm) });
     }
     if (button.id === "envClear") {
       if (
@@ -120,11 +162,7 @@ function bindEnvEvents() {
         }))
       )
         return;
-      envStatus = await bridge("/api/env/clear", {}).catch(error => {
-        toast(String(error.message || error));
-        return envStatus;
-      });
-      renderEnvStatus();
+      return requestEnv(scope, "clear", {});
     }
   });
 }
@@ -132,9 +170,20 @@ function bindEnvEvents() {
 function envVars() {
   const state = envStatus?.state;
   if (!state) return null;
+  // macOS：用的是系统里的工具、没有另备的环境，这一句（python、pip 都指向环境）不成立，改由 envSystemVars 说
+  if (envStatus?.system) return null;
   const kits = (envStatus.packs || [])
     .filter(pack => !pack.base && state.packs.includes(pack.id))
     .map(pack => `${pack.name}（${pack.hint || [...pack.pip, ...pack.npm].slice(0, 6).join("、")}）`);
   const extra = [...state.pip, ...state.npm];
   return { kits: [state.python, ...kits, ...(extra.length ? [`另装 ${extra.join("、")}`] : [])].join("；") };
+}
+// macOS 那一句（work.envSystem）：没有另备的环境，只说系统里现成有哪几件。
+// 给路径不给名字——PATH 里的未必就是它们（从 Finder 起的桥接 PATH 很窄）；
+// 一件都没探到时整句不带，免得拼出半句
+function envSystemVars() {
+  const tools = Object.values(envStatus?.system || {})
+    .map(tool => tool?.path)
+    .filter(Boolean);
+  return tools.length ? { tools: tools.join("、") } : null;
 }

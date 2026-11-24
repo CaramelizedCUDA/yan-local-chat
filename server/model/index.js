@@ -11,6 +11,7 @@
 const { Readable } = require("node:stream");
 const { finished } = require("node:stream/promises");
 const { sendJson, readJson, requestSignal, stamp } = require("../http.js");
+const { readLimitedBytes, ERROR_BODY_LIMIT } = require("../web.js");
 const fetchUpstream = require("./upstream.js");
 const openai = require("./openai.js");
 const anthropic = require("./anthropic.js");
@@ -20,12 +21,25 @@ const { wholeReplyEvents } = require("./sse.js");
 
 // 工具定义一次最多带多少件：超过不再静默截掉后面的，明确报错，接入更多工具时一眼能看出来
 const TOOLS_LIMIT = 128;
+// 列模型回的那份 JSON 的上限：正常只有几十上百个名字，超过这个数多半是接口出了毛病或根本没打算收尾
+const LIST_LIMIT = 4 * 1024 * 1024;
 
 // 上游没接下请求时回的那句话。OpenAI 系 { error: { message } }、有的中转站 { error: "…" }、旧版 vLLM { message }、
 // FastAPI 写的自建服务 { detail }（参数校验错是一串对象，整串交出去，思考档位的报错才读得出它认哪几档）；
-// ChatGPT 订阅额度那边的几种拒绝换成看得懂的话。页面只读桥接回的 { error }，各家的样子到此为止
+// ChatGPT 订阅额度那边的几种拒绝换成看得懂的话。页面只读桥接回的 { error }，各家的样子到此为止。
+// 正文只读开头（ERROR_BODY_LIMIT）：报错用不上一整份，网关失控时整份收进来一样能撑死桥接；
+// 完整才尝试解析 JSON，读满上限还没完的只回状态码与一小段预览
 async function upstreamError(response, raw) {
-  raw = raw ?? (await response.text().catch(() => ""));
+  let truncated = false;
+  if (raw === undefined || raw === null) {
+    const read = await readLimitedBytes(response, ERROR_BODY_LIMIT).catch(() => ({ buffer: Buffer.alloc(0), truncated: false }));
+    raw = read.buffer.toString("utf8");
+    truncated = read.truncated;
+  }
+  if (truncated) {
+    const preview = raw.trim().slice(0, 300);
+    return `上游接口返回 ${response.status}（正文超过 ${ERROR_BODY_LIMIT / 1024} KB，只读了开头）${preview ? `：${preview}` : ""}`;
+  }
   try {
     const json = JSON.parse(raw),
       detail = json.detail;
@@ -94,37 +108,6 @@ function replayBody(chunks, reader) {
     }
   });
 }
-/**
- * @param {Uint8Array[]} chunks
- * @param {ReadableStreamDefaultReader<Uint8Array>} reader
- * @param {number} [limit] 读到这么多字节就停：非事件流要整份读进来才判得出是不是 JSON，给个上限，
- * 配错的地址、失控的中转不至于让常驻桥接一直吃到内存天花板
- * @returns {Promise<{ text: string, truncated: boolean }>}
- */
-async function collectText(chunks, reader, limit = Infinity) {
-  const decoder = new TextDecoder();
-  let text = "",
-    read = 0;
-  const stop = async () => {
-    await reader.cancel().catch(() => {});
-    return { text, truncated: true };
-  };
-  for (const chunk of chunks) {
-    text += decoder.decode(chunk, { stream: true });
-    read += chunk.byteLength;
-  }
-  if (read > limit) return stop();
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (value) {
-      text += decoder.decode(value, { stream: true });
-      read += value.byteLength;
-      if (read > limit) return stop();
-    }
-    if (done) return { text: text + decoder.decode(), truncated: false };
-  }
-}
-
 // 上游回了 200，交给页面的只有事件流：页面只有一种读法，各家、各中转的样子到此为止。
 // 判定途中就断了：页面这头还没写头，补不了「连接中断」那条事件，按连不上算、可重试（502）。
 // 整份回来的：OpenAI 兼容那路摆成一块事件流；要重译的两路译不了，说清不是事件流，带上原文前 200 字（415，等一等也不会好，不重试）。
@@ -142,7 +125,8 @@ async function eventBody(response, provider) {
   };
   const lead = await peekLead(response.body).catch(cut);
   if (!lead.first || EVENT_MARKS.has(lead.first)) return replayBody(lead.chunks, lead.reader);
-  const { text: raw, truncated } = await collectText(lead.chunks, lead.reader, SNIFF_LIMIT).catch(cut);
+  const { buffer, truncated } = await readLimitedBytes({ body: replayBody(lead.chunks, lead.reader) }, SNIFF_LIMIT).catch(cut);
+  const raw = new TextDecoder().decode(buffer);
   const type = String(response.headers.get("content-type") || "").toLowerCase(),
     snippet = raw.trim().slice(0, 200);
   // 判定只看开头，整份 JSON 的答复才要整份；超过上限仍不是事件流的，不再往下读，也不当整份
@@ -198,7 +182,10 @@ module.exports = function createModel({ home }) {
       signal: AbortSignal.timeout(20000)
     });
     if (!response.ok) throw Error(await upstreamError(response));
-    const data = /** @type {any} */ (await response.json());
+    // 模型列表按上限读：接口回一份超大（或源源不断）的 JSON，整份进内存一样能撑死桥接
+    const { buffer, truncated } = await readLimitedBytes(response, LIST_LIMIT);
+    if (truncated) throw Error(`模型列表过大（超过 ${LIST_LIMIT / 1024 / 1024} MB），不再往下读`);
+    const data = /** @type {any} */ (JSON.parse(new TextDecoder().decode(buffer)));
     const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : null;
     return list && list.map(item => (typeof item === "string" ? item : item?.id || item?.name)).filter(Boolean);
   }

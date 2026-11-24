@@ -2,14 +2,50 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const { screenCommand, screenLoose, screenAutoReview, screenUnreviewable, sandboxEnv, screenPath } = require("../../server/sandbox.js");
+const {
+  screenCommand,
+  screenLoose,
+  screenAutoReview,
+  screenUnreviewable,
+  screenStoreCommand,
+  screenStorePath,
+  sandboxEnv,
+  screenPath
+} = require("../../server/sandbox.js");
 const wd = "E:\\项目\\言",
   win = { platform: "win32" },
   screen = command => screenCommand(command, wd, win);
 
 const mac = command => screenCommand(command, "/Users/a/proj", { platform: "darwin" });
+
+test("Homebrew 安装只在 macOS 严档转单条出沙箱请示", () => {
+  const darwin = { platform: "darwin" };
+  for (const command of [
+    "brew install hello",
+    '"/opt/homebrew/bin/brew" install hello',
+    "/usr/local/bin/brew reinstall hello",
+    'HOMEBREW_NO_AUTO_UPDATE=1 brew "install" hello',
+    'sh -c "brew install hello"'
+  ]) {
+    assert.match(mac(command), /^沙箱拒绝：Homebrew 安装/, command);
+    assert.equal(screenLoose(command, darwin), null, command);
+    assert.equal(screenAutoReview(command, darwin), null, command);
+    assert.equal(screen(command), null, command);
+  }
+  for (const command of [
+    "brew --prefix",
+    "brew list",
+    "brew info install",
+    "echo 'brew install hello'",
+    "rg 'brew install' docs",
+    "echo > brew install hello",
+    "cat <<EOF\nbrew install hello\nEOF"
+  ])
+    assert.equal(mac(command), null, command);
+});
 
 test("注释与空行：两种平台的四档筛查各自 200ms 内返回", () => {
   // 先把各档的正则跑热：首次使用要付一次性的编译开销，200ms 量的是筛查耗时而不是 JIT
@@ -157,6 +193,52 @@ test("POSIX 写动词守目录，复制与链接来源只豁免当次参数，rs
   }
 });
 
+test("screenCommand：工作目录自己带空格时，引号里的路径按整段比，不截成前半截", () => {
+  // 裸扫按空白切词，`"C:\Users\Me\My Project\out.txt"` 会截成 `C:\Users\Me\My`，
+  // 工作目录里的正常写入反倒被判越界（11-20 检查）。两种写法各验一遍：这一道只看传进来的 platform。
+  const cases = [
+    {
+      platform: "win32",
+      workdir: "C:\\Users\\Me\\My Project",
+      keep: [
+        'Set-Content "C:\\Users\\Me\\My Project\\out.txt" x',
+        'Copy-Item "C:\\Users\\Me\\My Project\\a.txt" "C:\\Users\\Me\\My Project\\b.txt"',
+        'curl -o "C:\\Users\\Me\\My Project\\x.txt" http://127.0.0.1:3000/'
+      ],
+      // 从这一层就出去了：引号包着也不能放
+      out: ['Set-Content "C:\\Users\\Me\\outside.txt" x', 'Copy-Item a.txt "C:\\Users\\Me\\My Project2\\b.txt"']
+    },
+    {
+      platform: "darwin",
+      workdir: "/Users/a/My Project",
+      keep: ['Set-Content "/Users/a/My Project/out.txt" x', 'cp "/Users/a/My Project/a.txt" "/Users/a/My Project/b.txt"'],
+      out: ['Set-Content "/Users/a/outside.txt" x', 'cp a.txt "/Users/a/My Project2/b.txt"']
+    }
+  ];
+  for (const item of cases) {
+    for (const command of item.keep) assert.equal(screenCommand(command, item.workdir, { platform: item.platform }), null, command);
+    for (const command of item.out)
+      assert.match(screenCommand(command, item.workdir, { platform: item.platform }), /越出了工作目录/, command);
+  }
+});
+
+test("screenCommand：合并引号路径时保留内层执行范围的路径检查", () => {
+  // 只把合成路径和占位符交给静态筛查；占位符不读写文件。
+  for (const [platform, dir, sep, writeMarker] of [
+    ["win32", "Q:\\yan-scan", "\\", "Set-Content -WhatIf ./marker x"],
+    ["darwin", "/yan-scan", "/", "touch"]
+  ]) {
+    const workdir = `${dir}${sep}root`,
+      outside = `${dir}${sep}outside`,
+      quoted = `echo "${workdir}${sep}marker$(scan-fixture ${outside})"`,
+      why = screenCommand(`${writeMarker}; ${quoted}`, workdir, { platform });
+    assert.ok(why?.includes(`越出了工作目录（${outside}）`), why ?? "内层合成路径没有被检查");
+
+    const spacedRoot = `${workdir} with spaces`;
+    assert.equal(screenCommand(`${writeMarker}; echo "${spacedRoot}${sep}marker"; echo "$(scan-fixture)"`, spacedRoot, { platform }), null);
+  }
+});
+
 test("screenCommand：日常的开发指令放行——包管理、git、目录内的绝对路径、本机 curl、.草稿 脚本", () => {
   for (const command of [
     "npm run format",
@@ -226,6 +308,9 @@ test("screenCommand：PowerShell 的写别名、套壳的 powershell / cmd、带
     String.raw`cmd /c "del C:\Windows\x"`,
     String.raw`Invoke-Command -ScriptBlock { Remove-Item C:\Windows\x }`,
     String.raw`curl http://127.0.0.1:3000/x -o C:\Windows\yan-probe.txt`,
+    // 短选项连写里的 -o 也是落点（-so FILE、-sLoFILE）；以前只认「-o 打头」
+    String.raw`curl -so C:\Windows\yan-probe.txt http://127.0.0.1:3000/x`,
+    String.raw`curl -sLoC:\Windows\yan-probe.txt http://127.0.0.1:3000/x`,
     String.raw`Invoke-WebRequest http://127.0.0.1:1/x -OutFile C:\Windows\x`,
     String.raw`Start-Process node -RedirectStandardOutput C:\Users\me\log.txt`,
     String.raw`[IO.File]::WriteAllText("C:\Windows\x", "y")`,
@@ -245,9 +330,37 @@ test("screenCommand：PowerShell 的写别名、套壳的 powershell / cmd、带
     "Get-Process powershell",
     "tar -tf a.tar",
     "git clone https://github.com/a/b",
-    "gcc -o build/a.exe a.c"
+    "gcc -o build/a.exe a.c",
+    // 簇里的 o 落在目录内照常；吃值的是 d 不是 o，-d 的值不是落点
+    "curl -so out.txt http://127.0.0.1:3000/x",
+    "curl -sd status=ok http://127.0.0.1:3000/x"
   ])
     assert.equal(screen(command), null, command);
+});
+test("screenCommand：别的程序的开关不按 curl 的短选项表读——gcc -fopenmp、g++ -fno-exceptions 不是落点", () => {
+  // 短选项簇里的落点只对 curl 成立（-so FILE、-sLoFILE）。这张字母表是 curl / wget 的，
+  // 拿它读编译开关会把 -fopenmp 的 o 当成吃值的那个、把 openmp 当文件名，
+  // 于是整条被判成「写」，同一条指令里别处的绝对路径（源文件、-I 目录）也跟着按写的边界拦下。
+  for (const command of [
+    "gcc -fopenmp -fsyntax-only a.c",
+    "g++ -fno-exceptions -fsyntax-only a.cpp",
+    "gcc -nostdlib -fsyntax-only a.c",
+    "gcc -fopenmp -c a.c -o build/a.o",
+    // 下面这些只在「被判成写」时才会被拦：读系统目录、读别的盘都是允许的
+    String.raw`gcc -fsyntax-only -fopenmp C:\Windows\a.c`,
+    String.raw`g++ -fno-exceptions -fsyntax-only D:\src\a.cpp`,
+    String.raw`clang -fopenmp -fsyntax-only D:\src\a.c`
+  ])
+    assert.equal(screen(command), null, command);
+  // 宽档同理：误判成写的话，/opt 这类系统目录的源文件会被当成往系统目录里写
+  for (const command of ["gcc -fopenmp /opt/src/a.c", "g++ -fno-exceptions -fsyntax-only /opt/src/a.cpp"])
+    assert.equal(screenLoose(command, { platform: "posix" }), null, command);
+  // 修的是「别的程序借 curl 的表」：curl 自己的连写照旧认得，wget 的 -O 也照旧
+  assert.match(screen("curl -soC:\\Windows\\yan-probe.txt http://127.0.0.1:3000/x"), /越出了工作目录/);
+  assert.match(screen("curl -so C:\\Users\\me\\x.txt http://127.0.0.1:3000/x"), /越出了工作目录|用户目录|系统目录/);
+  assert.equal(screen("curl -so out.txt http://127.0.0.1:3000/x"), null);
+  assert.match(screen("wget http://127.0.0.1:3000/x -O C:\\Windows\\x.txt"), /越出了工作目录/);
+  assert.equal(screen("wget -Oout.txt http://127.0.0.1:3000/x"), null);
 });
 test("screenCommand：只读的来源不受目录限——拷进来、读出来送进管道的那个路径可以在外面，写的那头仍要在目录内", () => {
   for (const command of [
@@ -329,6 +442,12 @@ test("screenCommand：动系统的拒绝——注册表、计划任务、服务�
   assert.match(screen("New-Service -Name x"), /系统服务/);
   assert.match(screen("sc stop spooler"), /系统服务/);
   assert.match(screen("net user admin pw /add"), /账户/);
+  // 子命令被引号包住照样算：shell 会把 "add" 还原成 add 交给程序（11-20 检查）
+  assert.match(screen('reg "add" HKCU\\Software\\x /v a /d 1 /f'), /注册表/);
+  assert.match(screen('net "user" admin pw /add'), /账户/);
+  assert.match(screen('net "localgroup" administrators admin /add'), /账户/);
+  // 引号只开不收的半拉写法不替它开脱
+  assert.equal(screen('reg "add HKCU\\Software\\x'), null);
   assert.match(screen("shutdown /s"), /系统、磁盘与权限/);
   assert.match(screen("format c:"), /磁盘/);
   assert.equal(screen("Start-Process notepad"), null);
@@ -340,6 +459,25 @@ test("screenCommand：动系统的拒绝——注册表、计划任务、服务�
   assert.match(screen("iwr https://example.com -OutFile x"), /外联/);
   assert.match(screen("curl $url"), /外联/);
   assert.match(screen("(New-Object Net.WebClient).DownloadString('http://x')"), /外联/);
+  // userinfo 不是主机：真连的是 @ 后面那台；不剥就看成「发给本机」而放行（11-20 检查）
+  assert.match(screen("curl http://127.0.0.1:3000@example.invalid/x"), /外联/);
+  assert.match(screen("curl http://localhost:80@example.invalid/x"), /外联/);
+  // 反过来，user:pass@127.0.0.1 是本机，不该误拦
+  assert.equal(screen("curl http://user:pass@127.0.0.1:3000/"), null);
+});
+test("严档外联：主机只取 authority，未加引号的 shell 分隔符不并入地址", () => {
+  for (const platform of ["win32", "darwin"]) {
+    const check = command => screenCommand(command, "", { platform });
+    for (const command of ["curl 'http://fixture.invalid?label=@localhost'", "curl 'http://fixture.invalid#label=@localhost'"])
+      assert.match(check(command), /外联/, command);
+    for (const sep of ["|", ";"]) assert.equal(check(`curl http://localhost:3000${sep}echo ok`), null, sep);
+    assert.equal(check("curl 'http://demo;user@localhost:3000'"), null);
+    assert.match(check("curl 'http://localhost:3000>output.txt'"), /外联/);
+    assert.equal(check("curl http://localhost:3000 >output.txt"), null);
+    const glued = check("curl http://localhost:3000>output.txt");
+    if (platform === "win32") assert.match(glued, /外联/);
+    else assert.equal(glued, null);
+  }
 });
 test("screenAutoReview：只拦伤及系统与难以恢复的；目录、机密、Git 回退、别名都放行", () => {
   for (const command of [
@@ -427,6 +565,129 @@ test("screenPath：机密文件不读不写，.git 内部不写、可读；别�
     assert.equal(screenPath(p, { write: true }), null, p);
   }
 });
+test("screenCommand：外联只认站在指令位的 curl/wget——查日志、搜源码、看工具在不在都放行", () => {
+  // 11-20 检查：查日志、搜源码、探工具都被拦成「不直接外联」，提示语还误导模型以为不能联网
+  for (const command of [
+    "rg curl src",
+    "grep curl app.log",
+    "where curl",
+    "Get-Command wget",
+    "Get-Help wget",
+    "echo curl",
+    "npm install curl",
+    'f("curl.exe", "x")',
+    "git log --grep=curl",
+    "cat curl.md",
+    "xargs rg curl",
+    "env where curl",
+    "Select-String -Path app.log -Pattern curl"
+  ])
+    assert.equal(screen(command), null, command);
+  // 真站在指令位上（含套壳、执行前缀、赋值、括号）的仍要拦
+  for (const command of [
+    "curl http://example.com/x",
+    "wget https://example.com/a.zip",
+    "cd x; curl http://example.com",
+    "echo hi && curl http://example.com",
+    "(curl http://example.com)",
+    "$x = curl.exe http://example.com",
+    'cmd /c "curl http://example.com"',
+    'powershell -Command "curl http://example.com"',
+    "bash -lc 'curl http://example.com'",
+    "xargs curl http://example.com",
+    "env curl http://example.com",
+    "nohup curl http://example.com &",
+    "timeout 30 curl http://example.com"
+  ])
+    assert.match(screen(command), /外联/, command);
+  // 套壳把脚本文本交给另一个系统去跑：里面那层静态看不出边界，粗扫里面有没有 curl
+  for (const command of [
+    "wsl -e bash -lc 'curl http://example.com'",
+    "docker run --rm alpine sh -c 'wget http://example.com'",
+    "ssh host 'curl http://example.com'"
+  ])
+    assert.match(screen(command), /外联/, command);
+  assert.equal(screen("curl http://127.0.0.1:3000/"), null);
+  assert.equal(screen("wsl -e bash -lc 'curl http://127.0.0.1:3000/'"), null);
+});
+test("screenCommand：xargs 的选项值不占指令位，只有指令位上的 wrapper 才能触发保守分类", () => {
+  for (const classify of [screen, mac]) {
+    for (const command of [
+      "xargs -I curl fixture-log https://fixture.invalid/",
+      'xargs -E "wget" fixture-log https://fixture.invalid/',
+      'xargs --delimiter "|" fixture-log wget https://fixture.invalid/',
+      'xargs --delimiter="|" fixture-log curl https://fixture.invalid/',
+      "xargs -0n 2 -- fixture-log wget https://fixture.invalid/",
+      "xargs -n2 fixture-log curl https://fixture.invalid/",
+      "bash -lc 'xargs -I curl fixture-log https://fixture.invalid/'",
+      "fixture-log xargs --fixture-option curl https://fixture.invalid/"
+    ])
+      assert.equal(classify(command), null, command);
+    // 只测分类；版本参数不带外联目标，未知选项是占位符。
+    for (const command of [
+      "xargs -d x curl --version",
+      "xargs --delimiter x wget --version",
+      "xargs -n 2 -- curl --version",
+      "env xargs --fixture-option x curl --version"
+    ])
+      assert.match(classify(command), /外联/, command);
+  }
+});
+
+test("screenCommand：Start-Process 按它启动的那个程序算外联，不按参数里的文字", () => {
+  for (const classify of [screen, mac]) {
+    // 启动的就是外联工具
+    for (const command of [
+      'Start-Process curl.exe -ArgumentList "https://example.com"',
+      "Start-Process wget -ArgumentList https://example.com/a.zip",
+      'Start-Process -FilePath curl.exe -ArgumentList "https://example.com"',
+      'Start-Process -FilePath:"curl.exe" "https://example.com"',
+      // 启动的是壳：真执行的还在它自己的参数里，照旧粗扫
+      'Start-Process pwsh -ArgumentList "-Command","curl https://example.com"',
+      // 认不出被启动的是谁（变量）：退回粗扫兜住
+      'Start-Process $exe -ArgumentList "curl https://example.com"'
+    ])
+      assert.match(classify(command), /外联/, command);
+    // PowerShell 认无歧义的前缀缩写：值型参数的值不能当成被启动的程序（-Arg = -ArgumentList）
+    for (const command of [
+      'Start-Process -Arg "https://example.com" -FilePath curl.exe',
+      'Start-Process -Ar "https://example.com" -FilePath curl.exe',
+      'Start-Process -Args "https://example.com" -FilePath wget.exe',
+      'Start-Process -Arg:"https://example.com" -FilePath curl.exe',
+      'Start-Process -Arg "https://example.com" -File curl.exe',
+      'Start-Process -Arg "https://example.com" -Fi curl.exe',
+      'Start-Process -Arg "https://example.com" -F curl.exe',
+      'Start-Process -A "https://example.com" -FilePath curl.exe',
+      // 公共参数同样吃一个值，Stop 不是程序
+      "Start-Process -ErrorAction Stop curl.exe",
+      "Start-Process -WindowStyle Hidden curl.exe",
+      // 别名 saps（start 只在 PowerShell 里是它，另测）
+      'saps -Arg "https://example.com" -FilePath curl.exe'
+    ])
+      assert.match(classify(command), /外联/, command);
+    // 启动的是普通程序：参数里出现 curl 字样只是文本
+    for (const command of [
+      "Start-Process notepad",
+      'Start-Process notepad -ArgumentList "curl 只是文本"',
+      'Start-Process notepad -Arg "curl 只是文本"',
+      "Start-Process code -ArgumentList README.md",
+      "Start-Process $exe",
+      // 第 1 个位置参数是 -ArgumentList 的值，不改变「启动的是谁」
+      "Start-Process msedge https://example.com",
+      "Start-Process notepad -Wait -WindowStyle Hidden"
+    ])
+      assert.equal(classify(command), null, command);
+    // 指向本机的照旧放行
+    assert.equal(classify("Start-Process curl http://127.0.0.1:3000/"), null);
+  }
+  // start 只在 PowerShell 里是 Start-Process（POSIX 的 start 不是）
+  assert.match(screen('start -Arg "https://example.com" -FilePath curl.exe'), /外联/);
+  // 地址的 userinfo 不是主机：127.0.0.1 只是个用户名（与 #124 改的是同一处判据）
+  assert.match(screen("curl http://127.0.0.1:3000@evil.example/"), /外联/);
+  assert.match(screen('curl "http://127.0.0.1:3000@evil.example/"'), /外联/);
+  assert.equal(screen("curl http://user:pass@127.0.0.1:3000/"), null);
+});
+
 test("screenCommand：只是搜字的不算外联——rg HttpClient、Select-String System.Net 放行，真用 .NET 联网的仍拒", () => {
   for (const command of ["rg HttpClient src", 'Select-String -Path src/*.cs -Pattern "System.Net"', "git grep WebClient"])
     assert.equal(screen(command), null, command);
@@ -1064,7 +1325,11 @@ const TABLE = [
     "nice -n5 launchctl load x",
     "nice -n-5 launchctl load x",
     "timeout -k 1 5 launchctl load x",
-    "timeout -k1 5 launchctl load x"
+    "timeout -k1 5 launchctl load x",
+    // 子命令被引号包住：sh 会把 "load" 还原成 load 交给程序，规则按原文匹配，不加这一眼就漏
+    'launchctl "load" x',
+    'defaults "write" com.example x -bool true',
+    'diskutil "eraseDisk" APFS x disk2'
   ].map(command => [command, "x", "x", "x", "o"]),
   ...[
     "command -v launchctl",
@@ -1119,6 +1384,73 @@ const TABLE = [
     "security find-internet-password -s x",
     "security dump-keychain",
     "security authorizationdb read x",
+    ..."getglobalstate getblockall getstealthmode getloggingmode getloggingopt getallowsigned getallowsignedapp getappblocked listapps"
+      .split(" ")
+      .map(flag => `socketfilterfw --${flag} /a.app`),
+    "socketfilterfw -h",
+    "sysadminctl -secureTokenStatus x",
+    "sysadminctl -filesystem status",
+    "sysadminctl -autologin status",
+    "sysadminctl -guestAccount status",
+    "sysadminctl -afpGuestAccess status",
+    "sysadminctl -smbGuestAccess status",
+    "sysadminctl -screenLock status",
+    "sysadminctl -h",
+    "dscl . -read /x",
+    "dscl . -readall /x",
+    "dscl . -readpl /x Key /tmp/x.plist",
+    "dscl . -readpli /x Key 0 /tmp/x.plist",
+    "dscl . -list /x",
+    "dscl . -diff /x /y",
+    "dscl . -search /x Key y",
+    "dscl . -mcxread /x",
+    "dscl . -mcxhelp",
+    "dscl . -auth x",
+    "dscl . -authonly x p",
+    "dscl localhost -read /x",
+    "dscl -q . -read /x",
+    "dscl -u admin . -read /x",
+    "dscl -read /x",
+    "dscl -u admin -P p . -list /x",
+    // 全局选项只管输出格式；man page：数据源之后的动词横线可省，cat 与 . 同 read、ls 同 list
+    "dscl -raw . -read /x",
+    "dscl -plist . -read /Users/a",
+    "dscl -url . -list /Users",
+    "dscl . read /x",
+    "dscl . readall /Users",
+    "dscl . cat /x",
+    "dscl . ls /Users",
+    "dscl . -cat /x",
+    "dscl . -ls /Users",
+    "dscl . -list /x; dscl . -read /y",
+    '"dscl" . -read /x',
+    '"/usr/sbin/dscl" . -read /x',
+    "/usr/sbin/dscl . -read /x",
+    "DSCL . -read /x",
+    "dscl >|x . -read",
+    "dscl 2>&1 . -read /x",
+    "(dscl . -read /x)",
+    // get* 查询参数夹续行仍是查询
+    "socketfilterfw --get\\\nappblocked x",
+    "sysadminctl -autologin status",
+    "socketfilterfw --getg 2>&1 --listapps",
+    // 单双横线同义：查询的长选项抄成单横线与短选项照旧放行
+    "socketfilterfw -getglobalstate",
+    "socketfilterfw -k",
+    "sysadminctl --secureTokenStatus x",
+    // dscl 的段界在 ; 前止步：下一条命令的参数不误当 dscl 的动词
+    "dscl . -read /x;echo -create",
+    "sysadminctl -adminUser root -secureTokenStatus x",
+    'sysadminctl -screenLock "status"',
+    'sysadminctl "-autologin" status',
+    'sysadminctl "-screenLock" status',
+    // 引号片段拼接出的查询选项/操作同样放行
+    "socketfilterfw '--get'g",
+    "sysadminctl '-autologin' status",
+    "sysadminctl \"-auto\"'login' status",
+    "socketfilterfw --getglobalstate --listapps",
+    "socketfilterfw --getappblocked /a.app",
+    "socketfilterfw --getg",
     "launchctl unknown x",
     "defaults unknown x",
     "networksetup -unknown x",
@@ -1133,6 +1465,11 @@ const TABLE = [
       "security add-certificates x"
     ].map(s => `echo "${s}"`)
   ].map(command => [command, "o", "o", "o", "o"]),
+  // &> 把后一个词收成参数（严档拦 cmd 本身），& 后台分隔符后的读命令照放
+  ["cmd &>log dscl . -read /x", "x", "o", "o", "o", { win32: "oooo" }],
+  ["echo x & dscl . -read /y", "o", "o", "o", "o"],
+  // &> 夹带后 sh -c 的引号正文也要展开（bash 视角是参数，dash 视角是命令）
+  ["cmd &>log sh -c 'dscl . -create /x'", "x", "x", "x", "o"],
   // 钥匙串密码
   ...[
     "security find-generic-password -s x -w",
@@ -1296,8 +1633,142 @@ const TABLE = [
     "security list-keychains -d user -s x",
     "security login-keychain -s",
     "security user-trust-settings-enable -e",
-    "security authorizationdb write x allow"
+    "security authorizationdb write x allow",
+    ..."setglobalstate setblockall setstealthmode setloggingmode setloggingopt setallowsigned setallowsignedapp"
+      .split(" ")
+      .map(flag => `socketfilterfw --${flag} x`),
+    "socketfilterfw --add /a.app",
+    "socketfilterfw --remove /a.app",
+    "socketfilterfw --blockapp /a.app",
+    "socketfilterfw --unblockapp /a.app",
+    "/usr/libexec/ApplicationFirewall/socketfilterfw --setblockall on",
+    // 写选项不在首位也拦：socketfilterfw 同一条调用按序处理多个选项
+    "socketfilterfw --getglobalstate --setglobalstate on",
+    "socketfilterfw --listapps --blockapp /a.app",
+    // getopt_long 的唯一前缀缩写同样生效：非 get*/l*/h* 开头的选项一律拦
+    "socketfilterfw --setg on",
+    "socketfilterfw --setblock on",
+    "socketfilterfw --b /a.app",
+    "socketfilterfw --unbl /a.app",
+    "socketfilterfw --a /a.app",
+    "socketfilterfw --rem /a.app",
+    // 单横线的长选项（抄错横线）同样按写判；-h/-d/-l/-k 这几个短选项不在此列
+    "socketfilterfw -setglobalstate off",
+    "socketfilterfw -setg on",
+    "sysadminctl --addUser x",
+    "sysadminctl --screenLock off",
+    // -filesystem 只认 status，其余取值按写拦
+    "sysadminctl -filesystem on",
+    ..."addUser deleteUser newPassword resetPasswordFor secureTokenOn secureTokenOff".split(" ").map(verb => `sysadminctl -${verb} x`),
+    "sysadminctl -autologin set -userName x",
+    "sysadminctl -autologin off",
+    "sysadminctl -guestAccount on",
+    "sysadminctl -afpGuestAccess off",
+    "sysadminctl -smbGuestAccess on",
+    "sysadminctl -automaticTime on",
+    "sysadminctl -use12HourClockForLoginWindow on",
+    "sysadminctl -screenLock immediate -password p",
+    "sysadminctl -screenLock 30 -password p",
+    "sysadminctl -screenLock off -password p",
+    // 全局选项在先也拦
+    "sysadminctl -adminUser root -adminPassword p -addUser x",
+    // 操作名带引号照拦（Shell 会剥掉引号）
+    'sysadminctl "-addUser" x',
+    'sysadminctl "-autologin" off',
+    'sysadminctl "-screenLock" immediate -password p',
+    ..."create createpl delete deletepl append merge change changei passwd mcxset mcxedit mcxdelete mcxdeleteall mcxexport mcximport"
+      .split(" ")
+      .map(verb => `dscl . -${verb} /x`),
+    "dscl localhost -create /x",
+    "dscl -u admin . -passwd /x p",
+    // 查询字样只当选项值的不算查询；写动词省掉前导横线、用别名同样拦
+    "dscl -u -read . -create /x",
+    // 命令在前时首个非选项参数是数据源：dscl read 会进交互模式，不能当查询
+    "dscl read /x",
+    "dscl . create /x",
+    "dscl . mk /x",
+    "dscl . rm /x",
+    "dscl -raw . -create /x",
+    "dscl . -unknownverb /x",
+    "dscl -q . -create /x",
+    "dscl",
+    "dscl .",
+    "dscl localhost",
+    "dscl -q .",
+    "dscl -u admin",
+    "echo x | dscl .",
+    "dscl . -create /x -read /y",
+    "dscl . -list /x; dscl",
+    // 未续行的换行是下一条命令；紧贴重定向也是裸调
+    "dscl\nfoo -read /x",
+    "dscl>x",
+    "dscl>x;echo y",
+    "dscl<in",
+    // 命令名带引号仍是同一个程序
+    '"dscl"',
+    '"dscl" .',
+    "'dscl'",
+    '"dscl" . -create /x',
+    // 带引号/不带引号的路径前缀，基名仍是同一个程序
+    '"/usr/sbin/dscl"',
+    '"/usr/sbin/dscl" . -create /x',
+    "/usr/sbin/dscl",
+    "/usr/sbin/dscl . -create /x",
+    // macOS 文件系统大小写不敏感，DSCL 是同一个程序
+    '"DSCL"',
+    "DSCL . -create /x",
+    '"/usr/bin/DSCL"',
+    // 单引号与相邻引号片段拼出的写选项同样拦
+    "socketfilterfw '--setg'",
+    "socketfilterfw '--'setg on",
+    "socketfilterfw -'-s'etg on",
+    "sysadminctl '-addUser' x",
+    "sysadminctl \"-add\"'User' x",
+    "dscl '-'create /x",
+    "dscl -''create /x",
+    // 强制覆盖重定向 >| 仍是重定向
+    "socketfilterfw >|out --setglobalstate on",
+    "sysadminctl >|o -addUser x",
+    // 分组/命令替换里的裸 dscl 仍进交互模式
+    "(dscl)",
+    "$(dscl)",
+    '"/usr/sbin/sysadminctl" -addUser x',
+    // fd 复制与 &> 里的 & 不是命令分隔符
+    "socketfilterfw 2>&1 --setglobalstate on",
+    "socketfilterfw &>log --setg on",
+    "sysadminctl 2>&1 -addUser x",
+    // 重定向紧贴命令名：后面的选项照样传给程序
+    "x=1 2>f socketfilterfw --setg",
+    "x=1 >f y=2 socketfilterfw --setg",
+    "x=1 >f dscl . -create /x",
+    "cmd &<in dscl . -create /x",
+    "cmd &>log dscl . -create /x",
+    ">out socketfilterfw --setglobalstate on",
+    "> out sysadminctl -addUser x",
+    "2>err socketfilterfw --setg",
+    ">log sudo id",
+    "socketfilterfw>log --setglobalstate on",
+    "socketfilterfw>x --add /a.app",
+    "sysadminctl>o -addUser x",
+    "sysadminctl>o -screenLock off"
   ].map(command => [command, "x", "x", "x", "o"]),
+  // POSIX 的 \<换行> 与 \x 转义：两侧拼成同一参数/程序名，写选项与 dscl 都不能靠换行拆开。
+  // PowerShell 没有这种续行，win32 下这些串本是别的命令，断言只挂 darwin；
+  // 双引号内的续行占位两平台同一标记，照样拦
+  ["socketfilterfw --\\\nsetg on", "o", "o", "o", "o", { darwin: "xxxo" }],
+  ["socketfilterfw -\\\n-setg on", "o", "o", "o", "o", { darwin: "xxxo" }],
+  ["sysadminctl -add\\\nUser x", "o", "o", "o", "o", { darwin: "xxxo" }],
+  ["sysadminctl -\\\naddUser x", "o", "o", "o", "o", { darwin: "xxxo" }],
+  ["sysadminctl -auto\\\nlogin off", "o", "o", "o", "o", { darwin: "xxxo" }],
+  ["ds\\\ncl . -create /x", "o", "o", "o", "o", { darwin: "xxxo" }],
+  ["d\\\nscl . -create /x", "o", "o", "o", "o", { darwin: "xxxo" }],
+  ['"ds\\\ncl" . -create /x', "x", "x", "x", "o"],
+  ["dscl\\\n . -create /x", "o", "o", "o", "o", { darwin: "xxxo" }],
+  // 空目标重定向：-read 是 > 的目标，dscl 实际收到 /x 仍进交互模式
+  ["dscl > -read /x", "x", "x", "x", "o"],
+  ["dscl > -read", "x", "x", "x", "o"],
+  // 重定向插在带值选项与值之间：-read 实际是 -P 的值，不是子命令
+  ["dscl -P >x -read", "x", "x", "x", "o"],
   [String.raw`env FOO=1 /usr/bin/sudo x`, "x", "x", "x", "o"],
   [String.raw`nohup /bin/launchctl load x`, "x", "x", "x", "o"],
   [String.raw`echo x | xargs -n1 /bin/launchctl load x`, "x", "x", "x", "o"],
@@ -1708,12 +2179,73 @@ test("审档：递归删工作目录之外的整个目录回绝，工作目录�
   assert.equal(review(atWin ? "Remove-Item sub\\dist -Recurse" : "rm -rf sub/dist"), null);
   // 原本就拦的最夸张那几种不受影响
   assert.match(review("Remove-Item . -Recurse -Force"), /整目录/);
-  // 变量里的路径静态看不出来，与本文件其余规则一样不猜；不是递归删的也不管
-  assert.equal(review("Remove-Item $env:TEMP\\build -Recurse"), null);
+  // 家目录与系统目录写成变量或 ~ 时按出去了算：~、$HOME、$env:USERPROFILE、%USERPROFILE% 展开后删的是工作目录之外的一整片
+  // （`rm -rf ~` 删的就是整个家目录）；名单以外的 $dir 静态看不出落到哪，与本文件其余规则一样不猜
+  for (const command of [
+    "rm -rf ~",
+    "rm -rf $HOME",
+    "Remove-Item ~/Documents -Recurse",
+    "Remove-Item $env:USERPROFILE -Recurse -Force",
+    "Remove-Item $env:TEMP\\build -Recurse",
+    ...(atWin ? ['cmd /c "rmdir /s /q %USERPROFILE%"', "ri ${env:HOME}\\x -r -fo"] : [])
+  ])
+    assert.match(review(command), /整个目录/, command);
+  assert.match(review(atWin ? 'Remove-Item "${env:HOME}\\fixture" -Recurse' : 'rm -r "${HOME}/fixture"'), /整个目录/);
+  assert.match(review(atWin ? "Remove-Item ${env:HOME}\\fixture -Recurse" : "rm -r ${HOME}/fixture"), /整个目录/);
+  assert.equal(review(atWin ? "Get-Content ${env:HOME}\\fixture.txt; Remove-Item ./build -Recurse" : "echo ${HOME}; rm -r ./build"), null);
+  assert.match(review(atWin ? 'Remove-Item -LiteralPath:"${env:HOME}\\fixture" -Recurse' : "rm -r ${HOME:-./fixture}/sample"), /整个目录/);
+  assert.equal(review("Remove-Item $dir\\build -Recurse"), null);
   assert.equal(review("Remove-Item D:\\data\\a.txt"), null);
   // 同一条指令里别处读的路径不算删除目标（`cat /tmp/x; rm -rf ./build` 里前一段只是读）
   assert.equal(
     review(atWin ? "Get-Content C:\\data\\notes.txt; Remove-Item .\\build -Recurse" : "cat /tmp/report.txt; rm -rf ./build"),
     null
   );
+});
+
+// 名字不写字面、改用通配盖住根顶层时，原先几条都不认（配置*、..\*.json、.yan\*）；这一道按路径解析后比
+test("存储根守卫：通配与相对路径也算点到了那几样", () => {
+  const root = atWin ? "E:\\store\\.yan" : "/tmp/store/.yan",
+    workdir = path.join(root, "卷宗"),
+    guard = command => screenStoreCommand(command, root, workdir);
+  // 对根顶层用通配，盖得住配置与备份
+  for (const target of [path.join(root, "*"), path.join(root, "配置*"), path.join(root, "*.json"), path.join(root, "配置备份", "*")])
+    assert.match(guard("Get-Content " + target) || "", /配置与登录/, target);
+  // 不涉及其他的照旧放行：工作目录里的通配、根顶层但不盖住它们的名字
+  for (const target of [path.join(root, "图.json"), path.join(root, "*.md"), path.join(workdir, "*.json"), path.join(workdir, "notes.md")])
+    assert.equal(guard("Get-Content " + target), null, target);
+  if (!atWin) return; // 下面的相对写法是 Windows 的分隔
+  // 工作目录在根里时，.. 就是根：不写字面名字的相对通配一样拦
+  for (const command of ["Get-Content ..\\*", "Get-Content ..\\*.json", "Get-Content ..\\配置*", "Get-Content ..\\配置备份\\*"])
+    assert.match(guard(command) || "", /配置与登录/, command);
+  for (const command of ["Get-Content ..\\图.json", "Get-ChildItem ..", "Get-ChildItem ..\\卷宗\\*.md", "Get-ChildItem src\\*.js"])
+    assert.equal(guard(command), null, command);
+});
+
+// 存储根里那几样不论档位、沙箱开不开都守（docs/sandbox.md「另有一道不随档位…」）。
+// Windows 的 \\?\ 与 \\.\ 是同一个文件的另一种写法，剥掉前缀后要比得出同一处
+test("存储根守卫：扩展长度写法不改变落点", () => {
+  const root = atWin ? "E:\\store\\.yan" : "/tmp/store/.yan",
+    secret = path.join(root, "配置.json"),
+    backup = path.join(root, "配置备份", "2026.json"),
+    plain = atWin ? "E:\\elsewhere\\notes.md" : "/tmp/elsewhere/notes.md";
+  for (const target of [secret, backup]) assert.match(screenStorePath(target, root) || "", /配置与登录/, target);
+  assert.equal(screenStorePath(plain, root), null);
+  if (!atWin) return; // 扩展前缀是 Windows 的写法，别的地方只是普通文件名
+  for (const target of [`\\\\?\\${secret}`, `\\\\.\\${secret}`, `\\\\?\\${backup}`])
+    assert.match(screenStorePath(target, root) || "", /配置与登录/, target);
+  // UNC 的扩展写法：\\?\UNC\srv\sh\x 与 \\srv\sh\x 同处
+  const unc = { root: "\\\\srv\\share\\.yan", target: "\\\\?\\UNC\\srv\\share\\.yan\\配置.json" };
+  assert.match(screenStorePath(unc.target, unc.root) || "", /配置与登录/);
+});
+
+// 宿主机是 Windows 时上面那条只走 PowerShell 分支，POSIX 的 `${VAR:-默认}` 一条都验不到——
+// 11-21 的 macOS 红正是这里漏的：`withoutExeDir` 把 `${HOME:-./x}` 里的 `{` 当语句起点，剥成了 `${x}`
+test("审档：POSIX 的 ${VAR:-默认} 不算程序目录，家目录递归删照拦", () => {
+  const review = command => screenAutoReview(command, { platform: "darwin", workdir: "/Users/a/proj" });
+  for (const command of ["rm -rf ${HOME:-./fixture}/sample", "rm -rf ${HOME:-./x}", "rm -r ${HOME:-/tmp/x}/y"])
+    assert.match(review(command), /整个目录/, command);
+  // `{ … }` 仍是语句起点：组里的家目录删除一样拦，只是不认 `${` 里的那一个
+  assert.match(review("{ rm -rf $HOME; }"), /整个目录/);
+  assert.equal(review("echo ${HOME:-./x}; rm -rf ./build"), null);
 });

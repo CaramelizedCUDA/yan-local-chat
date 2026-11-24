@@ -6,8 +6,8 @@
  * @param {Profile} profile
  */
 async function streamReply(conversation, assistant, profile, { resume = false } = {}) {
-  // queue 是这一答的收件口：用户的补言（user）与后台帮手的回报（report）
-  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user?: Message, step: Step, report?: string }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number }} */
+  // queue 是这一答的收件口：用户的补言（user）与帮手、后台指令及定时的回报（report）
+  /** @type {{ controller: AbortController, assistantId: string, label: string, profile: Profile, queue: Array<{ user?: Message, step: Step, report?: string }>, round: AbortController|null, reading: boolean, roundStart: number, steerTimer: number, promptTokens: number }} */
   const job = {
     controller: new AbortController(),
     assistantId: assistant.id,
@@ -17,14 +17,15 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     round: null,
     reading: false,
     roundStart: 0,
-    steerTimer: 0
+    steerTimer: 0,
+    // 作答中的上下文计数：每轮先估算，接口报了提示用量再校正（见 30-rounds.js 与 18-outline.js）。
+    promptTokens: 0
   };
   requestJobs.set(conversation.id, job);
   renderSendButtons();
   renderHistory();
   const started = performance.now(),
     spentBefore = resume ? Number(assistant.durationMs) || 0 : 0;
-  const gaugeTicker = conversation.id === currentId ? setInterval(updateContextGauge, 600) : null;
   // 行迹题头的用时边做边走：长指令跑着时没有新字进来、不会重画，另起一只每秒一跳的钟。续写接着此前的用时走，不从零起。
   // 已用的时长跟着钟一并记下、随存盘落下：页面半途崩了，续写时接的是崩前的数，而不是上一截收尾时的旧数
   assistant.startedAt = Date.now() - spentBefore;
@@ -55,7 +56,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       // 只取这一答之前的：在中间某一答上点「继续生成」时，它后面的问答不能混进来
       const at = conversation.messages.findIndex(m => m.id === assistant.id),
         before = at < 0 ? conversation.messages : conversation.messages.slice(0, at),
-        contextIndex = before.map(m => m.role).lastIndexOf("context");
+        contextIndex = lastContextIndex(before);
       const source = before.slice(contextIndex + 1).filter(
         m =>
           m.id !== assistant.id &&
@@ -64,12 +65,12 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
           // 刚发出就停下、一个字一步都没有的空答：不进历史（有的兼容接口拒收空的 assistant）
           !(m.role === "assistant" && !String(m.content || "").trim() && !m.steps?.length)
       );
-      lastUserId = source.filter(m => m.role === "user").at(-1)?.id;
+      lastUserId = source.findLast(m => m.role === "user")?.id;
       const head = summaryMessages(contextIndex >= 0 ? before[contextIndex] : null);
       head.push(...(await historyForApi(source, lastUserId, budget)));
       // 这一问的首段往后各问里一字不差，标作缓存点：下一问时连它在内的整段历史都从缓存读（桥接只给 Claude 留着这个标，别家去掉）。
       // 目录记忆只附在这一问（之前的问不带，免得一份目录记忆背上几十遍），所以接在后面另起一段——冠在开头，这一问每问都变，缓存只接得到上一答之前。
-      // 意也一样（见 19-intent/10-store.js）
+      // 图也一样（见 19-intent/10-store.js）
       const ask = head.findLast(entry => entry.role === "user"),
         ledger = ledgerNote(conversation, "main", profile),
         intent = intentNote(conversation);
@@ -81,18 +82,14 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       }
       // 续写：已写的话连同途中递进来的补言、回报照原处排上（与下一问装上一答同一个写法，见 answerParts），
       // 做过的步骤也得让它知道（另发一句「继续」时上一答的行迹本就随着去），不然从头再做一遍。只做了几步、一个字没写就断的也一样
-      if (resumed) {
-        const parts = (await answerForApi(resumed, budget)).filter(part => part.role !== "assistant" || part.content),
-          trail = stepsDigest(resumed);
-        if (parts.length || trail)
-          head.push(...parts, { role: "user", content: `${trail ? `${trail}\n\n` : ""}${prompt("assistant.resume")}` });
-      }
+      if (resumed) head.push(...(await resumeForApi(resumed, budget)));
       return head;
     };
     await Promise.all([loadLedger(conversation, job.controller.signal), loadIntent(conversation, job.controller.signal)]);
     history = await buildHead();
-    const watch = intentWatch(conversation);
-    // 上一答断着时回来的回报（见 wakeWithReports）：开工即递上，模型续写时就知道帮手怎样了
+    const headLength = history.length,
+      watch = intentWatch(conversation);
+    // 上一答断着时回来的回报开工即递上。它们是本轮新收到的，重装前文时不能被盖掉。
     held = takeHeldReports(conversation, job);
     if (held.length) await deliverSupplements(job, history, budget, assistant);
     // 先把这一答预计的用量记到预留里（提示 + 最大输出），别的对话同时开工时看得见；收尾时换成实际用量
@@ -105,13 +102,19 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       systemPrompt: systemPrompt(conversation, tools, { memory }),
       tools,
       reasoning: conversation.reasoning || "",
-      head: history.length,
+      head: headLength,
       // 撮要那一步由 keepInWindow 记进行迹（见 60-context.js 的 foldMark），这里只管重画与作业条上的一句
       onFold: busy => {
         setJobLabel(conversation, job, busy ? t("正删繁就简") : "");
         refreshSteps(assistant);
       },
-      // 放不下的是这一问之前的对话：压成摘要落成分隔（下一问也用得上），换掉 history 里这一问之前的那截
+      // 装好一轮、收到实测或撮要改了往来时，都更新同一个作答中读数。
+      onSize: n => {
+        if (job.promptTokens === n) return;
+        job.promptTokens = n;
+        if (view === "chat" && currentId === conversation.id && requestJob(conversation.id) === job) updateContextGauge();
+      },
+      // 放不下的是这一问之前的对话：压成摘要落成分隔（下一问也用得上）；只重装 history 的旧前缀，后面已递上的回报与本答往来仍保留
       compactHead: async signal => {
         const user = conversation.messages.find(m => m.id === lastUserId);
         if (!user || !(await compactContext(conversation, { auto: true, before: user, profile, signal }))) return false;
@@ -156,7 +159,7 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
     if (!assistant.deliverables.length) delete assistant.deliverables;
   } catch (error) {
     // 一个字没等到就又断了：模型没读到那几份回报，原样还回去等下一答
-    if (!tally.opened) returnHeldReports(conversation, assistant, held);
+    if (!tally.opened) returnHeldReports(conversation, assistant, held, job);
     settleSteps(assistant, error.name === "AbortError" ? "已止" : "已中断");
     if (error.name === "AbortError") assistant.status = "stopped";
     else if (assistant.content || assistant.reasoning || assistant.steps?.length) {
@@ -169,7 +172,6 @@ async function streamReply(conversation, assistant, profile, { resume = false } 
       assistant.error = bridgeErrorText(error.message);
     }
   } finally {
-    if (gaugeTicker) clearInterval(gaugeTicker);
     if (clock) clearInterval(clock);
     assistant.durationMs = spentBefore + Math.round(performance.now() - started);
     delete assistant.startedAt;

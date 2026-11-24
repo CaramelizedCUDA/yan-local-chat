@@ -1,5 +1,6 @@
-// 言 · 桥接的联网：地址门禁（公网才放行，http_request / download_file 另放本机回环）、按量读正文、翻网页、调接口（检索在 server/search.js）
-// 地址门禁与读正文是纯函数，server/work/ 的 download_file 与 CLIXML 还原直接 require；routes 由 server.js 装进接口表
+// 言 · 桥接的联网：地址门禁（公网才放行；本机与内网按页面给的档位：问而后行不碰，审而后行经审查后带 allowPrivate 重发，径行直连）、
+// 按量读正文、翻网页、调接口（检索在 server/search.js）
+// 地址门禁会解析域名；download_file 复用联网与限量读流，CLIXML 还原复用实体解码。接口由 server.js 登记
 "use strict";
 const dns = require("node:dns").promises;
 const net = require("node:net");
@@ -139,23 +140,40 @@ function isFakeIpAddress(value) {
   const [a, b] = host.split(".").map(Number);
   return a === 198 && (b === 18 || b === 19);
 }
-// 本机回环：127.0.0.0/8、::1、localhost。http_request / download_file 对它放行（模型开的本机服务本就该能测，run_command 里 curl 本机也放行），
-// 局域网等别的内网地址照旧拒；fetch_page / search_web 仍一律不碰本机
+// 本机回环：127.0.0.0/8、::1、localhost。http_request / download_file 对它一律放行（模型开的本机服务本就该能测，run_command 里 curl 本机也放行），
+// 别的内网地址按档位（见 assertPublicUrl 的 allowPrivate）；fetch_page 也按档位
 function isLoopback(value) {
   const host = hostLiteral(value),
     mapped = net.isIPv6(host) ? unmapIpv4(host) : null;
   if (mapped) return isLoopback(mapped);
   return host === "localhost" || host === "::1" || (net.isIPv4(host) && host.startsWith("127."));
 }
-async function assertPublicUrl(url, { allowLoopback = false } = {}) {
+// 撞上「本机或内网」这道门：detail 随 400 的 JSON 一起回给页面（见 server/http.js 的 jsonRoute），
+// 页面据此知道换条路——审而后行交审查，准了带 allowPrivate 再发一次（见 src/15-tools/03-review.js 的 bridgePrivate）。
+// afterRedirect：拦的是「公网地址把请求转过来的那一跳」，此前已经发出过请求。页面不能再发一次——原请求
+// （可能是 POST）已经做过一遍，重发就是做第二遍；故连要跟的地址一并交回（at），让模型自己决定跟不跟
+function privateRefusal(message, afterRedirect = null) {
+  return Object.assign(Error(message), {
+    detail: afterRedirect ? { private: true, sent: true, at: afterRedirect } : { private: true }
+  });
+}
+// 交回页面的地址剥掉 userinfo：跳转的 Location 是对方写的，别把凭据字面转手
+function shownAddress(url) {
+  const copy = new URL(url.href);
+  copy.username = copy.password = "";
+  return copy.href;
+}
+// allowPrivate 由页面按档位给：径行直接带、审而后行审准了再带；不给则照旧拒（问而后行与没开审查的审而后行）
+async function assertPublicUrl(url, { allowLoopback = false, allowPrivate = false, afterRedirect = false } = {}) {
+  const refused = message => privateRefusal(message, afterRedirect ? shownAddress(url) : null);
   if (!/^https?:$/.test(url.protocol)) throw Error("只支持 http 或 https 地址");
   const host = hostLiteral(url.hostname);
-  const blocked = address => isPrivateAddress(address) && !(allowLoopback && isLoopback(address));
-  if (blocked(host)) throw Error(allowLoopback ? "不允许访问内网地址（本机 127.0.0.1 / localhost 除外）" : "不允许访问本机或内网地址");
+  const blocked = address => !allowPrivate && isPrivateAddress(address) && !(allowLoopback && isLoopback(address));
+  if (blocked(host)) throw refused(allowLoopback ? "不允许访问内网地址（本机 127.0.0.1 / localhost 除外）" : "不允许访问本机或内网地址");
   if (net.isIP(host)) return [{ address: host, family: net.isIP(host) }];
   const addresses = await dns.lookup(host, { all: true, verbatim: true });
   const hit = addresses.find(item => blocked(item.address) && !isFakeIpAddress(item.address));
-  if (!addresses.length || hit) throw Error(`网址解析到了本机或内网地址${hit ? `（${hit.address}）` : ""}`);
+  if (!addresses.length || hit) throw refused(`网址解析到了本机或内网地址${hit ? `（${hit.address}）` : ""}`);
   return addresses;
 }
 // 连接只用刚验过的解析结果：Host / TLS SNI 仍取原域名，不在 fetch 时再解析一回。
@@ -197,20 +215,35 @@ function pinnedFetch(url, options, addresses) {
     request.end(options.body || undefined);
   });
 }
-// 桥接自己发出的请求都带这个头；桥接收到带它的 /api/ 请求一律拒绝。http_request / download_file 能打本机，
+// 走受管转发的请求带这个头；桥接收到带它的 /api/ 请求一律拒绝。http_request / download_file 能打本机，
 // 不设这一道，模型就能借它们调桥接自己的执事接口，绕过请示与沙箱在沙箱外跑指令（无 Origin、Host 也对得上）
 const OUTBOUND_MARK = "x-yan-outbound";
 // 带方法与请求体的公网请求（http_request / download_file 用）：同样的地址门禁，跳转逐跳再查；返回的是 Response，正文由调用者按需读
 async function fetchPublicResponse(
   url,
-  { method = "GET", headers = {}, body = null, timeout = 30000, allowLoopback = false, signal = null } = {}
+  {
+    method = "GET",
+    headers = {},
+    body = null,
+    timeout = 30000,
+    allowLoopback = false,
+    allowPrivate = false,
+    allowPrivateFirstHop = false,
+    signal = null
+  } = {}
 ) {
   let current = new URL(url);
   // 调用方的中止（页面走了、这一问停了）与超时一并算数；没传即照旧只有超时
   const deadline = AbortSignal.timeout(timeout),
     stop = signal ? AbortSignal.any([signal, deadline]) : deadline;
   for (let redirects = 0; redirects <= 5; redirects++) {
-    const addresses = await assertPublicUrl(current, { allowLoopback });
+    // 审查许可只给首跳，不能让对端借重定向把许可转交别的内网服务；径行仍可逐跳访问。
+    // 第二跳起（redirects > 0）此前已经发出过请求：撞到内网时页面不能重放，要连目标地址一并回
+    const addresses = await assertPublicUrl(current, {
+      allowLoopback: allowLoopback && (!allowPrivateFirstHop || redirects === 0),
+      allowPrivate: allowPrivate || (allowPrivateFirstHop && redirects === 0),
+      afterRedirect: redirects > 0
+    });
     const response = await pinnedFetch(
       current,
       {
@@ -244,6 +277,10 @@ async function fetchPublicResponse(
   }
   throw Error("跳转次数过多");
 }
+// 协议层报错正文的预算：报错只用得上开头那几句话（status、一条 message），整份读进来没有用处；
+// 网关或中转回一份没完的正文时，整份收进内存一样能把桥接撑死。读满这个数还没完就停下、掐掉正文，
+// 错误里只留状态码与一小段预览（MCP 的 HTTP 错误与模型接口的上游错误共用这一份）
+const ERROR_BODY_LIMIT = 8 * 1024;
 // 按字节收响应正文，最多 limit 字节，到量即停
 async function readLimitedBytes(response, limit) {
   const chunks = [];
@@ -270,7 +307,7 @@ async function readLimitedBytes(response, limit) {
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]),
   HTTP_BODY_LIMIT = 1024 * 1024,
   HTTP_TEXT_CHARS = 60000;
-// http_request：调公网接口，回状态码、响应头与正文；正文是文本或 JSON 的给原文（截到 6 万字），二进制的只给类型与大小
+// http_request：调公网或本机接口，回状态码、过滤后的响应头与截取的文本。二进制不交正文；bytes 是实际读到的字节数
 const handleHttp = jsonRoute(async body => {
   let url;
   try {
@@ -297,7 +334,9 @@ const handleHttp = jsonRoute(async body => {
       headers,
       body: payload,
       timeout: 30000,
-      allowLoopback: true
+      allowLoopback: true,
+      allowPrivate: body.allowPrivate === true,
+      allowPrivateFirstHop: body.allowPrivateFirstHop === true
     });
   const type = response.headers.get("content-type") || "",
     textual =
@@ -353,7 +392,7 @@ function decodeText(buffer, charset = "utf-8") {
     return buffer.toString("utf8");
   }
 }
-// 正文最多只收 3 MB（见 readLimitedBytes：边读边计，对方回 500 MB 也只占 3 MB）；字符集先看响应头，没写再看页头的 <meta>
+// 正文限量读取（见 readLimitedBytes），不先攒整份响应；字符集先看响应头，没写再看页头的 <meta>
 async function readLimitedText(response, limit = FETCH_TEXT_LIMIT) {
   const type = response.headers.get("content-type") || "";
   if (!/text\/|application\/(xhtml|json|xml)/i.test(type)) {
@@ -366,10 +405,12 @@ async function readLimitedText(response, limit = FETCH_TEXT_LIMIT) {
 }
 // 取网页的字（翻网页、检索）：地址门禁与逐跳再查都经 fetchPublicResponse，只此一路。没成的报错带 status（翻网页据此认被拒）；
 // pdf：是 PDF 就原样交回字节，不当文字读
-async function fetchText(url, { timeout = 15000, headers = {}, pdf = false } = {}) {
+async function fetchText(url, { timeout = 15000, headers = {}, pdf = false, allowPrivate = false, allowPrivateFirstHop = false } = {}) {
   const { response, url: finalUrl } = await fetchPublicResponse(url, {
     headers: { Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5", ...headers },
-    timeout
+    timeout,
+    allowPrivate,
+    allowPrivateFirstHop
   });
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
@@ -397,11 +438,13 @@ const handleFetch = jsonRoute(async body => {
   } catch {
     throw Error("网址无效");
   }
-  const offset = Math.max(0, Math.floor(Number(body.offset) || 0));
+  const offset = Math.max(0, Math.floor(Number(body.offset) || 0)),
+    allowPrivate = body.allowPrivate === true,
+    allowPrivateFirstHop = body.allowPrivateFirstHop === true;
   let page = null,
     refused = null;
   try {
-    page = await fetchText(url.href, { timeout: 20000, pdf: true });
+    page = await fetchText(url.href, { timeout: 20000, pdf: true, allowPrivate, allowPrivateFirstHop });
   } catch (error) {
     if (!REFUSED.has(error.status) || !browser.available()) throw error;
     refused = error;
@@ -418,9 +461,13 @@ const handleFetch = jsonRoute(async body => {
     full = !page ? "" : html ? htmlToText(page.text) : page.text,
     finalUrl = page?.url || url.href,
     scripted = !!page && html && full.trim().length < 200 && (page.text.match(/<script/gi) || []).length >= 3;
-  if (refused || (scripted && browser.available()))
+  // 无头浏览器走的是只放行公网的代理（见 server/headless.js）：本机与内网地址过不去，这一档就照直接请求的结果作答，不借它再试
+  const directOnly = allowPrivateFirstHop || (allowPrivate && isPrivateAddress(url.hostname));
+  if (!directOnly && (refused || (scripted && browser.available())))
     try {
-      const shown = await browser.render(url.href, { gate: assertPublicUrl }),
+      const shown = await browser.render(url.href, {
+          gate: allowPrivate ? target => assertPublicUrl(target, { allowPrivate: true }) : assertPublicUrl
+        }),
         text = htmlToText(shown.html);
       if (text.trim().length > full.trim().length) {
         full = text;
@@ -442,10 +489,9 @@ const handleFetch = jsonRoute(async body => {
 });
 
 module.exports = {
-  // 引导、翻网页：本机桥接认得的来源都可调（检索在 server/search.js）
-  openRoutes: { "POST /api/fetch": handleFetch },
-  // http_request 能打本机的服务，只给受信的页面
-  routes: { "POST /api/http": handleHttp, "POST /api/remote-image": handleImage },
+  // 翻网页、调接口、取外链图都列为受信路由：地址由调用方给，开放给别的本机页面就等于替它往本机与内网发请求。
+  // 翻网页原先开放，能连本机与内网之后一并收进受信的一半（只受理本站页面，见 server.js 的 TRUSTED_PATHS）
+  routes: { "POST /api/fetch": handleFetch, "POST /api/http": handleHttp, "POST /api/remote-image": handleImage },
   OUTBOUND_MARK,
   decodeEntities,
   stripTags,
@@ -453,5 +499,6 @@ module.exports = {
   assertPublicUrl,
   pinnedLookup,
   fetchPublicResponse,
-  readLimitedBytes
+  readLimitedBytes,
+  ERROR_BODY_LIMIT
 };

@@ -1,4 +1,4 @@
-// 言 · 沙箱环境：在 <存储根>/环境/ 里备一套自带的开发环境，只给桥接起的进程（模型的指令、MCP 服务）用，不动系统。
+// 言 · 环境：Windows 在 <存储根>/环境/ 备工具供指令与本机 MCP 使用；macOS 不安装环境包，只探测系统工具。以下目录是 Windows 的布局：
 //   bin/     uv、uvx，与各工具包立的入口（pandoc、ffmpeg、cc……）
 //   python/  uv 管的 Python 本体
 //   py/      虚拟环境：pip 装进这里
@@ -6,10 +6,10 @@
 //   go/ rust/ java/ …  自己下载解压的工具链，一组一个目录（见 packs.js 的 fetch）
 //   cache/   uv 与 npm 的下载缓存、下载到一半的压缩包
 //   已备.json 装了什么、用哪路下载源（准备时自己比出来的，模型往后自装的包也走这一路）
-// 接口：POST /api/env/status；/api/env/prepare { packs, pip, npm } 在后台装，页面轮询 status 看进度；/api/env/clear 整个删掉
-// 准备环境就是把环境对齐到勾选：勾上的装，上回装了、这回没勾的卸掉
+// 接口：POST /api/env/status 查状态；/api/env/prepare 在 Windows 后台装卸选中的包，在 macOS 重探系统工具并记下结果；
+// /api/env/clear 删环境目录，不卸系统工具。准备与清空互斥，也不能和存储换根交叠。
 "use strict";
-const { sendJson, readJson, jsonRoute, errorText, readJsonFile } = require("../http.js");
+const { jsonRoute, errorText, readJsonFile } = require("../http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Readable } = require("node:stream");
@@ -46,9 +46,25 @@ const MIRRORS = {
   }
 };
 
-module.exports = function createEnv({ envHome }) {
+// macOS 没有环境包可装：改为探测系统里现成的 Python、Node 与 ffmpeg。brew 的两个 prefix 先看——
+// 从 Finder 或 start.command 起的桥接 PATH 往往很窄，只靠 PATH 会探漏；再看 PATH 里的
+const SYSTEM_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];
+const SYSTEM_TOOLS = [
+  { id: "python", bins: ["python3", "python"], args: ["--version"] },
+  { id: "node", bins: ["node"], args: ["--version"] },
+  { id: "ffmpeg", bins: ["ffmpeg"], args: ["-version"] }
+];
+
+module.exports = function createEnv({ envHome, route = jsonRoute }) {
   /** @type {{ running: boolean, step: string, log: string[], error: string } | null} */
-  let job = null;
+  let job = null,
+    clearing = false,
+    probed = null; // darwin 的系统工具探测结果：每进程懒探一次，prepare（重新探测）时刷新
+  function systemTools() {
+    if (process.platform !== "darwin") return null;
+    if (!probed) probed = probeSystemTools();
+    return probed;
+  }
   const dirs = () => {
     const home = envHome();
     return {
@@ -76,9 +92,16 @@ module.exports = function createEnv({ envHome }) {
       ...(mirror.python ? { UV_PYTHON_INSTALL_MIRROR: mirror.python } : {})
     };
   }
-  // 给桥接起的进程接上环境：PATH 前面加上环境的几处，pip、uv、npm 与各工具链都指向环境里；环境没备好就原样返回。
+  // Windows 备好后才接环境的 PATH 前缀与 pip、uv、npm 等变量；macOS 只添系统工具目录。
   // Windows 上环境变量名不分大小写，PATH 常写作 Path：照原来的键名接，不另起一个
   function apply(base) {
+    // macOS 不备环境包：把 brew 的 bin 目录接进 PATH，指令里直接用 ffmpeg、python3 也能找着
+    // （探测选中的 brew 目录先，其余 brew 目录其次，原 PATH 最后）
+    if (process.platform === "darwin") {
+      const extra = systemDirs(systemTools()),
+        key = Object.keys(base).find(name => name.toUpperCase() === "PATH") || "PATH";
+      return extra.length ? { ...base, [key]: [...extra, base[key]].filter(Boolean).join(path.delimiter) } : base;
+    }
     const state = readState();
     if (!state) return base;
     const d = dirs(),
@@ -111,6 +134,7 @@ module.exports = function createEnv({ envHome }) {
     return {
       home: envHome(),
       supported: process.platform === "win32",
+      system: systemTools(),
       state: readState(),
       packs: PACKS.map(({ id, name, tag, note, hint = "", base = false, pip = [], npm = [] }) => ({
         id,
@@ -125,98 +149,83 @@ module.exports = function createEnv({ envHome }) {
       job: job && { running: job.running, step: job.step, error: job.error, log: job.log.slice(-60) }
     };
   }
-  async function prepare({ packs = [], pip = [], npm = [] }) {
+  async function prepare({ packs = [], pip = [], npm = [] }, say, step) {
     const chosen = PACKS.filter(pack => pack.base || packs.includes(pack.id)),
       before = readState(),
       dropped = PACKS.filter(pack => before?.packs.includes(pack.id) && !chosen.includes(pack)),
       d = dirs();
     let mirror = "china",
       m = MIRRORS.china;
-    const say = line => {
-      job.log.push(line);
-      if (job.log.length > LOG_KEEP) job.log.splice(0, job.log.length - LOG_KEEP);
-    };
-    const step = text => {
-      job.step = text;
-      say(`— ${text}`);
-    };
-    try {
-      fs.mkdirSync(d.bin, { recursive: true });
-      step("挑下载源");
-      mirror = await pickSource();
-      m = MIRRORS[mirror];
-      say(mirror === "china" ? "国内镜像快些，走镜像" : "官方源快些，走官方");
-      const pipPackages = unique([...chosen.flatMap(pack => pack.pip || []), ...pip]),
-        npmPackages = unique([...chosen.flatMap(pack => pack.npm || []), ...npm]),
-        // 上回装了、这回不要的：去掉仍被别组或「另装」用着的
-        pipDrop = unique([...dropped.flatMap(pack => pack.pip || []), ...(before?.pip || [])]).filter(name => !pipPackages.includes(name)),
-        npmDrop = unique([...dropped.flatMap(pack => pack.npm || []), ...(before?.npm || [])]).filter(name => !npmPackages.includes(name)),
-        env = { ...process.env, ...uvVars(m) },
-        npmEnv = { ...process.env, npm_config_prefix: d.node, npm_config_registry: m.npm, npm_config_cache: path.join(d.cache, "npm") },
-        python = path.join(d.py, "Scripts", "python.exe");
-      step("取 uv");
-      const uv = await ensureUv(m, say);
-      step(`装 Python ${PYTHON}`);
-      await run(uv, ["python", "install", PYTHON], env, say);
-      if (!fs.existsSync(python)) {
-        step("建虚拟环境");
-        await run(uv, ["venv", "--seed", "--python", PYTHON, d.py], env, say);
-      }
-      if (pipDrop.length) {
-        step(`卸 Python 包 ${pipDrop.length} 个`);
-        await run(uv, ["pip", "uninstall", "--python", python, ...pipDrop], env, say);
-      }
-      if (npmDrop.length) {
-        step(`卸 Node 工具 ${npmDrop.length} 个`);
-        await run(process.execPath, [npmCli(), "uninstall", "-g", ...npmDrop], npmEnv, say);
-      }
-      for (const pack of dropped) {
-        for (const name of Object.keys(pack.links || {}))
-          if (!chosen.some(other => other.links?.[name])) {
-            fs.rmSync(path.join(d.bin, `${name}.cmd`), { force: true });
-            if (pack.exe) unlinkExe(name, say);
-          }
-        if (pack.dir) {
-          step(`卸 ${pack.name}`);
-          fs.rmSync(path.join(d.home, pack.dir), { recursive: true, force: true });
-        }
-      }
-      if (pipPackages.length) {
-        step(`装 Python 包 ${pipPackages.length} 个`);
-        await run(uv, ["pip", "install", "--python", python, ...pipPackages], env, say);
-      }
-      if (npmPackages.length) {
-        step(`装 Node 工具 ${npmPackages.length} 个`);
-        await run(process.execPath, [npmCli(), "install", "-g", "--no-fund", "--no-audit", ...npmPackages], npmEnv, say);
-      }
-      // 自己下载的工具链：已有就不重下；装到一半出错的整个删掉，免得下回当成已装
-      for (const pack of chosen.filter(pack => pack.fetch && !fs.existsSync(path.join(d.home, pack.dir)))) {
-        step(`装 ${pack.name}`);
-        try {
-          await pack.fetch({
-            home: d.home,
-            mirror: m,
-            say,
-            download: (url, name) => download(url, path.join(d.cache, name), say),
-            unpack: (file, to) => unpack(file, to),
-            run: (command, args, runEnv) => run(command, args, runEnv, say)
-          });
-        } catch (error) {
-          fs.rmSync(path.join(d.home, pack.dir), { recursive: true, force: true });
-          throw error;
-        }
-      }
-      for (const pack of chosen) for (const [name, target] of Object.entries(pack.links || {})) link(name, target, say, pack.exe);
-      const version = execFileSync(python, ["--version"], { encoding: "utf8", windowsHide: true }).trim();
-      const state = { 言: "环境", python: version, packs: chosen.map(pack => pack.id), pip, npm, mirror, at: new Date().toISOString() };
-      fs.writeFileSync(path.join(d.home, STATE_FILE), JSON.stringify(state, null, 1));
-      step("已备好");
-    } catch (error) {
-      job.error = String(error.message || error);
-      say(`✗ ${job.error}`);
-    } finally {
-      job.running = false;
+    fs.mkdirSync(d.bin, { recursive: true });
+    step("挑下载源");
+    mirror = await pickSource();
+    m = MIRRORS[mirror];
+    say(mirror === "china" ? "国内镜像快些，走镜像" : "官方源快些，走官方");
+    const pipPackages = unique([...chosen.flatMap(pack => pack.pip || []), ...pip]),
+      npmPackages = unique([...chosen.flatMap(pack => pack.npm || []), ...npm]),
+      // 上回装了、这回不要的：去掉仍被别组或「另装」用着的
+      pipDrop = unique([...dropped.flatMap(pack => pack.pip || []), ...(before?.pip || [])]).filter(name => !pipPackages.includes(name)),
+      npmDrop = unique([...dropped.flatMap(pack => pack.npm || []), ...(before?.npm || [])]).filter(name => !npmPackages.includes(name)),
+      env = { ...process.env, ...uvVars(m) },
+      npmEnv = { ...process.env, npm_config_prefix: d.node, npm_config_registry: m.npm, npm_config_cache: path.join(d.cache, "npm") },
+      python = path.join(d.py, "Scripts", "python.exe");
+    step("取 uv");
+    const uv = await ensureUv(m, say);
+    step(`装 Python ${PYTHON}`);
+    await run(uv, ["python", "install", PYTHON], env, say);
+    if (!fs.existsSync(python)) {
+      step("建虚拟环境");
+      await run(uv, ["venv", "--seed", "--python", PYTHON, d.py], env, say);
     }
+    if (pipDrop.length) {
+      step(`卸 Python 包 ${pipDrop.length} 个`);
+      await run(uv, ["pip", "uninstall", "--python", python, ...pipDrop], env, say);
+    }
+    if (npmDrop.length) {
+      step(`卸 Node 工具 ${npmDrop.length} 个`);
+      await run(process.execPath, [npmCli(), "uninstall", "-g", ...npmDrop], npmEnv, say);
+    }
+    for (const pack of dropped) {
+      for (const name of Object.keys(pack.links || {}))
+        if (!chosen.some(other => other.links?.[name])) {
+          fs.rmSync(path.join(d.bin, `${name}.cmd`), { force: true });
+          if (pack.exe) unlinkExe(name, say);
+        }
+      if (pack.dir) {
+        step(`卸 ${pack.name}`);
+        fs.rmSync(path.join(d.home, pack.dir), { recursive: true, force: true });
+      }
+    }
+    if (pipPackages.length) {
+      step(`装 Python 包 ${pipPackages.length} 个`);
+      await run(uv, ["pip", "install", "--python", python, ...pipPackages], env, say);
+    }
+    if (npmPackages.length) {
+      step(`装 Node 工具 ${npmPackages.length} 个`);
+      await run(process.execPath, [npmCli(), "install", "-g", "--no-fund", "--no-audit", ...npmPackages], npmEnv, say);
+    }
+    // 自己下载的工具链：已有就不重下；装到一半出错的整个删掉，免得下回当成已装
+    for (const pack of chosen.filter(pack => pack.fetch && !fs.existsSync(path.join(d.home, pack.dir)))) {
+      step(`装 ${pack.name}`);
+      try {
+        await pack.fetch({
+          home: d.home,
+          mirror: m,
+          say,
+          download: (url, name) => download(url, path.join(d.cache, name), say),
+          unpack: (file, to) => unpack(file, to),
+          run: (command, args, runEnv) => run(command, args, runEnv, say)
+        });
+      } catch (error) {
+        fs.rmSync(path.join(d.home, pack.dir), { recursive: true, force: true });
+        throw error;
+      }
+    }
+    for (const pack of chosen) for (const [name, target] of Object.entries(pack.links || {})) link(name, target, say, pack.exe);
+    const version = execFileSync(python, ["--version"], { encoding: "utf8", windowsHide: true }).trim();
+    const state = { 言: "环境", python: version, packs: chosen.map(pack => pack.id), pip, npm, mirror, at: new Date().toISOString() };
+    fs.writeFileSync(path.join(d.home, STATE_FILE), JSON.stringify(state, null, 1));
+    step("已备好");
   }
   // uv 本身：PyPI 上 uv 的 wheel 里带着 uv.exe 与 uvx.exe，取最新的一个，用系统自带的 tar 解出来
   async function ensureUv(mirror, say) {
@@ -280,52 +289,147 @@ module.exports = function createEnv({ envHome }) {
   }
 
   // 环境里某件工具的程序本身（照 link 立的入口读回路径）；没装、或入口不是这种形状的返回 ""。
-  // 桥接自己要调它时用：.cmd 入口得经 cmd 才起得来，直接起 exe 省一层
+  // 桥接自己要调它时用：.cmd 入口得经 cmd 才起得来，直接起 exe 省一层。
+  // 没有有效入口时，macOS 退回系统里探到的那一份（如 Homebrew 的 ffmpeg）
   function toolPath(name) {
     try {
       const found = /^@"([^"]+)"/.exec(fs.readFileSync(path.join(dirs().bin, `${name}.cmd`), "utf8"))?.[1] || "";
-      return found && fs.existsSync(found) ? found : "";
-    } catch {
-      return "";
+      if (found && fs.existsSync(found)) return found;
+    } catch {}
+    return systemTools()?.[name]?.path || "";
+  }
+
+  // macOS 的「准备」：不做安装，把系统里现成的 Python、Node、ffmpeg 重探一遍记进状态
+  function prepareSystem(current, say) {
+    current.step = "探测系统工具";
+    probed = probeSystemTools();
+    for (const tool of SYSTEM_TOOLS) {
+      const hit = probed[tool.id];
+      say(hit ? `${tool.id} → ${hit.version || hit.path}` : `（没找到 ${tool.id}，跳过）`);
+    }
+    const home = envHome();
+    fs.mkdirSync(home, { recursive: true });
+    const state = { 言: "系统环境", system: probed, at: new Date().toISOString() };
+    fs.writeFileSync(path.join(home, STATE_FILE), JSON.stringify(state, null, 1));
+    current.step = "已探好";
+  }
+
+  // 先同步占位，再碰环境目录；连读旧状态或初始化失败也由这一处收口。
+  async function startPrepare(body) {
+    job = { running: true, step: "", log: [], error: "" };
+    const current = job;
+    const say = line => {
+      current.log.push(line);
+      if (current.log.length > LOG_KEEP) current.log.splice(0, current.log.length - LOG_KEEP);
+    };
+    const step = text => {
+      current.step = text;
+      say(`— ${text}`);
+    };
+    try {
+      if (process.platform === "darwin") prepareSystem(current, say);
+      else await prepare(body, say, step);
+    } catch (error) {
+      current.error = errorText(error, Infinity);
+      say(`✗ ${current.error}`);
+    } finally {
+      current.running = false;
     }
   }
 
-  async function handleStatus(req, res) {
-    await readJson(req).catch(() => ({}));
-    sendJson(res, 200, status());
-  }
-  const handlePrepare = jsonRoute(
-    async body => {
-      // 各件工具包下的都是 Windows 的发行版（python.exe、windows-amd64 的 zip……），别处装不上
-      if (process.platform !== "win32")
-        throw Error("环境工具包只备了 Windows 版；在 macOS 上请用系统里的 Python 与 Node（可经 Homebrew 安装）");
-      if (!job?.running) {
-        job = { running: true, step: "", log: [], error: "" };
-        void prepare(body);
-      }
+  const handlePrepare = route(
+    body => {
+      if (clearing) throw Error("环境正在清空，稍候再试");
+      // 各件工具包下的都是 Windows 的发行版（python.exe、windows-amd64 的 zip……），别处装不上；
+      // macOS 不装包，「准备」就是重探一遍系统工具
+      if (process.platform !== "win32" && process.platform !== "darwin")
+        throw Error("环境工具包只备了 Windows 版；在这套系统上请用系统里的 Python 与 Node");
+      if (!job?.running) void startPrepare(body);
       return status();
     },
     error => errorText(error, Infinity)
   );
-  async function handleClear(req, res) {
-    await readJson(req).catch(() => ({}));
-    if (job?.running) return sendJson(res, 400, { error: "环境正在准备，稍候再清" });
+  const handleClear = route(async () => {
+    if (job?.running) throw Error("环境正在准备，稍候再清");
+    if (clearing) throw Error("环境正在清空，稍候再试");
+    clearing = true;
     try {
       await fs.promises.rm(envHome(), { recursive: true, force: true });
       job = null;
-      sendJson(res, 200, status());
     } catch (error) {
-      sendJson(res, 400, { error: `没能删干净（可能有进程正用着环境里的程序）：${errorText(error, 200)}` });
+      throw Error(`没能删干净（可能有进程正用着环境里的程序）：${errorText(error, 200)}`);
+    } finally {
+      clearing = false;
     }
-  }
+    return status();
+  });
   return {
     apply,
     toolPath,
-    routes: { "POST /api/env/status": handleStatus, "POST /api/env/prepare": handlePrepare, "POST /api/env/clear": handleClear }
+    busy: () => clearing || !!job?.running,
+    // 只在换根成功后调用；系统工具探测缓存是全机的，不随根变。
+    resetJob: () => (job = null),
+    routes: { "POST /api/env/status": route(status), "POST /api/env/prepare": handlePrepare, "POST /api/env/clear": handleClear }
   };
 };
 
 const unique = names => [...new Set(names.map(name => String(name).trim()).filter(Boolean))];
+// PATH 前缀该放哪几处：探测认下来的那处（只在 brew 两处之内）先，其余 brew 目录殿后，各去重、只留真有的。
+// 探测按「跑得通」选（坏的那份跳过），PATH 却按目录先后找——选定的是 /usr/local/bin 那份而不提前，
+// 指令里敲 python3 照样先撞上 /opt/homebrew/bin 里坏的那份，状态卡报的版本与实际跑的不是同一件。
+// 这是目录排序，不是逐工具绑定：多个工具的优先目录不一定相同，探到的非 brew 路径也不会被提到前面。
+// 原 PATH 在末尾照原顺序保留；不能保证按名字启动的每件工具都与逐件探测结果一致。
+function systemDirs(found) {
+  const hit = unique(SYSTEM_TOOLS.map(tool => path.dirname(found?.[tool.id]?.path || "")).filter(dir => SYSTEM_DIRS.includes(dir)));
+  return unique([...hit, ...SYSTEM_DIRS]).filter(dir => fs.existsSync(dir));
+}
+// 按 SYSTEM_TOOLS 逐个探：每个工具先按候选程序名排序（如 python3 先于 python），每个名字再查 brew 两处、原 PATH。
+// 只「存在且可执行」不算——brew 里那份可能缺库、架构不对，跑起来就错；停在坏的上面，
+// 别处好的就用不上了（ffmpeg 尤其：预览视频换壳据此取壳），所以探不通就跳过、接着往下试
+function probeSystemTools() {
+  const candidates = [
+      ...SYSTEM_DIRS,
+      ...String(process.env.PATH || "")
+        .split(path.delimiter)
+        .filter(Boolean)
+    ],
+    found = {};
+  for (const tool of SYSTEM_TOOLS) {
+    for (const bin of tool.bins) {
+      for (const dir of candidates) {
+        const file = path.join(dir, bin),
+          version = probeVersion(file, tool.args);
+        if (version === null) continue;
+        found[tool.id] = { path: file, version };
+        break;
+      }
+      if (found[tool.id]) break;
+    }
+  }
+  return found;
+}
+// 跑该工具自己的版本参数拿版本：不是可执行文件、或跑不起来（缺库、架构不对）回 null，这个候选就不算。
+// 首行往往还带着整句版权（ffmpeg 是「ffmpeg version 7.1-… Copyright (c) 2000-2024 the FFmpeg developers」），
+// 只留前半句——它要进状态卡与系统提示，别把整行版权也带进去
+function probeVersion(file, args) {
+  try {
+    if (!fs.statSync(file).isFile()) return null;
+    fs.accessSync(file, fs.constants.X_OK);
+  } catch {
+    return null;
+  }
+  try {
+    const line = String(
+      execFileSync(file, args, { encoding: "utf8", timeout: 5000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] })
+    )
+      .split("\n")[0]
+      .split(/\s+Copyright\b/i)[0]
+      .trim();
+    return line.length > 60 ? `${line.slice(0, 59)}…` : line;
+  } catch {
+    return null;
+  }
+}
 // 下载到文件，大的每过一成报一次进度；先写到 .part，下完才改名
 async function download(url, file, say) {
   const response = await fetch(url, { signal: AbortSignal.timeout(30 * 60 * 1000) });
@@ -364,7 +468,7 @@ async function unpack(file, to) {
   });
   fs.rmSync(file, { force: true });
 }
-// 逐行转述子进程的输出（去掉颜色控制符），退出码不为 0 即失败，带上最后几行
+// 把收到的输出块去掉颜色控制符再按换行分段；不跨块拼行。退出码不为 0 时带最近几段报错
 function run(command, args, env, say) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });

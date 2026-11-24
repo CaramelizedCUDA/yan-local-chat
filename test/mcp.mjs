@@ -9,6 +9,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url)),
   FAKE = path.join(HERE, "fake-mcp.mjs"),
   HTTP_PORT = 8795,
   SSE_PORT = 8794;
+// macOS 不备环境包，环境页是系统工具卡、工具包区块隐藏
+const MAC = process.platform === "darwin";
 const web = spawn(process.execPath, [FAKE, "--http", String(HTTP_PORT)], { stdio: "ignore" }),
   old = spawn(process.execPath, [FAKE, "--sse", String(SSE_PORT)], { stdio: "ignore" });
 process.on("exit", () => (web.kill(), old.kill()));
@@ -24,9 +26,14 @@ const seed = {
     autoTitle: false,
     commandPolicyDefault: "ask",
     mcpServers: {
-      local: { command: process.execPath, args: [FAKE] },
-      big: { command: process.execPath, args: [FAKE, "--many"] },
-      web: { url: `http://127.0.0.1:${HTTP_PORT}/mcp`, note: "USER-NOTE-WEB" }
+      // 测试服务是本地受信 fixture：显式标白查询工具，不能信任其自报的 readOnlyHint。
+      local: { command: process.execPath, args: [FAKE], readOnlyTools: ["echo"] },
+      big: {
+        command: process.execPath,
+        args: [FAKE, "--many"],
+        readOnlyTools: ["echo", ...Array.from({ length: 40 }, (_, i) => `tool_${String(i).padStart(2, "0")}`)]
+      },
+      web: { url: `http://127.0.0.1:${HTTP_PORT}/mcp`, note: "USER-NOTE-WEB", readOnlyTools: ["echo"] }
     }
   },
   profiles: [
@@ -65,7 +72,7 @@ await evalJs(`document.querySelector('#approvalBar [data-approve="run"]').click(
 await waitFor(`${lastAssistant}?.dataset.status === "complete"`, 60000);
 
 const reply = await evalJs(`${lastAssistant}.textContent`);
-check("the server's own instructions ride along in the system prompt", /hint:true/.test(reply), reply.slice(0, 300));
+check("untrusted server instructions never enter the system prompt", /hint:false/.test(reply), reply.slice(0, 300));
 check("the user's note for a server rides along too, under that server", /note:true/.test(reply), reply.slice(0, 300));
 check(
   "small servers are handed over tool by tool; the big one only as a directory",
@@ -191,12 +198,14 @@ if (deleteConfirm) {
 await evalJs(`document.querySelector('.tab-btn[data-tab="env"]').click(); true`);
 await waitFor(`document.querySelectorAll("#envPacks [data-env-pack]").length > 3`, 15000);
 const envPage = await evalJs(
-  `({ base: document.querySelector('[data-env-pack="python"]').getAttribute("aria-disabled"), status: document.querySelector("#envStatus .card-name").textContent })`
+  `({ base: document.querySelector('[data-env-pack="python"]').getAttribute("aria-disabled"), status: document.querySelector("#envStatus .card-name").textContent, managedHidden: document.querySelector("#envManaged").classList.contains("hidden") })`
 );
 await evalJs(`document.querySelector('[data-env-pack="image"]').click(); true`);
 check(
   "env page lists the packs (Python as the fixed base); picking one is saved",
-  envPage.base === "true" && envPage.status === "尚未准备" && (await evalJs(`__yanState().settings.env.packs.includes("image")`)),
+  envPage.base === "true" &&
+    (MAC ? envPage.status === "系统工具" && envPage.managedHidden : envPage.status === "尚未准备") &&
+    (await evalJs(`__yanState().settings.env.packs.includes("image")`)),
   JSON.stringify(envPage)
 );
 await close();
