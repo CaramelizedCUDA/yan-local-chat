@@ -268,12 +268,12 @@ async function deliverLetter(letter) {
         refreshSteps(host);
         if (running.reading) watchSteer(running, host);
       } else {
-        live.messages.push(user);
-        live.updatedAt = now();
-        // 叫停过的只记下；模型可用又没在作答才开工（这一问里信就是它的话）
-        if (!live.userHalted) {
-          const profile = activeProfile(live);
-          if (profile && !quotaBlocked(profile)) void startTurn(live, user, profile, { follow: false });
+        // 没在作答：模型可用就由这封信开一问（startTurn 会把它写进册）；叫停过的、没有可用的模型或余墨已尽的只记下不自动开工
+        const profile = live.userHalted ? null : activeProfile(live);
+        if (profile && !quotaBlocked(profile)) void startTurn(live, user, profile, { follow: false });
+        else {
+          live.messages.push(user);
+          live.updatedAt = now();
         }
         if (currentId === live.id && view === "chat") renderConversation();
         else renderHistory();
@@ -283,6 +283,8 @@ async function deliverLetter(letter) {
     }
     markDirty(live.id);
     saveStore();
+    // 重领的信正文未变：同指纹的普通写被跳过、拿不到「已落盘」，回执就永远等不来。强制写一回才有着落
+    flushConversations([live.id], { force: true });
     // 回执只认落盘：还在浏览器里暂存着的不算收到，租期过了别页（或刷新后的自己）再领
     const landed = await chatWritePromises.get(live.id)?.catch(() => null);
     if (landed === "disk") await storeBridge("/api/mail/ack", { id: letter.id, owner: PAGE_ID }).catch(() => {});

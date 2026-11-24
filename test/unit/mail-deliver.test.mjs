@@ -11,11 +11,15 @@ function rig(conversation, { landed = "disk" } = {}) {
         bootstrap = { store: { root: "/tmp/root" } };
         store = { settings: {}, conversations: [conv], drafts: {}, memory: { items: [] } };
         markDirty = saveStore = saveStoreSoon = () => {};
+        flushConversations = () => [];
         renderHistory = renderConversation = renderSendButtons = refreshSteps = renderApprovalBar = () => {};
         currentId = null;
         view = "chat";
         claimTurn = async () => true;
-        startTurn = async () => { calls.starts += 1; };
+        startTurn = async (c, user) => {
+          calls.starts += 1;
+          c.messages.push(user, { id: "a" + calls.starts, role: "assistant", status: "complete", content: "答" });
+        };
         chatWritePromises.set(conv.id, Promise.resolve(landed));
         storeBridge = async path => {
           calls.posts.push(path);
@@ -42,11 +46,11 @@ const convOf = (extra = {}) => ({
 });
 const letter = id => ({ id, to: "c-1", from: "总调度", payload: "去办一件事", postedAt: Date.now() });
 
-test("收信：认领→写成带 mailId 的用户消息→落盘→回执；叫醒起一新答", async () => {
+test("收信：认领→由这封信开一问→落盘→回执；同信号只入册一回", async () => {
   const conv = convOf(),
     { deliverLetter, calls } = rig(conv);
   await deliverLetter(letter("m-1"));
-  assert.equal(conv.messages.length, 1);
+  assert.equal(conv.messages.length, 2);
   assert.equal(conv.messages[0].mailId, "m-1");
   assert.equal(conv.messages[0].content, "去办一件事");
   assert.deepEqual(conv.mailSeen, ["m-1"]);
@@ -59,7 +63,7 @@ test("收信：同一封再领（ACK 前刷新重来）不重复写消息，照�
     { deliverLetter, calls } = rig(conv);
   await deliverLetter(letter("m-2"));
   await deliverLetter(letter("m-2"));
-  assert.equal(conv.messages.length, 1);
+  assert.equal(conv.messages.filter(m => m.mailId === "m-2").length, 1);
   assert.equal(calls.starts, 1);
   assert.deepEqual(
     calls.posts.filter(path => path.endsWith("/ack")),
@@ -77,7 +81,7 @@ test("收信：用户叫停过的对话只记下、不自动开工；没落盘�
   const stuck = convOf({ id: "c-9" }),
     offline = rig(stuck, { landed: "page" });
   await offline.deliverLetter({ id: "m-4", to: "c-9", payload: "一" });
-  assert.equal(stuck.messages.length, 1);
+  assert.equal(stuck.messages.filter(m => m.mailId === "m-4").length, 1);
   assert.deepEqual(offline.calls.posts.filter(path => path.endsWith("/ack")), []);
 });
 
