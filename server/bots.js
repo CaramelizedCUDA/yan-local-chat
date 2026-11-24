@@ -14,7 +14,7 @@ const FILE = "bots.json",
   DRIVERS = ["native"],
   STATUSES = ["active", "paused", "retired"];
 
-/** @param {unknown} raw @returns {object} 九个字段的一只 Bot；不合规的抛错，整份名册不落 */
+/** @param {any} raw @returns {object} 九个字段的一只 Bot；不合规的抛错，整份名册不落 */
 function normalizeBot(raw) {
   if (!raw || typeof raw !== "object") throw Error("名册里有一项不是对象");
   const id = String(raw.id || "");
