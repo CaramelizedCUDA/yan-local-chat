@@ -45,6 +45,7 @@ function relayLabel(relay) {
     return { seal: t("候"), name: t`候「${relay.title}」到点`, gist: relay.late ? t`迟 ${spanText(relay.late)}` : "" };
   if (relay.kind === "bg")
     return { seal: t("候"), name: bgEndedText(relay) + (relay.ok || relay.lost ? "" : t` · 退出码 ${relay.exitCode ?? "?"}`), gist: "" };
+  if (relay.kind === "mail") return { seal: t("信"), name: relay.title ? t`信「${relay.title}」` : t("来信"), gist: "" };
   return { seal: t("遣"), name: t`帮手「${relay.title}」${relay.ok ? t("回报") : t("未完成")}`, gist: "" };
 }
 // 收信的那一个（主答的消息，或帮手的 sub）在自己的时间线末落一小步「回报」，递上后打勾；回这一步
@@ -195,4 +196,95 @@ function foldRelayTail(conversation, message) {
     .filter(m => m.role === "user")
     .flatMap(m => (m.relay || []).map((relay, i) => ({ report: i ? "" : m.content, relay })));
   conversation.heldReports = [...folded, ...(conversation.heldReports || [])];
+}
+// ---------- 磁盘信箱 ----------
+// 桥接那头落在 存储根/mail-queue/ 的信（跨 Bot 指令，见 server/mail.js 与 94-driver.js 的 send）：
+// 长等、认领、把指令写成那段对话的一条用户消息，落盘落稳才回执。同一封不重复入册——对话上的 mailSeen
+// 记已收的号，认领后写消息前就记上、与消息同一份落盘。没落盘的（桥接断了、只进浏览器暂存）不回执，
+// 租期一过再领重来。正在作答的照补言的路子递进这一答；没在作答的起一新答；用户叫停过的只记下不自动开工。
+async function listenMail() {
+  let skip = [];
+  for (;;) {
+    const scope = bootstrap.store;
+    try {
+      const { letters } = await storeBridge("/api/mail/wait", { skip });
+      if (bootstrap.store !== scope) continue;
+      const list = Array.isArray(letters) ? letters : [],
+        // 这段对话这页认不得（别处开的、还没读回）或别处正在答的：先跳过，空手一回后再看
+        mine = list.filter(letter => store.conversations.some(c => c.id === letter.to) && !remoteBusy.has(letter.to));
+      skip = list.length ? list.filter(item => !mine.includes(item)).map(item => item.id) : [];
+      for (const letter of mine) await deliverLetter(letter);
+    } catch {
+      // 桥接断了一下（重启、睡眠醒来）：稍候再等
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    } finally {
+      if (bootstrap.store !== scope) skip = [];
+    }
+  }
+}
+/** @param {{ id: string, to: string, from?: string, payload: string, postedAt?: number }} letter */
+async function deliverLetter(letter) {
+  const conversation = store.conversations.find(c => c.id === letter.to);
+  if (!conversation || runningElsewhere(conversation.id)) return;
+  // 打算叫醒的先认领这一问（与发送同一道闸）：认领不上就不领这封信，留给它醒着的那页
+  if (!requestJob(conversation.id) && !conversation.userHalted) {
+    const profile = activeProfile(conversation);
+    if (profile && !quotaBlocked(profile) && !(await claimTurn(conversation, { quiet: true }))) return;
+  }
+  const claim = await storeBridge("/api/mail/claim", { id: letter.id, owner: PAGE_ID }).catch(() => null);
+  if (!claim?.claimed) return;
+  try {
+    // 认领的工夫里对话可能整段没了或被别处写过换掉：按 id 取当前这一份
+    const live = store.conversations.find(c => c.id === letter.to);
+    if (!live) return;
+    const seen = (live.mailSeen ||= []);
+    if (!seen.includes(letter.id)) {
+      /** @type {Message} */
+      const user = {
+        id: uid(),
+        role: "user",
+        content: String(letter.payload || ""),
+        timestamp: now(),
+        mailId: letter.id,
+        relay: [{ kind: "mail", title: String(letter.from || ""), ok: true }]
+      };
+      const running = requestJob(live.id),
+        host = running && live.messages.find(message => message.id === running.assistantId);
+      if (host?.status === "streaming") {
+        // 正在作答：照补言的路子递进这一答——行迹里落一步「补言」，回合边界递上
+        /** @type {Step} */
+        const step = {
+          id: `note_${uid().slice(0, 8)}`,
+          name: "user_note",
+          arguments: "{}",
+          status: "running",
+          title: user.content.split("\n").find(Boolean)?.slice(0, 80) || "",
+          note: user.content,
+          at: host.content.length,
+          rat: String(host.reasoning || "").length
+        };
+        (running.queue ||= []).push({ user, step });
+        (host.steps ||= []).push(step);
+        refreshSteps(host);
+        if (running.reading) watchSteer(running, host);
+      } else {
+        live.messages.push(user);
+        live.updatedAt = now();
+        // 叫停过的只记下；模型可用又没在作答才开工（这一问里信就是它的话）
+        if (!live.userHalted) {
+          const profile = activeProfile(live);
+          if (profile && !quotaBlocked(profile)) void startTurn(live, user, profile, { follow: false });
+        }
+        if (currentId === live.id && view === "chat") renderConversation();
+        else renderHistory();
+      }
+      seen.push(letter.id);
+      if (seen.length > 100) live.mailSeen = seen.slice(-100);
+    }
+    markDirty(live.id);
+    saveStore();
+    // 回执只认落盘：还在浏览器里暂存着的不算收到，租期过了别页（或刷新后的自己）再领
+    const landed = await chatWritePromises.get(live.id)?.catch(() => null);
+    if (landed === "disk") await storeBridge("/api/mail/ack", { id: letter.id, owner: PAGE_ID }).catch(() => {});
+  } catch {}
 }

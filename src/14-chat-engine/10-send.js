@@ -19,6 +19,12 @@ async function preparing(task) {
 async function prepareTurn(c, { fresh = false } = {}) {
   if (!(await ensureWorkReady(c))) return false;
   if (!(await claimTurn(c))) return false;
+  // 用户自己动手开了工：之前叫停的封印解了，信箱来件照常唤醒
+  const live = store.conversations.find(item => item.id === c.id) || c;
+  if (live.userHalted) {
+    delete live.userHalted;
+    markDirty(live.id);
+  }
   return !conversationRunning(c.id) && (fresh || store.conversations.includes(c));
 }
 // 任何开工入口都认这一道：正文、新对话、旁注、续帮手与回报。目录准备由各入口按需做；
@@ -192,6 +198,7 @@ function sendSupplement() {
     job = c && requestJob(c.id),
     assistant = c?.messages.find(message => message.id === job?.assistantId);
   if (!c || !job || !assistant || assistant.status !== "streaming") return stopGeneration();
+  delete c.userHalted; // 叫停过的这段，用户又开了口就算放行
   const user = takeComposer($("#chatInput"));
   // 引文另记在这一步上：行迹里画短的那句（游目圈点的连同画面），给模型的那份（带网址与各处的位置）递上时才拼进去（见 50-note.js 的 replay）
   const text = user.content || user.quote?.text || "";
@@ -399,6 +406,12 @@ function haltConversation(id, { removing = false } = {}) {
 // 输入区那方印上的「止」
 function stopGeneration(id = currentId) {
   haltConversation(id);
+  // 用户亲手叫停：信箱来件只记下、不再自动开工，直到用户再发话（见 94-driver.js 的 halt 与 70-mail.js 的 deliverLetter）
+  const c = store.conversations.find(item => item.id === id);
+  if (c && !c.userHalted) {
+    c.userHalted = true;
+    markDirty(id);
+  }
   saveStore();
   renderHistory();
   renderSendButtons();

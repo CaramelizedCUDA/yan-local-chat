@@ -60,6 +60,8 @@ async function boot() {
   // 约好的时刻：对一遍桥接那头的，再等着到点（页面关着时到的这时递上）
   void reconcileTimers();
   void listenTimers();
+  // 磁盘信箱：等桥接那头的来信（页面关着时到的这时领上）
+  void listenMail();
   applyAppearance();
   bindEvents();
   // 模型所用的浏览器若已开着（页面刷新过、桥接重启过），看台直接接上

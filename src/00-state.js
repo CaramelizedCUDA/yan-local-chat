@@ -113,12 +113,12 @@
  * @property {{ steps?: number, from?: number, to?: number, head?: boolean }} [fold] 撮要：并了几步、撮前撮后各几字；head 是压的这一问之前的前文（笔记在 note）
  */
 /**
- * 回来的是谁（细线、行迹里的「回报」一步、导出都照它画，见 relayLabel）：帮手（不带 kind）、后台指令结束（bg）、时刻到（timer）
+ * 回来的是谁（细线、行迹里的「回报」一步、导出都照它画，见 relayLabel）：帮手（不带 kind）、后台指令结束（bg）、时刻到（timer）、信箱来信（mail）
  * @typedef {Object} Relay
- * @property {string} step 点它回到哪一步（帮手那一趟、挂候的那一步）
- * @property {string} title 帮手名、后台编号、候的那句话
+ * @property {string} [step] 点它回到哪一步（帮手那一趟、挂候的那一步）；信箱来信不挂在哪一步上，没有
+ * @property {string} title 帮手名、后台编号、候的那句话、寄信人的名
  * @property {boolean} ok
- * @property {"bg"|"timer"} [kind]
+ * @property {"bg"|"timer"|"mail"} [kind]
  * @property {number} [exitCode]
  * @property {string} [gist] 后台指令起时那句白话
  * @property {boolean} [lost] 后台指令随桥接重启而止（旧记录：现已不为它叫醒）
@@ -159,6 +159,7 @@
  * @property {{ key: string, files?: { id: string, size: number }[], reasoningOnly?: boolean }} [cold] 收了尾，思绪与帮手的经过另存在对话目录的 行迹/ 里；files 是挪走的附件，reasoningOnly 表明无步骤、只另存了思绪
  * @property {{ root: string, at: string, files: number }} [checkpoint] 这一答头一回动手改文件前记下的目录（见 14-chat-engine/80-checkpoint.js）
  * @property {{ at: string, restored: number, removed: number }[]} [rewound] 人把目录退回到这一答开工前的几回
+ * @property {string} [mailId] 信箱来信的编号：同一封不重复入册（见 70-mail.js 的磁盘信箱）
  */
 /** @typedef {{ at: string, why: string, auto?: boolean }} Break 途中断过的一回：何时、为何；auto 是自动接着写上了的。续写不清，查「为何总断」时翻它 */
 /** @typedef {{ id: string, parentId: string|null, messages: Message[], createdAt: string }} Fork 被换下来的一段尾巴 */
@@ -185,6 +186,8 @@
  * @property {number} [titleTries]
  * @property {boolean} [showCompacted]
  * @property {{ report: string, relay: Relay }[]} [heldReports] 上一答断着时回来的回报，下一答开工时递上
+ * @property {string[]} [mailSeen] 已收进这段对话的信的编号（同一封不重复入册，界内保留最近一百号）
+ * @property {boolean} [userHalted] 用户亲手叫停过：信箱来件只记下、不自动开工，直到用户再发话
  */
 /**
  * @typedef {Object} Profile 一份模型配置
