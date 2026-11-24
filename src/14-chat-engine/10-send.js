@@ -168,10 +168,12 @@ function takeComposer(input, key = draftKey(), snapshot = composerSnapshot(input
  * @param {Conversation} c
  * @param {Message} user
  * @param {Profile} profile
+ * @param {{ follow?: boolean, pushed?: boolean }} [options] pushed：问已入册（收尾同步落的那份），只补待写的一答
  */
-async function startTurn(c, user, profile, { follow = true } = {}) {
+async function startTurn(c, user, profile, { follow = true, pushed = false } = {}) {
   const assistant = newAssistant(profile);
-  c.messages.push(user, assistant);
+  if (pushed) c.messages.push(assistant);
+  else c.messages.push(user, assistant);
   c.updatedAt = now();
   c.profileId = profile.id;
   saveStore();
@@ -335,10 +337,13 @@ function settleSupplements(conversation, assistant, job, profile) {
   assistant.steps = (assistant.steps || []).filter(step => !ids.has(step.id) || step.mailId);
   if (!assistant.steps.length) delete assistant.steps;
   const users = queue.map(item => item.user),
-    quote = users.find(u => u.quote)?.quote || null,
-    // 信箱来信单列：编号得跟着正文走才有凭据（草稿不记编号，见 70-mail.js 的回执凭据）
-    mails = users.filter(u => u.mailId),
+    // 信箱来信单列：编号得跟着正文走才有凭据（草稿不记编号，见 70-mail.js 的回执凭据）。
+    // 开张扫描可能抢在收尾前把信步转成了消息：已入册的不再并、不放回——同一封只记一回
+    // （ids 里这几步正要并进并问，hasMailRecord 查的时候不算凭据）
+    mails = users.filter(u => u.mailId && !hasMailRecord(conversation, u.mailId, ids)),
     typed = users.filter(u => !u.mailId),
+    pendingUsers = users.filter(u => !u.mailId || mails.includes(u)),
+    quote = pendingUsers.find(u => u.quote)?.quote || null,
     mailIds = mails.map(u => u.mailId);
   // 没另起成的那条路：补言放回案上（这一答没写完，或目录正退回、此刻写下的会被盖掉）。
   // 信不进案上草稿：逐封落成正式消息记下，只记不叫醒
@@ -369,32 +374,31 @@ function settleSupplements(conversation, assistant, job, profile) {
       putBack();
       return mail();
     }
+    if (!pendingUsers.length) return mail();
     /** @type {Message} */
     const user = {
       id: uid(),
       role: "user",
-      content: users
+      content: pendingUsers
         .map(u => u.content)
         .filter(Boolean)
         .join("\n\n"),
       timestamp: now(),
-      attachments: users.flatMap(u => u.attachments || []),
+      attachments: pendingUsers.flatMap(u => u.attachments || []),
       ...(quote ? { quote } : {}),
       ...(mailIds.length ? { mailIds } : {})
     };
+    // 并问当场落册：撤步与入册同一趟写下，中间落盘不再只有 mailSeen，扫描也抢不进这个空窗
+    conversation.messages.push(user);
+    conversation.updatedAt = now();
+    markDirty(conversation.id);
     setTimeout(() => {
-      // 排队的工夫里叫过停（用户「止」、驱动 halt 置的 userHalted）：这条只记下不开工——话不能丢，
-      // 与信箱来件撞上叫停的那条同一路数（见 70-mail.js）
-      if (conversation.userHalted) {
-        conversation.messages.push(user);
-        conversation.updatedAt = now();
-        markDirty(conversation.id);
-        saveStoreSoon();
-        if (currentId === conversation.id && view === "chat") renderConversation();
-        else renderHistory();
-        return;
-      }
-      void startTurn(conversation, user, profile, { follow: false });
+      // 回调按 id 取当前那份：跟读可能已换进新对象（旧对象的 userHalted 是死的）。
+      // 叫过停的只记不开工——信与补言已经入册，话不丢（见 70-mail.js 的叫停语义）
+      const live = store.conversations.find(c => c.id === conversation.id);
+      if (!live || live.userHalted) return;
+      if (!live.messages.includes(user)) live.messages.push(user);
+      void startTurn(live, user, profile, { follow: false, pushed: true });
     }, 0);
     mail();
     return true;

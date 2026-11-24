@@ -213,10 +213,13 @@ function pendingMailAck(conversationId, mailId) {
   set.add(mailId);
 }
 // 同一封信的凭据在不在册：消息上的编号，或行迹里带编号的那一步。落盘的快照、内存里活的都用它查
-/** @param {Conversation|object} c */
-function hasMailRecord(c, mailId) {
+/** @param {Conversation|object} c @param {Set<string>} [exceptSteps] 这些步骤不算凭据——它们正要并进并问（见 settleSupplements） */
+function hasMailRecord(c, mailId, exceptSteps) {
   return everyMessage(c).some(
-    m => m.mailId === mailId || (m.mailIds || []).includes(mailId) || (m.steps || []).some(step => step.mailId === mailId)
+    m =>
+      m.mailId === mailId ||
+      (m.mailIds || []).includes(mailId) ||
+      (m.steps || []).some(step => step.mailId === mailId && !exceptSteps?.has(step.id))
   );
 }
 // writeConversation 每真落一份盘照都来这过一遍（见 30-chats.js）：照里找得到编号才回执——
@@ -254,7 +257,8 @@ function recoverMailOrphans() {
         // 收尾已把它并成消息、或别的凭据在册的：只撤步骤，不再记一遍
         if (hasMailRecord(c, step.mailId)) continue;
         c.messages.push({
-          id: uid(),
+          // id 由编号定：两页各自恢复同一信步，并出来是同 id 两份合一，不是两条
+          id: "mailmsg_" + step.mailId,
           role: "user",
           content: String(step.note || ""),
           timestamp: now(),
@@ -312,7 +316,8 @@ async function deliverLetter(letter) {
     if (!known && !recorded) {
       /** @type {Message} */
       const user = {
-        id: uid(),
+        // 信的入册 id 由编号定：两页从同一快照各自收信/恢复，并出来是同一个 id 的两份，按 id 合一而非两条
+        id: "mailmsg_" + letter.id,
         role: "user",
         content: String(letter.payload || ""),
         timestamp: now(),
@@ -355,7 +360,7 @@ async function deliverLetter(letter) {
     } else if (!recorded) {
       // 收过的信凭据没了（步骤随收尾被撤、号被挤出 mailSeen 之类）：补一条正式消息留下凭据，不重复递送
       live.messages.push({
-        id: uid(),
+        id: "mailmsg_" + letter.id,
         role: "user",
         content: String(letter.payload || ""),
         timestamp: now(),

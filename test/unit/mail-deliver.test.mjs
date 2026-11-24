@@ -13,6 +13,10 @@ function rig(conversation) {
       "foldRelayTail",
       "settleSupplements",
       "requestJobs",
+      `swapConv: conv => {
+        const i = store.conversations.findIndex(c => c.id === conv.id);
+        if (i >= 0) store.conversations[i] = conv;
+      }`,
       `setup: (conv, calls) => {
         bootstrap = { store: { root: "/tmp/root" } };
         store = { settings: {}, conversations: [conv], drafts: {}, memory: { items: [] } };
@@ -22,9 +26,11 @@ function rig(conversation) {
         currentId = null;
         view = "chat";
         claimTurn = async () => true;
-        startTurn = async (c, user) => {
+        startTurn = async (c, user, profile, options) => {
           calls.starts += 1;
-          c.messages.push(user, { id: "a" + calls.starts, role: "assistant", status: "complete", content: "答" });
+          const assistant = { id: "a" + calls.starts, role: "assistant", status: "complete", content: "答" };
+          if (options?.pushed) c.messages.push(assistant);
+          else c.messages.push(user, assistant);
         };
         storeBridge = async path => {
           calls.posts.push(path);
@@ -171,6 +177,49 @@ test("收信：凭据在册的再冒头（残信淘汰、老号挤出 mailSeen�
   assert.deepEqual(conv.mailSeen, ["m-r"]);
   await mailOnDiskWrite(conv.id, snap(conv));
   assert.deepEqual(calls.posts.filter(path => path.endsWith("/ack")), ["/api/mail/ack"]);
+});
+
+test("收尾与开张扫描撞车：先被转成消息的信不再并进并问——同一封只入册一回", async () => {
+  const step = { id: "s1", name: "user_note", status: "running", note: "信", mailId: "m-d", mailFrom: "总" },
+    assistant = { id: "a1", role: "assistant", status: "complete", content: "答", steps: [step] },
+    conv = convOf({ messages: [{ id: "u0", role: "user", content: "问" }, assistant] }),
+    job = { queue: [{ user: { id: "um", role: "user", content: "信", mailId: "m-d" }, step }], controller: { signal: { aborted: false } } },
+    { settleSupplements, recoverMailOrphans, calls } = rig(conv);
+  // 扫描抢在收尾前：信步先被转成消息（id 由编号定）
+  recoverMailOrphans();
+  assert.equal(conv.messages.at(-1).id, "mailmsg_m-d");
+  // 收尾再到：同一封不再并进并问、不放回、不另起一答——册里始终只有一份
+  settleSupplements(conv, assistant, job, { id: "p1" });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(conv.messages.filter(m => m.mailId === "m-d" || (m.mailIds || []).includes("m-d")).length, 1);
+  assert.equal(calls.starts, 0);
+});
+
+test("收尾回调：跟读换过对象的按当前对象查停机——旧对象的标志是死的", async () => {
+  const step = { id: "s1", name: "user_note", status: "running", note: "信", mailId: "m-s", mailFrom: "总" },
+    assistant = { id: "a1", role: "assistant", status: "complete", content: "答", steps: [step] },
+    conv = convOf({ messages: [{ id: "u0", role: "user", content: "问" }, assistant] }),
+    job = { queue: [{ user: { id: "um", role: "user", content: "信", mailId: "m-s" }, step }], controller: { signal: { aborted: false } } },
+    { settleSupplements, swapConv, calls } = rig(conv);
+  assert.equal(settleSupplements(conv, assistant, job, { id: "p1" }), true);
+  // 并问当场就入了册（同步落，不等回调）
+  const merged = conv.messages.at(-1);
+  assert.deepEqual(merged.mailIds, ["m-s"]);
+  // 排队的工夫跟读换进新对象、被用户叫停：回调得查新对象上的标志
+  swapConv({ ...conv, userHalted: true, messages: conv.messages.slice() });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(calls.starts, 0);
+  // 对照：换入的新对象没叫停，回调照常补待写的一答
+  const conv2 = convOf({ messages: [{ id: "u0", role: "user", content: "问" }] }),
+    f2 = rig(conv2),
+    step2 = { id: "s2", name: "user_note", status: "running", note: "信", mailId: "m-s2" },
+    assistant2 = { id: "a1", role: "assistant", status: "complete", content: "答", steps: [step2] };
+  conv2.messages.push(assistant2);
+  f2.settleSupplements(conv2, assistant2, { queue: [{ user: { id: "um2", role: "user", content: "信", mailId: "m-s2" }, step: step2 }], controller: { signal: { aborted: false } } }, { id: "p1" });
+  const merged2 = conv2.messages.at(-1);
+  f2.swapConv({ ...conv2, messages: conv2.messages.slice() });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(f2.calls.starts, 1);
 });
 
 test("收信：被 settleSteps 抢跑收成 error 的挂起信步，开张扫描照样找回", async () => {
