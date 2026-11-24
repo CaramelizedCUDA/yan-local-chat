@@ -113,10 +113,11 @@ function toolDefinitions(conversation, { sub = false, lookup = false, profile = 
       (sub && tool.mainOnly) ||
       (lookup && !tool.lookup) ||
       !presetAllows(ctx.preset, tool) ||
-      // 名册写护栏：主簿专属只给主簿；只读档不给写文件的工具；browserPolicy 为 none 不给浏览器工具
+      // 名册写护栏：主簿专属只给主簿；只读档不给写文件的工具；browserPolicy 为 none 不给浏览器工具。
+      // run_command 除外：写不写看参数，只读档照给（执行层按 isReadOnlyCommand 逐条拦，见 04-bots.js）
       (tool.chiefOnly && ctx.bot?.role !== "chief") ||
       (ctx.bot?.browserPolicy === "none" && tool.usesBrowser) ||
-      (String(ctx.bot?.writePolicy) === "readonly" && tool.writes) ||
+      (String(ctx.bot?.writePolicy) === "readonly" && tool.writes && tool.name !== "run_command") ||
       (tool.offer && !tool.offer(ctx))
     )
       continue;

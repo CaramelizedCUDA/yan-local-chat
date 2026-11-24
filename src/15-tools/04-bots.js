@@ -32,10 +32,9 @@ function botToolBlock(tool, args, conversation) {
   if (!bot) return null;
   if (tool.chiefOnly && bot.role !== "chief") return t`名册里的 ${bot.id} 不是主簿（chief），用不了 ${tool.name}`;
   if (bot.browserPolicy === "none" && tool.usesBrowser) return t`名册里的 ${bot.id} 的 browserPolicy 是 none，不许动浏览器`;
-  if (
-    String(bot.writePolicy) === "readonly" &&
-    (tool.writes || (tool.name === "run_command" && !isReadOnlyCommand(args.command)))
-  )
+  // run_command 的 writes 恒真（能不能写看参数）：只读档只拦非只读的那类指令，只读的照样放行
+  const writes = tool.name === "run_command" ? !isReadOnlyCommand(args.command) : tool.writes;
+  if (String(bot.writePolicy) === "readonly" && writes)
     return t`名册里的 ${bot.id} 是只读档位，写文件与写型指令都拦下了`;
   return null;
 }
