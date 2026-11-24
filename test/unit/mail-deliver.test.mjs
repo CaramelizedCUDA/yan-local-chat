@@ -10,6 +10,8 @@ function rig(conversation) {
       "mailOnDiskWrite",
       "hasMailRecord",
       "recoverMailOrphans",
+      "foldRelayTail",
+      "settleSupplements",
       "requestJobs",
       `setup: (conv, calls) => {
         bootstrap = { store: { root: "/tmp/root" } };
@@ -153,6 +155,101 @@ test("收信：用户叫停过的对话只记下、不自动开工；没落盘�
   await offline.deliverLetter({ id: "m-4", to: "c-9", payload: "一" });
   assert.equal(stuck.messages.filter(m => m.mailId === "m-4").length, 1);
   assert.deepEqual(offline.calls.posts.filter(path => path.endsWith("/ack")), []);
+});
+
+test("收信：凭据在册的再冒头（残信淘汰、老号挤出 mailSeen）只登记不递送", async () => {
+  // 回过执的残信从簿里淘汰后冒头，或老号被挤出 mailSeen：册里早有这封信——
+  // 不再记一条、不再开一答，只把它登记回 mailSeen 再回执
+  const conv = convOf({
+      mailSeen: [],
+      messages: [{ id: "u1", role: "user", content: "去办一件事", timestamp: 1, mailId: "m-r", relay: [{ kind: "mail" }] }]
+    }),
+    { deliverLetter, mailOnDiskWrite, calls } = rig(conv);
+  await deliverLetter(letter("m-r"));
+  assert.equal(conv.messages.filter(m => m.mailId === "m-r").length, 1);
+  assert.equal(calls.starts, 0);
+  assert.deepEqual(conv.mailSeen, ["m-r"]);
+  await mailOnDiskWrite(conv.id, snap(conv));
+  assert.deepEqual(calls.posts.filter(path => path.endsWith("/ack")), ["/api/mail/ack"]);
+});
+
+test("收信：被 settleSteps 抢跑收成 error 的挂起信步，开张扫描照样找回", async () => {
+  // recoverInterruptedMessages 跑在 listenMail 前、先把 running 收成 error——只扫 running 会漏掉这批
+  const conv = convOf({
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          status: "stopped",
+          content: "半句",
+          steps: [{ id: "s1", name: "user_note", status: "error", title: "去办一件事", note: "去办一件事", mailId: "m-e", mailFrom: "总调度" }]
+        }
+      ]
+    }),
+    { recoverMailOrphans } = rig(conv);
+  recoverMailOrphans();
+  const host = conv.messages.find(m => m.id === "a1");
+  assert.equal(host.steps, undefined);
+  const message = conv.messages.at(-1);
+  assert.equal(message.mailId, "m-e");
+  assert.equal(message.content, "去办一件事");
+});
+
+test("续写折尾：信不是可折的空回报——留在册，回报细线的尾巴照折", async () => {
+  const conv = convOf({
+      messages: [
+        { id: "a1", role: "assistant", status: "complete", content: "答" },
+        { id: "u2", role: "user", content: "信", mailId: "m-x", relay: [{ kind: "mail", title: "总", ok: true }] },
+        { id: "a2", role: "assistant", status: "stopped", content: "" }
+      ]
+    }),
+    { foldRelayTail } = rig(conv);
+  foldRelayTail(conv, conv.messages[0]);
+  // 带 mail 细线的不算空回报：尾巴一封不折，凭据正文都留在册
+  assert.equal(conv.messages.length, 3);
+  assert.equal(conv.heldReports, undefined);
+  // 对照：纯回报（bg/帮手）起的空尾巴照折
+  const conv2 = convOf({
+      messages: [
+        { id: "a1", role: "assistant", status: "complete", content: "答" },
+        { id: "u2", role: "user", content: "报", relay: [{ kind: "bg", step: "s9" }] },
+        { id: "a2", role: "assistant", status: "stopped", content: "" }
+      ]
+    }),
+    f2 = rig(conv2);
+  f2.foldRelayTail(conv2, conv2.messages[0]);
+  assert.equal(conv2.messages.length, 1);
+  assert.equal(conv2.heldReports.length, 1);
+});
+
+test("收尾：信步先留着等并入落地；排队的工夫叫过停就只记下不开工", async () => {
+  const step = { id: "s1", name: "user_note", status: "running", note: "去办一件事", mailId: "m-q", mailFrom: "总" },
+    assistant = { id: "a1", role: "assistant", status: "complete", content: "答", steps: [step] },
+    conv = convOf({ messages: [{ id: "u0", role: "user", content: "问" }, assistant], userHalted: true }),
+    job = { queue: [{ user: { id: "um", role: "user", content: "去办一件事", mailId: "m-q" }, step }], controller: { signal: { aborted: false } } },
+    { settleSupplements, recoverMailOrphans, calls } = rig(conv);
+  assert.equal(settleSupplements(conv, assistant, job, { id: "p1" }), true);
+  // 信步没被当场撤：并入的新一问还没落地，留着它凭据不断档
+  assert.equal(assistant.steps.length, 1);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  // 叫过停的：并问落成正式消息（带 mailIds），不开工
+  assert.equal(calls.starts, 0);
+  const merged = conv.messages.at(-1);
+  assert.equal(merged.role, "user");
+  assert.deepEqual(merged.mailIds, ["m-q"]);
+  // 并入落地后，留着的信步由开张扫描收走：凭据在册只撤步，不补记第二份
+  recoverMailOrphans();
+  assert.equal(assistant.steps, undefined);
+  assert.equal(conv.messages.filter(m => (m.mailIds || []).includes("m-q")).length, 1);
+  // 对照：没叫停的照常另起一问
+  const step2 = { id: "s2", name: "user_note", status: "running", note: "去办一件事", mailId: "m-q2" },
+    assistant2 = { id: "a1", role: "assistant", status: "complete", content: "答", steps: [step2] },
+    conv2 = convOf({ messages: [{ id: "u0", role: "user", content: "问" }, assistant2] }),
+    job2 = { queue: [{ user: { id: "um2", role: "user", content: "去办一件事", mailId: "m-q2" }, step: step2 }], controller: { signal: { aborted: false } } },
+    f2 = rig(conv2);
+  f2.settleSupplements(conv2, assistant2, job2, { id: "p1" });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(f2.calls.starts, 1);
 });
 
 test("收信：这页认不得的对话不领；认领失败的也不碰", async () => {

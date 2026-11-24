@@ -189,7 +189,10 @@ function foldRelayTail(conversation, message) {
     tail = conversation.messages.slice(at + 1),
     ids = new Set([message.id, ...tail.map(m => m.id)]);
   const empty = m =>
-    m.role === "user" ? !!m.relay?.length : m.role === "assistant" && m.status !== "streaming" && !m.content.trim() && !m.steps?.length;
+    m.role === "user"
+      ? // 信不是「为叫醒而起的回报」：它是收下的指令，得留在册。当空回报折掉，凭据正文会一起丢
+        !!m.relay?.length && !m.relay.some(relay => relay?.kind === "mail")
+      : m.role === "assistant" && m.status !== "streaming" && !m.content.trim() && !m.steps?.length;
   if (at < 0 || !tail.length || !tail.every(empty) || (conversation.forks || []).some(fork => ids.has(fork.parentId))) return;
   conversation.messages = conversation.messages.slice(0, at + 1);
   const folded = tail
@@ -239,7 +242,11 @@ function recoverMailOrphans() {
   for (const c of store.conversations || [])
     for (const host of c.messages || []) {
       const strays =
-        host.status === "streaming" ? [] : (host.steps || []).filter(step => step.name === "user_note" && step.mailId && step.status === "running");
+        host.status === "streaming"
+          ? []
+          : // 开张时 settleSteps 先把 running 收成 error（recoverInterruptedMessages 跑在 listenMail 前），
+            // 只找 running 会漏掉刚被收的那批——没递到的都算，递到了的才打 done
+            (host.steps || []).filter(step => step.name === "user_note" && step.mailId && step.status !== "done");
       if (!strays.length) continue;
       host.steps = host.steps.filter(step => !strays.includes(step));
       if (!host.steps.length) delete host.steps;
@@ -297,8 +304,12 @@ async function deliverLetter(letter) {
     // 认领的工夫里对话可能整段没了或被别处写过换掉：按 id 取当前这一份
     const live = store.conversations.find(c => c.id === letter.to);
     if (!live) return;
-    const seen = (live.mailSeen ||= []);
-    if (!seen.includes(letter.id)) {
+    const seen = (live.mailSeen ||= []),
+      known = seen.includes(letter.id),
+      // 凭据先于 mailSeen：回过执的残信从簿里淘汰后冒头、老号被挤出 mailSeen 的，册里早有这封信，
+      // 只登记不递送——不然同一指令会再开一答、消息入册两回
+      recorded = hasMailRecord(live, letter.id);
+    if (!known && !recorded) {
       /** @type {Message} */
       const user = {
         id: uid(),
@@ -341,9 +352,7 @@ async function deliverLetter(letter) {
         if (currentId === live.id && view === "chat") renderConversation();
         else renderHistory();
       }
-      seen.push(letter.id);
-      if (seen.length > 100) live.mailSeen = seen.slice(-100);
-    } else if (!hasMailRecord(live, letter.id)) {
+    } else if (!recorded) {
       // 收过的信凭据没了（步骤随收尾被撤、号被挤出 mailSeen 之类）：补一条正式消息留下凭据，不重复递送
       live.messages.push({
         id: uid(),
@@ -356,6 +365,11 @@ async function deliverLetter(letter) {
       live.updatedAt = now();
       if (currentId === live.id && view === "chat") renderConversation();
       else renderHistory();
+    }
+    // 头一回见的、凭据在册只登记的，都记进 mailSeen：下次再冒头连查册都省了
+    if (!known) {
+      seen.push(letter.id);
+      if (seen.length > 100) live.mailSeen = seen.slice(-100);
     }
     pendingMailAck(live.id, letter.id);
     markDirty(live.id);

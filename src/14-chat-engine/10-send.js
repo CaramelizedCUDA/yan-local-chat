@@ -330,7 +330,9 @@ function settleSupplements(conversation, assistant, job, profile) {
   };
   if (!queue.length) return mail();
   const ids = new Set(queue.map(item => item.step.id));
-  assistant.steps = (assistant.steps || []).filter(step => !ids.has(step.id));
+  // 信的那几步先留着：并入的新一问入册前有段空窗，撤了步骤中间落盘会只剩 mailSeen、凭据断档。
+  // 留着由 recoverMailOrphans 收拾——并入消息落地了它只撤步，没落地（停了、页没了）它把正文补记成消息
+  assistant.steps = (assistant.steps || []).filter(step => !ids.has(step.id) || step.mailId);
   if (!assistant.steps.length) delete assistant.steps;
   const users = queue.map(item => item.user),
     quote = users.find(u => u.quote)?.quote || null,
@@ -380,7 +382,20 @@ function settleSupplements(conversation, assistant, job, profile) {
       ...(quote ? { quote } : {}),
       ...(mailIds.length ? { mailIds } : {})
     };
-    setTimeout(() => void startTurn(conversation, user, profile, { follow: false }), 0);
+    setTimeout(() => {
+      // 排队的工夫里叫过停（用户「止」、驱动 halt 置的 userHalted）：这条只记下不开工——话不能丢，
+      // 与信箱来件撞上叫停的那条同一路数（见 70-mail.js）
+      if (conversation.userHalted) {
+        conversation.messages.push(user);
+        conversation.updatedAt = now();
+        markDirty(conversation.id);
+        saveStoreSoon();
+        if (currentId === conversation.id && view === "chat") renderConversation();
+        else renderHistory();
+        return;
+      }
+      void startTurn(conversation, user, profile, { follow: false });
+    }, 0);
     mail();
     return true;
   }
