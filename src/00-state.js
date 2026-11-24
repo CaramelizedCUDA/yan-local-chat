@@ -106,6 +106,8 @@
  * @property {Relay} [relay] 作答途中回来的回报（relay_note）是谁
  * @property {string} [report] 回报、传话递上时给模型的原话：往后重装这一答时插回原处（见 replay）
  * @property {boolean} [steer] 补言是把正在写的一轮停在句尾递上的（前缀与接在工具结果之后的不同）
+ * @property {string} [mailId] 信箱来信递成补言时记下的编号：凭据跟着这一步走，崩了也能凭它找回（见 70-mail.js）
+ * @property {string} [mailFrom] 同上记寄信人：转成正式消息时还原回报细线
  * @property {{ questions: AskQuestion[] }} [form]
  * @property {string[]} [answers]
  * @property {string} [conversationId] 翻旧谈
@@ -160,6 +162,7 @@
  * @property {{ root: string, at: string, files: number }} [checkpoint] 这一答头一回动手改文件前记下的目录（见 14-chat-engine/80-checkpoint.js）
  * @property {{ at: string, restored: number, removed: number }[]} [rewound] 人把目录退回到这一答开工前的几回
  * @property {string} [mailId] 信箱来信的编号：同一封不重复入册（见 70-mail.js 的磁盘信箱）
+ * @property {string[]} [mailIds] 几封信并成一问时记全编号（见 10-send.js 收尾的补言并问）
  */
 /** @typedef {{ at: string, why: string, auto?: boolean }} Break 途中断过的一回：何时、为何；auto 是自动接着写上了的。续写不清，查「为何总断」时翻它 */
 /** @typedef {{ id: string, parentId: string|null, messages: Message[], createdAt: string }} Fork 被换下来的一段尾巴 */

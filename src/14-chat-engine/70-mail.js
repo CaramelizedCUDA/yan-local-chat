@@ -202,11 +202,71 @@ function foldRelayTail(conversation, message) {
 // 长等、认领、把指令写成那段对话的一条用户消息，落盘落稳才回执。同一封不重复入册——对话上的 mailSeen
 // 记已收的号，认领后写消息前就记上、与消息同一份落盘。没落盘的（桥接断了、只进浏览器暂存）不回执，
 // 租期一过再领重来。正在作答的照补言的路子递进这一答；没在作答的起一新答；用户叫停过的只记下不自动开工。
+// 等回执的登记簿：哪段对话里哪封信还差一份含凭据的盘照（凭据：消息上的 mailId/mailIds、步骤上的 mailId）
+const mailPendingAcks = new Map();
+function pendingMailAck(conversationId, mailId) {
+  let set = mailPendingAcks.get(conversationId);
+  if (!set) mailPendingAcks.set(conversationId, (set = new Set()));
+  set.add(mailId);
+}
+// 同一封信的凭据在不在册：消息上的编号，或行迹里带编号的那一步。落盘的快照、内存里活的都用它查
+/** @param {Conversation|object} c */
+function hasMailRecord(c, mailId) {
+  return everyMessage(c).some(
+    m => m.mailId === mailId || (m.mailIds || []).includes(mailId) || (m.steps || []).some(step => step.mailId === mailId)
+  );
+}
+// writeConversation 每真落一份盘照都来这过一遍（见 30-chats.js）：照里找得到编号才回执——
+// 回执绑的是实际写盘的那份快照，不是随便哪个在途写任务的着落
+/** @param {string} json 落盘的那份快照原文 */
+async function mailOnDiskWrite(conversationId, json) {
+  const pending = mailPendingAcks.get(conversationId);
+  if (!pending?.size) return;
+  try {
+    const snap = JSON.parse(json);
+    for (const mailId of [...pending]) {
+      if (!hasMailRecord(snap, mailId)) continue;
+      const sent = await storeBridge("/api/mail/ack", { id: mailId, owner: PAGE_ID }).then(() => true, () => false);
+      // 桥接够不着就先留着、下一份落盘的再试；服务那头照实回了的（成没成）都销号，租期的说法交给信箱
+      if (sent) pending.delete(mailId);
+    }
+  } catch {}
+}
+// 开张先扫一回：上一页递到一半没了的（宿主答已止、补言一步还挂在 running）落成正式消息——
+// 只记下不自动开工；回过执的副作用指令也不自动重跑，发信方查行迹看得到
+function recoverMailOrphans() {
+  let touched = false;
+  for (const c of store.conversations || [])
+    for (const host of c.messages || []) {
+      const strays =
+        host.status === "streaming" ? [] : (host.steps || []).filter(step => step.name === "user_note" && step.mailId && step.status === "running");
+      if (!strays.length) continue;
+      host.steps = host.steps.filter(step => !strays.includes(step));
+      if (!host.steps.length) delete host.steps;
+      for (const step of strays) {
+        // 收尾已把它并成消息、或别的凭据在册的：只撤步骤，不再记一遍
+        if (hasMailRecord(c, step.mailId)) continue;
+        c.messages.push({
+          id: uid(),
+          role: "user",
+          content: String(step.note || ""),
+          timestamp: now(),
+          mailId: step.mailId,
+          relay: [{ kind: "mail", title: String(step.mailFrom || ""), ok: true }]
+        });
+      }
+      c.updatedAt = now();
+      markDirty(c.id);
+      touched = true;
+    }
+  if (touched) saveStore();
+}
 async function listenMail() {
   let skip = [];
   for (;;) {
     const scope = bootstrap.store;
     try {
+      recoverMailOrphans();
       const { letters } = await storeBridge("/api/mail/wait", { skip });
       if (bootstrap.store !== scope) continue;
       const list = Array.isArray(letters) ? letters : [],
@@ -251,7 +311,8 @@ async function deliverLetter(letter) {
       const running = requestJob(live.id),
         host = running && live.messages.find(message => message.id === running.assistantId);
       if (host?.status === "streaming") {
-        // 正在作答：照补言的路子递进这一答——行迹里落一步「补言」，回合边界递上
+        // 正在作答：照补言的路子递进这一答——行迹里落一步「补言」，回合边界递上。
+        // 编号记在步骤上：这份照落盘就是凭据，没递到前断的（刷新、叫停）靠它找回（见 recoverMailOrphans）
         /** @type {Step} */
         const step = {
           id: `note_${uid().slice(0, 8)}`,
@@ -260,6 +321,8 @@ async function deliverLetter(letter) {
           status: "running",
           title: user.content.split("\n").find(Boolean)?.slice(0, 80) || "",
           note: user.content,
+          mailId: letter.id,
+          mailFrom: String(letter.from || ""),
           at: host.content.length,
           rat: String(host.reasoning || "").length
         };
@@ -280,13 +343,26 @@ async function deliverLetter(letter) {
       }
       seen.push(letter.id);
       if (seen.length > 100) live.mailSeen = seen.slice(-100);
+    } else if (!hasMailRecord(live, letter.id)) {
+      // 收过的信凭据没了（步骤随收尾被撤、号被挤出 mailSeen 之类）：补一条正式消息留下凭据，不重复递送
+      live.messages.push({
+        id: uid(),
+        role: "user",
+        content: String(letter.payload || ""),
+        timestamp: now(),
+        mailId: letter.id,
+        relay: [{ kind: "mail", title: String(letter.from || ""), ok: true }]
+      });
+      live.updatedAt = now();
+      if (currentId === live.id && view === "chat") renderConversation();
+      else renderHistory();
     }
+    pendingMailAck(live.id, letter.id);
     markDirty(live.id);
     saveStore();
-    // 重领的信正文未变：同指纹的普通写被跳过、拿不到「已落盘」，回执就永远等不来。强制写一回才有着落
+    // 重领的信正文未变：同指纹的普通写被跳过、照里没有这封信，回执就永远等不来。强制写一回才有着落。
+    // 回执只认盘照：writeConversation 真落盘时会调 mailOnDiskWrite 对快照找凭据——在浏览器暂存、
+    // 被别页顶掉、照里没有这封信的都不算收到，租期过了别页（或刷新后的自己）再领
     flushConversations([live.id], { force: true });
-    // 回执只认落盘：还在浏览器里暂存着的不算收到，租期过了别页（或刷新后的自己）再领
-    const landed = await chatWritePromises.get(live.id)?.catch(() => null);
-    if (landed === "disk") await storeBridge("/api/mail/ack", { id: letter.id, owner: PAGE_ID }).catch(() => {});
   } catch {}
 }

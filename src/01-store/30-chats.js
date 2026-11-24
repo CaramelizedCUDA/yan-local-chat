@@ -276,6 +276,8 @@ async function writeConversation(id) {
         chatSaveWarned = false;
         if (!chatDeletePending(id)) {
           result = "disk";
+          // 信箱回执绑这份实际写盘的快照：照里找得到信的凭据才回执（见 14-chat-engine/70-mail.js）
+          void mailOnDiskWrite(id, pending.json);
           // pagehide 已把最新状态写进表时，旧的在途请求即使成功也不能把那份离页兜底删掉。
           if (!unloading && !pendingChatWrites.has(id)) await clearSavedChatSpills(dir, new Map([[id, pending.json]]));
           if (!sameRoot()) return null;

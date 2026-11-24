@@ -333,15 +333,28 @@ function settleSupplements(conversation, assistant, job, profile) {
   assistant.steps = (assistant.steps || []).filter(step => !ids.has(step.id));
   if (!assistant.steps.length) delete assistant.steps;
   const users = queue.map(item => item.user),
-    quote = users.find(u => u.quote)?.quote || null;
-  // 没另起成的那条路：补言放回案上（这一答没写完，或目录正退回、此刻写下的会被盖掉）
+    quote = users.find(u => u.quote)?.quote || null,
+    // 信箱来信单列：编号得跟着正文走才有凭据（草稿不记编号，见 70-mail.js 的回执凭据）
+    mails = users.filter(u => u.mailId),
+    typed = users.filter(u => !u.mailId),
+    mailIds = mails.map(u => u.mailId);
+  // 没另起成的那条路：补言放回案上（这一答没写完，或目录正退回、此刻写下的会被盖掉）。
+  // 信不进案上草稿：逐封落成正式消息记下，只记不叫醒
   const putBack = () => {
+    for (const u of mails) conversation.messages.push(u);
+    if (mails.length) {
+      conversation.updatedAt = now();
+      markDirty(conversation.id);
+      if (currentId === conversation.id && view === "chat") renderConversation();
+      else renderHistory();
+    }
+    if (!typed.length) return;
     const key = draftKey(conversation.id),
       draft = draftRecord(conversation.id);
     store.drafts ||= {};
     store.drafts[key] = {
-      text: [draft.text, ...users.map(u => u.content)].filter(Boolean).join("\n\n"),
-      attachments: [...draft.attachments, ...users.flatMap(u => u.attachments || [])],
+      text: [draft.text, ...typed.map(u => u.content)].filter(Boolean).join("\n\n"),
+      attachments: [...draft.attachments, ...typed.flatMap(u => u.attachments || [])],
       quote: draft.quote || quote,
       updatedAt: now()
     };
@@ -364,7 +377,8 @@ function settleSupplements(conversation, assistant, job, profile) {
         .join("\n\n"),
       timestamp: now(),
       attachments: users.flatMap(u => u.attachments || []),
-      ...(quote ? { quote } : {})
+      ...(quote ? { quote } : {}),
+      ...(mailIds.length ? { mailIds } : {})
     };
     setTimeout(() => void startTurn(conversation, user, profile, { follow: false }), 0);
     mail();
