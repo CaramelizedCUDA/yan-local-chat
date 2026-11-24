@@ -85,6 +85,30 @@ test("信箱：租期过了能再领；认领超上限记死不再送", async ()
   }
 });
 
+test("信箱：回执先记簿后销正本；带着回执的残信不再送、领不走", async () => {
+  const home = tmpHome(),
+    { post, close } = await serve(home, { waitMs: 200 });
+  try {
+    await post("/api/mail/post", { to: "conv-1", msgId: "m-9", payload: "一" });
+    await post("/api/mail/claim", { id: "m-9", owner: "page-a" });
+    assert.equal((await post("/api/mail/ack", { id: "m-9", owner: "page-a" })).body.ok, true);
+    // 模拟先记簿后销正本半途崩的：回执簿里有号、正本又回来了
+    fs.writeFileSync(
+      path.join(home, "m-9.json"),
+      JSON.stringify({ id: "m-9", to: "conv-1", payload: "残", status: "claimed", claims: 1, claim: { owner: "page-a", at: 1, until: Date.now() + 60000 } })
+    );
+    assert.equal((await post("/api/mail/wait", {})).body.letters.length, 0);
+    const claim = await post("/api/mail/claim", { id: "m-9", owner: "page-b" });
+    assert.equal(claim.body.claimed, false);
+    assert.equal(claim.body.gone, "acked");
+    // 同号再投照样判重
+    assert.equal((await post("/api/mail/post", { to: "conv-1", msgId: "m-9", payload: "再来" })).body.dup, true);
+  } finally {
+    close();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("信箱：重启桥接（同目录另起一份）未回执的信原样可领，已回执的判重", async () => {
   const home = tmpHome(),
     first = await serve(home, { waitMs: 200 });

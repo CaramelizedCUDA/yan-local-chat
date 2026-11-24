@@ -30,10 +30,12 @@ module.exports = function createMail({ home, route = jsonRoute, waitMs = WAIT_MS
     } catch {
       return [];
     }
+    const acked = ackedIds();
     return names
       .filter(name => name !== "acked-ids.json" && /^[\w-]{1,64}\.json$/.test(name))
       .map(name => readJsonFile(path.join(home(), name)))
-      .filter(letter => letter && validId(letter.id) && letter.to)
+      // 回过执又留下了的残信（先记簿后销正本半途崩的）：一样不送
+      .filter(letter => letter && validId(letter.id) && letter.to && !acked.has(letter.id))
       .sort((a, b) => (a.postedAt || 0) - (b.postedAt || 0));
   }
   // 可领的：不是死信，且没人在租期内押着（过期自动放出，不必等谁松手）
@@ -115,6 +117,8 @@ module.exports = function createMail({ home, route = jsonRoute, waitMs = WAIT_MS
     const letter = readLetter(id);
     if (!letter) return { claimed: false, gone: ackedIds().has(id) ? "acked" : "missing" };
     if (letter.status === "dead") return { claimed: false, dead: true };
+    // 回过执又留下了的残信（先记簿后销正本半途崩的）：不送、领不走
+    if (ackedIds().has(id)) return { claimed: false, gone: "acked" };
     const now = Date.now();
     if (letter.claim && letter.claim.until > now && letter.claim.owner !== owner) return { claimed: false, owner: letter.claim.owner };
     // 同一人续租只是延租期，不算又领一回；换手或过期再领才计数（总在落盘前断的才该记死）
@@ -140,8 +144,9 @@ module.exports = function createMail({ home, route = jsonRoute, waitMs = WAIT_MS
       throw Error("这封信不存在");
     }
     if (letter.status !== "claimed" || letter.claim?.owner !== owner) return { ok: false };
-    fs.rmSync(letterFile(id), { force: true });
+    // 先记回执簿再销正本：反过来中间一崩，信没了簿里也没留号
     noteAcked(id);
+    fs.rmSync(letterFile(id), { force: true });
     return { ok: true };
   }, error => `回执出错：${errorText(error, 200)}`);
 
