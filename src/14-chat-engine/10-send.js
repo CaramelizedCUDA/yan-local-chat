@@ -397,7 +397,8 @@ function settleSupplements(conversation, assistant, job, profile) {
       // 叫过停的只记不开工——信与补言已经入册，话不丢（见 70-mail.js 的叫停语义）
       const live = store.conversations.find(c => c.id === conversation.id);
       if (!live || live.userHalted) return;
-      if (!live.messages.includes(user)) live.messages.push(user);
+      // 换进来的对象里消息是新实例：已入册的并问按 id 认，按引用认不出会把同一条再写一遍
+      if (!live.messages.some(m => m.id === user.id)) live.messages.push(user);
       void startTurn(live, user, profile, { follow: false, pushed: true });
     }, 0);
     mail();

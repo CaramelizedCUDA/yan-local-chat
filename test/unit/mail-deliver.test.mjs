@@ -206,20 +206,23 @@ test("收尾回调：跟读换过对象的按当前对象查停机——旧对�
   const merged = conv.messages.at(-1);
   assert.deepEqual(merged.mailIds, ["m-s"]);
   // 排队的工夫跟读换进新对象、被用户叫停：回调得查新对象上的标志
-  swapConv({ ...conv, userHalted: true, messages: conv.messages.slice() });
+  swapConv(JSON.parse(JSON.stringify({ ...conv, userHalted: true })));
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(calls.starts, 0);
-  // 对照：换入的新对象没叫停，回调照常补待写的一答
+  // 对照：换入的新对象没叫停，回调照常补待写的一答——并问按 id 认入册，不重复写
   const conv2 = convOf({ messages: [{ id: "u0", role: "user", content: "问" }] }),
     f2 = rig(conv2),
     step2 = { id: "s2", name: "user_note", status: "running", note: "信", mailId: "m-s2" },
     assistant2 = { id: "a1", role: "assistant", status: "complete", content: "答", steps: [step2] };
   conv2.messages.push(assistant2);
   f2.settleSupplements(conv2, assistant2, { queue: [{ user: { id: "um2", role: "user", content: "信", mailId: "m-s2" }, step: step2 }], controller: { signal: { aborted: false } } }, { id: "p1" });
-  const merged2 = conv2.messages.at(-1);
-  f2.swapConv({ ...conv2, messages: conv2.messages.slice() });
+  const mergedId = conv2.messages.at(-1).id,
+    swapped = JSON.parse(JSON.stringify(conv2)); // 序列化换对象：元素引用全变，按引用认不出
+  f2.swapConv(swapped);
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(f2.calls.starts, 1);
+  assert.equal(swapped.messages.filter(m => m.id === mergedId).length, 1);
+  assert.equal(swapped.messages.at(-1).role, "assistant");
 });
 
 test("收信：被 settleSteps 抢跑收成 error 的挂起信步，开张扫描照样找回", async () => {
