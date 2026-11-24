@@ -62,8 +62,8 @@ async function boot() {
   void listenTimers();
   // 磁盘信箱：等桥接那头的来信（页面关着时到的这时领上）
   void listenMail();
-  // 名册镜像：工具过滤与写护栏按它认档位（见 15-tools/04-bots.js）
-  void syncBots();
+  // 名册镜像：工具过滤与写护栏按它认档位（见 15-tools/04-bots.js）；读完刷新侧栏的点卯徽标
+  void syncBots().then(renderFleetBadge);
   applyAppearance();
   bindEvents();
   // 模型所用的浏览器若已开着（页面刷新过、桥接重启过），看台直接接上
@@ -135,6 +135,7 @@ function bindEvents() {
   bindIntentEvents();
   bindApprovalEvents();
   bindHelperEvents();
+  bindFleetEvents();
   bindBubbleEvents();
   bindClepsydraEvents();
   setupChips();

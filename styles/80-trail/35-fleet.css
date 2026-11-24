@@ -1,0 +1,103 @@
+/* ---------- 点卯：名册各行 ----------
+   与差遣同扇全屏的窗（.helper-viewer / .helper-sheet 沿用），行是名单不是时间线——
+   一行一只：职司印、名号、状态、待定夺徽标、写锁与放锁、工食银 */
+.fleet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fleet-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 10px);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fleet-row:hover {
+  border-color: var(--ink-3, var(--line));
+}
+.fleet-seal {
+  flex: none;
+}
+.fleet-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.fleet-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fleet-meta {
+  color: var(--ink-4, var(--faint));
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fleet-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.fleet-state-text {
+  color: var(--ink-4, var(--faint));
+  font-size: 12px;
+}
+/* 待定夺徽标：要人看的——朱印高亮，不必转圈 */
+.fleet-await {
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--rouge) 14%, transparent);
+  color: var(--rouge);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fleet-lock {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--ink-4, var(--faint));
+  font-size: 12px;
+  white-space: nowrap;
+}
+.fleet-ink {
+  flex: none;
+  min-width: 3em;
+  text-align: right;
+  color: var(--ink-4, var(--faint));
+  font-size: 12px;
+}
+.fleet-stop {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--rouge);
+  border-radius: 99px;
+  color: var(--rouge);
+  font-size: 12px;
+}
+.fleet-stop:hover {
+  background: color-mix(in srgb, var(--rouge) 10%, transparent);
+}
+.fleet-empty {
+  padding: 40px 0;
+  color: var(--ink-4, var(--faint));
+  text-align: center;
+}
+/* 侧栏「卯」钮上的待定夺数：亮朱提醒 */
+#fleetCount.awaiting {
+  color: var(--rouge);
+  font-weight: 700;
+}
