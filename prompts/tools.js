@@ -441,5 +441,77 @@
       },
       required: ["server", "tool"]
     }
+  },
+
+  // ---- 点卯：主簿（chief）专属，名册护栏只在名册位上给 ----
+  fleet_list: {
+    description: "点卯：列名册上全部 Bot——编号、名字、职司（role）、写档（writePolicy）、此刻状态（在忙 / 待你定夺 / 持写锁）。",
+    parameters: { type: "object", properties: {} }
+  },
+
+  fleet_read: {
+    description: "翻阅：看一只 Bot 会话的行迹尾巴——元数据与最近几条原文摘录（含信的编号）。只读，不开新答、不调模型。",
+    parameters: {
+      type: "object",
+      properties: {
+        bot: { type: "string", description: "名册编号或名字" },
+        tail: { type: "number", description: "取末尾几条，默认 20、至多 50" },
+        chars: { type: "number", description: "每条至多几字，默认 4000" }
+      },
+      required: ["bot"]
+    }
+  },
+
+  fleet_send: {
+    description:
+      "传令：把一句话寄给一只 Bot（磁盘信箱，投递即返）。taskId 记差事归属，同一件差重派到第三回即转人工不再递；kind 为 progress 的只登记不叫醒。",
+    parameters: {
+      type: "object",
+      properties: {
+        bot: { type: "string", description: "名册编号或名字" },
+        message: { type: "string", description: "要传的话" },
+        taskId: { type: "string", description: "差事编号：同一批事挂同一个，便于认重派" },
+        kind: { type: "string", description: "信的种类：progress 是进展回报，不叫醒收信方" },
+        correlationId: { type: "string", description: "与来函对应的编号（回信认账用）" }
+      },
+      required: ["bot", "message"]
+    }
+  },
+
+  fleet_stop: {
+    description: "叫停：刹住一只 Bot 的会话。默认主簿之令（不打用户锁）；byUser 为真才按用户亲手叫停记（来信只登记不再开工）。",
+    parameters: {
+      type: "object",
+      properties: {
+        bot: { type: "string", description: "名册编号或名字" },
+        byUser: { type: "boolean", description: "按用户亲手叫停记；默认 false" }
+      },
+      required: ["bot"]
+    }
+  },
+
+  fleet_adopt: {
+    description: "接管：把一只 Bot 的会话收归主簿名下——此后来信只登记不开工，直到 fleet_release 放还。",
+    parameters: { type: "object", properties: { bot: { type: "string", description: "名册编号或名字" } }, required: ["bot"] }
+  },
+
+  fleet_release: {
+    description: "放还：解除接管，会话恢复自治（来信照常开工）。",
+    parameters: { type: "object", properties: { bot: { type: "string", description: "名册编号或名字" } }, required: ["bot"] }
+  },
+
+  spawn_bot: {
+    description: "立册：名册上立一只新 Bot，并给它一段会话；此后即可 fleet_send 传令。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "名册编号；空着自动生成" },
+        name: { type: "string", description: "名字" },
+        instructions: { type: "string", description: "给它的差事规程" },
+        workRoot: { type: "string", description: "它自己的目录（写域）" },
+        writePolicy: { type: "string", description: "serialized（默认，串行写）/ readonly / worktree" },
+        profileId: { type: "string", description: "用哪个模型档；空着用当前默认" }
+      }
+    }
   }
 };

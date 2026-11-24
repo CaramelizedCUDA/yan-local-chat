@@ -78,6 +78,7 @@ module.exports = function createMail({ home, route = jsonRoute, waitMs = WAIT_MS
           taskId: String(body.taskId || ""),
           correlationId: String(body.correlationId || ""),
           reassignCount: Number(body.reassignCount) || 0,
+          kind: String(body.kind || ""),
           payload,
           status: "queued",
           claims: 0,

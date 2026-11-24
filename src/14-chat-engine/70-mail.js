@@ -293,12 +293,13 @@ async function listenMail() {
     }
   }
 }
-/** @param {{ id: string, to: string, from?: string, payload: string, postedAt?: number }} letter */
+/** @param {{ id: string, to: string, from?: string, payload: string, postedAt?: number, kind?: string }} letter */
 async function deliverLetter(letter) {
   const conversation = store.conversations.find(c => c.id === letter.to);
   if (!conversation || runningElsewhere(conversation.id)) return;
-  // 打算叫醒的先认领这一问（与发送同一道闸）：认领不上就不领这封信，留给它醒着的那页
-  if (!requestJob(conversation.id) && !conversation.userHalted) {
+  // 打算叫醒的先认领这一问（与发送同一道闸）：认领不上就不领这封信，留给它醒着的那页。
+  // 主簿接管着的与纯进展回报的只会登记、不会开工——不必先认领
+  if (!requestJob(conversation.id) && !conversation.userHalted && !conversation.adoptedBy && letter.kind !== "progress") {
     const profile = activeProfile(conversation);
     if (profile && !quotaBlocked(profile) && !(await claimTurn(conversation, { quiet: true }))) return;
   }
@@ -347,8 +348,9 @@ async function deliverLetter(letter) {
         refreshSteps(host);
         if (running.reading) watchSteer(running, host);
       } else {
-        // 没在作答：模型可用就由这封信开一问（startTurn 会把它写进册）；叫停过的、没有可用的模型或余墨已尽的只记下不自动开工
-        const profile = live.userHalted ? null : activeProfile(live);
+        // 没在作答：模型可用就由这封信开一问（startTurn 会把它写进册）；叫停过的、主簿接管着的、纯进展回报的、
+        // 没有可用的模型或余墨已尽的只记下不自动开工——接管的等主簿放还，进展回报留给它下次醒着自己看
+        const profile = live.userHalted || live.adoptedBy || letter.kind === "progress" ? null : activeProfile(live);
         if (profile && !quotaBlocked(profile)) void startTurn(live, user, profile, { follow: false });
         else {
           live.messages.push(user);

@@ -4,14 +4,25 @@
 const SessionDrivers = {
   native: {
     driver: "native",
-    // 寄一封指令：走桥接的磁盘信箱（server/mail.js），投递即返回；目标所在页认领、写成用户消息、落盘回执、顺带叫醒
-    async send(conversationId, payload, { from = "", taskId = "", correlationId = "", msgId = "" } = {}) {
-      return storeBridge("/api/mail/post", { to: String(conversationId), payload: String(payload ?? ""), from, taskId, correlationId, msgId });
+    // 寄一封指令：走桥接的磁盘信箱（server/mail.js），投递即返回；目标所在页认领、写成用户消息、落盘回执、顺带叫醒。
+    // kind 为 "progress" 的是普通进展回报：只登记、不叫醒收信那页（规范 §5，免得下级汇报一句就惊动一次主簿）
+    async send(conversationId, payload, { from = "", taskId = "", correlationId = "", msgId = "", kind = "", reassignCount = 0 } = {}) {
+      return storeBridge("/api/mail/post", {
+        to: String(conversationId),
+        payload: String(payload ?? ""),
+        from,
+        taskId,
+        correlationId,
+        msgId,
+        kind,
+        reassignCount: Number(reassignCount) || 0
+      });
     },
-    // 停一段会话：与用户点「止」同效——记下叫停，信箱来信只登记、不再自动开工，直到用户再发话
-    async halt(conversationId) {
+    // 停一段会话：byUser 为真（用户亲手按停）才记 userHalted——记下叫停，信箱来信只登记、不再自动开工，直到用户再发话；
+    // 主簿叫停（byUser 为假）只是刹住当前这一程，不拿用户的锁去拴它
+    async halt(conversationId, { byUser = false } = {}) {
       const c = store.conversations.find(item => item.id === conversationId);
-      if (c && !c.userHalted) {
+      if (c && byUser && !c.userHalted) {
         c.userHalted = true;
         markDirty(c.id);
       }
@@ -58,6 +69,9 @@ const SessionDrivers = {
           status: message.status || "",
           at: message.timestamp,
           mailId: message.mailId || undefined,
+          // 并问挂的是一串编号，流式补言步骤上另有一处（行迹级凭据，见 70-mail.js）——都带上才算编号的覆盖全
+          mailIds: Array.isArray(message.mailIds) && message.mailIds.length ? message.mailIds : undefined,
+          stepMailIds: (message.steps || []).map(step => step.mailId).filter(Boolean),
           text: String(message.content || "").slice(-chars)
         }))
       };

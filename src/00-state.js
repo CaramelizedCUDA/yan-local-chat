@@ -191,6 +191,8 @@
  * @property {{ report: string, relay: Relay }[]} [heldReports] 上一答断着时回来的回报，下一答开工时递上
  * @property {string[]} [mailSeen] 已收进这段对话的信的编号（同一封不重复入册，界内保留最近一百号）
  * @property {boolean} [userHalted] 用户亲手叫停过：信箱来件只记下、不自动开工，直到用户再发话
+ * @property {string} [adoptedBy] 收归哪位主簿名下（fleet_adopt）：接管着时来件只登记不开工，放还为止
+ * @property {Record<string, number>} [taskReassigns] 主簿的重派账：taskId → 已派几回，到限转人工（见 95-bot.js）
  */
 /**
  * @typedef {Object} Profile 一份模型配置
