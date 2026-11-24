@@ -22,6 +22,7 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {Preset|null} preset 这段对话用的预设：只给它挑中的几组与几个 MCP 服务
  * @property {Profile|null} profile 这一答用的模型：参数里有随模型而定的（帮手的思考档位）
  * @property {boolean} [lookup] 旁注的一套：只查不改
+ * @property {object|null} [bot] 这段对话挂在名册里的那只 Bot（普通对谈为 null）：按它的档位过滤工具（见 04-bots.js）
  *
  * @typedef {{ ok: boolean, content: string, display: string, background?: boolean, images?: string[] }} ToolOutcome content 回给模型，display 写在标题行右侧；background：活在后台接着做，步骤由它自己收尾；images：交回的图（data: 地址），随工具结果给模型看
  * @typedef {{ url?: string, title?: string, read?: boolean, talk?: string, date?: string }} Source 答末「出处」的一条：网页或旧谈
@@ -33,6 +34,8 @@ const MIN_TOOL_STATUS_MS = 240;
  * @property {string} [server] MCP 工具属哪个服务：预设按服务挑
  * @property {false | ((ctx: OfferContext) => boolean)} [offer] 此处给不给；不写即处处都给，false 是只登记画法、从不交给模型的步骤（补言）
  * @property {boolean} [mainOnly] 只给主模型，帮手拿不到
+ * @property {boolean} [chiefOnly] 只给名册里的主簿（role === "chief"），其余名册位与普通对谈都拿不到
+ * @property {boolean} [usesBrowser] 会动浏览器：browserPolicy 为 none 的名册位拿不到（目前无此类工具，护栏先立）
  * @property {boolean} [lookup] 旁注（只查不改）也给
  * @property {(ctx: OfferContext) => Record<string, any>} [vars] 说明里 {{名字}} 的值
  * @property {(parameters: Record<string, any>, ctx: OfferContext) => Record<string, any>} [params] 参数随处境改写（如枚举只列此模型认的几档）
@@ -100,7 +103,8 @@ function toolDefinitions(conversation, { sub = false, lookup = false, profile = 
     offered: [],
     preset: presetOf(conversation),
     profile,
-    lookup
+    lookup,
+    bot: botOf(conversation)
   };
   const tools = [];
   for (const tool of TOOLS.values()) {
@@ -109,6 +113,10 @@ function toolDefinitions(conversation, { sub = false, lookup = false, profile = 
       (sub && tool.mainOnly) ||
       (lookup && !tool.lookup) ||
       !presetAllows(ctx.preset, tool) ||
+      // 名册写护栏：主簿专属只给主簿；只读档不给写文件的工具；browserPolicy 为 none 不给浏览器工具
+      (tool.chiefOnly && ctx.bot?.role !== "chief") ||
+      (ctx.bot?.browserPolicy === "none" && tool.usesBrowser) ||
+      (String(ctx.bot?.writePolicy) === "readonly" && tool.writes) ||
       (tool.offer && !tool.offer(ctx))
     )
       continue;
@@ -171,6 +179,9 @@ async function runTool(step, ctx) {
   // 给人看的一句（工具参数里的 description）：请示条与行迹题头用它，守的关口在工具跑之前就问，所以这里先记下
   if (toolSpec(step.name)?.parameters?.properties?.description && typeof args.description === "string" && args.description.trim())
     step.gist = args.description.trim();
+  // 名册写护栏的兜底闸：offer 层没给它的也拦（见 04-bots.js），照名字硬调的在此处按档位挡
+  const policyBlocked = botToolBlock(tool, args, ctx.conversation);
+  if (policyBlocked) return { ok: false, content: policyBlocked, display: "名册护栏拦下" };
   try {
     // 工具与审查都可能翻到先前几答的行迹（帮手的经过、看过的网址）：另存出去的先接回来
     await warmConversation(ctx.conversation);

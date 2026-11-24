@@ -25,12 +25,14 @@ function tmpHome() {
   return fs.mkdtempSync(path.join(parent, "bots-"));
 }
 
-test("名册：空目录读出空册；写回补齐九个字段，再读回来一致", async () => {
+test("名册：空目录读出空册；写回补齐定稿字段，再读回来一致", async () => {
   const home = tmpHome(),
     { post, close } = await serve(home);
   try {
     assert.deepEqual((await post("/api/bots/load", {})).body, { bots: [], updatedAt: 0 });
-    const saved = await post("/api/bots/save", { bots: [{ id: "bot-a", name: "探子", role: "helper", activeConversationId: "c-1" }] });
+    const saved = await post("/api/bots/save", {
+      bots: [{ id: "bot-a", name: "探子", role: "helper", activeConversationId: "c-1", profileHint: "p-9", writePolicy: "readonly" }]
+    });
     assert.equal(saved.status, 200);
     const { bots, updatedAt } = (await post("/api/bots/load", {})).body;
     assert.equal(updatedAt, saved.body.updatedAt);
@@ -40,9 +42,16 @@ test("名册：空目录读出空册；写回补齐九个字段，再读回来�
         name: "探子",
         driver: "native",
         role: "helper",
+        instructions: "",
+        // 旧档的 profileHint 并进 profileId
+        profileId: "p-9",
         activeConversationId: "c-1",
-        profileHint: "",
         memoryRef: "bots/bot-a/memory.md",
+        scope: { groups: [], botIds: [] },
+        identity: { gitName: "", gitEmail: "" },
+        writePolicy: "readonly",
+        browserPolicy: "none",
+        workRoot: "",
         capabilities: [],
         status: "active"
       }
@@ -62,6 +71,8 @@ test("名册：不合规的项整份拒落；带旧 base 的写回撞 409 并交
       { id: "x", role: "boss" },
       { id: "x", driver: "acp" },
       { id: "x", status: "gone" },
+      { id: "x", writePolicy: "casual" },
+      { id: "x", browserPolicy: "any" },
       { name: "没号" }
     ]) {
       const denied = await post("/api/bots/save", { bots: [bad] });

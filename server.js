@@ -177,7 +177,9 @@ const WORK = require("./server/work/index.js")({
   workHome: () => STORE.paths().work,
   storeRoot: () => STORE.paths().root,
   toolEnv: ENV.apply,
-  playable: VIDEO.playable
+  playable: VIDEO.playable,
+  // 名册写护栏按真本查档位：BOTS 在下面才装配，请求时才取，不在此刻求值
+  roster: () => BOTS.load()
 });
 // 技能：照 Claude Code 的 SKILL.md 写法，只认存储根/技能一处（见 server/skills.js）；随言带来的几份在 skills/，头一回列技能时拷进去
 // （YAN_BUILTIN_SKILLS 给空串即不带，测试桥接用）

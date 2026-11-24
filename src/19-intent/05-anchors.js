@@ -160,7 +160,9 @@ async function readAnchorCommands(conversation, values, signal, timeout, digest)
         signal?.throwIfAborted();
         const command = pending[cursor++];
         try {
-          prints[command] = digest(await bridge("/api/work/run", { ...workScope(conversation), command, timeout }, signal));
+          prints[command] = digest(
+            await bridge("/api/work/run", { ...workScope(conversation), command, readOnly: isReadOnlyCommand(command), timeout }, signal)
+          );
         } catch (error) {
           if (error.name === "AbortError") throw error;
         }

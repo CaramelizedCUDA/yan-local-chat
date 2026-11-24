@@ -2,12 +2,12 @@
 // 文件读写见 files.js，列与搜见 find.js，图与指纹见 intent.js，卷宗目录见 archive.js
 // 由 server.js 装配：require("./server/work/index.js")({ archiveHome, workHome, toolEnv })
 "use strict";
-const { sendJson, readJson, jsonRoute, requestSignal, stamp, errorText } = require("../http.js");
+const { sendJson, readJson, jsonRoute, requestSignal, onResponseSettled, stamp, errorText } = require("../http.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const sandbox = require("../sandbox.js");
 const paths = require("./paths.js");
-const { SCRATCH_DIR, WORK_SKIP, describeFsError, clampNumber, pathIsInside, resolveTarget, assertReachable, relPath } = paths;
+const { SCRATCH_DIR, WORK_SKIP, describeFsError, clampNumber, pathIsInside, resolveTarget, assertReachable, relPath, expandHome } = paths;
 const { pick } = require("./picker.js");
 const createShell = require("./shell.js");
 const createLocks = require("./locks.js");
@@ -16,7 +16,7 @@ const createFiles = require("./files.js");
 const createFind = require("./find.js");
 const createIntent = require("./intent.js");
 
-module.exports = function createWork({ archiveHome, workHome, storeRoot = () => "", toolEnv, playable }) {
+module.exports = function createWork({ archiveHome, workHome, storeRoot = () => "", toolEnv, playable, roster = () => ({ bots: [] }) }) {
   // ---- 执事模式：给模型一个工作目录，能跑指令、读写文件 ----
   // 指令用本机 shell 在工作目录内起跑；结构化文件工具默认只及目录内，可否访问目录外由权限档位与 roam 一同决定。
   // 请求带 sandbox: true 时做静态筛查并过滤指令环境；macOS 严档在系统有 sandbox-exec 时还限制子进程写盘（见 shell.js）。
@@ -42,7 +42,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
     } = createShell({
       toolEnv
     }),
-    { lockFile } = createLocks();
+    { lockFile, lockDir, canonical } = createLocks();
   // 沙箱分两档：问而后行（或没说档位的请求）用严的；审而后行、径行用宽的——宽档不套严档的文件路径规则，仍保护存储根；指令用宽档筛查（见 server/sandbox.js）
   const looseTier = body => body.permission === "review" || body.permission === "auto";
   const strictBox = body => body.sandbox === true && !looseTier(body);
@@ -59,6 +59,50 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
       if (why) throw Error(why);
     }
     return target;
+  }
+  // ---- 名册写护栏（规范 §5）：请求上带的 bot 指到名册里哪只，这次写就受它的档位管。
+  // 名册是桥接自己读的真本（用户手改的坏值在 bots/save 落盘时就拦了），页面只报编号、报不了档位。
+  // 只读档一律拒写；写型档（serialized；worktree 暂按串行落，独立工作区还没做）按目录的真实路径排队——
+  // 软链接、junction、大小写别名都归到同一把锁。没指到名册位的（普通对谈）照旧，不取目录锁。
+  function botOfBody(body) {
+    const id = String(body?.bot || "");
+    return id ? (roster().bots || []).find(item => item.id === id) || null : null;
+  }
+  // 写型 bot 写自己的域外也算越界：workRoot 记了就跟它比真实路径，不认账面路径
+  async function guardBotRoot(bot, workdir) {
+    if (!bot?.workRoot) return;
+    const [own, at] = await Promise.all([canonical(path.resolve(expandHome(bot.workRoot))), canonical(workdir)]);
+    if (own !== at) throw Error(`名册里的 ${bot.id} 只许写自己的目录（${bot.workRoot}），此次落点是别处`);
+  }
+  // 一次文件写的护栏：过了才拿目录串行锁与文件锁，两把一起还。readonly 拒、越域拒，写型按目录排队
+  async function lockWrite(workdir, body, file, signal) {
+    const bot = botOfBody(body);
+    if (!bot) return lockFile(file, signal);
+    if (String(bot.writePolicy) === "readonly") throw Error(`名册里的 ${bot.id} 是只读档位，不许写`);
+    await guardBotRoot(bot, workdir);
+    const dir = await lockDir(workdir, signal);
+    try {
+      const release = await lockFile(file, signal);
+      return () => {
+        release();
+        dir();
+      };
+    } catch (error) {
+      dir();
+      throw error;
+    }
+  }
+  // 指令入口的护栏：只读档只放页面标了 readOnly 的（页面过 isReadOnlyCommand 才标——只读分类规则在页面侧，
+  // 桥接以旗标为准、不自己再判一遍指令文本）；写型档拿目录锁，前台指令随请求还、后台指令随 job.ended 还
+  async function guardCommand(workdir, body, res) {
+    const bot = botOfBody(body);
+    if (!bot) return null;
+    if (String(bot.writePolicy) === "readonly") {
+      if (body.readOnly !== true) throw Error(`名册里的 ${bot.id} 是只读档位，只放只读指令`);
+      return null;
+    }
+    await guardBotRoot(bot, workdir);
+    return await lockDir(workdir, body.background === true ? undefined : requestSignal(res));
   }
   // 路径不对时给一句线索，模型下一回就能找对，不必先列目录：同名的在目录里别处（多半记错了上一层），
   // 不然列出还在的最近一层目录里有什么。沙箱里不借它报出机密文件的名字
@@ -146,10 +190,27 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
         const why = sandbox.screenAutoReview(command, { workdir });
         if (why) throw Error(why);
       }
+      // 名册写护栏：只读档只放标了 readOnly 的指令；写型档拿目录串行锁——
+      // 前台指令随响应落定还（含报错与中止），后台与转后台的挪到 job.ended 上还（排队等锁时页面停了，acquire 随 signal 落空）
+      let dirLock = await guardCommand(workdir, body, res);
+      const releaseDir = () => {
+        const held = dirLock;
+        dirLock = null;
+        held?.();
+      };
+      onResponseSettled(res, releaseDir);
+      const holdDirOnJob = job => {
+        if (dirLock && job) {
+          const held = dirLock;
+          dirLock = null;
+          job.ended.finally(() => held());
+        }
+      };
       if (body.background === true) {
-        if (res.destroyed) return;
+        if (res.destroyed) return releaseDir();
         console.log(`${stamp()} $ （后台）${command.slice(0, 120)}`);
         const job = startBackground(command, workdir, boxed, seatbelt);
+        holdDirOnJob(job);
         let delivered = false;
         const disconnected = () => {
           if (!delivered) discardBackground(job);
@@ -172,6 +233,8 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
         const waitMs = clampNumber(Number(body.timeout) * 1000, 120000, 1000, 600000),
           { job, report } = await runForeground(command, workdir, boxed, waitMs, signal, String(body.ticket), seatbelt);
         if (!report) return;
+        // 转入了后台的：目录锁跟着 job 走，不随这个请求的响应落定还
+        if (report.running) holdDirOnJob(job);
         // 转入了后台、编号却没能交到页面：无人能再凭编号叫停它，收掉
         if (res.destroyed) return report.running && discardBackground(job);
         return sendJson(res, 200, report);
@@ -229,7 +292,7 @@ module.exports = function createWork({ archiveHome, workHome, storeRoot = () => 
     return { why: sandbox.screenCommand(command, workdir) };
   }, failed);
   // 文件、列与搜、图各一段，共用上面的落点、沙箱筛查与报错写法
-  const work = { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile, storeRoot };
+  const work = { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile, lockWrite, storeRoot };
 
   return {
     workHome,

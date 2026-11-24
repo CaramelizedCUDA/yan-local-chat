@@ -17,7 +17,7 @@ const WORK_FILE_LIMIT = 200000;
 const fingerprint = buffer => crypto.createHash("sha1").update(buffer).digest("hex").slice(0, 16);
 
 module.exports = function createFiles(work) {
-  const { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile } = work;
+  const { failed, resolveWorkdir, targetOf, missingHint, shownPath, strictBox, lockFile, lockWrite } = work;
   const handleWorkWrite = jsonRoute(async (body, req, res) => {
     // 页面停了就别再动文件：排队等锁时停下，锁到手也不写（见 locks.js）
     const signal = requestSignal(res);
@@ -26,7 +26,8 @@ module.exports = function createFiles(work) {
     if (file === workdir) throw Error("请给出文件名");
     const content = String(body.content ?? "");
     if (Buffer.byteLength(content) > 32 * 1024 * 1024) throw Error("单个文件不超过 32 MB");
-    const release = await lockFile(file, signal);
+    // 名册写护栏（只读拒、写型按目录串行）裹在文件锁外头，两把一起还
+    const release = await lockWrite(workdir, body, file, signal);
     try {
       const existing = await fs.promises.stat(file).catch(error => {
         if (error.code === "ENOENT") return null;
@@ -123,7 +124,7 @@ module.exports = function createFiles(work) {
     if (file === workdir) throw Error("请给出文件名");
     if (!oldText) throw Error("old 不能为空；新建文件请用 write_file");
     if (oldText === newText) throw Error("old 与 new 相同，无需修改");
-    const release = await lockFile(file, signal);
+    const release = await lockWrite(workdir, body, file, signal);
     try {
       const stat = await fs.promises.stat(file).catch(() => null);
       if (!stat) throw Error(`文件不存在：${body.path}${await missingHint(workdir, file, strictBox(body))}`);
@@ -231,7 +232,7 @@ module.exports = function createFiles(work) {
     }
     const { buffer, truncated } = await readLimitedBytes(response, DOWNLOAD_LIMIT);
     if (truncated) throw Error(`文件超过 ${DOWNLOAD_LIMIT / 1048576} MB`);
-    const release = await lockFile(target, signal);
+    const release = await lockWrite(workdir, body, target, signal);
     try {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       const extension = path.extname(target),

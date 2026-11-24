@@ -51,6 +51,9 @@ defineTool({
         permission: policy,
         reviewed: step.reviewed?.ok === true,
         command: step.title,
+        // 名册写护栏：bot 编号与「这条算只读」一并报给桥接，桥接按真本档位放不放行
+        bot: botOf(conversation)?.id || "",
+        readOnly: isReadOnlyCommand(step.title),
         timeout: Number(args.timeout) || 120,
         background,
         ticket
@@ -296,7 +299,8 @@ function commandOutput(data) {
 function workScope(conversation) {
   const workdir = workRoot(conversation);
   if (!workdir) throw Error(t("此对话没有可用的目录（本机桥接不在线）"));
-  return { workdir, roam: roamAllowed(), sandbox: sandboxed(), permission: commandPolicyOf(conversation) };
+  // 名册写护栏：bot 编号跟着请求走，桥接按真本认档位（见 server/work/index.js 的 guardCommand/lockWrite）
+  return { workdir, roam: roamAllowed(), sandbox: sandboxed(), permission: commandPolicyOf(conversation), bot: botOf(conversation)?.id || "" };
 }
 // 文件工具能不能出目录：设置里的「可及范围」，默认全盘（系统级配置、别处的资料本就该读得到）
 function roamAllowed() {

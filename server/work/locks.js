@@ -65,9 +65,8 @@ module.exports = function createLocks() {
       }
     }
   }
-  // 写一个文件：该路径的独占锁；返回一次性的释放函数。没人握着、也没人排队的锁随手清掉
-  async function lockFile(file, signal) {
-    const key = lockKey(await canonical(file));
+  // 取一个键的独占锁；返回一次性的释放函数。没人握着、也没人排队的锁随手清掉
+  async function lockAt(key, signal) {
     let lock = pathLocks.get(key);
     if (!lock) pathLocks.set(key, (lock = new Mutex()));
     const forget = () => {
@@ -84,5 +83,14 @@ module.exports = function createLocks() {
       throw error;
     }
   }
-  return { lockFile };
+  // 写一个文件：该路径的独占锁
+  async function lockFile(file, signal) {
+    return lockAt(lockKey(await canonical(file)), signal);
+  }
+  // ---- 名册写护栏的串行锁：serialized（worktree 暂同）档位的 Bot 写同一目录时按真实路径排队。
+  // 目录键加前缀，不与文件键相混。只读的不取锁——稽核只看不写，不该挡写型的队。
+  async function lockDir(dir, signal) {
+    return lockAt(`dir:${lockKey(await canonical(dir))}`, signal);
+  }
+  return { lockFile, lockDir, canonical };
 };

@@ -213,7 +213,7 @@ async function keepHook(step, args, ctx) {
       try {
         data = await bridge(
           "/api/work/run",
-          { ...workScope(ctx.conversation), command, timeout: 300, hook: { tool: step.name, target } },
+          { ...workScope(ctx.conversation), command, readOnly: isReadOnlyCommand(command), timeout: 300, hook: { tool: step.name, target } },
           ctx.signal
         );
       } catch (error) {
