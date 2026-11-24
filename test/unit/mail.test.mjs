@@ -109,6 +109,36 @@ test("信箱：回执先记簿后销正本；带着回执的残信不再送、�
   }
 });
 
+test("信箱：回执簿读不动宁可错回，绝不拿空簿抹掉旧回执", async () => {
+  const home = tmpHome(),
+    { post, close } = await serve(home, { waitMs: 200 });
+  try {
+    await post("/api/mail/post", { to: "conv-1", msgId: "m-a", payload: "一" });
+    await post("/api/mail/post", { to: "conv-1", msgId: "m-b", payload: "二" });
+    await post("/api/mail/claim", { id: "m-a", owner: "page-a" });
+    await post("/api/mail/ack", { id: "m-a", owner: "page-a" });
+    await post("/api/mail/claim", { id: "m-b", owner: "page-a" });
+    // 把簿写坏（半截 JSON——EBUSY 一类读败同一路数）：回执、等信、再投都得当场错回，不能当空簿办事
+    fs.writeFileSync(path.join(home, "acked-ids.json"), "{不是json");
+    const ack = await post("/api/mail/ack", { id: "m-b", owner: "page-a" });
+    assert.ok(ack.body.error);
+    assert.equal(ack.body.ok, undefined);
+    // 簿原样留着（没拿空集把 m-a 抹掉）、正本还在等再回执
+    assert.equal(fs.readFileSync(path.join(home, "acked-ids.json"), "utf8"), "{不是json");
+    assert.equal(fs.existsSync(path.join(home, "m-b.json")), true);
+    assert.ok((await post("/api/mail/wait", {})).body.error);
+    assert.ok((await post("/api/mail/post", { to: "conv-1", msgId: "m-a", payload: "重放" })).body.error);
+    // 修好后照常：两个号都在簿里
+    fs.writeFileSync(path.join(home, "acked-ids.json"), JSON.stringify({ 言: "信箱 · 回执簿", ids: ["m-a"] }));
+    assert.equal((await post("/api/mail/ack", { id: "m-b", owner: "page-a" })).body.ok, true);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, "acked-ids.json"), "utf8")).ids, ["m-a", "m-b"]);
+    assert.equal(fs.existsSync(path.join(home, "m-b.json")), false);
+  } finally {
+    close();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("信箱：重启桥接（同目录另起一份）未回执的信原样可领，已回执的判重", async () => {
   const home = tmpHome(),
     first = await serve(home, { waitMs: 200 });

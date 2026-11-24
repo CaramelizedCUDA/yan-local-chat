@@ -40,8 +40,15 @@ module.exports = function createMail({ home, route = jsonRoute, waitMs = WAIT_MS
   }
   // 可领的：不是死信，且没人在租期内押着（过期自动放出，不必等谁松手）
   const claimable = (letter, now) => letter.status !== "dead" && (!letter.claim || letter.claim.until <= now);
+  // 回执簿读不动宁可当场败（EBUSY、半截 JSON）：readJsonFile 那类把异常当不存在的读法，
+  // 会让记簿拿空集起步、把已收过的信号全抹掉。读败一律沿路由错回——投、等、领、回执都停一停，比放行重复指令安全
   function ackedIds() {
-    return new Set(readJsonFile(ackedFile())?.ids || []);
+    try {
+      return new Set(JSON.parse(fs.readFileSync(ackedFile(), "utf8"))?.ids || []);
+    } catch (error) {
+      if (error?.code === "ENOENT") return new Set();
+      throw error;
+    }
   }
   function noteAcked(id) {
     const ids = [...ackedIds()].filter(item => item !== id);
